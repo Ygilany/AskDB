@@ -24,18 +24,18 @@
 // which is parametrization.
 // Rejected: see RULES, including a describe/suite/it/test call made only under a condition
 // (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`, an optional call's
-// arguments) or over a `.each` table chosen by one, anywhere between the call and the nearest
-// enclosing suite, test or named function. To exempt one line, put a line comment on the line
-// above it with a non-empty reason; the marker with no reason exempts nothing:
+// arguments) or over a `.each` table or loop iterable chosen by one, anywhere between the call
+// and the nearest enclosing suite, test or named function. To exempt one line, put a line comment
+// on the line above it with a non-empty reason; the marker with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // A use the check can't read (an alias such as `const d = describe`, `x && describe`, an
 // argument, `describe.call(…)`, a spread or computed key in the options) fails closed.
 //
 // Known limits: an early `return` before a call, a gate inside a named helper that is called
-// under a condition, options passed in a variable (`it(name, opts, fn)`), a `.each` table filtered
-// at run time (`describe.each(engines.filter(…))`), a test API imported from another module, and
-// `ctx.skip()` inside a test body are not detected.
+// under a condition, options passed in a variable (`it(name, opts, fn)`), a `.each` table or loop
+// filtered at run time (`describe.each(engines.filter(…))`, `while (…)`), a test API imported from
+// another module, and `ctx.skip()` inside a test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
@@ -92,7 +92,7 @@ export const RULES = [
   },
   {
     id: "ternary",
-    test: (ref) => !ref.invoked && isTernaryBranch(ref.top),
+    test: (ref) => !ref.invoked && isTernaryBranch(ref.chain),
     why: "selects describe/suite/it/test with a ternary; use integrationSuite()",
   },
   {
@@ -190,8 +190,19 @@ function vitestBindings(sf, program) {
     } else if (decl && ts.isNamespaceImport(decl) && importedFrom(decl) === "vitest") {
       found = { ns: true };
     } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
+      const init = unwrap(decl.initializer);
+      // `const w = v` keeps a Vitest namespace; `const t = test.extend({…})` is a test function.
+      found = ts.isIdentifier(init) && bindings.resolve(init)?.ns ? { ns: true } : undefined;
       const fn = extendedFn(decl.initializer, bindings);
       if (fn !== undefined) found = { fn };
+    } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
+      // `const { describe } = v`, from a Vitest namespace.
+      const holder = decl.parent.parent;
+      const init = ts.isVariableDeclaration(holder) && holder.initializer ? unwrap(holder.initializer) : undefined;
+      const key = decl.propertyName ?? decl.name;
+      if (init && ts.isIdentifier(init) && bindings.resolve(init)?.ns && ts.isIdentifier(key) && TEST_FNS.has(key.text)) {
+        found = { fn: key.text };
+      }
     }
     cache.set(symbol, found);
     return found;
@@ -199,10 +210,30 @@ function vitestBindings(sf, program) {
   return bindings;
 }
 
+/**
+ * Whether a Vitest namespace identifier is used in a form the check reads: `v.member`,
+ * `v["member"]`, or `const w = v` / `const { describe } = v` (both resolved as aliases).
+ */
+function namespaceMemberUse(id) {
+  const outer = outermostWrapper(id);
+  const p = outer.parent;
+  if (isMemberLink(p) && p.expression === outer) return true;
+  return ts.isVariableDeclaration(p) && p.initializer === outer;
+}
+
+/** A Vitest namespace passed on (`fn(v)`, `[v]`), which the check can't follow: it fails closed. */
+function escapedNamespaceRef(id, bindings) {
+  return {
+    suite: false, links: [], computed: false, chain: id, call: undefined, invoked: false, escapes: true,
+    defines: false, conditional: false, optionGate: false,
+    line: bindings.sf.getLineAndCharacterOfPosition(id.getStart(bindings.sf)).line + 1,
+  };
+}
+
 /** The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias), or undefined. */
 function testFnName(node, bindings) {
   if (ts.isIdentifier(node)) return bindings.resolve(node)?.fn;
-  if (isMemberLink(node) && ts.isIdentifier(node.expression) && bindings.resolve(node.expression)?.ns) {
+  if (isMemberLink(node) && ts.isIdentifier(unwrap(node.expression)) && bindings.resolve(unwrap(node.expression))?.ns) {
     const name = linkName(node);
     return TEST_FNS.has(name) ? name : undefined;
   }
@@ -239,22 +270,22 @@ function isValueReference(id) {
 
 /**
  * A reference to Vitest's describe/suite/it/test, starting at the identifier or `v.describe`
- * node `start`: its `.modifier` links, the outermost expression of the chain (`top`), the call or
- * tagged template that invokes it, and what the rules need to know about that call.
+ * node `start`: its `.modifier` links, the outermost expression of the member chain (`chain`), the
+ * call or tagged template that invokes it, and what the rules need to know about that call.
  * `it.skip.each(rows)(name, fn)` counts as invoked, through the call `each(rows)` returns.
  */
 function testRef(start, fnName, bindings) {
   const links = [];
   let computed = false;
   let extendCallPending = false;
-  let top = start;
+  let chain = start;
   for (;;) {
-    const inner = outermostWrapper(top);
+    const inner = outermostWrapper(chain);
     const up = inner.parent;
     // `test.extend({…})` returns a test function: read the chain on through that one call.
     if (extendCallPending && calleeOf(up) === inner) {
       extendCallPending = false;
-      top = up;
+      chain = up;
       continue;
     }
     if (!isMemberLink(up) || up.expression !== inner) break;
@@ -262,18 +293,19 @@ function testRef(start, fnName, bindings) {
     if (name === undefined) {
       // `describe[expr]`: a modifier chosen at run time can't be classified, so it fails closed.
       computed = true;
-      top = up;
+      chain = up;
       break;
     }
     links.push(name);
     extendCallPending = name === "extend";
-    top = up;
+    chain = up;
   }
-  top = outermostWrapper(top);
+  chain = outermostWrapper(chain);
   let call;
   let rows;
-  const p = top.parent;
-  if (calleeOf(p) === top) {
+  let eachResultStored = false;
+  const p = chain.parent;
+  if (calleeOf(p) === chain) {
     call = p;
     // `.each(rows)` / `.for(rows)` returns the function that defines the tests.
     const last = links[links.length - 1];
@@ -281,6 +313,8 @@ function testRef(start, fnName, bindings) {
     if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
       rows = ts.isCallExpression(call) ? call.arguments[0] : undefined;
       call = outer;
+    } else if (last === "each" || last === "for") {
+      eachResultStored = true;
     }
   }
   const suite = SUITE_FNS.has(fnName);
@@ -291,10 +325,11 @@ function testRef(start, fnName, bindings) {
     suite,
     links,
     computed,
-    top,
+    chain,
     call,
     invoked: call !== undefined,
-    escapes: call === undefined && !keptExtendResult(top, links),
+    // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
+    escapes: (call === undefined && !extendResultIsTracked(chain, links)) || eachResultStored,
     defines,
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || (rows !== undefined && isChosen(rows))),
@@ -303,13 +338,13 @@ function testRef(start, fnName, bindings) {
 }
 
 /**
- * Whether `top` is a `test.extend({…})` result the check can still follow: assigned to a variable
- * (tracked as a test function, see `vitestNames`) or discarded.
+ * Whether a `test.extend({…})` result is one the check can still follow: assigned to a variable
+ * (resolved as a test function, see `vitestBindings`) or discarded.
  */
-function keptExtendResult(top, links) {
-  if (links[links.length - 1] !== "extend" || calleeOf(top) === undefined) return false;
-  const p = top.parent;
-  return (ts.isVariableDeclaration(p) && p.initializer === top && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
+function extendResultIsTracked(chain, links) {
+  if (links[links.length - 1] !== "extend" || calleeOf(chain) === undefined) return false;
+  const p = chain.parent;
+  return (ts.isVariableDeclaration(p) && p.initializer === chain && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
 
 const SKIP_OPTIONS = new Set(["skip", "todo"]);
@@ -324,10 +359,15 @@ function optionKey(name) {
   return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
 }
 
+/** Whether `node` is `a && b`, `a || b`, `a ?? b` or one of their assignment forms. */
+function isBinaryChoice(node) {
+  return ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind);
+}
+
 /** Whether `node` (through wrappers) is picked at run time by `? :`, `&&`, `||` or `??`. */
 function isChosen(node) {
   node = unwrap(node);
-  return ts.isConditionalExpression(node) || (ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind));
+  return ts.isConditionalExpression(node) || isBinaryChoice(node);
 }
 
 /**
@@ -344,7 +384,7 @@ function hasGateOption(call, suite) {
     if (ts.isConditionalExpression(node)) {
       visit(node.whenTrue, true);
       visit(node.whenFalse, true);
-    } else if (ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind)) {
+    } else if (isBinaryChoice(node)) {
       visit(node.left, true);
       visit(node.right, true);
     } else if (ts.isObjectLiteralExpression(node)) {
@@ -384,9 +424,14 @@ const CONDITIONAL_OPERATORS = new Set([
 function conditionalEdge(parent, child) {
   if (ts.isIfStatement(parent)) return child !== parent.expression;
   if (ts.isConditionalExpression(parent)) return child !== parent.condition;
-  if (ts.isBinaryExpression(parent)) return CONDITIONAL_OPERATORS.has(parent.operatorToken.kind) && child === parent.right;
+  if (isBinaryChoice(parent)) return child === parent.right;
   // A `try` block with a `catch` runs only up to its first throw; the `catch` only after one.
   if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
+  // A loop or iteration callback over a table picked by a condition, like a `.each` table.
+  if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return isChosen(parent.expression);
+  if (ts.isCallExpression(parent) && parent.arguments.includes(child) && isMemberLink(unwrap(parent.expression))) {
+    if (isChosen(unwrap(parent.expression).expression)) return true;
+  }
   // `a?.b(arg)`: the arguments run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
   return ts.isCaseClause(parent) || ts.isDefaultClause(parent) || ts.isCatchClause(parent);
@@ -494,6 +539,9 @@ export function findGates(src, fileName = "file.test.ts") {
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
+      else if (ts.isIdentifier(node) && bindings.resolve(node)?.ns && !namespaceMemberUse(node)) {
+        refs.push(escapedNamespaceRef(node, bindings));
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -519,7 +567,7 @@ export function findGates(src, fileName = "file.test.ts") {
  * @param {string} root
  */
 function workspaceDirs(root) {
-  const yaml = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8").split("\n");
+  const yaml = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8").split(/\r?\n/);
   const start = yaml.findIndex((l) => /^packages:\s*$/.test(l));
   if (start === -1) throw new Error("pnpm-workspace.yaml has no `packages:` list");
   const include = [];

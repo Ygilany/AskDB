@@ -6,3 +6,4 @@ describe.call(null, "through .call", run); // HIT
 it.apply(null, ["through .apply", run]); // HIT
 const bound = test.bind(null); // HIT
 const o = { describe }; // HIT
+const table = it.each([1, 2]); // HIT

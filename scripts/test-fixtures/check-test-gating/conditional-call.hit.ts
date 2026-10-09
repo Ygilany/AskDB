@@ -48,3 +48,10 @@ registered ??= test("??=", run); // HIT
 if (ok) it.only("only", run); // HIT
 if (ok) it.for([1, 2])("for %s", run); // HIT
 optionalDriver?.register(describe("inside an optional call", run)); // HIT
+for (const url of process.env.DATABASE_URL ? [process.env.DATABASE_URL] : []) it(`loop over a chosen table ${url}`, run); // HIT
+(process.env.DATABASE_URL ? [1] : []).forEach((n) => it(`forEach over a chosen table ${n}`, run)); // HIT
+if (ok) {
+  describe.each([1, 2])("each under an if %s", () => { // HIT
+    it("reported once, at describe.each", run);
+  });
+}

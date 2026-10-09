@@ -108,10 +108,23 @@ test("CLI fails closed on a packages line it cannot read", (t) => {
 });
 
 test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
-  const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }, 'packages:\n  - "packages/**"\n');
+  for (const pattern of ["packages/**", "apps/*/*"]) {
+    const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "apps/x/y/z.test.ts": 'it("ok", () => {});\n' }, `packages:\n  - "${pattern}"\n`);
+    const result = run(root);
+    assert.equal(result.status, 1, pattern);
+    assert.match(result.stderr, /unsupported workspace pattern/, pattern);
+  }
+});
+
+test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {
+  const root = workspace(
+    t,
+    { "packages/a/src/a.test.ts": 'describe.skip("a", () => {});\n' },
+    'packages:\r\n  # comment\r\n  - "packages/*"\r\n',
+  );
   const result = run(root);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /unsupported workspace pattern/);
+  assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
 });
 
 test("CLI skips plain files beside packages and reads a list item with a trailing comment", (t) => {

@@ -21,3 +21,6 @@ export { describe };
 label: for (;;) { break label; }
 const ids = rows.map((it) => it.id);
 try { load(); } catch (test) { report(test); }
+it: for (;;) {
+  break it;
+}
