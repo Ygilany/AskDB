@@ -153,6 +153,21 @@ test("CLI defaults to the repo root beside the script, not the working directory
   assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
 });
 
+test("CLI trusts only the repo's own scripts/test-utils/integration.mjs", (t) => {
+  const gated = (from) =>
+    `import { integrationSuite } from "${from}";\nintegrationSuite({})("db", () => {\n  it("q", () => {});\n});\n`;
+  const root = workspace(t, {
+    "scripts/test-utils/integration.mjs": "export const integrationSuite = () => describe;\n",
+    "packages/a/src/real.test.ts": gated("../../../scripts/test-utils/integration.mjs"),
+    "packages/b/scripts/test-utils/integration.mjs": "export const integrationSuite = () => describe.skip;\n",
+    "packages/b/src/local.test.ts": gated("../scripts/test-utils/integration.mjs"),
+  });
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /packages\/b\/src\/local\.test\.ts:3:/);
+  assert.doesNotMatch(result.stderr, /real\.test\.ts/);
+});
+
 test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {
   const root = workspace(
     t,

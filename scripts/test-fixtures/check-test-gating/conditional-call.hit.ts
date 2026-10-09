@@ -85,3 +85,8 @@ maybe?.[it("inside an optional element access key", run)]; // HIT
 function typed(fn: (name: string) => void = test("a default parameter value", () => {})) { return fn; } // HIT
 const [first = describe("a destructuring default", run)] = process.env.DATABASE_URL ? [] : [1]; // HIT
 maybe`${() => describe("in a tagged template's substitution", run)}`; // HIT
+[assignedFirst = describe("an assignment-pattern default", run)] = process.env.DATABASE_URL ? [] : [1]; // HIT
+({ shorthandDefault = describe("a shorthand default", run) } = process.env.DATABASE_URL ? {} : { shorthandDefault: 1 }); // HIT
+({ key: renamedDefault = describe("a property default", run) } = {}); // HIT
+for ([looped = describe("a for-of pattern default", run)] of rows) {} // HIT
+await (async () => { await import("pg"); describe("in an async IIFE whose rejection is swallowed", run); })().catch(() => {}); // HIT

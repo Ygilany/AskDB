@@ -32,7 +32,7 @@
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Resolve `typescript` from this file's real location, so a symlinked or
@@ -163,7 +163,7 @@ function importedFrom(decl) {
  * Vitest, a variable holding `x.extend({…})` of a Vitest function is a test function, and any
  * other declaration (a parameter `it`, an import of `test` from another module) is not Vitest's.
  */
-function vitestBindings(sf, program) {
+function vitestBindings(sf, program, isIntegrationModule) {
   const checker = program.getTypeChecker();
   const cache = new Map();
   const bindings = { sf };
@@ -195,9 +195,9 @@ function vitestBindings(sf, program) {
       const { left, right } = decl.moduleReference;
       if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) && TEST_FNS.has(right.text)) found = { kind: "fn", name: right.text };
     } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
-      INTEGRATION_MODULE.test(importedFrom(decl) ?? "")) {
+      isIntegrationModule(importedFrom(decl) ?? "")) {
       found = { kind: "suiteFactory" };
-    } else if (decl && ts.isNamespaceImport(decl) && INTEGRATION_MODULE.test(importedFrom(decl) ?? "")) {
+    } else if (decl && ts.isNamespaceImport(decl) && isIntegrationModule(importedFrom(decl) ?? "")) {
       found = { kind: "integrationNs" }; // `import * as I from ".../integration.mjs"`
     } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
       const init = unwrap(decl.initializer);
@@ -251,7 +251,7 @@ function lineOf(node) {
   return sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
 }
 
-/** A ref with nothing to report, for `testRef` and `escapedNamespaceRef` to fill in. */
+/** A ref with nothing to report, for `testRef` and `unreadableRef` to fill in. */
 function emptyRef(start) {
   return {
     suite: false, links: [], computed: false, chain: start, invoked: false, escapes: false,
@@ -259,8 +259,11 @@ function emptyRef(start) {
   };
 }
 
-/** A Vitest namespace or loader passed on (`fn(v)`, `v2 = v`, `import("vitest").then(…)`): it fails closed. */
-function escapedNamespaceRef(id) {
+/**
+ * A use the check can't follow: a Vitest namespace or loader passed on (`fn(v)`, `import("vitest")
+ * .then(…)`), `integrationSuite` or its module aliased, or `import d = v.x`. It fails closed.
+ */
+function unreadableRef(id) {
   return { ...emptyRef(id), escapes: true };
 }
 
@@ -536,8 +539,14 @@ function conditionalEdge(parent, child) {
   // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
   if (ts.isElementAccessExpression(parent) && ts.isOptionalChain(parent) && child === parent.argumentExpression) return true;
-  // A default value runs only when the value is `undefined`.
+  // A default value runs only when the value is `undefined`: in a declaration, a parameter, or a
+  // destructuring assignment (`[a = x] = …`, `({ a = x } = …)`).
   if ((ts.isBindingElement(parent) || ts.isParameter(parent)) && child === parent.initializer) return true;
+  if (ts.isShorthandPropertyAssignment(parent) && child === parent.objectAssignmentInitializer) return true;
+  if (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && child === parent.right &&
+    isAssignmentPatternElement(parent)) {
+    return true;
+  }
   return ts.isCaseClause(parent) || ts.isDefaultClause(parent) || ts.isCatchClause(parent);
 }
 
@@ -571,6 +580,8 @@ function underCondition(call, bindings) {
     // A callback handed to any other call (`.then`, `setTimeout`, `new Promise`, a helper) may run
     // later or never.
     if (inCallback && ts.isTaggedTemplateExpression(node) && child === node.template) return true;
+    // `(async () => { … })().catch(…)`: a throw before the call is swallowed, so it may never run.
+    if (inCallback && ts.isCallExpression(node) && unwrap(node.expression) === unwrap(child) && rejectionSwallowed(node)) return true;
     if (inCallback && (ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments?.includes(child)) {
       if (!isIterationCall(node)) return true;
       inCallback = false;
@@ -579,11 +590,36 @@ function underCondition(call, bindings) {
   return false;
 }
 
+/** Whether `a = x` is an element of a destructuring assignment target, not a plain assignment. */
+function isAssignmentPatternElement(binary) {
+  let node = binary;
+  let p = node.parent;
+  if (!(ts.isArrayLiteralExpression(p) || ts.isPropertyAssignment(p))) return false;
+  while (ts.isArrayLiteralExpression(p) || ts.isObjectLiteralExpression(p) || ts.isPropertyAssignment(p) || ts.isSpreadElement(p) ||
+    ts.isParenthesizedExpression(p)) {
+    node = p;
+    p = p.parent;
+  }
+  if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.left === node) return true;
+  return (ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === node;
+}
+
 /** Whether a class member's body runs after the class is defined, not while it is. */
 function isDeferredClassMember(member) {
   if (ts.isMethodDeclaration(member) || ts.isConstructorDeclaration(member) || ts.isAccessor(member)) return true;
   if (!ts.isPropertyDeclaration(member)) return false;
   return !(ts.getCombinedModifierFlags(member) & ts.ModifierFlags.Static);
+}
+
+/** Whether a call's result is handed to `.catch(…)` or a two-argument `.then(…)`. */
+function rejectionSwallowed(call) {
+  const outer = outermostWrapper(call);
+  const member = outer.parent;
+  if (!isMemberLink(member) || member.expression !== outer) return false;
+  const handler = outermostWrapper(member).parent;
+  if (!ts.isCallExpression(handler) || handler.expression !== outermostWrapper(member)) return false;
+  const name = linkName(member);
+  return name === "catch" || (name === "then" && handler.arguments.length >= 2);
 }
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.
@@ -661,9 +697,12 @@ function oneFileProgram(sf) {
  * Throws when the file does not parse, so the check fails closed instead of skipping it.
  * @param {string} src
  * @param {string} [fileName] decides TS or TSX parsing by extension
+ * @param {{ isIntegrationModule?: (specifier: string) => boolean }} [options] which import specifiers
+ *   name scripts/test-utils/integration.mjs; the CLI resolves them against the repo root, and the
+ *   default matches the path's end
  * @returns {{ line: number; rule: string; why: string }[]}
  */
-export function findGates(src, fileName = "file.test.ts") {
+export function findGates(src, fileName = "file.test.ts", { isIntegrationModule = (specifier) => INTEGRATION_MODULE.test(specifier) } = {}) {
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const name = kind === ts.ScriptKind.TSX ? "/file.test.tsx" : "/file.test.ts";
   const sf = ts.createSourceFile(name, src, ts.ScriptTarget.Latest, true, kind);
@@ -673,14 +712,14 @@ export function findGates(src, fileName = "file.test.ts") {
     const line = sf.getLineAndCharacterOfPosition(d.start ?? 0).line + 1;
     throw new Error(`does not parse at line ${line}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
   }
-  const bindings = vitestBindings(sf, program);
+  const bindings = vitestBindings(sf, program, isIntegrationModule);
   const refs = [];
   const visit = (node) => {
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
       else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node, bindings)) && !isReadableNamespaceUse(node)) {
-        refs.push(escapedNamespaceRef(node));
+        refs.push(unreadableRef(node));
       }
     }
     // `integrationSuite` (or its module's namespace) used other than by calling it: an alias the
@@ -688,17 +727,20 @@ export function findGates(src, fileName = "file.test.ts") {
     if (ts.isIdentifier(node) && isValueReference(node)) {
       const kind = bindings.resolve(node)?.kind;
       const outer = outermostWrapper(node);
-      if (kind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(escapedNamespaceRef(node));
-      if (kind === "integrationNs" && !(isMemberLink(outer.parent) && outer.parent.expression === outer && isSuiteFactory(outer.parent, bindings) &&
-        calleeOf(outermostWrapper(outer.parent).parent) === outermostWrapper(outer.parent))) {
-        refs.push(escapedNamespaceRef(node));
+      if (kind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
+      // `I.isIntegrationRequired()` and other named members read through; `I.integrationSuite` must be called.
+      const member = isMemberLink(outer.parent) && outer.parent.expression === outer ? outer.parent : undefined;
+      const readable = member !== undefined && linkName(member) !== undefined &&
+        (!isSuiteFactory(member, bindings) || calleeOf(outermostWrapper(member).parent) === outermostWrapper(member));
+      if (kind === "integrationNs" && !readable) {
+        refs.push(unreadableRef(node));
       }
     }
     // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
     if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && bindings.resolve(node.name)?.kind !== "fn") {
       let root = node.moduleReference;
       while (ts.isQualifiedName(root)) root = root.left;
-      if (isVitestNamespace(root, bindings)) refs.push(escapedNamespaceRef(node.moduleReference));
+      if (isVitestNamespace(root, bindings)) refs.push(unreadableRef(node.moduleReference));
     }
     ts.forEachChild(node, visit);
   };
@@ -737,6 +779,7 @@ function main() {
     process.exit(1);
   }
 
+  const integrationModulePath = resolve(root, "scripts", "test-utils", "integration.mjs");
   const hits = [];
   let scanned = 0;
   for (const dir of dirs) {
@@ -747,7 +790,10 @@ function main() {
       const lines = src.split(/\r\n|[\r\n\u2028\u2029]/);
       let gates;
       try {
-        gates = findGates(src, file);
+        // Only the repo's own integration.mjs is the sanctioned gate, not a package-local copy.
+        const isIntegrationModule = (specifier) =>
+          specifier.startsWith(".") && resolve(dirname(file), specifier) === integrationModulePath;
+        gates = findGates(src, file, { isIntegrationModule });
       } catch (error) {
         hits.push(`${relative(root, file)}: cannot be checked (${error.message})`);
         continue;

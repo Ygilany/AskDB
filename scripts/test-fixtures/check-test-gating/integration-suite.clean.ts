@@ -14,3 +14,6 @@ import * as integration from "../../../scripts/test-utils/integration.mjs";
 integration.integrationSuite({ env: ["Y"] })("through a namespace import", () => {
   it("inside", () => {});
 });
+it("reads the flag through the namespace", () => {
+  integration.isIntegrationRequired();
+});

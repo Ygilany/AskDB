@@ -54,3 +54,7 @@ if (ready) {
   }
 }
 describe("a suite on the left of &&", run) && done();
+registry = describe("a plain assignment", run);
+(() => {
+  describe("an IIFE that always runs", run);
+})();

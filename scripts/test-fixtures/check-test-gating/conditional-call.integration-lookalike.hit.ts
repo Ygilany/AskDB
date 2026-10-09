@@ -10,3 +10,11 @@ lookalike({})("a lookalike module path", () => {
 isIntegrationRequired({})("another export of the real module", () => {
   it("inside a non-factory export's callback", () => {}); // HIT
 });
+import * as lookalikeNs from "../lookalike/test-utils/integration.mjs";
+lookalikeNs.integrationSuite({})("a namespace from a lookalike path", () => {
+  it("inside a lookalike namespace's callback", () => {}); // HIT
+});
+const local = makeLocal();
+local.integrationSuite({})("a local object's method", () => {
+  it("inside a local object's callback", () => {}); // HIT
+});
