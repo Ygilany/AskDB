@@ -1,4 +1,4 @@
-# ADR 0020 — A change that ships nothing takes an empty changeset
+# ADR 0020 — A change with no behavior or public-type change takes an empty changeset
 
 ## Status
 
@@ -20,7 +20,7 @@ Exclude `*.test.ts(x)` and test fixtures from the filter so test-only changes ne
 
 ### C. Empty changeset (chosen)
 
-`pnpm changeset --empty` writes a changeset with no package bumps. The check passes, no version moves, and the PR still says on purpose that it ships nothing.
+`pnpm changeset --empty` writes a changeset with no package bumps. The check passes, no version moves, and the PR still says on purpose that it changes no behavior.
 
 ## Decision
 
@@ -28,5 +28,5 @@ A change that alters no behavior and no public type (tests, or comments outside 
 
 ## Consequences
 
-- A reviewer checks that an empty changeset's PR really ships nothing: a changed export, default, error text or JSDoc on an export needs a real bump.
+- A reviewer checks that an empty changeset's PR really changes no behavior or public type: a changed export, default, error text or JSDoc on an export needs a real bump.
 - The workflow's filter stays as it is; changing it supersedes this ADR.

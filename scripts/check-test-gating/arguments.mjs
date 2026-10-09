@@ -1,7 +1,7 @@
 // What a suite or test call's arguments after the name do: skip or invert through options, pick
 // or build the body at run time, or pass options the check can't read. For
 // scripts/check-test-gating.mjs.
-import { calleeParts, everyPickLeaf, firstParameter, holdsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
+import { calleeParts, isCallOrNew, everyPickLeaf, firstParameter, holdsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
 import { CALL_SUITE, constInitializer, isInlineFunction, vitestCallKind } from "./bindings.mjs";
 import { readsPickedValue } from "./conditions.mjs";
 
@@ -103,7 +103,7 @@ function builtByCall(node, bindings) {
 }
 
 function isCallLike(node) {
-  return ts.isCallExpression(node) || ts.isNewExpression(node) || ts.isTaggedTemplateExpression(node);
+  return isCallOrNew(node) || ts.isTaggedTemplateExpression(node);
 }
 
 /**
@@ -112,12 +112,40 @@ function isCallLike(node) {
  * them (`Number(url ? fn : undefined)` after `globalThis.Number = (x) => x`) it can yield the body.
  */
 function isNumberCall(call, bindings) {
-  if (!ts.isCallExpression(call) || !isNumericConversion(call, bindings)) return false;
-  return call.arguments.every((arg) => everyPickLeaf(arg, (leaf) => {
-    leaf = unwrap(leaf);
-    if (isInlineFunction(leaf)) return false;
-    return !ts.isIdentifier(leaf) || (leaf.text !== "undefined" && constFunction(leaf, bindings) === undefined);
-  }));
+  return ts.isCallExpression(call) && isNumericConversion(call, bindings) && call.arguments.every((arg) => isPlainValue(arg, bindings));
+}
+
+/**
+ * Whether `node` can only be a plain value, never a function: a literal, `undefined`, an environment
+ * read (`process.env.X`), a template, arithmetic or a numeric conversion over such values, a
+ * `const` bound to one, or a pick between them. Anything else (a function or class declaration, a
+ * `let`, an import, another member read, a call) may be a function, so it isn't plain.
+ */
+function isPlainValue(node, bindings) {
+  return everyPickLeaf(node, (leaf) => {
+    if (ts.isNumericLiteral(leaf) || ts.isStringLiteralLike(leaf)) return true;
+    if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(leaf.kind)) return true;
+    if (ts.isTemplateExpression(leaf)) return leaf.templateSpans.every((span) => isPlainValue(span.expression, bindings));
+    if (ts.isPrefixUnaryExpression(leaf) || ts.isTypeOfExpression(leaf)) return isPlainValue(leaf.operand ?? leaf.expression, bindings);
+    if (ts.isBinaryExpression(leaf) && ARITHMETIC.has(leaf.operatorToken.kind)) {
+      return isPlainValue(leaf.left, bindings) && isPlainValue(leaf.right, bindings);
+    }
+    if (ts.isCallExpression(leaf)) return isNumberCall(leaf, bindings);
+    if (isEnvRead(leaf, bindings)) return true;
+    if (!ts.isIdentifier(leaf)) return false;
+    if (leaf.text === "undefined" && bindings.declarationsOf(leaf).length === 0) return true;
+    const init = constInitializer(leaf, bindings);
+    return init !== undefined && isPlainValue(init, bindings);
+  });
+}
+
+/** Whether `node` reads an environment variable from the global `process.env` (`process.env.X`, `process.env["X"]`). */
+function isEnvRead(node, bindings) {
+  if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
+  const env = unwrap(node.expression);
+  if (!ts.isPropertyAccessExpression(env) || env.name.text !== "env") return false;
+  const process = unwrap(env.expression);
+  return ts.isIdentifier(process) && process.text === "process" && bindings.declarationsOf(process).length === 0;
 }
 
 /**

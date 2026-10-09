@@ -81,3 +81,12 @@ function shadowedParseFloat() {
   function parseFloat(x) { return x; }
   it("options through a local parseFloat", parseFloat(process.env.DATABASE_URL), () => {}); // HIT
 }
+it("options before a Math.constructor value", withDb(runDb), Math.constructor(1)); // HIT
+it("a timeout converted from a template over a function", withDb(runDb), Number(`${runDb}`)); // HIT
+it("a timeout converted from arithmetic over a function", withDb(runDb), Number(runDb + 0)); // HIT
+function shadowedUndefined(undefined) {
+  it("a timeout converted from a parameter named undefined", withDb(runDb), Number(undefined)); // HIT
+}
+function shadowedProcess(process) {
+  it("a timeout converted from a local process.env read", withDb(runDb), Number(process.env.SLOW_TIMEOUT)); // HIT
+}

@@ -87,3 +87,7 @@ function reassignedNumber() {
 }
 it("a timeout slot holding an inline function through Number", {}, Number(process.env.DATABASE_URL ? async () => {} : null)); // HIT
 it("a number as the body", Number(process.env.DATABASE_URL ? 1 : 2)); // HIT
+function declaredTimeoutBody() {}
+it("a timeout slot holding a declared function through Number", {}, Number(process.env.DATABASE_URL ? declaredTimeoutBody : 0)); // HIT
+let letBody = async () => {};
+it("a timeout slot holding a let through Number", {}, Number(process.env.DATABASE_URL ? letBody : 0)); // HIT

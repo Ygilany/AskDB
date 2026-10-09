@@ -44,7 +44,7 @@ Turbo runs tasks in strict env mode: only variables listed in the `test` task's 
 - Any argument after the name picked by a condition (a body picked by `url ? fn : undefined` becomes a todo), unless it is a timeout. A timeout is a number, arithmetic over numbers, a `const` bound to one, a number conversion such as `Number(…)`, `parseInt(…)` or `Math.max(…)`, or a pick between such values or plain strings.
 - A body built by a call over any pick (`withDb(url ?? ":memory:", fn)`), since the call may read the pick any way.
 - A suite or test defined only under a condition: `if`/`else`, a `switch` case, `try`/`catch`, `?:`, `&&`, `||`, `??`, `&&=`, `||=`, `??=`, the arguments or key of an optional chain (`a?.b(…)`, `a?.[…]`), a default value, or a callback passed to a call other than `forEach`/`map`/`flatMap` (such as `.then`).
-- A `.each` table or loop iterable chosen by such a condition, a `.each` call with any spread argument, whatever the spread holds, a value a condition picks passed to `.each` called as a function (`it.each(["a|b\n"], c ? 1 : 2)`), or a `for` or `while` loop whose condition holds such a pick.
+- A `.each` table or loop iterable chosen by such a condition, or one that holds such a pick and passes through any call the check does not know keeps its size (a `.filter`, a `Set`, `Object.fromEntries`, a helper), a `.each` call with any spread argument, whatever the spread holds, a value a condition picks passed to `.each` called as a function (`it.each(["a|b\n"], c ? 1 : 2)`), or a `for` or `while` loop whose condition holds such a pick.
 - Any use it can't read, which fails as an unreadable use:
   - a reference held in an object, an array or a destructuring, or `describe.call(…)`;
   - a suite's result kept or read (`describe(…).test`);

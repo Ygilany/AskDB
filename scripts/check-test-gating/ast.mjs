@@ -103,6 +103,11 @@ export function calleeParts(call) {
   return { owner: ts.isIdentifier(receiver) ? receiver.text : undefined, name: linkName(callee) };
 }
 
+/** Whether `node` is a call or `new` expression. */
+export function isCallOrNew(node) {
+  return ts.isCallExpression(node) || ts.isNewExpression(node);
+}
+
 /** The call whose callee is `node`, through wrappers (`node(…)`, `(node as T)(…)`), or undefined. */
 export function invokedBy(node) {
   const outer = outermostWrapper(node);

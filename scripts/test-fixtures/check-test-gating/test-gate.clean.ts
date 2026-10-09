@@ -46,3 +46,5 @@ it("a rounded timeout", withDb(runDbClean), Math.round(5.5));
 it("a divided timeout", withDb(runDbClean), 120 / 2);
 it("a power timeout", withDb(runDbClean), 2 ** 6);
 it("a floored timeout", withDb(runDbClean), Math.floor(Math.abs(-60_000) % 70_000 + 1 - 1));
+it("a timeout of Number(undefined)", withDb(runDbClean), Number(undefined));
+it("a timeout parsed from an env read", withDb(runDbClean), Number(process.env.SLOW_TIMEOUT));

@@ -1,6 +1,7 @@
 // Whether a suite or test call runs only under a condition, and whether a value is picked at run
 // time, for scripts/check-test-gating.mjs.
 import {
+  isCallOrNew,
   invokedBy,
   calleeParts,
   calleeOf,
@@ -41,13 +42,12 @@ function pickedAtRunTime(node) {
   if (ts.isTemplateExpression(template)) return template.templateSpans.some((span) => pickedAtRunTime(span.expression));
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
-  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
+  if (isCallOrNew(node) && (node.arguments ?? []).some(pickDecidesSize)) return true;
   if (receiverOf(node) !== undefined && pickDecidesSize(receiverOf(node))) return true;
   // `[url ? "pg" : null, "sqlite"].map(f).filter(Boolean)`, `new Set(["sqlite", env ?? "sqlite"])`,
   // `Object.keys({ [url ? "pg" : "sqlite"]: 1, sqlite: 1 })`: a step that can drop or merge entries
   // of a table holding a pick lets the pick decide its size.
-  if (dropsEntries(node) && carriesPick(tableOf(node))) return true;
-  if (isObjectStatic(node) && (node.arguments ?? []).some((arg) => keyHoldsPick(resultOf(arg)))) return true;
+  if (chainDropsPick(node)) return true;
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && pickedAtRunTime(el.expression));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && pickedAtRunTime(p.expression));
@@ -164,7 +164,7 @@ export function underCondition(call, bindings) {
     if (inCallback && ts.isTaggedTemplateExpression(node) && child === node.template) return true;
     // `(async () => { … })().catch(…)`: a throw before the call is swallowed, so it may never run.
     if (inCallback && ts.isCallExpression(node) && unwrap(node.expression) === unwrap(child) && rejectionSwallowed(node)) return true;
-    if (inCallback && (ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments?.includes(child)) {
+    if (inCallback && isCallOrNew(node) && node.arguments.includes(child)) {
       if (!isIterationCall(node)) return true;
       // `rows.values().map(cb).take(url ? 1 : 0)`: an iterator's `map` runs the callback only as far
       // as a later call lets it, so a pick in a call chained after it is a condition.
@@ -208,35 +208,43 @@ function rejectionSwallowed(call) {
 
 // Array and iterator methods that return as many elements as their receiver has.
 const SIZE_KEEPING = new Set(["map", "with", "toSorted", "toReversed", "keys", "values", "entries", "forEach", "toArray"]);
-// Constructors that merge equal entries of the table they're given.
-const DEDUPING = new Set(["Set", "Map"]);
-
-/** The table a call or `new` works on: a method's receiver, or a constructor's first argument. */
-function tableOf(node) {
-  return receiverOf(node) ?? node.arguments?.[0];
-}
-
 /**
- * Whether `node` is a step that can drop or merge entries: a method outside `SIZE_KEEPING`
- * (`.filter`, `.slice`), or `new Set(…)` / `new Map(…)`.
+ * Whether a call or `new` in `node`'s chain takes a table holding a pick through a step not known to
+ * keep its size (`.filter(Boolean)`, `new Set(…)`, `Object.fromEntries(…)`, a helper), so the pick
+ * can decide how many entries come out. Only the steps in `keepsSize` carry a table through
+ * unchanged; every other step fails closed.
  */
-function dropsEntries(node) {
-  if (ts.isNewExpression(node)) return ts.isIdentifier(node.expression) && DEDUPING.has(node.expression.text);
-  return receiverOf(node) !== undefined && !SIZE_KEEPING.has(calleeParts(node)?.name);
+function chainDropsPick(node) {
+  node = resultOf(node);
+  if (!isCallOrNew(node)) return false;
+  const inputs = [receiverOf(node), ...(node.arguments ?? [])].filter((n) => n !== undefined && !ts.isFunctionLike(unwrap(n)));
+  // An earlier step in the chain is an argument or receiver here, which `pickedAtRunTime` reads on its own.
+  return !keepsSize(node) && inputs.some(carriesPick);
 }
 
 /**
- * Whether table `node` holds a pick in an element or property, carried through steps that keep its
- * size (`[url ? "pg" : null].map(f)`, `Array.from([…])`, `Object.values({ pg: url ? "pg" : null })`).
+ * Whether a call returns as many entries as the table it reads: a `SIZE_KEEPING` method,
+ * one-argument `Array.from`, or `Object.keys`/`values`/`entries` over an object with no computed key
+ * holding a pick (two such keys can collapse into one).
+ */
+function keepsSize(node) {
+  if (!ts.isCallExpression(node)) return false;
+  if (isArrayFrom(node)) return true;
+  if (isObjectStatic(node)) return !keyHoldsPick(resultOf(node.arguments[0] ?? node));
+  return receiverOf(node) !== undefined && SIZE_KEEPING.has(calleeParts(node)?.name);
+}
+
+/**
+ * Whether table `node` holds a pick in an element, key or value, carried through steps that keep
+ * its size (`[url ? "pg" : null].map(f)`, `Array.from([…])`, `Object.values({ pg: url ? "pg" : null })`).
  */
 function carriesPick(node) {
   if (node === undefined) return false;
   node = resultOf(node);
-  if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) ? carriesPick(el.expression) : holdsPick(el));
+  if (ts.isArrayLiteralExpression(node)) return node.elements.some(holdsPick);
   if (ts.isObjectLiteralExpression(node)) return node.properties.some(holdsPick);
-  if (!ts.isCallExpression(node)) return false;
-  if (isObjectStatic(node) || isArrayFrom(node)) return carriesPick(node.arguments[0]);
-  return SIZE_KEEPING.has(calleeParts(node)?.name) && carriesPick(receiverOf(node));
+  if (!keepsSize(node)) return false;
+  return carriesPick(isArrayFrom(node) || isObjectStatic(node) ? node.arguments[0] : receiverOf(node));
 }
 
 /** Whether object literal `node` has a computed key holding a pick (`{ [url ? "pg" : "x"]: 1 }`). */
