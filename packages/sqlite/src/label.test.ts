@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createConnectorRegistry } from "@askdb/connectors";
+import { createConnectorRegistry } from "@askdb/introspect";
 import { sqliteConnectorProvider } from "./connector/provider.js";
 
 // The label hosts see: the adapter's parsed parts, built by the registry.

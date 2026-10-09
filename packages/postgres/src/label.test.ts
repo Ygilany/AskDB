@@ -1,6 +1,6 @@
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { createConnectorRegistry } from "@askdb/connectors";
+import { createConnectorRegistry } from "@askdb/introspect";
 import { postgresConnectorProvider } from "./connector/provider.js";
 import { parsePostgresConnection } from "./label.js";
 

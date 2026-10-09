@@ -6,7 +6,8 @@
  * Nothing here is engine-specific: catalog SQL, row shapes, and dialect rules
  * stay in each engine package. The kit only removes the mechanical code every
  * engine would otherwise copy — optional-driver loading, table-glob filters,
- * Schema v2 IDs, catalog-row folding, and connection labels.
+ * Schema v2 IDs, catalog-row folding, connection labels, and the
+ * connector-provider adapter for live-catalog-only engines.
  */
 
 export {
@@ -36,6 +37,14 @@ export {
   sortedUnique,
   type RowsToRecordsOptions,
 } from "./rows.js";
+
+export {
+  defineLiveConnectorProvider,
+  runtimeIntrospectionString,
+  type LiveCatalogInput,
+  type LiveConnectorProviderSpec,
+} from "./provider.js";
+
 
 export {
   formatConnectionLabel,
