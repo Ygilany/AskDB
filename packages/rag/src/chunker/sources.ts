@@ -8,6 +8,7 @@ import {
   parseTenantPolicyMarkdown,
 } from "@askdb/core";
 import type {
+  BundledSchemaV2,
   NormalizedSchemaV2,
   ParsedConceptsMarkdown,
   ParsedTableMarkdown,
@@ -84,13 +85,8 @@ export function loadChunkerSourcesFromDir(dir: string): ChunkerSources {
  * `tables: { filename: content }` so the chunker can re-parse them.
  */
 export function loadChunkerSourcesFromBundleJson(raw: string): ChunkerSources {
-  const parsed = JSON.parse(raw) as {
-    bundled?: boolean;
-    physical?: unknown;
-    tables?: Record<string, string>;
-    concepts?: string;
-    tenantPolicy?: string;
-  };
+  // Unvalidated until `loadSchemaFromJson` below; the shape is core's bundle format.
+  const parsed = JSON.parse(raw) as Partial<BundledSchemaV2>;
   if (!parsed.bundled) {
     throw new Error("Expected a bundled schema JSON (missing `bundled: true`).");
   }

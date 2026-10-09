@@ -235,6 +235,8 @@ const schema = loadSchemaFromJson(bundleJsonString);
 
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
 
+The bundle's shape is exported as the `BundledSchemaV2` type: `{ bundled: true, physical, tables, concepts?, tenantPolicy? }`, where `physical` is the `schema.json` object, `tables` maps each `tables/` filename to its raw markdown, and `concepts` and `tenantPolicy` hold the raw `concepts.md` and `tenant-policy.md` when those files exist. `askdb bundle` writes it.
+
 ### `findMentionedNames(text, names)` and `createMentionMatcher(names)`
 
 ```ts

@@ -18,11 +18,11 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 **`@askdb/enrich`:**
 - `Workspace` and `WorkspaceTable` — load a describable schema directory, expose tables as editable drafts
 - Table draft construction from `tables/*.md` parsed front-matter
-- `saveTable()` — round-trippable write through the Phase 5 writer
+- `saveTable()` — round-trippable write through the Phase 5 writer. New table files get a filename-safe `<table>.md`, or `<schema>.<table>.md` when bare names collide (including names a case-insensitive file system stores as one) or `<table>.md` is already taken; existing files keep their names (matched by front-matter `id`); writes outside `tables/` are refused. See [schema-v2 contract](../contracts/schema-v2.md#describable-layer--tablestablemd).
 - Markdown body section update helpers (replace H2 sections without touching the rest)
 - `concepts.md` loading, saving, and link validation
 - AI suggestion source, target, and context helpers (builds the enrichment prompt; caller supplies the model)
-- `bundleSchema(dir) → bundledJson` — compiles a schema directory into a single packed JSON
+- `bundleSchemaDirectory(dir) → BundledSchemaV2` (the bundle type `@askdb/core` exports) — compiles a schema directory (`schema.json`, `tables/*.md`, `concepts.md`, `tenant-policy.md`) into a single packed JSON
 
 ### Out of scope
 
@@ -41,23 +41,27 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 ## Contracts and API surface
 
 ```ts
-// @askdb/enrich
-import { openWorkspace, saveTable, bundleSchema } from '@askdb/enrich'
+// @askdb/enrich (all synchronous)
+import { loadWorkspace, saveTable, bundleSchemaDirectory } from '@askdb/enrich'
+import type { BundledSchemaV2 } from '@askdb/core'
 
-openWorkspace(schemaDir: string): Promise<Workspace>
+loadWorkspace(schemaDir: string): Workspace
 
 interface Workspace {
-  tables: WorkspaceTable[]
-  warnings: WorkspaceWarning[]   // orphan IDs, new un-described IDs
+  schemaDir: string
+  physical: V2SchemaJson
+  tables: WorkspaceTable[]       // each paired with its tables/*.md file (by front-matter id) or a default filename
+  concepts: ParsedConceptsMarkdown | undefined
+  warnings: SchemaV2Warning[]    // loader warnings: orphan IDs, ignored downgrades, ...
 }
 
-saveTable(table: WorkspaceTable, draft: TableDraft): Promise<void>
+saveTable(workspace: Workspace, tableId: string, frontmatter: V2TableFrontmatter, body: string): void
 
-bundleSchema(schemaDir: string): Promise<BundledSchema>
+bundleSchemaDirectory(schemaDir: string): BundledSchemaV2
 
 // AI suggestion helpers
-buildSuggestSource(table: WorkspaceTable): SuggestSource
-buildSuggestContext(workspace: Workspace): SuggestContext
+buildSuggestionTarget(workspace: Workspace, source: SuggestSource): EnrichmentTarget
+buildSuggestionContext(workspace: Workspace, tableId: string): EnrichmentContext
 ```
 
 ```sh
@@ -76,4 +80,5 @@ askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich
 - Sensitive warning: description mentioning a sensitive column name emits warning without blocking save.
 - Sensitivity round-trip: a draft sensitivity override saved via `saveTable()` is honored by `loadSchema()` (escalate-only), in both directory and bundle form.
 - Re-introspection ingestion: new un-described column IDs queued for description; orphan IDs offered for pruning.
-- Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`.
+- Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`, including the tenant policy for multi-tenant schemas.
+- Table filenames: colliding bare names get schema-qualified files, including names a case-insensitive file system treats as one; over-long names are shortened with a hash suffix; identifiers with path separators or `..`, and symbolic or hard links in `tables/`, cannot redirect a write outside `tables/`; saves are atomic (temp file plus rename); existing filenames are never renamed.
