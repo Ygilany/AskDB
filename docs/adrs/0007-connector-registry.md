@@ -133,7 +133,7 @@ Apps declare only the adapter packages they support. A hypothetical embedded dep
 - `packages/connectors/src/registry.ts` — registry implementation.
 - `packages/ai/src/provider.ts` — AI registry (parallel pattern).
 
-## Status note (2026-09-25)
+## Status note (2026-10-09)
 
 Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md):
 

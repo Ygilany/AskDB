@@ -29,8 +29,8 @@ export type StudioIntrospectionPlan =
 
 /**
  * Resolve what a server-side introspection run would do, from the runtime
- * config alone. Mirrors the CLI's flag-free resolution in
- * `apps/cli/src/introspect.ts` (config provider + per-engine connection).
+ * config alone: the config's provider, and the connection its adapter's
+ * `resolveConnection` hook resolves (the same registry call the CLI makes).
  * Never includes credentials in `sourceLabel` — it is shown in the UI.
  */
 export function resolveStudioIntrospectionPlan(): StudioIntrospectionPlan {

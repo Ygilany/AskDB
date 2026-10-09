@@ -183,7 +183,7 @@ Boundary rules:
 
 - `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect, a model, an optional retriever, and a schema; it returns SQL.
 - Integration packages own engine-specific knowledge, apart from the built-in dialect facts above. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
-- `@askdb/introspect` does not know whether an integration reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the connector package.
+- `@askdb/introspect` does not know whether an engine reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the engine package; the registry's connection only names the three source kinds a host can supply (`url`, `fromExport`, `schemaPath`), and each engine decides what they mean (ADR 0008).
 - Engine packages own connection resolution. Each exports a `ConnectorProviderAdapter` whose `resolveConnection` hook merges explicit values (CLI flags) with AskDB runtime config and whose `connectionLabelParts` hook parses the connection into display-safe parts; the registry builds every label from those parts ([ADR 0011](adrs/0011-connection-labels-from-parsed-parts.md)). First-party surfaces dispatch through `createConnectorRegistry(...)` and do not switch on engine names ([ADR 0008](adrs/0008-engine-packages-and-connector-registry.md)).
 - `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic.
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.

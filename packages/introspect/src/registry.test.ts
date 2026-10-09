@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createConnectorRegistry,
-  runtimeIntrospectionString,
   type ConnectorProviderAdapter,
   type ConnectorConfig,
   type ConnectorConnectionRequest,
   type ConnectorConnectionResult,
 } from "./registry.js";
+import { runtimeIntrospectionString } from "./kit/provider.js";
 
 const makeAdapter = (provider: ConnectorProviderAdapter["provider"]): ConnectorProviderAdapter => ({
   provider,

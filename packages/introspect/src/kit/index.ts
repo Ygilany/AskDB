@@ -40,11 +40,11 @@ export {
 
 export {
   defineLiveConnectorProvider,
+  runtimeIntrospectionString,
   type LiveCatalogInput,
   type LiveConnectorProviderSpec,
 } from "./provider.js";
 
-export { runtimeIntrospectionString } from "../registry.js";
 
 export {
   formatConnectionLabel,

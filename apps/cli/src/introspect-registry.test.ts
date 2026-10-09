@@ -163,6 +163,22 @@ describe("askdb introspect — injected connector registry", () => {
     expect(createConnector).not.toHaveBeenCalled();
   });
 
+  it("names the registered engines that provide templates when `introspect templates` targets one that doesn't", async () => {
+    installRuntime();
+    const beta: ConnectorProviderAdapter = {
+      ...acmeAdapter().adapter,
+      provider: "beta",
+      getTemplates: () => ({ engine: "beta", version: 1, templates: [] }),
+    };
+    const code = await runIntrospectCli(["templates", "--engine", "acme"], {
+      connectorRegistry: createConnectorRegistry([acmeAdapter().adapter, beta]),
+    });
+    expect(code).toBe(1);
+    expect(stderr).toContain(
+      "Engine 'acme' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine beta.",
+    );
+  });
+
   it("lists the registered engines when --engine is unknown", async () => {
     installRuntime();
     const code = await runIntrospectCli(["--engine", "nope", "--print"], {
@@ -178,6 +194,14 @@ describe("askdb introspect — CLI-owned errors with the built-in registry", () 
     installRuntime();
     expect(await runIntrospectCli(["--engine", "postgres", "--url", "postgres://h/db", "--from-export", "x", "--print"])).toBe(1);
     expect(stderr).toContain("Use only one input mode: --url or --from-export.");
+  });
+
+  it("keeps the `introspect templates` message naming postgres for the built-in registry", async () => {
+    installRuntime();
+    expect(await runIntrospectCli(["templates", "--engine", "prisma"])).toBe(1);
+    expect(stderr).toContain(
+      "Engine 'prisma' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.",
+    );
   });
 
   it("keeps the unsupported-engine message listing the built-in engines", async () => {

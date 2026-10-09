@@ -5,7 +5,7 @@
 Accepted (2026-09-25). Decisions 1 and 2 (the engine kit) landed with #195; decisions 3 to 5 (the registry move, connection resolution, the `@askdb/connectors` shim) with #199 (2026-10-09).
 
 Supersedes in part:
-- [ADR 0002](0002-integration-package-layout.md): the rule that integration packages own their SQL dialect.
+- [ADR 0002](0002-integration-package-layout.md): the rule that integration packages own their SQL dialect, and the rule that `@askdb/introspect` declares no source kinds (its registry's connection now names three: `url`, `fromExport`, `schemaPath`; connector inputs stay engine-owned).
 - [ADR 0007](0007-connector-registry.md): where the connector registry lives, and its closed provider union.
 
 ## Context
@@ -40,6 +40,7 @@ ADR 0002 organized AskDB around one package per integration. Each integration ow
 4. **Adapters own connection resolution; the registry builds the label.** `ConnectorProviderAdapter` gains an optional `resolveConnection({ explicit?, runtime, surface? })` hook. It turns explicit values (CLI flags) plus AskDB runtime config (`getAskDbRuntimeConfig()`, typed structurally so engines do not depend on `@askdb/config`) into `{ url?, fromExport?, schemaPath? }`, or an error that must not echo the connection string. `surface: "cli"` makes error messages name flags; other surfaces name config keys. The adapter's `connectionLabelParts` hook (from #189) supplies the label's parts; the adapter never returns label text ([ADR 0011](0011-connection-labels-from-parsed-parts.md)).
 
    The registry exposes `registry.resolveConnection(provider, request)`, which returns the adapter's result plus `sourceLabel = registry.connectionLabel(provider, connection)`. When an adapter has no `resolveConnection`, the registry passes `explicit` through; when it has no `connectionLabelParts`, the label is `configured <provider> connection`. The CLI and Studio switches are deleted. Both apps now dispatch through the registry, and the CLI accepts an injected registry (`runIntrospectCli(argv, { connectorRegistry })`).
+
    The connection is one of the three source kinds a host can supply, `url`, `fromExport` or `schemaPath`, the fields ADR 0007's `ConnectorConfig` already had (`ConnectorConnection`). An engine whose source is something else maps it onto one of them, usually `url`; its connector input type stays engine-owned, as ADR 0002 requires, because `createConnector` builds it.
 
 5. **Deprecate `@askdb/connectors`.** It stays published as a re-export shim of the registry and the kit's connection-label helpers. `CONNECTOR_PROVIDERS` is kept as an alias of `BUILT_IN_CONNECTOR_PROVIDERS`, and `ConnectorProvider` as an alias of `ConnectorProviderId`. Engine packages and first-party apps no longer depend on it.

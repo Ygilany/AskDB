@@ -1,8 +1,4 @@
-import {
-  runtimeIntrospectionString,
-  type ConnectorProviderAdapter,
-  type ConnectorProviderId,
-} from "../registry.js";
+import type { ConnectorProviderAdapter, ConnectorProviderId, ConnectorRuntimeConfig } from "../registry.js";
 import type { CatalogQueryRunner, Connector, IntrospectionFilters } from "../types.js";
 import type { ConnectionLabelParts } from "./label.js";
 
@@ -86,4 +82,13 @@ export function defineLiveConnectorProvider(spec: LiveConnectorProviderSpec): Co
       return url === undefined ? undefined : spec.connectionLabelParts(url);
     },
   };
+}
+
+/**
+ * Read a non-empty string from `runtime.introspection[key]` — the shape
+ * `@askdb/config` resolves per-engine connection values into.
+ */
+export function runtimeIntrospectionString(runtime: ConnectorRuntimeConfig, key: string): string | undefined {
+  const value = runtime.introspection[key];
+  return typeof value === "string" && value !== "" ? value : undefined;
 }

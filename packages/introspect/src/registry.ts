@@ -255,11 +255,3 @@ function isAdapterEntry(
   return entry[1] !== undefined;
 }
 
-/**
- * Read a non-empty string from `runtime.introspection[key]` — the shape
- * `@askdb/config` resolves per-engine connection values into.
- */
-export function runtimeIntrospectionString(runtime: ConnectorRuntimeConfig, key: string): string | undefined {
-  const value = runtime.introspection[key];
-  return typeof value === "string" && value !== "" ? value : undefined;
-}

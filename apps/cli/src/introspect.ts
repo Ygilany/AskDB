@@ -100,8 +100,11 @@ function runTemplatesCommand(argv: readonly string[], registry: ConnectorRegistr
   const engine = resolveEngine(registry, opts.engine);
   const bundle = registry.getTemplates(engine);
   if (!bundle) {
+    const withTemplates = registry.providers().filter((id) => registry.getTemplates(id) !== undefined);
     throw new Error(
-      `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.`,
+      `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for ` +
+        (withTemplates.length > 0 ? withTemplates.map((id) => `--engine ${id}`).join(", ") : "engines that provide them") +
+        ".",
     );
   }
   const body = bundle.templates
