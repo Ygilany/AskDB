@@ -50,8 +50,8 @@ const { sql } = await ask({
 
 | Field | Type | When present |
 | --- | --- | --- |
-| `sql` | `string` | Always. The model's bound, checked SQL — business values inlined as literals. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
-| `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. |
+| `sql` | `string` | Always. The model's bound, checked SQL — business values inlined as literals. Keeps the model's trailing `;`, if it wrote one; remove it before wrapping the statement. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
+| `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. Keeps the trailing `;` of the model's `sql-unbound` block, if it has one. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order. In `"sql-params"` mode this already includes the tenant IDs. |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
 | `preparedQuery` | `PreparedQuery \| undefined` | Definitions + named template only (no runtime values). Input to `bindPreparedQuery()`. |
