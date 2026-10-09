@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { QueryParameterError } from "../errors.js";
-import {
-  bindPreparedQuery,
-  escapeSqlLiteral,
-  scanPlaceholders,
-  tokenizeSqlSpans,
-  type PreparedQuery,
-} from "./bind.js";
+import { escapeSqlLiteral, scanPlaceholders, tokenizeSqlSpans, type PreparedQuery } from "./bind.js";
+import { bindPreparedQuery as checkedBind } from "./rebind.js";
 import { validateSelectSql } from "./validate.js";
 import { MYSQL_DIALECT, POSTGRES_DIALECT } from "./dialect-spec.js";
 
@@ -140,6 +135,11 @@ describe("escapeSqlLiteral", () => {
     expect(a).not.toMatch(/[^']'\\'$/);
   });
 });
+
+/** The binder's rendering, under a schema with no tenant policy or sensitive markers. */
+function bindPreparedQuery(p: PreparedQuery, values: Parameters<typeof checkedBind>[1]) {
+  return checkedBind(p, values, { schema: { tables: [] } });
+}
 
 function prepared(
   dialect: PreparedQuery["dialect"],

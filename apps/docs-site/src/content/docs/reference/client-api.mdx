@@ -57,7 +57,7 @@ const { sql, usage, unboundSql, params, preparedQuery } = await askdb.ask(
 );
 ```
 
-Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/#result--askpipelineresult). The facade forwards options and returns the core result verbatim, including optional `unboundSql` / `params` / `parameters` / `preparedQuery` when `parameterize` is on (default). Rebind locally with `bindPreparedQuery` from `@askdb/core` — it does not authorize tenant IDs.
+Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/#result--askpipelineresult). The facade forwards options and returns the core result verbatim, including `verdict` and the optional `unboundSql` / `params` / `parameters` / `preparedQuery` when `parameterize` is on (default). Rebind a stored `preparedQuery` with [`client.bind()`](#clientbindprepared-values-options).
 
 ### Overrides — `AskOverrides`
 
@@ -82,6 +82,30 @@ All `AskPipelineOptions` fields can be overridden per call. In addition, `schema
 | `totalSchemaChunkCount` | `number` | Total indexed chunk count; from `buildSchemaIndex` result stats. |
 | `logger` | `AskDbLogger` | Per-call structured logger. |
 | `deps` | `AskGenerateDeps` | `{ generateText? }` for testing. |
+
+---
+
+## `client.bind(prepared, values, options?)`
+
+```ts
+const { preparedQuery } = await askdb.ask("How many orders shipped in March?", { tenantScope });
+
+// Later, with a new value and no model call:
+const rebound = await askdb.bind(preparedQuery!, { month: "2026-04" }, { tenantScope });
+await pool.query(rebound.unboundSql, rebound.params);
+```
+
+Rebinds a stored `preparedQuery` with new values, without calling the model. It resolves the schema the way `ask()` does, expands a `subtree` scope with core's [`expandTenantScope()`](/reference/core-api/#expandtenantscopepolicy-scope-resolvetenantdescendants) and your `resolveTenantDescendants`, and forwards to core's [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails), which re-checks the template under that schema, the scope and the modes before binding. Returns `Promise<BoundQuery>`: `sql`, `unboundSql` + `params`, `bindings`, and the `verdict`. It throws the same errors as `bindPreparedQuery()`.
+
+### Options — `BindOptions`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. Tenant IDs are rendered from it, never from `values`. |
+| `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` `tenantScope`, as for `ask()`. Required for `subtree` scopes. |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | Default `"warn"`: sensitive references bind and are reported in `verdict`. `"strict"` refuses them. |
+| `acceptWarnings` | `ReadonlyArray<"tenant">` | With a policy whose `enforcement` is `warn`, a template that fails the tenant check is refused unless this includes `"tenant"`. |
+| `schema` | `SchemaSource \| AnyNormalizedSchema` | Override the schema for this call only. Default: the schema `ask()` resolves (`createAskDb({ schema })`, then `host.schemaJson` / `ASKDB_SCHEMA_JSON`, then `host.schemaPath` / `ASKDB_SCHEMA_PATH`). |
 
 ---
 

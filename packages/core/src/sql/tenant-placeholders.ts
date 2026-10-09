@@ -12,9 +12,10 @@ import {
   escapeSqlLiteral,
   escapeSqlLiteralLegacy,
   formatMarker,
+  isTenantPlaceholderName,
   markerStyleForDialect,
+  scanPlaceholders,
   scanTenantPlaceholders,
-  tokenizeSqlSpans,
   type MarkerStyle,
   type PlaceholderOccurrence,
 } from "./bind.js";
@@ -157,13 +158,14 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
  */
 export function unexpandedSubtreeError(
   tenantRoot: string,
-  caller: "resolveTenantSql()" | "buildTenantPromptBlock()",
+  caller: "resolveTenantSql()" | "buildTenantPromptBlock()" | "bindPreparedQuery()",
 ): TenantScopeError {
   return new TenantScopeError(
     `tenantScope.access is an unexpanded 'subtree' of '${tenantRoot}'. ${caller} does not walk ` +
-      "the hierarchy. Expand the subtree first: ask() does this when you pass " +
-      "resolveTenantDescendants; a direct caller passes a 'multi_root' access with each tenant " +
-      "root's IDs under that root (or an 'ids' access when the subtree is one root table).",
+      "the hierarchy. Expand the subtree first: ask() and askdb.bind() do this when you pass " +
+      "resolveTenantDescendants; a direct caller passes the scope through expandTenantScope(), " +
+      "or a 'multi_root' access with each tenant root's IDs under that root (or an 'ids' access " +
+      "when the subtree is one root table).",
     "SUBTREE_NOT_RESOLVABLE",
   );
 }
@@ -242,31 +244,38 @@ function substituteTenantPlaceholders(
   return out;
 }
 
-// `(?<!:)` so a `::type` cast is not read as a placeholder (matches the substituter's scanner).
-const ANY_CASE_PLACEHOLDER_RE = /(?<!:):([a-z][a-z0-9_]*)/gi;
-
 /**
- * Tenant placeholders are case-sensitive: the prompt names the exact lowercase
- * form, and the substituter (like `bindPreparedQuery()`) only recognizes that
- * form. Any other casing (`:TENANT_AGENCY_IDS`) would otherwise pass through
- * unsubstituted, so reject it rather than return SQL with a raw placeholder.
- * Scans the same code regions as the substituter.
+ * Tenant placeholders are written exactly `:tenant_<root>_ids`, in lowercase: the prompt
+ * names that form, and the substituter (like `bindPreparedQuery()`) only renders it. A
+ * placeholder in another casing (`:TENANT_AGENCY_IDS`), or with an identifier glued to it
+ * (`:tenant_agency_idsOR`, which the scanner reads as one name), would otherwise pass
+ * through unsubstituted, so reject it rather than return SQL with a raw placeholder.
  */
 function rejectCaseVariantTenantPlaceholders(sql: string, dialect?: TenantSqlDialect): void {
-  // Same code regions the substituter scans, so both agree on what is a placeholder.
-  for (const span of tokenizeSqlSpans(sql, lexerDialect(dialect))) {
-    if (span.kind !== "code") continue;
-    for (const m of sql.slice(span.start, span.end).matchAll(ANY_CASE_PLACEHOLDER_RE)) {
-      const name = m[1]!;
-      const lower = name.toLowerCase();
-      if (name === lower || !/^tenant_[a-z0-9_]+_ids$/.test(lower)) continue;
-      throw new TenantScopeError(
-        `Generated SQL references ${m[0]}, but tenant placeholders are case-sensitive and must be ` +
-          `written :${lower}. Refusing to emit SQL with an unsubstituted tenant placeholder.`,
-        "UNRESOLVED_TENANT_PLACEHOLDER",
-      );
-    }
+  const placeholder = findTenantPlaceholderAnyCase(sql, dialect);
+  if (placeholder === undefined || isTenantPlaceholderName(placeholder.slice(1))) return;
+  throw new TenantScopeError(
+    `Generated SQL references ${placeholder}, which isn't a tenant placeholder AskDB can render: ` +
+      "they are written exactly :tenant_<root>_ids, in lowercase, with nothing glued to the name. " +
+      "Refusing to emit SQL with an unsubstituted tenant placeholder.",
+    "UNRESOLVED_TENANT_PLACEHOLDER",
+  );
+}
+
+/**
+ * The first placeholder in a code region of `sql` whose name starts with `tenant_` in any
+ * casing, or undefined. One that can't be rendered (another casing, or an identifier glued
+ * to the name) comes first when there is one. Reads placeholders with the same scanner as
+ * the substituter and the renderer, so all three agree on where a name ends.
+ */
+export function findTenantPlaceholderAnyCase(sql: string, dialect?: TenantSqlDialect): string | undefined {
+  let renderable: string | undefined;
+  for (const occ of scanPlaceholders(sql, lexerDialect(dialect))) {
+    if (!/^tenant_/i.test(occ.name)) continue;
+    if (!isTenantPlaceholderName(occ.name)) return occ.placeholder;
+    renderable ??= occ.placeholder;
   }
+  return renderable;
 }
 
 const IN_LIST_BEFORE = /\bIN\s*\(\s*$/i;
@@ -435,8 +444,12 @@ export function replacePlaceholdersWithParams(
  * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when
  * a tenant ID holds a backslash but the dialect's escaping is unknown
  * (`UNESCAPABLE_TENANT_ID`). Throws `SchemaParseError` when two of the policy's roots
- * derive the same placeholder, rather than bind one root's IDs through the other's. `global` scope returns
- * `sql` unchanged.
+ * derive the same placeholder, rather than bind one root's IDs through the other's.
+ *
+ * A `global` scope binds no IDs: SQL without a tenant placeholder is returned unchanged,
+ * and SQL that still has one throws `UNRESOLVED_TENANT_PLACEHOLDER`, since nothing can
+ * fill it (ADR 0010). A placeholder in any casing but the exact lowercase form throws the
+ * same reason under every scope.
  */
 export function resolveTenantSql(
   sql: string,
@@ -449,7 +462,16 @@ export function resolveTenantSql(
   if (scope.access.kind === "subtree") {
     throw unexpandedSubtreeError(scope.access.tenantRoot, "resolveTenantSql()");
   }
+  rejectCaseVariantTenantPlaceholders(sql, dialect);
   if (scope.access.kind === "global") {
+    const placeholder = scanTenantPlaceholders(sql, lexerDialect(dialect))[0]?.placeholder;
+    if (placeholder !== undefined) {
+      throw new TenantScopeError(
+        `Generated SQL references ${placeholder}, but the tenant scope is 'global', which binds no ` +
+          "tenant IDs. Refusing to emit SQL with an unsubstituted tenant placeholder.",
+        "UNRESOLVED_TENANT_PLACEHOLDER",
+      );
+    }
     return mode === "sql-only"
       ? { mode: "sql-only", sql, bindings: [] }
       : { mode: "sql-params", sql, params: [], bindings: [], paramStartIndex };

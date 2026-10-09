@@ -25,6 +25,7 @@ export {
   type TenantSqlDialect,
 } from "./sql/tenant-placeholders.js";
 export { expandClosure } from "./sql/tenant-hierarchy.js";
+export { expandTenantScope } from "./sql/tenant-scope-expand.js";
 export {
   ask,
   type AskPipelineOptions,
@@ -158,15 +159,14 @@ export {
 } from "./schema/normalize.js";
 export { extractSqlFromModelText, extractUnboundSqlFromModelText } from "./sql/extract-sql.js";
 export {
-  bindPreparedQuery,
   escapeSqlLiteral,
   type QueryParameterType,
   type QueryParameterValue,
   type QueryParamSlot,
   type QueryParameterBinding,
   type PreparedQuery,
-  type BoundQuery,
 } from "./sql/bind.js";
+export { bindPreparedQuery, type BindGuardrails, type BoundQuery } from "./sql/rebind.js";
 export {
   type DialectId,
   type DialectSpec,

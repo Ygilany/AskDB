@@ -302,6 +302,23 @@ describe("ask() — tenant SQL output modes", () => {
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders");
     expect(result.tenantBindings).toBeUndefined();
   });
+
+  // Before ADR 0010, ask() returned the raw placeholder with tenantGuardrail.passed: true.
+  it.each([":tenant_agency_ids", ":TENANT_AGENCY_IDS", ":tenant_agency_idsOR 1=1"])(
+    "throws UNRESOLVED_TENANT_PLACEHOLDER for a global-scope reply that still has %s",
+    async (placeholder) => {
+      const error = await ask({
+        question: "count orders",
+        schema,
+        model: fakeModel,
+        dialect: { generate: async () => ({ sql: `SELECT COUNT(*) FROM orders WHERE agency_id = ${placeholder}` }) },
+        tenantScope: { access: { kind: "global", reason: "admin" } },
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(TenantScopeError);
+      expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -446,11 +463,33 @@ describe("resolveTenantSql — fails closed on unresolved placeholders", () => {
     );
   });
 
-  it("global scope is unaffected: SQL returned unchanged, no throw", () => {
+  // The scanner reads an identifier glued to a placeholder as part of its name, so
+  // `:tenant_agency_idsOR` is no tenant placeholder anyone can render: it must throw, not
+  // come back raw.
+  it.each([":tenant_agency_idsOR 1=1", ":tenant_agency_ids$x", ":tenant_agency_idsé", ":Tenant_agency_idsOR"])(
+    "a glued tenant placeholder (%s) throws UNRESOLVED_TENANT_PLACEHOLDER under an ids scope",
+    (tail) => {
+      const sql = `SELECT * FROM orders WHERE agency_id = ${tail}`;
+      const ids: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
+      expect(reasonOf(() => resolveTenantSql(sql, policy, ids, "sql-only"))).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+      expect(reasonOf(() => resolveTenantSql(sql, policy, ids, "sql-params"))).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+    },
+  );
+
+  // ADR 0010: a global scope binds no IDs, so a placeholder left in the SQL can never be
+  // filled. Returning it raw (as before) handed the host unexecutable SQL marked passed.
+  it.each([
+    { name: "lowercase", sql: "SELECT * FROM orders WHERE client_id IN (:tenant_client_ids)" },
+    { name: "upper-case", sql: "SELECT * FROM orders WHERE agency_id = :TENANT_AGENCY_IDS" },
+    { name: "keyword-glued", sql: "SELECT * FROM orders WHERE agency_id = :tenant_agency_idsOR 1=1" },
+  ])("global scope with a $name tenant placeholder throws UNRESOLVED_TENANT_PLACEHOLDER", ({ sql }) => {
     const globalScope: TenantScope = { access: { kind: "global", reason: "admin" } };
-    const sql = "SELECT * FROM orders WHERE client_id IN (:tenant_client_ids)";
-    expect(resolveTenantSql(sql, policy, globalScope, "sql-only").sql).toBe(sql);
-    expect(resolveTenantSql(sql, policy, globalScope, "sql-params").sql).toBe(sql);
+    expect(reasonOf(() => resolveTenantSql(sql, policy, globalScope, "sql-only"))).toBe(
+      "UNRESOLVED_TENANT_PLACEHOLDER",
+    );
+    expect(reasonOf(() => resolveTenantSql(sql, policy, globalScope, "sql-params"))).toBe(
+      "UNRESOLVED_TENANT_PLACEHOLDER",
+    );
   });
 });
 

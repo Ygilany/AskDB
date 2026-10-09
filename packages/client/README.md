@@ -44,24 +44,22 @@ const { sql } = await askdb.ask("count active users", {
 
 ## Parameterized output
 
-`askdb.ask()` returns the same `AskPipelineResult` as `@askdb/core`'s `ask()`, including optional `unboundSql`, `params`, `parameters`, and `preparedQuery` when the model complies (default `parameterize: true`). The facade forwards options and returns the core result verbatim — no client-side binding logic.
+`askdb.ask()` returns the same `AskPipelineResult` as `@askdb/core`'s `ask()`, including optional `unboundSql`, `params`, `parameters`, and `preparedQuery` when the model complies (default `parameterize: true`). The facade forwards options and returns the core result verbatim, `verdict` included.
 
 ```ts
-import { bindPreparedQuery } from "@askdb/core";
-
 const result = await askdb.ask("How many cities does Colorado have?", { tenantScope });
 
 await pool.query(result.sql);
 await pool.query(result.unboundSql!, result.params);
 
-const rebound = bindPreparedQuery(result.preparedQuery!, {
-  state_name: "Utah",
-  ":tenant_agency_ids": authorizedAgencyIds,
-});
+// A new value, no model call.
+const rebound = await askdb.bind(result.preparedQuery!, { state_name: "Utah" }, { tenantScope });
 await pool.query(rebound.sql);
 ```
 
-Every `ask()` is still one model call. Set `{ parameterize: false }` to opt out of the extra output tokens. `bindPreparedQuery` does not authorize tenant IDs — that remains the host's job when building `tenantScope`. Prefer `params` over `tenantParams` when using the new fields.
+Every `ask()` is still one model call. Set `{ parameterize: false }` to opt out of the extra output tokens. Prefer `params` over `tenantParams` when using the new fields.
+
+`askdb.bind(prepared, values, options?)` wraps `@askdb/core`'s `bindPreparedQuery()`: it checks the stored template under the client's schema (or `options.schema`), the `tenantScope` you pass and the modes (`sensitiveGuardrailMode`, `acceptWarnings`), expands a `subtree` scope with `options.resolveTenantDescendants`, and renders the tenant IDs from the scope. Authorizing that scope remains the host's job, as for `ask()`.
 
 ## Multi-tenant usage
 
