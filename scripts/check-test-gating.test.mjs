@@ -116,6 +116,15 @@ test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
   }
 });
 
+test("CLI fails closed on a glob exclusion it cannot match", (t) => {
+  for (const exclusion of ["!examples/consumer-*", "!**/consumer-lab"]) {
+    const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }, `packages:\n  - "packages/*"\n  - "${exclusion}"\n`);
+    const result = run(root);
+    assert.equal(result.status, 1, exclusion);
+    assert.match(result.stderr, /unsupported workspace exclusion/, exclusion);
+  }
+});
+
 test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {
   const root = workspace(
     t,

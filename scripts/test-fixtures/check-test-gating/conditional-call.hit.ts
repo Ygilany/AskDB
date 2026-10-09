@@ -70,3 +70,12 @@ loadDriver({ onReady: () => { describe("callback in an options object", run); } 
 loadDriver({ onReady() { describe("object-literal method", run); } }); // HIT
 promise.then(...[() => describe("spread callback", run)]); // HIT
 new Promise((resolve) => describe("in a Promise executor", run)); // HIT
+if (process.env.DATABASE_URL) {
+  class Pg {
+    static {
+      describe("in a static block", run); // HIT
+    }
+    static suite = describe("in a static field", run); // HIT
+  }
+}
+if (ok) register(class { static { describe("in a class expression's static block", run); } }); // HIT

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 /**
  * Workspace package directories from pnpm-workspace.yaml's `packages:` list.
- * Supports literal paths, a trailing `/*`, and `!` exclusions; anything else throws, so the
+ * Supports literal paths, a trailing `/*`, and literal `!` exclusions; anything else throws, so the
  * check fails closed rather than skipping a package. Parsed here rather than asking
  * `pnpm -r ls`, so `pnpm lint` doesn't spawn pnpm for one list it can read directly.
  * @param {string} root
@@ -21,7 +21,11 @@ export function workspaceDirs(root) {
     const m = raw.match(/^\s*-\s*["']?([^"'#]+?)["']?\s*(?:#.*)?$/);
     if (!m) throw new Error(`unrecognized line in the \`packages:\` list: ${JSON.stringify(raw)}`);
     const pattern = m[1];
-    if (pattern.startsWith("!")) exclude.add(pattern.slice(1));
+    if (pattern.startsWith("!")) {
+      // A glob exclusion pnpm accepts but this reader can't match would scan an excluded package.
+      if (pattern.includes("*")) throw new Error(`check-test-gating: unsupported workspace exclusion "${pattern}"; extend workspaceDirs()`);
+      exclude.add(pattern.slice(1));
+    }
     else include.push(pattern);
   }
   const dirs = [];

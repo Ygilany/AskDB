@@ -43,3 +43,14 @@ describe.each([1, 2])("each %s", () => {
 rows.map((r) => it(`map ${r}`, () => {}));
 rows.flatMap((r) => [it(`flatMap ${r}`, () => {})]);
 registry.push(describe("passed as a value, not a callback", run));
+if (ready) {
+  class Lazy {
+    field = describe("an instance field runs per instance, later", run);
+    constructor() {
+      describe("a constructor runs later", run);
+    }
+    get view() {
+      return describe("an accessor runs later", run);
+    }
+  }
+}

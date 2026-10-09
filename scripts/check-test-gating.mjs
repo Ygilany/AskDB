@@ -15,11 +15,12 @@
 // not parse fails the check instead of passing unread.
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
-// namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`)
-// and variables holding `test.extend({…})`.
-// `integrationSuite({…})` and a variable holding its result are suite functions, so the sanctioned
-// gate passes. Names resolve through TypeScript's binder, so a local declaration that shadows one
-// (a parameter `it`, an import of `test` from another module) is not Vitest's.
+// namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`,
+// and a member read straight off a loader, `require("vitest").describe`) and variables holding
+// `test.extend({…})`. `integrationSuite({…})` and a variable holding its result are suite
+// functions, so the sanctioned gate passes. Names resolve through TypeScript's binder, so a local
+// declaration that shadows one (a parameter `it`, an import of `test` from another module) is not
+// Vitest's.
 //
 // Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
 // `it("…", { skip: true }, fn)`, and tests defined in a loop (`for (const c of cases) it(…)`),
@@ -27,18 +28,21 @@
 // Rejected: see RULES, including a describe/suite/it/test call made only under a condition
 // (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`, an optional call's
 // arguments, a callback passed to any call but `forEach`/`map`/`flatMap`) or over a `.each`
-// table or loop iterable chosen by one, anywhere between the call
-// and the nearest enclosing suite, test or named function. To exempt one line, put a line comment
-// on the line above it with a non-empty reason; the marker with no reason exempts nothing:
+// table or loop iterable chosen by one, anywhere between the call and the nearest enclosing
+// suite, test, named function or class member that runs later (a static block or static field
+// runs with its class, so the walk goes on). To exempt one line, put a line comment on the line
+// above it with a non-empty reason; the marker with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // A use the check can't read (an alias such as `const d = describe`, `x && describe`, an
-// argument, `describe.call(…)`, a spread or computed key in the options) fails closed.
+// argument, `describe.call(…)`, a spread or computed key in the options, a Vitest namespace or
+// loader passed on, assigned, or read through `.then`) fails closed.
 //
 // Known limits: an early `return` before a call, a gate inside a named helper that is called
 // under a condition, options passed in a variable (`it(name, opts, fn)`), a `.each` table or loop
 // filtered at run time (`describe.each(engines.filter(…))`, `while (…)`), a test API imported from
-// another module, and `ctx.skip()` inside a test body are not detected.
+// another module, a module specifier built at run time (`import(name)`), and `ctx.skip()` inside a
+// test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
@@ -208,7 +212,7 @@ function vitestBindings(sf, program) {
       // `const w = v` or `const v = await import("vitest")` is a Vitest namespace.
       found = isVitestModule(init, bindings) ? { kind: "ns" } : undefined;
       // `const run = integrationSuite({…})` is a suite function; so is `const t = test.extend({…})`.
-      const fn = suiteFactoryCall(init, bindings) ? "describe" : extendedFn(decl.initializer, bindings);
+      const fn = suiteFactoryCall(init, bindings) ? "describe" : (testFnName(init, bindings) ?? extendedFn(decl.initializer, bindings));
       if (fn !== undefined) found = { kind: "fn", name: fn };
     } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
       // `const { describe } = v`, from a Vitest namespace.
@@ -231,7 +235,13 @@ function vitestBindings(sf, program) {
  * key, a rest element or a nested pattern fails closed.
  */
 function namespaceMemberUse(id) {
-  const outer = outermostWrapper(id);
+  let outer = outermostWrapper(id);
+  // A loader is read through `await`: `(await import("vitest")).describe`. An `import()` that isn't
+  // awaited is a promise (`.then(…)`, stored, passed on), which the check can't follow.
+  if (ts.isCallExpression(id)) {
+    if (!ts.isAwaitExpression(outer.parent) && id.expression.kind === ts.SyntaxKind.ImportKeyword) return false;
+    while (ts.isAwaitExpression(outer.parent) || isWrapper(outer.parent)) outer = outer.parent;
+  }
   const p = outer.parent;
   if (isMemberLink(p) && p.expression === outer) return linkName(p) !== undefined;
   if (!ts.isVariableDeclaration(p) || p.initializer !== outer) return false;
@@ -241,20 +251,20 @@ function namespaceMemberUse(id) {
     !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)));
 }
 
-/** The 1-based line `node` starts on. */
-function lineOf(node, bindings) {
-  return bindings.sf.getLineAndCharacterOfPosition(node.getStart(bindings.sf)).line + 1;
+/** The 1-based line `node` starts on in `sf`. */
+function lineOf(node, sf) {
+  return sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
 }
 
 /** A ref with nothing to report, for `testRef` and `escapedNamespaceRef` to fill in. */
 function emptyRef(start, bindings) {
   return {
-    suite: false, links: [], computed: false, chain: start, call: undefined, invoked: false, escapes: false,
-    defines: false, conditional: false, optionGate: false, line: lineOf(start, bindings),
+    suite: false, links: [], computed: false, chain: start, invoked: false, escapes: false,
+    conditional: false, optionGate: false, line: lineOf(start, bindings.sf),
   };
 }
 
-/** A Vitest namespace passed on (`fn(v)`, `[v]`), which the check can't follow: it fails closed. */
+/** A Vitest namespace or loader passed on (`fn(v)`, `v2 = v`, `import("vitest").then(…)`): it fails closed. */
 function escapedNamespaceRef(id, bindings) {
   return { ...emptyRef(id, bindings), escapes: true };
 }
@@ -266,12 +276,22 @@ function escapedNamespaceRef(id, bindings) {
 function isVitestModule(node, bindings) {
   while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
   if (ts.isExternalModuleReference(node)) node = node.expression;
-  if (ts.isStringLiteral(node)) return node.text === "vitest";
-  if (ts.isIdentifier(node)) return bindings.resolve(node)?.kind === "ns";
-  if (!ts.isCallExpression(node) || node.arguments.length !== 1 || !ts.isStringLiteral(node.arguments[0])) return false;
+  if (ts.isStringLiteralLike(node)) return node.text === "vitest";
+  if (ts.isIdentifier(node)) return isVitestNamespace(node, bindings);
+  return isVitestLoaderCall(node);
+}
+
+/** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
+function isVitestLoaderCall(node) {
+  if (!ts.isCallExpression(node) || node.arguments.length !== 1 || !ts.isStringLiteralLike(node.arguments[0])) return false;
   const isLoader = node.expression.kind === ts.SyntaxKind.ImportKeyword ||
     (ts.isIdentifier(node.expression) && node.expression.text === "require");
   return isLoader && node.arguments[0].text === "vitest";
+}
+
+/** Whether identifier `id` names a Vitest namespace. */
+function isVitestNamespace(id, bindings) {
+  return bindings.resolve(id)?.kind === "ns";
 }
 
 // Where `integrationSuite()` lives, as the test files import it.
@@ -291,7 +311,8 @@ function testFnName(node, bindings) {
     const found = bindings.resolve(node);
     return found?.kind === "fn" ? found.name : undefined;
   }
-  if (isMemberLink(node) && ts.isIdentifier(unwrap(node.expression)) && bindings.resolve(unwrap(node.expression))?.kind === "ns") {
+  // `v.describe`, `require("vitest").describe`, `(await import("vitest")).describe`.
+  if (isMemberLink(node) && !ts.isStringLiteralLike(unwrap(node.expression)) && isVitestModule(node.expression, bindings)) {
     const name = linkName(node);
     return TEST_FNS.has(name) ? name : undefined;
   }
@@ -385,11 +406,9 @@ function testRef(start, fnName, bindings) {
     links,
     computed,
     chain,
-    call,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
     escapes: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored,
-    defines,
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || (rows !== undefined && isChosen(rows))),
   };
@@ -512,13 +531,17 @@ function underCondition(call, bindings) {
   let inCallback = false;
   for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
-    if (ts.isFunctionDeclaration(node) || ts.isClassLike(node) || (ts.isMethodDeclaration(node) && ts.isClassLike(node.parent))) {
-      return false;
+    if (ts.isFunctionDeclaration(node)) return false;
+    // A class member that runs later (a method, accessor, constructor or instance field) is a
+    // boundary; a static block, static field or `extends` clause runs when the class does.
+    if (ts.isClassLike(node)) {
+      if (isDeferredClassMember(child)) return false;
+      continue;
     }
     if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, bindings)) {
       return false;
     }
-    if (ts.isFunctionLike(node)) inCallback = true;
+    if (ts.isFunctionLike(node) && !ts.isClassStaticBlockDeclaration(node)) inCallback = true;
     // A callback handed to any other call (`.then`, `setTimeout`, `new Promise`, a helper) may run
     // later or never.
     if (inCallback && (ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments?.includes(child)) {
@@ -527,6 +550,13 @@ function underCondition(call, bindings) {
     }
   }
   return false;
+}
+
+/** Whether a class member's body runs after the class is defined, not while it is. */
+function isDeferredClassMember(member) {
+  if (ts.isMethodDeclaration(member) || ts.isConstructorDeclaration(member) || ts.isAccessor(member)) return true;
+  if (!ts.isPropertyDeclaration(member)) return false;
+  return !(ts.getCombinedModifierFlags(member) & ts.ModifierFlags.Static);
 }
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.
@@ -622,7 +652,7 @@ export function findGates(src, fileName = "file.test.ts") {
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
-      else if (ts.isIdentifier(node) && bindings.resolve(node)?.kind === "ns" && !namespaceMemberUse(node)) {
+      else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node)) && !namespaceMemberUse(node)) {
         refs.push(escapedNamespaceRef(node, bindings));
       }
     }
