@@ -25,3 +25,6 @@ describe("options skip", { skip: !process.env.DATABASE_URL }, () => {}); // HIT
 describe("options skip: true", { skip: true }, () => {}); // HIT
 describe("options picked by a ternary", process.env.DATABASE_URL ? {} : { skip: true }, () => {}); // HIT
 describe[process.env.DATABASE_URL ? "concurrent" : "skip"]("computed modifier", () => {}); // HIT
+describe("computed literal key", { ["skip"]: true }, () => {}); // HIT
+describe("computed key", { [key]: false }, () => {}); // HIT
+describe("spread options", { ...opts }, () => {}); // HIT

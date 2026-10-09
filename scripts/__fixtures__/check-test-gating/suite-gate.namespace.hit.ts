@@ -6,3 +6,4 @@ group.skip("through a renamed import", () => {}); // HIT
 group("renamed suite", () => {
   check("renamed test", () => {});
 });
+vitest["describe"].skipIf(!process.env.DATABASE_URL)("element access on the namespace", () => {}); // HIT

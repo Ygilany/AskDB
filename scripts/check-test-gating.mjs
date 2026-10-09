@@ -24,9 +24,12 @@
 // comment on the line above it with a non-empty reason; the marker with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
 //
-// Known limits: an early `return` before a call, a gate behind a helper or alias
-// (`const d = describe`, a named function called under a condition), options passed in a
-// variable or spread (`it(name, opts, fn)`), and `ctx.skip()` inside a test body are not detected.
+// A use the check can't read (an alias such as `const d = describe`, `x && describe`, an
+// argument, `describe.call(…)`, a spread or computed key in the options) fails closed.
+//
+// Known limits: an early `return` before a call, a gate inside a named helper that is called
+// under a condition, options passed in a variable (`it(name, opts, fn)`), and `ctx.skip()` inside
+// a test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
@@ -38,6 +41,11 @@ import { fileURLToPath } from "node:url";
 // --preserve-symlinks-main invocation still finds the repo's install.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const ts = createRequire(selfPath)("typescript");
+if (typeof ts.createSourceFile !== "function" || ts.SyntaxKind === undefined) {
+  // TypeScript 7 moved the compiler API out of the package entry point (ADR 0019).
+  console.error(`check-test-gating: needs the TypeScript 5/6 compiler API; typescript ${ts.version} doesn't export it (see docs/adrs/0019-test-gating-check-parses-with-typescript.md).`);
+  process.exit(1);
+}
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 const SUITE_FNS = new Set(["describe", "suite"]);
@@ -47,16 +55,24 @@ const MODIFIERS = new Set([
   "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
 ]);
 const GATE_LINKS = new Set(["skipIf", "runIf"]);
+const SUITE_GATE_LINKS = new Set(["skip", "skipIf", "runIf"]);
+// Function-protocol links that call the function indirectly, so the check can't read the call.
+const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
+
+/** Whether `ref` gates by a link in `gateLinks`, a run-time modifier, or its options argument. */
+function gatedByHand(ref, gateLinks) {
+  return ref.links.some((l) => gateLinks.has(l)) || ref.computed || ref.optionGate;
+}
 
 export const RULES = [
   {
     id: "suite-gate",
-    test: (ref) => ref.suite && (ref.links.some((l) => l === "skip" || GATE_LINKS.has(l)) || ref.computed || ref.optionGate),
+    test: (ref) => ref.suite && gatedByHand(ref, SUITE_GATE_LINKS),
     why: "gates a suite by hand; use integrationSuite()",
   },
   {
     id: "test-gate",
-    test: (ref) => !ref.suite && (ref.links.some((l) => GATE_LINKS.has(l)) || ref.computed || ref.optionGate),
+    test: (ref) => !ref.suite && gatedByHand(ref, GATE_LINKS),
     why: "gates a test by hand; use integrationSuite() around the suite",
   },
   {
@@ -75,6 +91,13 @@ export const RULES = [
     id: "conditional-call",
     test: (ref) => ref.invoked && ref.links.every((l) => MODIFIERS.has(l)) && ref.conditional,
     why: "defines a suite or test only under a condition; use integrationSuite()",
+  },
+  {
+    // Anything else that isn't a direct call: an alias, an argument, `x && describe`,
+    // `describe.call(…)`. The check can't follow the value, so it fails closed.
+    id: "unclassified-use",
+    test: (ref) => !ref.invoked || ref.links.some((l) => INDIRECT_LINKS.has(l)),
+    why: "uses describe/suite/it/test other than by calling it, so the check can't read the gate; call it directly or use integrationSuite()",
   },
 ];
 
@@ -101,6 +124,13 @@ function outermostWrapper(node) {
 function unwrap(node) {
   while (isWrapper(node)) node = node.expression;
   return node;
+}
+
+/** The callee of a call or the tag of a tagged template, or undefined for any other node. */
+function calleeOf(node) {
+  if (ts.isCallExpression(node)) return node.expression;
+  if (ts.isTaggedTemplateExpression(node)) return node.tag;
+  return undefined;
 }
 
 /** The property name of a `.name` or `["name"]` link, or undefined. */
@@ -139,12 +169,12 @@ function vitestNames(sf) {
 function testFnName(node, ctx) {
   if (ts.isIdentifier(node)) return ctx.locals.get(node.text);
   if (
-    ts.isPropertyAccessExpression(node) &&
+    (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
     ts.isIdentifier(node.expression) &&
     ctx.namespaces.has(node.expression.text) &&
-    TEST_FNS.has(node.name.text)
+    TEST_FNS.has(linkName(node))
   ) {
-    return node.name.text;
+    return linkName(node);
   }
   return undefined;
 }
@@ -163,7 +193,7 @@ function isValueReference(id) {
     if (parent.name === id) return false;
   }
   if (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent)) return false;
-  if (ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent)) return false;
+  if (ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent)) return false;
   return !ts.isExportSpecifier(parent) && !ts.isBindingElement(parent);
 }
 
@@ -194,7 +224,7 @@ function testRef(start, base, ctx) {
   top = outermostWrapper(top);
   let call;
   const p = top.parent;
-  if ((ts.isCallExpression(p) && p.expression === top) || (ts.isTaggedTemplateExpression(p) && p.tag === top)) {
+  if (calleeOf(p) === top) {
     call = p;
     // `.each(rows)` / `.for(rows)` returns the function that defines the tests.
     const last = links[links.length - 1];
@@ -219,6 +249,16 @@ function testRef(start, base, ctx) {
 
 const SKIP_OPTIONS = new Set(["skip", "todo"]);
 
+/** An options key as text, or null when it's computed at run time (`[expr]`). */
+function optionKey(name) {
+  if (!name) return undefined;
+  if (ts.isComputedPropertyName(name)) {
+    const expr = unwrap(name.expression);
+    return ts.isStringLiteralLike(expr) || ts.isNumericLiteral(expr) ? expr.text : null;
+  }
+  return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
+}
+
 /**
  * Whether a suite or test call skips through its options argument (`{ skip: cond }`,
  * `{ todo: cond }`, or options picked by `? :`, `&&`, `||` or `??`). A literal `skip: true` or
@@ -238,10 +278,12 @@ function hasGateOption(call, suite) {
       visit(node.right, true);
     } else if (ts.isObjectLiteralExpression(node)) {
       for (const prop of node.properties) {
-        const key = prop.name && (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) ? prop.name.text : undefined;
+        // A spread or a key computed at run time could carry `skip`; fail closed.
+        if (ts.isSpreadAssignment(prop)) { gate = true; continue; }
+        const key = optionKey(prop.name);
+        if (key === null) { gate = true; continue; }
         if (!SKIP_OPTIONS.has(key)) continue;
-        if (ts.isShorthandPropertyAssignment(prop)) { gate = true; continue; }
-        if (!ts.isPropertyAssignment(prop)) continue;
+        if (!ts.isPropertyAssignment(prop)) { gate = true; continue; } // shorthand, getter, method
         const value = unwrap(prop.initializer);
         const literal = value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword;
         if (chosen || !literal || (suite && key === "skip" && value.kind === ts.SyntaxKind.TrueKeyword)) gate = true;
@@ -287,7 +329,7 @@ function underCondition(call, ctx) {
   for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
     if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) return false;
-    if ((ts.isCallExpression(node) || ts.isTaggedTemplateExpression(node)) && node !== call && isTestCall(node, ctx)) {
+    if (calleeOf(node) !== undefined && node !== call && isTestCall(node, ctx)) {
       return false;
     }
   }
@@ -295,7 +337,7 @@ function underCondition(call, ctx) {
 }
 
 function isTestCall(node, ctx) {
-  let callee = ts.isCallExpression(node) ? node.expression : node.tag;
+  let callee = calleeOf(node);
   if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
   for (;;) {
     callee = unwrap(callee);
@@ -375,8 +417,8 @@ export function findGates(src, fileName = "file.test.ts") {
   const visit = (node) => {
     if (ts.isIdentifier(node) && isValueReference(node) && ctx.locals.has(node.text)) {
       refs.push(testRef(node, ctx.locals.get(node.text), ctx));
-    } else if (ts.isPropertyAccessExpression(node) && testFnName(node, ctx) !== undefined) {
-      refs.push(testRef(node, node.name.text, ctx));
+    } else if (!ts.isIdentifier(node) && testFnName(node, ctx) !== undefined) {
+      refs.push(testRef(node, testFnName(node, ctx), ctx));
     }
     ts.forEachChild(node, visit);
   };

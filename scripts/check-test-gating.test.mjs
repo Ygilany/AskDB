@@ -125,15 +125,26 @@ test("CLI runs when invoked through a symlinked path", (t) => {
   }
 });
 
-test("CLI reports the right line and source for lone-CR and U+2028 line breaks", (t) => {
+test("CLI reports the right line and source for CRLF, lone-CR and U+2028 line breaks", (t) => {
   const root = workspace(t, {
     "packages/a/src/cr.test.ts": 'const a = 1;\rdescribe.skip("cr", () => {});\r',
     "packages/a/src/ls.test.ts": 'const s = 1;\u2028describe.skip("ls", () => {});\n',
+    "packages/a/src/crlf.test.ts": 'const a = 1;\r\ndescribe.skip("crlf", () => {});\r\n',
   });
   const result = run(root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /cr\.test\.ts:2: .*\n\s+describe\.skip\("cr"/);
   assert.match(result.stderr, /ls\.test\.ts:2: .*\n\s+describe\.skip\("ls"/);
+  assert.match(result.stderr, /crlf\.test\.ts:2: .*\n\s+describe\.skip\("crlf"/);
+});
+
+test("CLI scans .test.tsx files and parses them as TSX", (t) => {
+  const root = workspace(t, {
+    "packages/a/src/view.test.tsx": 'render(<p>tables/*.md</p>);\ndescribe.skip("view", () => {});\n',
+  });
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /view\.test\.tsx:2: /);
 });
 
 test("CLI passes a clean workspace", (t) => {

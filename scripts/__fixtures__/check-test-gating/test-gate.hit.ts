@@ -7,3 +7,7 @@ test("options todo", { todo: !ok }, () => {}); // HIT
 it("shorthand skip", { skip }, () => {}); // HIT
 it("options by &&", ok && { skip: true }, () => {}); // HIT
 it[mode]("computed modifier", () => {}); // HIT
+it("getter", { get skip() { return !url; } }, () => {}); // HIT
+it("quoted key", { "skip": !url }, () => {}); // HIT
+it("asserted options", ({ skip: !url }) as TestOptions, () => {}); // HIT
+it("satisfies options", { todo: !ok } satisfies TestOptions, () => {}); // HIT
