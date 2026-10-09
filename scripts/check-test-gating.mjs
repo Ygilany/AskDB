@@ -15,7 +15,8 @@
 // not parse fails the check instead of passing unread.
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
-// namespace imports (`import * as v from "vitest"`) and variables holding `test.extend({…})`.
+// namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`)
+// and variables holding `test.extend({…})`.
 // `integrationSuite({…})` and a variable holding its result are suite functions, so the sanctioned
 // gate passes. Names resolve through TypeScript's binder, so a local declaration that shadows one
 // (a parameter `it`, an import of `test` from another module) is not Vitest's.
@@ -42,8 +43,8 @@
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Resolve `typescript` from this file's real location, so a symlinked or
 // --preserve-symlinks-main invocation still finds the repo's install.
@@ -57,6 +58,8 @@ if (typeof ts.createSourceFile !== "function" || ts.SyntaxKind === undefined) {
   );
   process.exit(1);
 }
+// Loaded beside this file's real path, like `typescript`, so a symlinked invocation finds it.
+const { workspaceDirs } = await import(pathToFileURL(join(dirname(selfPath), "check-test-gating", "workspace.mjs")).href);
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 const SUITE_FNS = new Set(["describe", "suite"]);
@@ -175,39 +178,45 @@ function vitestBindings(sf, program) {
   const checker = program.getTypeChecker();
   const cache = new Map();
   const bindings = { sf, checker };
-  /** What identifier `id` refers to: `{ fn }` for a Vitest function, `{ ns: true }` for a Vitest namespace, or undefined. */
+  /**
+   * What identifier `id` refers to: `{ kind: "fn", name }` for a Vitest function, `{ kind: "ns" }`
+   * for a Vitest namespace, `{ kind: "suiteFactory" }` for `integrationSuite`, or undefined.
+   */
   bindings.resolve = (id) => {
     const parent = id.parent;
     const symbol = ts.isShorthandPropertyAssignment(parent) && parent.name === id
       ? checker.getShorthandAssignmentValueSymbol(parent)
       : checker.getSymbolAtLocation(id);
-    if (symbol === undefined) return TEST_FNS.has(id.text) ? { fn: id.text } : undefined;
+    if (symbol === undefined) return TEST_FNS.has(id.text) ? { kind: "fn", name: id.text } : undefined;
     if (cache.has(symbol)) return cache.get(symbol);
     cache.set(symbol, undefined); // a cycle (`const t = t.extend(…)`) resolves to nothing
     const decl = symbol.declarations?.[0];
     let found;
     if (decl && ts.isImportSpecifier(decl) && importedFrom(decl) === "vitest") {
       const imported = (decl.propertyName ?? decl.name).text;
-      if (TEST_FNS.has(imported)) found = { fn: imported };
+      if (TEST_FNS.has(imported)) found = { kind: "fn", name: imported };
     } else if (decl && ts.isNamespaceImport(decl) && importedFrom(decl) === "vitest") {
-      found = { ns: true };
+      found = { kind: "ns" };
+    } else if (decl && ts.isImportEqualsDeclaration(decl) && isVitestModule(decl.moduleReference, bindings)) {
+      found = { kind: "ns" }; // `import v = require("vitest")`
     } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
       INTEGRATION_MODULE.test(importedFrom(decl) ?? "")) {
-      found = { suiteFactory: true };
+      found = { kind: "suiteFactory" };
     } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
       const init = unwrap(decl.initializer);
       // `const w = v` keeps a Vitest namespace; `const t = test.extend({…})` is a test function.
-      found = ts.isIdentifier(init) && bindings.resolve(init)?.ns ? { ns: true } : undefined;
+      // `const w = v` or `const v = await import("vitest")` is a Vitest namespace.
+      found = isVitestModule(init, bindings) ? { kind: "ns" } : undefined;
       // `const run = integrationSuite({…})` is a suite function; so is `const t = test.extend({…})`.
       const fn = suiteFactoryCall(init, bindings) ? "describe" : extendedFn(decl.initializer, bindings);
-      if (fn !== undefined) found = { fn };
+      if (fn !== undefined) found = { kind: "fn", name: fn };
     } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
       // `const { describe } = v`, from a Vitest namespace.
       const holder = decl.parent.parent;
       const init = ts.isVariableDeclaration(holder) && holder.initializer ? unwrap(holder.initializer) : undefined;
       const key = decl.propertyName ?? decl.name;
-      if (init && ts.isIdentifier(init) && bindings.resolve(init)?.ns && ts.isIdentifier(key) && TEST_FNS.has(key.text)) {
-        found = { fn: key.text };
+      if (init && isVitestModule(init, bindings) && ts.isIdentifier(key) && TEST_FNS.has(key.text)) {
+        found = { kind: "fn", name: key.text };
       }
     }
     cache.set(symbol, found);
@@ -232,13 +241,37 @@ function namespaceMemberUse(id) {
     !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)));
 }
 
+/** The 1-based line `node` starts on. */
+function lineOf(node, bindings) {
+  return bindings.sf.getLineAndCharacterOfPosition(node.getStart(bindings.sf)).line + 1;
+}
+
+/** A ref with nothing to report, for `testRef` and `escapedNamespaceRef` to fill in. */
+function emptyRef(start, bindings) {
+  return {
+    suite: false, links: [], computed: false, chain: start, call: undefined, invoked: false, escapes: false,
+    defines: false, conditional: false, optionGate: false, line: lineOf(start, bindings),
+  };
+}
+
 /** A Vitest namespace passed on (`fn(v)`, `[v]`), which the check can't follow: it fails closed. */
 function escapedNamespaceRef(id, bindings) {
-  return {
-    suite: false, links: [], computed: false, chain: id, call: undefined, invoked: false, escapes: true,
-    defines: false, conditional: false, optionGate: false,
-    line: bindings.sf.getLineAndCharacterOfPosition(id.getStart(bindings.sf)).line + 1,
-  };
+  return { ...emptyRef(id, bindings), escapes: true };
+}
+
+/**
+ * Whether `node` (through wrappers and `await`) is the Vitest module: `import("vitest")`,
+ * `require("vitest")`, or an identifier bound to a Vitest namespace.
+ */
+function isVitestModule(node, bindings) {
+  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
+  if (ts.isExternalModuleReference(node)) node = node.expression;
+  if (ts.isStringLiteral(node)) return node.text === "vitest";
+  if (ts.isIdentifier(node)) return bindings.resolve(node)?.kind === "ns";
+  if (!ts.isCallExpression(node) || node.arguments.length !== 1 || !ts.isStringLiteral(node.arguments[0])) return false;
+  const isLoader = node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+    (ts.isIdentifier(node.expression) && node.expression.text === "require");
+  return isLoader && node.arguments[0].text === "vitest";
 }
 
 // Where `integrationSuite()` lives, as the test files import it.
@@ -248,14 +281,17 @@ const INTEGRATION_MODULE = /(?:^|\/)test-utils\/integration(?:\.mjs)?$/;
 function suiteFactoryCall(node, bindings) {
   if (!ts.isCallExpression(node)) return false;
   const callee = unwrap(node.expression);
-  return ts.isIdentifier(callee) && bindings.resolve(callee)?.suiteFactory === true;
+  return ts.isIdentifier(callee) && bindings.resolve(callee)?.kind === "suiteFactory";
 }
 
 /** The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias), or undefined. */
 function testFnName(node, bindings) {
   if (suiteFactoryCall(node, bindings)) return "describe";
-  if (ts.isIdentifier(node)) return bindings.resolve(node)?.fn;
-  if (isMemberLink(node) && ts.isIdentifier(unwrap(node.expression)) && bindings.resolve(unwrap(node.expression))?.ns) {
+  if (ts.isIdentifier(node)) {
+    const found = bindings.resolve(node);
+    return found?.kind === "fn" ? found.name : undefined;
+  }
+  if (isMemberLink(node) && ts.isIdentifier(unwrap(node.expression)) && bindings.resolve(unwrap(node.expression))?.kind === "ns") {
     const name = linkName(node);
     return TEST_FNS.has(name) ? name : undefined;
   }
@@ -344,6 +380,7 @@ function testRef(start, fnName, bindings) {
   const ownLinks = links.slice(links.lastIndexOf("extend") + 1);
   const defines = call !== undefined && !extendCallPending && ownLinks.every((l) => MODIFIERS.has(l));
   return {
+    ...emptyRef(start, bindings),
     suite,
     links,
     computed,
@@ -355,7 +392,6 @@ function testRef(start, fnName, bindings) {
     defines,
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || (rows !== undefined && isChosen(rows))),
-    line: bindings.sf.getLineAndCharacterOfPosition(start.getStart(bindings.sf)).line + 1,
   };
 }
 
@@ -372,12 +408,15 @@ function extendResultIsTracked(chain) {
 
 const SKIP_OPTIONS = new Set(["skip", "todo"]);
 
-/** An options key as text, or null when it's computed at run time (`[expr]`). */
+// An options key computed at run time (`{ [expr]: … }`), which could be `skip`.
+const RUNTIME_KEY = Symbol("runtime key");
+
+/** An options key as text, `RUNTIME_KEY` for `[expr]`, or undefined for a name the check skips. */
 function optionKey(name) {
   if (!name) return undefined;
   if (ts.isComputedPropertyName(name)) {
     const expr = unwrap(name.expression);
-    return ts.isStringLiteralLike(expr) || ts.isNumericLiteral(expr) ? expr.text : null;
+    return ts.isStringLiteralLike(expr) || ts.isNumericLiteral(expr) ? expr.text : RUNTIME_KEY;
   }
   return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
 }
@@ -415,7 +454,7 @@ function hasGateOption(call, suite) {
         // A spread or a key computed at run time could carry `skip`; fail closed.
         if (ts.isSpreadAssignment(prop)) { gate = true; continue; }
         const key = optionKey(prop.name);
-        if (key === null) { gate = true; continue; }
+        if (key === RUNTIME_KEY) { gate = true; continue; }
         if (!SKIP_OPTIONS.has(key)) continue;
         if (!ts.isPropertyAssignment(prop)) { gate = true; continue; } // shorthand, getter, method
         const value = unwrap(prop.initializer);
@@ -468,15 +507,23 @@ function conditionalEdge(parent, child) {
  */
 function underCondition(call, bindings) {
   let child = call;
+  // Set once the walk leaves a function, until a call it's passed to (directly or inside an
+  // argument such as `{ onReady: () => … }`) is reached.
+  let inCallback = false;
   for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
-    if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) return false;
+    if (ts.isFunctionDeclaration(node) || ts.isClassLike(node) || (ts.isMethodDeclaration(node) && ts.isClassLike(node.parent))) {
+      return false;
+    }
     if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, bindings)) {
       return false;
     }
-    // A callback handed to any other call (`.then`, `setTimeout`, a helper) may run later or never.
-    if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && ts.isFunctionLike(child) && node.arguments?.includes(child)) {
+    if (ts.isFunctionLike(node)) inCallback = true;
+    // A callback handed to any other call (`.then`, `setTimeout`, `new Promise`, a helper) may run
+    // later or never.
+    if (inCallback && (ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments?.includes(child)) {
       if (!isIterationCall(node)) return true;
+      inCallback = false;
     }
   }
   return false;
@@ -575,7 +622,7 @@ export function findGates(src, fileName = "file.test.ts") {
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
-      else if (ts.isIdentifier(node) && bindings.resolve(node)?.ns && !namespaceMemberUse(node)) {
+      else if (ts.isIdentifier(node) && bindings.resolve(node)?.kind === "ns" && !namespaceMemberUse(node)) {
         refs.push(escapedNamespaceRef(node, bindings));
       }
     }
@@ -593,45 +640,6 @@ export function findGates(src, fileName = "file.test.ts") {
   return [...flagged]
     .sort((a, b) => a[0] - b[0])
     .map(([line, rule]) => ({ line, rule: rule.id, why: rule.why }));
-}
-
-/**
- * Workspace package directories from pnpm-workspace.yaml's `packages:` list.
- * Supports literal paths, a trailing `/*`, and `!` exclusions; anything else throws, so the
- * check fails closed rather than skipping a package. Parsed here rather than asking
- * `pnpm -r ls`, so `pnpm lint` doesn't spawn pnpm for one list it can read directly.
- * @param {string} root
- */
-function workspaceDirs(root) {
-  const yaml = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8").split(/\r?\n/);
-  const start = yaml.findIndex((l) => /^packages:\s*$/.test(l));
-  if (start === -1) throw new Error("pnpm-workspace.yaml has no `packages:` list");
-  const include = [];
-  const exclude = new Set();
-  for (const raw of yaml.slice(start + 1)) {
-    if (/^\s*(?:#.*)?$/.test(raw)) continue; // blank or comment line, at any indent
-    if (/^[A-Za-z_][\w-]*\s*:/.test(raw)) break; // next top-level key
-    const m = raw.match(/^\s*-\s*["']?([^"'#]+?)["']?\s*(?:#.*)?$/);
-    if (!m) throw new Error(`unrecognized line in the \`packages:\` list: ${JSON.stringify(raw)}`);
-    const pattern = m[1];
-    if (pattern.startsWith("!")) exclude.add(pattern.slice(1));
-    else include.push(pattern);
-  }
-  const dirs = [];
-  for (const pattern of include) {
-    if (pattern.endsWith("/*") && !pattern.slice(0, -2).includes("*")) {
-      const parent = pattern.slice(0, -2);
-      if (!existsSync(join(root, parent))) continue;
-      for (const e of readdirSync(join(root, parent), { withFileTypes: true })) {
-        if (e.isDirectory()) dirs.push(`${parent}/${e.name}`);
-      }
-    } else if (pattern.includes("*")) {
-      throw new Error(`check-test-gating: unsupported workspace pattern "${pattern}"; extend workspaceDirs()`);
-    } else if (existsSync(join(root, pattern))) {
-      dirs.push(pattern);
-    }
-  }
-  return dirs.filter((d) => !exclude.has(d));
 }
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".turbo", ".astro", ".lab"]);

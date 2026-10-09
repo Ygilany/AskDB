@@ -63,3 +63,10 @@ if (ok) describe.shuffle("shuffle", run); // HIT
 if (ok) it.fails("fails", run); // HIT
 if (ok) it.todo("todo"); // HIT
 for (const k in process.env.DATABASE_URL ? { a: 1 } : {}) it(`for-in over a chosen object ${k}`, run); // HIT
+await import("better-sqlite3").then((() => describe("parenthesized callback", run))); // HIT
+setTimeout((function () { it("function expression in parentheses", run); }), 0); // HIT
+promise.then((() => describe("cast callback", run)) as any); // HIT
+loadDriver({ onReady: () => { describe("callback in an options object", run); } }); // HIT
+loadDriver({ onReady() { describe("object-literal method", run); } }); // HIT
+promise.then(...[() => describe("spread callback", run)]); // HIT
+new Promise((resolve) => describe("in a Promise executor", run)); // HIT

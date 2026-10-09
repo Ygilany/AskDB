@@ -6,3 +6,4 @@ const notATestFn = assertThat.skip;
 other.describe.skip("not Vitest's describe");
 import * as v from "vitest";
 const e = v.expect;
+(v as any).expect(1);

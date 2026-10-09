@@ -6,3 +6,7 @@ run("gated the sanctioned way", () => {
 integrationSuite({ env: ["MYSQL_DATABASE_URL"] })("inline", () => {
   it("inside inline", () => {});
 });
+import { integrationSuite as gate } from "../../../scripts/test-utils/integration.mjs";
+gate({ env: ["X"] })("renamed sanctioned gate", () => {
+  it("inside", () => {});
+});

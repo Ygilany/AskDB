@@ -42,3 +42,4 @@ describe.each([1, 2])("each %s", () => {
 });
 rows.map((r) => it(`map ${r}`, () => {}));
 rows.flatMap((r) => [it(`flatMap ${r}`, () => {})]);
+registry.push(describe("passed as a value, not a callback", run));

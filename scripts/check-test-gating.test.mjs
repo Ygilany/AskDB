@@ -150,6 +150,8 @@ test("CLI exits with a message naming ADR 0019 when typescript lacks the compile
   writeFileSync(join(dir, "node_modules", "typescript", "package.json"), '{"name":"typescript","version":"7.0.0","main":"index.js"}');
   writeFileSync(join(dir, "node_modules", "typescript", "index.js"), 'module.exports = { version: "7.0.0" };');
   copyFileSync(script, join(dir, "check-test-gating.mjs"));
+  mkdirSync(join(dir, "check-test-gating"));
+  copyFileSync(join(here, "check-test-gating", "workspace.mjs"), join(dir, "check-test-gating", "workspace.mjs"));
   const result = run(workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }), join(dir, "check-test-gating.mjs"));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /needs the TypeScript 5\/6 compiler API; typescript 7\.0\.0/);

@@ -8,11 +8,11 @@ Proposed (2026-10-09, #326). Implemented in `scripts/check-test-gating.mjs`, run
 
 CI sets `ASKDB_REQUIRE_INTEGRATION=1` so a missing database or driver fails an integration suite instead of skipping it. That works only for suites gated through `integrationSuite()` (`scripts/test-utils/integration.mjs`). A hand-rolled gate (`describe.skip`, `describe.skipIf(…)`, `cond ? describe : describe.skip`, `{ skip: cond }` options, or a suite defined under an `if`) skips silently, so a misconfigured job passes by running nothing. `pnpm lint` runs a check that rejects these gates in the `*.test.ts` and `*.test.tsx` files of every workspace package in `pnpm-workspace.yaml` except the consumer lab, which is its own pnpm root and fails on a missing fixture by design.
 
-The first version matched regexes over the source after blanking comments and string, template and regex literals with a hand-written lexer. That design had two problems. The lexer did not understand JSX text, so a `/*` or a backtick in a `.test.tsx` file blanked the rest of the file and the check passed it unread. And the conditional-call rule looked only at the token before a call, so a suite defined as the second statement of an `if` block was missed.
+A regex design, matching over the source after blanking comments and string, template and regex literals with a hand-written lexer, has two problems. A lexer that doesn't read JSX text treats a `/*` or a backtick in a `.test.tsx` file as the start of a comment or template, blanks the rest of the file, and the check passes it unread. And a conditional-call rule that looks only at the token before a call misses a suite defined as the second statement of an `if` block.
 
 ## Options considered
 
-### A. Regexes over a hand-lexed source (the first version)
+### A. Regexes over a hand-lexed source
 
 Rejected. Every construct the lexer misreads is a way past the gate, and the misreads fail open. Each fix adds lexer code (JSX, regex-versus-division, template nesting) that duplicates a parser the repo already installs.
 
@@ -22,7 +22,7 @@ Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with 
 
 ### C. Walk the TypeScript AST (chosen)
 
-`typescript` is already a root devDependency (`^6.0.3`, locked in `pnpm-lock.yaml`). `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test` (the globals, a renamed or namespace import from `vitest`, or a variable holding `test.extend({…})`; names resolve through the binder of a one-file program, so a local declaration that shadows one is not Vitest's): its modifier links, whether it is invoked, whether it is a ternary branch, and whether a condition (`if`/`else`, `switch` case, `try`/`catch`, `? :`, `&&`, `||`, `??`, a loop over a table a condition picks, or a callback passed to a call other than `forEach`/`map`/`flatMap`) sits between the call and the nearest enclosing suite, test or named function. `integrationSuite({…})` and a variable holding its result are suite functions, so its own gate passes.
+`typescript` is already a root devDependency (`^6.0.3`, locked in `pnpm-lock.yaml`). `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test` (the globals, a renamed or namespace import from `vitest`, `await import("vitest")` or `require("vitest")`, or a variable holding `test.extend({…})`; names resolve through the binder of a one-file program, so a local declaration that shadows one is not Vitest's): its modifier links, whether it is invoked, whether it is a ternary branch, and whether a condition (`if`/`else`, `switch` case, `try`/`catch`, `? :`, `&&`, `||`, `??`, a loop over a table a condition picks, or a callback passed to a call other than `forEach`/`map`/`flatMap`) sits between the call and the nearest enclosing suite, test or named function. `integrationSuite({…})` and a variable holding its result are suite functions, so its own gate passes.
 
 ### Where the check runs
 

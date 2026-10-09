@@ -25,3 +25,5 @@ it: for (;;) {
   break it;
 }
 let qualified: Foo.it;
+const selfRef = selfRef.extend({});
+selfRef("a cycle resolves to nothing", run);
