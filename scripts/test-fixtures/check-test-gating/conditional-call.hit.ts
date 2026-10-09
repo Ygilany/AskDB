@@ -94,3 +94,7 @@ for (const engine of ["sqlite", ...(process.env.DATABASE_URL ? ["postgres"] : []
 if (process.env.DATABASE_URL) test.extend({ db: describe("under test.extend under an if", run) }); // HIT
 (async () => { describe("in an IIFE whose rejection is caught", run); })().catch(() => {}); // HIT
 (async () => { describe("in an IIFE with a two-argument then", run); })().then(ok, bad); // HIT
+if (ready) it.describe("it.describe under an if", run); // HIT
+if (ready) test.suite("test.suite under an if", run); // HIT
+for ([forInDefault = describe("a for-in pattern default", run)] in obj) {} // HIT
+[...[nestedDefault = describe("a default inside a spread pattern", run)]] = rows; // HIT

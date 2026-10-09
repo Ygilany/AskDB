@@ -77,7 +77,7 @@ function run(root, scriptPath = script, nodeFlags = []) {
   return spawnSync(process.execPath, [...nodeFlags, scriptPath, root], { encoding: "utf8" });
 }
 
-test("CLI scans every workspace package (not just src/) and skips excluded ones", (t) => {
+test("CLI scans every workspace package (not just src/) and skips what Vitest skips", (t) => {
   const root = workspace(t, {
     "packages/a/src/a.test.ts": 'it("ok", () => {});\n',
     "packages/excluded/src/x.test.ts": 'describe.skip("excluded package", () => {});\n',
@@ -93,7 +93,9 @@ test("CLI scans every workspace package (not just src/) and skips excluded ones"
   assert.equal(result.status, 1);
   assert.match(result.stderr, /fixtures\/db\/test\/db\.integration\.test\.ts:1:/);
   assert.match(result.stderr, /packages\/a\/zz-after-skipped\.test\.ts:1:/);
-  assert.doesNotMatch(result.stderr, /excluded|node_modules|dist|\.turbo|\.astro|\.lab/);
+  assert.doesNotMatch(result.stderr, /excluded|node_modules|dist/);
+  // Vitest runs tests under dot-directories it doesn't exclude, so the check reads them too.
+  for (const dir of [".turbo", ".astro", ".lab"]) assert.match(result.stderr, new RegExp(`packages/a/\\${dir}/`));
 });
 
 test("CLI keeps reading the packages list past a column-0 comment", (t) => {

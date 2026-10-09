@@ -11,3 +11,5 @@ const dbTest = test.extend({ ...baseFixtures, todo: async ({}, use) => use([]) }
 it("skip: false", { skip: false }, () => {});
 test.scoped({ skip: maybe });
 it("a computed literal key", { ["skip"]: true }, run);
+it("a timeout picked between numbers", () => {}, process.env.CI ? 60_000 : 5_000);
+it(process.env.NAME ?? "a name picked at run time", () => {});

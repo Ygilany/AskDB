@@ -56,14 +56,15 @@ export function vitestBindings(program, isIntegrationModule) {
       found = { kind: "suiteFactory" };
     } else if (decl && ts.isNamespaceImport(decl) && isIntegrationModule(importedFrom(decl) ?? "")) {
       found = { kind: "integrationNs" }; // `import * as I from ".../integration.mjs"`
-    } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
-      const init = unwrap(decl.initializer);
+    } else if (decl && ts.isVariableDeclaration(decl) && initializedDecl(symbol)) {
+      // `var t = test.extend({}); var t: typeof t;` declares one variable twice; read its initializer.
+      const init = unwrap(initializedDecl(symbol).initializer);
       // `const w = v` keeps a Vitest namespace; `const t = test.extend({…})` is a test function.
       // `const w = v` or `const v = await import("vitest")` is a Vitest namespace; `const r =
       // createRequire(import.meta.url)` is a `require`.
       found = isVitestModule(init, bindings) ? { kind: "ns" } : isCreateRequireCall(init) ? { kind: "require" } : undefined;
       // `const run = integrationSuite({…})` is a suite function; so is `const t = test.extend({…})`.
-      const fn = suiteFactoryCall(init, bindings) ? "describe" : (testFnName(init, bindings) ?? extendedFn(decl.initializer, bindings));
+      const fn = suiteFactoryCall(init, bindings) ? "describe" : (testFnName(init, bindings) ?? extendedFn(init, bindings));
       if (fn !== undefined) found = { kind: "fn", name: fn };
     } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
       // `const { describe } = v`, from a Vitest namespace.
@@ -169,4 +170,10 @@ export function extendedFn(node, bindings) {
     base = unwrap(base.expression);
   }
   return testFnName(base, bindings) ?? extendedFn(base, bindings);
+}
+
+/** The one declaration of a variable symbol that has an initializer, or undefined if none or several do. */
+function initializedDecl(symbol) {
+  const withInit = symbol.declarations.filter((d) => ts.isVariableDeclaration(d) && d.initializer);
+  return withInit.length === 1 ? withInit[0] : undefined;
 }

@@ -302,12 +302,23 @@ function hasGateOption(call, suite) {
       }
     }
   };
-  for (const arg of call.arguments) {
+  for (const [i, arg] of call.arguments.entries()) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
+    // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
+    // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone.
+    if (i > 0 && isChosen(arg) && !picksOnlyLiterals(arg)) return true;
     visit(arg, false);
   }
   return gate;
+}
+
+/** Whether every value a run-time choice can produce is a string or number literal. */
+function picksOnlyLiterals(node) {
+  node = unwrap(node);
+  const branches = choiceBranches(node);
+  if (branches.length > 0) return branches.every(picksOnlyLiterals);
+  return ts.isStringLiteralLike(node) || ts.isNumericLiteral(node);
 }
 
 /** Whether `node` is the true or false branch of a `? :` (through wrappers). */
@@ -545,7 +556,8 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     .map(([line, rule]) => ({ line, rule: rule.id, why: rule.why }));
 }
 
-const SKIP_DIRS = new Set(["node_modules", "dist", ".turbo", ".astro", ".lab"]);
+// What the root vitest.config.ts and Vitest's defaults exclude; anything else Vitest would run.
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 
 /** What a symbolic link points at: "dir", "file", or undefined for a dangling or looping link. */
 function linkTarget(path) {
