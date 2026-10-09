@@ -1,8 +1,8 @@
 // What a suite or test call's arguments after the name do: skip or invert through options, pick
 // or build the body at run time, or pass options the check can't read. For
 // scripts/check-test-gating.mjs.
-import { calleeParts, isCallOrNew, everyPickLeaf, firstParameter, containsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
-import { CALL_SUITE, constInitializer, isGlobalName, isInlineFunction, vitestCallKind } from "./bindings.mjs";
+import { calleeParts, isCallOrNew, isMemberLink, everyPickLeaf, firstParameter, containsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
+import { CALL_SUITE, constInitializer, isGlobalCallee, isGlobalName, isInlineFunction, vitestCallKind } from "./bindings.mjs";
 import { readsPickedValue } from "./conditions.mjs";
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a
@@ -143,7 +143,7 @@ function isPlainValue(node, bindings) {
 
 /** Whether `node` reads an environment variable from the global `process.env` (`process.env.X`, `process.env["X"]`). */
 function isEnvRead(node, bindings) {
-  if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) return false;
+  if (!isMemberLink(node)) return false;
   const env = unwrap(node.expression);
   if (!ts.isPropertyAccessExpression(env) || env.name.text !== "env") return false;
   const process = unwrap(env.expression);
@@ -193,7 +193,7 @@ function isReadableSuiteBody(body, bindings) {
 
 /** The inline function a `const` name is bound to (`const body = () => {…}`), or undefined. */
 function constFunction(node, bindings) {
-  const init = ts.isIdentifier(node) ? constInitializer(node, bindings) : undefined;
+  const init = constInitializer(node, bindings);
   return init !== undefined && isInlineFunction(init) ? init : undefined;
 }
 
@@ -207,9 +207,7 @@ function isNumericConversion(call, bindings) {
   const parts = calleeParts(call);
   if (parts === undefined) return false;
   // `const Number = (x) => x`: a name declared in the file is not the global.
-  const callee = unwrap(call.expression);
-  const name = ts.isIdentifier(callee) ? callee : unwrap(callee.expression);
-  if (ts.isIdentifier(name) && !isGlobalName(name, bindings)) return false;
+  if (!isGlobalCallee(call, bindings)) return false;
   if (parts.owner === undefined) return receiverOf(call) === undefined && NUMERIC_CONVERSIONS.has(parts.name);
   return (parts.owner === "Math" && MATH_NUMBERS.has(parts.name)) || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
 }
@@ -229,7 +227,7 @@ function isNonFunction(node, bindings) {
   return everyPickLeaf(node, (leaf) => {
     if (ts.isObjectLiteralExpression(leaf)) return true;
     if (!ts.isStringLiteralLike(leaf) && isPlainValue(leaf, bindings)) return true;
-    const init = ts.isIdentifier(leaf) ? constInitializer(leaf, bindings) : undefined;
+    const init = constInitializer(leaf, bindings);
     return init !== undefined && isNonFunction(init, bindings);
   });
 }

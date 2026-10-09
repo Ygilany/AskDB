@@ -79,3 +79,7 @@ describe.each([...[process.env.CI ? "a" : "b", "c"].keys()])("keys keeps the siz
 describe.each([...[process.env.CI ? "a" : "b", "c"].entries()])("entries keeps the size %s", () => {});
 describe.each([process.env.CI ? "a" : "b", "c"].values().toArray())("values and toArray keep the size %s", () => {});
 new class { constructor() { describe("a suite in a constructor called without parentheses", () => {}); } };
+const fixedEngines = ["pg", process.env.CI ? "sqlite" : "mysql"];
+describe.each(fixedEngines)("a const table with a picked element but a fixed size %s", () => {});
+const cycleA = cycleB, cycleB = cycleA;
+describe.each(cycleA)("a cycle of consts ends %s", () => {});

@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, optionKey, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
+import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, memberOn, optionKey, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -50,6 +50,15 @@ function importedFrom(decl) {
  */
 export function isGlobalName(id, bindings) {
   return ts.isIdentifier(id) && bindings.declarationsOf(id).length === 0;
+}
+
+/**
+ * Whether the plain name `call` is made through is a global: the callee of `Number(…)`, or the
+ * object of `Array.from(…)` / `Math.max(…)`, through wrappers. Any other callee isn't.
+ */
+export function isGlobalCallee(call, bindings) {
+  const callee = unwrap(call.expression);
+  return isGlobalName(isMemberLink(callee) ? unwrap(callee.expression) : callee, bindings);
 }
 
 /**
@@ -141,6 +150,23 @@ export function isDetachedLoader(node) {
   return calleeOf(outer.parent) !== outer;
 }
 
+/**
+ * Whether identifier `id` is Vitest's `vi` (the global, or imported from `"vitest"`) used other than
+ * through a member written out (`vi.fn()`, `vi["mock"]`): passed on (`Reflect.get(vi, …)`), read
+ * by a computed key (`vi[k]`), or destructured or aliased (`const { [k]: f } = vi`). Its loaders
+ * load Vitest, so a use the check can't name fails closed.
+ */
+export function isUnreadableViUse(id, bindings) {
+  if (!ts.isIdentifier(id)) return false;
+  const decls = bindings.declarationsOf(id);
+  const isVi = decls.length === 0
+    ? id.text === "vi"
+    : decls.every((d) => ts.isImportSpecifier(d) && (d.propertyName ?? d.name).text === "vi" && importedFrom(d) === "vitest");
+  if (!isVi) return false;
+  const member = memberOn(id);
+  return member === undefined || linkName(member) === undefined;
+}
+
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
 function isVitestLoaderCall(node, bindings) {
   if (!ts.isCallExpression(node) || !isVitestSpecifier(node.arguments[0])) return false;
@@ -214,6 +240,15 @@ function extendedFn(node, bindings) {
 }
 
 /**
+ * Whether a reference to Vitest function `fnName`, through `links` (the ones after its last
+ * `.extend`), defines a suite: `describe(…)`, `it.describe(…)`. The one suite test for
+ * `vitestCallKind` and the entry's reference walk.
+ */
+export function definesSuite(fnName, links) {
+  return SUITE_FNS.has(fnName) || links.some((l) => SUITE_FNS.has(l));
+}
+
+/**
  * What a call or tagged template defines through Vitest's describe/suite/it/test and modifier
  * links: `CALL_SUITE`, `CALL_TEST`, `CALL_ROWS` (a `.each` or `.for` call, whose body receives a row), or
  * undefined when it defines nothing (`test.extend({…})`, `test.scoped({…})`, any other call).
@@ -223,16 +258,17 @@ export function vitestCallKind(node, bindings) {
   if (callee === undefined) return undefined;
   const outer = unwrap(callee);
   if (isMemberLink(outer) && !MODIFIERS.has(linkName(outer)) && testFnName(outer, bindings) === undefined) return undefined;
-  let rows = false;
-  let suite = false;
+  const links = [];
   for (;;) {
     callee = unwrap(callee);
     // `test.extend({…}).describe(…)`: the walk goes on past a call that returns a test function.
     const name = testFnName(callee, bindings) ?? extendedFn(callee, bindings);
-    if (name !== undefined) return rows ? CALL_ROWS : suite || SUITE_FNS.has(name) ? CALL_SUITE : CALL_TEST;
+    if (name !== undefined) {
+      if (links.some((l) => ROW_LINKS.has(l))) return CALL_ROWS;
+      return definesSuite(name, links) ? CALL_SUITE : CALL_TEST;
+    }
     if (isMemberLink(callee)) {
-      rows ||= ROW_LINKS.has(linkName(callee));
-      suite ||= SUITE_FNS.has(linkName(callee));
+      links.push(linkName(callee));
       callee = callee.expression;
     } else if (calleeOf(callee) !== undefined) {
       callee = calleeOf(callee); // `describe.skipIf(c)(…)`, `.each(rows)(…)`, `.each\`table\`(…)`
@@ -254,9 +290,10 @@ function isSuiteBody(fn, bindings) {
   return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) === CALL_SUITE;
 }
 
-/** The initializer of the one `const` that declares identifier `id`, unwrapped, or undefined. */
-export function constInitializer(id, bindings) {
-  const decls = bindings.declarationsOf(id);
+/** The initializer of the one `const` that declares `node`, an identifier, unwrapped, or undefined (any other node too). */
+export function constInitializer(node, bindings) {
+  if (!ts.isIdentifier(node)) return undefined;
+  const decls = bindings.declarationsOf(node);
   if (decls.length !== 1) return undefined;
   const [d] = decls;
   if (!ts.isVariableDeclaration(d) || !ts.isIdentifier(d.name) || !d.initializer) return undefined;

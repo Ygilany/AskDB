@@ -94,3 +94,7 @@ describe.each(_.map([process.env.PG_URL ? "pg" : null, "sqlite"], (e) => e).filt
   const Object = { values: (t) => Object.values(t).filter(Boolean) };
   describe.each(Object.values({ pg: process.env.DATABASE_URL ? "pg" : null }))("a local Object.values %s", () => {}); // HIT
 }
+const pickedUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
+describe.each(pickedUrls)("a picked table held in a const %s", () => {}); // HIT
+const filteredEngines = [process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean);
+describe.each(filteredEngines)("a filtered table held in a const %s", () => {}); // HIT

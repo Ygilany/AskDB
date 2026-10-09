@@ -25,3 +25,9 @@ const { importActual: detachedActual } = vi; // HIT
 const detachedLoader = vi.importActual; // HIT
 const detachedByKey = vi["importMock"]; // HIT
 (await vi.importActual.call(vi, "vitest")).describe.skipIf(!process.env.DATABASE_URL)("loader called through .call", (t) => { t("connects", () => {}); }); // HIT
+const reflectedLoader = Reflect.get(vi, "importActual"); // HIT
+const loaderKey = "importActual";
+(await vi[loaderKey]("vitest")).describe.skipIf(!process.env.DATABASE_URL)("a loader read by a computed key", (t) => { t("connects", () => {}); }); // HIT
+const { [loaderKey]: computedLoader } = vi; // HIT
+import { vi as importedVi } from "vitest";
+const importedReflected = Reflect.get(importedVi, "importMock"); // HIT

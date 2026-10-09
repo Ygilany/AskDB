@@ -44,10 +44,10 @@ Turbo runs tasks in strict env mode: only variables listed in the `test` task's 
 - Any argument after the name picked by a condition (a body picked by `url ? fn : undefined` becomes a todo), unless every value it can pick is plainly not a function: a literal, `undefined`, a `process.env` read, arithmetic or a template over such values, a number conversion such as `Number(…)`, `parseInt(…)` or `Math.max(…)` over them, or a `const` bound to one (`url ? 10_000 : 5_000`).
 - A body built by a call over any pick (`withDb(url ?? ":memory:", fn)`), since the call may read the pick any way.
 - A suite or test defined only under a condition: `if`/`else`, a `switch` case, `try`/`catch`, `?:`, `&&`, `||`, `??`, `&&=`, `||=`, `??=`, the arguments or key of an optional chain (`a?.b(…)`, `a?.[…]`), a default value, or a callback passed to a call other than a `forEach`/`map`/`flatMap` method that takes it first (such as `_.forEach(rows, cb)` or `.then`).
-- A `.each` table or loop whose rows a condition can add or drop (`[url ? "pg" : null, "sqlite"].filter(Boolean)`), or a `for` or `while` loop whose condition holds such a pick. ADR 0019 ("What counts as a gate") lists the table forms the check reads.
+- A `.each` table or loop whose rows a condition can add or drop (`[url ? "pg" : null, "sqlite"].filter(Boolean)`), inline or in a `const`, or a `for` or `while` loop whose condition holds such a pick. ADR 0019 ("What counts as a gate") lists the table forms the check reads.
 - Any use it can't read, which fails as an unreadable use:
   - a reference held in an object, an array or a destructuring, or `describe.call(…)`;
-  - `vi.importActual` or `vi.importMock` taken off `vi` before the call (`const ia = vi.importActual`, `const { importActual } = vi`);
+  - `vi.importActual` or `vi.importMock` taken off `vi` before the call (`const ia = vi.importActual`, `const { importActual } = vi`), or `vi` itself used other than through a member written out (`Reflect.get(vi, …)`, `vi[k]`);
   - a suite's result kept or read (`describe(…).test`);
   - options or a timeout built by a call in an argument that isn't the body (`Object.assign(…)`, `optionsFor(env)`);
   - a suite body other than an inline function or a `const` function with no parameter: a named body that takes a parameter (`describe(name, body)` with `function body(test)`), a `let`, `function` or global body, a body passed third after a value that isn't options, a body read off an object (`suites.db`) or returned by a call (`makeBody()`), or a `function` body reading `arguments`.

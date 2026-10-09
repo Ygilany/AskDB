@@ -19,17 +19,32 @@ import {
   unwrap,
   resultOf,
 } from "./ast.mjs";
-import { isGlobalName, vitestCallKind } from "./bindings.mjs";
+import { constInitializer, isGlobalCallee, vitestCallKind } from "./bindings.mjs";
+
+// The `const` initializers `valueIsPicked` is reading through, so a cycle of `const`s ends.
+const following = new Set();
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
  * or is built from such a pick: by an operator (`+`, `-x`, `typeof`), a template (tagged or not),
- * spread into an array or object, passed to a call or `new`, or the receiver of a method call. A
- * value returned by an inline function (`(() => url ? 0 : 1)()`) is not read: a known limit.
+ * spread into an array or object, passed to a call or `new`, the receiver of a method call, or held
+ * in a `const` (`const urls = url ? [url] : []`). A value returned by an inline function
+ * (`(() => url ? 0 : 1)()`) is not read: a known limit.
  */
 function valueIsPicked(node, bindings) {
   node = resultOf(node);
   if (isPick(node)) return true;
+  // `const urls = url ? [url] : []; describe.each(urls)`: a `const` is judged by its initializer,
+  // once per walk (`const a = b, b = a` would loop).
+  const init = constInitializer(node, bindings);
+  if (init !== undefined && !following.has(init)) {
+    following.add(init);
+    try {
+      return valueIsPicked(init, bindings);
+    } finally {
+      following.delete(init);
+    }
+  }
   if (readsPickedValue(node, bindings)) return true;
   // `(url ? 0 : 1) + 1`, `-(url ? 1 : 0)`, `${url ?? ""}`: arithmetic, concatenation or a template
   // over a pick is decided by it too.
@@ -258,19 +273,13 @@ function keyHoldsPick(node) {
 /** Whether `node` is the global `Object.keys(…)`, `Object.values(…)` or `Object.entries(…)`. */
 function isObjectStatic(node, bindings) {
   const parts = calleeParts(node);
-  return parts?.owner === "Object" && ["keys", "values", "entries"].includes(parts.name) && ownerIsGlobal(node, bindings);
+  return parts?.owner === "Object" && ["keys", "values", "entries"].includes(parts.name) && isGlobalCallee(node, bindings);
 }
 
 /** Whether `node` is the global `Array.from(table)` with one argument, which keeps its size. */
 function isArrayFrom(node, bindings) {
   const parts = calleeParts(node);
-  return parts?.owner === "Array" && parts.name === "from" && node.arguments.length === 1 && ownerIsGlobal(node, bindings);
-}
-
-/** Whether the object a method call is read off (`Array` in `Array.from(…)`) is a global name, not a local one. */
-function ownerIsGlobal(call, bindings) {
-  const callee = unwrap(call.expression);
-  return (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) && isGlobalName(unwrap(callee.expression), bindings);
+  return parts?.owner === "Array" && parts.name === "from" && node.arguments.length === 1 && isGlobalCallee(node, bindings);
 }
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.

@@ -139,3 +139,6 @@ for (const e of new Set(["sqlite", process.env.ENGINE ?? "sqlite"])) describe(`f
 new Set(["sqlite", process.env.ENGINE ?? "sqlite"]).forEach((e) => describe(`forEach over a Set with a picked engine ${e}`, run)); // HIT
 [process.env.PG_URL ? "pg" : null, "sqlite"].values().toArray().filter(Boolean).forEach((e) => describe(`iterator copy then filter ${e}`, run)); // HIT
 _.forEach(process.env.PG_URL ? ["pg"] : [], (e) => { describe(e, () => {}); }); // HIT
+const loopUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
+for (const url of loopUrls) describe(url, () => {}); // HIT
+loopUrls.forEach((url) => { describe(url, () => {}); }); // HIT

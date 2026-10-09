@@ -30,3 +30,6 @@ selfRef("a cycle resolves to nothing", run);
 interface Gate { name: string }
 const Gate = integrationSuite({ env: ["DATABASE_URL"] });
 Gate("an interface merged with a sanctioned gate", () => {});
+vi.fn();
+vi["useFakeTimers"]();
+function takesLocalVi(vi) { register(vi); }
