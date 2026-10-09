@@ -12,8 +12,8 @@ const connectionLabel = (url: string) => registry.connectionLabel("sqlserver", {
 const FALLBACK = "configured sqlserver connection";
 const NBSP = " ";
 
-// Inputs that leaked a secret through the earlier label code (review rounds
-// 1-3 and the delta reviews on #189/#195/#199) sit next to ordinary strings in
+// Inputs that leaked a secret through the earlier label code (ADR 0011,
+// "Context") sit next to ordinary strings in
 // all three forms SQL Server accepts. The parts come from the driver's own
 // parsers (ADR 0011), so the label names what the driver reads.
 const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
@@ -35,23 +35,23 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["Server=(local);Database=app", "sqlserver://localhost/app"],
   // The original #189 leak: Studio's new URL() label showed the Prisma form's password.
   ["sqlserver://host;database=db;user=sa;password=S3cret", "sqlserver://host/db"],
-  // Round 1: an @ in the password after host:port, and a / or # in a URL password.
+  // An @ in the password after host:port, and a / or # in a URL password.
   ["sqlserver://host:1433;database=db;user=sa;password=p@ssw0rd", FALLBACK],
   ["sqlserver://host:1433;database=db;user=sa;password={p@ss;w0rd}", FALLBACK],
   ["mssql://sa:S3/cret@host:1433/db", FALLBACK],
   ["mssql://sa:S3/cr@t#@db:1433/app", FALLBACK],
-  // Round 2: leading whitespace, and an unescaped ; inside an unquoted password.
+  // Leading whitespace, and an unescaped ; inside an unquoted password.
   [" mssql://sa:S3cret@localhost:1433/app", FALLBACK],
   [" sqlserver://host:1433;user=sa;password=S3cret;encrypt=true", FALLBACK],
   // The driver reads `cd;Database` as one key, so there is no database.
   ["Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
   // An unbraced ; inside a value is ambiguous: the connection keeps the old reading, the label falls back.
   ["sqlserver://db:1433;user=sa;password=ab;cd;database=app", FALLBACK],
-  // Round 3: a quoted or braced value followed by trailing text (the ADO.NET parser throws).
+  // A quoted or braced value followed by trailing text (the ADO.NET parser throws).
   ["Server=db;Database=app;Password='ab'cd;", FALLBACK],
   ["Server=db;Database=app;Password={ab}cd;", FALLBACK],
   ["sqlserver://db:1433;database=app;password={ab}cd", FALLBACK],
-  // Round 3: URL userinfo in the Prisma form, and JDBC, came back unchanged.
+  // URL userinfo in the Prisma form, and JDBC, came back unchanged.
   ["sqlserver://sa:se;cret@h", FALLBACK],
   ["jdbc:sqlserver://h:1433;databaseName=app;user=sa;password=secret", FALLBACK],
   // Repeated keys and aliases: the driver keeps the last one.
@@ -61,7 +61,7 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["Server=localhost\\SQLEXPRESS;Database=app;Password=S3cret", FALLBACK],
   ["Server=np:\\\\.\\pipe\\sql\\query;Database=app", FALLBACK],
   ["User Id=sa;Password=S3cret", FALLBACK],
-  // Delta review 2: the driver reads each of these as part of the password, so
+  // The driver reads each of these as part of the password, so
   // no database (or server) comes from it.
   ["Server=h;User Id=sa;Password=p;;Database=leak", "sqlserver://h"],
   ["Server=h;User Id=sa;Password=;Database=leak", "sqlserver://h"],
@@ -71,7 +71,7 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["Server=h;Password==;Database=leak", "sqlserver://h"],
   // An empty segment before another one is ambiguous too.
   ["sqlserver://h;password=p;;database=leak", FALLBACK],
-  // Delta review 4: a ;database= inside a Prisma {…} value. The connection reads
+  // A ;database= inside a Prisma {…} value. The connection reads
   // it as part of the value; the label falls back, as for any {…} or quote.
   ["sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", FALLBACK],
   ["sqlserver://h;password={ab;database=cd;x}", FALLBACK],
@@ -80,11 +80,11 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["sqlserver://h;password={S3c;database=ret", FALLBACK],
   // A Prisma named instance isn't a host[:port] label.
   ["sqlserver://h\\SQLEXPRESS:1433;database=app", FALLBACK],
-  // Delta review 4: no server means no label, and mssql keeps the space after `tcp:`.
+  // No server means no label, and mssql keeps the space after `tcp:`.
   ["Server=;Database=app", FALLBACK],
   ["Database=h;Addr=", FALLBACK],
   ["Data Source=tcp: leak", FALLBACK],
-  // Delta review 3: Unicode whitespace before ";" (the driver keeps the ";" in the password).
+  // Unicode whitespace before ";" (the driver keeps the ";" in the password).
   [`Server=h;User Id=sa;Password=${NBSP};Database=leak`, "sqlserver://h"],
   ["Server=h;User Id=sa;Password=　;Database=leak", "sqlserver://h"],
   ["Server=h;User Id=sa;Password=﻿;Database=leak", "sqlserver://h"],

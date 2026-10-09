@@ -52,7 +52,7 @@
     "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/introspect": "workspace:*",
-    "@tediousjs/connection-string": "1.1.0"
+    "@tediousjs/connection-string": "^1.1.0"
   },
   "peerDependencies": {
     "mssql": ">=12"

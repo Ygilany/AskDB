@@ -53,7 +53,7 @@
     "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/introspect": "workspace:*",
-    "pg-connection-string": "2.14.1"
+    "pg-connection-string": "^2.14.1"
   },
   "peerDependencies": {
     "pg": ">=8"

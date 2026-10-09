@@ -25,8 +25,17 @@ function expectRule(sql: string, rule: SqlValidationRuleCode, dialect: DialectSp
 }
 
 describe("validateSelectSql (postgres dialect)", () => {
-  it("accepts SELECT and strips trailing semicolon", () => {
-    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1 as one;")).toBe("SELECT 1 as one");
+  it("returns the SQL trimmed, keeping a trailing semicolon as the model wrote it", () => {
+    expect(validateSelectSql(POSTGRES_DIALECT, "  SELECT 1 as one;\n")).toBe("SELECT 1 as one;");
+    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1 as one ;")).toBe("SELECT 1 as one ;");
+    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1 as one")).toBe("SELECT 1 as one");
+  });
+
+  it("runs the dialect's extraValidate on the statement without its trailing semicolon", () => {
+    const seen: string[] = [];
+    const dialect: DialectSpec = { ...POSTGRES_DIALECT, extraValidate: (sql) => void seen.push(sql) };
+    validateSelectSql(dialect, "SELECT 1 as one ;");
+    expect(seen).toEqual(["SELECT 1 as one"]);
   });
 
   it("accepts WITH ... SELECT", () => {
@@ -263,8 +272,9 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
   });
 
   it("allows exactly one trailing semicolon", () => {
-    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1;  ")).toBe("SELECT 1");
+    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1;  ")).toBe("SELECT 1;");
     expectRule("SELECT 1;;", "SQL_MULTI_STATEMENT");
+    expectRule("SELECT 1; SELECT 2;", "SQL_MULTI_STATEMENT");
   });
 });
 
