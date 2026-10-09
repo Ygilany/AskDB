@@ -81,3 +81,8 @@ describe.each(onlyAvailable([process.env.PG_URL ? "pg" : null, "sqlite"]))("a he
 describe.each(onlyAvailable([process.env.PG_URL ? "pg" : null, "sqlite"]).map((e) => e))("a size-keeping step over a helper's result %s", () => {}); // HIT
 describe.each(values([process.env.PG_URL ? "pg" : null, "sqlite"]))("a bare helper named like a size-keeping method %s", () => {}); // HIT
 describe.each([...new Set([...["sqlite", process.env.ENGINE ?? "sqlite"]])])("a pick spread into the table a Set dedupes %s", () => {}); // HIT
+describe.each(merge([], [process.env.PG_URL ? "pg" : null, "sqlite"]))("a table holding a pick in a later argument %s", () => {}); // HIT
+describe.each([process.env.PG_URL ? "pg" : null, "sqlite"].flatMap((x) => x ? [x] : []))("flatMap over a table holding a pick %s", () => {}); // HIT
+describe.each([process.env.PG_URL ? "pg" : null, "sqlite"].reduce((a, x) => x ? [...a, x] : a, []))("reduce over a table holding a pick %s", () => {}); // HIT
+describe.each(engines.values([process.env.PG_URL ? "pg" : null, "sqlite"]))("a helper named values taking the table %s", () => {}); // HIT
+describe.each(_.map([process.env.PG_URL ? "pg" : null, "sqlite"], (e) => e).filter(Boolean))("a helper named map taking the table %s", () => {}); // HIT

@@ -56,9 +56,9 @@ export function argumentsGate(call, suite, bindings) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
     // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
-    // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone, and a
+    // test a todo. Only a pick between plain values (`url ? 10_000 : 5_000`) is left alone, and a
     // value computed from a pick (`Number(env ?? 60_000)`) is always there.
-    if (i > 0 && isPick(resultOf(arg)) && !isTimeoutValue(arg, bindings)) return true;
+    if (i > 0 && isPick(resultOf(arg)) && !isPlainValue(arg, bindings)) return true;
     // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
     // body read out of a pick.
     if (i > 0 && readsPickedValue(resultOf(arg))) return true;
@@ -75,12 +75,12 @@ export function argumentsGate(call, suite, bindings) {
 
 /**
  * The index of the argument Vitest runs as the body: the second when no third follows or the third
- * is a timeout, otherwise the third (`it(name, options, body)`), since Vitest takes only a body or a
- * number there.
+ * is a plain value (a timeout), otherwise the third (`it(name, options, body)`), since Vitest takes
+ * only a body or a number there.
  */
 function bodyIndex(call, bindings) {
   const [, , third] = call.arguments;
-  return third === undefined || isTimeoutValue(third, bindings) ? 1 : 2;
+  return third === undefined || isPlainValue(third, bindings) ? 1 : 2;
 }
 
 /**
@@ -118,8 +118,10 @@ function isNumberCall(call, bindings) {
 /**
  * Whether `node` can only be a plain value, never a function: a literal, `undefined`, an environment
  * read (`process.env.X`), a template, arithmetic or a numeric conversion over such values, a
- * `const` bound to one, or a pick between them. Anything else (a function or class declaration, a
- * `let`, an import, another member read, a call) may be a function, so it isn't plain.
+ * `const` bound to one, or a pick between them (`5_000`, `60 * 1000`, `const T = 5_000`,
+ * `Number(env ?? 60_000)`, `url ? 10_000 : 5_000`). Anything else (a function or class declaration,
+ * a `let`, an import, another member read, a call) may be a function, so it isn't plain. The one
+ * test of "can this be a function" for timeouts, picks and suite arguments.
  */
 function isPlainValue(node, bindings) {
   return everyPickLeaf(node, (leaf) => {
@@ -219,35 +221,15 @@ const ARITHMETIC = new Set([
 ]);
 
 /**
- * Whether `node` is a timeout: a number literal, arithmetic over numbers, a numeric conversion, a
- * `const` bound to one, or a pick between such values or plain strings (`5_000`, `60 * 1000`,
- * `const T = 5_000`, `Number(env ?? 60_000)`, `url ? 10_000 : 5_000`).
- */
-function isTimeoutValue(node, bindings) {
-  return everyPickLeaf(node, (leaf) => {
-    if (ts.isNumericLiteral(leaf) || ts.isStringLiteralLike(leaf)) return true;
-    if (ts.isPrefixUnaryExpression(leaf)) return isTimeoutValue(leaf.operand, bindings);
-    if (ts.isBinaryExpression(leaf) && ARITHMETIC.has(leaf.operatorToken.kind)) {
-      return isTimeoutValue(leaf.left, bindings) && isTimeoutValue(leaf.right, bindings);
-    }
-    if (ts.isCallExpression(leaf)) return isNumberCall(leaf, bindings);
-    const init = ts.isIdentifier(leaf) ? constInitializer(leaf, bindings) : undefined;
-    return init !== undefined && isTimeoutValue(init, bindings);
-  });
-}
-
-/**
- * Whether `node` can't be a function, in the forms a suite passes before its body: options or a
- * timeout (`{ timeout }`, `5_000`, `-1`), `undefined` or `null`, a pick between such values, or a
- * `const` bound to one.
+ * Whether `node` can't be a function, in the forms a suite passes before its body: options, or a
+ * plain value other than a string (see `isPlainValue`: a timeout, `undefined`, `null`, an
+ * environment read), a pick between such values, or a `const` bound to one.
  */
 function isNonFunction(node, bindings) {
   return everyPickLeaf(node, (leaf) => {
-    if (ts.isObjectLiteralExpression(leaf) || leaf.kind === ts.SyntaxKind.NullKeyword) return true;
-    if (!ts.isStringLiteralLike(leaf) && isTimeoutValue(leaf, bindings)) return true;
-    if (!ts.isIdentifier(leaf)) return false;
-    if (leaf.text === "undefined" && bindings.declarationsOf(leaf).length === 0) return true;
-    const init = constInitializer(leaf, bindings);
+    if (ts.isObjectLiteralExpression(leaf)) return true;
+    if (!ts.isStringLiteralLike(leaf) && isPlainValue(leaf, bindings)) return true;
+    const init = ts.isIdentifier(leaf) ? constInitializer(leaf, bindings) : undefined;
     return init !== undefined && isNonFunction(init, bindings);
   });
 }

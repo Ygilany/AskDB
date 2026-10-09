@@ -112,7 +112,7 @@ function conditionalEdge(parent, child) {
     const initializer = ts.isForStatement(parent) ? parent.initializer : undefined;
     return (condition !== undefined && holdsPick(condition)) || (initializer !== undefined && holdsPick(initializer));
   }
-  if (receiverOf(parent) !== undefined && parent.arguments.includes(child) && pickedAtRunTime(receiverOf(parent))) return true;
+  if (receiverOf(parent) !== undefined && parent.arguments?.includes(child) && pickedAtRunTime(receiverOf(parent))) return true;
   // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
   if (ts.isElementAccessExpression(parent) && ts.isOptionalChain(parent) && child === parent.argumentExpression) return true;
@@ -164,8 +164,8 @@ export function underCondition(call, bindings) {
     if (inCallback && ts.isTaggedTemplateExpression(node) && child === node.template) return true;
     // `(async () => { … })().catch(…)`: a throw before the call is swallowed, so it may never run.
     if (inCallback && ts.isCallExpression(node) && unwrap(node.expression) === unwrap(child) && rejectionSwallowed(node)) return true;
-    if (inCallback && isCallOrNew(node) && node.arguments.includes(child)) {
-      if (!isIterationCall(node)) return true;
+    if (inCallback && isCallOrNew(node) && node.arguments?.includes(child)) {
+      if (!isIterationCall(node, child)) return true;
       // `rows.values().map(cb).take(url ? 1 : 0)`: an iterator's `map` runs the callback only as far
       // as a later call lets it, so a pick in a call chained after it is a condition.
       if (pickLaterInChain(node)) return true;
@@ -207,7 +207,7 @@ function rejectionSwallowed(call) {
 }
 
 // Array and iterator methods that return as many elements as their receiver has.
-const SIZE_KEEPING = new Set(["map", "with", "toSorted", "toReversed", "keys", "values", "entries", "forEach", "toArray"]);
+const SIZE_KEEPING = new Set(["map", "with", "toSorted", "toReversed", "keys", "values", "entries", "toArray"]);
 /**
  * Whether a call or `new` in `node`'s chain takes a table holding a pick through a step not known to
  * keep its size (`.filter(Boolean)`, `new Set(…)`, `Object.fromEntries(…)`, a helper), so the pick
@@ -231,7 +231,9 @@ function keepsSize(node) {
   if (!ts.isCallExpression(node)) return false;
   if (isArrayFrom(node)) return true;
   if (isObjectStatic(node)) return !keyHoldsPick(resultOf(node.arguments[0] ?? node));
-  return receiverOf(node) !== undefined && SIZE_KEEPING.has(calleeParts(node)?.name);
+  // `engines.values([url ? "pg" : null])`: a method named like one that takes the table as an
+  // argument isn't the array method.
+  return receiverOf(node) !== undefined && SIZE_KEEPING.has(calleeParts(node)?.name) && !node.arguments.some(carriesPick);
 }
 
 /**
@@ -283,9 +285,11 @@ function pickLaterInChain(call) {
 }
 
 /** Whether `node` is `rows.forEach(cb)`, `rows.map(cb)` or `rows.flatMap(cb)`. */
-function isIterationCall(node) {
+function isIterationCall(node, callback) {
   const parts = calleeParts(node);
-  return parts !== undefined && receiverOf(node) !== undefined && ITERATION_METHODS.has(parts.name);
+  // Array and iterator methods take the callback first; `_.forEach(table, cb)` iterates an argument
+  // the check doesn't read, so it is any other call.
+  return parts !== undefined && receiverOf(node) !== undefined && ITERATION_METHODS.has(parts.name) && node.arguments[0] === callback;
 }
 
 /**

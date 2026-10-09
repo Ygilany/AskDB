@@ -70,3 +70,12 @@ describe("a timeout behind a comma, before a named body", (0, 5_000), noParamete
 it("a timeout picked behind a comma", () => {}, process.env.SLOW ? (0, 60_000) : 5_000);
 describe.each([["pg"]].slice(void (process.env.DATABASE_URL ? 0 : 1)))("a void over a pick is always undefined %s", () => {});
 describe("a todo key under meta", { meta: { todo: "#123" } }, () => {});
+describe("a suite timeout read from the environment", process.env.SUITE_TIMEOUT, () => {});
+describe.each([process.env.CI ? "a" : "b", "c"].map((e) => e))("map keeps a picked element's table size %s", () => {});
+describe.each([process.env.CI ? "a" : "b", "c"].with(0, "d"))("with keeps the size %s", () => {});
+describe.each([process.env.CI ? "a" : "b", "c"].toSorted())("toSorted keeps the size %s", () => {});
+describe.each([process.env.CI ? "a" : "b", "c"].toReversed())("toReversed keeps the size %s", () => {});
+describe.each([...[process.env.CI ? "a" : "b", "c"].keys()])("keys keeps the size %s", () => {});
+describe.each([...[process.env.CI ? "a" : "b", "c"].entries()])("entries keeps the size %s", () => {});
+describe.each([process.env.CI ? "a" : "b", "c"].values().toArray())("values and toArray keep the size %s", () => {});
+new class { constructor() { describe("a suite in a constructor called without parentheses", () => {}); } };

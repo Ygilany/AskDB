@@ -90,3 +90,6 @@ function shadowedUndefined(undefined) {
 function shadowedProcess(process) {
   it("a timeout converted from a local process.env read", withDb(runDb), Number(process.env.SLOW_TIMEOUT)); // HIT
 }
+it("a timeout converted from another object's env", withDb(runDb), Number(other.env.SLOW_TIMEOUT)); // HIT
+it("a timeout converted from another global's env", withDb(runDb), Number(proc.env.SLOW_TIMEOUT)); // HIT
+it("a timeout converted from a process member that is a function", withDb(runDb), Number(process.hrtime.bigint)); // HIT

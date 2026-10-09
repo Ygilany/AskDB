@@ -6,7 +6,7 @@
 
 - [ ] Added or updated tests for changed behavior (public APIs, SQL safety, user-facing workflows)
 - [ ] Types named in new or changed exported signatures are re-exported from the entry point (`exports` subpath) that exports them
-- [ ] Added a changeset for any publishable package change (`pnpm changeset`)
+- [ ] Added a changeset for any publishable package change (`pnpm changeset`), or `pnpm changeset --empty` when no behavior or public type changed (`AGENTS.md`, Conventions)
 - [ ] Preflight passes: `pnpm smoke:install && pnpm preflight`
 - [ ] Does not introduce SQL execution into `@askdb/core` or any public surface — generated SQL is returned to the caller, never run by AskDB
 - [ ] No secrets, credentials, or production data committed
