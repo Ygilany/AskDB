@@ -5,6 +5,7 @@ import {
   holdsPick,
   isBinaryPick,
   isPick,
+  isPlainAssignment,
   isMemberLink,
   linkName,
   memberOn,
@@ -32,7 +33,8 @@ function pickedAtRunTime(node) {
   // over a pick is decided by it too.
   if (ts.isBinaryExpression(node)) return pickedAtRunTime(node.left) || pickedAtRunTime(node.right);
   if (ts.isPrefixUnaryExpression(node)) return pickedAtRunTime(node.operand);
-  if (ts.isTypeOfExpression(node) || ts.isVoidExpression(node) || ts.isDeleteExpression(node)) return pickedAtRunTime(node.expression);
+  // `void x` is always `undefined` and `delete x` a boolean the pick doesn't choose, so only `typeof` reads on.
+  if (ts.isTypeOfExpression(node)) return pickedAtRunTime(node.expression);
   // `` `${url ?? ""}` ``, `` String.raw`${url ?? ""}` ``: a template's values, tagged or not.
   const template = ts.isTaggedTemplateExpression(node) ? node.template : node;
   if (ts.isTemplateExpression(template)) return template.templateSpans.some((span) => pickedAtRunTime(span.expression));
@@ -110,7 +112,7 @@ function conditionalEdge(parent, child) {
   // destructuring assignment (`[a = x] = …`, `({ a = x } = …)`).
   if ((ts.isBindingElement(parent) || ts.isParameter(parent)) && child === parent.initializer) return true;
   if (ts.isShorthandPropertyAssignment(parent) && child === parent.objectAssignmentInitializer) return true;
-  if (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && child === parent.right &&
+  if (isPlainAssignment(parent) && child === parent.right &&
     isAssignmentPatternElement(parent)) {
     return true;
   }
@@ -172,7 +174,7 @@ function isAssignmentPatternElement(binary) {
     node = p;
     p = p.parent;
   }
-  if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.left === node) return true;
+  if (isPlainAssignment(p) && p.left === node) return true;
   return (ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === node;
 }
 

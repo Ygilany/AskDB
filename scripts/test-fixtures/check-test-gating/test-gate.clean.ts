@@ -20,3 +20,8 @@ var sameTest = test.extend({});
 sameTest("declarations that agree", () => {});
 it("a test expected to fail", { fails: true }, () => {});
 it("a body read out of a fixed array", [() => {}][0]);
+it("an options object nested in a body's closure", () => {
+  const options = { skip: !process.env.DATABASE_URL };
+  expect(options).toBeDefined();
+});
+it("plain options merged", Object.assign({}, { timeout: 5_000 }), () => {});

@@ -55,3 +55,6 @@ it("a body read off a picked object", { f: process.env.DATABASE_URL ? () => {} :
 it("a body read with a picked .at", [() => {}].at(process.env.DATABASE_URL ? 0 : 1)); // HIT
 import.meta.vitest?.it.skipIf(!process.env.DATABASE_URL)("an optional import.meta.vitest", () => {}); // HIT
 it("options behind an instantiation expression", { skip: !process.env.DATABASE_URL }<never>, () => {}); // HIT
+it("options read out of an array", [{ skip: !process.env.DATABASE_URL }][0], () => {}); // HIT
+it("options merged by Object.assign", Object.assign({}, { skip: !process.env.DATABASE_URL }), () => {}); // HIT
+it("options read off an object", { o: { todo: !process.env.DATABASE_URL } }.o, () => {}); // HIT

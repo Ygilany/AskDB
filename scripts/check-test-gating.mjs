@@ -20,16 +20,17 @@
 // `vi.importActual("vitest")`, `vi.importMock("vitest")`, `import v = require(…)`, in-source
 // `import.meta.vitest`, and a member read straight off a loader, `require("vitest").describe`) and
 // variables holding `test.extend({…})`. `integrationSuite({…})` and a variable holding its result
-// are suite functions, so the sanctioned gate passes. A suite
-// body's first parameter is the test API Vitest passes it; a body other than an inline function or
-// a `const` function with no parameter fails closed. Names resolve through TypeScript's binder, so
-// any other local declaration that shadows one (a callback's parameter `it`, an import of `test`
-// from another module) is not Vitest's.
+// are suite functions, so the sanctioned gate passes.
+// A suite body's first parameter is the test API Vitest passes it; a body other than an inline
+// function or a `const` function with no parameter fails closed. Names resolve through
+// TypeScript's binder, so any other local declaration that shadows one (a callback's parameter
+// `it`, an import of `test` from another module) is not Vitest's.
 //
 // What is rejected and allowed is listed in CONTRIBUTING.md ("Integration Tests"); RULES below
 // implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records
-// why and lists what the check can't see. A use the check can't read fails closed rather than passing. To exempt
-// one line, put a line comment on the line above it with a non-empty reason:
+// why and lists what the check can't see. A use the check can't read fails closed rather than
+// passing.
+// To exempt one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
@@ -56,6 +57,7 @@ const {
   pickBranches,
   everyPickLeaf,
   isPick,
+  isPlainAssignment,
   optionKey,
   RUNTIME_KEY,
 } = await import(moduleUrl("ast.mjs"));
@@ -264,7 +266,7 @@ function suiteResultHeld(call) {
   const outer = outermostWrapper(call);
   const p = outer.parent;
   return memberOn(outer) !== undefined || (ts.isVariableDeclaration(p) && p.initializer === outer) ||
-    (ts.isBinaryExpression(p) && p.right === outer && p.operatorToken.kind === ts.SyntaxKind.EqualsToken);
+    (isPlainAssignment(p) && p.right === outer);
 }
 
 /**
@@ -310,6 +312,13 @@ function hasGateOption(call, suite) {
       }
     }
   };
+  const visitNested = (node) => {
+    if (ts.isFunctionLike(node)) return;
+    ts.forEachChild(node, (child) => {
+      if (ts.isObjectLiteralExpression(child)) visit(child, false);
+      visitNested(child);
+    });
+  };
   for (const [i, arg] of call.arguments.entries()) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
@@ -321,6 +330,9 @@ function hasGateOption(call, suite) {
     // body read out of a pick.
     if (i > 0 && readsPickedValue(resultOf(arg))) return true;
     visit(arg, false);
+    // `[{ skip: cond }][0]`, `Object.assign({}, { skip: cond })`: options literals inside the
+    // argument, outside a nested function (the body).
+    if (i > 0) visitNested(arg);
   }
   return gate;
 }

@@ -68,3 +68,4 @@ describe(names[process.env.ENGINE ?? "a"], () => {
 });
 describe("a timeout behind a comma, before a named body", (0, 5_000), noParameterBody);
 it("a timeout picked behind a comma", () => {}, process.env.SLOW ? (0, 60_000) : 5_000);
+describe.each([["pg"]].slice(void (process.env.DATABASE_URL ? 0 : 1)))("a void over a pick is always undefined %s", () => {});

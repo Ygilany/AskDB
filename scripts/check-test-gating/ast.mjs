@@ -131,6 +131,11 @@ export function pickBranches(node) {
   return [];
 }
 
+/** Whether `node` is a plain `a = b` assignment. */
+export function isPlainAssignment(node) {
+  return ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+}
+
 /** Whether `node` is itself a pick: `? :`, `&&`, `||`, `??` or one of their assignment forms. */
 export function isPick(node) {
   return pickBranches(node).length > 0;
