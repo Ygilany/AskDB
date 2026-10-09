@@ -184,10 +184,10 @@ export function everyPickLeaf(node, isLeaf) {
 
 /**
  * Whether `node` holds a pick anywhere inside it, outside a nested function, whatever the pick
- * decides (`{ a: url ? 1 : 2 }` holds one). Compare `pickedAtRunTime` (the value itself is chosen)
- * and `pickDecidesSize` (a table's length is) in `conditions.mjs`.
+ * decides (`{ a: url ? 1 : 2 }` holds one). Compare `valueIsPicked` (the value itself is chosen)
+ * and `sizeIsPicked` (a table's length is) in `conditions.mjs`.
  */
-export function holdsPick(node) {
+export function containsPick(node) {
   return someInside(node, isPick);
 }
 

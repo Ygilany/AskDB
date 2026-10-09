@@ -1,8 +1,8 @@
 // What a suite or test call's arguments after the name do: skip or invert through options, pick
 // or build the body at run time, or pass options the check can't read. For
 // scripts/check-test-gating.mjs.
-import { calleeParts, isCallOrNew, everyPickLeaf, firstParameter, holdsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
-import { CALL_SUITE, constInitializer, isInlineFunction, vitestCallKind } from "./bindings.mjs";
+import { calleeParts, isCallOrNew, everyPickLeaf, firstParameter, containsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
+import { CALL_SUITE, constInitializer, isGlobalName, isInlineFunction, vitestCallKind } from "./bindings.mjs";
 import { readsPickedValue } from "./conditions.mjs";
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a
@@ -61,7 +61,7 @@ export function argumentsGate(call, suite, bindings) {
     if (i > 0 && isPick(resultOf(arg)) && !isPlainValue(arg, bindings)) return true;
     // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
     // body read out of a pick.
-    if (i > 0 && readsPickedValue(resultOf(arg))) return true;
+    if (i > 0 && readsPickedValue(resultOf(arg), bindings)) return true;
     // A body built by a call over a pick (see `bodyBuiltFromPick`). Options built by a call are
     // `optionsUnreadable`.
     if (i === body && bodyBuiltFromPick(resultOf(arg), bindings)) return true;
@@ -96,10 +96,10 @@ export function optionsUnreadable(call, bindings) {
 
 /**
  * Whether `node` is built by a call: a call, `new` or tagged template, other than a numeric
- * conversion that can only produce a number (see `isNumberCall`).
+ * conversion that can only produce a number (see `isPlainNumericCall`).
  */
 function builtByCall(node, bindings) {
-  return isCallLike(node) && !isNumberCall(node, bindings);
+  return isCallLike(node) && !isPlainNumericCall(node, bindings);
 }
 
 function isCallLike(node) {
@@ -111,7 +111,7 @@ function isCallLike(node) {
  * (`Number(env ?? 60_000)`), so it yields a number however `Number` is bound. With a function among
  * them (`Number(url ? fn : undefined)` after `globalThis.Number = (x) => x`) it can yield the body.
  */
-function isNumberCall(call, bindings) {
+function isPlainNumericCall(call, bindings) {
   return ts.isCallExpression(call) && isNumericConversion(call, bindings) && call.arguments.every((arg) => isPlainValue(arg, bindings));
 }
 
@@ -132,10 +132,10 @@ function isPlainValue(node, bindings) {
     if (ts.isBinaryExpression(leaf) && ARITHMETIC.has(leaf.operatorToken.kind)) {
       return isPlainValue(leaf.left, bindings) && isPlainValue(leaf.right, bindings);
     }
-    if (ts.isCallExpression(leaf)) return isNumberCall(leaf, bindings);
+    if (ts.isCallExpression(leaf)) return isPlainNumericCall(leaf, bindings);
     if (isEnvRead(leaf, bindings)) return true;
     if (!ts.isIdentifier(leaf)) return false;
-    if (leaf.text === "undefined" && bindings.declarationsOf(leaf).length === 0) return true;
+    if (leaf.text === "undefined" && isGlobalName(leaf, bindings)) return true;
     const init = constInitializer(leaf, bindings);
     return init !== undefined && isPlainValue(init, bindings);
   });
@@ -147,7 +147,7 @@ function isEnvRead(node, bindings) {
   const env = unwrap(node.expression);
   if (!ts.isPropertyAccessExpression(env) || env.name.text !== "env") return false;
   const process = unwrap(env.expression);
-  return ts.isIdentifier(process) && process.text === "process" && bindings.declarationsOf(process).length === 0;
+  return ts.isIdentifier(process) && process.text === "process" && isGlobalName(process, bindings);
 }
 
 /**
@@ -160,7 +160,7 @@ function bodyBuiltFromPick(node, bindings) {
   // A numeric conversion is never a real body, so it gets no exemption here.
   if (!isCallLike(node)) return false;
   const parts = ts.isTaggedTemplateExpression(node) ? [node.tag, node.template] : [...(node.arguments ?? []), receiverOf(node)];
-  return parts.some((part) => part !== undefined && holdsPick(part));
+  return parts.some((part) => part !== undefined && containsPick(part));
 }
 
 /**
@@ -209,7 +209,7 @@ function isNumericConversion(call, bindings) {
   // `const Number = (x) => x`: a name declared in the file is not the global.
   const callee = unwrap(call.expression);
   const name = ts.isIdentifier(callee) ? callee : unwrap(callee.expression);
-  if (ts.isIdentifier(name) && bindings.declarationsOf(name).length > 0) return false;
+  if (ts.isIdentifier(name) && !isGlobalName(name, bindings)) return false;
   if (parts.owner === undefined) return receiverOf(call) === undefined && NUMERIC_CONVERSIONS.has(parts.name);
   return (parts.owner === "Math" && MATH_NUMBERS.has(parts.name)) || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
 }

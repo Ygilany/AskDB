@@ -69,6 +69,7 @@ const {
   KIND_SUITE_FACTORY,
   KIND_AMBIGUOUS,
   KIND_INTEGRATION_NS,
+  isDetachedLoader,
   isPromiseLoader,
   vitestBindings,
   isVitestModuleUse,
@@ -250,7 +251,7 @@ function testRef(start, fnName, bindings) {
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
       (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))) || (defines && optionsUnreadable(call, bindings)),
     conditional: defines && underCondition(call, bindings),
-    runtimeGate: defines && (argumentsGate(call, suite, bindings) || rowsPicked(rowArgs)),
+    runtimeGate: defines && (argumentsGate(call, suite, bindings) || rowsPicked(rowArgs, bindings)),
   };
 }
 
@@ -361,6 +362,9 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
         refs.push(unreadableRef(node));
       }
     }
+    // `const ia = vi.importActual`, `const { importActual } = vi`: a loader taken off `vi` before
+    // the call loads a module the check can't name.
+    if (isDetachedLoader(node)) refs.push(unreadableRef(node));
     // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
     if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && kindOf(node.name, bindings) !== KIND_FN) {
       let root = node.moduleReference;

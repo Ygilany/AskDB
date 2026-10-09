@@ -55,3 +55,4 @@ it("a timeout converted from a parenthesised process", withDb(runDbClean), Numbe
 it("a timeout converted from a boolean or null", withDb(runDbClean), Number(process.env.CI ? true : null));
 it("a timeout converted from typeof", withDb(runDbClean), Number(typeof process.env.CI));
 it("a timeout converted from a template of plain values", withDb(runDbClean), parseInt(`${process.env.SLOW ?? 5}${0}`));
+it("a timeout converted from false", withDb(runDbClean), Number(process.env.CI ? false : 0));

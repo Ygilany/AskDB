@@ -5,7 +5,7 @@ import {
   invokedBy,
   calleeParts,
   calleeOf,
-  holdsPick,
+  containsPick,
   isBinaryPick,
   isPick,
   isPlainAssignment,
@@ -19,7 +19,7 @@ import {
   unwrap,
   resultOf,
 } from "./ast.mjs";
-import { vitestCallKind } from "./bindings.mjs";
+import { isGlobalName, vitestCallKind } from "./bindings.mjs";
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
@@ -27,30 +27,30 @@ import { vitestCallKind } from "./bindings.mjs";
  * spread into an array or object, passed to a call or `new`, or the receiver of a method call. A
  * value returned by an inline function (`(() => url ? 0 : 1)()`) is not read: a known limit.
  */
-function pickedAtRunTime(node) {
+function valueIsPicked(node, bindings) {
   node = resultOf(node);
   if (isPick(node)) return true;
-  if (readsPickedValue(node)) return true;
+  if (readsPickedValue(node, bindings)) return true;
   // `(url ? 0 : 1) + 1`, `-(url ? 1 : 0)`, `${url ?? ""}`: arithmetic, concatenation or a template
   // over a pick is decided by it too.
-  if (ts.isBinaryExpression(node)) return pickedAtRunTime(node.left) || pickedAtRunTime(node.right);
-  if (ts.isPrefixUnaryExpression(node)) return pickedAtRunTime(node.operand);
+  if (ts.isBinaryExpression(node)) return valueIsPicked(node.left, bindings) || valueIsPicked(node.right, bindings);
+  if (ts.isPrefixUnaryExpression(node)) return valueIsPicked(node.operand, bindings);
   // `void x` is always `undefined` and `delete x` a boolean the pick doesn't choose, so only `typeof` reads on.
-  if (ts.isTypeOfExpression(node)) return pickedAtRunTime(node.expression);
+  if (ts.isTypeOfExpression(node)) return valueIsPicked(node.expression, bindings);
   // `` `${url ?? ""}` ``, `` String.raw`${url ?? ""}` ``: a template's values, tagged or not.
   const template = ts.isTaggedTemplateExpression(node) ? node.template : node;
-  if (ts.isTemplateExpression(template)) return template.templateSpans.some((span) => pickedAtRunTime(span.expression));
+  if (ts.isTemplateExpression(template)) return template.templateSpans.some((span) => valueIsPicked(span.expression, bindings));
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
-  if (isCallOrNew(node) && (node.arguments ?? []).some(pickDecidesSize)) return true;
-  if (receiverOf(node) !== undefined && pickDecidesSize(receiverOf(node))) return true;
+  if (isCallOrNew(node) && (node.arguments ?? []).some((n) => sizeIsPicked(n, bindings))) return true;
+  if (receiverOf(node) !== undefined && sizeIsPicked(receiverOf(node), bindings)) return true;
   // `[url ? "pg" : null, "sqlite"].map(f).filter(Boolean)`, `new Set(["sqlite", env ?? "sqlite"])`,
   // `Object.keys({ [url ? "pg" : "sqlite"]: 1, sqlite: 1 })`: a step that can drop or merge entries
   // of a table holding a pick lets the pick decide its size.
-  if (chainDropsPick(node)) return true;
+  if (chainDropsPick(node, bindings)) return true;
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
-  if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && pickedAtRunTime(el.expression));
-  return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && pickedAtRunTime(p.expression));
+  if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && valueIsPicked(el.expression, bindings));
+  return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && valueIsPicked(p.expression, bindings));
 }
 
 /**
@@ -58,17 +58,17 @@ function pickedAtRunTime(node) {
  * holds a pick, or `x` is an array or object literal holding one (`[url ? fn : undefined][0]`,
  * `{ f: url ? fn : undefined }.f`, `tables[url ? 0 : 1]`).
  */
-export function readsPickedValue(node) {
+export function readsPickedValue(node, bindings) {
   let object;
   let key;
   if (ts.isElementAccessExpression(node)) [object, key] = [node.expression, node.argumentExpression];
   else if (ts.isPropertyAccessExpression(node)) object = node.expression;
   else if (receiverOf(node) !== undefined && linkName(unwrap(node.expression)) === "at") [object, key] = [receiverOf(node), node.arguments[0]];
   else return false;
-  if (key !== undefined && holdsPick(key)) return true;
+  if (key !== undefined && containsPick(key)) return true;
   const value = resultOf(object);
-  if (ts.isArrayLiteralExpression(value) || ts.isObjectLiteralExpression(value)) return holdsPick(value);
-  return pickedAtRunTime(value);
+  if (ts.isArrayLiteralExpression(value) || ts.isObjectLiteralExpression(value)) return containsPick(value);
+  return valueIsPicked(value, bindings);
 }
 
 /**
@@ -77,31 +77,31 @@ export function readsPickedValue(node) {
  * `Array.from({ length: url ? 1 : 0 })`, `[url ? [url] : []].flat()`). A pick of a value inside a
  * fixed-size table (`{ pg: url ?? "postgres://localhost" }`) doesn't change its size.
  */
-function pickDecidesSize(node) {
+function sizeIsPicked(node, bindings) {
   node = resultOf(node);
   // `f(...[url ? 0 : 1])`: each element spread from an array literal is an argument of its own.
   if (ts.isSpreadElement(node)) {
     const spread = resultOf(node.expression);
-    return ts.isArrayLiteralExpression(spread) ? spread.elements.some(pickDecidesSize) : pickDecidesSize(spread);
+    return ts.isArrayLiteralExpression(spread) ? spread.elements.some((n) => sizeIsPicked(n, bindings)) : sizeIsPicked(spread, bindings);
   }
-  if (pickedAtRunTime(node)) return true;
+  if (valueIsPicked(node, bindings)) return true;
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.some((p) =>
-      ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && holdsPick(p.initializer));
+      ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && containsPick(p.initializer));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
     pickBranches(resultOf(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
 }
 
 /** Whether the node `child` of `parent` runs only when a condition holds. */
-function conditionalEdge(parent, child) {
+function conditionalEdge(parent, child, bindings) {
   if (ts.isIfStatement(parent)) return child !== parent.expression;
   if (ts.isConditionalExpression(parent)) return child !== parent.condition;
   if (isBinaryPick(parent)) return child === parent.right;
   // A `try` block with a `catch` runs only up to its first throw; the `catch` only after one.
   if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
   // A loop or iteration callback over a table picked by a condition, like a `.each` table.
-  if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return pickedAtRunTime(parent.expression);
+  if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return valueIsPicked(parent.expression, bindings);
   // A classic `for`, `while` or `do … while` whose condition (or a `for`'s initializer) holds a pick
   // (`i < (url ? 1 : 0)`) runs its body, or repeats it, only when the pick allows. A condition with no pick (`while (url)`) is a
   // plain loop, a known limit.
@@ -110,9 +110,9 @@ function conditionalEdge(parent, child) {
     const condition = ts.isForStatement(parent) ? parent.condition : parent.expression;
     // `for (let i = url ? 0 : 1; i < 1; i++)`: the initializer decides the first test of the condition.
     const initializer = ts.isForStatement(parent) ? parent.initializer : undefined;
-    return (condition !== undefined && holdsPick(condition)) || (initializer !== undefined && holdsPick(initializer));
+    return (condition !== undefined && containsPick(condition)) || (initializer !== undefined && containsPick(initializer));
   }
-  if (receiverOf(parent) !== undefined && parent.arguments?.includes(child) && pickedAtRunTime(receiverOf(parent))) return true;
+  if (receiverOf(parent) !== undefined && parent.arguments?.includes(child) && valueIsPicked(receiverOf(parent), bindings)) return true;
   // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
   if (ts.isElementAccessExpression(parent) && ts.isOptionalChain(parent) && child === parent.argumentExpression) return true;
@@ -140,7 +140,7 @@ export function underCondition(call, bindings) {
   let inCallback = false;
   let grandchild;
   for (let node = call.parent; node && !ts.isSourceFile(node); grandchild = child, child = node, node = node.parent) {
-    if (conditionalEdge(node, child)) return true;
+    if (conditionalEdge(node, child, bindings)) return true;
     if (ts.isFunctionDeclaration(node)) return false;
     // A declared class's member that runs later (a method, accessor, constructor or instance field)
     // is a boundary, like a named function; a static block, static field or `extends` clause runs
@@ -214,12 +214,12 @@ const SIZE_KEEPING = new Set(["map", "with", "toSorted", "toReversed", "keys", "
  * can decide how many entries come out. Only the steps in `keepsSize` carry a table through
  * unchanged; every other step fails closed.
  */
-function chainDropsPick(node) {
+function chainDropsPick(node, bindings) {
   node = resultOf(node);
   if (!isCallOrNew(node)) return false;
   const inputs = [receiverOf(node), ...(node.arguments ?? [])].filter((n) => n !== undefined && !ts.isFunctionLike(unwrap(n)));
-  // An earlier step in the chain is an argument or receiver here, which `pickedAtRunTime` reads on its own.
-  return !keepsSize(node) && inputs.some(carriesPick);
+  // An earlier step in the chain is an argument or receiver here, which `valueIsPicked` reads on its own.
+  return !keepsSize(node, bindings) && inputs.some((n) => carriesPick(n, bindings));
 }
 
 /**
@@ -227,44 +227,50 @@ function chainDropsPick(node) {
  * one-argument `Array.from`, or `Object.keys`/`values`/`entries` over an object with no computed key
  * holding a pick (two such keys can collapse into one).
  */
-function keepsSize(node) {
+function keepsSize(node, bindings) {
   if (!ts.isCallExpression(node)) return false;
-  if (isArrayFrom(node)) return true;
-  if (isObjectStatic(node)) return !keyHoldsPick(resultOf(node.arguments[0] ?? node));
+  if (isArrayFrom(node, bindings)) return true;
+  if (isObjectStatic(node, bindings)) return !keyHoldsPick(resultOf(node.arguments[0] ?? node));
   // `engines.values([url ? "pg" : null])`: a method named like one that takes the table as an
   // argument isn't the array method.
-  return receiverOf(node) !== undefined && SIZE_KEEPING.has(calleeParts(node)?.name) && !node.arguments.some(carriesPick);
+  return receiverOf(node) !== undefined && SIZE_KEEPING.has(calleeParts(node)?.name) && !node.arguments.some((n) => carriesPick(n, bindings));
 }
 
 /**
  * Whether table `node` holds a pick in an element, key or value, carried through steps that keep
  * its size (`[url ? "pg" : null].map(f)`, `Array.from([…])`, `Object.values({ pg: url ? "pg" : null })`).
  */
-function carriesPick(node) {
+function carriesPick(node, bindings) {
   if (node === undefined) return false;
   node = resultOf(node);
-  if (ts.isArrayLiteralExpression(node)) return node.elements.some(holdsPick);
-  if (ts.isObjectLiteralExpression(node)) return node.properties.some(holdsPick);
-  if (!keepsSize(node)) return false;
-  return carriesPick(isArrayFrom(node) || isObjectStatic(node) ? node.arguments[0] : receiverOf(node));
+  if (ts.isArrayLiteralExpression(node)) return node.elements.some(containsPick);
+  if (ts.isObjectLiteralExpression(node)) return node.properties.some(containsPick);
+  if (!keepsSize(node, bindings)) return false;
+  return carriesPick(isArrayFrom(node, bindings) || isObjectStatic(node, bindings) ? node.arguments[0] : receiverOf(node), bindings);
 }
 
 /** Whether object literal `node` has a computed key holding a pick (`{ [url ? "pg" : "x"]: 1 }`). */
 function keyHoldsPick(node) {
   return ts.isObjectLiteralExpression(node) &&
-    node.properties.some((p) => p.name !== undefined && ts.isComputedPropertyName(p.name) && holdsPick(p.name));
+    node.properties.some((p) => p.name !== undefined && ts.isComputedPropertyName(p.name) && containsPick(p.name));
 }
 
-/** Whether `node` is `Object.keys(…)`, `Object.values(…)` or `Object.entries(…)`. */
-function isObjectStatic(node) {
+/** Whether `node` is the global `Object.keys(…)`, `Object.values(…)` or `Object.entries(…)`. */
+function isObjectStatic(node, bindings) {
   const parts = calleeParts(node);
-  return parts?.owner === "Object" && ["keys", "values", "entries"].includes(parts.name);
+  return parts?.owner === "Object" && ["keys", "values", "entries"].includes(parts.name) && ownerIsGlobal(node, bindings);
 }
 
-/** Whether `node` is `Array.from(table)` with one argument, which keeps its size. */
-function isArrayFrom(node) {
+/** Whether `node` is the global `Array.from(table)` with one argument, which keeps its size. */
+function isArrayFrom(node, bindings) {
   const parts = calleeParts(node);
-  return parts?.owner === "Array" && parts.name === "from" && node.arguments.length === 1;
+  return parts?.owner === "Array" && parts.name === "from" && node.arguments.length === 1 && ownerIsGlobal(node, bindings);
+}
+
+/** Whether the object a method call is read off (`Array` in `Array.from(…)`) is a global name, not a local one. */
+function ownerIsGlobal(call, bindings) {
+  const callee = unwrap(call.expression);
+  return (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) && isGlobalName(unwrap(callee.expression), bindings);
 }
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.
@@ -274,11 +280,11 @@ const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
 function pickLaterInChain(call) {
   // `call[url ? "toArray" : "return"]()`: a method chosen by a pick.
   const read = outermostWrapper(call).parent;
-  if (ts.isElementAccessExpression(read) && read.expression === outermostWrapper(call) && holdsPick(read.argumentExpression)) return true;
+  if (ts.isElementAccessExpression(read) && read.expression === outermostWrapper(call) && containsPick(read.argumentExpression)) return true;
   for (let member = memberOn(call); member !== undefined; ) {
     const next = invokedBy(member);
     if (next === undefined) return false;
-    if (next.arguments.some(holdsPick)) return true;
+    if (next.arguments.some(containsPick)) return true;
     member = memberOn(next);
   }
   return false;
@@ -297,7 +303,7 @@ function isIterationCall(node, callback) {
  * spread argument, a picked table or value, or, in the template form called directly
  * (`.each(["a|b\n"], …values)`), a pick anywhere in the header strings.
  */
-export function rowsPicked(rowArgs) {
-  if (rowArgs.some((arg) => ts.isSpreadElement(arg) || pickedAtRunTime(arg))) return true;
-  return rowArgs.length > 1 && holdsPick(rowArgs[0]);
+export function rowsPicked(rowArgs, bindings) {
+  if (rowArgs.some((arg) => ts.isSpreadElement(arg) || valueIsPicked(arg, bindings))) return true;
+  return rowArgs.length > 1 && containsPick(rowArgs[0]);
 }

@@ -47,6 +47,7 @@ Turbo runs tasks in strict env mode: only variables listed in the `test` task's 
 - A `.each` table or loop whose rows a condition can add or drop (`[url ? "pg" : null, "sqlite"].filter(Boolean)`), or a `for` or `while` loop whose condition holds such a pick. ADR 0019 ("What counts as a gate") lists the table forms the check reads.
 - Any use it can't read, which fails as an unreadable use:
   - a reference held in an object, an array or a destructuring, or `describe.call(…)`;
+  - `vi.importActual` or `vi.importMock` taken off `vi` before the call (`const ia = vi.importActual`, `const { importActual } = vi`);
   - a suite's result kept or read (`describe(…).test`);
   - options or a timeout built by a call in an argument that isn't the body (`Object.assign(…)`, `optionsFor(env)`);
   - a suite body other than an inline function or a `const` function with no parameter: a named body that takes a parameter (`describe(name, body)` with `function body(test)`), a `let`, `function` or global body, a body passed third after a value that isn't options, a body read off an object (`suites.db`) or returned by a call (`makeBody()`), or a `function` body reading `arguments`.

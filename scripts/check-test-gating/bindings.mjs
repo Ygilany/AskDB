@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
+import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, optionKey, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -41,6 +41,15 @@ function importedFrom(decl) {
   let n = decl;
   while (n && !ts.isImportDeclaration(n)) n = n.parent;
   return n && ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : undefined;
+}
+
+/**
+ * Whether identifier `id` names a global (`Number`, `Array`, `process`, `undefined`): the file
+ * declares nothing it resolves to. The check's program has no lib, so a built-in has no declaration
+ * and a local shadow (`const Array = …`, a parameter named `undefined`) has one.
+ */
+export function isGlobalName(id, bindings) {
+  return ts.isIdentifier(id) && bindings.declarationsOf(id).length === 0;
 }
 
 /**
@@ -118,6 +127,18 @@ function isVitestSpecifier(node) {
 /** Whether loader callee `callee` returns a promise: `import` or `vi.importActual` / `vi.importMock`. */
 export function isPromiseLoader(callee) {
   return callee.kind === ts.SyntaxKind.ImportKeyword || (isMemberLink(callee) && PROMISE_MEMBER_LOADERS.has(linkName(callee)));
+}
+
+/**
+ * Whether `node` takes `vi.importActual` or `vi.importMock` off its object without calling it there
+ * (`const ia = vi.importActual`, `const { importActual } = vi`, `vi.importActual.call(vi, "vitest")`).
+ * The module the detached loader loads isn't read, so a use like this fails closed.
+ */
+export function isDetachedLoader(node) {
+  if (ts.isBindingElement(node)) return PROMISE_MEMBER_LOADERS.has(optionKey(node.propertyName ?? node.name));
+  if (!isMemberLink(node) || !PROMISE_MEMBER_LOADERS.has(linkName(node))) return false;
+  const outer = outermostWrapper(node);
+  return calleeOf(outer.parent) !== outer;
 }
 
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
@@ -275,7 +296,7 @@ function resolveInitializer(init, bindings) {
  * What one declaration makes a name: the `{ kind, … }` record `resolve()` returns, or undefined.
  * A variable's initializer goes through `resolveInitializer`.
  */
-function resolveDeclaration(decl, bindings) {
+function kindOfDeclaration(decl, bindings) {
   const { isIntegrationModule } = bindings;
   let found;
   if (decl && ts.isImportSpecifier(decl) && importedFrom(decl) === "vitest") {
@@ -324,7 +345,7 @@ function resolveDeclaration(decl, bindings) {
 function resolveDeclarations(symbol, bindings) {
   const decls = (symbol.declarations ?? []).filter((d) =>
     !ts.isTypeAliasDeclaration(d) && !ts.isInterfaceDeclaration(d) && !(ts.isVariableDeclaration(d) && !d.initializer && ts.isIdentifier(d.name)));
-  const results = decls.map((d) => resolveDeclaration(d, bindings));
+  const results = decls.map((d) => kindOfDeclaration(d, bindings));
   if (results.length <= 1) return results[0];
   const vitest = results.filter((f) => f?.kind === KIND_FN || f?.kind === KIND_NS);
   if (vitest.length === 0) return undefined;

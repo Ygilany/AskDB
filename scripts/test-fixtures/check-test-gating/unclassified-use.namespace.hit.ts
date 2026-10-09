@@ -21,3 +21,7 @@ const holder = { ns: vitest }; // HIT
 class Holds { static ns = vitest; } // HIT
 function withDefault(ns = vitest) {} // HIT
 const loadedHolder = { ns: await import("vitest") }; // HIT
+const { importActual: detachedActual } = vi; // HIT
+const detachedLoader = vi.importActual; // HIT
+const detachedByKey = vi["importMock"]; // HIT
+(await vi.importActual.call(vi, "vitest")).describe.skipIf(!process.env.DATABASE_URL)("loader called through .call", (t) => { t("connects", () => {}); }); // HIT
