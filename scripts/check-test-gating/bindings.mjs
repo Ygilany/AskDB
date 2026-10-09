@@ -27,8 +27,8 @@ export function vitestBindings(program, isIntegrationModule) {
   /**
    * What identifier `id` refers to: `{ kind: "fn", name }` for a Vitest function, `{ kind: "ns" }`
    * for a Vitest namespace, `{ kind: "suiteFactory" }` for `integrationSuite`, `{ kind: "require" }`
-   * for a function from `createRequire(…)`, `{ kind: "ambiguous" }` for a variable whose several
-   * initializers include a Vitest one, or undefined.
+   * for a function from `createRequire(…)`, `{ kind: "ambiguous" }` for a name whose declarations
+   * disagree about a Vitest value (see `resolveDeclarations`), or undefined.
    */
   bindings.resolve = (id) => {
     const parent = id.parent;
@@ -38,43 +38,7 @@ export function vitestBindings(program, isIntegrationModule) {
     if (symbol === undefined) return TEST_FNS.has(id.text) ? { kind: "fn", name: id.text } : undefined;
     if (cache.has(symbol)) return cache.get(symbol);
     cache.set(symbol, undefined); // a cycle (`const t = t.extend(…)`) resolves to nothing
-    // A value and a type can share a name (`type t = …; const t = test.extend<t>(…)`); read the value.
-    const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
-    let found;
-    if (decl && ts.isImportSpecifier(decl) && importedFrom(decl) === "vitest") {
-      const imported = (decl.propertyName ?? decl.name).text;
-      if (TEST_FNS.has(imported)) found = { kind: "fn", name: imported };
-    } else if (decl && ts.isNamespaceImport(decl) && importedFrom(decl) === "vitest") {
-      found = { kind: "ns" };
-    } else if (decl && ts.isImportEqualsDeclaration(decl) && isVitestModule(decl.moduleReference, bindings)) {
-      found = { kind: "ns" }; // `import v = require("vitest")`
-    } else if (decl && ts.isImportEqualsDeclaration(decl) && ts.isQualifiedName(decl.moduleReference)) {
-      // `import d = v.describe`, on a Vitest namespace. A longer name (`v.describe.skip`) fails closed
-      // in findGates.
-      const { left, right } = decl.moduleReference;
-      if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) && TEST_FNS.has(right.text)) found = { kind: "fn", name: right.text };
-    } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
-      isIntegrationModule(importedFrom(decl) ?? "")) {
-      found = { kind: "suiteFactory" };
-    } else if (decl && ts.isNamespaceImport(decl) && isIntegrationModule(importedFrom(decl) ?? "")) {
-      found = { kind: "integrationNs" }; // `import * as I from ".../integration.mjs"`
-    } else if (decl && ts.isVariableDeclaration(decl)) {
-      // `var t = test.extend({}); var t: typeof t;` declares one variable twice; read its initializer.
-      // Two initializers, either of them Vitest's, can't be told apart: the name fails closed.
-      const found_ = symbol.declarations
-        .filter((d) => ts.isVariableDeclaration(d) && d.initializer)
-        .map((d) => resolveInitializer(unwrap(d.initializer), bindings));
-      if (found_.length === 1) found = found_[0];
-      else if (found_.some((f) => f?.kind === "fn" || f?.kind === "ns")) found = { kind: "ambiguous" };
-    } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
-      // `const { describe } = v`, from a Vitest namespace.
-      const holder = decl.parent.parent;
-      const init = ts.isVariableDeclaration(holder) && holder.initializer ? unwrap(holder.initializer) : undefined;
-      const key = decl.propertyName ?? decl.name;
-      if (init && isVitestModule(init, bindings) && ts.isIdentifier(key) && TEST_FNS.has(key.text)) {
-        found = { kind: "fn", name: key.text };
-      }
-    }
+    const found = resolveDeclarations(symbol, bindings, isIntegrationModule);
     cache.set(symbol, found);
     return found;
   };
@@ -182,4 +146,58 @@ function resolveInitializer(init, bindings) {
   if (fn !== undefined) return { kind: "fn", name: fn };
   if (isVitestModule(init, bindings)) return { kind: "ns" };
   return isCreateRequireCall(init) ? { kind: "require" } : undefined;
+}
+
+/**
+ * What one declaration makes a name: the `{ kind, … }` record `resolve()` returns, or undefined.
+ * A variable's initializer goes through `resolveInitializer`.
+ */
+function resolveDeclaration(decl, bindings, isIntegrationModule) {
+  let found;
+  if (decl && ts.isImportSpecifier(decl) && importedFrom(decl) === "vitest") {
+    const imported = (decl.propertyName ?? decl.name).text;
+    if (TEST_FNS.has(imported)) found = { kind: "fn", name: imported };
+  } else if (decl && ts.isNamespaceImport(decl) && importedFrom(decl) === "vitest") {
+    found = { kind: "ns" };
+  } else if (decl && ts.isImportEqualsDeclaration(decl) && isVitestModule(decl.moduleReference, bindings)) {
+    found = { kind: "ns" }; // `import v = require("vitest")`
+  } else if (decl && ts.isImportEqualsDeclaration(decl) && ts.isQualifiedName(decl.moduleReference)) {
+    // `import d = v.describe`, on a Vitest namespace. A longer name (`v.describe.skip`) fails closed
+    // in findGates.
+    const { left, right } = decl.moduleReference;
+    if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) && TEST_FNS.has(right.text)) found = { kind: "fn", name: right.text };
+  } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
+    isIntegrationModule(importedFrom(decl) ?? "")) {
+    found = { kind: "suiteFactory" };
+  } else if (decl && ts.isNamespaceImport(decl) && isIntegrationModule(importedFrom(decl) ?? "")) {
+    found = { kind: "integrationNs" }; // `import * as I from ".../integration.mjs"`
+  } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer) {
+    found = resolveInitializer(unwrap(decl.initializer), bindings);
+  } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
+    // `const { describe } = v`, from a Vitest namespace.
+    const holder = decl.parent.parent;
+    const init = ts.isVariableDeclaration(holder) && holder.initializer ? unwrap(holder.initializer) : undefined;
+    const key = decl.propertyName ?? decl.name;
+    if (init && isVitestModule(init, bindings) && ts.isIdentifier(key) && TEST_FNS.has(key.text)) {
+      found = { kind: "fn", name: key.text };
+    }
+  }
+  return found;
+}
+
+/**
+ * Resolves a name across all of its declarations. Type-only declarations and a `var` without an
+ * initializer say nothing about the value. When several value declarations remain and they don't
+ * agree on a Vitest function or namespace (`var t = test.extend({}); var t = other;`, or a
+ * destructuring or parameter that redeclares it), the name is `ambiguous` and fails closed.
+ */
+function resolveDeclarations(symbol, bindings, isIntegrationModule) {
+  const decls = (symbol.declarations ?? []).filter((d) =>
+    !ts.isTypeAliasDeclaration(d) && !ts.isInterfaceDeclaration(d) && !(ts.isVariableDeclaration(d) && !d.initializer && ts.isIdentifier(d.name)));
+  const results = decls.map((d) => resolveDeclaration(d, bindings, isIntegrationModule));
+  if (results.length <= 1) return results[0];
+  const vitest = results.filter((f) => f?.kind === "fn" || f?.kind === "ns");
+  if (vitest.length === 0) return undefined;
+  const same = vitest.length === results.length && results.every((f) => f.kind === results[0].kind && f.name === results[0].name);
+  return same ? results[0] : { kind: "ambiguous" };
 }

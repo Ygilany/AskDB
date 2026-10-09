@@ -202,6 +202,7 @@ test("CLI scans a package that is a symbolic link and skips a pattern that match
     'packages:\n  - "packages/*"\n  - "missing/*"\n  - "absent"\n',
   );
   symlinkSync(join(root, "vendor", "b"), join(root, "packages", "b"));
+  symlinkSync(join(root, "vendor", "gone"), join(root, "packages", "dangling"));
   const result = run(root);
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /packages\/b\/src\/b\.test\.ts:1:/);

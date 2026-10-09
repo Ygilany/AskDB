@@ -98,3 +98,5 @@ if (ready) it.describe("it.describe under an if", run); // HIT
 if (ready) test.suite("test.suite under an if", run); // HIT
 for ([forInDefault = describe("a for-in pattern default", run)] in obj) {} // HIT
 [...[nestedDefault = describe("a default inside a spread pattern", run)]] = rows; // HIT
+Object.entries(process.env.DATABASE_URL ? { postgres: 1 } : {}).forEach(([engine]) => describe(engine, run)); // HIT
+for (const [engine] of Object.entries(process.env.DATABASE_URL ? { postgres: 1 } : {})) describe(engine, run); // HIT

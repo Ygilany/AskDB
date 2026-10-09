@@ -38,9 +38,9 @@ Turbo runs tasks in strict env mode: only variables listed in the `test` task's 
 
 `pnpm lint` runs [`scripts/check-test-gating.mjs`](scripts/check-test-gating.mjs), which fails on these hand-rolled gates in the tests of every workspace package except the consumer lab (see [Consumer lab](#consumer-lab)):
 
-- `describe.skip`, or `.skipIf` or `.runIf` on a suite or test.
+- `describe.skip` or `describe.todo`, or `.skipIf` or `.runIf` on a suite or test.
 - `it.skip` passed around as a value, or `cond ? describe : …`.
-- A `{ skip: cond }` or `{ todo: cond }` options argument, a suite's `{ skip: true }`, or any argument after the name picked by a condition (a body picked by `url ? fn : undefined` becomes a todo), unless the pick is between plain strings or numbers.
+- A `{ skip: cond }` or `{ todo: cond }` options argument, a suite's `{ skip: true }` or `{ todo: true }`, or any argument after the name picked by a condition (a body picked by `url ? fn : undefined` becomes a todo), unless the pick is between plain strings or numbers.
 - A suite or test defined only under a condition: `if`/`else`, a `switch` case, `try`/`catch`, `?:`, `&&`, `||`, `??`, `&&=`, `||=`, `??=`, the arguments or key of an optional chain (`a?.b(…)`, `a?.[…]`), a default value, or a callback passed to a call other than `forEach`/`map`/`flatMap` (such as `.then`).
 - A `.each` table or loop iterable chosen by such a condition.
 - Any use it can't read, such as an alias or `describe.call(…)`.

@@ -26,12 +26,12 @@ Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with 
 
 ### D. Fail CI's `test` job on any skipped test (not adopted here)
 
-The root and fixture Vitest configs already load `ciReporters()`, whose summary reporter counts skipped tests, and CI's `test` job runs with `ASKDB_REQUIRE_INTEGRATION=1`, under which `integrationSuite()` throws instead of skipping. A reporter that fails that job on any skipped test would catch what no syntax check can: `ctx.skip()`, options passed in a variable, a gate inside a helper. It is not adopted in this PR: it turns every `it.skip` and `it.todo` into a CI failure, a policy change for the maintainer, and it fires only in the run where the environment is broken, not when the gate is written. It would complement C, not replace it.
+The root and fixture Vitest configs already load `ciReporters()`, whose summary reporter counts skipped tests, and CI's `test` job runs with `ASKDB_REQUIRE_INTEGRATION=1`, under which `integrationSuite()` registers a test that fails instead of skipping the suite. A reporter that fails that job on any skipped test would catch what no syntax check can: `ctx.skip()`, options passed in a variable, a gate inside a helper. It is not adopted in this PR: it turns every `it.skip` and `it.todo` into a CI failure, a policy change for the maintainer, and it fires only in the run where the environment is broken, not when the gate is written. It would complement C, not replace it.
 
 ### What counts as a gate
 
 - **A literal skip on one test is allowed** (`it.skip(…)`, `it(name, { skip: true }, fn)`): it skips the same way in every environment, so it can't hide a missing database, and CI's summary still counts it. Rejecting it too would leave no way to mark a known-broken test.
-- **A skip on a suite is rejected even when literal** (`describe.skip`, `{ skip: true }` on `describe`): integration suites are where a missing prerequisite hides, and a suite-wide skip is the shape `integrationSuite()` replaces.
+- **A skip on a suite is rejected even when literal** (`describe.skip`, `describe.todo`, `{ skip: true }` or `{ todo: true }` on `describe`): integration suites are where a missing prerequisite hides, and a suite-wide skip is the shape `integrationSuite()` replaces.
 - **The consumer lab is not scanned.** It is its own pnpm root with its own lockfile, and its tests fail on a missing fixture by design (`CONTRIBUTING.md`, "Consumer lab"); `pnpm-workspace.yaml` excludes it and the check follows that list. Scanning it would need its install and would check tests that already fail closed.
 
 ### Reading the workspace list

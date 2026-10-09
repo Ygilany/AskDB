@@ -80,3 +80,10 @@ export function oneFileProgram(sf) {
   const options = { noLib: true, noResolve: true, jsx: ts.JsxEmit.Preserve };
   return ts.createProgram([sf.fileName], options, host);
 }
+
+/** The `.name` or `[key]` access whose object is `node` (through wrappers), or undefined. */
+export function memberOn(node) {
+  const outer = outermostWrapper(node);
+  const p = outer.parent;
+  return isMemberLink(p) && p.expression === outer ? p : undefined;
+}

@@ -38,7 +38,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
-const { ts, isWrapper, outermostWrapper, unwrap, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram } = await import(sibling("ast.mjs"));
+const { ts, isWrapper, outermostWrapper, unwrap, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } = await import(sibling("ast.mjs"));
 const { EXTENDERS, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs } = await import(sibling("workspace.mjs"));
@@ -53,7 +53,8 @@ const MODIFIERS = new Set([
   "describe", "suite",
 ]);
 const GATE_LINKS = new Set(["skipIf", "runIf"]);
-const SUITE_GATE_LINKS = new Set(["skip", "skipIf", "runIf"]);
+// `describe.todo(name, fn)` never runs the suite's tests, like `describe.skip`.
+const SUITE_GATE_LINKS = new Set(["skip", "todo", "skipIf", "runIf"]);
 // Function-protocol links that call the function indirectly, so the check can't read the call.
 const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
 
@@ -114,8 +115,9 @@ function isReadableNamespaceUse(id) {
     if (!ts.isAwaitExpression(outer.parent) && id.expression.kind === ts.SyntaxKind.ImportKeyword) return false;
     while (ts.isAwaitExpression(outer.parent) || isWrapper(outer.parent)) outer = outer.parent;
   }
+  const member = memberOn(outer);
+  if (member !== undefined) return linkName(member) !== undefined;
   const p = outer.parent;
-  if (isMemberLink(p) && p.expression === outer) return linkName(p) !== undefined;
   if (!ts.isVariableDeclaration(p) || p.initializer !== outer) return false;
   if (ts.isIdentifier(p.name)) return true;
   // `const { describe, it: t } = v`: plain keys only, no rest, computed key or nesting.
@@ -270,6 +272,8 @@ function isBinaryChoice(node) {
 function isChosen(node) {
   node = unwrap(node);
   if (choiceBranches(node).length > 0) return true;
+  // `Object.entries(url ? { pg: url } : {})`: a call over a pick yields a table whose size is picked too.
+  if (ts.isCallExpression(node) && node.arguments.some((arg) => isChosen(ts.isSpreadElement(arg) ? arg.expression : arg))) return true;
   // `[a, ...(cond ? [b] : [])]`: how many rows there are depends on the condition.
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) => ts.isSpreadElement(el) && isChosen(el.expression));
 }
@@ -298,7 +302,7 @@ function hasGateOption(call, suite) {
         if (!ts.isPropertyAssignment(prop)) { gate = true; continue; } // shorthand, getter, method
         const value = unwrap(prop.initializer);
         const literal = value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword;
-        if (chosen || !literal || (suite && key === "skip" && value.kind === ts.SyntaxKind.TrueKeyword)) gate = true;
+        if (chosen || !literal || (suite && value.kind === ts.SyntaxKind.TrueKeyword)) gate = true;
       }
     }
   };
@@ -425,9 +429,8 @@ function isDeferredClassMember(member) {
 
 /** Whether a call's result is handed to `.catch(…)` or a two-argument `.then(…)`. */
 function rejectionSwallowed(call) {
-  const outer = outermostWrapper(call);
-  const member = outer.parent;
-  if (!isMemberLink(member) || member.expression !== outer) return false;
+  const member = memberOn(call);
+  if (member === undefined) return false;
   const handler = outermostWrapper(member).parent;
   if (!ts.isCallExpression(handler) || handler.expression !== outermostWrapper(member)) return false;
   const name = linkName(member);
@@ -528,7 +531,7 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
       if (bindingKind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
       if (bindingKind === "ambiguous") refs.push(unreadableRef(node));
       // `I.isIntegrationRequired()` and other named members read through; `I.integrationSuite` must be called.
-      const member = isMemberLink(outer.parent) && outer.parent.expression === outer ? outer.parent : undefined;
+      const member = memberOn(node);
       const readable = member !== undefined && linkName(member) !== undefined &&
         (!isSuiteFactory(member, bindings) || calleeOf(outermostWrapper(member).parent) === outermostWrapper(member));
       if (bindingKind === "integrationNs" && !readable) {
