@@ -84,3 +84,13 @@ let attempts = 0;
 do {
   it(`a do-while loop ${attempts}`, () => {});
 } while (++attempts < 2);
+try {
+  ready = true;
+} finally {
+  describe("a finally block always runs", run);
+}
+const lookup = {};
+lookup[it("a plain element access key", run)];
+tagged`${describe("inside a tagged template's value", run)}`;
+let attemptsLeft = 0;
+for (describe("a for initializer runs once", run); attemptsLeft < (process.env.DATABASE_URL ? 1 : 0); ) attemptsLeft++;

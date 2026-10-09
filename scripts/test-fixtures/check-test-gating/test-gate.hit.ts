@@ -39,3 +39,11 @@ describe("a wrapped suite body", ((t) => {
 }) as any);
 it.each(Array.from({ length: process.env.DATABASE_URL ? 1 : 0, other: 1 }))("a length beside another key %s", () => {}); // HIT
 it.each([[2], process.env.DATABASE_URL ? [1] : []].flat())("a picked element after a fixed one %s", () => {}); // HIT
+it.each((0, process.env.DATABASE_URL ? [1] : []))("a table picked behind a comma %s", () => {}); // HIT
+it("a body picked behind a comma", (0, process.env.DATABASE_URL ? () => {} : undefined)); // HIT
+let assignedRows;
+it.each(assignedRows = process.env.DATABASE_URL ? [1] : [])("a table picked in an assignment %s", () => {}); // HIT
+let assignedTestBody;
+it("a body picked in an assignment", assignedTestBody = process.env.DATABASE_URL ? () => {} : undefined); // HIT
+it.each([process.env.DATABASE_URL ? [1] : []][0])("an index into a picked table %s", () => {}); // HIT
+it("options indexed by a pick", [{}, { skip: true }][process.env.DATABASE_URL ? 0 : 1], () => {}); // HIT

@@ -37,8 +37,6 @@ describe("a body assigned after its declaration", assignedBody); // HIT
 describe("a named body after options", { timeout: 5 }, declaredBody); // HIT
 let assignedInline;
 describe("a body assigned inside the call", assignedInline = (test) => test.skipIf(!process.env.DATABASE_URL)("query", run)); // HIT
-let pickedLater;
-describe("a picked body assigned inside the call", pickedLater = process.env.DATABASE_URL ? () => {} : undefined); // HIT
 let reassignedBody = () => {};
 if (!process.env.DATABASE_URL) reassignedBody = undefined;
 describe("a let body reassigned under a condition", reassignedBody); // HIT

@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, firstParameter, isMemberLink, linkName, outermostWrapper, pickBranches, ts, unwrap, unwrapValue } from "./ast.mjs";
+import { calleeOf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, pickBranches, ts, unwrap, unwrapValue } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -237,7 +237,7 @@ export function suiteBodyUnreadable(call, bindings) {
 
 function isReadableSuiteBody(body, bindings) {
   if (isInlineFunction(body)) return !readsArguments(body);
-  if (pickBranches(body).length > 0) return true;
+  if (isPick(body)) return true;
   const fn = constFunction(body, bindings);
   return fn !== undefined && firstParameter(fn) === undefined && !readsArguments(fn);
 }

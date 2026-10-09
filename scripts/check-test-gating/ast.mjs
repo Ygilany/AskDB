@@ -93,11 +93,20 @@ export function firstParameter(fn) {
   return fn.parameters.find((p) => !(ts.isIdentifier(p.name) && p.name.text === "this"));
 }
 
-/** `node` with its wrappers and any `await` removed. */
+/**
+ * The expression whose value `node` yields: through wrappers, `await`, a comma operator's last
+ * operand (`(0, x)`) and a plain assignment's right side (`rows = x`).
+ */
 export function unwrapValue(node) {
-  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
-  return node;
+  for (;;) {
+    if (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
+    else if (ts.isBinaryExpression(node) && VALUE_OPERATORS.has(node.operatorToken.kind)) node = node.right;
+    else return node;
+  }
 }
+
+// Binary operators whose result is their right operand.
+const VALUE_OPERATORS = new Set([ts.SyntaxKind.CommaToken, ts.SyntaxKind.EqualsToken]);
 
 const PICK_OPERATORS = new Set([
   ts.SyntaxKind.AmpersandAmpersandToken,
@@ -113,6 +122,16 @@ export function pickBranches(node) {
   if (ts.isConditionalExpression(node)) return [node.whenTrue, node.whenFalse];
   if (isBinaryPick(node)) return [node.left, node.right];
   return [];
+}
+
+/** Whether `node` is itself a pick: `? :`, `&&`, `||`, `??` or one of their assignment forms. */
+export function isPick(node) {
+  return pickBranches(node).length > 0;
+}
+
+/** Whether `node` holds a pick anywhere inside it, outside a nested function. */
+export function holdsPick(node) {
+  return someInside(node, isPick);
 }
 
 /** Whether `node` is `a && b`, `a || b`, `a ?? b` or one of their assignment forms. */

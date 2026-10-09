@@ -115,3 +115,8 @@ while (process.env.DATABASE_URL ?? false) {
   describe("a while condition holding a pick", run); // HIT
   break;
 }
+for (const u of (0, process.env.DATABASE_URL ? [1] : [])) describe(`a loop table picked behind a comma ${u}`, run); // HIT
+let repeats = 0;
+do {
+  describe(`a do-while condition holding a pick ${repeats}`, run); // HIT
+} while (++repeats < (process.env.DATABASE_URL ? 2 : 1));

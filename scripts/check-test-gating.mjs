@@ -46,7 +46,6 @@ const {
   outermostWrapper,
   unwrap,
   unwrapValue,
-  someInside,
   calleeOf,
   isMemberLink,
   linkName,
@@ -54,6 +53,7 @@ const {
   oneFileProgram,
   memberOn,
   pickBranches,
+  isPick,
   optionKey,
   RUNTIME_KEY,
 } = await import(moduleUrl("ast.mjs"));
@@ -77,7 +77,7 @@ const {
   isSuiteFactory,
   testFnName,
 } = await import(moduleUrl("bindings.mjs"));
-const { isPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
+const { isPicked, rowsPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
 const { workspaceDirs, entryTarget } = await import(moduleUrl("workspace.mjs"));
 
 // Function-protocol links that call the function indirectly, so the check can't read the call.
@@ -255,16 +255,6 @@ function testRef(start, fnName, bindings) {
 }
 
 /**
- * Whether a `.each` or `.for` call's arguments let a condition decide how many rows there are: a
- * spread argument, a picked table or value, or, in the template form called directly
- * (`.each(["a|b\n"], …values)`), a pick anywhere in the header strings.
- */
-function rowsPicked(rowArgs) {
-  if (rowArgs.some((arg) => ts.isSpreadElement(arg) || isPicked(arg))) return true;
-  return rowArgs.length > 1 && someInside(rowArgs[0], (n) => pickBranches(n).length > 0);
-}
-
-/**
  * Whether a suite call's result is kept or read (`const c = describe(…)`, `describe(…).test`): the
  * collector it returns carries a test API the check can't follow.
  */
@@ -299,7 +289,7 @@ function hasGateOption(call, suite) {
   if (!ts.isCallExpression(call)) return false;
   let gate = false;
   const visit = (node, chosen) => {
-    node = unwrap(node);
+    node = unwrapValue(node);
     const branches = pickBranches(node);
     if (branches.length > 0) {
       for (const branch of branches) visit(branch, true);
@@ -323,7 +313,9 @@ function hasGateOption(call, suite) {
     // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
     // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone, and a
     // value computed from a pick (`Number(env ?? 60_000)`) is always there.
-    if (i > 0 && pickBranches(unwrapValue(arg)).length > 0 && !picksOnlyLiterals(arg)) return true;
+    if (i > 0 && isPick(unwrapValue(arg)) && !picksOnlyLiterals(arg)) return true;
+    // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`: options or a body indexed by a pick.
+    if (i > 0 && ts.isElementAccessExpression(unwrapValue(arg)) && isPicked(arg)) return true;
     visit(arg, false);
   }
   return gate;

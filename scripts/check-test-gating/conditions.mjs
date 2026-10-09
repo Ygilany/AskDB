@@ -2,14 +2,15 @@
 // time, for scripts/check-test-gating.mjs.
 import {
   calleeOf,
+  holdsPick,
   isBinaryPick,
+  isPick,
   isMemberLink,
   linkName,
   memberOn,
   optionKey,
   outermostWrapper,
   pickBranches,
-  someInside,
   ts,
   unwrap,
   unwrapValue,
@@ -23,7 +24,11 @@ import { vitestCallKind } from "./bindings.mjs";
  */
 export function isPicked(node) {
   node = unwrapValue(node);
-  if (pickBranches(node).length > 0) return true;
+  if (isPick(node)) return true;
+  // `[url ? [1] : []][0]`, `tables[url ? 0 : 1]`: an index into a picked table, or picked itself.
+  if (ts.isElementAccessExpression(node)) {
+    return holdsPick(node.argumentExpression) || isPicked(node.expression) || pickDecidesSize(node.expression);
+  }
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
   if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
@@ -45,7 +50,7 @@ function pickDecidesSize(node) {
   if (isPicked(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.some((p) =>
-      ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, (n) => pickBranches(n).length > 0));
+      ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && holdsPick(p.initializer));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
     pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
@@ -60,11 +65,13 @@ function conditionalEdge(parent, child) {
   if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
   // A loop or iteration callback over a table picked by a condition, like a `.each` table.
   if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return isPicked(parent.expression);
-  // A classic `for` or `while` whose condition holds a pick (`i < (url ? 1 : 0)`) runs its body only
-  // when the pick allows. A condition with no pick (`while (url)`) is a plain loop, a known limit.
-  if ((ts.isForStatement(parent) || ts.isWhileStatement(parent)) && (child === parent.statement || child === parent.incrementor)) {
+  // A classic `for`, `while` or `do … while` whose condition holds a pick (`i < (url ? 1 : 0)`) runs
+  // its body, or repeats it, only when the pick allows. A condition with no pick (`while (url)`) is a
+  // plain loop, a known limit.
+  if ((ts.isForStatement(parent) || ts.isWhileStatement(parent) || ts.isDoStatement(parent)) &&
+    (child === parent.statement || child === parent.incrementor)) {
     const condition = ts.isForStatement(parent) ? parent.condition : parent.expression;
-    return condition !== undefined && someInside(condition, (n) => pickBranches(n).length > 0);
+    return condition !== undefined && holdsPick(condition);
   }
   if (ts.isCallExpression(parent) && parent.arguments.includes(child) && isMemberLink(unwrap(parent.expression))) {
     if (isPicked(unwrap(parent.expression).expression)) return true;
@@ -161,4 +168,14 @@ const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
 function isIterationCall(node) {
   const callee = ts.isCallExpression(node) ? unwrap(node.expression) : undefined;
   return callee !== undefined && isMemberLink(callee) && ITERATION_METHODS.has(linkName(callee));
+}
+
+/**
+ * Whether a `.each` or `.for` call's arguments let a condition decide how many rows there are: a
+ * spread argument, a picked table or value, or, in the template form called directly
+ * (`.each(["a|b\n"], …values)`), a pick anywhere in the header strings.
+ */
+export function rowsPicked(rowArgs) {
+  if (rowArgs.some((arg) => ts.isSpreadElement(arg) || isPicked(arg))) return true;
+  return rowArgs.length > 1 && holdsPick(rowArgs[0]);
 }
