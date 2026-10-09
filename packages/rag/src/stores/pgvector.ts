@@ -392,9 +392,11 @@ type PgModule = { Pool: new (cfg: { connectionString: string }) => unknown };
 
 /**
  * Resolve the optional `pg` peer: first from `@askdb/rag` itself, then from
- * `resolveFrom` (default `process.cwd()`) — the same fallback
- * `@askdb/postgres`'s `loadPgDriver` uses, without depending on it. Handles
- * the CJS `default` interop so `Pool` is found under plain Node ESM.
+ * `resolveFrom` (default `process.cwd()`), the two places `@askdb/postgres`'s
+ * `loadPgDriver` looks, without depending on it. Unlike that loader (the
+ * `@askdb/introspect/kit` one, which `@askdb/rag` can't reach), it reports any
+ * failure as a missing peer, including an installed `pg` that fails to load.
+ * Handles the CJS `default` interop so `Pool` is found under plain Node ESM.
  */
 async function loadPg(resolveFrom?: string): Promise<PgModule> {
   const pick = (mod: unknown): PgModule => {

@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock `pg` so we can simulate "peer dep missing" without uninstalling the workspace dev dep.
 // `vi.hoisted` is required because `vi.mock` is hoisted to the top of the file before imports.
 const pgState = vi.hoisted(() => ({
+  imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("pg", async () => {
+  pgState.imports++;
   if (pgState.shouldFail) {
     const err = new Error("Cannot find package 'pg' imported from postgres.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
@@ -90,6 +92,7 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     vi.resetModules();
     pgState.projectResolvedPaths.clear();
     pgState.shouldFail = false;
+    pgState.imports = 0;
     process.chdir(originalCwd);
   });
 
@@ -99,14 +102,15 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     tempDirs = [];
   });
 
-  // Hosts build a runner without the optional peer installed; an eager load() would
-  // reject unhandled at construction, which fails this test.
+  // Hosts build a runner without the optional peer installed; the driver must
+  // not be imported until the runner is first called.
   it("createPostgresCatalogQueryRunner() does not load `pg` at construction time", async () => {
     const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     pgState.shouldFail = true;
 
     expect(() => createPostgresCatalogQueryRunner("postgres://nowhere")).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pgState.imports).toBe(0);
   });
 
   it("invoking the runner when `pg` is missing rejects with a helpful AskDbError", async () => {

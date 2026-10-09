@@ -17,7 +17,7 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 type Bs3Namespace = { default: typeof DatabaseCtor };
 export type { Bs3Namespace };
 
-const bs3Loader = createOptionalDriverLoader<Bs3Namespace>({
+const betterSqlite3Loader = createOptionalDriverLoader<Bs3Namespace>({
   packageName: "better-sqlite3",
   importDriver: () => import("better-sqlite3").catch(rethrowDriverImportError) as unknown as Promise<Bs3Namespace>,
   missingMessage: missingDriverMessage({ engine: "SQLite", packageName: "better-sqlite3" }),
@@ -28,7 +28,7 @@ const bs3Loader = createOptionalDriverLoader<Bs3Namespace>({
  * lazy-import + project-root fallback behavior as the catalog runner.
  */
 export async function loadBetterSqlite3Driver(options?: DriverLoadOptions): Promise<Bs3Namespace> {
-  return bs3Loader.load(options);
+  return betterSqlite3Loader.load(options);
 }
 
 export function isBetterSqlite3DriverInstalled(options?: DriverLoadOptions): boolean {
@@ -41,7 +41,7 @@ async function runSqliteCatalogQuery(
   params: ReadonlyArray<unknown> | undefined,
   options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await bs3Loader.load(options);
+  const mod = await betterSqlite3Loader.load(options);
   const Database = mod.default;
   const db = new Database(filename, { readonly: true, fileMustExist: true });
   try {

@@ -149,8 +149,11 @@ export function isDriverInstalled(packageName: string, options?: DriverLoadOptio
 }
 
 /**
- * The standard "optional peer missing" message used by the first-party engine
- * packages, e.g. `missingDriverMessage({ engine: "Postgres", packageName: "pg" })`.
+ * The "optional peer missing" message of the first-party engine packages, e.g.
+ * `missingDriverMessage({ engine: "Postgres", packageName: "pg" })`. It calls
+ * the runner built-in and suggests a one-off `askdb` command, which registers
+ * only the first-party engines, so a third-party engine writes its own
+ * `missingMessage` instead.
  */
 export function missingDriverMessage(input: { engine: string; packageName: string }): string {
   const { engine, packageName } = input;

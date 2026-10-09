@@ -5,10 +5,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const bs3State = vi.hoisted(() => ({
+  imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("better-sqlite3", async () => {
+  bs3State.imports++;
   if (bs3State.shouldFail) {
     const err = new Error("Cannot find package 'better-sqlite3' imported from sqlite.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
@@ -92,6 +94,7 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
     vi.resetModules();
     bs3State.projectResolvedPaths.clear();
     bs3State.shouldFail = false;
+    bs3State.imports = 0;
     process.chdir(originalCwd);
   });
 
@@ -101,14 +104,15 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
     tempDirs = [];
   });
 
-  // Hosts build a runner without the optional peer installed; an eager load() would
-  // reject unhandled at construction, which fails this test.
+  // Hosts build a runner without the optional peer installed; the driver must
+  // not be imported until the runner is first called.
   it("createSqliteCatalogQueryRunner() does not load `better-sqlite3` at construction time", async () => {
     const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
     bs3State.shouldFail = true;
 
     expect(() => createSqliteCatalogQueryRunner(":memory:")).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bs3State.imports).toBe(0);
   });
 
   it("invoking the runner when `better-sqlite3` is missing rejects with a helpful AskDbError", async () => {

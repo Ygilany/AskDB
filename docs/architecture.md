@@ -69,8 +69,11 @@ flowchart TB
   postgres --> introspect
   postgres --> connectors
   prisma --> introspect
+  mysql --> introspect
   mysql --> connectors
+  sqlite --> introspect
   sqlite --> connectors
+  sqlserver --> introspect
   sqlserver --> connectors
   enrich --> core
   rag --> core
@@ -142,8 +145,11 @@ flowchart BT
   postgres --> introspect
   postgres --> connectors
   prisma --> introspect
+  mysql --> introspect
   mysql --> connectors
+  sqlite --> introspect
   sqlite --> connectors
+  sqlserver --> introspect
   sqlserver --> connectors
   studio --> enrich
   studio --> core
