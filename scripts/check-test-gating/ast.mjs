@@ -88,6 +88,12 @@ export function memberOn(node) {
   return isMemberLink(p) && p.expression === outer ? p : undefined;
 }
 
+/** The receiver of a method call (`x` in `x.f(…)`), or undefined for any other call. */
+export function receiverOf(call) {
+  const callee = ts.isCallExpression(call) ? unwrap(call.expression) : undefined;
+  return callee !== undefined && isMemberLink(callee) ? callee.expression : undefined;
+}
+
 /** A function's first parameter, past a TypeScript `this` annotation, or undefined. */
 export function firstParameter(fn) {
   return fn.parameters.find((p) => !(ts.isIdentifier(p.name) && p.name.text === "this"));
@@ -97,7 +103,7 @@ export function firstParameter(fn) {
  * The expression whose value `node` yields: through wrappers, `await`, a comma operator's last
  * operand (`(0, x)`) and a plain assignment's right side (`rows = x`).
  */
-export function unwrapValue(node) {
+export function resultOf(node) {
   for (;;) {
     if (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
     else if (ts.isBinaryExpression(node) && VALUE_OPERATORS.has(node.operatorToken.kind)) node = node.right;

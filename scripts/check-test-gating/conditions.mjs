@@ -11,9 +11,10 @@ import {
   optionKey,
   outermostWrapper,
   pickBranches,
+  receiverOf,
   ts,
   unwrap,
-  unwrapValue,
+  resultOf,
 } from "./ast.mjs";
 import { vitestCallKind } from "./bindings.mjs";
 
@@ -22,14 +23,14 @@ import { vitestCallKind } from "./bindings.mjs";
  * or is built from such a pick: spread into an array or object, passed to a call or `new`, or the
  * receiver of a method call.
  */
-export function pickedAtRunTime(node) {
-  node = unwrapValue(node);
+function pickedAtRunTime(node) {
+  node = resultOf(node);
   if (isPick(node)) return true;
   if (readsPickedValue(node)) return true;
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
   if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
-  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && pickDecidesSize(unwrap(node.expression).expression)) return true;
+  if (receiverOf(node) !== undefined && pickDecidesSize(receiverOf(node))) return true;
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && pickedAtRunTime(el.expression));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && pickedAtRunTime(p.expression));
@@ -45,11 +46,10 @@ export function readsPickedValue(node) {
   let key;
   if (ts.isElementAccessExpression(node)) [object, key] = [node.expression, node.argumentExpression];
   else if (ts.isPropertyAccessExpression(node)) object = node.expression;
-  else if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && linkName(unwrap(node.expression)) === "at") {
-    [object, key] = [unwrap(node.expression).expression, node.arguments[0]];
-  } else return false;
+  else if (receiverOf(node) !== undefined && linkName(unwrap(node.expression)) === "at") [object, key] = [receiverOf(node), node.arguments[0]];
+  else return false;
   if (key !== undefined && holdsPick(key)) return true;
-  const value = unwrapValue(object);
+  const value = resultOf(object);
   if (ts.isArrayLiteralExpression(value) || ts.isObjectLiteralExpression(value)) return holdsPick(value);
   return pickedAtRunTime(value);
 }
@@ -61,7 +61,7 @@ export function readsPickedValue(node) {
  * fixed-size table (`{ pg: url ?? "postgres://localhost" }`) doesn't change its size.
  */
 function pickDecidesSize(node) {
-  node = unwrapValue(node);
+  node = resultOf(node);
   if (ts.isSpreadElement(node)) return pickDecidesSize(node.expression);
   if (pickedAtRunTime(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
@@ -69,7 +69,7 @@ function pickDecidesSize(node) {
       ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && holdsPick(p.initializer));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
-    pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
+    pickBranches(resultOf(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
 }
 
 /** Whether the node `child` of `parent` runs only when a condition holds. */
@@ -89,9 +89,7 @@ function conditionalEdge(parent, child) {
     const condition = ts.isForStatement(parent) ? parent.condition : parent.expression;
     return condition !== undefined && holdsPick(condition);
   }
-  if (ts.isCallExpression(parent) && parent.arguments.includes(child) && isMemberLink(unwrap(parent.expression))) {
-    if (pickedAtRunTime(unwrap(parent.expression).expression)) return true;
-  }
+  if (receiverOf(parent) !== undefined && parent.arguments.includes(child) && pickedAtRunTime(receiverOf(parent))) return true;
   // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
   if (ts.isElementAccessExpression(parent) && ts.isOptionalChain(parent) && child === parent.argumentExpression) return true;

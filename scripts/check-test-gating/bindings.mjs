@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, pickBranches, ts, unwrap, unwrapValue } from "./ast.mjs";
+import { calleeOf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, pickBranches, ts, unwrap, resultOf } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -76,12 +76,20 @@ export function vitestBindings(program, isIntegrationModule) {
   return bindings;
 }
 
+/** Whether `node` is `import.meta.vitest`, Vitest's in-source test API (through wrappers). */
+export function isImportMetaVitest(node) {
+  if (!ts.isPropertyAccessExpression(node) || node.name.text !== "vitest") return false;
+  const meta = unwrap(node.expression);
+  return ts.isMetaProperty(meta) && meta.keywordToken === ts.SyntaxKind.ImportKeyword && meta.name.text === "meta";
+}
+
 /**
  * Whether `node` (through wrappers and `await`) is the Vitest module: `import("vitest")`,
- * `require("vitest")`, or an identifier bound to a Vitest namespace.
+ * `require("vitest")`, `import.meta.vitest`, or an identifier bound to a Vitest namespace.
  */
 function isVitestModule(node, bindings) {
-  node = unwrapValue(node);
+  node = resultOf(node);
+  if (isImportMetaVitest(node)) return true;
   if (ts.isExternalModuleReference(node)) return isVitestSpecifier(node.expression);
   if (ts.isIdentifier(node)) return isVitestNamespace(node, bindings);
   return isVitestLoaderCall(node, bindings);

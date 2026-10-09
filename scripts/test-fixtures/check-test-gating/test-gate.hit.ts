@@ -53,3 +53,4 @@ it("options read out of a picked array", [process.env.DATABASE_URL ? {} : { skip
 it.each([process.env.DATABASE_URL ? [[1]] : [[2], [3]]][0])("a table read out of a picked array %s", () => {}); // HIT
 it("a body read off a picked object", { f: process.env.DATABASE_URL ? () => {} : undefined }.f); // HIT
 it("a body read with a picked .at", [() => {}].at(process.env.DATABASE_URL ? 0 : 1)); // HIT
+import.meta.vitest?.it.skipIf(!process.env.DATABASE_URL)("an optional import.meta.vitest", () => {}); // HIT

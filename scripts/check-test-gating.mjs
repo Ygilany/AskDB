@@ -17,8 +17,8 @@
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
 // namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`
 // through `require`, `module.require`, `globalThis.require` or a `createRequire(…)` function,
-// `vi.importActual("vitest")`, `vi.importMock("vitest")`, `import v = require(…)`, and a member
-// read straight off a loader, `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
+// `vi.importActual("vitest")`, `vi.importMock("vitest")`, `import v = require(…)`, in-source
+// `import.meta.vitest`, and a member read straight off a loader, `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
 // and a variable holding its result are suite functions, so the sanctioned gate passes. A suite
 // body's first parameter is the test API Vitest passes it; a body other than an inline function or
 // a `const` function with no parameter fails closed. Names resolve through TypeScript's binder, so
@@ -45,7 +45,7 @@ const {
   isWrapper,
   outermostWrapper,
   unwrap,
-  unwrapValue,
+  resultOf,
   calleeOf,
   isMemberLink,
   linkName,
@@ -72,12 +72,13 @@ const {
   isPromiseLoader,
   vitestBindings,
   isVitestLoaderCall,
+  isImportMetaVitest,
   isVitestNamespace,
   integrationModuleResolver,
   isSuiteFactory,
   testFnName,
 } = await import(moduleUrl("bindings.mjs"));
-const { pickedAtRunTime, readsPickedValue, rowsPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
+const { readsPickedValue, rowsPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
 const { workspaceDirs, entryTarget } = await import(moduleUrl("workspace.mjs"));
 
 // Function-protocol links that call the function indirectly, so the check can't read the call.
@@ -281,16 +282,16 @@ function extendResultIsTracked(chain) {
 const SKIP_OPTIONS = new Set(["skip", "todo", "fails"]);
 
 /**
- * Whether a suite or test call skips through its options argument (`{ skip: cond }`,
- * `{ todo: cond }`, or options picked by `? :`, `&&`, `||` or `??`). A literal `skip: true` or
- * `todo: true` on a test is a plain skipped test, like `it.skip`; on a suite, `skip: true` is a
- * gate, like `describe.skip`.
+ * Whether a suite or test call skips or inverts through its options argument (`{ skip: cond }`,
+ * `{ todo: cond }`, `{ fails: cond }`, or options picked by `? :`, `&&`, `||` or `??`). A literal
+ * `true` on a test is a plain skipped or expected-to-fail test, like `it.skip`; on a suite, a
+ * literal `true` for `skip`, `todo` or `fails` is a gate, like `describe.skip`.
  */
 function hasGateOption(call, suite) {
   if (!ts.isCallExpression(call)) return false;
   let gate = false;
   const visit = (node, chosen) => {
-    node = unwrapValue(node);
+    node = resultOf(node);
     const branches = pickBranches(node);
     if (branches.length > 0) {
       for (const branch of branches) visit(branch, true);
@@ -314,10 +315,10 @@ function hasGateOption(call, suite) {
     // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
     // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone, and a
     // value computed from a pick (`Number(env ?? 60_000)`) is always there.
-    if (i > 0 && isPick(unwrapValue(arg)) && !picksOnlyLiterals(arg)) return true;
+    if (i > 0 && isPick(resultOf(arg)) && !picksOnlyLiterals(arg)) return true;
     // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
     // body read out of a pick.
-    if (i > 0 && readsPickedValue(unwrapValue(arg))) return true;
+    if (i > 0 && readsPickedValue(resultOf(arg))) return true;
     visit(arg, false);
   }
   return gate;
@@ -325,7 +326,7 @@ function hasGateOption(call, suite) {
 
 /** Whether every value a run-time choice can produce is a string or number literal. */
 function picksOnlyLiterals(node) {
-  node = unwrapValue(node);
+  node = resultOf(node);
   const branches = pickBranches(node);
   if (branches.length > 0) return branches.every(picksOnlyLiterals);
   return ts.isStringLiteralLike(node) || ts.isNumericLiteral(node);
@@ -396,7 +397,8 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
-      else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node, bindings)) && !isReadableNamespaceUse(node)) {
+      else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node, bindings) || isImportMetaVitest(node)) &&
+        !isReadableNamespaceUse(node)) {
         refs.push(unreadableRef(node));
       }
     }
