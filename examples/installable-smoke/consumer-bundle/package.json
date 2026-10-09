@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "bundle": "esbuild src/entry.mjs --bundle --platform=node --format=esm --outfile=dist/bundle.mjs --log-level=warning \"--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "bundle": "esbuild src/entry.mjs --bundle --platform=node --format=esm --outfile=dist/bundle.mjs --log-level=warning \"--banner:js=import { createRequire as __bannerCreateRequire } from 'node:module'; const require = __bannerCreateRequire(import.meta.url);\"",
     "smoke": "node dist/bundle.mjs"
   },
   "dependencies": {
@@ -12,6 +12,11 @@
     "@askdb/client": "__ASKDB_CLIENT_TARBALL__",
     "@askdb/config": "__ASKDB_CONFIG_TARBALL__",
     "@askdb/core": "__ASKDB_CORE_TARBALL__",
+    "@askdb/introspect": "__ASKDB_INTROSPECT_TARBALL__",
+    "@askdb/mysql": "__ASKDB_MYSQL_TARBALL__",
+    "@askdb/postgres": "__ASKDB_POSTGRES_TARBALL__",
+    "@askdb/sqlite": "__ASKDB_SQLITE_TARBALL__",
+    "@askdb/sqlserver": "__ASKDB_SQLSERVER_TARBALL__",
     "@ai-sdk/openai": "4.0.0",
     "ai": "^7.0.113"
   },

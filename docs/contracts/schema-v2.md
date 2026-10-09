@@ -25,6 +25,7 @@ my-app.schema/
     orders.md
     order_items.md
   concepts.md                # optional cross-table vocabulary
+  tenant-policy.md           # optional multi-tenant scoping rules
   schema.lock.json           # optional, machine-managed pointer to last embedded checksums
 ```
 
@@ -33,6 +34,7 @@ my-app.schema/
 | `schema.json` | yes | introspection / human | physical structure (tables, columns, types, FKs, baseline `sensitive`) |
 | `tables/<table>.md` | optional, one per described table | Studio / web catalog / human | descriptions, business context, aliases, common query language, examples, escalate-only `sensitive` overrides |
 | `concepts.md` | optional | Studio / human | cross-table vocabulary (e.g. *customer* → users + leads) |
+| `tenant-policy.md` | optional; its presence turns on tenant enforcement | application author / Studio | tenant roots, scoped tables and enforcement mode ([tenant policy contract](./tenant-policy.md)) |
 | `schema.lock.json` | optional | `@askdb/rag` | embedding checksums per chunk id |
 
 A v2 directory with `schema.json` and zero `tables/*.md` files is valid — `@askdb/core` loads it with an empty describable layer (no descriptions, no aliases, no concepts). Authoring the describable layer is opt-in per table.
@@ -46,6 +48,20 @@ my-app.schema.bundle.json
 ```
 
 The bundle preserves all field semantics and IDs; it is read-only — authoring still happens against the directory.
+
+The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`. `@askdb/core` owns the format and exports it as the `BundledSchemaV2` type; `@askdb/enrich`'s `bundleSchemaDirectory()` returns that type. Like the directory loader, the bundler treats only a missing optional file as absent: if `tenant-policy.md`, `concepts.md` or `tables/` exists but can't be read, bundling fails rather than writing a bundle without it.
+
+```jsonc
+{
+  "bundled": true,
+  "physical": { /* schema.json */ },
+  "tables": { "orders.md": "<raw markdown>" }, // every tables/*.md, keyed by filename
+  "concepts": "<raw concepts.md>",             // present when concepts.md exists
+  "tenantPolicy": "<raw tenant-policy.md>"     // present when tenant-policy.md exists
+}
+```
+
+`tenantPolicy` is load-bearing: `ask()` only enforces tenant scope when the loaded schema has a policy, so a bundle without it would silently turn off tenant isolation. See [`tenant-policy.md`](./tenant-policy.md).
 
 ---
 
@@ -113,6 +129,18 @@ Required table fields are `id`, `name`, `schema`, and `columns`. Required column
 ## Describable layer — `tables/<table>.md`
 
 One file per described table. Format: **YAML front-matter** for structured fields, **markdown body** for prose.
+
+**Filenames.** Files are linked to tables by the front-matter `id`, never by filename, so an existing file keeps its name whatever it is. When `@askdb/enrich` creates a file for a table that has none yet, it picks ([ADR 0013](../adrs/0013-table-filename-scheme.md)):
+
+- `<table>.md` when no other table in `schema.json` has the same name under the comparison below;
+- `<schema>.<table>.md` when two tables share a name under that comparison (e.g. `public.orders` and `archive.orders`), or when `<table>.md` is already taken by another file;
+- `<schema>.<table>-<n>.md` as a last resort if that is taken too.
+
+Two names count as the same when APFS or NTFS would store them as one file. APFS ignores case with full case folding (`straße` matches `STRASSE` and `STRAẞE`) and ignores Unicode normalization (NFC `café` matches NFD `café`); NTFS ignores case one character at a time and doesn't normalize. The comparison counts a pair as the same if either would. The key is `normalize("NFC").toLowerCase().toUpperCase().toLowerCase()`; ADR 0013 records how it was checked against Unicode full case folding. Every entry in `tables/` counts as taken, not only the `.md` files the loader reads, so `Orders.MD` blocks `orders.md`, but `orders.txt` doesn't.
+
+Names are made filename-safe first: path separators (`/` and `\`, on every platform), NUL, control characters, lone UTF-16 surrogates, and Windows-reserved characters become `_`, and a leading `.` or Windows device name gets a `_` prefix. A filename longer than 200 bytes (UTF-8, decomposed) is cut to fit and ends in `~` plus the first 8 hex digits of the SHA-256 of the untruncated name: `<prefix>~<8 hex>.md`. Databases allow names longer than file systems do (SQL Server identifiers are up to 128 characters), so a schema-qualified or non-ASCII name can otherwise exceed the 255-byte limit.
+
+`saveTable()` writes only to a `.md` file directly inside `tables/`. It refuses a filename with a path separator or `..`, and it refuses to write when `tables/` or the target file is a symbolic link. It writes the new content to a temporary file in `tables/` and renames it over the target, so a hard link at the target is replaced, not written through, and readers see the old file or the new one (the temp file is `fsync`ed first). A target without write permission is refused with `EACCES`, as a plain write would be. The new file keeps the target's permission bits and group, and its owner when the process may set it (only root can give a file to another user); if the group can't be kept, the group and others each get only the access both had. `\` counts as a path separator only on Windows. A symbolic or hard link already in `tables/` therefore can't redirect a write. Replacing `tables/` itself with a symbolic link while a save is running is not guarded.
 
 ```markdown
 ---

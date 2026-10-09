@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -218,6 +218,33 @@ describe("AskDB Studio server", () => {
     expect(saved.tables.find((table: any) => table.physical.name === "users").escalatedByOtherFiles).toEqual([createdAtId]);
     const createdAt = loadSchema(schemaDir).tables.flatMap((t) => t.columns).find((c) => c.id === createdAtId);
     expect(createdAt?.sensitive).toBe(true);
+  });
+
+  it("refuses to save a table through a symbolic link that points outside tables/", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const ordersMd = join(schemaDir, "tables", "orders.md");
+    // A checkout can carry `tables/orders.md -> <anything>`; git stores symlinks.
+    const outside = join(schemaDir, "..", "outside.md");
+    const original = readFileSync(ordersMd, "utf8");
+    writeFileSync(outside, original);
+    rmSync(ordersMd);
+    symlinkSync(outside, ordersMd);
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    const orders = workspace.tables.find((table: any) => table.physical.name === "orders");
+    const response = await postRaw(`${baseUrl}/api/tables/${encodeURIComponent(orders.physical.id)}`, {
+      draft: { ...orders.draft, description: "Edited order description." },
+    });
+
+    expect(response.ok).toBe(false);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringMatching(/outside tables\/: "orders\.md" is a symbolic link/) },
+    });
+    expect(readFileSync(outside, "utf8")).toBe(original);
   });
 
   describe("request guard", () => {

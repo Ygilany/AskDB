@@ -52,7 +52,7 @@ Each table and column carries an ID that survives across re-introspection runs.
 - `table.id`: `"table:<schema>.<name>"` — always schema-qualified, including `public`.
 - `column.id`: `"table:<schema>.<name>#<column>"`.
 
-Engines without Postgres-style schemas emit a single `public` namespace so ids stay stable across engines: SQLite always, and MySQL for the connection's own database. MySQL with a database list (`filters.schemas`, from `introspection.schemas` or `--schemas`) emits one namespace per listed database instead (`table:<database>.<name>`). Each first-party connector keeps its id helpers private (`makeTableId`, `makeColumnId`, in `ids.ts` or, for `@askdb/prisma`, inline); use the same format so the enrichment layer (`tables/<name>.md` markdown) keeps matching after schema changes.
+Engines without Postgres-style schemas emit a single `public` namespace so ids stay stable across engines: SQLite always, and MySQL for the connection's own database. MySQL with a database list (`filters.schemas`, from `introspection.schemas` or `--schemas`) emits one namespace per listed database instead (`table:<database>.<name>`). Build them with `makeTableId` / `makeColumnId` from `@askdb/introspect/kit` (every first-party connector does); use the same format so the enrichment layer (`tables/<name>.md` markdown) keeps matching after schema changes.
 
 ### Filters
 
@@ -65,6 +65,8 @@ export type IntrospectionFilters = {
   tables?: string[];            // glob patterns matched against "<schema>.<name>"
 };
 ```
+
+`compileTableFilters(patterns)` and `ambiguousFilterWarnings(patterns, qualifiedNames)` in `@askdb/introspect/kit` implement the `tables` glob (`*`, `?`) and the `ambiguous_filter` warning described below.
 
 There is no default include list: with `schemas` unset, `@askdb/postgres` and `@askdb/sqlserver` introspect every non-system schema (pass `schemas: ["public"]` to narrow it). System schemas (Postgres: `information_schema`, `pg_catalog`, `pg_toast*`, `pg_temp_*`; SQL Server: `sys`, `INFORMATION_SCHEMA`, the `db_*` role schemas, `guest`) and engine-internal objects (SQLite `sqlite_*` tables, SQL Server `is_ms_shipped` objects) must always be excluded regardless of `filters.excludeSchemas`. When a table-glob pattern matches no rows, emit an `ambiguous_filter` warning so callers can spot typos.
 
@@ -166,7 +168,7 @@ export type CatalogQueryRunner = (
 Rules:
 
 - The runner is **introspection-only**. It is never used to execute generated user SQL — that boundary is enforced in `@askdb/core`.
-- Drivers are optional peer dependencies. `@askdb/postgres` lazy-loads `pg` from inside `createPostgresCatalogQueryRunner` so consumers that only generate SQL never pull a driver into their dependency graph.
+- Drivers are optional peer dependencies. `@askdb/postgres` lazy-loads `pg` from inside `createPostgresCatalogQueryRunner` so consumers that only generate SQL never pull a driver into their dependency graph. Use `createOptionalDriverLoader` / `isDriverInstalled` from `@askdb/introspect/kit` for the same behavior (engine-package import first, then the caller's project root, cached per `resolveFrom`, retry after a missing-peer failure). Write the import in your package as `() => import("your-driver").catch(rethrowDriverImportError)`: a `.catch()` on the `import()` itself is how bundlers such as esbuild tell an optional peer from a required one.
 - Callers can BYO runners. Expose the type so tests and alternative drivers (e.g. `postgres.js`, Neon HTTP) can plug in without modifying the connector.
 
 ---
@@ -211,7 +213,7 @@ Required published exports:
 - `describeX(input: XInput): Promise<IntrospectionResult>` — the bare function, useful for tests and bespoke pipelines that bypass the orchestrator.
 - The input type (`XIntrospectionInput`).
 - `xConnectorProvider: ConnectorProviderAdapter` — the `@askdb/connectors` adapter that turns a `ConnectorConfig` into the connector + input pair.
-- For connectors that take a connection string or a path: an optional `connectionLabelParts(connection)` hook on `xConnectorProvider` that returns the parts safe to display (`{ host?, port?, database? }` or `{ file }`), taken from your driver's own connection-string parser where it has one (never a second implementation of its grammar), or `undefined` when the input doesn't parse cleanly (`parseConnectionUrl` from `@askdb/connectors` is a strict fallback for a standard `scheme://host:port/database` URL). `registry.connectionLabel()` builds the label from them with `formatConnectionLabel`; an adapter never returns label text, and without the hook the label is `configured <engine> connection` ([ADR 0011](../adrs/0011-connection-labels-from-parsed-parts.md)).
+- For connectors that take a connection string or a path: an optional `connectionLabelParts(connection)` hook on `xConnectorProvider` that returns the parts safe to display (`{ host?, port?, database? }` or `{ file }`), taken from your driver's own connection-string parser where it has one (never a second implementation of its grammar), or `undefined` when the input doesn't parse cleanly (`parseConnectionUrl` from `@askdb/introspect/kit` is a strict fallback for a standard `scheme://host:port/database` URL). `registry.connectionLabel()` builds the label from them with `formatConnectionLabel`; an adapter never returns label text, and without the hook the label is `configured <engine> connection` ([ADR 0011](../adrs/0011-connection-labels-from-parsed-parts.md)).
 - (Optional) a re-export of the engine's `DialectSpec` from `@askdb/core`.
 - (Optional) the template bundle constants when `templates()` is implemented.
 

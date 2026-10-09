@@ -11,8 +11,9 @@ export {
   type ConnectorRegistry,
 } from "./registry.js";
 
+// Moved to `@askdb/introspect/kit`; re-exported here for compatibility.
 export {
   formatConnectionLabel,
   parseConnectionUrl,
   type ConnectionLabelParts,
-} from "./label.js";
+} from "@askdb/introspect/kit";
