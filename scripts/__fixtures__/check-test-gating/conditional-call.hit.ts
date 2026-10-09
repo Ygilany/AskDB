@@ -29,3 +29,12 @@ if (ok) {
     it("inside a conditional suite", run);
   });
 }
+try {
+  await import("better-sqlite3");
+  describe("sqlite", run); // HIT
+} catch {
+  it("better-sqlite3 is not installed", () => {}); // HIT
+}
+if (ok) {
+  rows.forEach((r) => it(`row ${r}`, run)); // HIT
+}

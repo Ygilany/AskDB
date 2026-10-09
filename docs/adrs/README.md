@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Read this index before changing code or reviewing a PR. Each row is a decision AskDB already made between viable options; the ADR holds the options and why the others lost. Don't regress a decision silently: to change one, amend or supersede its ADR in the same PR.
+Read this index before changing code or reviewing a PR. Each Accepted row is a decision AskDB already made between viable options, and a Proposed row is one still under review in the PR it names; the ADR holds the options and why the others lost. Don't regress a decision silently: to change one, amend or supersede its ADR in the same PR.
 
 A PR that adds an ADR adds its row here; a PR that amends or supersedes one updates its row.
 

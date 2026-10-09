@@ -19,3 +19,13 @@ describe("suite", () => {
   if (verbose) console.log("conditions inside a suite body are fine");
   it("test", () => {});
 });
+if (ready) {
+  function register() {
+    describe("in a declared function, reported where it is called", run);
+  }
+}
+try {
+  describe("a try without a catch always runs", run);
+} finally {
+  cleanup();
+}

@@ -46,7 +46,7 @@ for (const file of files) {
 }
 
 test("a file that does not parse throws instead of passing", () => {
-  assert.throws(() => findGates('describe.skip("unterminated", () => {\n'), /line \d+:/);
+  assert.throws(() => findGates('describe.skip("unterminated", () => {\n'), /does not parse at line \d+:/);
   assert.throws(() => findGates("const x = <p>jsx</p>;\n", "x.test.ts"));
 });
 
@@ -103,6 +103,13 @@ test("CLI fails closed on a packages line it cannot read", (t) => {
   assert.match(result.stderr, /unrecognized line/);
 });
 
+test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
+  const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }, 'packages:\n  - "packages/**"\n');
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unsupported workspace pattern/);
+});
+
 test("CLI runs when invoked through a symlinked path", (t) => {
   const root = workspace(t, { "packages/a/src/a.test.ts": 'describe.skip("gated", () => {});\n' });
   const link = join(root, "linked-check.mjs");
@@ -128,7 +135,7 @@ test("CLI fails closed on a test file it cannot parse", (t) => {
   });
   const result = run(root);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /packages\/a\/src\/broken\.test\.ts: cannot be parsed/);
+  assert.match(result.stderr, /packages\/a\/src\/broken\.test\.ts: cannot be checked \(does not parse at line \d+/);
 });
 
 test("CLI fails closed when it finds no test files", (t) => {

@@ -22,15 +22,15 @@ Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with 
 
 ### C. Walk the TypeScript AST (chosen)
 
-`typescript` is already a root devDependency, pinned with the rest of the toolchain. `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test`: its modifier links, whether it is invoked, whether it is a ternary branch, and whether a condition (`if`/`else`, `switch` case, `? :`, `&&`, `||`, `??`) sits between the call and the nearest enclosing suite, test or named function.
+`typescript` is already a root devDependency, pinned with the rest of the toolchain. `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test`: its modifier links, whether it is invoked, whether it is a ternary branch, and whether a condition (`if`/`else`, `switch` case, `try`/`catch`, `? :`, `&&`, `||`, `??`) sits between the call and the nearest enclosing suite, test or named function.
 
 ## Decision
 
-The check parses each test file with `ts.createSourceFile` and applies its rules to the AST. A file with parse errors fails the check, naming the file, instead of being skipped. `typescript` is loaded from the script's real path, so a symlinked invocation finds the repo's install.
+The check parses each test file with `ts.createSourceFile` and applies its rules to the AST. A file with parse errors fails the check, naming the file, instead of being skipped. Wrappers that leave a value unchanged (`(x)`, `x!`, `x as T`, `<T>x`, `x satisfies T`) are seen through. `typescript` is loaded from the script's real path, so a symlinked invocation finds the repo's install.
 
 ## Consequences
 
 - Comments, strings, templates, regexes and JSX text can't trip or hide a rule; only code can.
 - The check depends on the root install: `pnpm lint` already runs after `pnpm install` locally, in CI and in `scripts/release-preflight.sh`.
-- Parse errors come from `SourceFile.parseDiagnostics`, which TypeScript does not document as public. If a TypeScript upgrade removes it, the check throws on every file and fails closed; it does not pass silently.
+- Parse errors come from `getSyntacticDiagnostics` on a one-file program with no lib, no module resolution and no emit, all public API. Any other error while checking a file also fails the check, naming the file.
 - Still not detected: an early `return` before a call, a gate behind a helper or alias, and `ctx.skip()` in a test body. Catching these needs data flow, not syntax; the review profile asks reviewers to read new suites for them.

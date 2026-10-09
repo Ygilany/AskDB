@@ -14,3 +14,8 @@ describe.skip("a pragma with no reason exempts nothing", () => {}); // HIT
 describe["skip"]("element access", () => {}); // HIT
 /* check-test-gating-ignore-next-line: a block comment is not a pragma */
 describe.skip("a pragma in a block comment exempts nothing", () => {}); // HIT
+// check-test-gating-ignore-next-line: exempts only the line right below
+const unrelated = 1;
+describe.skip("two lines below a pragma", () => {}); // HIT
+describe!.skip("non-null assertion", () => {}); // HIT
+(describe as any).skipIf(!url)("type assertion", () => {}); // HIT

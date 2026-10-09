@@ -16,9 +16,9 @@
 // Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
 // and tests defined in a loop (`for (const c of cases) it(…)`), which is parametrization.
 // Rejected: see RULES, including a describe/suite/it/test call made only under a condition
-// (`if`/`else`, `switch` cases, `? :`, `&&`, `||`, `??`) anywhere between the call and the
-// nearest enclosing suite, test or named function. To exempt one line, put a line comment on
-// the line above it with a non-empty reason; the marker with no reason exempts nothing:
+// (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`) anywhere between the
+// call and the nearest enclosing suite, test or named function. To exempt one line, put a line
+// comment on the line above it with a non-empty reason; the marker with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // Known limits: an early `return` before a call, a gate behind a helper or alias
@@ -76,8 +76,20 @@ export const RULES = [
 
 const PRAGMA = /^\/\/\s*check-test-gating-ignore-next-line\s*:\s*\S/;
 
+// Wrappers that leave the value unchanged: `(x)`, `x!`, `x as T`, `<T>x`, `x satisfies T`.
+function isWrapper(node) {
+  return (
+    ts.isParenthesizedExpression(node) ||
+    ts.isNonNullExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isTypeAssertionExpression(node) ||
+    ts.isSatisfiesExpression(node)
+  );
+}
+
+/** The outermost wrapper around `node`, or `node` itself. */
 function stripParens(node) {
-  while (ts.isParenthesizedExpression(node.parent) && node.parent.expression === node) node = node.parent;
+  while (isWrapper(node.parent) && node.parent.expression === node) node = node.parent;
   return node;
 }
 
@@ -162,7 +174,9 @@ function conditionalEdge(parent, child) {
   if (ts.isIfStatement(parent)) return child !== parent.expression;
   if (ts.isConditionalExpression(parent)) return child !== parent.condition;
   if (ts.isBinaryExpression(parent)) return CONDITIONAL_OPERATORS.has(parent.operatorToken.kind) && child === parent.right;
-  return ts.isCaseClause(parent) || ts.isDefaultClause(parent);
+  // A `try` block with a `catch` runs only up to its first throw; the `catch` only after one.
+  if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
+  return ts.isCaseClause(parent) || ts.isDefaultClause(parent) || ts.isCatchClause(parent);
 }
 
 /**
@@ -185,8 +199,10 @@ function underCondition(call) {
 function isTestCall(node) {
   let callee = ts.isCallExpression(node) ? node.expression : node.tag;
   if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
-  while (ts.isParenthesizedExpression(callee)) callee = callee.expression;
-  while (linkName(callee) !== undefined) callee = callee.expression;
+  for (;;) {
+    if (isWrapper(callee) || linkName(callee) !== undefined) callee = callee.expression;
+    else break;
+  }
   return ts.isIdentifier(callee) && TEST_FNS.has(callee.text);
 }
 
@@ -195,6 +211,14 @@ function pragmaLines(sf) {
   const text = sf.text;
   const seen = new Set();
   const lines = new Set();
+  // Trivia scanning from a token next to JSX text would read `// …` in that text as a comment.
+  const jsxText = [];
+  const collectJsxText = (node) => {
+    if (node.kind === ts.SyntaxKind.JsxText) jsxText.push([node.pos, node.end]);
+    ts.forEachChild(node, collectJsxText);
+  };
+  collectJsxText(sf);
+  const inJsxText = (pos) => jsxText.some(([a, b]) => pos >= a && pos < b);
   const visit = (node) => {
     if (node.kind === ts.SyntaxKind.JsxText) return;
     if (node.kind < ts.SyntaxKind.FirstNode || node.kind === ts.SyntaxKind.EndOfFileToken) {
@@ -203,7 +227,7 @@ function pragmaLines(sf) {
         ...(ts.getTrailingCommentRanges(text, node.end) ?? []),
       ];
       for (const c of comments) {
-        if (seen.has(c.pos) || c.kind !== ts.SyntaxKind.SingleLineCommentTrivia) continue;
+        if (seen.has(c.pos) || c.kind !== ts.SyntaxKind.SingleLineCommentTrivia || inJsxText(c.pos)) continue;
         seen.add(c.pos);
         if (PRAGMA.test(text.slice(c.pos, c.end))) lines.add(sf.getLineAndCharacterOfPosition(c.pos).line + 2);
       }
@@ -212,6 +236,23 @@ function pragmaLines(sf) {
   };
   visit(sf);
   return lines;
+}
+
+/** The file's syntax errors, through a one-file program (no type-checking, no emit, no I/O). */
+function syntaxErrors(sf) {
+  const host = {
+    getSourceFile: (n) => (n === sf.fileName ? sf : undefined),
+    fileExists: (n) => n === sf.fileName,
+    readFile: () => undefined,
+    getDefaultLibFileName: () => "/lib.d.ts",
+    writeFile: () => {},
+    getCurrentDirectory: () => "/",
+    getCanonicalFileName: (n) => n,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => "\n",
+  };
+  const options = { noLib: true, noResolve: true, jsx: ts.JsxEmit.Preserve };
+  return ts.createProgram([sf.fileName], options, host).getSyntacticDiagnostics(sf);
 }
 
 /**
@@ -223,13 +264,12 @@ function pragmaLines(sf) {
  */
 export function findGates(src, fileName = "file.test.ts") {
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, kind);
-  const diagnostics = sf.parseDiagnostics;
-  if (!Array.isArray(diagnostics)) throw new Error("this TypeScript version does not expose parse diagnostics");
-  if (diagnostics.length > 0) {
-    const d = diagnostics[0];
+  const name = kind === ts.ScriptKind.TSX ? "/file.test.tsx" : "/file.test.ts";
+  const sf = ts.createSourceFile(name, src, ts.ScriptTarget.Latest, true, kind);
+  const d = syntaxErrors(sf)[0];
+  if (d) {
     const line = sf.getLineAndCharacterOfPosition(d.start ?? 0).line + 1;
-    throw new Error(`line ${line}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
+    throw new Error(`does not parse at line ${line}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
   }
   currentFile = sf;
   const refs = [];
@@ -325,7 +365,7 @@ function main() {
       try {
         gates = findGates(src, file);
       } catch (error) {
-        hits.push(`${relative(root, file)}: cannot be parsed, so it cannot be checked (${error.message})`);
+        hits.push(`${relative(root, file)}: cannot be checked (${error.message})`);
         continue;
       }
       for (const hit of gates) {
