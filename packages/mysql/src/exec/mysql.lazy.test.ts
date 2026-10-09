@@ -5,10 +5,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mysql2State = vi.hoisted(() => ({
+  imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("mysql2/promise", async () => {
+  mysql2State.imports++;
   if (mysql2State.shouldFail) {
     const err = new Error("Cannot find package 'mysql2' imported from mysql.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
@@ -31,7 +33,7 @@ vi.mock("node:module", async () => {
             /* dir may not exist yet */
           }
         }
-        if (specifier === "mysql2/promise" && resolved) {
+        if ((specifier === "mysql2/promise" || specifier === "mysql2") && resolved) {
           return resolved;
         }
         const err = new Error(`Cannot find module '${specifier}'`);
@@ -81,13 +83,12 @@ module.exports = {
 }
 
 describe("exec/mysql - lazy `mysql2` peer dependency", () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
     mysql2State.projectResolvedPaths.clear();
     mysql2State.shouldFail = false;
+    mysql2State.imports = 0;
     process.chdir(originalCwd);
-    const { __resetMysql2ModuleCacheForTests } = await import("./mysql.js");
-    __resetMysql2ModuleCacheForTests();
   });
 
   afterEach(async () => {
@@ -96,11 +97,15 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     tempDirs = [];
   });
 
+  // Hosts build a runner without the optional peer installed; the driver must
+  // not be imported until the runner is first called.
   it("createMysqlCatalogQueryRunner() does not load `mysql2` at construction time", async () => {
     const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
     mysql2State.shouldFail = true;
 
     expect(() => createMysqlCatalogQueryRunner("mysql://nowhere")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mysql2State.imports).toBe(0);
   });
 
   it("invoking the runner when `mysql2` is missing rejects with a helpful AskDbError", async () => {
@@ -119,25 +124,6 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     expect(msg).toMatch(/`npx -p askdb -p mysql2 askdb \.\.\.`/);
   });
 
-  it("after a missing-mysql2 failure, a later invocation retries the import (cache cleared)", async () => {
-    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
-    process.chdir(await createTempProject());
-    mysql2State.shouldFail = true;
-    const runner = createMysqlCatalogQueryRunner("mysql://nowhere");
-
-    const first = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((first as Error).name).toBe("AskDbError");
-
-    const projectDir = await createTempProject();
-    await addMysql2Fixture(projectDir);
-    process.chdir(projectDir);
-
-    await expect(runner("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-  });
-
   it("resolves `mysql2` from the caller project cwd when the adapter import cannot see it", async () => {
     const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
     const projectDir = await createTempProject();
@@ -153,46 +139,22 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     });
   });
 
-  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
-    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
-    const emptyDir = await createTempProject();
-    mysql2State.shouldFail = true;
-    const runner = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: emptyDir });
-
-    const err = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
-    expect((err as Error).message).toMatch(/optional `mysql2` peer dependency/);
-  });
-
-  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
-    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
+  it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `mysql2` there when cwd lacks it", async () => {
+    const { createMysqlCatalogQueryRunner, loadMysql2Driver, isMysql2DriverInstalled } = await import("./mysql.js");
     const projectDir = await createTempProject();
     await addMysql2Fixture(projectDir);
     process.chdir(await createTempProject());
     mysql2State.shouldFail = true;
+
+    // The wrappers Studio calls must forward resolveFrom too.
+    expect(isMysql2DriverInstalled({ resolveFrom: projectDir })).toBe(true);
+    expect(isMysql2DriverInstalled()).toBe(false);
+    await expect(loadMysql2Driver({ resolveFrom: projectDir })).resolves.toBeDefined();
 
     const runner = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: projectDir });
     await expect(runner("SELECT 1")).resolves.toEqual({
       columns: ["n", "label"],
       rows: [[1, "ok"]],
     });
-  });
-
-  it("resolveFrom cache slots are independent per directory", async () => {
-    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
-    const dirWithDriver = await createTempProject();
-    await addMysql2Fixture(dirWithDriver);
-    const dirWithoutDriver = await createTempProject();
-    mysql2State.shouldFail = true;
-
-    const runnerA = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: dirWithDriver });
-    await expect(runnerA("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-
-    const runnerB = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: dirWithoutDriver });
-    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
   });
 });

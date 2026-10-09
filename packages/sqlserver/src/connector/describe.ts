@@ -13,8 +13,17 @@ import type {
   SqlUnique,
   SqlView,
 } from "@askdb/introspect";
-import { compileTableFilters } from "./glob.js";
-import { makeColumnId, makeTableId } from "./ids.js";
+import {
+  ambiguousFilterWarnings,
+  buildOrderedGroups,
+  byName,
+  compileTableFilters,
+  groupBy,
+  makeColumnId,
+  makeTableId,
+  rowsToRecords,
+  sortedUnique,
+} from "@askdb/introspect/kit";
 
 /**
  * System schemas excluded from the default introspection.
@@ -217,17 +226,7 @@ export async function describeSqlServer(input: DescribeSqlServerInput): Promise<
   const runner = input.runner;
   const tableFilter = compileTableFilters(input.filters?.tables);
 
-  const run = async <T>(sql: string): Promise<T[]> => {
-    const result = await runner(sql);
-    if (result.rows.length === 0) return [];
-    const idx = new Map<string, number>();
-    for (let i = 0; i < result.columns.length; i++) idx.set(result.columns[i]!, i);
-    return result.rows.map((row) => {
-      const record: Record<string, unknown> = {};
-      for (const [name, i] of idx) record[name] = row[i];
-      return record as T;
-    });
-  };
+  const run = async <T>(sql: string): Promise<T[]> => rowsToRecords<T>(await runner(sql));
 
   const [tableRows, viewRows, columnRows, constraintRows, fkRows, indexRows] = await Promise.all([
     run<TableRow>(SQL_TABLES),
@@ -278,14 +277,7 @@ export function foldSqlServerResult(input: FoldInput): IntrospectionResult {
     return true;
   };
 
-  const colsByTable = new Map<string, ColumnRow[]>();
-  for (const c of input.columnRows) {
-    if (!includes(c.schema_name)) continue;
-    const key = `${c.schema_name}.${c.table_name}`;
-    const list = colsByTable.get(key) ?? [];
-    list.push(c);
-    colsByTable.set(key, list);
-  }
+  const colsByTable = groupByQualified(input.columnRows, includes);
   const constraintsByTable = groupByQualified(input.constraintRows, includes);
   const fksByTable = groupByQualified(input.fkRows, includes);
   const indexesByTable = groupByQualified(input.indexRows, includes);
@@ -360,14 +352,12 @@ export function foldSqlServerResult(input: FoldInput): IntrospectionResult {
     sequences: [],
   }));
 
-  for (const pattern of input.declaredFilters) {
-    const matched = namespaces.some(
-      (ns) =>
-        ns.tables.some((t) => compileTableFilters([pattern])(`${ns.name}.${t.name}`)) ||
-        ns.views.some((v) => compileTableFilters([pattern])(`${ns.name}.${v.name}`)),
-    );
-    if (!matched) warnings.push({ code: "ambiguous_filter", filter: pattern });
-  }
+  warnings.push(
+    ...ambiguousFilterWarnings(
+      input.declaredFilters,
+      namespaces.flatMap((ns) => [...ns.tables, ...ns.views].map((t) => `${ns.name}.${t.name}`)),
+    ),
+  );
 
   const schema: SqlSchema = { schemaId: input.schemaId, schemas: namespaces };
   const isEmpty = namespaces.length === 0;
@@ -412,46 +402,34 @@ function renderType(c: ColumnRow): string {
 }
 
 function buildUniques(rows: ConstraintRow[]): SqlUnique[] {
-  const byName = new Map<string, ConstraintRow[]>();
-  for (const r of rows) {
-    if (r.constraint_type !== "UNIQUE") continue;
-    const list = byName.get(r.constraint_name) ?? [];
-    list.push(r);
-    byName.set(r.constraint_name, list);
-  }
-  return Array.from(byName, ([name, list]) => ({
-    name,
-    columns: list
-      .slice()
-      .sort((a, b) => a.ordinal_position - b.ordinal_position)
-      .map((r) => r.column_name),
-  })).sort((a, b) => a.name.localeCompare(b.name));
+  return buildOrderedGroups(
+    rows.filter((r) => r.constraint_type === "UNIQUE"),
+    (r) => r.constraint_name,
+    (r) => r.ordinal_position,
+    (name, ordered) => ({ name, columns: ordered.map((r) => r.column_name) }),
+  );
 }
 
 function buildForeignKeys(rows: ForeignKeyRow[]): SqlForeignKey[] {
-  const byName = new Map<string, ForeignKeyRow[]>();
-  for (const r of rows) {
-    const list = byName.get(r.constraint_name) ?? [];
-    list.push(r);
-    byName.set(r.constraint_name, list);
-  }
-  const fks: SqlForeignKey[] = [];
-  for (const [name, list] of byName) {
-    const ordered = list.slice().sort((a, b) => a.ordinal_position - b.ordinal_position);
-    const sample = ordered[0]!;
-    fks.push({
-      name,
-      columns: ordered.map((r) => r.column_name),
-      references: {
-        schema: sample.referenced_schema,
-        table: sample.referenced_table,
-        columns: ordered.map((r) => r.referenced_column),
-      },
-      onDelete: mapAction(sample.delete_action),
-      onUpdate: mapAction(sample.update_action),
-    });
-  }
-  return fks.sort((a, b) => a.name.localeCompare(b.name));
+  return buildOrderedGroups(
+    rows,
+    (r) => r.constraint_name,
+    (r) => r.ordinal_position,
+    (name, ordered): SqlForeignKey => {
+      const sample = ordered[0]!;
+      return {
+        name,
+        columns: ordered.map((r) => r.column_name),
+        references: {
+          schema: sample.referenced_schema,
+          table: sample.referenced_table,
+          columns: ordered.map((r) => r.referenced_column),
+        },
+        onDelete: mapAction(sample.delete_action),
+        onUpdate: mapAction(sample.update_action),
+      };
+    },
+  );
 }
 
 function mapAction(code: number): SqlForeignKeyAction | undefined {
@@ -470,43 +448,28 @@ function mapAction(code: number): SqlForeignKeyAction | undefined {
 }
 
 function buildIndexes(rows: IndexRow[]): SqlIndex[] {
-  const byName = new Map<string, IndexRow[]>();
-  for (const r of rows) {
-    const list = byName.get(r.index_name) ?? [];
-    list.push(r);
-    byName.set(r.index_name, list);
-  }
-  return Array.from(byName, ([name, list]) => {
-    const ordered = list.slice().sort((a, b) => a.ordinal_position - b.ordinal_position);
-    const sample = ordered[0]!;
-    return {
-      name,
-      columns: ordered.map((r) => r.column_name),
-      unique: sample.is_unique === 1 || sample.is_unique === true,
-      method: sample.method,
-    } satisfies SqlIndex;
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  return buildOrderedGroups(
+    rows,
+    (r) => r.index_name,
+    (r) => r.ordinal_position,
+    (name, ordered) => {
+      const sample = ordered[0]!;
+      return {
+        name,
+        columns: ordered.map((r) => r.column_name),
+        unique: sample.is_unique === 1 || sample.is_unique === true,
+        method: sample.method,
+      } satisfies SqlIndex;
+    },
+  );
 }
 
 function groupByQualified<T extends { schema_name: string; table_name: string }>(
   rows: T[],
   includes: (schemaName: string) => boolean,
 ): Map<string, T[]> {
-  const out = new Map<string, T[]>();
-  for (const r of rows) {
-    if (!includes(r.schema_name)) continue;
-    const key = `${r.schema_name}.${r.table_name}`;
-    const list = out.get(key) ?? [];
-    list.push(r);
-    out.set(key, list);
-  }
-  return out;
-}
-
-function sortedUnique(values: Iterable<string>): string[] {
-  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-}
-
-function byName<T extends { name: string }>(a: T, b: T): number {
-  return a.name.localeCompare(b.name);
+  return groupBy(
+    rows.filter((r) => includes(r.schema_name)),
+    (r) => `${r.schema_name}.${r.table_name}`,
+  );
 }

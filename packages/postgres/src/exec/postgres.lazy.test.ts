@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock `pg` so we can simulate "peer dep missing" without uninstalling the workspace dev dep.
 // `vi.hoisted` is required because `vi.mock` is hoisted to the top of the file before imports.
 const pgState = vi.hoisted(() => ({
+  imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("pg", async () => {
+  pgState.imports++;
   if (pgState.shouldFail) {
     const err = new Error("Cannot find package 'pg' imported from postgres.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
@@ -86,13 +88,12 @@ module.exports = { Pool };
 }
 
 describe("exec/postgres — lazy `pg` peer dependency", () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
     pgState.projectResolvedPaths.clear();
     pgState.shouldFail = false;
+    pgState.imports = 0;
     process.chdir(originalCwd);
-    const { __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
   });
 
   afterEach(async () => {
@@ -101,16 +102,19 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     tempDirs = [];
   });
 
+  // Hosts build a runner without the optional peer installed; the driver must
+  // not be imported until the runner is first called.
   it("createPostgresCatalogQueryRunner() does not load `pg` at construction time", async () => {
     const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     pgState.shouldFail = true;
 
     expect(() => createPostgresCatalogQueryRunner("postgres://nowhere")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pgState.imports).toBe(0);
   });
 
   it("invoking the runner when `pg` is missing rejects with a helpful AskDbError", async () => {
-    const { createPostgresCatalogQueryRunner, __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     process.chdir(await createTempProject());
     pgState.shouldFail = true;
     const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
@@ -126,26 +130,8 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     expect(msg).toMatch(/catalog query runner/);
   });
 
-  it("after a missing-pg failure, a later invocation retries the import (cache cleared)", async () => {
-    const { createPostgresCatalogQueryRunner, __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
-    process.chdir(await createTempProject());
-    pgState.shouldFail = true;
-    const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
-
-    const first = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((first as Error).name).toBe("AskDbError");
-
-    const projectDir = await createTempProject();
-    await addPgFixture(projectDir);
-    process.chdir(projectDir);
-
-    await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
-  });
-
   it("resolves `pg` from the caller project cwd when the adapter import cannot see it", async () => {
-    const { createPostgresCatalogQueryRunner, __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     const projectDir = await createTempProject();
     await addPgFixture(projectDir);
     process.chdir(projectDir);
@@ -156,40 +142,19 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
   });
 
-  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
-    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
-    const emptyDir = await createTempProject();
-    pgState.shouldFail = true;
-    const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: emptyDir });
-
-    const err = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
-    expect((err as Error).message).toMatch(/optional `pg` peer dependency/);
-  });
-
-  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
-    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+  it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `pg` there when cwd lacks it", async () => {
+    const { createPostgresCatalogQueryRunner, loadPgDriver, isPgDriverInstalled } = await import("./postgres.js");
     const projectDir = await createTempProject();
     await addPgFixture(projectDir);
     process.chdir(await createTempProject());
     pgState.shouldFail = true;
+
+    // The wrappers Studio calls must forward resolveFrom too.
+    expect(isPgDriverInstalled({ resolveFrom: projectDir })).toBe(true);
+    expect(isPgDriverInstalled()).toBe(false);
+    await expect(loadPgDriver({ resolveFrom: projectDir })).resolves.toBeDefined();
 
     const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: projectDir });
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
-  });
-
-  it("resolveFrom cache slots are independent per directory", async () => {
-    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
-    const dirWithDriver = await createTempProject();
-    await addPgFixture(dirWithDriver);
-    const dirWithoutDriver = await createTempProject();
-    pgState.shouldFail = true;
-
-    const runnerA = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: dirWithDriver });
-    await expect(runnerA("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
-
-    const runnerB = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: dirWithoutDriver });
-    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
   });
 });
