@@ -135,6 +135,16 @@ export function isPick(node) {
   return pickBranches(node).length > 0;
 }
 
+/**
+ * Whether `isLeaf` holds for every value a pick in `node` can produce, looking through each value
+ * with `see` (`unwrap` or `resultOf`); a node that isn't a pick is its own only value.
+ */
+export function everyPickLeaf(node, see, isLeaf) {
+  node = see(node);
+  const branches = pickBranches(node);
+  return branches.length > 0 ? branches.every((b) => everyPickLeaf(b, see, isLeaf)) : isLeaf(node);
+}
+
 /** Whether `node` holds a pick anywhere inside it, outside a nested function. */
 export function holdsPick(node) {
   return someInside(node, isPick);

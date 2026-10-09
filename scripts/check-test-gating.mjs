@@ -18,8 +18,9 @@
 // namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`
 // through `require`, `module.require`, `globalThis.require` or a `createRequire(…)` function,
 // `vi.importActual("vitest")`, `vi.importMock("vitest")`, `import v = require(…)`, in-source
-// `import.meta.vitest`, and a member read straight off a loader, `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
-// and a variable holding its result are suite functions, so the sanctioned gate passes. A suite
+// `import.meta.vitest`, and a member read straight off a loader, `require("vitest").describe`) and
+// variables holding `test.extend({…})`. `integrationSuite({…})` and a variable holding its result
+// are suite functions, so the sanctioned gate passes. A suite
 // body's first parameter is the test API Vitest passes it; a body other than an inline function or
 // a `const` function with no parameter fails closed. Names resolve through TypeScript's binder, so
 // any other local declaration that shadows one (a callback's parameter `it`, an import of `test`
@@ -53,6 +54,7 @@ const {
   oneFileProgram,
   memberOn,
   pickBranches,
+  everyPickLeaf,
   isPick,
   optionKey,
   RUNTIME_KEY,
@@ -71,9 +73,7 @@ const {
   KIND_INTEGRATION_NS,
   isPromiseLoader,
   vitestBindings,
-  isVitestLoaderCall,
-  isImportMetaVitest,
-  isVitestNamespace,
+  isVitestModuleNode,
   integrationModuleResolver,
   isSuiteFactory,
   testFnName,
@@ -326,10 +326,7 @@ function hasGateOption(call, suite) {
 
 /** Whether every value a run-time choice can produce is a string or number literal. */
 function picksOnlyLiterals(node) {
-  node = resultOf(node);
-  const branches = pickBranches(node);
-  if (branches.length > 0) return branches.every(picksOnlyLiterals);
-  return ts.isStringLiteralLike(node) || ts.isNumericLiteral(node);
+  return everyPickLeaf(node, resultOf, (leaf) => ts.isStringLiteralLike(leaf) || ts.isNumericLiteral(leaf));
 }
 
 /** Whether `node` is the true or false branch of a `? :` (through wrappers). */
@@ -397,8 +394,7 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
-      else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node, bindings) || isImportMetaVitest(node)) &&
-        !isReadableNamespaceUse(node)) {
+      else if (isVitestModuleNode(node, bindings) && !isReadableNamespaceUse(node)) {
         refs.push(unreadableRef(node));
       }
     }

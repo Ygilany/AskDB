@@ -20,13 +20,18 @@ import { vitestCallKind } from "./bindings.mjs";
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
- * or is built from such a pick: spread into an array or object, passed to a call or `new`, or the
- * receiver of a method call.
+ * or is built from such a pick: by arithmetic, concatenation or a template, spread into an array or
+ * object, passed to a call or `new`, or the receiver of a method call.
  */
 function pickedAtRunTime(node) {
   node = resultOf(node);
   if (isPick(node)) return true;
   if (readsPickedValue(node)) return true;
+  // `(url ? 0 : 1) + 1`, `-(url ? 1 : 0)`, `${url ?? ""}`: arithmetic, concatenation or a template
+  // over a pick is decided by it too.
+  if (ts.isBinaryExpression(node)) return pickedAtRunTime(node.left) || pickedAtRunTime(node.right);
+  if (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) return pickedAtRunTime(node.operand);
+  if (ts.isTemplateExpression(node)) return node.templateSpans.some((span) => pickedAtRunTime(span.expression));
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
   if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
@@ -119,12 +124,17 @@ export function underCondition(call, bindings) {
   for (let node = call.parent; node && !ts.isSourceFile(node); grandchild = child, child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
     if (ts.isFunctionDeclaration(node)) return false;
-    // A class member that runs later (a method, accessor, constructor or instance field) is a
-    // boundary; a static block, static field or `extends` clause runs when the class does.
+    // A declared class's member that runs later (a method, accessor, constructor or instance field)
+    // is a boundary, like a named function; a static block, static field or `extends` clause runs
+    // when the class does. A class expression's members run where it is constructed, like a
+    // function expression's body, so the walk goes on as for a callback.
     if (ts.isClassLike(node)) {
       // A member's computed key and decorators run with the class, like a static block.
       const viaKeyOrDecorator = grandchild !== undefined && (child.name === grandchild || ts.isDecorator(grandchild));
-      if (isDeferredClassMember(child) && !viaKeyOrDecorator) return false;
+      if (isDeferredClassMember(child) && !viaKeyOrDecorator) {
+        if (ts.isClassDeclaration(node)) return false;
+        inCallback = true;
+      }
       continue;
     }
     if (calleeOf(node) !== undefined && node !== call && vitestCallKind(node, bindings) !== undefined) {

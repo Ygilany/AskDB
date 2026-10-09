@@ -11,3 +11,5 @@ const metaUrl = import.meta.url;
 function NotImportMeta() {
   new.target.vitest.describe.skip("a vitest member off new.target, not import.meta", () => {});
 }
+await import("vitest/config");
+require("vitest-fetch-mock");

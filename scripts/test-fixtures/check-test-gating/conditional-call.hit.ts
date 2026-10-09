@@ -122,3 +122,8 @@ do {
 } while (++repeats < (process.env.DATABASE_URL ? 2 : 1));
 let stepped = 0;
 for (; stepped < (process.env.DATABASE_URL ? 1 : 0); describe("a for incrementor under a picked condition", run)) stepped++; // HIT
+for (const u of [1].slice((process.env.DATABASE_URL ? 0 : 1) * 1)) describe(`a loop table sliced by arithmetic over a pick ${u}`, run); // HIT
+if (process.env.DATABASE_URL) new (class { constructor() { describe("a class expression's constructor under an if", run); } })(); // HIT
+if (process.env.DATABASE_URL) new (class { suite = describe("a class expression's field under an if", run); })(); // HIT
+process.env.DATABASE_URL && new (class { m = (() => describe("a class expression's field IIFE under &&", run))(); })(); // HIT
+Promise.resolve().then(() => new (class { constructor() { describe("a class expression in a .then callback", run); } })()); // HIT

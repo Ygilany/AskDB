@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, pickBranches, ts, unwrap, resultOf } from "./ast.mjs";
+import { calleeOf, everyPickLeaf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, ts, unwrap, resultOf } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -89,8 +89,17 @@ export function isImportMetaVitest(node) {
  */
 function isVitestModule(node, bindings) {
   node = resultOf(node);
-  if (isImportMetaVitest(node)) return true;
+  // `import v = require("vitest")`: the declaration, not a use of the module.
   if (ts.isExternalModuleReference(node)) return isVitestSpecifier(node.expression);
+  return isVitestModuleNode(node, bindings);
+}
+
+/**
+ * Whether `node` itself, with nothing unwrapped, is a use of the Vitest module: `import.meta.vitest`,
+ * a loader call, or an identifier bound to a Vitest namespace.
+ */
+export function isVitestModuleNode(node, bindings) {
+  if (isImportMetaVitest(node)) return true;
   if (ts.isIdentifier(node)) return isVitestNamespace(node, bindings);
   return isVitestLoaderCall(node, bindings);
 }
@@ -272,15 +281,14 @@ function constInitializer(id, bindings) {
  * `const` bound to one.
  */
 function isNonFunction(node, bindings) {
-  node = unwrap(node);
-  if (ts.isObjectLiteralExpression(node) || ts.isNumericLiteral(node) || node.kind === ts.SyntaxKind.NullKeyword) return true;
-  if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)) return true;
-  const branches = pickBranches(node);
-  if (branches.length > 0) return branches.every((b) => isNonFunction(b, bindings));
-  if (!ts.isIdentifier(node)) return false;
-  if (node.text === "undefined" && bindings.declarationsOf(node).length === 0) return true;
-  const init = constInitializer(node, bindings);
-  return init !== undefined && isNonFunction(init, bindings);
+  return everyPickLeaf(node, unwrap, (leaf) => {
+    if (ts.isObjectLiteralExpression(leaf) || ts.isNumericLiteral(leaf) || leaf.kind === ts.SyntaxKind.NullKeyword) return true;
+    if (ts.isPrefixUnaryExpression(leaf) && ts.isNumericLiteral(leaf.operand)) return true;
+    if (!ts.isIdentifier(leaf)) return false;
+    if (leaf.text === "undefined" && bindings.declarationsOf(leaf).length === 0) return true;
+    const init = constInitializer(leaf, bindings);
+    return init !== undefined && isNonFunction(init, bindings);
+  });
 }
 
 function isInlineFunction(node) {

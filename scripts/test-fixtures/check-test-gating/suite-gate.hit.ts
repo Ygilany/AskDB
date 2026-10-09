@@ -59,3 +59,7 @@ describe("a picked body assigned inside the call", pickedLater = process.env.DAT
 describe.each((0, process.env.DATABASE_URL ? [1] : []))("a table picked behind a comma %s", () => {}); // HIT
 describe("a suite whose results a condition inverts", { fails: !process.env.DATABASE_URL }, () => {}); // HIT
 describe("a suite expected to fail", { fails: true }, () => {}); // HIT
+describe.each([["pg"]].slice((process.env.DATABASE_URL ? 0 : 1) + 0))("a slice bound computed from a pick %s", () => {}); // HIT
+describe.each(`${process.env.DATABASE_URL ?? ""}`.split(""))("a template over a pick %s", () => {}); // HIT
+describe.each([["pg"]].slice(-(process.env.DATABASE_URL ? 0 : 1)))("a negated pick %s", () => {}); // HIT
+describe.each([["pg"]].slice("" + (process.env.DATABASE_URL ? 0 : 1)))("a concatenated pick %s", () => {}); // HIT

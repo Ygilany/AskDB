@@ -21,7 +21,7 @@ describe("suite", () => {
 });
 if (ready) {
   function register() {
-    describe("in a declared function, reported where it is called", run);
+    describe("in a declared function: its call site is a known limit (a named helper)", run);
   }
 }
 try {
@@ -32,7 +32,7 @@ try {
 if (ready) {
   class Suites {
     register() {
-      describe("in a method, reported where it is called", run);
+      describe("in a declared class's method: its call site is a known limit (a named helper)", run);
     }
   }
 }
@@ -94,3 +94,5 @@ lookup[it("a plain element access key", run)];
 tagged`${describe("inside a tagged template's value", run)}`;
 let attemptsLeft = 0;
 for (describe("a for initializer runs once", run); attemptsLeft < (process.env.DATABASE_URL ? 1 : 0); ) attemptsLeft++;
+new (class { constructor() { describe("a class expression constructed unconditionally", run); } })();
+describe.each([["pg"]].slice(0 + 0))("a slice bound computed without a pick %s", () => {});
