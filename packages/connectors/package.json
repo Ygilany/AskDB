@@ -1,6 +1,6 @@
 {
   "name": "@askdb/connectors",
-  "version": "0.1.0-beta.8",
+  "version": "0.1.0-beta.9",
   "description": "Deprecated: compatibility re-export of the AskDB connector provider registry, which now lives in @askdb/introspect (connection-label helpers in @askdb/introspect/kit).",
   "keywords": [
     "askdb",
