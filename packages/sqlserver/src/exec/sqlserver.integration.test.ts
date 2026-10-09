@@ -41,6 +41,15 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
             REFERENCES dbo.integration_users (id)
         )
       `);
+      await pool
+        .request()
+        .query(
+          "IF OBJECT_ID('dbo.integration_shipped', 'U') IS NOT NULL DROP TABLE dbo.integration_shipped",
+        );
+      // A user table marked as shipped, like the replication MS* tables SQL
+      // Server creates in dbo: introspection must leave it out.
+      await pool.request().query("CREATE TABLE dbo.integration_shipped (id INT NOT NULL PRIMARY KEY)");
+      await pool.request().query("EXEC sys.sp_MS_marksystemobject N'dbo.integration_shipped'");
     } finally {
       await pool.close();
     }
@@ -52,6 +61,11 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
     const pool = new mssql.ConnectionPool(url!);
     await pool.connect();
     try {
+      await pool
+        .request()
+        .query(
+          "IF OBJECT_ID('dbo.integration_shipped', 'U') IS NOT NULL DROP TABLE dbo.integration_shipped",
+        );
       await pool
         .request()
         .query(
@@ -87,6 +101,7 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
     );
     expect(allTableNames).toContain("dbo.integration_users");
     expect(allTableNames).toContain("dbo.integration_posts");
+    expect(allTableNames).not.toContain("dbo.integration_shipped");
 
     const dboNs = result.schema.schemas.find((s) => s.name === "dbo")!;
 

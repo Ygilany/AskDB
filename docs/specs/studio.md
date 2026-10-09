@@ -82,7 +82,7 @@ Execute is opt-in (`studio.execute.enabled`, default `false`). When disabled, `P
 
 Each request (`apps/studio/src/server.ts` `executeQuery` → `apps/studio/src/execute-registry.ts`):
 
-1. `validateExecuteSql` runs `@askdb/core` `validateSelectSql` with the provider's `DialectSpec`. A same-family `dialect` override is honored: `cockroachdb` on postgres, `mariadb` on mysql. A `SqlValidationError` becomes a `400`, and the driver is never called. The normalized SQL is what gets executed. On SQL Server, a batch of several statements made only of verbs not on the denylist (for example two `SELECT`s) passes validation and runs as one batch.
+1. `validateExecuteSql` runs `@askdb/core` `validateSelectSql` with the provider's `DialectSpec`. A same-family `dialect` override is honored: `cockroachdb` on postgres, `mariadb` on mysql. A `SqlValidationError` becomes a `400`, and the driver is never called. The validated SQL, without its trailing `;`, is what gets executed: `validateSelectSql` keeps the `;`, and the runners wrap the statement in a row cap. On SQL Server, a batch of several statements made only of verbs not on the denylist (for example two `SELECT`s) passes validation and runs as one batch.
 2. When the schema marks anything `sensitive`, `validateSensitiveReferences` runs in `"warn"` mode, and matches come back as `warnings` on a successful response. Studio has no strict setting.
 3. The engine runner executes the SQL read-only (one statement on Postgres, MySQL/MariaDB and SQLite; a batch on SQL Server, inside an always-rolled-back transaction), with a timeout (`studio.execute.timeoutMs`, default 30000) and a row cap (`studio.execute.maxRows`, default 500; fetch `maxRows + 1`, respond with `truncated`/`rowLimit`):
 

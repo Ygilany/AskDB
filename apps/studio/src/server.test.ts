@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -218,6 +218,33 @@ describe("AskDB Studio server", () => {
     expect(saved.tables.find((table: any) => table.physical.name === "users").escalatedByOtherFiles).toEqual([createdAtId]);
     const createdAt = loadSchema(schemaDir).tables.flatMap((t) => t.columns).find((c) => c.id === createdAtId);
     expect(createdAt?.sensitive).toBe(true);
+  });
+
+  it("refuses to save a table through a symbolic link that points outside tables/", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const ordersMd = join(schemaDir, "tables", "orders.md");
+    // A checkout can carry `tables/orders.md -> <anything>`; git stores symlinks.
+    const outside = join(schemaDir, "..", "outside.md");
+    const original = readFileSync(ordersMd, "utf8");
+    writeFileSync(outside, original);
+    rmSync(ordersMd);
+    symlinkSync(outside, ordersMd);
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    const orders = workspace.tables.find((table: any) => table.physical.name === "orders");
+    const response = await postRaw(`${baseUrl}/api/tables/${encodeURIComponent(orders.physical.id)}`, {
+      draft: { ...orders.draft, description: "Edited order description." },
+    });
+
+    expect(response.ok).toBe(false);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringMatching(/outside tables\/: "orders\.md" is a symbolic link/) },
+    });
+    expect(readFileSync(outside, "utf8")).toBe(original);
   });
 
   describe("request guard", () => {
@@ -1081,8 +1108,8 @@ describe("AskDB Studio server", () => {
     expect(typeof workspace.schemaPathRelative).toBe("string");
   });
 
-  // Every input that leaked a secret through the earlier masking redactor
-  // (review rounds 1-3 on #189/#195/#199), plus ordinary strings per engine.
+  // Every class of input that leaked a secret through the earlier masking
+  // redactor (ADR 0011, "Context"), plus ordinary strings per engine.
   // The label is built only from parsed host/port/database (or a SQLite path);
   // anything that doesn't parse cleanly is "configured <engine> connection".
   it.each([
@@ -1093,46 +1120,46 @@ describe("AskDB Studio server", () => {
     ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=S3cret;encrypt=true", "sqlserver://db:1433/app"],
     ["sqlserver", "Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;", "sqlserver://db:1433/app"],
     ["sqlite", "./data/app.db", "./data/app.db"],
-    // Round 1: a password containing @, / or #.
+    // A password containing @, / or #.
     ["postgres", "postgres://app:pa/ss@db:5432/app", "configured postgres connection"],
     ["postgres", "postgres://app:p@ss/w#rd@db:5432/app", "configured postgres connection"],
     ["mysql", "mysql://root:pa/ss@db:3306/shop", "configured mysql connection"],
     ["sqlserver", "mssql://sa:S3/cr@t#@db:1433/app", "configured sqlserver connection"],
     ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=p@ssw0rd", "configured sqlserver connection"],
     ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true", "configured sqlserver connection"],
-    // Round 2: an unescaped ; inside an unquoted password; SQLite URI keys.
+    // An unescaped ; inside an unquoted password; SQLite URI keys.
     // The driver reads `cd;Database` as one key, so no database is shown.
     ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
     // An unbraced ; inside a value is ambiguous: the label falls back.
     ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "configured sqlserver connection"],
     ["sqlite", "file:./data/app.db?mode=ro&key=S3cret", "./data/app.db"],
-    // Round 3: a quoted or braced value followed by trailing text.
+    // A quoted or braced value followed by trailing text.
     ["postgres", "postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
     ["sqlserver", "Server=db;Database=app;Password='ab'cd;", "configured sqlserver connection"],
     ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "configured sqlserver connection"],
-    // Round 3: JDBC and near-miss URL forms.
+    // JDBC and near-miss URL forms.
     ["postgres", "jdbc:postgresql://u:secret@h/db", "configured postgres connection"],
     ["postgres", '"postgres://u:secret@h/db"', "configured postgres connection"],
     ["postgres", "postgres:/u:secret@h/db", "configured postgres connection"],
     ["sqlserver", "sqlserver://sa:se;cret@h", "configured sqlserver connection"],
-    // Round 3: a percent-encoded SQLite key name.
+    // A percent-encoded SQLite key name.
     ["sqlite", "file:app.db?%6Bey=secret", "app.db"],
-    // Rounds 1-2 inputs that were only in the engine tables.
+    // Inputs that were only in the engine tables: leading whitespace, and a # or / in a URL password.
     // (@askdb/config trims config values, so the leading space never reaches the parser.)
     ["postgres", " postgres://app:S3cret@db:5432/app", "postgres://db:5432/app"],
     ["postgres", "postgres://app:pa#ss@db:5432/app", "configured postgres connection"],
     ["sqlserver", "mssql://sa:S3/cret@host:1433/db", "configured sqlserver connection"],
-    // Delta review: ADO.NET spellings the driver reads as part of the password.
+    // ADO.NET spellings the driver reads as part of the password.
     // The driver reads the rest as part of the password: no database comes from it.
     ["sqlserver", "Server=h;User Id=sa;Password=p;;Database=leak", "sqlserver://h"],
     ["sqlserver", "Server=h;User Id=sa;Password=;Database=leak", "sqlserver://h"],
     ["sqlserver", "Data Source=h;Password=x;;Initial Catalog=leak", "sqlserver://h"],
     ["sqlserver", "User Id=sa;Password=p;;Server=leakhost", "configured sqlserver connection"],
-    // Delta review 3: Unicode whitespace before ";" (NBSP, U+FEFF).
+    // Unicode whitespace before ";" (NBSP, U+FEFF).
     ["sqlserver", "Server=h;User Id=sa;Password=\u00a0;Database=leak", "sqlserver://h"],
     ["sqlserver", "Server=h;User Id=sa;Password=\ufeff;Database=leak", "sqlserver://h"],
     ["sqlserver", "User Id=sa;Password=\u00a0;Server=leakhost", "configured sqlserver connection"],
-    // Delta review 4: a ;database= inside a Prisma {…} value or a quote. The
+    // A ;database= inside a Prisma {…} value or a quote. The
     // string can be read more than one way, so the label falls back.
     ["sqlserver", "sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", "configured sqlserver connection"],
     ["sqlserver", "sqlserver://h;user={a;database=leak;}", "configured sqlserver connection"],
@@ -1177,6 +1204,20 @@ describe("AskDB Studio server", () => {
     expect(plan.engine).toBe("sqlite");
     expect(plan.error).toContain("introspection.providerConfig.sqlite.file");
     expect(plan.error).not.toContain("--url");
+  });
+
+  it("GET /api/introspect/status gives a prisma source with no schemaPath the generic label (the connector auto-discovers the schema)", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "prisma", providerConfig: { prisma: {} }, outputDir: "./askdb/" },
+    });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan).toEqual({ ok: true, engine: "prisma", sourceLabel: "configured prisma connection" });
   });
 
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {

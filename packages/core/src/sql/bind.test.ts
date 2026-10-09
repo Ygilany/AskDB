@@ -203,6 +203,15 @@ describe("bindPreparedQuery — scalars", () => {
     expect(bound.bindings[0]!.markers).toEqual(["$1", "$2"]);
     expect(bound.bindings[0]!.indices).toEqual([0, 1]);
   });
+
+  it("keeps namedSql's trailing semicolon in sql and unboundSql, with a placeholder right before it", () => {
+    const p = prepared("postgres", "SELECT * FROM t WHERE s = :s;", [
+      { name: "s", placeholder: ":s", type: "string", cardinality: "one", source: "question" },
+    ]);
+    const bound = bindPreparedQuery(p, { s: "x" });
+    expect(bound.sql).toBe("SELECT * FROM t WHERE s = 'x';");
+    expect(bound.unboundSql).toBe("SELECT * FROM t WHERE s = $1;");
+  });
 });
 
 describe("bindPreparedQuery — lists", () => {

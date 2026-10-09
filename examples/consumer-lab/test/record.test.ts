@@ -10,7 +10,7 @@
  * hand-written replies can't be asked for, and a refusal makes no call. A provider error stops
  * the run, and so does any other error (the fixture, a model call AskDB couldn't make), keeping
  * what the run did. A reply whose ```sql fence doesn't hold the SQL `ask()` returned is a miss,
- * because the replay suites read that fence; a trailing semicolon, which both drop, is not. The parameterized question's reply
+ * because the replay suites read that fence; a trailing semicolon, which the lab ignores on both sides, is not. The parameterized question's reply
  * passes with any placeholder name and misses when its unbound block disagrees with its SQL. The key
  * never reaches what lab:record writes: a reply holding it is not recorded, and is listed
  * redacted. The CLI exits 2 on a refusal before any call, and 1 when the run stopped or broke a
@@ -69,7 +69,7 @@ const REPLIES: Record<string, string> = {
   "programs-started-since": fence("SELECT agency_id, program_code FROM program WHERE starts_on >= '2022-01-01' ORDER BY agency_id, program_code"),
   // A reply that somehow holds the key: never written.
   "open-enrollments": `${fence("SELECT client_id, program_code FROM enrollment WHERE exited_on IS NULL")}\n-- ${KEY}`,
-  // The right rows, ending with the semicolon a model usually writes: `ask()` and the replay suites both drop it.
+  // The right rows, ending with the semicolon a model usually writes: the lab compares SQL without it, on the fence's side and on `ask()`'s.
   "program-active-flags": fence("SELECT agency_id, program_code, is_active FROM program;"),
   // The right rows in an untagged fence: `ask()` reads it, the replay suites wouldn't.
   "top-five-orders": '```\nSELECT order_id, total FROM "order" ORDER BY total DESC, order_id LIMIT 5\n```',

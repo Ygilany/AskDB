@@ -147,7 +147,7 @@ describe("introspect() — engine-agnostic orchestrator", () => {
 });
 
 describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
-  it("returns byte-identical output to what renderToSchemaV2 writes, including provider", async () => {
+  it("introspect() forwards the connector's provider into the schema.json it writes", async () => {
     const connector: Connector<FakeInput> = {
       async describe() {
         return {
@@ -163,9 +163,7 @@ describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
     await introspect<FakeInput>({ tag: "out" }, { outDir, schemaId: "fake" }, { connector });
     const written = readFileSync(join(outDir, "schema.json"), "utf8");
 
-    const rendered = renderSchemaV2Body(fakeSchema, { schemaId: "fake", provider: "postgres" });
-    expect(rendered.body).toBe(written);
-    expect(rendered.json.provider).toBe("postgres");
+    expect((JSON.parse(written) as { provider?: string }).provider).toBe("postgres");
   });
 
   it("preserves human-set sensitive flags from an existing artifact", () => {

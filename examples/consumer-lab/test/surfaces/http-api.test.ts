@@ -54,7 +54,8 @@ import { ensureArtifact } from "../../src/artifacts.js";
 import { needsCapability } from "../../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../../src/dialects.js";
 import { postAsk, startHttpServer, type HttpReply, type HttpServer, type HttpServerOptions } from "../../src/http-api.js";
-import { CASSETTES_DIR, cassetteSql, loadQuestions } from "../../src/model/catalog.js";
+import { CASSETTES_DIR, loadQuestions } from "../../src/model/catalog.js";
+import { expectCassetteSql } from "../support/cassette-sql.js";
 import { startReplayServer, type ReplayServer } from "../../src/model/replay-server.js";
 import { LAB_ROOT, LAB_STATE } from "../../src/paths.js";
 
@@ -105,8 +106,9 @@ afterAll(async () => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-function expectSuccess(reply: HttpReply, sql: string): void {
-  expect(reply.body).toMatchObject({ ok: true, sql });
+function expectSuccess(reply: HttpReply, dialect: string, questionId: string): void {
+  expect(reply.body).toMatchObject({ ok: true, sql: expect.any(String) });
+  expectCassetteSql(reply.body.sql, dialect, questionId);
   expect(reply.body.correlationId).toMatch(/\S/);
   // `usage`: `null`, or `{ promptTokens, completionTokens, totalTokens }`, each `number | null`.
   expect(reply.body).toHaveProperty("usage");
@@ -165,7 +167,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] ht
     let reply!: HttpReply;
     const httpPrompt = await promptOf(dialect, async () => (reply = await postAsk(http, { question: question.text })));
 
-    expectSuccess(reply, cassetteSql(dialect, question.id));
+    expectSuccess(reply, dialect, question.id);
     // Same config and artifact, so the same prompt: the server resolves the dialect, mode
     // and prompt options as the library does.
     expect(httpPrompt).toBe(await promptOf(dialect, () => askLibrary(dialect, question.text)));
@@ -209,7 +211,7 @@ describe("[postgres]", () => {
   it("http-payload-too-large: a body of exactly 1 MiB is answered", async (ctx) => {
     const http = await labServer(ctx, "postgres");
 
-    expectSuccess(await postAsk(http, paddedBody(AGENCIES.text, MAX_BODY_BYTES)), cassetteSql("postgres", AGENCIES.id));
+    expectSuccess(await postAsk(http, paddedBody(AGENCIES.text, MAX_BODY_BYTES)), "postgres", AGENCIES.id);
   });
 
   it("http-schema-override-disabled: an inline schemaJson answers 403 schema_override_disabled by default", async (ctx) => {
@@ -305,7 +307,7 @@ export default defineConfig({
     const http = await labServer(ctx, "postgres");
     const reply = await postAsk(http, { question: AGENCIES.text, explain: true });
 
-    expectSuccess(reply, cassetteSql("postgres", AGENCIES.id));
+    expectSuccess(reply, "postgres", AGENCIES.id);
     expect(reply.body.explain).toEqual(expect.any(Object));
   });
 
@@ -355,7 +357,7 @@ Every order belongs to one agency.
     expect(modelCallsFor(AGENCIES.text)).toHaveLength(before);
 
     // Control: the same artifact without the policy answers, and that call reaches the model.
-    expectSuccess(await postAsk(await labServer(ctx, "postgres"), { question: AGENCIES.text }), cassetteSql("postgres", AGENCIES.id));
+    expectSuccess(await postAsk(await labServer(ctx, "postgres"), { question: AGENCIES.text }), "postgres", AGENCIES.id);
     expect(modelCallsFor(AGENCIES.text)).toHaveLength(before + 1);
   });
 });

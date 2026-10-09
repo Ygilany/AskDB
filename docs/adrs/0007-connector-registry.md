@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-06-11).
+Accepted (2026-06-11). Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md): the registry now lives in `@askdb/introspect` with open provider ids, adapters resolve their own connection, and `@askdb/connectors` is a deprecated re-export shim.
 
 ## Context
 
@@ -42,8 +42,8 @@ Owns:
 - `ConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`.
 - `ConnectorConfig` — unified per-call config (provider + url/fromExport/schemaPath/filters/schemaId).
 - `ConnectorResult` — `{ connector: Connector<unknown>; input: unknown; mode: string }`.
-- `ConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()`).
-- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`.
+- `ConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()` and `connectionLabelParts?(connection)`, ADR 0011).
+- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates, connectionLabel }`.
 - `createConnectorRegistry(adapters)` — registry factory.
 - `connectorProviderMissingMessage()` — actionable error helper.
 

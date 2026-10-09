@@ -7,8 +7,9 @@
  * The schema prefix is always included (even for `public`) so cross-schema
  * tables are unambiguous and IDs survive a future move between schemas
  * without colliding. The `#` separator is reserved for column suffixes.
- * Engines without Postgres-style schemas (MySQL, SQLite) use `"public"` so
- * IDs stay stable across engines.
+ * Engines without Postgres-style schemas use `"public"` so IDs stay stable
+ * across engines: SQLite always, and MySQL for the connection's own database
+ * (with a database list, MySQL uses each database's name instead).
  */
 export function makeTableId(schemaName: string, tableName: string): string {
   return `table:${schemaName}.${tableName}`;

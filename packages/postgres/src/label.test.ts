@@ -10,8 +10,8 @@ const connectionLabel = (url: string) => registry.connectionLabel("postgres", { 
 
 const FALLBACK = "configured postgres connection";
 
-// Inputs that leaked a secret through the earlier masking redactor (review
-// rounds 1-3 on #189/#195/#199) sit next to ordinary strings. The parts come
+// Inputs that leaked a secret through the earlier masking redactor (ADR 0011,
+// "Context") sit next to ordinary strings. The parts come
 // from pg-connection-string, the parser `pg` uses (ADR 0011).
 const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   // Ordinary strings.
@@ -21,18 +21,18 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["postgres://app:p%40ss@[::1]:5432/app", "postgres://[::1]:5432/app"],
   ["postgres://app:p@ss@db/app", "postgres://db/app"],
   ["postgres:///app", "postgres:///app"],
-  // A `?host=` override is the host the driver connects to (delta review 3).
+  // A `?host=` override is the host the driver connects to.
   ["postgres://app:S3cret@db/app?host=replica", "postgres://replica/app"],
-  // Round 1: a password with an unencoded / or # was echoed unchanged.
+  // A password with an unencoded / or # was echoed unchanged.
   ["postgres://app:pa/ss@db:5432/app", FALLBACK],
   ["postgres://app:pa#ss@db:5432/app", FALLBACK],
   ["postgres://app:p@ss/w#rd@db:5432/app", FALLBACK],
-  // Round 2: leading whitespace hid the URL from the redactor.
+  // Leading whitespace hid the URL from the redactor.
   [" postgres://app:S3cret@db:5432/app", FALLBACK],
-  // Round 3: a quoted value with trailing text leaked the tail (`****cd`).
+  // A quoted value with trailing text leaked the tail (`****cd`).
   ["postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
   ["postgres://db:5432/app?sslmode=verify-full&password=\"ab\"cd", "postgres://db:5432/app"],
-  // Round 3: JDBC and near-miss URL forms came back unchanged.
+  // JDBC and near-miss URL forms came back unchanged.
   ["jdbc:postgresql://u:secret@h/db", FALLBACK],
   ['"postgres://u:secret@h/db"', FALLBACK],
   ["'postgres://u:secret@h/db'", FALLBACK],
@@ -73,7 +73,7 @@ describe("postgres label parts match what pg resolves", () => {
 });
 
 // pg-connection-string's parse() reads the files ssl* params name; a label
-// never needs them, so they are removed before parsing (delta review 4).
+// never needs them, so they are removed before parsing.
 describe("postgres label ignores ssl* parameters", () => {
   it.each([
     "postgres://u:pw@db:5432/app?sslrootcert=/nonexistent/ca.pem",

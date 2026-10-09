@@ -5,10 +5,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mysql2State = vi.hoisted(() => ({
+  imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("mysql2/promise", async () => {
+  mysql2State.imports++;
   if (mysql2State.shouldFail) {
     const err = new Error("Cannot find package 'mysql2' imported from mysql.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
@@ -85,6 +87,7 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     vi.resetModules();
     mysql2State.projectResolvedPaths.clear();
     mysql2State.shouldFail = false;
+    mysql2State.imports = 0;
     process.chdir(originalCwd);
   });
 
@@ -94,14 +97,15 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     tempDirs = [];
   });
 
-  // Hosts build a runner without the optional peer installed; an eager load() would
-  // reject unhandled at construction, which fails this test.
+  // Hosts build a runner without the optional peer installed; the driver must
+  // not be imported until the runner is first called.
   it("createMysqlCatalogQueryRunner() does not load `mysql2` at construction time", async () => {
     const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
     mysql2State.shouldFail = true;
 
     expect(() => createMysqlCatalogQueryRunner("mysql://nowhere")).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mysql2State.imports).toBe(0);
   });
 
   it("invoking the runner when `mysql2` is missing rejects with a helpful AskDbError", async () => {

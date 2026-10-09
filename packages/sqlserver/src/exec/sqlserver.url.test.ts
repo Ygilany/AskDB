@@ -255,6 +255,18 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     "sqlserver://h;user=sa;password=ab{cd;database=app;x=}",
     "sqlserver://h;user=sa;password={ab;database=a}pp",
     "sqlserver://h;user=sa;password={ab}cd;database=app",
+    // A value that closes its braces before any ; is plain text, so a } that
+    // ends a later value doesn't close it.
+    "sqlserver://h;password={ab}cd;user={MyServer/User}",
+    "sqlserver://h;user=sa;password={x}y;database={app}",
+    "sqlserver://h;password={S3c}r3t;user={me};database=app",
+    // A { with no } of its own: the } that ends a later key=value piece doesn't close it.
+    "sqlserver://h;database=app;password={Xy7;user={MyServer/User}",
+    "sqlserver://h;user=sa;password={ab;database=a}pp;user={me}",
+    "sqlserver://h;password={ab;database=app;user=x}",
+    "sqlserver://h;user=sa;password={a;b=c}",
+    // A } followed by more text doesn't close an escape.
+    "sqlserver://h;password={a;b}x;user=u",
   ])("reads %s exactly as before", (input) => {
     expect(resolveConnectionInput(input)).toEqual(legacyParsePrismaSqlServerUrl(input));
   });

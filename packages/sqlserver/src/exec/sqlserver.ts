@@ -143,15 +143,20 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  *
  * On top of that it reads Prisma's `{…}` escaping (Prisma's SQL Server docs:
  * "If your credentials contain `: \ = ; / [ ] { }`, wrap values in curly
- * braces", e.g. `password={Pass:Word;}`), but only where the old parser could
- * never have read the value: a value that starts with `{`, ends with `}`, and
- * holds a `;` in between. The old parser cut such a value at the `;`, so it
- * never connected with the value the user wrote. The value is everything
- * between the braces, read verbatim, so `;`, `=` and braces inside it are part
- * of it (`{{a;b}}` is `{a;b}`); it ends at the first `}` followed only by
- * blanks and then `;` or the end of the string. Any other `{` or `}` is a
- * plain character, as before: `password={abc}` is `{abc}`, an unclosed `{` is
- * part of the value, and a `{` in one value never pairs with a `}` in another.
+ * braces", e.g. `password={Pass:Word;}`), but only where the old parser never
+ * read the value as written: a value that starts with `{`, has a `;` before its
+ * first `}`, and ends at a `}` whose `;`-separated piece holds no `=`. The old
+ * parser cut such a value at its first `;` and dropped that last piece (a piece
+ * without `=` is skipped), so it never connected with the value the user wrote.
+ * The value is everything between the braces, read verbatim, so `;`, `=` and
+ * braces inside it are part of it (`{{a;b}}` is `{a;b}`); it ends at the first
+ * `}` followed only by blanks and then `;` or the end of the string.
+ *
+ * Any other `{` or `}` is a plain character, as before: `password={abc}` is
+ * `{abc}`, and an unclosed `{` is part of the value. Braces that close before
+ * any `;` never reach into a later value (`password={ab}cd;user={me}` reads
+ * `{ab}cd` and `{me}`), and neither does a `{` whose closing `}` ends a later
+ * `key=value` piece (`password={Xy7;user={me}` reads `{Xy7` and `{me}`).
  * This is where it differs from Prisma, which reads every `{…}` as an escape
  * (`{abc}` is `abc`) and ends it at the first `}`.
  *
@@ -238,9 +243,9 @@ type PrismaPiece = { braced: boolean; text: string };
 /**
  * Split on `;` outside an escaping `{…}`; each segment keeps its braced and
  * plain pieces. A value is an escape (see `parsePrismaSqlServerUrl`) when it
- * starts with `{` (after `key=` and blanks), ends at a `}` followed only by
- * blanks before the next `;` or the end of the string, and holds a `;` in
- * between. Everything else, including the host part, splits on every `;`.
+ * starts with `{` (after `key=` and blanks), has a `;` before its first `}`,
+ * and ends at a `}` followed only by blanks before the next `;` or the end of
+ * the string. Everything else, including the host part, splits on every `;`.
  */
 function splitPrismaSegments(input: string): PrismaPiece[][] {
   const hostEnd = input.indexOf(";");
@@ -270,8 +275,10 @@ function splitPrismaSegments(input: string): PrismaPiece[][] {
 
 /**
  * The escaping `{…}` of the segment starting at `start` (whose first `;` is at
- * `firstSemi`), or `undefined`: the value must start with `{`, and the first
- * `}` followed only by blanks and then `;` or the end of the input closes it.
+ * `firstSemi`), or `undefined`: the value must start with `{`, a `;` must come
+ * before the first `}` after it, the first `}` followed only by blanks and then
+ * `;` or the end of the input closes it, and the `;`-separated piece that `}`
+ * ends must hold no `=` (the old parser skipped that piece).
  */
 function escapedValue(
   input: string,
@@ -283,12 +290,16 @@ function escapedValue(
   let open = eq + 1;
   while (input[open] === " " || input[open] === "\t") open++;
   if (input[open] !== "{") return undefined;
+  // A `}` before the value's first `;` means the braces wrap no `;`: plain text.
+  const firstClose = input.indexOf("}", open + 1);
+  if (firstClose === -1 || firstClose < firstSemi) return undefined;
   const closing = /\}[ \t]*(?:;|$)/g;
   closing.lastIndex = open + 1;
   const match = closing.exec(input);
   if (!match) return undefined;
   const close = match.index;
-  if (!input.slice(open + 1, close).includes(";")) return undefined;
+  // The piece the `}` ends is a `key=value` the old parser read: plain text.
+  if (input.slice(input.lastIndexOf(";", close) + 1, close).includes("=")) return undefined;
   const end = match[0].endsWith(";") ? close + match[0].length - 1 : input.length;
   return { open, close, end };
 }

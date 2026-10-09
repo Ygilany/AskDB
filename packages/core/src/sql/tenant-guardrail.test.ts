@@ -331,6 +331,9 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["the predicate inside an OUTER APPLY", "SELECT o.* FROM orders o OUTER APPLY (SELECT 1 AS one WHERE o.agency_id = :tenant_agency_ids) x"],
     ["the predicate in a hinted LEFT HASH JOIN's ON", "SELECT o.* FROM orders o LEFT HASH JOIN lookup_states d ON d.code = o.state AND o.agency_id = :tenant_agency_ids"],
     ["a quoted function named like a clause keyword", 'SELECT * FROM orders WHERE "where"(agency_id = :tenant_agency_ids)'],
+    ["no predicate before a trailing semicolon", "SELECT * FROM orders;"],
+    ["a literal tenant ID before a spaced trailing semicolon", "SELECT * FROM orders WHERE agency_id = 1 ;"],
+    ["the placeholder OR-ed away before a trailing semicolon", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids OR 1 = 1;"],
   ])("rejects %s", (_label, sql) => {
     expect(rules(sql)).toContain("MISSING_TENANT_PREDICATE");
   });

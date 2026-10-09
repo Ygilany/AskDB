@@ -257,6 +257,45 @@ describe("describeSqlServer", () => {
     expect(result.schema.schemas.map((s) => s.name)).toEqual(["dbo"]);
   });
 
+  it("filters tables with glob patterns and emits ambiguous_filter warning for misses", async () => {
+    const runner = fakeRunner({
+      tables: [
+        { schema_name: "dbo", table_name: "keep_users", table_type: "BASE TABLE" },
+        { schema_name: "dbo", table_name: "orders", table_type: "BASE TABLE" },
+      ],
+      columns: [
+        {
+          schema_name: "dbo",
+          table_name: "keep_users",
+          column_name: "id",
+          ordinal_position: 1,
+          type_name: "int",
+          max_length: 4,
+          precision_v: 10,
+          scale: 0,
+          is_nullable: 0,
+        },
+        {
+          schema_name: "dbo",
+          table_name: "orders",
+          column_name: "id",
+          ordinal_position: 1,
+          type_name: "int",
+          max_length: 4,
+          precision_v: 10,
+          scale: 0,
+          is_nullable: 0,
+        },
+      ],
+    });
+    const result = await describeSqlServer({
+      runner,
+      filters: { tables: ["dbo.keep*", "dbo.missing"] },
+    });
+    expect(result.schema.schemas[0]!.tables.map((t) => t.name)).toEqual(["keep_users"]);
+    expect(result.warnings).toEqual([{ code: "ambiguous_filter", filter: "dbo.missing" }]);
+  });
+
   it("marks isEmpty when nothing usable remains after filtering", async () => {
     const result = await describeSqlServer({ runner: fakeRunner({}) });
     expect(result.isEmpty).toBe(true);

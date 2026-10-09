@@ -5,10 +5,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mssqlState = vi.hoisted(() => ({
+  imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("mssql", async () => {
+  mssqlState.imports++;
   if (mssqlState.shouldFail) {
     const err = new Error("Cannot find package 'mssql' imported from sqlserver.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
@@ -88,6 +90,7 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
     vi.resetModules();
     mssqlState.projectResolvedPaths.clear();
     mssqlState.shouldFail = false;
+    mssqlState.imports = 0;
     process.chdir(originalCwd);
   });
 
@@ -97,14 +100,15 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
     tempDirs = [];
   });
 
-  // Hosts build a runner without the optional peer installed; an eager load() would
-  // reject unhandled at construction, which fails this test.
+  // Hosts build a runner without the optional peer installed; the driver must
+  // not be imported until the runner is first called.
   it("createSqlServerCatalogQueryRunner() does not load `mssql` at construction time", async () => {
     const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
     mssqlState.shouldFail = true;
 
     expect(() => createSqlServerCatalogQueryRunner("mssql://nowhere")).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mssqlState.imports).toBe(0);
   });
 
   it("invoking the runner when `mssql` is missing rejects with a helpful AskDbError", async () => {

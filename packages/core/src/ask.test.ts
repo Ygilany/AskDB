@@ -786,6 +786,168 @@ describe("ask — parameterize", () => {
   });
 });
 
+describe("ask — a model's trailing semicolon is kept (#477)", () => {
+  it("returns sql ending in ; only when the model's reply did", async () => {
+    const run = (text: string) =>
+      ask({
+        question: "list users",
+        schema: minimalSchema,
+        model: fakeModel,
+        dialect: "postgres",
+        deps: { generateText: vi.fn(async () => ({ text })) },
+      });
+    expect((await run("```sql\nSELECT id FROM users;\n```")).sql).toBe("SELECT id FROM users;");
+    expect((await run("```sql\nSELECT id FROM users\n```")).sql).toBe("SELECT id FROM users");
+  });
+
+  it("still rejects a second statement after the semicolon", async () => {
+    await expect(
+      ask({
+        question: "list users",
+        schema: minimalSchema,
+        model: fakeModel,
+        dialect: "postgres",
+        deps: { generateText: vi.fn(async () => ({ text: "```sql\nSELECT 1; SELECT 2\n```" })) },
+      }),
+    ).rejects.toMatchObject({ rule: "SQL_MULTI_STATEMENT" });
+  });
+
+  const reply = [
+    "```sql",
+    "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = :tenant_agency_ids;",
+    "```",
+    "```sql-unbound",
+    "SELECT count(*) FROM orders WHERE status = :status_name AND agency_id = :tenant_agency_ids;",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"}]}',
+    "```",
+  ].join("\n");
+
+  it("keeps it in sql, unboundSql and preparedQuery.namedSql of a parameterized reply", async () => {
+    const result = await ask({
+      question: "how many paid orders",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: [
+            "```sql",
+            "SELECT count(*) FROM cities WHERE state = 'colorado';",
+            "```",
+            "```sql-unbound",
+            "SELECT count(*) FROM cities WHERE state = :state_name;",
+            "```",
+            "```json",
+            '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+            "```",
+          ].join("\n"),
+        })),
+      },
+    });
+    expect(result.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado';");
+    expect(result.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1;");
+    expect(result.params).toEqual(["colorado"]);
+    expect(result.preparedQuery?.namedSql).toBe("SELECT count(*) FROM cities WHERE state = :state_name;");
+  });
+
+  it("compares the parameterized blocks in linear time, however long a whitespace run the model writes", async () => {
+    const gap = " ".repeat(100_000);
+    const started = Date.now();
+    const result = await ask({
+      question: "How many cities does Colorado have?",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: [
+            "```sql",
+            `SELECT count(*) FROM cities WHERE${gap}state = 'colorado';`,
+            "```",
+            "```sql-unbound",
+            `SELECT count(*) FROM cities WHERE${gap}state = :state_name;`,
+            "```",
+            "```json",
+            '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+            "```",
+          ].join("\n"),
+        })),
+      },
+    });
+    expect(result.params).toEqual(["colorado"]);
+    // A backtracking terminator pattern takes tens of seconds on this reply.
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it.each([
+    { bound: "'colorado' ;", unbound: ":state_name;", sql: "'colorado' ;", unboundSql: "$1;" },
+    { bound: "'colorado';", unbound: ":state_name", sql: "'colorado';", unboundSql: "$1" },
+    { bound: "'colorado'", unbound: ":state_name ;", sql: "'colorado'", unboundSql: "$1 ;" },
+  ])("keeps the parameterized extras when the two blocks end differently ($bound / $unbound)", async (c) => {
+    const result = await ask({
+      question: "How many cities does Colorado have?",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: [
+            "```sql",
+            `SELECT count(*) FROM cities WHERE state = ${c.bound}`,
+            "```",
+            "```sql-unbound",
+            `SELECT count(*) FROM cities WHERE state = ${c.unbound}`,
+            "```",
+            "```json",
+            '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+            "```",
+          ].join("\n"),
+        })),
+      },
+    });
+    expect(result.sql).toBe(`SELECT count(*) FROM cities WHERE state = ${c.sql}`);
+    expect(result.unboundSql).toBe(`SELECT count(*) FROM cities WHERE state = ${c.unboundSql}`);
+    expect(result.params).toEqual(["colorado"]);
+  });
+
+  it.each([
+    {
+      dialect: "postgres" as const,
+      mode: "sql-only" as const,
+      sql: "status = 'paid' AND agency_id IN ('42', '99');",
+      unbound: "status = $1 AND agency_id IN ('42', '99');",
+    },
+    {
+      dialect: "postgres" as const,
+      mode: "sql-params" as const,
+      sql: "status = 'paid' AND agency_id IN ($1, $2);",
+      unbound: "status = $1 AND agency_id IN ($2, $3);",
+    },
+    {
+      dialect: "mysql" as const,
+      mode: "sql-params" as const,
+      sql: "status = 'paid' AND agency_id IN (?, ?);",
+      unbound: "status = ? AND agency_id IN (?, ?);",
+    },
+  ])("$dialect $mode: the tenant guardrail passes and substitutes a placeholder right before it", async (c) => {
+    const result = await ask({
+      question: "how many paid orders",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: c.dialect,
+      tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42", "99"] } },
+      tenantSqlMode: c.mode,
+      deps: { generateText: vi.fn(async () => ({ text: reply })) },
+    });
+    const prefix = "SELECT count(*) FROM orders WHERE ";
+    expect(result.tenantGuardrail?.passed).toBe(true);
+    expect(result.sql).toBe(prefix + c.sql);
+    expect(result.unboundSql).toBe(prefix + c.unbound);
+  });
+});
+
 describe("ask — tenant params contract across dialects (sql-params)", () => {
   // Tenant placeholder BEFORE the business placeholders, so `?` dialects must
   // interleave tenant and business values in source order.
