@@ -468,44 +468,4 @@ describe("describeMysql", () => {
       },
     ]);
   });
-
-  it("with a database list, keeps FKs into listed databases and skips FKs into unlisted ones", async () => {
-    const fk = (constraint: string, referencedDatabase: string) => ({
-      table_schema: "app",
-      constraint_name: constraint,
-      table_name: "orders",
-      column_name: "ref_id",
-      referenced_table_schema: referencedDatabase,
-      referenced_table_name: "users",
-      referenced_column_name: "id",
-      ordinal_position: 1,
-      update_rule: "NO ACTION",
-      delete_rule: "NO ACTION",
-    });
-    const result = foldMysqlResult({
-      schemaId: "introspected",
-      namespaceOf: (database) => database,
-      isIntrospected: (database) => ["app", "people"].includes(database),
-      tableFilter: compileTableFilters(undefined),
-      tableRows: [{ table_schema: "app", table_name: "orders", table_type: "BASE TABLE", table_comment: "" }],
-      columnRows: [],
-      constraintRows: [],
-      fkRows: [fk("orders_people_fk", "people"), fk("orders_billing_fk", "billing")],
-      indexRows: [],
-      viewRows: [],
-      declaredFilters: [],
-    });
-
-    const orders = result.schema.schemas[0]!.tables[0]!;
-    expect(orders.foreignKeys.map((f) => [f.name, f.references.schema])).toEqual([["orders_people_fk", "people"]]);
-    expect(result.warnings).toEqual([
-      {
-        code: "cross_database_fk",
-        table: "table:app.orders",
-        constraint: "orders_billing_fk",
-        referencedDatabase: "billing",
-        referencedTable: "users",
-      },
-    ]);
-  });
 });

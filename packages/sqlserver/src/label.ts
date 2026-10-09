@@ -39,7 +39,7 @@ export function parseSqlServerConnection(input: string): ConnectionLabelParts | 
     return undefined;
   }
   if (input.startsWith("mssql://") && !mssqlUrlIsUnambiguous(input)) return undefined;
-  return parts(resolved.server, resolved.port === undefined ? undefined : String(resolved.port), resolved.database);
+  return partsWithHost(resolved.server, resolved.port === undefined ? undefined : String(resolved.port), resolved.database);
 }
 
 function mssqlUrlIsUnambiguous(input: string): boolean {
@@ -69,11 +69,11 @@ function adoNetParts(connectionString: string): ConnectionLabelParts | undefined
   const server = comma ? comma[1]!.trim() : address;
   const port = comma ? comma[2]!.trim() : undefined;
   const host = server === "." || /^\((local|\.|localdb)\)$/i.test(server) ? "localhost" : server;
-  return parts(host, port, database);
+  return partsWithHost(host, port, database);
 }
 
-/** No host means no label: `Server=;Database=app` falls back rather than showing `sqlserver:///app`. */
-function parts(host: string, port: string | undefined, database: string | undefined): ConnectionLabelParts | undefined {
+/** The parts, or `undefined` (the fallback label) when there is no host: `Server=;Database=app` falls back rather than showing `sqlserver:///app`. */
+function partsWithHost(host: string, port: string | undefined, database: string | undefined): ConnectionLabelParts | undefined {
   if (host === "") return undefined;
   return {
     host,

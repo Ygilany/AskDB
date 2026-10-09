@@ -39,11 +39,11 @@ npx askdb bundle my-app.schema --out my-app.schema.bundle.json
   "schemaId": "my-app",
   "tables": [
     {
-      "id": "table:users",
+      "id": "table:public.users",
       "name": "users",
       "columns": [
         {
-          "id": "table:users#email",
+          "id": "table:public.users#email",
           "name": "email",
           "type": "text",
           "nullable": false,
@@ -63,12 +63,12 @@ Per-table markdown adds the meaning the model needs to generate good SQL: descri
 
 ```markdown
 ---
-id: table:orders
+id: table:public.orders
 name: orders
 schemaId: my-app
 aliases: [purchases, sales]
 columns:
-  - id: table:orders#status
+  - id: table:public.orders#status
     enum: [pending, paid, shipped, cancelled]
     description: Order lifecycle state.
 ---
@@ -99,8 +99,8 @@ Every table, column, and concept has a stable ID. Renaming a column in the datab
 
 | ID | Refers to |
 | --- | --- |
-| `table:users` | A table |
-| `table:users#email` | A column |
+| `table:public.users` | A table (always schema-qualified; engines without schemas use `public`) |
+| `table:public.users#email` | A column |
 | `concept:customer` | A cross-table business concept |
 
 ## Why this matters

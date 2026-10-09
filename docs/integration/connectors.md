@@ -52,7 +52,7 @@ Each table and column carries an ID that survives across re-introspection runs.
 - `table.id`: `"table:<schema>.<name>"` — always schema-qualified, including `public`.
 - `column.id`: `"table:<schema>.<name>#<column>"`.
 
-Engines without Postgres-style schemas emit a single `public` namespace so ids stay stable across engines: SQLite always, and MySQL for the connection's own database. MySQL with a database list (`filters.schemas`, from `introspection.schemas` or `--schemas`) emits one namespace per listed database instead (`table:<database>.<name>`). Each first-party connector keeps a small private `ids.ts` (`makeTableId`, `makeColumnId`); use the same format so the enrichment layer (`tables/<name>.md` markdown) keeps matching after schema changes.
+Engines without Postgres-style schemas emit a single `public` namespace so ids stay stable across engines: SQLite always, and MySQL for the connection's own database. MySQL with a database list (`filters.schemas`, from `introspection.schemas` or `--schemas`) emits one namespace per listed database instead (`table:<database>.<name>`). Each first-party connector keeps its id helpers private (`makeTableId`, `makeColumnId`, in `ids.ts` or, for `@askdb/prisma`, inline); use the same format so the enrichment layer (`tables/<name>.md` markdown) keeps matching after schema changes.
 
 ### Filters
 

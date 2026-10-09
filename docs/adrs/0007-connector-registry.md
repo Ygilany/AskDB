@@ -42,8 +42,8 @@ Owns:
 - `ConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`.
 - `ConnectorConfig` — unified per-call config (provider + url/fromExport/schemaPath/filters/schemaId).
 - `ConnectorResult` — `{ connector: Connector<unknown>; input: unknown; mode: string }`.
-- `ConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()`).
-- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`.
+- `ConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()` and `connectionLabelParts?(connection)`, ADR 0011).
+- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates, connectionLabel }`.
 - `createConnectorRegistry(adapters)` — registry factory.
 - `connectorProviderMissingMessage()` — actionable error helper.
 

@@ -73,7 +73,11 @@ const result = await introspect(
 | Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;encrypt=true` |
 | ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
 
-In the Prisma form, wrap a value that contains `;` in curly braces, as Prisma does: `password={Pass:Word;}` is `Pass:Word;`. AskDB reads braces as an escape only around a whole value that holds a `;` before its first `}` (the value starts with `{` and ends with `}`), so strings that worked before keep connecting with the same values. Any other brace is a plain character, as before: `password={abc}` is `{abc}`, and a `{` that is never closed is part of the value. Prisma reads every `{…}` as an escape, so a URL shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) sends that value to SQL Server with its braces when AskDB connects. Braces inside an escaped value are literal: `{{a;b}}` is `{a;b}`.
+In the Prisma form, wrap a value that contains `;` in curly braces, as Prisma does: `password={Pass:Word;}` is `Pass:Word;`. AskDB reads braces this way only where its earlier parser couldn't read the value, so strings that worked before keep connecting with the same values:
+
+- A value is an escape when it starts with `{`, has a `;` before its first `}`, and ends at a `}` whose last `;`-separated piece has no `=`. Everything between the braces is the value, read verbatim: `{{a;b}}` is `{a;b}`.
+- Any other brace is a plain character, as before: `password={abc}` is `{abc}`, and a `{` that is never closed is part of the value.
+- Prisma reads every `{…}` as an escape, so a URL shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) reaches SQL Server with its braces when AskDB connects.
 
 **TLS / self-signed certificates**
 
@@ -96,7 +100,7 @@ SQL Server uses TLS by default. If you connect to a local or dev instance with a
 
 **Labels for display**
 
-`sqlServerConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database from any of the three formats: `Server=localhost,1433;Database=app;User Id=sa;Password=pass;` becomes `sqlserver://localhost:1433/app`. The parts come from the same code the connection uses: `resolveConnectionInput()` for `mssql://` and `sqlserver://`, and `@tediousjs/connection-string` (the parser `mssql` uses, a dependency of this package) for ADO.NET strings, so the label names the host and database the driver will use. A string the driver rejects, a named instance or pipe, an `@` in the `sqlserver://` form, or JDBC becomes `configured sqlserver connection`.
+`sqlServerConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database from any of the three formats: `Server=localhost,1433;Database=app;User Id=sa;Password=pass;` becomes `sqlserver://localhost:1433/app`. The parts come from the same code the connection uses: `resolveConnectionInput()` for `mssql://` and `sqlserver://`, and `@tediousjs/connection-string` (the parser `mssql` uses, a dependency of this package) for ADO.NET strings, so the label names the host and database the driver will use. A string the driver rejects, a named instance or pipe, an `@` in the `sqlserver://` form, a `sqlserver://` string that can be read more than one way (it holds a `{`, a quote, a piece without `=`, or an empty piece before another one), or JDBC becomes `configured sqlserver connection`.
 
 ## Captured metadata
 

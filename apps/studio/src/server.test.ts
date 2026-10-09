@@ -1163,6 +1163,20 @@ describe("AskDB Studio server", () => {
     expect(plan).toEqual({ ok: true, engine, sourceLabel });
   });
 
+  it("GET /api/introspect/status labels a prisma source with no schemaPath as auto-discovered", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "prisma", providerConfig: { prisma: {} }, outputDir: "./askdb/" },
+    });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan).toEqual({ ok: true, engine: "prisma", sourceLabel: "auto-discovered prisma/schema.prisma" });
+  });
+
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {
     const prismaConfig: AskDbConfig = {
       ...STUDIO_TEST_BASE,

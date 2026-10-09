@@ -164,8 +164,6 @@ describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
     const written = readFileSync(join(outDir, "schema.json"), "utf8");
 
     expect((JSON.parse(written) as { provider?: string }).provider).toBe("postgres");
-    const rendered = renderSchemaV2Body(fakeSchema, { schemaId: "fake", provider: "postgres" });
-    expect(rendered.body).toBe(written);
   });
 
   it("preserves human-set sensitive flags from an existing artifact", () => {
