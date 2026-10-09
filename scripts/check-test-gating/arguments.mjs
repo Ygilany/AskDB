@@ -1,7 +1,7 @@
 // What a suite or test call's arguments after the name do: skip or invert through options, pick
 // or build the body at run time, or pass options the check can't read. For
 // scripts/check-test-gating.mjs.
-import { calleeParts, isCallOrNew, isMemberLink, everyPickLeaf, firstParameter, containsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
+import { calleeParts, isCallOrNew, isMemberLink, everyPickLeaf, firstParameter, containsPick, isPick, propertyKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
 import { CALL_SUITE, constHolds, constInitializer, isEnvRead, isGlobalCallee, isGlobalName, isInlineFunction, vitestCallKind } from "./bindings.mjs";
 import { readsPickedValue } from "./conditions.mjs";
 
@@ -28,7 +28,7 @@ export function argumentsGate(call, suite, bindings) {
       for (const prop of node.properties) {
         // A spread or a key computed at run time could carry `skip`; fail closed.
         if (ts.isSpreadAssignment(prop)) { gate = true; continue; }
-        const key = optionKey(prop.name);
+        const key = propertyKey(prop.name);
         if (key === RUNTIME_KEY) { gate = true; continue; }
         if (!SKIP_OPTIONS.has(key)) continue;
         if (!ts.isPropertyAssignment(prop)) { gate = true; continue; } // shorthand, getter, method
@@ -43,7 +43,7 @@ export function argumentsGate(call, suite, bindings) {
     if (ts.isFunctionLike(node)) return;
     // `{ meta: { todo: "#123" } }`: Vitest reads a task's mode from the options' own keys, never
     // from their `meta`. A `meta` anywhere else (`{ meta: { todo: c } }.meta`) is read like any value.
-    if (ts.isPropertyAssignment(node) && node.parent === options && optionKey(node.name) === "meta") return;
+    if (ts.isPropertyAssignment(node) && node.parent === options && propertyKey(node.name) === "meta") return;
     const branches = pickBranches(node);
     ts.forEachChild(node, (child) => {
       const childChosen = chosen || branches.includes(child);

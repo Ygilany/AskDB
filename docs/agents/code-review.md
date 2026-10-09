@@ -22,7 +22,7 @@ Where requirements come from, read by the Spec lens.
 
 ### Description vs diff
 
-- Every box ticked in the PR template's checklist (tests, changeset, `pnpm smoke:install && pnpm preflight`, no SQL execution added, no secrets) is true of the diff.
+- Every box ticked in the PR template's checklist (tests, changeset or empty changeset, `pnpm smoke:install && pnpm preflight`, no SQL execution added, no secrets, re-exported types) is true of the diff.
 - Verification results in the body (matrix cells, test counts, "`pnpm preflight` passes") match the head SHA and the committed manifests, not a run from before a rebase (#381).
 - Export tables and API names in the body match the package entry points at the head SHA; in a stack, after a lower PR changed design, the upper PR's description still describes its own layer (#189, #195, #199).
 - Each `Closes #<n>` issue's acceptance criteria are met as written, not a narrower reading (#443).

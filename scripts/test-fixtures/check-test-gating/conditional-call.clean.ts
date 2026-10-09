@@ -107,3 +107,4 @@ for (;;) {
 [process.env.PG_URL ? "pg" : "sqlite"].map(String).forEach((e) => describe(`map keeps the size ${e}`, run));
 Array.from([process.env.PG_URL ? "pg" : "sqlite", "my"]).forEach((e) => describe(`Array.from keeps the size ${e}`, run));
 [process.env.PG_URL ? "pg" : "sqlite", "my"].values().toArray().forEach((e) => describe(`an iterator copy keeps the size ${e}`, run));
+const mappedCount = [1].map((e) => { it("mapped " + e, () => {}); return e; }).length;

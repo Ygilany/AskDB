@@ -148,3 +148,5 @@ for (const e of pushedEngines) describe(e, () => {}); // HIT
 const engineSet = new Set(["sqlite"]);
 if (process.env.PG_URL) engineSet.add("pg");
 engineSet.forEach((e) => { describe(e, () => {}); }); // HIT
+const loopPgUrl = process.env.DATABASE_URL;
+for (const url of [loopPgUrl, "sqlite"].filter(Boolean)) describe(url, () => {}); // HIT

@@ -203,11 +203,11 @@ function someInside(node, test) {
   return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;
 }
 
-// An options key computed at run time (`{ [expr]: … }`), which could be `skip`.
+// A property key computed at run time (`{ [expr]: … }`); as an options key it could be `skip`.
 export const RUNTIME_KEY = Symbol("runtime key");
 
-/** An options key as text, `RUNTIME_KEY` for `[expr]`, or undefined for a name the check skips. */
-export function optionKey(name) {
+/** A property or binding name as text (an options key, a destructured name), `RUNTIME_KEY` for `[expr]`, or undefined for a name the check skips. */
+export function propertyKey(name) {
   if (!name) return undefined;
   if (ts.isComputedPropertyName(name)) {
     const expr = unwrap(name.expression);

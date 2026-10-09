@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, memberOn, optionKey, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
+import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, memberOn, propertyKey, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -52,12 +52,28 @@ export function isGlobalName(id, bindings) {
   return ts.isIdentifier(id) && bindings.declarationsOf(id).length === 0;
 }
 
-/** Whether `node` reads an environment variable from the global `process.env` (`process.env.X`, `process.env["X"]`). */
+/** Whether `node` reads an environment variable: `process.env.X`, `process.env["X"]`, `env.X` from `node:process`, or a name destructured from one. */
 export function isEnvRead(node, bindings) {
-  if (!isMemberLink(node)) return false;
-  const env = unwrap(node.expression);
-  if (!ts.isPropertyAccessExpression(env) || env.name.text !== "env") return false;
-  const process = unwrap(env.expression);
+  // `const { PG_URL } = process.env`: a name destructured from the environment.
+  if (ts.isIdentifier(node)) {
+    const decls = bindings.declarationsOf(node);
+    return decls.length === 1 && ts.isBindingElement(decls[0]) && ts.isObjectBindingPattern(decls[0].parent) &&
+      ts.isVariableDeclaration(decls[0].parent.parent) && decls[0].parent.parent.initializer !== undefined &&
+      isEnvObject(decls[0].parent.parent.initializer, bindings);
+  }
+  return isMemberLink(node) && isEnvObject(node.expression, bindings);
+}
+
+/** Whether `node` is the environment object: the global `process.env`, or `env` imported from `"process"` / `"node:process"`. */
+function isEnvObject(node, bindings) {
+  node = unwrap(node);
+  if (ts.isIdentifier(node)) {
+    const decls = bindings.declarationsOf(node);
+    return decls.length === 1 && ts.isImportSpecifier(decls[0]) && (decls[0].propertyName ?? decls[0].name).text === "env" &&
+      ["process", "node:process"].includes(importedFrom(decls[0]));
+  }
+  if (!ts.isPropertyAccessExpression(node) || node.name.text !== "env") return false;
+  const process = unwrap(node.expression);
   return ts.isIdentifier(process) && process.text === "process" && isGlobalName(process, bindings);
 }
 
@@ -82,17 +98,24 @@ export function vitestBindings(program, isIntegrationModule) {
   const cache = new Map();
   // Which import specifiers name the sanctioned gate's module.
   const bindings = { isIntegrationModule };
-  /** The declarations of the symbol identifier `id` names, or none. */
-  bindings.declarationsOf = (id) => checker.getSymbolAtLocation(id)?.declarations ?? [];
+  /**
+   * The symbol identifier `id` names as a value: in a shorthand property (`{ vi }`) the variable it
+   * reads, not the property it declares.
+   */
+  const valueSymbol = (id) => {
+    const parent = id.parent;
+    return ts.isShorthandPropertyAssignment(parent) && parent.name === id
+      ? checker.getShorthandAssignmentValueSymbol(parent)
+      : checker.getSymbolAtLocation(id);
+  };
+  /** The declarations of the value identifier `id` names (see `valueSymbol`), or none. */
+  bindings.declarationsOf = (id) => valueSymbol(id)?.declarations ?? [];
   /**
    * What identifier `id` refers to, as `{ kind, name? }` with one of the `KIND_*` constants above
    * (`name` for `KIND_FN`; `KIND_AMBIGUOUS` is explained at `resolveDeclarations`), or undefined.
    */
   bindings.resolve = (id) => {
-    const parent = id.parent;
-    const symbol = ts.isShorthandPropertyAssignment(parent) && parent.name === id
-      ? checker.getShorthandAssignmentValueSymbol(parent)
-      : checker.getSymbolAtLocation(id);
+    const symbol = valueSymbol(id);
     if (symbol === undefined) return TEST_FNS.has(id.text) ? { kind: KIND_FN, name: id.text } : undefined;
     if (cache.has(symbol)) return cache.get(symbol);
     cache.set(symbol, undefined); // a cycle (`const t = t.extend(…)`) resolves to nothing
@@ -170,6 +193,23 @@ export function isUnreadableViUse(node, bindings) {
   return member === undefined || linkName(member) === undefined;
 }
 
+// Vitest hooks, whose callbacks run after the suites and tests are collected.
+const HOOKS = new Set(["beforeAll", "beforeEach", "afterAll", "afterEach", "onTestFinished", "onTestFailed"]);
+
+/**
+ * Whether `call` calls a Vitest hook: the global (`beforeAll(…)`), an import from `"vitest"` (renamed
+ * or not), or a member of a Vitest namespace or loader (`v.afterEach(…)`). A local function or an
+ * object's method of the same name is not Vitest's.
+ */
+export function isVitestHookCall(call, bindings) {
+  const callee = unwrap(call.expression);
+  if (isMemberLink(callee)) return HOOKS.has(linkName(callee)) && resolvesToVitestModule(callee.expression, bindings);
+  if (!ts.isIdentifier(callee)) return false;
+  const decls = bindings.declarationsOf(callee);
+  if (decls.length === 0) return HOOKS.has(callee.text);
+  return decls.every((d) => ts.isImportSpecifier(d) && importedFrom(d) === "vitest" && HOOKS.has((d.propertyName ?? d.name).text));
+}
+
 // Vitest's `vi` object, under both names it exports (`const vi = vitest`).
 const VI_NAMES = new Set(["vi", "vitest"]);
 
@@ -189,7 +229,7 @@ function namesVi(node, bindings) {
 
 /** Whether declaration `d` is `{ vi }`, `{ vi: m }` or `{ vitest }` destructured from a Vitest module. */
 function destructuresVi(d, bindings) {
-  if (!ts.isBindingElement(d) || !VI_NAMES.has(optionKey(d.propertyName ?? d.name))) return false;
+  if (!ts.isBindingElement(d) || !VI_NAMES.has(propertyKey(d.propertyName ?? d.name))) return false;
   const decl = d.parent.parent;
   return ts.isVariableDeclaration(decl) && decl.initializer !== undefined && resolvesToVitestModule(decl.initializer, bindings);
 }

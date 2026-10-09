@@ -115,3 +115,35 @@ describe.each(pushedInSuite)("a table pushed to under an if in a suite body %s",
 const pickTruncated = ["pg", "sqlite"];
 pickTruncated.length = process.env.PG_URL ? 2 : 1;
 describe.each(pickTruncated)("a table truncated to a picked length %s", () => {}); // HIT
+const pushedInLookalikeHook: string[] = [];
+setup.beforeAll(() => { if (process.env.PG_URL) pushedInLookalikeHook.push("pg"); });
+describe.each(pushedInLookalikeHook)("a table pushed to in an object's beforeAll %s", () => {}); // HIT
+function afterEach(f) { f(); }
+const pushedInLocalHook: string[] = [];
+afterEach(() => { if (process.env.PG_URL) pushedInLocalHook.push("pg"); });
+describe.each(pushedInLocalHook)("a table pushed to in a local afterEach %s", () => {}); // HIT
+const constPgUrl = process.env.DATABASE_URL;
+const constMysqlUrl = process.env.MYSQL_DATABASE_URL;
+describe.each([constPgUrl, constMysqlUrl].filter(Boolean))("const-held env reads filtered %s", () => {}); // HIT
+const constPickRows = [process.env.PG_URL ? "pg" : null, "sqlite"];
+describe.each(constPickRows.filter(Boolean))("a const table holding a pick, filtered %s", () => {}); // HIT
+describe.each([...new Set(constPickRows)])("a const table holding a pick, deduped %s", () => {}); // HIT
+const { PG_URL: destructuredPgUrl } = process.env;
+describe.each([destructuredPgUrl, "sqlite"].filter(Boolean))("an env name destructured from process.env %s", () => {}); // HIT
+const engineMap = new Map([["sqlite", 1]]);
+if (process.env.PG_URL) engineMap.set("pg", 2);
+describe.each([...engineMap])("a Map set under an if %s", () => {}); // HIT
+const indexWritten = ["sqlite"];
+if (process.env.PG_URL) indexWritten[1] = "pg";
+describe.each(indexWritten)("an index written under an if %s", () => {}); // HIT
+const lengthDecremented = ["pg", "sqlite"];
+if (!process.env.PG_URL) lengthDecremented.length -= 1;
+describe.each(lengthDecremented)("a length decremented under an if %s", () => {}); // HIT
+const lengthStepped = ["pg", "sqlite"];
+if (!process.env.PG_URL) lengthStepped.length--;
+describe.each(lengthStepped)("a length stepped down under an if %s", () => {}); // HIT
+let reassignedRows = ["sqlite"];
+if (process.env.PG_URL) reassignedRows = [...reassignedRows, "pg"];
+describe.each(reassignedRows)("a let reassigned under an if %s", () => {}); // HIT
+import { env as processEnv } from "node:process";
+describe.each([processEnv.PG_URL, "sqlite"].filter(Boolean))("env from node:process filtered %s", () => {}); // HIT

@@ -96,3 +96,5 @@ it("a timeout converted from a process member that is a function", withDb(runDb)
 describe("a string in the options slot", "not options", () => { it("q", () => {}); }); // HIT
 const timeoutCycleA = timeoutCycleB, timeoutCycleB = timeoutCycleA;
 it("a timeout converted from a cycle of consts", withDb(runDb), Number(timeoutCycleA)); // HIT
+const viHolder = { vi }; // HIT
+const vitestHolder = { vitest }; // HIT

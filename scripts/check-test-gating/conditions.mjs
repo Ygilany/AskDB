@@ -11,7 +11,7 @@ import {
   isPlainAssignment,
   linkName,
   memberOn,
-  optionKey,
+  propertyKey,
   outermostWrapper,
   pickBranches,
   receiverOf,
@@ -19,7 +19,7 @@ import {
   unwrap,
   resultOf,
 } from "./ast.mjs";
-import { CALL_TEST, constHolds, isEnvRead, isGlobalCallee, vitestCallKind } from "./bindings.mjs";
+import { CALL_TEST, constHolds, isEnvRead, isGlobalCallee, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
@@ -59,14 +59,15 @@ function valueIsPicked(node, bindings) {
 }
 
 // Methods that add or remove entries of the array, `Set` or `Map` they are called on.
-const SIZE_CHANGING = new Set(["push", "pop", "shift", "unshift", "splice", "add", "delete", "clear"]);
+const SIZE_CHANGING = new Set(["push", "pop", "shift", "unshift", "splice", "add", "set", "delete", "clear"]);
 // Each declaration's answer, set to false while it is worked out so a walk back to it ends.
 const resized = new WeakMap();
 
 /**
  * Whether identifier `node` names a table that some reference in the file resizes under a
  * condition or by a pick: `if (url) rows.push(url)`, `rows.push(...(url ? [url] : []))`,
- * `if (!url) rows.length = 0`. A table passed to a helper that resizes it is not seen.
+ * `if (!url) rows.length = 0`, `if (url) rows[1] = url`, `if (url) map.set(k, v)`, or a `let`
+ * reassigned (`if (url) rows = [...rows, url]`). A table passed to a helper that resizes it is not seen.
  */
 function resizedUnderCondition(node, bindings) {
   if (!ts.isIdentifier(node)) return false;
@@ -88,20 +89,30 @@ function resizedUnderCondition(node, bindings) {
 
 /** Whether reference `ref` resizes its table under a condition or by a pick (see `resizedUnderCondition`). */
 function resizes(ref, bindings) {
+  if (runsAfterCollection(ref, bindings)) return false;
+  const picksOrConditional = (write) => containsPick(write) || underCondition(write, bindings);
+  // `rows = [...rows, "pg"]`: a `let` reassigned.
+  const reassigned = writeOf(outermostWrapper(ref));
+  if (reassigned !== undefined) return picksOrConditional(reassigned);
   const member = memberOn(ref);
-  if (member === undefined || runsAfterCollection(ref, bindings)) return false;
-  const outer = outermostWrapper(member);
-  // `rows.length = n`
-  if (linkName(member) === "length" && isPlainAssignment(outer.parent) && outer.parent.left === outer) {
-    return containsPick(outer.parent.right) || underCondition(outer.parent, bindings);
-  }
+  if (member === undefined) return false;
+  // `rows.length = n`, `rows.length -= 1`, `rows.length--`, `rows[1] = "pg"`.
+  const written = writeOf(outermostWrapper(member));
+  if (written !== undefined && (linkName(member) === "length" || ts.isElementAccessExpression(member))) return picksOrConditional(written);
   const call = invokedBy(member);
   if (call === undefined || !SIZE_CHANGING.has(linkName(member))) return false;
-  return call.arguments.some(containsPick) || underCondition(call, bindings);
+  return picksOrConditional(call);
 }
 
-// Vitest hooks, whose callbacks run after the suites and tests are collected.
-const HOOKS = new Set(["beforeAll", "beforeEach", "afterAll", "afterEach", "onTestFinished", "onTestFailed"]);
+/** The assignment (`=`, `+=`, …) or `++`/`--` that writes `target`, or undefined when it only reads it. */
+function writeOf(target) {
+  const p = target.parent;
+  if (ts.isBinaryExpression(p) && p.left === target &&
+    p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment) return p;
+  const step = [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken];
+  if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) && step.includes(p.operator)) return p;
+  return undefined;
+}
 
 /**
  * Whether `node` sits in a test body or a hook callback, which run after Vitest has read every
@@ -112,7 +123,7 @@ function runsAfterCollection(node, bindings) {
     if (!ts.isFunctionLike(n)) continue;
     const call = outermostWrapper(n).parent;
     if (!ts.isCallExpression(call) || !call.arguments.includes(outermostWrapper(n))) continue;
-    if (vitestCallKind(call, bindings) === CALL_TEST || HOOKS.has(calleeParts(call)?.name)) return true;
+    if (vitestCallKind(call, bindings) === CALL_TEST || isVitestHookCall(call, bindings)) return true;
   }
   return false;
 }
@@ -151,7 +162,7 @@ function sizeIsPicked(node, bindings) {
   if (valueIsPicked(node, bindings)) return true;
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.some((p) =>
-      ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && containsPick(p.initializer));
+      ts.isPropertyAssignment(p) && propertyKey(p.name) === "length" && containsPick(p.initializer));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
     pickBranches(resultOf(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
@@ -307,15 +318,25 @@ function keepsSize(node, bindings) {
 function carriesPick(node, bindings) {
   if (node === undefined) return false;
   node = resultOf(node);
-  // `[process.env.PG_URL, process.env.MYSQL_URL].filter(Boolean)`: an environment read decides an
-  // entry as a pick does.
-  const decides = (n) => containsPick(n) || isEnvRead(resultOf(n), bindings);
-  if (ts.isArrayLiteralExpression(node)) return node.elements.some(decides);
+  // `const rows = [url ? "pg" : null]; rows.filter(Boolean)`: a `const` table is read through.
+  if (constHolds(node, bindings, (init) => carriesPick(init, bindings))) return true;
+  if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => decidesEntry(el, bindings));
   if (ts.isObjectLiteralExpression(node)) {
-    return node.properties.some((p) => containsPick(p) || (ts.isPropertyAssignment(p) && isEnvRead(resultOf(p.initializer), bindings)));
+    return node.properties.some((p) => containsPick(p) || (ts.isPropertyAssignment(p) && decidesEntry(p.initializer, bindings)));
   }
   if (!keepsSize(node, bindings)) return false;
   return carriesPick(isArrayFrom(node, bindings) || isObjectStatic(node, bindings) ? node.arguments[0] : receiverOf(node), bindings);
+}
+
+/**
+ * Whether table entry `node` can be dropped by a condition: it holds a pick or reads the environment
+ * (`[process.env.PG_URL, process.env.MYSQL_URL].filter(Boolean)`), inline or through a `const`
+ * (`const url = process.env.DATABASE_URL; [url].filter(Boolean)`).
+ */
+function decidesEntry(node, bindings) {
+  node = resultOf(node);
+  if (containsPick(node) || isEnvRead(node, bindings)) return true;
+  return constHolds(node, bindings, (init) => decidesEntry(init, bindings));
 }
 
 /** Whether object literal `node` has a computed key holding a pick (`{ [url ? "pg" : "x"]: 1 }`). */

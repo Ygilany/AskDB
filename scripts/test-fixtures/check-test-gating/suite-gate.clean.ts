@@ -94,3 +94,18 @@ describe.each(pushedInTest)("a table only pushed to inside a test %s", () => {
 const pushedInHook: string[] = [];
 beforeAll(() => { if (process.env.CI) pushedInHook.push("x"); });
 describe.each(pushedInHook)("a table only pushed to in a hook %s", () => {});
+import { beforeAll as setupOnce } from "vitest";
+const pushedInRenamedHook: string[] = [];
+setupOnce(() => { if (process.env.CI) pushedInRenamedHook.push("x"); });
+describe.each(pushedInRenamedHook)("a table pushed to in a renamed Vitest hook %s", () => {});
+const readOnlyRows = ["pg", "sqlite"];
+const hasPg = readOnlyRows.includes("pg");
+if (process.env.CI) { console.log(readOnlyRows.length); }
+describe.each(readOnlyRows)("a table only read, never resized %s", () => {});
+import { IMPORTED_TIMEOUT } from "./timeouts";
+describe("a function body ignores what follows it", () => {}, IMPORTED_TIMEOUT);
+const fixedUrl = process.env.DATABASE_URL ?? "postgres://localhost";
+describe.each([fixedUrl, "sqlite"])("a const env read in a table no step filters %s", () => {});
+if (process.env.CI) console.log(-readOnlyRows.length, !readOnlyRows[0]);
+import { env as configEnv } from "./config";
+describe.each([configEnv.LABEL, "sqlite"].filter(Boolean))("an env object from another module %s", () => {});
