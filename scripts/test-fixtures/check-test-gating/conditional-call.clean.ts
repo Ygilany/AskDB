@@ -64,3 +64,13 @@ registry = describe("a plain assignment", run);
 (async () => {
   describe("an IIFE with finally", run);
 })().finally(() => {});
+describe.each`
+  engine
+  ${"sqlite"}
+`("a tagged-template table with tests inside $engine", () => {
+  it("inside", () => {});
+});
+for (const engine of [...ENGINES, "extra"]) it(`a plain spread in a loop ${engine}`, () => {});
+describe.each([...ROWS, 1])("a plain spread in a table %s", () => {});
+suites.push(...ROWS.map((row) => describe(`map result spread into push ${row}`, run)));
+await Promise.all(ROWS.map((row) => it(`map result passed on ${row}`, () => {})));

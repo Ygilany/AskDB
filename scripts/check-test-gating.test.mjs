@@ -4,7 +4,7 @@
 // lines marked `// HIT`, all under <rule>; every *.clean.ts(x) must report nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -47,6 +47,11 @@ for (const file of files) {
     });
   }
 }
+
+test("findGates trusts no integration module unless told which one is", () => {
+  const src = 'import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";\nintegrationSuite({})("db", () => {\n  it("q", () => {});\n});\n';
+  assert.deepEqual(findGates(src).map(({ line, rule }) => ({ line, rule })), [{ line: 3, rule: "conditional-call" }]);
+});
 
 test("a file that does not parse throws instead of passing", () => {
   assert.throws(() => findGates('describe.skip("unterminated", () => {\n'), /does not parse at line \d+:/);
@@ -147,9 +152,9 @@ test("CLI fails closed on a pnpm-workspace.yaml with no packages list", (t) => {
 
 test("CLI defaults to the repo root beside the script, not the working directory", (t) => {
   const root = workspace(t, { "packages/a/src/a.test.ts": 'describe.skip("gated", () => {});\n' });
-  mkdirSync(join(root, "scripts", "check-test-gating"), { recursive: true });
+  mkdirSync(join(root, "scripts"), { recursive: true });
   copyFileSync(script, join(root, "scripts", "check-test-gating.mjs"));
-  copyFileSync(join(here, "check-test-gating", "workspace.mjs"), join(root, "scripts", "check-test-gating", "workspace.mjs"));
+  cpSync(join(here, "check-test-gating"), join(root, "scripts", "check-test-gating"), { recursive: true });
   symlinkSync(join(here, "..", "node_modules"), join(root, "node_modules"));
   const result = spawnSync(process.execPath, [join(root, "scripts", "check-test-gating.mjs")], { encoding: "utf8", cwd: tmpdir() });
   assert.equal(result.status, 1, result.stderr);
@@ -178,6 +183,7 @@ test("CLI follows a symbolic link to a directory, once", (t) => {
   });
   symlinkSync(join(root, "shared"), join(root, "packages", "a", "src", "linked"));
   symlinkSync(join(root, "packages", "a", "src"), join(root, "packages", "a", "src", "loop"));
+  symlinkSync(join(root, "does-not-exist"), join(root, "packages", "a", "src", "dangling"));
   const result = run(root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /packages\/a\/src\/linked\/gated\.test\.ts:1:/);
@@ -217,8 +223,7 @@ test("CLI exits with a message naming ADR 0019 when typescript lacks the compile
   writeFileSync(join(dir, "node_modules", "typescript", "package.json"), '{"name":"typescript","version":"7.0.0","main":"index.js"}');
   writeFileSync(join(dir, "node_modules", "typescript", "index.js"), 'module.exports = { version: "7.0.0" };');
   copyFileSync(script, join(dir, "check-test-gating.mjs"));
-  mkdirSync(join(dir, "check-test-gating"));
-  copyFileSync(join(here, "check-test-gating", "workspace.mjs"), join(dir, "check-test-gating", "workspace.mjs"));
+  cpSync(join(here, "check-test-gating"), join(dir, "check-test-gating"), { recursive: true });
   const result = run(workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }), join(dir, "check-test-gating.mjs"));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /needs the TypeScript 5\/6 compiler API; typescript 7\.0\.0/);
