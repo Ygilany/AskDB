@@ -484,6 +484,13 @@ describe("workspace table filenames", () => {
     expect(filenameOf(ws3, "table:public.orders")).toBe("public.orders.md");
     saveDescribed(ws3, "table:public.orders");
     expect(readFileSync(join(schemaDir, "tables/Orders.MD"), "utf8")).toBe("precious notes\n");
+
+    // A file with another name, such as a different extension, doesn't.
+    rmSync(join(schemaDir, "tables"), { recursive: true });
+    writeSchema(schemaDir, [table("public", "orders")]);
+    writeFileSync(join(schemaDir, "tables/orders.txt"), "scratch\n", "utf8");
+    const ws4 = loadWorkspace(schemaDir);
+    expect(filenameOf(ws4, "table:public.orders")).toBe("orders.md");
   });
 
   it("sanitizes identifiers so default filenames stay inside tables/", () => {
