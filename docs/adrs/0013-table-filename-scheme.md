@@ -10,7 +10,7 @@ A Schema v2 directory has one optional markdown file per described table under `
 
 `@askdb/enrich` still has to pick a name when it creates a file for a table that has none yet (`loadWorkspace()` assigns it and `saveTable()` writes it). Studio and custom authoring surfaces all go through that code. Before PR #181 the name was `${table.name}.md`, which broke in three ways:
 
-- **Collisions.** `public.orders` and `archive.orders` both mapped to `orders.md`, so saving one overwrote the other. Names that differ only in case (`Orders`, `orders`) collide the same way on a case-insensitive file system. So do names that differ only in Unicode normalization or case folding: APFS stores NFC `café` and NFD `café` as one file, and `straße` and `STRASSE` as one file. Postgres and SQL Server treat each of these pairs as two distinct quoted identifiers.
+- **Collisions.** `public.orders` and `archive.orders` both mapped to `orders.md`, so saving one overwrote the other. Names that differ only in case (`Orders`, `orders`) collide the same way on a case-insensitive file system. So do names that differ only in Unicode normalization or case folding: APFS stores NFC `café` and NFD `café` as one file, and `straße` and `STRASSE` as one file. Postgres treats each of these pairs as two distinct quoted identifiers, and so does SQL Server under a case-sensitive collation (its default collation compares case-insensitively).
 - **Escapes.** A quoted identifier such as `../../x` made the write land outside `tables/`.
 - **Length.** SQL Server allows 128-character identifiers. A schema-qualified name can then be 260 bytes, and 128 CJK characters are 384 bytes even unqualified. ext4 and APFS cap one name at 255 UTF-8 bytes and NTFS at 255 UTF-16 units, so the write fails with `ENAMETOOLONG`.
 
@@ -20,7 +20,7 @@ The name only has to be unique, stay inside `tables/`, and fit on disk. Readabil
 
 ### A. Bare name, schema-qualified on collision, counter as last resort (chosen)
 
-`<table>.md` when no other table in `schema.json` has the same name; otherwise `<schema>.<table>.md`; `<schema>.<table>-<n>.md` if that is taken too. A name already on disk, including an orphaned file, is never reused.
+`<table>.md` when no other table in `schema.json` has the same name under the file-system comparison in Decision rule 2; otherwise `<schema>.<table>.md`; `<schema>.<table>-<n>.md` if that is taken too. A name already on disk, including an orphaned file, is never reused.
 
 - Single-schema databases, the common case, keep the short names every fixture and doc already uses.
 - Two same-named tables in different schemas get names that say which is which.

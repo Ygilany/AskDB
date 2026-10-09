@@ -132,8 +132,8 @@ One file per described table. Format: **YAML front-matter** for structured field
 
 **Filenames.** Files are linked to tables by the front-matter `id`, never by filename, so an existing file keeps its name whatever it is. When `@askdb/enrich` creates a file for a table that has none yet, it picks ([ADR 0013](../adrs/0013-table-filename-scheme.md)):
 
-- `<table>.md` when the table name is unique across `schema.json`;
-- `<schema>.<table>.md` when two tables share a name (e.g. `public.orders` and `archive.orders`), or when `<table>.md` is already taken by another file;
+- `<table>.md` when no other table in `schema.json` has the same name under the comparison below;
+- `<schema>.<table>.md` when two tables share a name under that comparison (e.g. `public.orders` and `archive.orders`), or when `<table>.md` is already taken by another file;
 - `<schema>.<table>-<n>.md` as a last resort if that is taken too.
 
 Two names count as the same when a case-insensitive file system (APFS, NTFS) would store them as one file: the comparison ignores case, with full case folding (`straße` matches `STRASSE` and `STRAẞE`), and Unicode normalization (NFC `café` matches NFD `café`). The key is `normalize("NFC").toLowerCase().toUpperCase().toLowerCase()`; ADR 0013 records how it was checked against Unicode full case folding. Every entry in `tables/` counts as taken, whatever its extension.
