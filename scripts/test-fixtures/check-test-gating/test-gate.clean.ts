@@ -61,3 +61,9 @@ it("a min timeout", withDb(runDbClean), Math.min(Number(process.env.SLOW_TIMEOUT
 it("a ceil timeout", withDb(runDbClean), Math.ceil(Number(process.env.SLOW_TIMEOUT ?? 0)));
 it("a pow timeout", withDb(runDbClean), Math.pow(10, 3));
 it("a trunc timeout", withDb(runDbClean), Math.trunc(Number(process.env.SLOW_TIMEOUT ?? 0)));
+{
+  const constRunBody = async () => {};
+  it("a test body held in a const function", constRunBody);
+  const constLiteralSkip = { skip: true };
+  it("a literal skip held in a const", constLiteralSkip, constRunBody);
+}

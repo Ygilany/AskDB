@@ -187,7 +187,7 @@ function extendResultIsTracked(chain) {
   return (isVariableInitializer(chain) && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
 
-/** Line numbers exempted by a `// check-test-gating-ignore-next-line: <reason>` comment. */
+/** The 1-based numbers of the lines exempted by a `// check-test-gating-ignore-next-line: <reason>` comment: each the line after its comment. */
 export function pragmaLines(sf) {
   const text = sf.text;
   const seen = new Set();
@@ -211,6 +211,7 @@ export function pragmaLines(sf) {
       for (const c of comments) {
         if (seen.has(c.pos) || c.kind !== ts.SyntaxKind.SingleLineCommentTrivia || inJsxText(c.pos)) continue;
         seen.add(c.pos);
+        // 0-based comment line, +1 for 1-based, +1 more: the line the marker exempts.
         if (PRAGMA.test(text.slice(c.pos, c.end))) lines.add(sf.getLineAndCharacterOfPosition(c.pos).line + 2);
       }
     }

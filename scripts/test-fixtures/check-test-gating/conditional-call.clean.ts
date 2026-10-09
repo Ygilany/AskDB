@@ -108,3 +108,9 @@ for (;;) {
 Array.from([process.env.PG_URL ? "pg" : "sqlite", "my"]).forEach((e) => describe(`Array.from keeps the size ${e}`, run));
 [process.env.PG_URL ? "pg" : "sqlite", "my"].values().toArray().forEach((e) => describe(`an iterator copy keeps the size ${e}`, run));
 const mappedCount = [1].map((e) => { it("mapped " + e, () => {}); return e; }).length;
+for (const e of [{ name: "pg" }, { name: "sqlite" }]) {
+  if (e.name === "x") { for (const y of [1]) { if (y) console.log(y); } }
+  describe(e.name, () => {});
+}
+const fixedSuites = [{ name: "pg", engines: ["pg"] }];
+for (const s of fixedSuites) describe.each(s.engines)("a loop variable's fixed table %s", () => {});

@@ -5,6 +5,7 @@ import {
   calleeOf,
   calleeParts,
   containsPick,
+  INDIRECT_LINKS,
   invokedBy,
   isBinaryPick,
   isCallOrNew,
@@ -22,7 +23,7 @@ import {
   ts,
   unwrap,
 } from "./ast.mjs";
-import { constHolds, definesTests, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
+import { CALL_ROWS, constHolds, definesTests, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
 import { isGlobalCallee, mayReadEnv } from "./globals.mjs";
 
 /**
@@ -39,6 +40,8 @@ function valueIsPicked(node, bindings) {
   if (constHolds(node, bindings, (init) => valueIsPicked(init, bindings))) return true;
   // `const { engines } = url ? a : b`, `const { engines } = { engines: url ? … : … }`: destructured from a pick.
   if (destructuredFromPick(node, bindings)) return true;
+  // `for (const s of suites) describe.each(s.engines)`: a row of a table holding a pick.
+  if (elementOfPicked(node, bindings)) return true;
   // `const engines = ["sqlite"]; if (url) engines.push("pg")`: a table resized under a condition.
   if (resizedUnderCondition(node, bindings)) return true;
   if (readsPickedValue(node, bindings)) return true;
@@ -66,8 +69,6 @@ function valueIsPicked(node, bindings) {
 
 // Methods that add or remove entries of the array, `Set` or `Map` they are called on.
 const SIZE_CHANGING = new Set(["push", "pop", "shift", "unshift", "splice", "add", "set", "delete", "clear"]);
-// Function-protocol links that call the method before them (`rows.push.call(rows, x)`).
-const INDIRECT_CALLS = new Set(["call", "apply"]);
 // Each declaration's settled answer, and the declarations being worked out now.
 const resized = new WeakMap();
 const resizing = new Set();
@@ -122,21 +123,48 @@ function resizes(ref, bindings) {
   if (reassigned !== undefined) return resizedBy(reassigned);
   // `rows.length = n`, `rows.length--`, `[rows.length] = [1]`, `rows[1] = "pg"`, `tables.pg = 2`, `delete tables.pg`,
   // at any depth (`config.engines.push("pg")`, `config.engines.length = 1`).
-  // `rows.push.call(rows, "pg")`, `rows.push.apply(rows, ["pg"])`: the method called indirectly.
+  // `rows.push.call(rows, "pg")`, `rows.push.apply(rows, ["pg"])`, `rows.push.bind(rows)("pg")`: the method called indirectly.
   let previous;
   for (let member = memberOn(ref); member !== undefined; previous = member, member = memberOn(member)) {
     const outer = outermostWrapper(member);
     const written = writeOf(outer) ?? (ts.isDeleteExpression(outer.parent) ? outer.parent : undefined);
     if (written !== undefined) return resizedBy(written);
+    // `const engines = cfg.engines; if (url) engines.push("pg")`: an alias of a member.
+    if (isVariableInitializer(outer) && ts.isIdentifier(outer.parent.name) && resizedUnderCondition(outer.parent.name, bindings)) return true;
     const call = invokedBy(member);
     if (call === undefined) continue;
-    const method = INDIRECT_CALLS.has(linkName(member)) && previous !== undefined ? linkName(previous) : linkName(member);
+    const method = INDIRECT_LINKS.has(linkName(member)) && previous !== undefined ? linkName(previous) : linkName(member);
     return SIZE_CHANGING.has(method) && picksOrConditional(call);
   }
   // `const all = rows; if (url) all.push("pg")`: an alias resizes the same table.
   const aliased = outermostWrapper(ref);
   if (isVariableInitializer(aliased) && ts.isIdentifier(aliased.parent.name)) return resizedUnderCondition(aliased.parent.name, bindings);
   return false;
+}
+
+/**
+ * Whether identifier `node` names a row of a table holding a pick: a `for…of`/`for…in` variable, the
+ * first parameter of a `forEach`/`map`/`flatMap` callback, or a `.each`/`.for` body's row, through
+ * any destructuring (`for (const s of [{ engines: url ? ["pg"] : [] }]) describe.each(s.engines)`).
+ */
+function elementOfPicked(node, bindings) {
+  if (!ts.isIdentifier(node)) return false;
+  const [d, ...rest] = bindings.declarationsOf(node);
+  if (d === undefined || rest.length > 0) return false;
+  const holder = ts.isBindingElement(d) ? bindingHolder(d) : d;
+  let tables = [];
+  if (ts.isVariableDeclaration(holder) && ts.isForInOrOfStatement(holder.parent?.parent) && holder.parent.parent.initializer === holder.parent) {
+    tables = [holder.parent.parent.expression];
+  } else if (ts.isParameter(holder) && holder.parent.parameters[0] === holder) {
+    const fn = outermostWrapper(holder.parent);
+    const call = fn.parent;
+    if (ts.isCallExpression(call) && isIterationCall(call, fn)) tables = [receiverOf(call)];
+    else if (ts.isCallExpression(call) && call.arguments.includes(fn) && vitestCallKind(call, bindings) === CALL_ROWS) {
+      const each = unwrap(call.expression);
+      tables = ts.isCallExpression(each) ? [...each.arguments] : [];
+    }
+  }
+  return tables.some((table) => valueIsPicked(table, bindings) || someInside(table, (n) => isPick(n) || holdsPickedLiteral(n, bindings)));
 }
 
 /**
@@ -299,6 +327,8 @@ export function underCondition(call, bindings) {
   let grandchild;
   for (let node = call.parent; node && !ts.isSourceFile(node); grandchild = child, child = node, node = node.parent) {
     if (conditionalEdge(node, child, bindings)) return true;
+    // `if (!url) continue; describe(…)`: an earlier statement that can leave the block first.
+    if (exitsEarlier(node, child)) return true;
     if (ts.isFunctionDeclaration(node)) return false;
     // A declared class's member that runs later (a method, accessor, constructor or instance field)
     // is a boundary, like a named function; a static block, static field or `extends` clause runs
@@ -331,6 +361,20 @@ export function underCondition(call, bindings) {
     }
   }
   return false;
+}
+
+/**
+ * Whether a statement before `child` in the statement list `node` (a block, case clause or file)
+ * leaves it under a condition: an `if` holding a `continue`, `break` or `return` outside a nested
+ * function (`if (!url) continue;`, `if (!url) return;`).
+ */
+function exitsEarlier(node, child) {
+  const statements = ts.isBlock(node) || ts.isSourceFile(node) || ts.isCaseClause(node) || ts.isDefaultClause(node) || ts.isModuleBlock(node)
+    ? node.statements : undefined;
+  if (statements === undefined) return false;
+  const index = statements.indexOf(child);
+  return index > 0 && statements.slice(0, index).some((s) => ts.isIfStatement(s) &&
+    someInside(s, (n) => ts.isContinueStatement(n) || ts.isBreakStatement(n) || ts.isReturnStatement(n)));
 }
 
 /** Whether `a = x` is an element of a destructuring assignment target, not a plain assignment. */

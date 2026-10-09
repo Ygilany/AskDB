@@ -70,22 +70,40 @@ export function argumentsGate(call, suite, bindings) {
   for (const [i, arg] of call.arguments.entries()) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
-    // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
-    // test a todo. Only a pick between plain values (`url ? 10_000 : 5_000`) is left alone, and a
-    // value computed from a pick (`Number(env ?? 60_000)`) is always there.
-    if (i > 0 && isPick(resultOf(arg)) && !isPlainValue(arg, bindings)) return true;
-    // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
-    // body read out of a pick.
-    if (i > 0 && readsPickedValue(resultOf(arg), bindings)) return true;
-    // A body built by a call over a pick (see `bodyBuiltFromPick`). Options built by a call are
-    // `optionsUnreadable`.
-    if (i === body && bodyBuiltFromPick(resultOf(arg), bindings)) return true;
-    visit(arg, false);
+    if (i === 0) continue;
+    const picked = (value) =>
+      // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
+      // test a todo. Only a pick between plain values (`url ? 10_000 : 5_000`) is left alone, and a
+      // value computed from a pick (`Number(env ?? 60_000)`) is always there.
+      (isPick(resultOf(value)) && !isPlainValue(value, bindings)) ||
+      // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
+      // body read out of a pick.
+      readsPickedValue(resultOf(value), bindings) ||
+      // A body built by a call over a pick (see `bodyBuiltFromPick`). Options built by a call are
+      // `optionsUnreadable`.
+      (i === body && bodyBuiltFromPick(resultOf(value), bindings));
+    // `const body = url ? fn : undefined; it(name, body)`: a `const` argument is judged by its value.
+    if (picked(arg) || constHolds(resultOf(arg), bindings, picked)) return true;
+    // `let body = …; it(name, body)`: a test body that can be reassigned can't be read; fail closed (a
+    // suite's is `suiteBodyUnreadable`'s).
+    if (!suite && i === body && isReassignable(resultOf(arg), bindings)) return true;
     // `[{ skip: cond }][0]`, `Object.assign({}, { skip: cond })`: options literals inside the
-    // argument, outside a nested function (the body).
-    if (i > 0) visitNested(arg, false, resultOf(arg));
+    // argument, outside a nested function (the body), or in the `const` that holds them.
+    for (const value of [arg, constInitializer(resultOf(arg), bindings)]) {
+      if (value === undefined) continue;
+      visit(value, false);
+      visitNested(value, false, resultOf(value));
+    }
   }
   return gate;
+}
+
+/** Whether identifier `node` names a `let` or `var` binding, whose value the check can't pin to one initializer. */
+function isReassignable(node, bindings) {
+  if (!ts.isIdentifier(node)) return false;
+  const decls = bindings.declarationsOf(node);
+  return decls.length > 0 && decls.every((d) => ts.isVariableDeclaration(d) && ts.isVariableDeclarationList(d.parent) &&
+    (d.parent.flags & ts.NodeFlags.Const) === 0);
 }
 
 /**

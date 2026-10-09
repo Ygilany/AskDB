@@ -245,3 +245,7 @@ export function destructuredFrom(element) {
   return holder !== undefined && ts.isVariableDeclaration(holder) && holder.name === element.parent &&
     ts.isObjectBindingPattern(element.parent) ? holder.initializer : undefined;
 }
+
+// Function-protocol links that call the function before them indirectly (`describe.call(…)`,
+// `rows.push.apply(rows, […])`, `rows.push.bind(rows)(…)`).
+export const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);

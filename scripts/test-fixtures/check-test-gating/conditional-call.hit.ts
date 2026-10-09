@@ -169,3 +169,19 @@ for (const k in forInTables) describe(k, () => {}); // HIT
   const loopRows = [{ name: "pg", url: loopUrl }, { name: "sqlite", url: ":memory:" }];
   for (const e of loopRows.filter((e) => e.url)) describe(e.name, () => {}); // HIT
 }
+{
+  const loopSuites = [{ name: "pg", engines: process.env.PG_URL ? ["pg"] : [] }];
+  for (const s of loopSuites) for (const e of s.engines) describe(e, () => {}); // HIT
+  for (const e of [{ name: "pg", env: "PG_URL" }]) {
+    if (!process.env[e.env]) continue;
+    describe(e.name, () => {}); // HIT
+  }
+  earlyExit: {
+    if (!process.env.PG_URL) break earlyExit;
+    describe("after a labeled break", () => {}); // HIT
+  }
+  function definesAfterReturn() {
+    if (!process.env.PG_URL) return;
+    describe("after an early return", () => {}); // HIT
+  }
+}

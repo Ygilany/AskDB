@@ -26,9 +26,9 @@
 // `it`, an import of `test` from another module) is not Vitest's.
 //
 // What is rejected and allowed is listed in CONTRIBUTING.md ("Integration Tests"); RULES below
-// implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records
-// why and lists what the check can't see (among them an early `return`, a gate inside a helper
-// called under a condition, options in a variable, and `ctx.skip()`). A use the check
+// implements it and lists what the check can't see (among them a gate inside a helper called
+// under a condition, options in a `let`, and `ctx.skip()`), and ADR 0019
+// (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records why. A use the check
 // can't read fails closed rather than passing.
 // To exempt one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
@@ -42,13 +42,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const moduleUrl = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
-const { ts, oneFileProgram } = await import(moduleUrl("ast.mjs"));
+const { INDIRECT_LINKS, ts, oneFileProgram } = await import(moduleUrl("ast.mjs"));
 const { GATE_LINKS, SUITE_GATE_LINKS, vitestBindings, integrationModuleResolver } = await import(moduleUrl("bindings.mjs"));
 const { collectRefs, pragmaLines } = await import(moduleUrl("refs.mjs"));
 const { workspaceDirs, walk } = await import(moduleUrl("workspace.mjs"));
 
-// Function-protocol links that call the function indirectly, so the check can't read the call.
-const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
 
 /** Whether `ref` gates by a link in `gateLinks`, a run-time modifier, or its options argument. */
 function gatedByHand(ref, gateLinks) {

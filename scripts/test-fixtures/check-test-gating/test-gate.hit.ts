@@ -91,3 +91,13 @@ function declaredTimeoutBody() {}
 it("a timeout slot holding a declared function through Number", {}, Number(process.env.DATABASE_URL ? declaredTimeoutBody : 0)); // HIT
 let letBody = async () => {};
 it("a timeout slot holding a let through Number", {}, Number(process.env.DATABASE_URL ? letBody : 0)); // HIT
+{
+  const constPickedBody = process.env.DATABASE_URL ? () => {} : undefined;
+  it("a test body held in a const pick", constPickedBody); // HIT
+  it("a test body held in a const pick after options", {}, constPickedBody); // HIT
+  it.each([1])("a row test body held in a const pick %s", constPickedBody); // HIT
+  let letBodyHeld = process.env.DATABASE_URL ? () => {} : undefined;
+  it("a test body held in a let", letBodyHeld); // HIT
+  const constSkipOptions = { skip: !process.env.DATABASE_URL };
+  it("options held in a const", constSkipOptions, () => {}); // HIT
+}

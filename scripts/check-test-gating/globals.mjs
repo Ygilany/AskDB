@@ -74,7 +74,7 @@ function isProcessObject(node, bindings) {
   node = unwrap(node);
   if (isMemberLink(node) && linkName(node) === "process") {
     const holder = unwrap(node.expression);
-    return ts.isIdentifier(holder) && ["globalThis", "global"].includes(holder.text) && isGlobalName(holder, bindings);
+    return isGlobalObject(holder, bindings);
   }
   if (!ts.isIdentifier(node)) return false;
   const [d, ...rest] = bindings.declarationsOf(node);
@@ -85,10 +85,15 @@ function isProcessObject(node, bindings) {
   const init = destructuredFrom(d);
   if (init !== undefined && propertyKey(d.propertyName ?? d.name) === "process") {
     const holder = unwrap(init);
-    return ts.isIdentifier(holder) && ["globalThis", "global"].includes(holder.text) && isGlobalName(holder, bindings);
+    return isGlobalObject(holder, bindings);
   }
   // `const p = process`
   return constHolds(node, bindings, (value) => isProcessObject(value, bindings));
+}
+
+/** Whether `node` is the unshadowed global object, `globalThis` or `global`. */
+function isGlobalObject(node, bindings) {
+  return ts.isIdentifier(node) && ["globalThis", "global"].includes(node.text) && isGlobalName(node, bindings);
 }
 
 /**

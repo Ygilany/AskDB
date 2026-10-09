@@ -21,7 +21,7 @@ export const KIND_AMBIGUOUS = "ambiguous"; // declarations that disagree about a
 // What `vitestCallKind()` finds a call to define.
 export const CALL_SUITE = "suite";
 const CALL_TEST = "test";
-const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
+export const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
 const SUITE_FNS = new Set(["describe", "suite"]);
 // Links whose suite body receives a table row, not the test API: `describe.each(rows)(name, (row) => …)`.
 export const ROW_LINKS = new Set(["each", "for"]);

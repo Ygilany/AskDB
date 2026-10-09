@@ -6,7 +6,7 @@ Proposed (2026-10-09, #326). Stated in `AGENTS.md` ("Conventions") and `CONTRIBU
 
 ## Context
 
-The Changesets workflow (`.github/workflows/changesets.yml`) runs on every PR, and the `main` branch ruleset (a GitHub repository setting, not a file in the repo) requires its `status` job. It requires a changeset whenever a PR touches a publishable package's `src/` (`packages/*/src`, `apps/{cli,http-api,studio}/src`) or a publishable package's manifest (`packages/*/package.json`, `apps/{cli,http-api,studio}/package.json`) outside `devDependencies`. Some of those changes alter nothing a package ships: a test file under `src/`, or a comment outside an exported declaration. A patch changeset for such a change publishes a new version identical in behavior and types to the last one, and adds a changelog entry that says nothing to a host.
+The Changesets workflow (`.github/workflows/changesets.yml`) runs on every PR, and its `status` job is meant to be a required check in the `main` branch ruleset (a GitHub repository setting, not a file in the repo; the workflow's own comment says so). It requires a changeset whenever a PR touches a publishable package's `src/` (`packages/*/src`, `apps/{cli,http-api,studio}/src`) or a publishable package's manifest (`packages/*/package.json`, `apps/{cli,http-api,studio}/package.json`) outside `devDependencies`. Some of those changes alter nothing a package ships: a test file under `src/`, or a comment outside an exported declaration. A patch changeset for such a change publishes a new version identical in behavior and types to the last one, and adds a changelog entry that says nothing to a host.
 
 ## Options considered
 

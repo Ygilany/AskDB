@@ -305,3 +305,28 @@ describe.each([processNs.env.PG_URL, "sqlite"].filter(Boolean))("env through a n
   if (!process.env.PG_URL) deletedMap.delete("pg");
   describe.each([...deletedMap])("a Map entry deleted under an if %s", () => {}); // HIT
 }
+{
+  const pushedByBind = ["sqlite"];
+  if (process.env.PG_URL) pushedByBind.push.bind(pushedByBind)("pg");
+  describe.each(pushedByBind)("a table pushed to through bind under an if %s", () => {}); // HIT
+}
+{
+  const noParameterRunHere = () => {};
+  const mixedPick = process.env.DATABASE_URL ? (t) => t.skipIf(!process.env.DATABASE_URL)("q", () => {}) : 5;
+  describe("a const pick with a function branch before a body", mixedPick, noParameterRunHere); // HIT
+}
+{
+  const suitesWithPick = [{ name: "pg", engines: process.env.PG_URL ? ["pg"] : [] }, { name: "sqlite", engines: ["sqlite"] }];
+  for (const s of suitesWithPick) describe.each(s.engines)("a loop variable's picked table %s", () => {}); // HIT
+  suitesWithPick.forEach((s) => describe.each(s.engines)("a forEach row's picked table %s", () => {})); // HIT
+  describe.each(suitesWithPick)("$name", (s) => {
+    describe.each(s.engines)("an each row's picked table %s", () => {}); // HIT
+  });
+  for (const [, engines] of Object.entries({ pg: process.env.PG_URL ? ["pg"] : [], sqlite: ["sqlite"] })) describe.each(engines)("an entries row's picked table %s", () => {}); // HIT
+}
+{
+  const memberAliasCfg = { engines: ["sqlite"] };
+  const memberAlias = memberAliasCfg.engines;
+  if (process.env.PG_URL) memberAlias.push("pg");
+  describe.each(memberAliasCfg.engines)("a table pushed to through an alias of its member %s", () => {}); // HIT
+}
