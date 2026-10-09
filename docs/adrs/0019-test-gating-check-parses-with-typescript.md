@@ -1,4 +1,4 @@
-# ADR 0018 — The test-gating check parses test files with the TypeScript compiler
+# ADR 0019 — The test-gating check parses test files with the TypeScript compiler
 
 ## Status
 

@@ -4,17 +4,17 @@
  * `expectCassetteSql` (`test/support/cassette-sql.ts`), which the replay suites use.
  *
  * Protects: the two are equal once a single trailing `;` is removed from each, whichever side has
- * it. Released AskDB removes the `;` from the SQL it returns (`concepts/safety-boundaries.mdx`,
- * "Single statement") and #477 keeps it, while a recorded cassette's fence almost always ends with
- * one, so the lab must read both behaviors. Anything else still differs: a second `;`, a `;` in
+ * it. AskDB up to `1.0.0-beta.43` removes the `;` from the SQL it returns, and later versions
+ * keep it (#477, `concepts/safety-boundaries.mdx`, "Single statement"), while a recorded cassette's
+ * fence almost always ends with one, so the lab must read both behaviors. Anything else still differs: a second `;`, a `;` in
  * the middle, another statement.
  * Catches: a comparison that normalizes only the cassette's side, so every recorded cassette fails
  * once `ask()` keeps the `;`; one that strips every trailing `;`, or every `;`, so a statement
  * AskDB should have rejected or changed compares equal; and a fence read from an untagged block,
  * which `ask()` reads and the replay suites don't.
- * Not covered elsewhere: the replay suites and `record.test.ts` run against an AskDB that removes
- * the `;`, so the side of the comparison that handles a kept `;` is never exercised by them until
- * #477 ships.
+ * Not covered elsewhere: on the committed baseline (`1.0.0-beta.43`) the replay suites and
+ * `record.test.ts` run against an AskDB that removes the `;`, so they exercise the side of the
+ * comparison that handles a kept `;` only on `lab:use .` or a later release.
  * No production seam: plain functions over strings, and one real cassette read from disk.
  */
 import { describe, expect, it } from "vitest";

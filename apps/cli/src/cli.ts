@@ -331,7 +331,7 @@ program
         }
 
         console.log("-- sql --");
-        console.log(`${out.sql};`);
+        console.log(out.sql);
         if (opts.explain) {
           console.log("-- explain --");
           console.log(JSON.stringify(out.explain ?? null, null, 2));
