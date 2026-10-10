@@ -2,7 +2,8 @@
 // a few plain shapes only. Anything else fails, rather than the check trying to tell whether it
 // could depend on the environment (ADR 0019).
 import {
-  containsPick, GATE, isGlobalName, isKeyedProperty, isLiteralToken, propertyKey, someInside, ts, UNREADABLE, unwrap, valueExpressionOf,
+  containsPick, GATE, isGlobalName, isKeyedProperty, isLiteralToken, propertyKey, someInside, ts, UNREADABLE, unwrap,
+  valueExpressionOf,
 } from "./ast.mjs";
 import { constHolds, constInitializer, isInlineFunction, readsEnvironment } from "./bindings.mjs";
 
@@ -26,16 +27,21 @@ export function argumentsVerdict(call, suite, bindings) {
   if (third !== undefined) return UNREADABLE;
   if (first === undefined) return undefined;
   const body = (node) => isBody(node, suite, bindings);
-  // `it(name, fn)`, `it(name, fn, 30_000)`: a timeout can't skip the test, so any other value is unreadable, not a gate.
+  // `it(name, fn)`, `it(name, fn, 30_000)`: a timeout can't skip the test, so any other value is unreadable, not a
+  // gate.
   if (body(first)) return second === undefined || isPlainValue(second, bindings) ? undefined : UNREADABLE;
   // `it(name, { timeout })`, `it(name, { timeout }, fn)`
   if (ts.isObjectLiteralExpression(first)) {
-    return readOptions(first, suite, bindings) ?? (second === undefined || body(second) ? undefined : shapeVerdict(second, bindings));
+    return readOptions(first, suite, bindings) ??
+      (second === undefined || body(second) ? undefined : shapeVerdict(second, bindings));
   }
   return shapeVerdict(first, bindings);
 }
 
-/** `GATE` for an argument holding a pick or an environment read outside a nested function (`url ? fn : undefined`), else `UNREADABLE`. */
+/**
+ * `GATE` for an argument holding a pick or an environment read outside a nested function (`url ? fn : undefined`), else
+ * `UNREADABLE`.
+ */
 function shapeVerdict(node, bindings) {
   return containsPick(node) || someInside(node, (n) => readsEnvironment(n, bindings)) ? GATE : UNREADABLE;
 }
@@ -60,7 +66,8 @@ function isBody(node, suite, bindings) {
 function readOptions(options, suite, bindings) {
   for (const prop of options.properties) {
     // `{ skip }`, `{ get skip() {…} }`: a skip key whose value isn't a literal.
-    if (!ts.isPropertyAssignment(prop)) return SKIP_OPTIONS.has(propertyKey(prop.name)) ? GATE : shapeVerdict(prop, bindings);
+    if (!ts.isPropertyAssignment(prop)) return SKIP_OPTIONS.has(propertyKey(prop.name)) ?
+      GATE : shapeVerdict(prop, bindings);
     if (typeof propertyKey(prop.name) !== "string") return UNREADABLE;
     const value = unwrap(prop.initializer);
     if (SKIP_OPTIONS.has(propertyKey(prop.name))) {
@@ -110,5 +117,6 @@ function isPlainValue(node, bindings) {
 function readsArguments(fn) {
   if (ts.isArrowFunction(fn)) return false;
   // An arrow shares its enclosing function's `arguments`; another function has its own.
-  return someInside(fn.body, (node) => ts.isIdentifier(node) && node.text === "arguments", (node) => ts.isFunctionLike(node) && !ts.isArrowFunction(node));
+  return someInside(fn.body, (node) => ts.isIdentifier(node) && node.text === "arguments",
+    (node) => ts.isFunctionLike(node) && !ts.isArrowFunction(node));
 }

@@ -3,6 +3,7 @@
 // judge it. Also reads the `check-test-gating-ignore-next-line` pragmas.
 import {
   calleeOf,
+  forEachNode,
   GATE,
   invokedBy,
   isMemberLink,
@@ -147,7 +148,8 @@ function testRef(start, fnName, bindings) {
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (defines && resultUsed(call)) ||
+    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
+      (defines && resultUsed(call)) ||
       args === UNREADABLE || table === UNREADABLE,
     conditional: defines && definedOffPlainPath(call, bindings),
     runtimeGate: args === GATE || table === GATE,
@@ -166,18 +168,19 @@ function extendResultIsTracked(chain) {
   return (isVariableInitializer(chain) && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
 
-/** The 1-based numbers of the lines exempted by a `// check-test-gating-ignore-next-line: <reason>` comment: each the line after its comment. */
+/**
+ * The 1-based numbers of the lines exempted by a `// check-test-gating-ignore-next-line: <reason>` comment: each the
+ * line after its comment.
+ */
 export function pragmaLines(sf) {
   const text = sf.text;
   const seen = new Set();
   const lines = new Set();
   // Trivia scanning from a token next to JSX text would read `// …` in that text as a comment.
   const jsxText = [];
-  const collectJsxText = (node) => {
+  forEachNode(sf, (node) => {
     if (node.kind === ts.SyntaxKind.JsxText) jsxText.push([node.pos, node.end]);
-    ts.forEachChild(node, collectJsxText);
-  };
-  collectJsxText(sf);
+  });
   const inJsxText = (pos) => jsxText.some(([a, b]) => pos >= a && pos < b);
   const visit = (node) => {
     // JSX text and JSDoc are not line comments; a marker in either exempts nothing.
@@ -233,17 +236,18 @@ export function collectRefs(sf, bindings) {
     // the call loads a module the check can't name.
     if (isDetachedLoader(node)) refs.push(unreadableRef(node));
     // `Reflect.get(vi, "importActual")`, `vi[k]`: `vi` used where the loader it reads can't be named.
-    if ((!ts.isIdentifier(node) || isValueReference(node)) && isUnreadableViUse(node, bindings)) refs.push(unreadableRef(node));
+    if ((!ts.isIdentifier(node) || isValueReference(node)) &&
+      isUnreadableViUse(node, bindings)) refs.push(unreadableRef(node));
     // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
-    if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && kindOf(node.name, bindings) !== KIND_FN) {
+    if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) &&
+      kindOf(node.name, bindings) !== KIND_FN) {
       let root = node.moduleReference;
       while (ts.isQualifiedName(root)) root = root.left;
       // `import g = describe.skipIf`, `import f = I.integrationSuite`: any root the bindings know.
       if (bindings.resolve(root) !== undefined) refs.push(unreadableRef(node.moduleReference));
     }
-    ts.forEachChild(node, visit);
   };
-  visit(sf);
+  forEachNode(sf, visit);
   // `if (!process.env.URL) rows.length = 0`: the environment read while Vitest collects.
   for (const node of environmentReadsAtCollection(sf, bindings)) refs.push({ ...emptyRef(node), environment: true });
   return refs;

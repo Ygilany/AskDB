@@ -1,9 +1,13 @@
 // Where a test file may read the environment, for scripts/check-test-gating.mjs. While Vitest
 // collects suites and tests, nothing may depend on the environment except through
 // `integrationSuite()`; so the environment may be read only where that can't happen (ADR 0019).
-import { isConstDeclaration, isGlobalName, isKeyedProperty, isLiteralToken, isMemberLink, isValueReference, linkName, outermostWrapper, propertyKey, ts, unwrap } from "./ast.mjs";
 import {
-  constInitializer, definesTests, isInlineFunction, isProcessEnv, isProcessObject, isSuiteFactory, passedToTestOrHook, readsEnvironment,
+  forEachNode, isConstDeclaration, isGlobalName, isKeyedProperty, isLiteralToken, isMemberLink, linkName,
+  outermostWrapper, propertyKey, ts, unwrap
+} from "./ast.mjs";
+import {
+  constInitializer, definesTests, isInlineFunction, isProcessEnv, isProcessObject, isSuiteFactory,
+  passedToTestHookOrFixture, readsEnvironment, usesOf,
   vitestCallKind,
 } from "./bindings.mjs";
 
@@ -34,19 +38,12 @@ export function environmentReadsAtCollection(sf, bindings) {
       pending.push(decl);
     }
   };
-  const visit = (node) => {
+  forEachNode(sf, (node) => {
     if (readsEnvironment(node, bindings)) place(node);
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
+  });
   // A `const` or function that reads the environment is placed like the read, at each use.
   while (pending.length > 0) {
-    const decl = pending.pop();
-    const uses = (node) => {
-      if (ts.isIdentifier(node) && isValueReference(node) && bindings.declarationsOf(node).includes(decl)) place(node);
-      ts.forEachChild(node, uses);
-    };
-    uses(sf);
+    for (const use of usesOf(pending.pop(), bindings)) place(use);
   }
   return reported;
 }
@@ -56,47 +53,50 @@ export function environmentReadsAtCollection(sf, bindings) {
  * arguments), the declaration of the plain `const` or named function it sits in, or `"collection"`.
  */
 function siteOf(node, bindings) {
+  // `it("connects", run)`, `beforeAll(connect)`, `test.extend({ url })`: a named function passed as a
+  // test body, hook or fixture runs after collection.
+  if (namesFunction(node, bindings) && passedToTestHookOrFixture(node, bindings)) return "allowed";
   for (let child = node, n = node.parent; n !== undefined && !ts.isSourceFile(n); child = n, n = n.parent) {
-    if (ts.isCallExpression(n) && n.arguments.includes(child)) {
-      if (isSuiteFactory(unwrap(n.expression), bindings)) return "allowed";
-      // `it("connects", run)`, `beforeAll(connect)`: a named function passed as a test body or hook runs after collection.
-      if (child === outermostWrapper(node) && namesFunction(node, bindings) && passedToTestOrHook(node, bindings)) return "allowed";
-    }
+    if (ts.isCallExpression(n) && n.arguments.includes(child) &&
+      isSuiteFactory(unwrap(n.expression), bindings)) return "allowed";
     if (isConstDeclaration(n) && n.initializer === child) {
       // A named function: `const connect = () => …`.
       if (ts.isIdentifier(n.name) && isInlineFunction(unwrap(n.initializer))) return n;
-      if (isPlainInitializer(n.initializer, bindings) && isPlainPattern(n.name, bindings) && atCollection(n, bindings)) return n;
+      if (isPlainInitializer(n.initializer, bindings) && isPlainPattern(n.name, bindings) &&
+        atCollection(n, bindings)) return n;
     }
     if (ts.isFunctionDeclaration(n) && n.name !== undefined) return n;
-    // A suite body runs while Vitest collects; any callback other than a test body or hook may run then too.
-    if (ts.isFunctionLike(n) && passedToTestOrHook(n, bindings)) return "allowed";
+    // A suite body runs while Vitest collects; any callback other than a test body, hook or fixture may run then too.
+    if (ts.isFunctionLike(n) && passedToTestHookOrFixture(n, bindings)) return "allowed";
   }
   return "collection";
 }
 
-/** Whether destructuring pattern `name` takes only literal keys and plain defaults (`const { X = "" } = process.env`). */
+/**
+ * Whether destructuring pattern `name` takes only literal keys and plain defaults (`const { X = "" } = process.env`).
+ */
 function isPlainPattern(name, bindings) {
   if (ts.isIdentifier(name)) return true;
   return name.elements.every((el) => ts.isOmittedExpression(el) ||
     ((el.propertyName === undefined || typeof propertyKey(el.propertyName) === "string") &&
-      (el.initializer === undefined || isPlainInitializer(el.initializer, bindings)) && isPlainPattern(el.name, bindings)));
+      (el.initializer === undefined || isPlainInitializer(el.initializer, bindings)) &&
+        isPlainPattern(el.name, bindings)));
 }
 
 /** Whether `node` is a name for a function: a `function` declaration, or a `const` bound to an inline one. */
 function namesFunction(node, bindings) {
   const decls = bindings.declarationsOf(node);
-  return decls.length > 0 && decls.every(ts.isFunctionDeclaration) || isInlineFunction(constInitializer(node, bindings) ?? node);
+  return decls.length > 0 && decls.every(ts.isFunctionDeclaration) ||
+    isInlineFunction(constInitializer(node, bindings) ?? node);
 }
 
 /** The declarations that bind the names `decl` declares: itself, or each element of its destructuring pattern. */
 function declaredNames(decl) {
   if (!ts.isVariableDeclaration(decl) || ts.isIdentifier(decl.name)) return [decl];
   const names = [];
-  const visit = (node) => {
+  forEachNode(decl.name, (node) => {
     if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) names.push(node);
-    ts.forEachChild(node, visit);
-  };
-  visit(decl.name);
+  });
   return names;
 }
 
@@ -132,9 +132,11 @@ function isPlainInitializer(node, bindings, seen = new Set()) {
   if (isLiteralToken(node)) return true;
   if (ts.isTemplateExpression(node)) return node.templateSpans.every((span) => plain(span.expression));
   if (ts.isPrefixUnaryExpression(node)) {
-    return node.operator !== ts.SyntaxKind.PlusPlusToken && node.operator !== ts.SyntaxKind.MinusMinusToken && plain(node.operand);
+    return node.operator !== ts.SyntaxKind.PlusPlusToken &&
+      node.operator !== ts.SyntaxKind.MinusMinusToken && plain(node.operand);
   }
-  if (ts.isBinaryExpression(node)) return !isAssignment(node.operatorToken.kind) && plain(node.left) && plain(node.right);
+  if (ts.isBinaryExpression(node)) return !isAssignment(node.operatorToken.kind) &&
+    plain(node.left) && plain(node.right);
   if (ts.isConditionalExpression(node)) return plain(node.condition) && plain(node.whenTrue) && plain(node.whenFalse);
   if (ts.isArrayLiteralExpression(node)) return node.elements.every(plain);
   if (ts.isObjectLiteralExpression(node)) {

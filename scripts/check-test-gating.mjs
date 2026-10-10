@@ -25,13 +25,11 @@
 // TypeScript's binder, so any other local declaration that shadows one (a callback's parameter
 // `it`, an import of `test` from another module) is not Vitest's.
 //
-// The check accepts only plain forms and fails everything else (ADR 0019,
-// docs/adrs/0019-test-gating-check-parses-with-typescript.md, records why): a suite or test is
-// defined in straight-line code (check-test-gating/placement.mjs), its arguments take a few plain
-// shapes (arguments.mjs), a `.each` table is built from code that reads no environment, loads no
-// module and makes no choice where its rows come from (tables.mjs), and the environment is read only where collection can't depend on it
-// (environment.mjs). CONTRIBUTING.md ("Integration Tests") lists the forms and what the check can't
-// see (among them `ctx.skip()` and a table imported from another module); RULES below reports them.
+// The check accepts only plain forms and fails everything else. CONTRIBUTING.md ("Integration
+// Tests") is the one list of those forms and of what the check can't see; ADR 0019
+// (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records why. Each module under
+// check-test-gating/ owns one part (placement, arguments, tables, environment), and RULES below
+// reports them.
 // To exempt one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
 //
@@ -45,7 +43,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const moduleUrl = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
 const { INDIRECT_LINKS, ts, oneFileProgram } = await import(moduleUrl("ast.mjs"));
-const { GATE_LINKS, SUITE_GATE_LINKS, vitestBindings, integrationModuleResolver } = await import(moduleUrl("bindings.mjs"));
+const { GATE_LINKS, SUITE_GATE_LINKS, vitestBindings, integrationModuleResolver } =
+  await import(moduleUrl("bindings.mjs"));
 const { collectRefs, pragmaLines } = await import(moduleUrl("refs.mjs"));
 const { workspaceDirs, walk } = await import(moduleUrl("workspace.mjs"));
 
@@ -88,7 +87,8 @@ export const RULES = [
     // `.each` table the check can't read. It fails closed.
     id: "unclassified-use",
     test: (ref) => ref.unreadable || ref.links.some((l) => INDIRECT_LINKS.has(l)),
-    why: "uses describe/suite/it/test in a way the check can't read (an alias, a kept result, or arguments or a table " +
+    why:
+      "uses describe/suite/it/test in a way the check can't read (an alias, a kept result, or arguments or a table " +
       "outside the plain forms); call it directly with an inline body, literal options and a literal or const table, or use integrationSuite()",
   },
   {

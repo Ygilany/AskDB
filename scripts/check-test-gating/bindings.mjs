@@ -7,6 +7,7 @@ import {
   calleeParts,
   destructuredFrom,
   firstParameter,
+  forEachNode,
   importedFrom,
   INDIRECT_LINKS,
   isConstDeclaration,
@@ -26,7 +27,8 @@ const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // Vitest's `vi` object, under both names it exports (`const vi = vitest`).
 const VI_NAMES = new Set(["vi", "vitest"]);
 // Vitest hooks, whose callbacks run after the suites and tests are collected.
-const HOOKS = new Set(["beforeAll", "beforeEach", "afterAll", "afterEach", "aroundAll", "aroundEach", "onTestFinished", "onTestFailed"]);
+const HOOKS = new Set(["beforeAll", "beforeEach", "afterAll", "afterEach", "aroundAll", "aroundEach",
+  "onTestFinished", "onTestFailed"]);
 // Every Vitest export the check resolves a name to (see `vitestExportName`).
 const READ_EXPORTS = new Set([...TEST_FNS, ...VI_NAMES, ...HOOKS]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -145,7 +147,8 @@ function isVitestSpecifier(node) {
 
 /** Whether loader callee `callee` returns a promise: `import` or `vi.importActual` / `vi.importMock`. */
 export function isPromiseLoader(callee) {
-  return callee.kind === ts.SyntaxKind.ImportKeyword || (isMemberLink(callee) && PROMISE_MEMBER_LOADERS.has(linkName(callee)));
+  return callee.kind === ts.SyntaxKind.ImportKeyword ||
+    (isMemberLink(callee) && PROMISE_MEMBER_LOADERS.has(linkName(callee)));
 }
 
 /**
@@ -177,48 +180,74 @@ export function isUnreadableViUse(node, bindings) {
  * read off a test function, where Vitest also puts them (`test.beforeEach(…)`, `myTest.aroundEach(…)`).
  * A local function or an object's method of the same name is not Vitest's.
  */
-export function isVitestHookCall(call, bindings) {
+function isVitestHookCall(call, bindings) {
   const callee = unwrap(call.expression);
   if (HOOKS.has(vitestExportName(callee, bindings))) return true;
   if (!isMemberLink(callee) || !HOOKS.has(linkName(callee))) return false;
-  const owner = unwrap(callee.expression);
-  return ts.isIdentifier(owner) && ["it", "test"].includes(bindings.resolve(owner)?.name);
+  return isTestFunction(unwrap(callee.expression), bindings);
 }
 
-/** Whether `node` is passed straight to a call that defines tests or a Vitest hook, which runs it after collection. */
-export function passedToTestOrHook(node, bindings) {
+/**
+ * Whether `node` is a Vitest test function: `it`, `test`, `v.test`, a renamed import or a `test.extend(…)` result.
+ */
+function isTestFunction(node, bindings) {
+  return ["it", "test"].includes(testFnName(node, bindings) ?? extendedFn(node, bindings));
+}
+
+/**
+ * Whether `node` is passed straight to something Vitest runs after collection: a call that defines
+ * tests, a Vitest hook, or a fixture of a test function's `.extend({…})`, `.override({…})` or
+ * `.scoped({…})` (`test.extend({ url: async ({}, use) => … })`, `test.extend({ url })`).
+ */
+export function passedToTestHookOrFixture(node, bindings) {
   const outer = outermostWrapper(node);
   const call = outer.parent;
-  return ts.isCallExpression(call) && call.arguments.includes(outer) && (definesTests(call, bindings) || isVitestHookCall(call, bindings));
+  if (ts.isCallExpression(call) && call.arguments.includes(outer)) return definesTests(call, bindings) ||
+    isVitestHookCall(call, bindings);
+  const prop = ts.isMethodDeclaration(node) ? node : outer.parent;
+  if (!(ts.isMethodDeclaration(prop) || (ts.isPropertyAssignment(prop) && prop.initializer === outer) ||
+    (ts.isShorthandPropertyAssignment(prop) && prop.name === node))) return false;
+  const fixtures = outermostWrapper(prop.parent);
+  const extend = fixtures.parent;
+  if (!ts.isCallExpression(extend) || !extend.arguments.includes(fixtures)) return false;
+  const callee = unwrap(extend.expression);
+  if (!isMemberLink(callee) || !EXTENDERS.has(linkName(callee))) return false;
+  return isTestFunction(unwrap(callee.expression), bindings);
 }
 
 /**
  * Whether `node` runs only after Vitest has collected the suites: inside a function passed straight
  * to a test or a Vitest hook, or inside a named function (`function seed() {…}`,
- * `const run = () => …`) that is only ever passed straight to one (`beforeAll(seed)`, `it("t", run)`).
+ * `const run = () => …`) every use of which is passed straight to one (`beforeAll(seed)`,
+ * `it("t", run)`) or itself runs only after collection (`it("t", () => { check(); })`). `seen` holds
+ * the named functions being read, so recursion (`const f = () => f()`) ends, failing closed.
  */
-export function runsAfterCollection(node, bindings) {
+export function runsAfterCollection(node, bindings, seen = new Set()) {
   for (let n = node.parent; n !== undefined && !ts.isSourceFile(n); n = n.parent) {
     if (!ts.isFunctionLike(n)) continue;
-    if (passedToTestOrHook(n, bindings)) return true;
+    if (passedToTestHookOrFixture(n, bindings)) return true;
     const decl = ts.isFunctionDeclaration(n) ? n : outermostWrapper(n).parent;
     if (decl !== undefined && decl.name !== undefined && ts.isIdentifier(decl.name) &&
-      (ts.isFunctionDeclaration(decl) || (isConstDeclaration(decl) && unwrap(decl.initializer) === n))) {
+      (ts.isFunctionDeclaration(decl) || (isConstDeclaration(decl) && unwrap(decl.initializer) === n)) &&
+        !seen.has(decl)) {
+      seen.add(decl);
       const uses = usesOf(decl, bindings);
-      if (uses.length > 0 && uses.every((use) => passedToTestOrHook(use, bindings))) return true;
+      if (uses.length > 0 && uses.every((use) => passedToTestHookOrFixture(use, bindings) ||
+        runsAfterCollection(use, bindings, seen))) return true;
     }
   }
   return false;
 }
 
 /** Every reference to the name `decl` declares, other than the declaration's own name. */
-function usesOf(decl, bindings) {
+export function usesOf(decl, bindings) {
   const uses = [];
-  const visit = (node) => {
-    if (ts.isIdentifier(node) && node !== decl.name && isValueReference(node) && bindings.declarationsOf(node).includes(decl)) uses.push(node);
-    ts.forEachChild(node, visit);
-  };
-  visit(decl.getSourceFile());
+  forEachNode(decl.getSourceFile(), (node) => {
+    if (ts.isIdentifier(node) && node !== decl.name && isValueReference(node) &&
+      bindings.declarationsOf(node).includes(decl)) {
+      uses.push(node);
+    }
+  });
   return uses;
 }
 
@@ -230,6 +259,8 @@ function namesVi(node, bindings) {
   return VI_NAMES.has(vitestExportName(node, bindings));
 }
 
+// What reads the environment lives here, beside the binder, because it needs it: a `createRequire(…)`
+// function, a renamed `node:process` import. Where a read may sit is environment.mjs's to decide.
 // Names through which code reads the environment: `process.env`, `globalThis.process`, `global.process`.
 const ENVIRONMENT_NAMES = new Set(["process", "globalThis", "global"]);
 const PROCESS_MODULES = new Set(["process", "node:process"]);
@@ -251,7 +282,8 @@ const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
 export function readsEnvironment(node, bindings) {
   if (ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword) {
     const outer = outermostWrapper(node);
-    return !(isMemberLink(outer.parent) && outer.parent.expression === outer && IMPORT_META_PATHS.has(linkName(outer.parent)));
+    return !(isMemberLink(outer.parent) && outer.parent.expression === outer &&
+      IMPORT_META_PATHS.has(linkName(outer.parent)));
   }
   if (ts.isCallExpression(node) && isLoaderCall(node, bindings)) {
     const specifier = node.arguments[0] && unwrap(node.arguments[0]);
@@ -277,11 +309,15 @@ export function readsEnvironment(node, bindings) {
 export function isProcessObject(node, bindings) {
   if (!ts.isIdentifier(node)) return false;
   if (node.text === "process" && isGlobalName(node, bindings)) return true;
-  if (bindings.declarationsOf(node).some((d) => isImport(d) && !ts.isImportSpecifier(d) && PROCESS_MODULES.has(importedFrom(d)))) return true;
+  if (bindings.declarationsOf(node).some((d) => isImport(d) && !ts.isImportSpecifier(d) &&
+    PROCESS_MODULES.has(importedFrom(d)))) return true;
   return constHolds(node, bindings, (init) => isProcessObject(init, bindings));
 }
 
-/** Whether `node` is `process.env`: `env` read off the process object, or `env` imported from `process` or `node:process`. */
+/**
+ * Whether `node` is `process.env`: `env` read off the process object, or `env` imported from `process` or
+ * `node:process`.
+ */
 export function isProcessEnv(node, bindings) {
   if (isMemberLink(node)) return linkName(node) === "env" && isProcessObject(unwrap(node.expression), bindings);
   return ts.isIdentifier(node) && bindings.declarationsOf(node).some((d) =>
@@ -307,7 +343,8 @@ function isRequire(id, bindings) {
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
 function isVitestLoaderCall(node, bindings) {
   if (!ts.isCallExpression(node) || !isVitestSpecifier(node.arguments[0])) return false;
-  // `import("vitest")`, `require`, a `createRequire(…)` function, `module.require`, `vi.importActual`, `vi.importMock`.
+  // `import("vitest")`, `require`, a `createRequire(…)` function, `module.require`, `vi.importActual`,
+  // `vi.importMock`.
   return isLoaderCall(node, bindings);
 }
 
@@ -351,7 +388,10 @@ export function testFnName(node, bindings) {
   return TEST_FNS.has(name) ? name : undefined;
 }
 
-/** The kind record for Vitest export `name`: `KIND_FN` for a test function, `KIND_EXPORT` for another export the check reads, else undefined. */
+/**
+ * The kind record for Vitest export `name`: `KIND_FN` for a test function, `KIND_EXPORT` for another export the check
+ * reads, else undefined.
+ */
 function exportKind(name) {
   if (TEST_FNS.has(name)) return { kind: KIND_FN, name };
   return READ_EXPORTS.has(name) ? { kind: KIND_EXPORT, name } : undefined;
@@ -410,18 +450,25 @@ export function vitestCallKind(node, bindings) {
   return definesSuite(parts.name, parts.links) ? CALL_SUITE : CALL_TEST;
 }
 
-/** Whether `call` defines tests, not suites: `it(…)`, `test.each(rows)(…)`, `it.for(rows)(…)`. Its body runs after collection. */
+/**
+ * Whether `call` defines tests, not suites: `it(…)`, `test.each(rows)(…)`, `it.for(rows)(…)`. Its body runs after
+ * collection.
+ */
 export function definesTests(call, bindings) {
   const parts = vitestCallParts(call, bindings);
   return parts !== undefined && !definesSuite(parts.name, parts.links);
 }
 
-/** The Vitest function a call reaches and the links on the way (`describe.skipIf(c)(…)` gives `describe`, `["skipIf"]`), or undefined. */
+/**
+ * The Vitest function a call reaches and the links on the way (`describe.skipIf(c)(…)` gives `describe`,
+ * `["skipIf"]`), or undefined.
+ */
 function vitestCallParts(node, bindings) {
   let callee = calleeOf(node);
   if (callee === undefined) return undefined;
   const outer = unwrap(callee);
-  if (isMemberLink(outer) && !MODIFIERS.has(linkName(outer)) && testFnName(outer, bindings) === undefined) return undefined;
+  if (isMemberLink(outer) && !MODIFIERS.has(linkName(outer)) &&
+    testFnName(outer, bindings) === undefined) return undefined;
   const links = [];
   for (;;) {
     callee = unwrap(callee);
@@ -451,7 +498,9 @@ function isSuiteBody(fn, bindings) {
   return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) === CALL_SUITE;
 }
 
-/** The initializer of the one `const` that declares `node`, an identifier, unwrapped, or undefined (any other node too). */
+/**
+ * The initializer of the one `const` that declares `node`, an identifier, unwrapped, or undefined (any other node too).
+ */
 export function constInitializer(node, bindings) {
   if (!ts.isIdentifier(node)) return undefined;
   const decls = bindings.declarationsOf(node);
@@ -527,7 +576,8 @@ function kindOfDeclaration(decl, bindings) {
     // in findGates.
     const { left, right } = decl.moduleReference;
     // Only a test function: any other `import x = v.name` is an alias `findGates` fails closed on.
-    if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) && TEST_FNS.has(right.text)) found = exportKind(right.text);
+    if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) &&
+      TEST_FNS.has(right.text)) found = exportKind(right.text);
   } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
     isIntegrationModule(importedFrom(decl) ?? "")) {
     found = { kind: KIND_SUITE_FACTORY };
@@ -537,14 +587,16 @@ function kindOfDeclaration(decl, bindings) {
     found = resolveInitializer(unwrap(decl.initializer), bindings);
   } else if (decl && ts.isParameter(decl) && isTestApiParameter(decl, bindings)) {
     // `describe("db", (test) => { test.skipIf(…)(…) })`. A rest parameter holds the API in an array.
-    found = ts.isIdentifier(decl.name) && !decl.dotDotDotToken ? { kind: KIND_FN, name: "test" } : { kind: KIND_AMBIGUOUS };
+    found = ts.isIdentifier(decl.name) && !decl.dotDotDotToken ?
+      { kind: KIND_FN, name: "test" } : { kind: KIND_AMBIGUOUS };
   } else if (decl && ts.isBindingElement(decl) && parameterOf(decl) !== undefined) {
     // `describe("db", ({ skipIf }) => …)`: the test API taken apart, which the check can't follow.
     if (isTestApiParameter(parameterOf(decl), bindings)) found = { kind: KIND_AMBIGUOUS };
   } else if (decl && destructuredFrom(decl) !== undefined) {
     // `const { describe } = v`, from a Vitest namespace.
     const key = decl.propertyName ?? decl.name;
-    if (resolvesToVitestModule(unwrap(destructuredFrom(decl)), bindings) && ts.isIdentifier(key)) found = exportKind(key.text);
+    if (resolvesToVitestModule(unwrap(destructuredFrom(decl)), bindings) &&
+      ts.isIdentifier(key)) found = exportKind(key.text);
   }
   return found;
 }
@@ -557,12 +609,14 @@ function kindOfDeclaration(decl, bindings) {
  */
 function resolveDeclarations(symbol, bindings) {
   const decls = (symbol.declarations ?? []).filter((d) =>
-    !ts.isTypeAliasDeclaration(d) && !ts.isInterfaceDeclaration(d) && !(ts.isVariableDeclaration(d) && !d.initializer && ts.isIdentifier(d.name)));
+    !ts.isTypeAliasDeclaration(d) && !ts.isInterfaceDeclaration(d) &&
+      !(ts.isVariableDeclaration(d) && !d.initializer && ts.isIdentifier(d.name)));
   const results = decls.map((d) => kindOfDeclaration(d, bindings));
   if (results.length <= 1) return results[0];
   const vitest = results.filter((f) => f?.kind === KIND_FN || f?.kind === KIND_NS);
   if (vitest.length === 0) return undefined;
-  const same = vitest.length === results.length && results.every((f) => f.kind === results[0].kind && f.name === results[0].name);
+  const same = vitest.length === results.length &&
+    results.every((f) => f.kind === results[0].kind && f.name === results[0].name);
   return same ? results[0] : { kind: KIND_AMBIGUOUS };
 }
 

@@ -1,8 +1,10 @@
 // Where a suite or test may be defined, for scripts/check-test-gating.mjs: straight-line code only.
-// A definition the check can't show always runs (under a condition, in a loop, a callback or a
+// A definition the check can't show to run on every path (under a condition, in a loop, a callback or a
 // helper, or after a statement that can leave the block first) fails, rather than the check trying
 // to tell which conditions could depend on the environment (ADR 0019).
-import { isMemberLink, isPlainAssignment, isVariableInitializer, isWrapper, outermostWrapper, someInside, ts } from "./ast.mjs";
+import {
+  isMemberLink, isPlainAssignment, isVariableInitializer, isWrapper, outermostWrapper, someInside, ts
+} from "./ast.mjs";
 import { vitestCallKind } from "./bindings.mjs";
 
 /**
@@ -16,7 +18,8 @@ import { vitestCallKind } from "./bindings.mjs";
 export function definedOffPlainPath(call, bindings) {
   let child = outermostWrapper(call);
   for (let node = child.parent; node !== undefined; child = node, node = node.parent) {
-    if (ts.isExpressionStatement(node) || ts.isAwaitExpression(node) || isWrapper(node) || keepsResult(node, child)) continue;
+    if (ts.isExpressionStatement(node) || ts.isAwaitExpression(node) || isWrapper(node) ||
+      keepsResult(node, child)) continue;
     if (ts.isBlock(node) || ts.isModuleBlock(node) || ts.isSourceFile(node)) {
       if (exitsEarlier(node.statements, child)) return true;
       if (ts.isSourceFile(node)) return false;
@@ -37,7 +40,8 @@ export function resultUsed(call) {
   let outer = outermostWrapper(call);
   while (ts.isAwaitExpression(outer.parent) || isWrapper(outer.parent)) outer = outer.parent;
   const p = outer.parent;
-  return (isMemberLink(p) && p.expression === outer) || isVariableInitializer(outer) || (isPlainAssignment(p) && p.right === outer) ||
+  return (isMemberLink(p) && p.expression === outer) || isVariableInitializer(outer) ||
+    (isPlainAssignment(p) && p.right === outer) ||
     ((ts.isCallExpression(p) || ts.isNewExpression(p)) && (p.arguments ?? []).includes(outer));
 }
 
@@ -47,10 +51,12 @@ export function resultUsed(call) {
  * (`describe(…).test.skip(…)`), or a non-optional call it is passed to (`register(describe(…))`).
  */
 function keepsResult(node, child) {
-  if ((ts.isVariableDeclaration(node) && node.initializer === child) || ts.isVariableDeclarationList(node) || ts.isVariableStatement(node)) return true;
+  if ((ts.isVariableDeclaration(node) && node.initializer === child) ||
+    ts.isVariableDeclarationList(node) || ts.isVariableStatement(node)) return true;
   if (isPlainAssignment(node) && node.right === child) return true;
   if (isMemberLink(node) && node.expression === child && !ts.isOptionalChain(node)) return true;
-  return ts.isCallExpression(node) && !ts.isOptionalChain(node) && (node.expression === child || node.arguments.includes(child));
+  return ts.isCallExpression(node) && !ts.isOptionalChain(node) &&
+    (node.expression === child || node.arguments.includes(child));
 }
 
 /** Whether function `fn` is a body passed straight to a Vitest suite, test or `.each` call. */

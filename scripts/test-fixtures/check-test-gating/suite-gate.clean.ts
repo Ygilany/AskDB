@@ -59,3 +59,11 @@ beforeAll(seedRows);
 describe.each(namedBodyRows)("a table read by a named test body and hook %s", () => {
   it("reads it", checkRows);
 });
+const helperRows = ["pg", "sqlite"];
+const checkHelperRows = () => { expect(helperRows.length).toBe(2); };
+const runHelper = () => { checkHelperRows(); };
+beforeAll(() => checkHelperRows());
+describe.each(helperRows)("a table read by a helper called from tests and hooks %s", () => {
+  it("calls it", () => { checkHelperRows(); });
+  it("passes a function that calls it", runHelper);
+});

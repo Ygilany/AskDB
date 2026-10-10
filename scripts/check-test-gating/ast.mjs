@@ -185,9 +185,18 @@ function isBinaryPick(node) {
   return ts.isBinaryExpression(node) && PICK_OPERATORS.has(node.operatorToken.kind);
 }
 
+/** Calls `visit` on `node` and everything inside it, in source order, not looking into a node `stop` holds for. */
+export function forEachNode(node, visit, stop = () => false) {
+  if (stop(node)) return;
+  visit(node);
+  ts.forEachChild(node, (child) => {
+    forEachNode(child, visit, stop);
+  });
+}
+
 /**
  * Whether `test` holds for `node` or anything inside it, not looking into a node `stop` holds for
- * (by default a nested function).
+ * (by default a nested function). Like `forEachNode`, but it stops at the first match.
  */
 export function someInside(node, test, stop = ts.isFunctionLike) {
   if (stop(node)) return false;
@@ -198,7 +207,10 @@ export function someInside(node, test, stop = ts.isFunctionLike) {
 // A property key computed at run time (`{ [expr]: … }`); as an options key it could be `skip`.
 const RUNTIME_KEY = Symbol("runtime key");
 
-/** A property or binding name as text (an options key, a destructured name), `RUNTIME_KEY` for `[expr]`, or undefined for a name the check skips. */
+/**
+ * A property or binding name as text (an options key, a destructured name), `RUNTIME_KEY` for `[expr]`, or undefined
+ * for a name the check skips.
+ */
 export function propertyKey(name) {
   if (!name) return undefined;
   if (ts.isComputedPropertyName(name)) {
@@ -256,11 +268,13 @@ export function isValueReference(id) {
   const parent = id.parent;
   if (parent.name === id) return ts.isShorthandPropertyAssignment(parent);
   if (parent.propertyName === id || parent.label === id) return false;
-  if ((ts.isJsxOpeningElement(parent) || ts.isJsxSelfClosingElement(parent) || ts.isJsxClosingElement(parent)) && parent.tagName === id) {
+  if ((ts.isJsxOpeningElement(parent) || ts.isJsxSelfClosingElement(parent) ||
+    ts.isJsxClosingElement(parent)) && parent.tagName === id) {
     return false;
   }
   // `typeof import("vitest").describe` names a type: the qualifier of an import type.
-  return !(ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent) || ts.isImportTypeNode(parent));
+  return !(ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) ||
+    ts.isTypeQueryNode(parent) || ts.isImportTypeNode(parent));
 }
 
 /**
@@ -274,13 +288,17 @@ export function isGlobalName(id, bindings) {
 
 /** Whether `decl` is a `const` declaration with an initializer (`const x = …`, `const { a } = …`). */
 export function isConstDeclaration(decl) {
-  return ts.isVariableDeclaration(decl) && decl.initializer !== undefined && ts.isVariableDeclarationList(decl.parent) &&
+  return ts.isVariableDeclaration(decl) && decl.initializer !== undefined &&
+    ts.isVariableDeclarationList(decl.parent) &&
     (decl.parent.flags & ts.NodeFlags.Const) !== 0;
 }
 
-/** Whether `decl` is an import declaration of a name (`import x`, `import { x }`, `import * as x`, `import x = …`). */
+/**
+ * Whether `decl` is an import declaration of a name (`import x`, `import { x }`, `import * as x`, `import x = …`).
+ */
 export function isImport(decl) {
-  return ts.isImportSpecifier(decl) || ts.isImportClause(decl) || ts.isNamespaceImport(decl) || ts.isImportEqualsDeclaration(decl);
+  return ts.isImportSpecifier(decl) || ts.isImportClause(decl) ||
+    ts.isNamespaceImport(decl) || ts.isImportEqualsDeclaration(decl);
 }
 
 // How a call's arguments or `.each` table read (`arguments.mjs`, `tables.mjs`): a gate set by hand,

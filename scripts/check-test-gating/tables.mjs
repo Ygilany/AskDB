@@ -3,21 +3,22 @@
 // names the check can pin, which nothing but table code touches while Vitest collects. Anything else fails,
 // rather than the check trying to tell which steps could drop a row (ADR 0019).
 import {
-  bindingHolder, calleeOf, GATE, isConstDeclaration, isGlobalName, isImport, isMemberLink, isPick, isValueReference, linkName,
-  outermostWrapper, ts, unwrap, UNREADABLE,
+  bindingHolder, calleeOf, forEachNode, GATE, isConstDeclaration, isGlobalName, isImport, isMemberLink, isPick,
+  isValueReference,
+  linkName, outermostWrapper, someInside, ts, unwrap, UNREADABLE,
 } from "./ast.mjs";
-import { isLoaderCall, readsEnvironment, ROW_LINKS, runsAfterCollection, vitestCallKind } from "./bindings.mjs";
+import { isLoaderCall, readsEnvironment, ROW_LINKS, runsAfterCollection, usesOf, vitestCallKind } from "./bindings.mjs";
 
 // JavaScript's built-in globals (ECMAScript's, plus `URL`, `TextEncoder` and `TextDecoder`), which a
 // table may use undeclared. Any other undeclared name is something the check can't pin.
 const BUILT_INS = new Set([
-  "AggregateError", "Array", "ArrayBuffer", "Atomics", "BigInt", "BigInt64Array", "BigUint64Array", "Boolean", "DataView",
-  "Date", "Error", "EvalError", "Float32Array", "Float64Array", "Infinity", "Int16Array", "Int32Array", "Int8Array",
-  "Intl", "JSON", "Map", "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError", "ReferenceError", "Reflect",
-  "RegExp", "Set", "String", "Symbol", "SyntaxError", "TextDecoder", "TextEncoder", "TypeError", "URIError", "URL",
-  "URLSearchParams", "Uint16Array", "Uint32Array", "Uint8Array", "Uint8ClampedArray", "WeakMap", "WeakRef", "WeakSet",
-  "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent", "isFinite", "isNaN", "parseFloat", "parseInt",
-  "structuredClone", "undefined",
+  "AggregateError", "Array", "ArrayBuffer", "Atomics", "BigInt", "BigInt64Array", "BigUint64Array", "Boolean",
+  "DataView", "Date", "Error", "EvalError", "Float32Array", "Float64Array", "Infinity", "Int16Array", "Int32Array",
+  "Int8Array", "Intl", "JSON", "Map", "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError",
+  "ReferenceError", "Reflect", "RegExp", "Set", "String", "Symbol", "SyntaxError", "TextDecoder", "TextEncoder",
+  "TypeError", "URIError", "URL", "URLSearchParams", "Uint16Array", "Uint32Array", "Uint8Array", "Uint8ClampedArray",
+  "WeakMap", "WeakRef", "WeakSet", "decodeURI", "decodeURIComponent", "encodeURI", "encodeURIComponent", "isFinite",
+  "isNaN", "parseFloat", "parseInt", "structuredClone", "undefined",
 ]);
 
 /**
@@ -37,26 +38,27 @@ export function tableVerdict(rowArgs, bindings) {
   const followed = new Set();
   const within = (node) => roots.some((root) => root.pos <= node.pos && node.end <= root.end);
   let unreadable = false;
-  for (let i = 0; i < roots.length; i++) {
-    const visit = (node) => {
-      if (readsEnvironment(node, bindings)) return true;
-      if (ts.isCallExpression(node) && isLoaderCall(node, bindings)) unreadable = true;
-      if (ts.isIdentifier(node) && isValueReference(node)) {
-        // An undeclared name other than a JavaScript built-in is something the check can't pin.
-        if (isGlobalName(node, bindings) && !BUILT_INS.has(node.text)) unreadable = true;
-        for (const decl of bindings.declarationsOf(node)) {
-          if (within(decl) || followed.has(decl) || isImport(decl)) continue;
-          const source = codeOf(decl);
-          if (source === undefined) unreadable = true;
-          else {
-            followed.add(decl);
-            roots.push(source);
-          }
+  // An environment read ends the walk: the table gates.
+  const readsOrFollows = (node) => {
+    if (readsEnvironment(node, bindings)) return true;
+    if (ts.isCallExpression(node) && isLoaderCall(node, bindings)) unreadable = true;
+    if (ts.isIdentifier(node) && isValueReference(node)) {
+      // An undeclared name other than a JavaScript built-in is something the check can't pin.
+      if (isGlobalName(node, bindings) && !BUILT_INS.has(node.text)) unreadable = true;
+      for (const decl of bindings.declarationsOf(node)) {
+        if (within(decl) || followed.has(decl) || isImport(decl)) continue;
+        const source = codeOf(decl);
+        if (source === undefined) unreadable = true;
+        else {
+          followed.add(decl);
+          roots.push(source);
         }
       }
-      return ts.forEachChild(node, visit);
-    };
-    if (visit(roots[i])) return GATE;
+    }
+    return false;
+  };
+  for (let i = 0; i < roots.length; i++) {
+    if (someInside(roots[i], readsOrFollows, () => false)) return GATE;
   }
   const shape = shapeOf(rowArgs, bindings);
   if (shape.choice) return GATE;
@@ -65,7 +67,10 @@ export function tableVerdict(rowArgs, bindings) {
   return [...shape.names].some((decl) => touchedAtCollection(decl, tableCode, bindings)) ? UNREADABLE : undefined;
 }
 
-/** The code `decl` binds: a `function`'s declaration, or the initializer of the `const` that declares or destructures it. */
+/**
+ * The code `decl` binds: a `function`'s declaration, or the initializer of the `const` that declares or destructures
+ * it.
+ */
 function codeOf(decl) {
   const holder = ts.isBindingElement(decl) ? bindingHolder(decl) : decl;
   if (ts.isFunctionDeclaration(holder) && holder.body !== undefined) return holder;
@@ -75,27 +80,36 @@ function codeOf(decl) {
 /**
  * Where a table's rows come from: the table expression, and through each name in it, the `const`
  * or `function` it names, and any function in them that isn't a callback (an IIFE, an object's
- * method or getter), but not a row of an array literal (`["pg", url]`) or a callback
- * (`.filter((e) => …)`), whose code can drop a row only through a name the shape reaches or an
- * imported probe (a documented limit). Returns those code `roots`, the declarations of the `names` they reach, and whether the
- * shape makes a `choice`: a pick (`? :`, `&&`, `||`, `??`), or an `if`, `switch`, loop or `try`.
+ * method or getter), but not a row of an array literal (`["pg", url]`) or a callback's code
+ * (`.filter((e) => …)`). A callback can drop a row only through a name it reads, which is
+ * touch-checked, or an imported probe (a documented limit). Returns those code `roots`, the
+ * declarations of the `names` they reach, and whether the shape makes a `choice`: a pick (`? :`,
+ * `&&`, `||`, `??`), or an `if`, `switch`, loop or `try`.
  */
 function shapeOf(rowArgs, bindings) {
   const roots = [];
   const names = new Set();
   let choice = false;
+  // A row of an array literal (an element other than a spread) isn't read. Nor is a callback's code,
+  // but the names it reads are touch-checked like the shape's own
+  // (`.filter((e) => !missing.includes(e))`, where a probe could fill `missing`).
+  const skipped = (root) => (node) => {
+    if (node === root) return false;
+    if (ts.isArrayLiteralExpression(node.parent) && !ts.isSpreadElement(node)) return true;
+    if (!ts.isFunctionLike(node) || !isCallback(node)) return false;
+    forEachNode(node, (inner) => {
+      if (!ts.isIdentifier(inner) || !isValueReference(inner)) return;
+      for (const decl of bindings.declarationsOf(inner)) names.add(decl);
+    });
+    return true;
+  };
   const follow = (root) => {
     roots.push(root);
-    visit(root, true);
+    forEachNode(root, visit, skipped(root));
   };
-  const visit = (node, root = false) => {
-    if (!root && ts.isFunctionLike(node) && isCallback(node)) return;
+  const visit = (node) => {
     if (isPick(node) || ts.isIfStatement(node) || ts.isSwitchStatement(node) ||
       ts.isIterationStatement(node, false) || ts.isTryStatement(node)) choice = true;
-    if (ts.isArrayLiteralExpression(node)) {
-      for (const el of node.elements) if (ts.isSpreadElement(el)) visit(el);
-      return;
-    }
     if (ts.isIdentifier(node) && isValueReference(node)) {
       for (const decl of bindings.declarationsOf(node)) {
         if (names.has(decl)) continue;
@@ -106,13 +120,15 @@ function shapeOf(rowArgs, bindings) {
         if (source !== undefined) follow(source);
       }
     }
-    ts.forEachChild(node, (child) => visit(child));
   };
   rowArgs.forEach(follow);
   return { roots, names, choice };
 }
 
-/** Whether function `fn` is passed to a call (`.filter((e) => …)`), rather than called in place, held or given to `new`. */
+/**
+ * Whether function `fn` is passed to a call (`.filter((e) => …)`), rather than called in place, held or given to
+ * `new`.
+ */
 function isCallback(fn) {
   const outer = outermostWrapper(fn);
   return ts.isCallExpression(outer.parent) && outer.parent.arguments.includes(outer);
@@ -126,16 +142,15 @@ function tableCodeOf(sf, bindings) {
   if (tableCodeCache.has(bindings)) return tableCodeCache.get(bindings);
   const roots = [];
   tableCodeCache.set(bindings, roots);
-  const visit = (node) => {
-    if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && ROW_LINKS.has(linkName(unwrap(node.expression)))) {
+  forEachNode(sf, (node) => {
+    if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) &&
+      ROW_LINKS.has(linkName(unwrap(node.expression)))) {
       const outer = outermostWrapper(node);
       if (calleeOf(outer.parent) === outer && vitestCallKind(outer.parent, bindings) !== undefined) {
         roots.push(...shapeOf(node.arguments, bindings).roots);
       }
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
+  });
   return roots;
 }
 
@@ -147,10 +162,5 @@ function tableCodeOf(sf, bindings) {
  */
 function touchedAtCollection(decl, tableCode, bindings) {
   const inTableCode = (node) => tableCode.some((root) => root.pos <= node.pos && node.end <= root.end);
-  const touches = (node) => {
-    if (ts.isIdentifier(node) && node !== decl.name && isValueReference(node) && bindings.declarationsOf(node).includes(decl) &&
-      !inTableCode(node) && !runsAfterCollection(node, bindings)) return true;
-    return ts.forEachChild(node, touches) === true;
-  };
-  return touches(decl.getSourceFile());
+  return usesOf(decl, bindings).some((use) => !inTableCode(use) && !runsAfterCollection(use, bindings));
 }

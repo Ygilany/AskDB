@@ -76,3 +76,7 @@ describe("a callback in a suite body runs while Vitest collects", () => {
   [1].forEach(() => { const fromCallback = process.env.PG_URL; }); // HIT
 });
 test.scoped(() => { if (process.env.PG_URL) pushed.push("pg"); }); // HIT
+const notVitestApi = { extend: (_fixtures: unknown) => 0 };
+notVitestApi.extend({ url: () => process.env.PG_URL }); // HIT
+test.fixtures({ url: () => process.env.PG_URL }); // HIT
+const wrappedProcess = require(("node:process")); // HIT

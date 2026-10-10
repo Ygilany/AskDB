@@ -1,5 +1,6 @@
 // Where the environment may be read: a test body, a Vitest hook, integrationSuite()'s options, a
 // plain const (used only in those places), and a named function (called or passed only there).
+import * as vt from "vitest";
 import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";
 const url = process.env.DATABASE_URL;
 const pgvector = process.env.ASKDB_PGVECTOR_URL ?? process.env.PGVECTOR_URL;
@@ -21,12 +22,19 @@ const port = -process.env.PG_PORT! + 1;
 const listedUrls = [url, pgvector, maybeUrl, port, process.arch];
 const label = `db-${process.env.DB_NAME ?? "none"}-${process.versions.node}`;
 const resolved = require.resolve("vitest");
+const fsModule = require(("node:fs"));
+const pathModule = require("node:path" as string);
 const run = async () => { process.env.MY_AI = "y"; expect(isCi || label).toBeDefined(); };
 beforeEach(connect);
 async function readUrl() { return process.env.DATABASE_URL; }
 beforeAll(readUrl);
 aroundEach(async (run) => { if (process.env.DEBUG_SQL) console.log("sql"); await run(); });
 test.beforeEach(() => { process.env.TZ = "UTC"; });
+vt.test.beforeEach(() => { process.env.TZ = "UTC"; });
+const urlFixture = async ({}, use: (v: string) => Promise<void>) => { await use(process.env.DATABASE_URL ?? ""); };
+const dbTest = test.extend({ url: async ({}, use) => { await use(process.env.DATABASE_URL ?? ""); }, urlFixture });
+const scopedTest = dbTest.scoped({ other: urlFixture });
+const methodTest = vt.test.extend({ async url({}, use: (v: string) => Promise<void>) { await use(process.env.DATABASE_URL ?? ""); } });
 const PORT = "5432";
 const portUrl = process.env.PG_URL ?? `postgres://127.0.0.1:${PORT}/a?port=${PORT}`;
 beforeAll(() => { process.env.MY_AI = "x"; connect(); });

@@ -345,3 +345,16 @@ try { await import("pg"); } catch { IMPORTED_ENGINES.splice(IMPORTED_ENGINES.ind
 describe.each(IMPORTED_ENGINES)("an imported table this file changes while collecting %s", () => {}); // HIT
 if (!hasEnv.pgDriver) engineMatrix.ENGINES.pop();
 describe.each(engineMatrix.ENGINES)("a namespace import's table this file changes %s", () => {}); // HIT
+const recursiveRows = ["pg"];
+const shrinkRows = (): void => { if (recursiveRows.length > 5) shrinkRows(); recursiveRows.pop(); };
+it("calls a recursive helper", () => { shrinkRows(); });
+describe.each(recursiveRows)("a table a recursive helper changes %s", () => {}); // HIT
+const missingDrivers: string[] = [];
+try { await import("better-sqlite3"); } catch { missingDrivers.push("sqlite"); }
+describe.each(["postgres", "sqlite"].filter((e) => !missingDrivers.includes(e)))("a callback reads a list a probe fills %s", () => {}); // HIT
+const presentDrivers = new Set(["postgres", "sqlite"]);
+await import("better-sqlite3").catch(() => presentDrivers.delete("sqlite"));
+describe.each(["postgres", "sqlite"].filter((e) => presentDrivers.has(e)))("a callback reads a Set a probe shrinks %s", () => {}); // HIT
+const driverFlags = { sqlite: true };
+await import("better-sqlite3").catch(() => { driverFlags.sqlite = false; });
+describe.each(["sqlite"].filter((e) => driverFlags[e]))("a callback reads a flag a probe clears %s", () => {}); // HIT
