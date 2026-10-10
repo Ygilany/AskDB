@@ -13,7 +13,7 @@
     "check-updates:all": "npm run check-updates -- --target latest --errorLevel 1",
     "test": "pnpm exec turbo run test",
     "test:watch": "vitest",
-    "lint": "pnpm exec turbo run lint",
+    "lint": "node --test scripts/check-test-gating.test.mjs && node scripts/check-test-gating.mjs && pnpm exec turbo run lint",
     "docs:build": "pnpm -C apps/docs-site build",
     "docs:preview": "pnpm -C apps/docs-site preview",
     "docs:dev": "pnpm -C apps/docs-site dev",
