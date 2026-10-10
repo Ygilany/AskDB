@@ -52,3 +52,10 @@ const shownRows = corpus.map(([name]) => name).filter((name) => name !== "b" && 
 describe.each(corpus)("a table another table is built from %s", () => {});
 describe.each(shownRows)("a table filtered on its own data in a callback %s", () => {});
 describe.each([["pg", corpus.length > 1 ? "many" : "one"]])("a pick inside a row %s", () => {});
+const namedBodyRows = ["pg", "sqlite"];
+const checkRows = () => { expect(namedBodyRows.length).toBe(2); };
+function seedRows() { namedBodyRows.push("mysql"); }
+beforeAll(seedRows);
+describe.each(namedBodyRows)("a table read by a named test body and hook %s", () => {
+  it("reads it", checkRows);
+});

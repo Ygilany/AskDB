@@ -334,3 +334,14 @@ notVitest.each(spliceRows.splice(0))();
 describe.each(spliceRows)("a table emptied through another object's .each %s", () => {}); // HIT
 it("a mixed array in options", { tags: [1, makeTag()] }, run); // HIT
 it("a mixed object in options", { meta: { a: 1, b: makeTag() } }, run); // HIT
+const hookAndCallRows = ["pg"];
+function resetRows() { hookAndCallRows.length = 0; }
+beforeAll(resetRows);
+resetRows();
+describe.each(hookAndCallRows)("a table a hook also changes while collecting %s", () => {}); // HIT
+import { IMPORTED_ENGINES } from "./engines";
+import * as engineMatrix from "./engines";
+try { await import("pg"); } catch { IMPORTED_ENGINES.splice(IMPORTED_ENGINES.indexOf("pg"), 1); }
+describe.each(IMPORTED_ENGINES)("an imported table this file changes while collecting %s", () => {}); // HIT
+if (!hasEnv.pgDriver) engineMatrix.ENGINES.pop();
+describe.each(engineMatrix.ENGINES)("a namespace import's table this file changes %s", () => {}); // HIT

@@ -6,7 +6,7 @@ import {
   bindingHolder, calleeOf, GATE, isConstDeclaration, isGlobalName, isImport, isMemberLink, isPick, isValueReference, linkName,
   outermostWrapper, ts, unwrap, UNREADABLE,
 } from "./ast.mjs";
-import { definesTests, isLoaderCall, isVitestHookCall, readsEnvironment, ROW_LINKS, vitestCallKind } from "./bindings.mjs";
+import { isLoaderCall, readsEnvironment, ROW_LINKS, runsAfterCollection, vitestCallKind } from "./bindings.mjs";
 
 // JavaScript's built-in globals (ECMAScript's, plus `URL`, `TextEncoder` and `TextDecoder`), which a
 // table may use undeclared. Any other undeclared name is something the check can't pin.
@@ -74,9 +74,10 @@ function codeOf(decl) {
 
 /**
  * Where a table's rows come from: the table expression, and through each name in it, the `const`
- * or `function` it names, but not a row of an array literal (`["pg", url]`) or a callback
- * (`.filter((e) => …)`), whose code can't change how many rows there are without a name the shape
- * reaches. Returns those code `roots`, the declarations of the `names` they reach, and whether the
+ * or `function` it names, and any function in them that isn't a callback (an IIFE, an object's
+ * method or getter), but not a row of an array literal (`["pg", url]`) or a callback
+ * (`.filter((e) => …)`), whose code can drop a row only through a name the shape reaches or an
+ * imported probe (a documented limit). Returns those code `roots`, the declarations of the `names` they reach, and whether the
  * shape makes a `choice`: a pick (`? :`, `&&`, `||`, `??`), or an `if`, `switch`, loop or `try`.
  */
 function shapeOf(rowArgs, bindings) {
@@ -88,7 +89,7 @@ function shapeOf(rowArgs, bindings) {
     visit(root, true);
   };
   const visit = (node, root = false) => {
-    if (!root && ts.isFunctionLike(node)) return;
+    if (!root && ts.isFunctionLike(node) && isCallback(node)) return;
     if (isPick(node) || ts.isIfStatement(node) || ts.isSwitchStatement(node) ||
       ts.isIterationStatement(node, false) || ts.isTryStatement(node)) choice = true;
     if (ts.isArrayLiteralExpression(node)) {
@@ -97,8 +98,10 @@ function shapeOf(rowArgs, bindings) {
     }
     if (ts.isIdentifier(node) && isValueReference(node)) {
       for (const decl of bindings.declarationsOf(node)) {
-        if (names.has(decl) || isImport(decl)) continue;
+        if (names.has(decl)) continue;
+        // An import's code is out of the check's sight, but this file's uses of it are not.
         names.add(decl);
+        if (isImport(decl)) continue;
         const source = codeOf(decl);
         if (source !== undefined) follow(source);
       }
@@ -107,6 +110,12 @@ function shapeOf(rowArgs, bindings) {
   };
   rowArgs.forEach(follow);
   return { roots, names, choice };
+}
+
+/** Whether function `fn` is passed to a call (`.filter((e) => …)`), rather than called in place, held or given to `new`. */
+function isCallback(fn) {
+  const outer = outermostWrapper(fn);
+  return ts.isCallExpression(outer.parent) && outer.parent.arguments.includes(outer);
 }
 
 // Each file's table code, by its bindings: the shape roots of every table in it.
@@ -144,15 +153,4 @@ function touchedAtCollection(decl, tableCode, bindings) {
     return ts.forEachChild(node, touches) === true;
   };
   return touches(decl.getSourceFile());
-}
-
-/** Whether `node` sits in a test body or a Vitest hook callback, which run after Vitest has read every table. */
-function runsAfterCollection(node, bindings) {
-  for (let n = node.parent; n !== undefined && !ts.isSourceFile(n); n = n.parent) {
-    if (!ts.isFunctionLike(n)) continue;
-    const outer = outermostWrapper(n);
-    const call = outer.parent;
-    if (ts.isCallExpression(call) && call.arguments.includes(outer) && (definesTests(call, bindings) || isVitestHookCall(call, bindings))) return true;
-  }
-  return false;
 }

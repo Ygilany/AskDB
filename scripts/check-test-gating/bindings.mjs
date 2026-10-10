@@ -17,16 +17,16 @@ import {
   linkName,
   memberOn,
   outermostWrapper,
-  resultOf,
   ts,
   unwrap,
+  valueExpressionOf,
 } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // Vitest's `vi` object, under both names it exports (`const vi = vitest`).
 const VI_NAMES = new Set(["vi", "vitest"]);
 // Vitest hooks, whose callbacks run after the suites and tests are collected.
-const HOOKS = new Set(["beforeAll", "beforeEach", "afterAll", "afterEach", "onTestFinished", "onTestFailed"]);
+const HOOKS = new Set(["beforeAll", "beforeEach", "afterAll", "afterEach", "aroundAll", "aroundEach", "onTestFinished", "onTestFailed"]);
 // Every Vitest export the check resolves a name to (see `vitestExportName`).
 const READ_EXPORTS = new Set([...TEST_FNS, ...VI_NAMES, ...HOOKS]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -116,7 +116,7 @@ function isImportMetaVitest(node) {
  * `require("vitest")`, `import.meta.vitest`, or an identifier bound to a Vitest namespace.
  */
 function resolvesToVitestModule(node, bindings) {
-  node = resultOf(node);
+  node = valueExpressionOf(node);
   // `import v = require("vitest")`: the declaration, not a use of the module.
   if (ts.isExternalModuleReference(node)) return isVitestSpecifier(node.expression);
   return isVitestModuleUse(node, bindings);
@@ -173,11 +173,53 @@ export function isUnreadableViUse(node, bindings) {
 
 /**
  * Whether `call` calls a Vitest hook, through any route `vitestExportName` resolves (`beforeAll(…)`,
- * a renamed import, `const { beforeAll } = await import("vitest")`, `v.afterEach(…)`). A local
- * function or an object's method of the same name is not Vitest's.
+ * a renamed import, `const { beforeAll } = await import("vitest")`, `v.afterEach(…)`), or a hook
+ * read off a test function, where Vitest also puts them (`test.beforeEach(…)`, `myTest.aroundEach(…)`).
+ * A local function or an object's method of the same name is not Vitest's.
  */
 export function isVitestHookCall(call, bindings) {
-  return HOOKS.has(vitestExportName(unwrap(call.expression), bindings));
+  const callee = unwrap(call.expression);
+  if (HOOKS.has(vitestExportName(callee, bindings))) return true;
+  if (!isMemberLink(callee) || !HOOKS.has(linkName(callee))) return false;
+  const owner = unwrap(callee.expression);
+  return ts.isIdentifier(owner) && ["it", "test"].includes(bindings.resolve(owner)?.name);
+}
+
+/** Whether `node` is passed straight to a call that defines tests or a Vitest hook, which runs it after collection. */
+export function passedToTestOrHook(node, bindings) {
+  const outer = outermostWrapper(node);
+  const call = outer.parent;
+  return ts.isCallExpression(call) && call.arguments.includes(outer) && (definesTests(call, bindings) || isVitestHookCall(call, bindings));
+}
+
+/**
+ * Whether `node` runs only after Vitest has collected the suites: inside a function passed straight
+ * to a test or a Vitest hook, or inside a named function (`function seed() {…}`,
+ * `const run = () => …`) that is only ever passed straight to one (`beforeAll(seed)`, `it("t", run)`).
+ */
+export function runsAfterCollection(node, bindings) {
+  for (let n = node.parent; n !== undefined && !ts.isSourceFile(n); n = n.parent) {
+    if (!ts.isFunctionLike(n)) continue;
+    if (passedToTestOrHook(n, bindings)) return true;
+    const decl = ts.isFunctionDeclaration(n) ? n : outermostWrapper(n).parent;
+    if (decl !== undefined && decl.name !== undefined && ts.isIdentifier(decl.name) &&
+      (ts.isFunctionDeclaration(decl) || (isConstDeclaration(decl) && unwrap(decl.initializer) === n))) {
+      const uses = usesOf(decl, bindings);
+      if (uses.length > 0 && uses.every((use) => passedToTestOrHook(use, bindings))) return true;
+    }
+  }
+  return false;
+}
+
+/** Every reference to the name `decl` declares, other than the declaration's own name. */
+function usesOf(decl, bindings) {
+  const uses = [];
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && node !== decl.name && isValueReference(node) && bindings.declarationsOf(node).includes(decl)) uses.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(decl.getSourceFile());
+  return uses;
 }
 
 /**
@@ -196,7 +238,7 @@ const PROCESS_MODULES = new Set(["process", "node:process"]);
 // `import.meta.vitest`, Vitest's in-source test API (which the binder reads as Vitest).
 const IMPORT_META_PATHS = new Set(["url", "dirname", "filename", "vitest"]);
 // Member calls that load a module by name: `module.require(…)`, `vi.importActual(…)`, `vi.importMock(…)`.
-export const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
+const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
 
 /**
  * Whether `node` reads the environment: a `process`, `globalThis` or `global` name; `import.meta`
@@ -226,6 +268,24 @@ export function readsEnvironment(node, bindings) {
     return !(isMemberLink(parent) && parent.expression === outer && !INDIRECT_LINKS.has(linkName(parent)));
   }
   return bindings.declarationsOf(node).some((d) => isImport(d) && PROCESS_MODULES.has(importedFrom(d)));
+}
+
+/**
+ * Whether `node` is the process object: the global `process`, a default, namespace or
+ * `import … = require(…)` import of `process` or `node:process` under any name, or a `const` holding one.
+ */
+export function isProcessObject(node, bindings) {
+  if (!ts.isIdentifier(node)) return false;
+  if (node.text === "process" && isGlobalName(node, bindings)) return true;
+  if (bindings.declarationsOf(node).some((d) => isImport(d) && !ts.isImportSpecifier(d) && PROCESS_MODULES.has(importedFrom(d)))) return true;
+  return constHolds(node, bindings, (init) => isProcessObject(init, bindings));
+}
+
+/** Whether `node` is `process.env`: `env` read off the process object, or `env` imported from `process` or `node:process`. */
+export function isProcessEnv(node, bindings) {
+  if (isMemberLink(node)) return linkName(node) === "env" && isProcessObject(unwrap(node.expression), bindings);
+  return ts.isIdentifier(node) && bindings.declarationsOf(node).some((d) =>
+    ts.isImportSpecifier(d) && (d.propertyName ?? d.name).text === "env" && PROCESS_MODULES.has(importedFrom(d)));
 }
 
 /**

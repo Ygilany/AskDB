@@ -15,8 +15,8 @@
 // not parse fails the check instead of passing unread.
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
-// namespace imports (`import * as v from "vitest"`, the loaders `MEMBER_LOADERS` (ast.mjs) and
-// `isVitestLoaderCall` in check-test-gating/bindings.mjs list, in-source `import.meta.vitest`, and a
+// namespace imports (`import * as v from "vitest"`, the loaders `isLoaderCall` and
+// `isVitestLoaderCall` in check-test-gating/bindings.mjs read, in-source `import.meta.vitest`, and a
 // member read straight off a loader, `require("vitest").describe`) and variables holding
 // `test.extend({…})`. `integrationSuite({…})` and a variable holding its result
 // are suite functions, so the sanctioned gate passes.

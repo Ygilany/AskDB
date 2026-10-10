@@ -198,3 +198,18 @@ describe.each(probedDriver ? [["sqlite", probedDriver]] : [])("a table picked on
 async function loadProbe() { return { driver: undefined as unknown }; }
 function engineList() { if (existsSync("x.db")) return ["db"]; return []; }
 describe.each(engineList())("a table a helper builds under an if %s", () => {}); // HIT
+function rowsViaFor() { const out: string[] = []; for (const e of ["pg"]) out.push(e); return out; }
+describe.each(rowsViaFor())("rows built in a for loop %s", () => {}); // HIT
+function rowsViaWhile() { const out: string[] = []; while (out.length < 1) out.push("pg"); return out; }
+describe.each(rowsViaWhile())("rows built in a while loop %s", () => {}); // HIT
+function rowsViaSwitch(k: string) { switch (k) { case "pg": return ["pg"]; default: return []; } }
+describe.each(rowsViaSwitch("pg"))("rows chosen by a switch %s", () => {}); // HIT
+function rowsViaTry() { try { return ["pg"]; } catch { return []; } }
+describe.each(rowsViaTry())("rows chosen by a try %s", () => {}); // HIT
+const rowsFromIife = (() => { const out = ["sqlite"]; if (existsSync("/tmp/pg.sock")) out.push("pg"); return out; })();
+describe.each(rowsFromIife)("rows built by an IIFE under an if %s", () => {}); // HIT
+const rowMatrix = { engines() { return existsSync("/tmp/pg.sock") ? ["sqlite", "pg"] : ["sqlite"]; } };
+describe.each(rowMatrix.engines())("rows from an object's method %s", () => {}); // HIT
+const rowGetter = { get engines() { return existsSync("/tmp/pg.sock") ? ["sqlite", "pg"] : ["sqlite"]; } };
+describe.each(rowGetter.engines)("rows from a getter %s", () => {}); // HIT
+describe.each(await new Promise<string[]>((done) => done(existsSync("/tmp/pg.sock") ? ["pg"] : [])))("rows a Promise executor picks %s", () => {}); // HIT

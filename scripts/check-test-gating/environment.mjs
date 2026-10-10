@@ -1,9 +1,10 @@
 // Where a test file may read the environment, for scripts/check-test-gating.mjs. While Vitest
 // collects suites and tests, nothing may depend on the environment except through
 // `integrationSuite()`; so the environment may be read only where that can't happen (ADR 0019).
-import { isConstDeclaration, isGlobalName, isMemberLink, isValueReference, linkName, outermostWrapper, propertyKey, ts, unwrap } from "./ast.mjs";
+import { isConstDeclaration, isGlobalName, isKeyedProperty, isLiteralToken, isMemberLink, isValueReference, linkName, outermostWrapper, propertyKey, ts, unwrap } from "./ast.mjs";
 import {
-  constHolds, constInitializer, definesTests, isInlineFunction, isSuiteFactory, isVitestHookCall, readsEnvironment, vitestCallKind,
+  constInitializer, definesTests, isInlineFunction, isProcessEnv, isProcessObject, isSuiteFactory, passedToTestOrHook, readsEnvironment,
+  vitestCallKind,
 } from "./bindings.mjs";
 
 /**
@@ -59,8 +60,7 @@ function siteOf(node, bindings) {
     if (ts.isCallExpression(n) && n.arguments.includes(child)) {
       if (isSuiteFactory(unwrap(n.expression), bindings)) return "allowed";
       // `it("connects", run)`, `beforeAll(connect)`: a named function passed as a test body or hook runs after collection.
-      if (child === outermostWrapper(node) && namesFunction(node, bindings) &&
-        (definesTests(n, bindings) || isVitestHookCall(n, bindings))) return "allowed";
+      if (child === outermostWrapper(node) && namesFunction(node, bindings) && passedToTestOrHook(node, bindings)) return "allowed";
     }
     if (isConstDeclaration(n) && n.initializer === child) {
       // A named function: `const connect = () => …`.
@@ -68,13 +68,8 @@ function siteOf(node, bindings) {
       if (isPlainInitializer(n.initializer, bindings) && isPlainPattern(n.name, bindings) && atCollection(n, bindings)) return n;
     }
     if (ts.isFunctionDeclaration(n) && n.name !== undefined) return n;
-    if (!ts.isFunctionLike(n)) continue;
-    const outer = outermostWrapper(n);
-    const call = outer.parent;
-    if (ts.isCallExpression(call) && call.arguments.includes(outer)) {
-      if (definesTests(call, bindings) || isVitestHookCall(call, bindings)) return "allowed";
-      // A suite body runs while Vitest collects; any other callback may run then too.
-    }
+    // A suite body runs while Vitest collects; any callback other than a test body or hook may run then too.
+    if (ts.isFunctionLike(n) && passedToTestOrHook(n, bindings)) return "allowed";
   }
   return "collection";
 }
@@ -134,8 +129,7 @@ const PROCESS_CALLS = new Set(["cwd"]);
 function isPlainInitializer(node, bindings, seen = new Set()) {
   const plain = (n) => isPlainInitializer(n, bindings, seen);
   node = unwrap(node);
-  if (ts.isNumericLiteral(node) || ts.isStringLiteralLike(node)) return true;
-  if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind)) return true;
+  if (isLiteralToken(node)) return true;
   if (ts.isTemplateExpression(node)) return node.templateSpans.every((span) => plain(span.expression));
   if (ts.isPrefixUnaryExpression(node)) {
     return node.operator !== ts.SyntaxKind.PlusPlusToken && node.operator !== ts.SyntaxKind.MinusMinusToken && plain(node.operand);
@@ -145,20 +139,20 @@ function isPlainInitializer(node, bindings, seen = new Set()) {
   if (ts.isArrayLiteralExpression(node)) return node.elements.every(plain);
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.every((p) =>
-      (ts.isPropertyAssignment(p) && typeof propertyKey(p.name) === "string" && plain(p.initializer)) ||
+      isKeyedProperty(p, plain) ||
       (ts.isShorthandPropertyAssignment(p) && plain(p.name)));
   }
-  if (isProcess(node, bindings) || isProcessEnv(node, bindings)) return true;
+  if (isProcessObject(node, bindings) || isProcessEnv(node, bindings)) return true;
   if (isMemberLink(node)) {
     const owner = unwrap(node.expression);
     if (linkName(node) === undefined) return false;
-    return isProcessEnv(owner, bindings) || (isProcess(owner, bindings) && PROCESS_FACTS.has(linkName(node))) ||
-      (isMemberLink(owner) && linkName(owner) === "versions" && isProcess(unwrap(owner.expression), bindings));
+    return isProcessEnv(owner, bindings) || (isProcessObject(owner, bindings) && PROCESS_FACTS.has(linkName(node))) ||
+      (isMemberLink(owner) && linkName(owner) === "versions" && isProcessObject(unwrap(owner.expression), bindings));
   }
   if (ts.isCallExpression(node)) {
     const callee = unwrap(node.expression);
     return node.arguments.length === 0 && isMemberLink(callee) && PROCESS_CALLS.has(linkName(callee)) &&
-      isProcess(unwrap(callee.expression), bindings);
+      isProcessObject(unwrap(callee.expression), bindings);
   }
   if (!ts.isIdentifier(node)) return false;
   if (node.text === "undefined" && isGlobalName(node, bindings)) return true;
@@ -168,23 +162,17 @@ function isPlainInitializer(node, bindings, seen = new Set()) {
   // where it reads the environment, in `siteOf`).
   let [decl] = decls;
   while (ts.isBindingElement(decl)) decl = decl.parent.parent;
+  // `seen` holds the `const`s being read on this path, so a cycle (`const a = b, b = a`) ends.
   if (!isConstDeclaration(decl) || seen.has(decl)) return false;
   seen.add(decl);
-  return plain(decl.initializer);
+  try {
+    return plain(decl.initializer);
+  } finally {
+    seen.delete(decl);
+  }
 }
 
 function isAssignment(kind) {
   return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
 }
 
-/** Whether `node` is `process`: the global, one imported from `node:process`, or a `const` holding one. */
-function isProcess(node, bindings) {
-  if (!ts.isIdentifier(node)) return false;
-  if (node.text === "process" && readsEnvironment(node, bindings)) return true;
-  return constHolds(node, bindings, (init) => isProcess(init, bindings));
-}
-
-/** Whether `node` is `process.env`. */
-function isProcessEnv(node, bindings) {
-  return isMemberLink(node) && linkName(node) === "env" && isProcess(unwrap(node.expression), bindings);
-}

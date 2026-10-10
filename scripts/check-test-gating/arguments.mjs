@@ -1,7 +1,9 @@
 // What a suite or test call's arguments after the name may be, for scripts/check-test-gating.mjs:
 // a few plain shapes only. Anything else fails, rather than the check trying to tell whether it
 // could depend on the environment (ADR 0019).
-import { containsPick, GATE, isGlobalName, propertyKey, resultOf, someInside, ts, UNREADABLE, unwrap } from "./ast.mjs";
+import {
+  containsPick, GATE, isGlobalName, isKeyedProperty, isLiteralToken, propertyKey, someInside, ts, UNREADABLE, unwrap, valueExpressionOf,
+} from "./ast.mjs";
 import { constHolds, constInitializer, isInlineFunction, readsEnvironment } from "./bindings.mjs";
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a
@@ -76,7 +78,7 @@ function isPlainLiteral(node, bindings) {
   if (ts.isArrayLiteralExpression(node)) return node.elements.every((el) => isPlainLiteral(el, bindings));
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.every((p) =>
-      ts.isPropertyAssignment(p) && typeof propertyKey(p.name) === "string" && isPlainLiteral(p.initializer, bindings));
+      isKeyedProperty(p, (value) => isPlainLiteral(value, bindings)));
   }
   return isPlainValue(node, bindings);
 }
@@ -93,9 +95,8 @@ const ARITHMETIC = new Set([
  * `const` bound to one (`5_000`, `60 * 1000`, `const T = 5_000`). No pick, call or other read.
  */
 function isPlainValue(node, bindings) {
-  node = resultOf(node);
-  if (ts.isNumericLiteral(node) || ts.isStringLiteralLike(node)) return true;
-  if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind)) return true;
+  node = valueExpressionOf(node);
+  if (isLiteralToken(node)) return true;
   if (ts.isPrefixUnaryExpression(node)) return isPlainValue(node.operand, bindings);
   if (ts.isBinaryExpression(node) && ARITHMETIC.has(node.operatorToken.kind)) {
     return isPlainValue(node.left, bindings) && isPlainValue(node.right, bindings);

@@ -64,3 +64,15 @@ const readThroughGetter = getterHolder.value && process.env.PG_URL; // HIT
 const cwdWithArgument = process.cwd(String(1)) && process.env.PG_URL; // HIT
 const fromUndeclared = process.env.PG_URL ?? someGlobal; // HIT
 const fromLet = process.env.PG_URL ?? letPlain; // HIT
+import { argv as processArgv } from "node:process";
+const notProcessEnv = processArgv.env; // HIT
+{
+  const process = { env: { PG_URL: "x" } };
+  const shadowedUrl = process.env.PG_URL; // HIT
+}
+const exitFn = process.exit; // HIT
+const notAFact = process.config.variables; // HIT
+describe("a callback in a suite body runs while Vitest collects", () => {
+  [1].forEach(() => { const fromCallback = process.env.PG_URL; }); // HIT
+});
+test.scoped(() => { if (process.env.PG_URL) pushed.push("pg"); }); // HIT

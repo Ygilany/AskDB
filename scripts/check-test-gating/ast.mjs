@@ -124,7 +124,7 @@ export function firstParameter(fn) {
  * The expression whose value `node` yields: through wrappers, `await`, a comma operator's last
  * operand (`(0, x)`) and a plain assignment's right side (`rows = x`).
  */
-export function resultOf(node) {
+export function valueExpressionOf(node) {
   for (;;) {
     if (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
     else if (ts.isBinaryExpression(node) && VALUE_OPERATORS.has(node.operatorToken.kind)) node = node.right;
@@ -149,6 +149,17 @@ function pickBranches(node) {
   if (ts.isConditionalExpression(node)) return [node.whenTrue, node.whenFalse];
   if (isBinaryPick(node)) return [node.left, node.right];
   return [];
+}
+
+/** Whether `node` is a number, string or boolean literal, a template with no substitutions, or `null`. */
+export function isLiteralToken(node) {
+  return ts.isNumericLiteral(node) || ts.isStringLiteralLike(node) ||
+    [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind);
+}
+
+/** Whether object literal member `p` is a plain `key: value` pair with a string key whose value passes `test`. */
+export function isKeyedProperty(p, test) {
+  return ts.isPropertyAssignment(p) && typeof propertyKey(p.name) === "string" && test(p.initializer);
 }
 
 /** Whether `node` is a plain `a = b` assignment. */
