@@ -10,7 +10,8 @@ import { vitestCallKind } from "./bindings.mjs";
  * Vitest body it sits in (an inline function passed to a suite, test or `.each` call) or to the
  * file, only an expression statement, a block, `await`, wrappers and the nodes that keep a result
  * (see `keepsResult`, which `resultUsed` reports instead) may stand between, and no earlier
- * statement in a block on the way may `return`, `break` or `continue`.
+ * statement in a block on the way may `return`. (A `break` or `continue` that could leave the block
+ * targets a loop, `switch` or label around it, which already fails.)
  */
 export function definedOffPlainPath(call, bindings) {
   let child = outermostWrapper(call);
@@ -59,28 +60,9 @@ function isVitestBody(fn, bindings) {
   return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) !== undefined;
 }
 
-/**
- * Whether a statement before `child` in `statements` can leave the list: a `return`, or a `break`
- * or `continue` that targets something outside it, outside a nested function.
- */
+/** Whether a statement before `child` in `statements` can `return`, outside a nested function or class. */
 function exitsEarlier(statements, child) {
   const index = statements.indexOf(child);
-  return index > 0 && statements.slice(0, index).some(leaves);
-}
-
-function leaves(statement) {
-  const exits = (node) => ts.isReturnStatement(node) || ((ts.isBreakStatement(node) || ts.isContinueStatement(node)) && !targetInside(node, statement));
-  return someInside(statement, exits, (node) => ts.isFunctionLike(node) || ts.isClassLike(node));
-}
-
-/**
- * Whether a `break` or `continue` targets a statement inside `root`: its label's statement, or for
- * an unlabeled one, the nearest loop (or, for `break`, `switch`).
- */
-function targetInside(node, root) {
-  for (let n = node.parent; n !== undefined && n !== root.parent; n = n.parent) {
-    if (node.label !== undefined ? ts.isLabeledStatement(n) && n.label.text === node.label.text
-      : ts.isIterationStatement(n, false) || (ts.isBreakStatement(node) && ts.isSwitchStatement(n))) return true;
-  }
-  return false;
+  return index > 0 && statements.slice(0, index).some((statement) =>
+    someInside(statement, ts.isReturnStatement, (node) => ts.isFunctionLike(node) || ts.isClassLike(node)));
 }

@@ -115,3 +115,4 @@ it("an options object nested in a body's closure", () => {
   expect(options).toBeDefined();
 });
 it("a fails key under meta", { meta: { fails: process.env.CI === "true" } }, () => {}); // HIT
+it.each((hasDriver && ["sqlite"]) || [])("rows chosen by && and || %s", () => {}); // HIT

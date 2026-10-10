@@ -8,8 +8,12 @@ import {
   destructuredFrom,
   firstParameter,
   importedFrom,
+  INDIRECT_LINKS,
   isConstDeclaration,
+  isGlobalName,
+  isImport,
   isMemberLink,
+  isValueReference,
   linkName,
   memberOn,
   outermostWrapper,
@@ -53,8 +57,6 @@ export const MODIFIERS = new Set([
 ]);
 // Links whose call returns a new test function: `test.extend({…})`, `test.override({…})`, `test.scoped({…})`.
 export const EXTENDERS = new Set(["extend", "override", "scoped"]);
-// Member calls that load a module by name: `module.require`, `vi.importActual`, `vi.importMock`.
-const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
 // Of those, the ones that return a promise, as `import()` does.
 const PROMISE_MEMBER_LOADERS = new Set(["importActual", "importMock"]);
 
@@ -186,15 +188,67 @@ function namesVi(node, bindings) {
   return VI_NAMES.has(vitestExportName(node, bindings));
 }
 
+// Names through which code reads the environment: `process.env`, `globalThis.process`, `global.process`.
+const ENVIRONMENT_NAMES = new Set(["process", "globalThis", "global"]);
+const PROCESS_MODULES = new Set(["process", "node:process"]);
+
+// What `import.meta` may be read for without reading the environment: the file's own location, and
+// `import.meta.vitest`, Vitest's in-source test API (which the binder reads as Vitest).
+const IMPORT_META_PATHS = new Set(["url", "dirname", "filename", "vitest"]);
+// Member calls that load a module by name: `module.require(…)`, `vi.importActual(…)`, `vi.importMock(…)`.
+export const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
+
+/**
+ * Whether `node` reads the environment: a `process`, `globalThis` or `global` name; `import.meta`
+ * other than `import.meta.url`, `.dirname`, `.filename` or `.vitest` (Vitest mirrors the environment into
+ * `import.meta.env`, and an alias of `import.meta` could read it); a name imported from `"process"`
+ * or `"node:process"`, by `import` or `import … = require(…)`; or a call that loads a module whose
+ * name isn't a string literal other than those two (`import("node:process")`, `require(name)`);
+ * or `require` used other than by calling it or reading a member (an alias, `.call`, passing it on).
+ */
+export function readsEnvironment(node, bindings) {
+  if (ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword) {
+    const outer = outermostWrapper(node);
+    return !(isMemberLink(outer.parent) && outer.parent.expression === outer && IMPORT_META_PATHS.has(linkName(outer.parent)));
+  }
+  if (ts.isCallExpression(node) && isLoaderCall(node, bindings)) {
+    const specifier = node.arguments[0] && unwrap(node.arguments[0]);
+    return specifier === undefined || !ts.isStringLiteralLike(specifier) || PROCESS_MODULES.has(specifier.text);
+  }
+  if (!ts.isIdentifier(node) || !isValueReference(node)) return false;
+  if (ENVIRONMENT_NAMES.has(node.text)) return true;
+  // `const load = require`, `require.call(null, "node:process")`: a loader taken somewhere the
+  // check can't read the module it loads. A direct call is read above; `require.resolve(…)` loads nothing.
+  if (isRequire(node, bindings)) {
+    const outer = outermostWrapper(node);
+    const parent = outer.parent;
+    if (ts.isCallExpression(parent) && parent.expression === outer) return false;
+    return !(isMemberLink(parent) && parent.expression === outer && !INDIRECT_LINKS.has(linkName(parent)));
+  }
+  return bindings.declarationsOf(node).some((d) => isImport(d) && PROCESS_MODULES.has(importedFrom(d)));
+}
+
+/**
+ * Whether `call` loads a module by name: `import(…)`, `require(…)` (the global, or a function from
+ * `createRequire(…)`), or a `MEMBER_LOADERS` member (`module.require(…)`, `vi.importActual(…)`).
+ */
+export function isLoaderCall(call, bindings) {
+  const callee = unwrap(call.expression);
+  if (callee.kind === ts.SyntaxKind.ImportKeyword) return true;
+  if (ts.isIdentifier(callee)) return isRequire(callee, bindings);
+  return isMemberLink(callee) && MEMBER_LOADERS.has(linkName(callee));
+}
+
+/** Whether identifier `id` is a `require`: the global, or a function from `createRequire(…)`. */
+function isRequire(id, bindings) {
+  return (id.text === "require" && isGlobalName(id, bindings)) || kindOf(id, bindings) === KIND_REQUIRE;
+}
+
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
 function isVitestLoaderCall(node, bindings) {
   if (!ts.isCallExpression(node) || !isVitestSpecifier(node.arguments[0])) return false;
-  const callee = unwrap(node.expression);
-  if (callee.kind === ts.SyntaxKind.ImportKeyword) return true; // `import("vitest")`, `import("vitest", opts)`
-  // `require`, `module.require`, `globalThis.require`, or a function from `createRequire(…)`.
-  if (ts.isIdentifier(callee)) return callee.text === "require" || kindOf(callee, bindings) === KIND_REQUIRE;
-  // `module.require`, `globalThis.require`, and Vitest's own `vi.importActual` / `vi.importMock`.
-  return isMemberLink(callee) && MEMBER_LOADERS.has(linkName(callee));
+  // `import("vitest")`, `require`, a `createRequire(…)` function, `module.require`, `vi.importActual`, `vi.importMock`.
+  return isLoaderCall(node, bindings);
 }
 
 /** Whether identifier `id` names a Vitest namespace. */
@@ -345,8 +399,6 @@ export function constInitializer(node, bindings) {
   const [d] = decls;
   return isConstDeclaration(d) && ts.isIdentifier(d.name) ? unwrap(d.initializer) : undefined;
 }
-
-
 
 // The `const` initializers `constHolds` is reading through, so a cycle (`const a = b, b = a`) ends.
 const initializersInProgress = new Set();

@@ -179,7 +179,7 @@ for (const k in forInTables) describe(k, () => {}); // HIT
   }
   earlyExit: {
     if (!hasEnv.PG_URL) break earlyExit;
-    describe("after a labeled break", () => {}); // HIT
+    describe("under a labeled statement", () => {}); // HIT
   }
   function definesAfterReturn() {
     if (!process.env.PG_URL) return;

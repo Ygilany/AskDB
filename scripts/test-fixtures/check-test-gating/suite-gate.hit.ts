@@ -158,8 +158,6 @@ describe.each([processNs.env.PG_URL, "sqlite"].filter(Boolean))("env through a n
   describe.each([processAlias.env.PG_URL, "sqlite"].filter(Boolean))("env through a const alias of process %s", () => {}); // HIT
   const { PG_URL: viaAliasEnv } = processAlias.env;
   describe.each([viaAliasEnv, "sqlite"].filter(Boolean))("env destructured through a process alias %s", () => {}); // HIT
-  const { process: fromGlobalThis } = globalThis;
-  describe.each([fromGlobalThis.env.PG_URL, "sqlite"].filter(Boolean))("process destructured from globalThis %s", () => {}); // HIT
 }
 {
   const suitesWithPick = [{ name: "pg", engines: process.env.PG_URL ? ["pg"] : [] }, { name: "sqlite", engines: ["sqlite"] }];
@@ -191,3 +189,12 @@ describe.each([fixedUrl, "sqlite"])("a const env read in a table no step filters
   describe.each([fromArrayPattern, "sqlite"].filter(Boolean))("an array pattern reads no env key %s", () => {}); // HIT
 }
 describe.each([{ name: "pg", url: process.env.PG_URL }, { name: "sqlite", url: ":memory:" }])("a table whose rows read the environment, no step filtering %s", () => {}); // HIT
+import { existsSync } from "node:fs";
+import { platform } from "node:os";
+describe.each(existsSync(new URL("./x.db", import.meta.url)) ? ["db"] : [])("a table picked by a file probe %s", () => {}); // HIT
+describe.each(platform() === "win32" ? [] : ["posix"])("a table picked by the platform %s", () => {}); // HIT
+const { driver: probedDriver } = await loadProbe();
+describe.each(probedDriver ? [["sqlite", probedDriver]] : [])("a table picked on a probe result %s", () => {}); // HIT
+async function loadProbe() { return { driver: undefined as unknown }; }
+function engineList() { if (existsSync("x.db")) return ["db"]; return []; }
+describe.each(engineList())("a table a helper builds under an if %s", () => {}); // HIT

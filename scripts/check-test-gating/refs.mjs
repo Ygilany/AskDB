@@ -3,6 +3,7 @@
 // judge it. Also reads the `check-test-gating-ignore-next-line` pragmas.
 import {
   calleeOf,
+  GATE,
   invokedBy,
   isMemberLink,
   isValueReference,
@@ -13,6 +14,7 @@ import {
   memberOn,
   outermostWrapper,
   ts,
+  UNREADABLE,
   unwrap,
 } from "./ast.mjs";
 import {
@@ -146,9 +148,9 @@ function testRef(start, fnName, bindings) {
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (defines && resultUsed(call)) ||
-      args === "unreadable" || table === "unreadable",
+      args === UNREADABLE || table === UNREADABLE,
     conditional: defines && definedOffPlainPath(call, bindings),
-    runtimeGate: args === "gate" || table === "gate",
+    runtimeGate: args === GATE || table === GATE,
   };
 }
 

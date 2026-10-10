@@ -70,7 +70,6 @@ LET_BODY = (t) => { t.skipIf(!hasEnv.PG_URL)("q", () => {}); };
 describe("a body destructured from env into a let", LET_BODY); // HIT
 let letItAlias = it; // HIT
 letItAlias("through a let alias of it", () => {});
-it.each((url && [url]) || [])("rows chosen by && and || %s", () => {}); // HIT
 {
   const constPickedBody = hasEnv.DATABASE_URL ? () => {} : undefined;
   it("a test body held in a const pick", constPickedBody); // HIT
@@ -110,7 +109,9 @@ describe.each(...rowsAndMore)("spread rows %s", () => {}); // HIT
 describe.each([{ name: "pg", engines: ["pg"] }])("$name", (s) => {
   describe.each(s.engines)("a table read off a row parameter %s", () => {}); // HIT
 });
-registry.push(describe("passed as a value, not a callback", run)); // HIT
+registry.push(describe("passed as a value, not a callback", () => {})); // HIT
+const awaitedSuite = await describe("awaited and kept", () => {}); // HIT
+registry.push(await describe("awaited and passed", () => {})); // HIT
 registry = it("a plain assignment", run); // HIT
 describe.each([...ROWS, 1])("a plain spread in a table %s", () => {}); // HIT
 import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";
@@ -161,7 +162,7 @@ const cycleA = cycleB, cycleB = cycleA;
 describe.each(cycleA)("a cycle of consts ends %s", () => {});
 const alwaysPushed = ["sqlite"];
 alwaysPushed.push("pg");
-describe.each(alwaysPushed)("a table pushed to unconditionally %s", () => {});
+describe.each(alwaysPushed)("a table pushed to unconditionally %s", () => {}); // HIT
 const pushedInTest: string[] = [];
 describe.each(pushedInTest)("a table only pushed to inside a test %s", () => {
   it("pushes", () => { if (process.env.CI) pushedInTest.push("x"); });
@@ -176,7 +177,7 @@ describe.each(pushedInRenamedHook)("a table pushed to in a renamed Vitest hook %
 const readOnlyRows = ["pg", "sqlite"];
 const hasPg = readOnlyRows.includes("pg");
 if (hasEnv.CI) { console.log(readOnlyRows.length); }
-describe.each(readOnlyRows)("a table only read, never resized %s", () => {});
+describe.each(readOnlyRows)("a table also read elsewhere while Vitest collects %s", () => {}); // HIT
 import { IMPORTED_TIMEOUT } from "./timeouts";
 describe("a function body ignores what follows it", () => {}, IMPORTED_TIMEOUT); // HIT
 if (hasEnv.CI) console.log(-readOnlyRows.length, !readOnlyRows[0]);
@@ -210,13 +211,13 @@ const plainA = ["sqlite"];
 const plainB: string[] = [];
 for (const x of plainB) plainA.push(x);
 for (const x of plainA) plainB.push(x);
-describe.each(plainA)("two tables that read each other with no condition %s", () => {});
+describe.each(plainA)("two tables that read each other with no condition %s", () => {}); // HIT
 import configDefault from "./config";
 describe.each([configDefault.env.LABEL, "sqlite"].filter(Boolean))("a default import from another module %s", () => {});
 {
   const plainConfig = { engines: ["pg", "sqlite"] };
   plainConfig.engines.push("mysql");
-  describe.each(plainConfig.engines)("a nested table pushed to unconditionally %s", () => {});
+  describe.each(plainConfig.engines)("a nested table pushed to unconditionally %s", () => {}); // HIT
   const TypedFixed = ["pg", "sqlite"];
   type TypedFixed = string[];
   describe.each(TypedFixed)("a fixed const beside a type of the same name %s", () => {});
@@ -283,7 +284,7 @@ it("a trunc timeout", withDb(runDbClean), Math.trunc(Number(process.env.SLOW_TIM
 {
   const callNoResize = ["pg", "sqlite"];
   if (hasEnv.CI) callNoResize.slice.call(callNoResize, 0);
-  describe.each(callNoResize)("a table called through .call at collection time %s", () => {});
+  describe.each(callNoResize)("a table called through .call at collection time %s", () => {}); // HIT
 }
 describe("a body behind a comma", (0, (test) => test.skipIf(!process.env.DATABASE_URL)("query", run))); // HIT
 describe("a body assigned inside the call", assignedInline = (test) => test.skipIf(!process.env.DATABASE_URL)("query", run)); // HIT
@@ -295,10 +296,10 @@ it("a timeout read from the environment", () => {}, Number(process.env.SLOW_TIME
 {
   const passedRows = ["pg"];
   registerRows(passedRows);
-  describe.each(passedRows)("a table input passed to another function %s", () => {});
+  describe.each(passedRows)("a table input passed to another function %s", () => {}); // HIT
   const storedRows = ["pg"];
   const rowHolder = { storedRows };
-  describe.each(storedRows)("a table input stored in another object %s", () => {});
+  describe.each(storedRows)("a table input stored in another object %s", () => {}); // HIT
 }
 it("a timeout or a body", () => {}, ok ? 5 : fn); // HIT
 it("a timeout picked behind a comma", () => {}, process.env.SLOW ? (0, 60_000) : 5_000); // HIT
@@ -320,3 +321,16 @@ it("options holding a function in an array", { meta: { hooks: [timeoutFn] } }, (
   const undefined = () => {};
   it("a timeout through a shadowed undefined", () => {}, undefined); // HIT
 }
+const loadedDrivers: string[] = [];
+try { await import("better-sqlite3"); loadedDrivers.push("sqlite"); } catch {}
+describe.each(loadedDrivers)("a table pushed to after a driver loads %s", () => {}); // HIT
+const probedRows = ["sqlite"];
+await import("better-sqlite3").catch(() => { probedRows.length = 0; });
+describe.each(probedRows)("a table emptied when a driver fails to load %s", () => {}); // HIT
+describe.each((await import("./engines.js")).default)("a table loaded from a module at run time %s", () => {}); // HIT
+const notVitest = { each: (_rows: unknown) => () => {} };
+const spliceRows = ["pg"];
+notVitest.each(spliceRows.splice(0))();
+describe.each(spliceRows)("a table emptied through another object's .each %s", () => {}); // HIT
+it("a mixed array in options", { tags: [1, makeTag()] }, run); // HIT
+it("a mixed object in options", { meta: { a: 1, b: makeTag() } }, run); // HIT

@@ -15,21 +15,21 @@
 // not parse fails the check instead of passing unread.
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
-// namespace imports (`import * as v from "vitest"`, the loaders `MEMBER_LOADERS` and
+// namespace imports (`import * as v from "vitest"`, the loaders `MEMBER_LOADERS` (ast.mjs) and
 // `isVitestLoaderCall` in check-test-gating/bindings.mjs list, in-source `import.meta.vitest`, and a
 // member read straight off a loader, `require("vitest").describe`) and variables holding
 // `test.extend({…})`. `integrationSuite({…})` and a variable holding its result
 // are suite functions, so the sanctioned gate passes.
-// A suite body's first parameter is the test API Vitest passes it; a body other than an inline
-// function or a `const` function with no parameter fails closed. Names resolve through
+// A suite body's first parameter is the test API Vitest passes it; a suite's body must be inline,
+// and a test's may also be a `const` bound to a function. Names resolve through
 // TypeScript's binder, so any other local declaration that shadows one (a callback's parameter
 // `it`, an import of `test` from another module) is not Vitest's.
 //
 // The check accepts only plain forms and fails everything else (ADR 0019,
 // docs/adrs/0019-test-gating-check-parses-with-typescript.md, records why): a suite or test is
 // defined in straight-line code (check-test-gating/placement.mjs), its arguments take a few plain
-// shapes (arguments.mjs), a `.each` table is built from code that reads no environment
-// (tables.mjs), and the environment is read only where collection can't depend on it
+// shapes (arguments.mjs), a `.each` table is built from code that reads no environment, loads no
+// module and makes no choice where its rows come from (tables.mjs), and the environment is read only where collection can't depend on it
 // (environment.mjs). CONTRIBUTING.md ("Integration Tests") lists the forms and what the check can't
 // see (among them `ctx.skip()` and a table imported from another module); RULES below reports them.
 // To exempt one line, put a line comment on the line above it with a non-empty reason:

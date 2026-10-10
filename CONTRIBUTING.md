@@ -38,21 +38,21 @@ Turbo runs tasks in strict env mode: only variables listed in the `test` task's 
 
 `pnpm lint` runs [`scripts/check-test-gating.mjs`](scripts/check-test-gating.mjs) over the tests of every workspace package except the consumer lab (see [Consumer lab](#consumer-lab)). It accepts only plain forms and fails on everything else, rather than trying to tell which forms could depend on the environment ([ADR 0019](docs/adrs/0019-test-gating-check-parses-with-typescript.md)):
 
-- **Where a suite or test is defined:** straight-line code. That means the top level of the file, or directly in a suite, test or `.each` body, optionally awaited, with no earlier `return`, `break` or `continue` in the same block. A definition under an `if`, `switch`, `try`, `? :`, `&&`, `||`, `??`, a default value or an optional chain, or in a loop, a callback, a helper function or a class, fails as a conditional definition.
+- **Where a suite or test is defined:** straight-line code. That means the top level of the file, or directly in a suite, test or `.each` body, optionally awaited, with no earlier `return` in the same block. A definition under an `if`, `switch`, `try`, `? :`, `&&`, `||`, `??`, a default value or an optional chain, or in a loop, a callback, a helper function or a class, fails as a conditional definition.
 - **Modifiers:** `describe.skip`, `describe.todo`, and `.skipIf` or `.runIf` on a suite or test fail, as do `it.skip` passed around as a value and `cond ? describe : …`. A directly called `it.skip(…)` or `it.todo(…)` stays allowed.
 - **Arguments after the name:** nothing, a body, a body and a timeout, options, or options and a body.
   - A body is an inline function; a test's may also be a `const` bound to one.
   - Options are an object literal of plain `key: value` pairs. `skip`, `todo` and `fails` take a literal `true` or `false`, and `true` only on a test.
   - A timeout is a plain value: a number, string or boolean literal, `null`, `undefined`, a sign or arithmetic over those, or a `const` bound to one.
 
-  An argument holding a pick or an environment read fails as a gate (`url ? fn : undefined`, `{ skip: !url }`), and any other shape fails as an unreadable use.
-- **`.each` and `.for` tables:** the table, and every `const` and in-file function it is built from, must not read the environment, and may reach only `const` names, in-file functions, JavaScript built-ins and imports (which the check can't read into; see below).
-- **Reading the environment:** `process`, `globalThis`, `import.meta` (other than `import.meta.url`, `.dirname`, `.filename` and `.vitest`), an import of `node:process`, or a module loaded by a name that isn't a plain string. Only these places may read it:
+  An argument holding a conditional choice (`? :`, `&&`, `||`, `??`) or an environment read fails as a gate (`url ? fn : undefined`, `{ skip: !url }`), and any other shape fails as an unreadable use.
+- **`.each` and `.for` tables:** the table, and every `const` and in-file function it is built from, must not read the environment or load a module, and may reach only `const` names, in-file functions, JavaScript built-ins and imports (which the check can't read into; see below). Where the rows come from (the table, the `const`s and functions it names, and spreads, but not a row of an array literal or a callback) holds no conditional choice, `if`, `switch`, loop or `try` (`driver ? [["sqlite", driver]] : []`). A `const` or function it names is used, while Vitest collects, only in the code of a table (`try { await import("pg"); rows.push("pg"); } catch {}` fails).
+- **Reading the environment:** `process`, `globalThis`, `global`, `import.meta` (other than `import.meta.url`, `.dirname`, `.filename` and `.vitest`), an import of `process` or `node:process`, a module loaded by a name that isn't a plain string, or `require` used other than by calling it or reading a member (`const load = require`, `require.call(…)`). Only these places may read it:
   - a test body;
   - a Vitest hook;
   - `integrationSuite()`'s arguments;
-  - a plain `const` at the top level or in a suite body (no call other than a `process` method, no `new`, no function, no assignment: `const url = process.env.DATABASE_URL`);
-  - a named function (`function connect() {…}`, `const connect = () => …`).
+  - a plain `const` at the top level or in a suite body, whose value is a literal, `process.env` or a variable read from it by a literal name, `process.platform`, `.arch`, `.version`, `.versions`, `.execPath`, `.pid` or `process.cwd()`, another such `const`, or an operator, template, array or object literal over those, with no call, `new`, function, getter, method or assignment (`const url = process.env.DATABASE_URL ?? ""`);
+  - a named function (`function connect() {…}`, `const connect = () => …`), called there or passed as a test body or hook (`beforeAll(connect)`).
 
   Such a `const` or function may itself be used only in those same places. Reading the environment anywhere else (an `if` at the top level or in a suite body, a callback run while Vitest collects, a call of such a function there) fails, since code that runs while Vitest collects could otherwise change which suites or rows exist.
 - **Unreadable uses:**
@@ -62,7 +62,7 @@ Turbo runs tasks in strict env mode: only variables listed in the `test` task's 
 
 A suite body's parameter (`describe(name, (test) => …)`) is Vitest's test API and is checked like `test`.
 
-The check parses each file with the TypeScript compiler and fails on a test file it cannot parse. Its own tests run under `node --test` (`pnpm lint` runs them first), not Vitest, because `scripts/` isn't a workspace package. A line that genuinely needs a gate takes `// check-test-gating-ignore-next-line: <reason>` on the line above, and the reason is required. The check can't see these gates, so review new suites for them: `ctx.skip()` in a test body, and a test API, table, helper or module imported from another file that reads the environment or changes a table when it loads (an import is something the check can't see into).
+The check parses each file with the TypeScript compiler and fails on a test file it cannot parse. Its own tests run under `node --test` (`pnpm lint` runs them first), not Vitest, because `scripts/` isn't a workspace package. A line that genuinely needs a gate takes `// check-test-gating-ignore-next-line: <reason>` on the line above, and the reason is required. The check can't see these gates, so review new suites for them: `ctx.skip()` in a test body, and a test API, table, helper or module imported from another file that reads the environment or changes a table when it loads, or a probe imported from another module (`existsSync`, `platform()`) whose result a table's callback uses (an import is something the check can't see into).
 
 ### Multi-engine fixture
 

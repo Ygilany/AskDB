@@ -33,7 +33,7 @@ describe.each([fixturePath.href])("a table built from the file's own URL %s", ()
 const shared = { rag: null };
 describe.each([["omitted", shared]])("a shared value as a row entry %s", () => {});
 const withShared = { ...shared, extra: 1 };
-console.log(engines.length, engines.includes("pg"), Object.keys(shared));
+console.log(Object.keys(shared));
 describe.each(engines)("a const table read elsewhere %s", () => {
   it("a test may change it", () => { engines.push("x"); });
 });
@@ -47,3 +47,8 @@ const sourceRows = [["pg", 1], ["sqlite", 2]];
 describe.each(sourceRows.map(([name]) => name))("a table mapped from a const %s", () => {});
 describe.each(sourceRows.slice(0, 1))("a table sliced from a const %s", () => {});
 describe.each(sourceRows.flatMap(([name]) => [name, `${name}-replica`]))("a table flat-mapped from a const %s", () => {});
+const corpus = [["a", 1], ["b", 2]] as const;
+const shownRows = corpus.map(([name]) => name).filter((name) => name !== "b" && name.length > 0);
+describe.each(corpus)("a table another table is built from %s", () => {});
+describe.each(shownRows)("a table filtered on its own data in a callback %s", () => {});
+describe.each([["pg", corpus.length > 1 ? "many" : "one"]])("a pick inside a row %s", () => {});

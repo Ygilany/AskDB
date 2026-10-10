@@ -1,16 +1,16 @@
 // What a suite or test call's arguments after the name may be, for scripts/check-test-gating.mjs:
 // a few plain shapes only. Anything else fails, rather than the check trying to tell whether it
 // could depend on the environment (ADR 0019).
-import { containsPick, isGlobalName, propertyKey, readsEnvironment, resultOf, someInside, ts, unwrap } from "./ast.mjs";
-import { constHolds, constInitializer, isInlineFunction } from "./bindings.mjs";
+import { containsPick, GATE, isGlobalName, propertyKey, resultOf, someInside, ts, UNREADABLE, unwrap } from "./ast.mjs";
+import { constHolds, constInitializer, isInlineFunction, readsEnvironment } from "./bindings.mjs";
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a
 // missing database into a pass): Vitest's options object, a separate vocabulary from the links.
 const SKIP_OPTIONS = new Set(["skip", "todo", "fails"]);
 
 /**
- * How a call's arguments after the name read: `"gate"` when they skip it by hand (a skip option
- * that isn't a literal, a literal skip on a suite, or a pick where the body goes), `"unreadable"`
+ * How a call's arguments after the name read: `GATE` when they skip it by hand (a skip option
+ * that isn't a literal, a literal skip on a suite, or a pick where the body goes), `UNREADABLE`
  * when they aren't one of the plain shapes, or undefined. After the name, the plain shapes are
  * nothing, a body, a body and a timeout, options, and options and a body. A body is an inline
  * function (not a `function` that reads `arguments`, where a suite's would reach the test API);
@@ -18,14 +18,14 @@ const SKIP_OPTIONS = new Set(["skip", "todo", "fails"]);
  */
 export function argumentsVerdict(call, suite, bindings) {
   if (!ts.isCallExpression(call)) return undefined;
-  if (call.arguments.some(ts.isSpreadElement)) return "unreadable";
+  if (call.arguments.some(ts.isSpreadElement)) return UNREADABLE;
   const args = call.arguments.slice(1);
   const [first, second, third] = args.map((arg) => unwrap(arg));
-  if (third !== undefined) return "unreadable";
+  if (third !== undefined) return UNREADABLE;
   if (first === undefined) return undefined;
   const body = (node) => isBody(node, suite, bindings);
   // `it(name, fn)`, `it(name, fn, 30_000)`: a timeout can't skip the test, so any other value is unreadable, not a gate.
-  if (body(first)) return second === undefined || isPlainValue(second, bindings) ? undefined : "unreadable";
+  if (body(first)) return second === undefined || isPlainValue(second, bindings) ? undefined : UNREADABLE;
   // `it(name, { timeout })`, `it(name, { timeout }, fn)`
   if (ts.isObjectLiteralExpression(first)) {
     return readOptions(first, suite, bindings) ?? (second === undefined || body(second) ? undefined : shapeVerdict(second, bindings));
@@ -33,9 +33,9 @@ export function argumentsVerdict(call, suite, bindings) {
   return shapeVerdict(first, bindings);
 }
 
-/** `"gate"` for an argument holding a pick or an environment read outside a nested function (`url ? fn : undefined`), else `"unreadable"`. */
+/** `GATE` for an argument holding a pick or an environment read outside a nested function (`url ? fn : undefined`), else `UNREADABLE`. */
 function shapeVerdict(node, bindings) {
-  return containsPick(node) || someInside(node, (n) => readsEnvironment(n, bindings)) ? "gate" : "unreadable";
+  return containsPick(node) || someInside(node, (n) => readsEnvironment(n, bindings)) ? GATE : UNREADABLE;
 }
 
 /**
@@ -58,12 +58,12 @@ function isBody(node, suite, bindings) {
 function readOptions(options, suite, bindings) {
   for (const prop of options.properties) {
     // `{ skip }`, `{ get skip() {…} }`: a skip key whose value isn't a literal.
-    if (!ts.isPropertyAssignment(prop)) return SKIP_OPTIONS.has(propertyKey(prop.name)) ? "gate" : shapeVerdict(prop, bindings);
-    if (typeof propertyKey(prop.name) !== "string") return "unreadable";
+    if (!ts.isPropertyAssignment(prop)) return SKIP_OPTIONS.has(propertyKey(prop.name)) ? GATE : shapeVerdict(prop, bindings);
+    if (typeof propertyKey(prop.name) !== "string") return UNREADABLE;
     const value = unwrap(prop.initializer);
     if (SKIP_OPTIONS.has(propertyKey(prop.name))) {
       if (value.kind === ts.SyntaxKind.FalseKeyword || (value.kind === ts.SyntaxKind.TrueKeyword && !suite)) continue;
-      return "gate";
+      return GATE;
     }
     if (!isPlainLiteral(value, bindings)) return shapeVerdict(value, bindings);
   }

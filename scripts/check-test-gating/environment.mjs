@@ -1,8 +1,10 @@
 // Where a test file may read the environment, for scripts/check-test-gating.mjs. While Vitest
 // collects suites and tests, nothing may depend on the environment except through
 // `integrationSuite()`; so the environment may be read only where that can't happen (ADR 0019).
-import { isConstDeclaration, isValueReference, outermostWrapper, readsEnvironment, ts, unwrap } from "./ast.mjs";
-import { definesTests, isInlineFunction, isSuiteFactory, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
+import { isConstDeclaration, isGlobalName, isMemberLink, isValueReference, linkName, outermostWrapper, propertyKey, ts, unwrap } from "./ast.mjs";
+import {
+  constHolds, constInitializer, definesTests, isInlineFunction, isSuiteFactory, isVitestHookCall, readsEnvironment, vitestCallKind,
+} from "./bindings.mjs";
 
 /**
  * The nodes in `sf` that read the environment where code runs while Vitest collects. The
@@ -54,11 +56,16 @@ export function environmentReadsAtCollection(sf, bindings) {
  */
 function siteOf(node, bindings) {
   for (let child = node, n = node.parent; n !== undefined && !ts.isSourceFile(n); child = n, n = n.parent) {
-    if (ts.isCallExpression(n) && n.arguments.includes(child) && isSuiteFactory(unwrap(n.expression), bindings)) return "allowed";
+    if (ts.isCallExpression(n) && n.arguments.includes(child)) {
+      if (isSuiteFactory(unwrap(n.expression), bindings)) return "allowed";
+      // `it("connects", run)`, `beforeAll(connect)`: a named function passed as a test body or hook runs after collection.
+      if (child === outermostWrapper(node) && namesFunction(node, bindings) &&
+        (definesTests(n, bindings) || isVitestHookCall(n, bindings))) return "allowed";
+    }
     if (isConstDeclaration(n) && n.initializer === child) {
       // A named function: `const connect = () => …`.
       if (ts.isIdentifier(n.name) && isInlineFunction(unwrap(n.initializer))) return n;
-      if (isPlainInitializer(n.initializer) && atCollection(n, bindings)) return n;
+      if (isPlainInitializer(n.initializer, bindings) && isPlainPattern(n.name, bindings) && atCollection(n, bindings)) return n;
     }
     if (ts.isFunctionDeclaration(n) && n.name !== undefined) return n;
     if (!ts.isFunctionLike(n)) continue;
@@ -70,6 +77,20 @@ function siteOf(node, bindings) {
     }
   }
   return "collection";
+}
+
+/** Whether destructuring pattern `name` takes only literal keys and plain defaults (`const { X = "" } = process.env`). */
+function isPlainPattern(name, bindings) {
+  if (ts.isIdentifier(name)) return true;
+  return name.elements.every((el) => ts.isOmittedExpression(el) ||
+    ((el.propertyName === undefined || typeof propertyKey(el.propertyName) === "string") &&
+      (el.initializer === undefined || isPlainInitializer(el.initializer, bindings)) && isPlainPattern(el.name, bindings)));
+}
+
+/** Whether `node` is a name for a function: a `function` declaration, or a `const` bound to an inline one. */
+function namesFunction(node, bindings) {
+  const decls = bindings.declarationsOf(node);
+  return decls.length > 0 && decls.every(ts.isFunctionDeclaration) || isInlineFunction(constInitializer(node, bindings) ?? node);
 }
 
 /** The declarations that bind the names `decl` declares: itself, or each element of its destructuring pattern. */
@@ -96,24 +117,74 @@ function atCollection(node, bindings) {
   return true;
 }
 
+// What a plain `const` may read from `process` besides `process.env`: facts about the running
+// process (`process.platform`, `process.cwd()`), which hold no configuration of their own.
+const PROCESS_FACTS = new Set(["platform", "arch", "version", "versions", "execPath", "pid"]);
+const PROCESS_CALLS = new Set(["cwd"]);
+
 /**
- * Whether a `const`'s initializer only reads values: no call other than a method of `process`
- * (`process.cwd()`), no `new`, no function, and no assignment, `++`, `--` or `delete`. Such a
- * `const` can hold the environment without acting on it while Vitest collects.
+ * Whether a `const`'s initializer is a plain value: a literal; `process` or `process.env`, or a
+ * variable read from it with a literal name (`process.env.X`, `process.env["X"]`); a `PROCESS_FACTS` read or
+ * `process.cwd()`; another plain `const`, or a name destructured from one; the global `undefined`;
+ * an operator other than an assignment, `++` or `--` over plain values (`??`, `? :`, `===`, `!`);
+ * a template over them; or an array or object literal of them. Such a `const` holds the environment without
+ * acting on it while Vitest collects. Anything else (a call, `new`, a getter or `toString` method,
+ * an assignment) may act on it, so it fails.
  */
-function isPlainInitializer(node) {
-  const acts = (n) => {
-    if (ts.isFunctionLike(n) || ts.isNewExpression(n) || ts.isDeleteExpression(n) || ts.isTaggedTemplateExpression(n)) return true;
-    if (ts.isCallExpression(n)) {
-      const callee = unwrap(n.expression);
-      if (!(ts.isPropertyAccessExpression(callee) && ts.isIdentifier(unwrap(callee.expression)) && unwrap(callee.expression).text === "process")) return true;
-    }
-    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
-      [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(n.operator)) return true;
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
-      return true;
-    }
-    return ts.forEachChild(n, (c) => (acts(c) ? true : undefined)) === true;
-  };
-  return !acts(node);
+function isPlainInitializer(node, bindings, seen = new Set()) {
+  const plain = (n) => isPlainInitializer(n, bindings, seen);
+  node = unwrap(node);
+  if (ts.isNumericLiteral(node) || ts.isStringLiteralLike(node)) return true;
+  if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind)) return true;
+  if (ts.isTemplateExpression(node)) return node.templateSpans.every((span) => plain(span.expression));
+  if (ts.isPrefixUnaryExpression(node)) {
+    return node.operator !== ts.SyntaxKind.PlusPlusToken && node.operator !== ts.SyntaxKind.MinusMinusToken && plain(node.operand);
+  }
+  if (ts.isBinaryExpression(node)) return !isAssignment(node.operatorToken.kind) && plain(node.left) && plain(node.right);
+  if (ts.isConditionalExpression(node)) return plain(node.condition) && plain(node.whenTrue) && plain(node.whenFalse);
+  if (ts.isArrayLiteralExpression(node)) return node.elements.every(plain);
+  if (ts.isObjectLiteralExpression(node)) {
+    return node.properties.every((p) =>
+      (ts.isPropertyAssignment(p) && typeof propertyKey(p.name) === "string" && plain(p.initializer)) ||
+      (ts.isShorthandPropertyAssignment(p) && plain(p.name)));
+  }
+  if (isProcess(node, bindings) || isProcessEnv(node, bindings)) return true;
+  if (isMemberLink(node)) {
+    const owner = unwrap(node.expression);
+    if (linkName(node) === undefined) return false;
+    return isProcessEnv(owner, bindings) || (isProcess(owner, bindings) && PROCESS_FACTS.has(linkName(node))) ||
+      (isMemberLink(owner) && linkName(owner) === "versions" && isProcess(unwrap(owner.expression), bindings));
+  }
+  if (ts.isCallExpression(node)) {
+    const callee = unwrap(node.expression);
+    return node.arguments.length === 0 && isMemberLink(callee) && PROCESS_CALLS.has(linkName(callee)) &&
+      isProcess(unwrap(callee.expression), bindings);
+  }
+  if (!ts.isIdentifier(node)) return false;
+  if (node.text === "undefined" && isGlobalName(node, bindings)) return true;
+  const decls = bindings.declarationsOf(node);
+  if (decls.length !== 1) return false;
+  // `const { PG_URL } = process.env`: the `const` that destructures the name (its pattern is read
+  // where it reads the environment, in `siteOf`).
+  let [decl] = decls;
+  while (ts.isBindingElement(decl)) decl = decl.parent.parent;
+  if (!isConstDeclaration(decl) || seen.has(decl)) return false;
+  seen.add(decl);
+  return plain(decl.initializer);
+}
+
+function isAssignment(kind) {
+  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+}
+
+/** Whether `node` is `process`: the global, one imported from `node:process`, or a `const` holding one. */
+function isProcess(node, bindings) {
+  if (!ts.isIdentifier(node)) return false;
+  if (node.text === "process" && readsEnvironment(node, bindings)) return true;
+  return constHolds(node, bindings, (init) => isProcess(init, bindings));
+}
+
+/** Whether `node` is `process.env`. */
+function isProcessEnv(node, bindings) {
+  return isMemberLink(node) && linkName(node) === "env" && isProcess(unwrap(node.expression), bindings);
 }
