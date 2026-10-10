@@ -1,3 +1,4 @@
+const run = () => {};
 import * as vitest from "vitest";
 register(vitest); // HIT
 vitest[key].skip("computed namespace key", () => {}); // HIT

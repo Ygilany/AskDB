@@ -1,3 +1,4 @@
+const run = () => {};
 if (!process.env.DATABASE_URL) it.skip("needs a database", () => {}); // HIT
 url ? it("a", run) : noop; // HIT
 process.env.DATABASE_URL ? noop : describe("db", run); // HIT
@@ -185,3 +186,154 @@ for (const k in forInTables) describe(k, () => {}); // HIT
     describe("after an early return", () => {}); // HIT
   }
 }
+for (const loopBody of [() => {}]) describe("a for-of const body", loopBody); // HIT
+{
+  const loopSuites = [{ name: "pg", engines: ["pg"] }, { name: "sqlite", engines: ["sqlite"] }];
+  for (const s of loopSuites) describe.each(s.engines)("a suite defined in a loop %s", () => {}); // HIT
+  loopSuites.forEach((s) => describe.each(s.engines)("a suite defined in a forEach callback %s", () => {})); // HIT
+  for (const [, engines] of Object.entries({ pg: ["pg"], sqlite: ["sqlite"] })) describe.each(engines)("a suite defined in a loop over entries %s", () => {}); // HIT
+}
+const run = () => {};
+describe("always runs", () => {
+  it("inside a suite", () => {});
+});
+for (const c of cases) it(`parametrized ${c}`, () => {}); // HIT
+cases.forEach((c) => test(`each ${c}`, () => {})); // HIT
+function register() {
+  describe("defined in a helper", () => {}); // HIT
+}
+if (ready) {
+  expect(1).toBe(1);
+}
+const label = ok ? "describe(" : "it(";
+const value = cond ? helpers.describe("member") : other.it("member");
+const fixtures = { first: it("in an object literal", () => {}) }; // HIT
+if (ready) test.extend({});
+while (pending.length) it(`drains ${pending.pop()}`, () => {}); // HIT
+describe("suite", () => {
+  if (verbose) console.log("conditions inside a suite body are fine");
+  it("test", () => {});
+});
+if (ready) {
+  function register() {
+    describe("in a declared function: its call site is a known limit (a named helper)", run); // HIT
+  }
+}
+try {
+  describe("a try without a catch always runs", run); // HIT
+} finally {
+  cleanup();
+}
+if (ready) {
+  class Suites {
+    register() {
+      describe("in a declared class's method: its call site is a known limit (a named helper)", run); // HIT
+    }
+  }
+}
+describe.each([1, 2])("each %s", () => {
+  if (verbose) log();
+  it("inside describe.each", () => {});
+});
+rows.map((r) => it(`map ${r}`, () => {})); // HIT
+rows.flatMap((r) => [it(`flatMap ${r}`, () => {})]); // HIT
+if (ready) {
+  class Lazy {
+    field = describe("an instance field runs per instance, later", run); // HIT
+    constructor() {
+      describe("a constructor runs later", run); // HIT
+    }
+    get view() {
+      return describe("an accessor runs later", run); // HIT
+    }
+  }
+}
+describe("a suite on the left of &&", run) && done(); // HIT
+(() => {
+  describe("an IIFE that always runs", run); // HIT
+})();
+(async () => {
+  describe("an IIFE with a one-argument then", run); // HIT
+})().then(() => {});
+(async () => {
+  describe("an IIFE with finally", run); // HIT
+})().finally(() => {});
+describe.each`
+  engine
+  ${"sqlite"}
+`("a tagged-template table with tests inside $engine", () => {
+  it("inside", () => {});
+});
+for (const engine of [...ENGINES, "extra"]) it(`a plain spread in a loop ${engine}`, () => {}); // HIT
+suites.push(...ROWS.map((row) => describe(`map result spread into push ${row}`, run))); // HIT
+await Promise.all(ROWS.map((row) => it(`map result passed on ${row}`, () => {}))); // HIT
+for (const [engine] of Object.entries({ ...BASE_ENGINES })) describe(`a plain object spread ${engine}`, () => {}); // HIT
+for (const [engine] of Object.entries({ postgres: process.env.PG_URL ?? "postgres://localhost" })) describe(`a fixed table ${engine}`, () => {}); // HIT
+for (let i = 0; i < 2; i++) it(`a classic for loop ${i}`, () => {}); // HIT
+let attempts = 0;
+do {
+  it(`a do-while loop ${attempts}`, () => {}); // HIT
+} while (++attempts < 2);
+try {
+  ready = true;
+} finally {
+  describe("a finally block always runs", run); // HIT
+}
+const lookup = {};
+lookup[it("a plain element access key", run)]; // HIT
+tagged`${describe("inside a tagged template's value", run)}`; // HIT
+let attemptsLeft = 0;
+for (describe("a for initializer runs once", run); attemptsLeft < (process.env.DATABASE_URL ? 1 : 0); ) attemptsLeft++; // HIT
+new (class { constructor() { describe("a class expression constructed unconditionally", run); } })(); // HIT
+describe.each([["pg"]].slice(0 + 0))("a slice bound computed without a pick %s", () => {});
+describe.each([["pg"]].slice(-1))("a negative slice bound without a pick %s", () => {});
+describe.each([["pg"]].slice(`${1}`.length))("a template without a pick %s", () => {});
+register(class { static s = describe("a static field runs when the class does", run); }); // HIT
+[["pg"]].values().map(([e]) => describe(`a lazy map drained with no pick ${e}`, run)).toArray(); // HIT
+for (;;) {
+  describe("a for loop with no condition", run); // HIT
+  break;
+}
+[process.env.PG_URL ? "pg" : "sqlite"].map(String).forEach((e) => describe(`map keeps the size ${e}`, run)); // HIT
+Array.from([process.env.PG_URL ? "pg" : "sqlite", "my"]).forEach((e) => describe(`Array.from keeps the size ${e}`, run)); // HIT
+[process.env.PG_URL ? "pg" : "sqlite", "my"].values().toArray().forEach((e) => describe(`an iterator copy keeps the size ${e}`, run)); // HIT
+const mappedCount = [1].map((e) => { it("mapped " + e, () => {}); return e; }).length; // HIT
+for (const e of [{ name: "pg" }, { name: "sqlite" }]) {
+  if (e.name === "x") { for (const y of [1]) { if (y) console.log(y); } }
+  describe(e.name, () => {}); // HIT
+}
+const fixedSuites = [{ name: "pg", engines: ["pg"] }];
+for (const s of fixedSuites) describe.each(s.engines)("a loop variable's fixed table %s", () => {}); // HIT
+describe("a suite body's test API, called directly", (test) => {
+  test("query", () => {});
+});
+describe.each([1, 2])("a row, not the test API %s", (test) => {
+  expect(test).toBeGreaterThan(0);
+});
+it("a test context, not the test API", (test) => {
+  expect(test).toBeDefined();
+});
+describe("a second parameter", (test, extra) => {
+  expect(extra).toBeUndefined();
+});
+const noParameterBody = () => {
+  it("inside", () => {}); // HIT
+};
+const suiteTimeout = 60 * 1000;
+describe("a timeout held in a constant", () => {}, suiteTimeout);
+describe("a negative timeout", () => {}, -1);
+function suiteInsideAFunction() {
+  describe("an arrow body, whose arguments are the outer function's", () => { // HIT
+    expect(arguments.length).toBe(0);
+  });
+}
+new class { constructor() { describe("a suite in a constructor called without parentheses", () => {}); } }; // HIT
+describe("a suite body that returns early", () => {
+  if (!process.env.DATABASE_URL) return;
+  it("after the early return", () => {}); // HIT
+});
+describe.each([1])("an each body that returns early %s", () => {
+  for (const x of [1]) if (x) break;
+  if (!process.env.DATABASE_URL) return;
+  describe("after a return, past a loop whose break stays inside it", () => {}); // HIT
+});

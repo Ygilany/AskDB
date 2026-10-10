@@ -5,7 +5,7 @@ import {
   calleeOf,
   invokedBy,
   isMemberLink,
-  isPlainAssignment,
+  isValueReference,
   isVariableInitializer,
   isWrapper,
   lineOf,
@@ -32,8 +32,9 @@ import {
   KIND_SUITE_FACTORY,
   testFnName,
 } from "./bindings.mjs";
-import { rowsPicked, underCondition } from "./conditions.mjs";
-import { argumentsGate, optionsUnreadable, suiteBodyUnreadable } from "./arguments.mjs";
+import { argumentsVerdict } from "./arguments.mjs";
+import { definedOffPlainPath, resultUsed } from "./placement.mjs";
+import { tableVerdict } from "./tables.mjs";
 
 const PRAGMA = /^\/\/\s*check-test-gating-ignore-next-line\s*:\s*\S/;
 
@@ -75,22 +76,6 @@ function emptyRef(start) {
  */
 function unreadableRef(id) {
   return { ...emptyRef(id), unreadable: true };
-}
-
-/**
- * Whether identifier `id` is a value reference, not a name: a member (`obj.test`), a declared
- * name (variable, parameter, function, property, method, enum member, type parameter, JSX
- * attribute), an import or export name, a label, a JSX tag, or a type.
- */
-function isValueReference(id) {
-  const parent = id.parent;
-  if (parent.name === id) return ts.isShorthandPropertyAssignment(parent);
-  if (parent.propertyName === id || parent.label === id) return false;
-  if ((ts.isJsxOpeningElement(parent) || ts.isJsxSelfClosingElement(parent) || ts.isJsxClosingElement(parent)) && parent.tagName === id) {
-    return false;
-  }
-  // `typeof import("vitest").describe` names a type: the qualifier of an import type.
-  return !(ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent) || ts.isImportTypeNode(parent));
 }
 
 /**
@@ -149,6 +134,8 @@ function testRef(start, fnName, bindings) {
   const suite = definesSuite(fnName, ownLinks);
   // Links after the last `.extend`; a call through Vitest modifiers only defines a suite or test.
   const defines = call !== undefined && !extendCallPending && ownLinks.every((l) => MODIFIERS.has(l));
+  const args = defines ? argumentsVerdict(call, suite, bindings) : undefined;
+  const table = defines ? tableVerdict(rowArgs, bindings) : undefined;
   return {
     ...emptyRef(start),
     suite,
@@ -157,22 +144,11 @@ function testRef(start, fnName, bindings) {
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
-      (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))) || (defines && optionsUnreadable(call, bindings)),
-    conditional: defines && underCondition(call, bindings),
-    runtimeGate: defines && (argumentsGate(call, suite, bindings) || rowsPicked(rowArgs, bindings)),
+    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (defines && resultUsed(call)) ||
+      args === "unreadable" || table === "unreadable",
+    conditional: defines && definedOffPlainPath(call, bindings),
+    runtimeGate: args === "gate" || table === "gate",
   };
-}
-
-/**
- * Whether a suite call's result is kept or read (`const c = describe(…)`, `describe(…).test`): the
- * collector it returns carries a test API the check can't follow.
- */
-function suiteResultHeld(call) {
-  const outer = outermostWrapper(call);
-  const p = outer.parent;
-  return memberOn(outer) !== undefined || isVariableInitializer(outer) ||
-    (isPlainAssignment(p) && p.right === outer);
 }
 
 /**

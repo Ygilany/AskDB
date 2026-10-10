@@ -25,11 +25,12 @@
 // TypeScript's binder, so any other local declaration that shadows one (a callback's parameter
 // `it`, an import of `test` from another module) is not Vitest's.
 //
-// What is rejected and allowed is listed in CONTRIBUTING.md ("Integration Tests"); RULES below
-// implements it and lists what the check can't see (among them a gate inside a helper called
-// under a condition, options in a `let`, and `ctx.skip()`), and ADR 0019
-// (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records why. A use the check
-// can't read fails closed rather than passing.
+// The check accepts only plain forms and fails everything else (ADR 0019,
+// docs/adrs/0019-test-gating-check-parses-with-typescript.md, records why): a suite or test is
+// defined in straight-line code (check-test-gating/placement.mjs), its arguments take a few plain
+// shapes (arguments.mjs), and a `.each` table is built from code that reads no environment
+// (tables.mjs). CONTRIBUTING.md ("Integration Tests") lists the forms and what the check can't
+// see (among them `ctx.skip()` and a table imported from another module); RULES below reports them.
 // To exempt one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
 //
@@ -46,7 +47,6 @@ const { INDIRECT_LINKS, ts, oneFileProgram } = await import(moduleUrl("ast.mjs")
 const { GATE_LINKS, SUITE_GATE_LINKS, vitestBindings, integrationModuleResolver } = await import(moduleUrl("bindings.mjs"));
 const { collectRefs, pragmaLines } = await import(moduleUrl("refs.mjs"));
 const { workspaceDirs, walk } = await import(moduleUrl("workspace.mjs"));
-
 
 /** Whether `ref` gates by a link in `gateLinks`, a run-time modifier, or its options argument. */
 function gatedByHand(ref, gateLinks) {
@@ -76,18 +76,19 @@ export const RULES = [
     why: "selects describe/suite/it/test with a ternary; use integrationSuite()",
   },
   {
-    // A describe/suite/it/test call that only runs when a condition holds.
+    // A describe/suite/it/test call outside straight-line code (see placement.mjs).
     id: "conditional-call",
     test: (ref) => ref.conditional,
-    why: "defines a suite or test only under a condition; use integrationSuite()",
+    why: "defines a suite or test outside straight-line code (under a condition, in a loop, a callback or a helper, or after " +
+      "an early exit); define it directly, and use integrationSuite() for one that needs the environment",
   },
   {
-    // Anything the check can't follow: an alias, an argument, `x && describe`, `describe.call(…)`,
-    // a suite's result kept, options built at run time. It fails closed.
+    // Anything outside the plain forms: an alias, `describe.call(…)`, a kept result, arguments or a
+    // `.each` table the check can't read. It fails closed.
     id: "unclassified-use",
     test: (ref) => ref.unreadable || ref.links.some((l) => INDIRECT_LINKS.has(l)),
-    why: "uses describe/suite/it/test in a way the check can't read (an alias, a kept suite result, options built at run time); " +
-      "call it directly with literal options, or use integrationSuite()",
+    why: "uses describe/suite/it/test in a way the check can't read (an alias, a kept result, or arguments or a table " +
+      "outside the plain forms); call it directly with an inline body, literal options and a literal or const table, or use integrationSuite()",
   },
 ];
 

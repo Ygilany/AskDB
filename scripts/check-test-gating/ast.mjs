@@ -103,11 +103,6 @@ export function calleeParts(call) {
   return { owner: ts.isIdentifier(receiver) ? receiver.text : undefined, name: linkName(callee) };
 }
 
-/** Whether `node` is a call or `new` expression. */
-export function isCallOrNew(node) {
-  return ts.isCallExpression(node) || ts.isNewExpression(node);
-}
-
 /** The call whose callee is `node`, through wrappers (`node(…)`, `(node as T)(…)`), or undefined. */
 export function invokedBy(node) {
   const outer = outermostWrapper(node);
@@ -118,12 +113,6 @@ export function invokedBy(node) {
 /** Whether `node` is the initializer of a variable declaration (`const x = node`). */
 export function isVariableInitializer(node) {
   return ts.isVariableDeclaration(node.parent) && node.parent.initializer === node;
-}
-
-/** The receiver of a method call (`x` in `x.f(…)`), or undefined for any other call. */
-export function receiverOf(call) {
-  const callee = ts.isCallExpression(call) ? unwrap(call.expression) : undefined;
-  return callee !== undefined && isMemberLink(callee) ? callee.expression : undefined;
 }
 
 /** A function's first parameter, past a TypeScript `this` annotation, or undefined. */
@@ -156,7 +145,7 @@ const PICK_OPERATORS = new Set([
 ]);
 
 /** The operands a run-time choice picks between (`a ? b : c` gives `b`, `c`; `a && b` gives both), or none. */
-export function pickBranches(node) {
+function pickBranches(node) {
   if (ts.isConditionalExpression(node)) return [node.whenTrue, node.whenFalse];
   if (isBinaryPick(node)) return [node.left, node.right];
   return [];
@@ -168,31 +157,20 @@ export function isPlainAssignment(node) {
 }
 
 /** Whether `node` is itself a pick: `? :`, `&&`, `||`, `??` or one of their assignment forms. */
-export function isPick(node) {
+function isPick(node) {
   return pickBranches(node).length > 0;
 }
 
 /**
- * Whether `isLeaf` holds for every value a pick in `node` can produce, each seen through `resultOf`;
- * a node that isn't a pick is its own only value.
- */
-export function everyPickLeaf(node, isLeaf) {
-  node = resultOf(node);
-  const branches = pickBranches(node);
-  return branches.length > 0 ? branches.every((b) => everyPickLeaf(b, isLeaf)) : isLeaf(node);
-}
-
-/**
- * Whether `node` holds a pick anywhere inside it, outside a nested function, whatever the pick
- * decides (`{ a: url ? 1 : 2 }` holds one). Compare `valueIsPicked` (the value itself is chosen)
- * and `sizeIsPicked` (a table's length is) in `conditions.mjs`.
+ * Whether `node` holds a pick (`? :`, `&&`, `||`, `??`) anywhere inside it, outside a nested
+ * function (`{ a: url ? 1 : 2 }` holds one).
  */
 export function containsPick(node) {
   return someInside(node, isPick);
 }
 
 /** Whether `node` is `a && b`, `a || b`, `a ?? b` or one of their assignment forms. */
-export function isBinaryPick(node) {
+function isBinaryPick(node) {
   return ts.isBinaryExpression(node) && PICK_OPERATORS.has(node.operatorToken.kind);
 }
 
@@ -204,7 +182,7 @@ export function someInside(node, test) {
 }
 
 // A property key computed at run time (`{ [expr]: … }`); as an options key it could be `skip`.
-export const RUNTIME_KEY = Symbol("runtime key");
+const RUNTIME_KEY = Symbol("runtime key");
 
 /** A property or binding name as text (an options key, a destructured name), `RUNTIME_KEY` for `[expr]`, or undefined for a name the check skips. */
 export function propertyKey(name) {
@@ -249,3 +227,28 @@ export function destructuredFrom(element) {
 // Function-protocol links that call the function before them indirectly (`describe.call(…)`,
 // `rows.push.apply(rows, […])`, `rows.push.bind(rows)(…)`).
 export const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
+
+/**
+ * Whether identifier `id` is a value reference, not a name: a member (`obj.test`), a declared
+ * name (variable, parameter, function, property, method, enum member, type parameter, JSX
+ * attribute), an import or export name, a label, a JSX tag, or a type.
+ */
+export function isValueReference(id) {
+  const parent = id.parent;
+  if (parent.name === id) return ts.isShorthandPropertyAssignment(parent);
+  if (parent.propertyName === id || parent.label === id) return false;
+  if ((ts.isJsxOpeningElement(parent) || ts.isJsxSelfClosingElement(parent) || ts.isJsxClosingElement(parent)) && parent.tagName === id) {
+    return false;
+  }
+  // `typeof import("vitest").describe` names a type: the qualifier of an import type.
+  return !(ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent) || ts.isImportTypeNode(parent));
+}
+
+/**
+ * Whether identifier `id` names a global (`Number`, `Array`, `process`, `undefined`): the file
+ * declares nothing it resolves to. The check's program has no lib, so a built-in has no declaration
+ * and a local shadow (`const Array = …`, a parameter named `undefined`) has one.
+ */
+export function isGlobalName(id, bindings) {
+  return ts.isIdentifier(id) && bindings.declarationsOf(id).length === 0;
+}

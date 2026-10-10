@@ -1,7 +1,21 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { bindingHolder, calleeOf, calleeParts, destructuredFrom, firstParameter, importedFrom, isMemberLink, linkName, memberOn, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
+import {
+  bindingHolder,
+  calleeOf,
+  calleeParts,
+  destructuredFrom,
+  firstParameter,
+  importedFrom,
+  isMemberLink,
+  linkName,
+  memberOn,
+  outermostWrapper,
+  resultOf,
+  ts,
+  unwrap,
+} from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // Vitest's `vi` object, under both names it exports (`const vi = vitest`).
@@ -19,9 +33,9 @@ const KIND_REQUIRE = "require"; // a function from `createRequire(…)`
 const KIND_EXPORT = "export"; // another Vitest export the check reads (`vi`, a hook), with its `name`
 export const KIND_AMBIGUOUS = "ambiguous"; // declarations that disagree about a Vitest value
 // What `vitestCallKind()` finds a call to define.
-export const CALL_SUITE = "suite";
+const CALL_SUITE = "suite";
 const CALL_TEST = "test";
-export const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
+const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
 const SUITE_FNS = new Set(["describe", "suite"]);
 // Links whose suite body receives a table row, not the test API: `describe.each(rows)(name, (row) => …)`.
 export const ROW_LINKS = new Set(["each", "for"]);

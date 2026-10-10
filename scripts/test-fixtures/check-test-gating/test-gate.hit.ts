@@ -1,3 +1,4 @@
+const run = () => {};
 it.skipIf(!process.env.DATABASE_URL)("gated test", () => {}); // HIT
 test.runIf(ok)("gated test", () => {}); // HIT
 it.concurrent.skipIf(!ok)("concurrent gated test", () => {}); // HIT
@@ -12,10 +13,8 @@ it("quoted key", { "skip": !url }, () => {}); // HIT
 it("asserted options", ({ skip: !url }) as TestOptions, () => {}); // HIT
 it("satisfies options", { todo: !ok } satisfies TestOptions, () => {}); // HIT
 it.each([1, 2])("each with options %s", { skip: !ok }, () => {}); // HIT
-it.each((url && [url]) || [])("rows chosen by && and || %s", () => {}); // HIT
 it("options chosen by a ternary", ok ? { skip: true } : {}, () => {}); // HIT
 it("a body picked by &&", process.env.DATABASE_URL && (async () => {})); // HIT
-it("a timeout or a body", () => {}, ok ? 5 : fn); // HIT
 async function awaitedBody() {
   it("an awaited body pick", await (process.env.DATABASE_URL ? async () => {} : undefined)); // HIT
 }
@@ -91,13 +90,28 @@ function declaredTimeoutBody() {}
 it("a timeout slot holding a declared function through Number", {}, Number(process.env.DATABASE_URL ? declaredTimeoutBody : 0)); // HIT
 let letBody = async () => {};
 it("a timeout slot holding a let through Number", {}, Number(process.env.DATABASE_URL ? letBody : 0)); // HIT
-{
-  const constPickedBody = process.env.DATABASE_URL ? () => {} : undefined;
-  it("a test body held in a const pick", constPickedBody); // HIT
-  it("a test body held in a const pick after options", {}, constPickedBody); // HIT
-  it.each([1])("a row test body held in a const pick %s", constPickedBody); // HIT
-  let letBodyHeld = process.env.DATABASE_URL ? () => {} : undefined;
-  it("a test body held in a let", letBodyHeld); // HIT
-  const constSkipOptions = { skip: !process.env.DATABASE_URL };
-  it("options held in a const", constSkipOptions, () => {}); // HIT
-}
+it("options built by Object.fromEntries over a pick", Object.fromEntries(process.env.DATABASE_URL ? [] : [["skip", true]]), () => {}); // HIT
+it("options parsed from a picked string", JSON.parse(process.env.DATABASE_URL ? "{}" : '{"skip":true}'), () => {}); // HIT
+it("options built from a skip entry", Object.fromEntries([["skip", !process.env.DATABASE_URL]]), () => {}); // HIT
+it("options parsed from a template", JSON.parse(`{"skip": ${!process.env.DATABASE_URL}}`), () => {}); // HIT
+it("options from a tagged template", opts`${process.env.DATABASE_URL ? "" : "skip"}`, () => {}); // HIT
+it("options from a picked receiver", (process.env.DATABASE_URL ? fastOptions : slowOptions).build(), () => {}); // HIT
+it("options from a helper over a fallback", buildOptions(process.env.MODE ?? fallbackMode), () => {}); // HIT
+it("options from a look-alike parseInt", Foo.parseInt(process.env.MODE ?? fallbackMode), () => {}); // HIT
+it("options built with a key held in a const", Object.fromEntries([[SKIP, !process.env.DATABASE_URL]]), () => {}); // HIT
+it("options from a helper over the environment", optionsFor(process.env.DATABASE_URL), () => {}); // HIT
+it("options indexed by a literal pick inside a call", Object.assign({}, [{}, { skip: true }][process.env.DATABASE_URL ? 0 : 1]), () => {}); // HIT
+it("options built by a call beside a named body", Object.fromEntries([["skip", !process.env.DATABASE_URL]]), runDb); // HIT
+it("options parsed from a template beside a named body", JSON.parse(`{"skip": ${!process.env.DATABASE_URL}}`), runDb); // HIT
+it("options from a helper beside a bound body", optionsFor(process.env.DATABASE_URL), runDb.bind(null)); // HIT
+it("options built by a call on a call", getOpts()(process.env.DATABASE_URL), () => {}); // HIT
+const dbTest = test.extend({ ...baseFixtures, todo: async ({}, use) => use([]) });
+it("skip: false", { skip: false }, () => {});
+test.scoped({ skip: maybe });
+it("a computed literal key", { ["skip"]: true }, run);
+it(process.env.NAME ?? "a name picked at run time", () => {});
+it("an options object nested in a body's closure", () => {
+  const options = { skip: !process.env.DATABASE_URL };
+  expect(options).toBeDefined();
+});
+it("a fails key under meta", { meta: { fails: process.env.CI === "true" } }, () => {}); // HIT
