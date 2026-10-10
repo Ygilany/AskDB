@@ -92,14 +92,6 @@ describe.each(_.map([process.env.PG_URL ? "pg" : null, "sqlite"], (e) => e).filt
 }
 const pickedUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
 describe.each(pickedUrls)("a picked table held in a const %s", () => {}); // HIT
-const filteredEngines = [process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean);
-describe.each(filteredEngines)("a filtered table held in a const %s", () => {}); // HIT
-const pushedUrls: string[] = [];
-if (process.env.DATABASE_URL) pushedUrls.push(process.env.DATABASE_URL);
-const spreadPushed = ["sqlite"];
-spreadPushed.push(...(process.env.PG_URL ? ["pg"] : []));
-const truncated = ["pg", "sqlite"];
-if (!process.env.PG_URL) truncated.length = 1;
 describe.each([process.env.PG_URL, process.env.MYSQL_URL].filter(Boolean))("env values filtered %s", () => {}); // HIT
 describe.each(Object.values({ pg: process.env.PG_URL }).filter(Boolean))("env values in an object filtered %s", () => {}); // HIT
 const constPgUrl = process.env.DATABASE_URL;
@@ -110,44 +102,14 @@ describe.each(constPickRows.filter(Boolean))("a const table holding a pick, filt
 describe.each([...new Set(constPickRows)])("a const table holding a pick, deduped %s", () => {}); // HIT
 const { PG_URL: destructuredPgUrl } = process.env;
 describe.each([destructuredPgUrl, "sqlite"].filter(Boolean))("an env name destructured from process.env %s", () => {}); // HIT
-const engineMap = new Map([["sqlite", 1]]);
-if (process.env.PG_URL) engineMap.set("pg", 2);
-const indexWritten = ["sqlite"];
-if (process.env.PG_URL) indexWritten[1] = "pg";
-const lengthDecremented = ["pg", "sqlite"];
-if (!process.env.PG_URL) lengthDecremented.length -= 1;
-const lengthStepped = ["pg", "sqlite"];
-if (!process.env.PG_URL) lengthStepped.length--;
-let reassignedRows = ["sqlite"];
-if (process.env.PG_URL) reassignedRows = [...reassignedRows, "pg"];
 import { env as processEnv } from "node:process";
 describe.each([processEnv.PG_URL, "sqlite"].filter(Boolean))("env from node:process filtered %s", () => {}); // HIT
 import { env as bareProcessEnv } from "process";
 describe.each([bareProcessEnv.PG_URL, "sqlite"].filter(Boolean))("env from process filtered %s", () => {}); // HIT
-let letPicked = process.env.PG_URL ? ["pg", "sqlite"] : ["sqlite"];
-let destructReassigned = ["sqlite"];
-if (process.env.PG_URL) [destructReassigned] = [["sqlite", "pg"]];
-const dotTables = { sqlite: 1 };
-if (process.env.PG_URL) dotTables.pg = 2;
-const deletedTables = { sqlite: 1, pg: 2 };
-if (!process.env.PG_URL) delete deletedTables.pg;
 import processDefault from "node:process";
 describe.each([processDefault.env.PG_URL, "sqlite"].filter(Boolean))("env through a default process import %s", () => {}); // HIT
 const aliasedEnv = process.env;
 describe.each([aliasedEnv.PG_URL, "sqlite"].filter(Boolean))("env through a const alias %s", () => {}); // HIT
-const orderA = ["sqlite"];
-const orderB: string[] = [];
-for (const x of orderB) orderA.push(x);
-if (process.env.PG_URL) orderA.push("pg");
-for (const x of orderA) orderB.push(x);
-let loopAssigned: string[] = [];
-for (loopAssigned of [["sqlite"], ["pg"]]) {}
-const patternLength = ["pg", "sqlite"];
-if (!process.env.PG_URL) [patternLength.length] = [1];
-const objectPatternLength = ["pg", "sqlite"];
-if (!process.env.PG_URL) ({ n: objectPatternLength.length } = { n: 1 });
-const loopLength = ["pg", "sqlite"];
-if (!process.env.PG_URL) for (loopLength.length of [1]) {}
 import * as processNs from "node:process";
 describe.each([processNs.env.PG_URL, "sqlite"].filter(Boolean))("env through a namespace process import %s", () => {}); // HIT
 {
@@ -190,8 +152,6 @@ describe.each([processNs.env.PG_URL, "sqlite"].filter(Boolean))("env through a n
   describe.each([["pg", process.env.PG_URL], ["sqlite", ":memory:"]].filter(([, u]) => u))("env read inside a tuple row %s", () => {}); // HIT
   describe.each(Object.entries({ pg: { url: process.env.PG_URL }, sqlite: { url: ":memory:" } }).filter(([, c]) => c.url))("env read inside an object value %s", () => {}); // HIT
   describe.each([process.env.PG_URL?.trim(), "sqlite"].filter(Boolean))("env read under a method call %s", () => {}); // HIT
-  const trimmedUrl = process.env.PG_URL?.trim();
-  describe.each([trimmedUrl, "sqlite"].filter(Boolean))("a const holding a trimmed env read %s", () => {}); // HIT
 }
 {
   const processAlias = process;

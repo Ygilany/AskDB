@@ -33,6 +33,7 @@ import {
   testFnName,
 } from "./bindings.mjs";
 import { argumentsVerdict } from "./arguments.mjs";
+import { environmentReadsAtCollection } from "./environment.mjs";
 import { definedOffPlainPath, resultUsed } from "./placement.mjs";
 import { tableVerdict } from "./tables.mjs";
 
@@ -66,7 +67,7 @@ function isReadableNamespaceUse(id) {
 function emptyRef(start) {
   return {
     suite: false, links: [], runtimeModifier: false, chain: start, invoked: false, unreadable: false,
-    conditional: false, runtimeGate: false, line: lineOf(start),
+    conditional: false, runtimeGate: false, environment: false, line: lineOf(start),
   };
 }
 
@@ -241,5 +242,7 @@ export function collectRefs(sf, bindings) {
     ts.forEachChild(node, visit);
   };
   visit(sf);
+  // `if (!process.env.URL) rows.length = 0`: the environment read while Vitest collects.
+  for (const node of environmentReadsAtCollection(sf, bindings)) refs.push({ ...emptyRef(node), environment: true });
   return refs;
 }

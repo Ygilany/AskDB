@@ -1,9 +1,9 @@
 // Straight-line definitions: at the top level, in a suite or `.each` body, awaited, or after
 // statements that can't leave the block first.
 const run = () => {};
-describe("at the top level", run);
+describe("at the top level", () => {});
 it("a test at the top level", run);
-await describe("awaited", run);
+await describe("awaited", () => {});
 describe("a suite body", () => {
   const value = 1;
   it("after a declaration", run);

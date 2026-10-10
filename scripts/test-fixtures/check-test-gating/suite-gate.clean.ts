@@ -13,8 +13,8 @@ describe.each(pushedInOtherHooks)("a table pushed to in every other hook %s", ()
 // read, and table inputs used elsewhere only by reads, tests and hooks.
 import { IMPORTED_ROWS } from "./rows";
 const noParameter = () => {};
-describe("a suite with plain options", { timeout: 5_000 }, noParameter);
-describe("a suite with skip false", { skip: false }, noParameter);
+describe("a suite with plain options", { timeout: 5_000 }, () => {});
+describe("a suite with skip false", { skip: false }, () => {});
 describe.each([["pg"], ["sqlite"]])("a literal table %s", () => {});
 const engines = ["pg", "sqlite"];
 describe.each(engines)("a const table %s", () => {});
@@ -41,3 +41,9 @@ beforeAll(() => { engines.length = 0; });
 describe.each(Array.from(engines))("a table copied by Array.from %s", () => {});
 const engineKeys = Object.keys({ pg: 1 });
 describe.each(engineKeys)("keys of a literal %s", () => {});
+const builtInRows = [Math.max(1, 2), JSON.stringify({ a: 1 }), Number("3"), new Date(0).toISOString()];
+describe.each(builtInRows)("a table built with built-ins %s", () => {});
+const sourceRows = [["pg", 1], ["sqlite", 2]];
+describe.each(sourceRows.map(([name]) => name))("a table mapped from a const %s", () => {});
+describe.each(sourceRows.slice(0, 1))("a table sliced from a const %s", () => {});
+describe.each(sourceRows.flatMap(([name]) => [name, `${name}-replica`]))("a table flat-mapped from a const %s", () => {});

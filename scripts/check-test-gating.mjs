@@ -28,8 +28,9 @@
 // The check accepts only plain forms and fails everything else (ADR 0019,
 // docs/adrs/0019-test-gating-check-parses-with-typescript.md, records why): a suite or test is
 // defined in straight-line code (check-test-gating/placement.mjs), its arguments take a few plain
-// shapes (arguments.mjs), and a `.each` table is built from code that reads no environment
-// (tables.mjs). CONTRIBUTING.md ("Integration Tests") lists the forms and what the check can't
+// shapes (arguments.mjs), a `.each` table is built from code that reads no environment
+// (tables.mjs), and the environment is read only where collection can't depend on it
+// (environment.mjs). CONTRIBUTING.md ("Integration Tests") lists the forms and what the check can't
 // see (among them `ctx.skip()` and a table imported from another module); RULES below reports them.
 // To exempt one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
@@ -89,6 +90,13 @@ export const RULES = [
     test: (ref) => ref.unreadable || ref.links.some((l) => INDIRECT_LINKS.has(l)),
     why: "uses describe/suite/it/test in a way the check can't read (an alias, a kept result, or arguments or a table " +
       "outside the plain forms); call it directly with an inline body, literal options and a literal or const table, or use integrationSuite()",
+  },
+  {
+    // The environment read where code runs while Vitest collects (see environment.mjs).
+    id: "collection-env",
+    test: (ref) => ref.environment,
+    why: "reads the environment while Vitest collects suites; read it in a test, a hook, a plain const or integrationSuite()'s " +
+      "options, so nothing that defines a suite or table depends on it",
   },
 ];
 

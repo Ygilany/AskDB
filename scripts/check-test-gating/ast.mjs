@@ -174,11 +174,14 @@ function isBinaryPick(node) {
   return ts.isBinaryExpression(node) && PICK_OPERATORS.has(node.operatorToken.kind);
 }
 
-/** Whether `test` holds for `node` or anything inside it, outside a nested function. */
-export function someInside(node, test) {
-  if (ts.isFunctionLike(node)) return false;
+/**
+ * Whether `test` holds for `node` or anything inside it, not looking into a node `stop` holds for
+ * (by default a nested function).
+ */
+export function someInside(node, test, stop = ts.isFunctionLike) {
+  if (stop(node)) return false;
   if (test(node)) return true;
-  return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;
+  return ts.forEachChild(node, (child) => (someInside(child, test, stop) ? true : undefined)) === true;
 }
 
 // A property key computed at run time (`{ [expr]: … }`); as an options key it could be `skip`.
@@ -196,6 +199,11 @@ export function propertyKey(name) {
 
 /** The module an import declaration names, through its specifier, clause or binding. */
 export function importedFrom(decl) {
+  // `import p = require("node:process")`
+  if (ts.isImportEqualsDeclaration(decl)) {
+    const ref = decl.moduleReference;
+    return ts.isExternalModuleReference(ref) && ts.isStringLiteral(ref.expression) ? ref.expression.text : undefined;
+  }
   let n = decl;
   while (n && !ts.isImportDeclaration(n)) n = n.parent;
   return n && ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : undefined;
@@ -251,4 +259,53 @@ export function isValueReference(id) {
  */
 export function isGlobalName(id, bindings) {
   return ts.isIdentifier(id) && bindings.declarationsOf(id).length === 0;
+}
+
+/** Whether `decl` is a `const` declaration with an initializer (`const x = …`, `const { a } = …`). */
+export function isConstDeclaration(decl) {
+  return ts.isVariableDeclaration(decl) && decl.initializer !== undefined && ts.isVariableDeclarationList(decl.parent) &&
+    (decl.parent.flags & ts.NodeFlags.Const) !== 0;
+}
+
+/** Whether `decl` is an import declaration of a name (`import x`, `import { x }`, `import * as x`, `import x = …`). */
+export function isImport(decl) {
+  return ts.isImportSpecifier(decl) || ts.isImportClause(decl) || ts.isNamespaceImport(decl) || ts.isImportEqualsDeclaration(decl);
+}
+
+// Names through which code reads the environment: `process.env`, `globalThis.process`, `global.process`.
+const ENVIRONMENT_NAMES = new Set(["process", "globalThis", "global"]);
+const PROCESS_MODULES = new Set(["process", "node:process"]);
+
+// What `import.meta` may be read for without reading the environment: the file's own location, and
+// `import.meta.vitest`, Vitest's in-source test API (which the binder reads as Vitest).
+const IMPORT_META_PATHS = new Set(["url", "dirname", "filename", "vitest"]);
+// Calls that load a module by name: `import(…)`, `require(…)`, `vi.importActual(…)`, `vi.importMock(…)`.
+const LOADER_NAMES = new Set(["require", "importActual", "importMock"]);
+
+/**
+ * Whether `node` reads the environment: a `process`, `globalThis` or `global` name; `import.meta`
+ * other than `import.meta.url`, `.dirname`, `.filename` or `.vitest` (Vitest mirrors the environment into
+ * `import.meta.env`, and an alias of `import.meta` could read it); a name imported from `"process"`
+ * or `"node:process"`, by `import` or `import … = require(…)`; or a call that loads a module whose
+ * name isn't a string literal other than those two (`import("node:process")`, `require(name)`).
+ */
+export function readsEnvironment(node, bindings) {
+  if (ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword) {
+    return !(isMemberLink(node.parent) && node.parent.expression === node && IMPORT_META_PATHS.has(linkName(node.parent)));
+  }
+  if (ts.isCallExpression(node) && isLoaderCall(node)) {
+    const specifier = node.arguments[0] && unwrap(node.arguments[0]);
+    return specifier === undefined || !ts.isStringLiteralLike(specifier) || PROCESS_MODULES.has(specifier.text);
+  }
+  if (!ts.isIdentifier(node) || !isValueReference(node)) return false;
+  if (ENVIRONMENT_NAMES.has(node.text)) return true;
+  return bindings.declarationsOf(node).some((d) => isImport(d) && PROCESS_MODULES.has(importedFrom(d)));
+}
+
+/** Whether `call` loads a module by name: `import(…)`, `require(…)`, or a `require`, `importActual` or `importMock` member. */
+function isLoaderCall(call) {
+  const callee = unwrap(call.expression);
+  if (callee.kind === ts.SyntaxKind.ImportKeyword) return true;
+  if (ts.isIdentifier(callee)) return callee.text === "require";
+  return isMemberLink(callee) && LOADER_NAMES.has(linkName(callee));
 }

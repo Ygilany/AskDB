@@ -1,9 +1,8 @@
 // What a suite or test call's arguments after the name may be, for scripts/check-test-gating.mjs:
 // a few plain shapes only. Anything else fails, rather than the check trying to tell whether it
 // could depend on the environment (ADR 0019).
-import { containsPick, firstParameter, isGlobalName, propertyKey, resultOf, someInside, ts, unwrap } from "./ast.mjs";
+import { containsPick, isGlobalName, propertyKey, readsEnvironment, resultOf, someInside, ts, unwrap } from "./ast.mjs";
 import { constHolds, constInitializer, isInlineFunction } from "./bindings.mjs";
-import { readsEnvironment } from "./tables.mjs";
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a
 // missing database into a pass): Vitest's options object, a separate vocabulary from the links.
@@ -25,14 +24,13 @@ export function argumentsVerdict(call, suite, bindings) {
   if (third !== undefined) return "unreadable";
   if (first === undefined) return undefined;
   const body = (node) => isBody(node, suite, bindings);
-  const other = (node) => shapeVerdict(node, bindings);
   // `it(name, fn)`, `it(name, fn, 30_000)`: a timeout can't skip the test, so any other value is unreadable, not a gate.
   if (body(first)) return second === undefined || isPlainValue(second, bindings) ? undefined : "unreadable";
   // `it(name, { timeout })`, `it(name, { timeout }, fn)`
   if (ts.isObjectLiteralExpression(first)) {
-    return readOptions(first, suite, bindings) ?? (second === undefined || body(second) ? undefined : other(second));
+    return readOptions(first, suite, bindings) ?? (second === undefined || body(second) ? undefined : shapeVerdict(second, bindings));
   }
-  return other(first);
+  return shapeVerdict(first, bindings);
 }
 
 /** `"gate"` for an argument holding a pick or an environment read outside a nested function (`url ? fn : undefined`), else `"unreadable"`. */
@@ -41,16 +39,15 @@ function shapeVerdict(node, bindings) {
 }
 
 /**
- * Whether `node` is a body the check reads: an inline function, or a name a `const` binds to one
- * (`const run = () => {…}`; a `function` declaration can be reassigned). A suite's named body takes
- * no parameter (the test API it would get can't be followed through the name), and no `function`
- * body reads `arguments` (where a suite's would reach the test API).
+ * Whether `node` is a body the check reads: an inline function, or for a test, a name a `const`
+ * binds to one (`const run = () => {…}`; a `function` declaration can be reassigned). A suite's body
+ * is inline, since `placement.mjs` reads the suites and tests it defines from where it is passed,
+ * and no `function` body reads `arguments` (where a suite's would reach the test API).
  */
 function isBody(node, suite, bindings) {
   if (isInlineFunction(node)) return !readsArguments(node);
-  const fn = constInitializer(node, bindings);
-  if (fn === undefined || !isInlineFunction(fn)) return false;
-  return !readsArguments(fn) && !(suite && firstParameter(fn) !== undefined);
+  const fn = suite ? undefined : constInitializer(node, bindings);
+  return fn !== undefined && isInlineFunction(fn) && !readsArguments(fn);
 }
 
 /**
@@ -111,10 +108,6 @@ function isPlainValue(node, bindings) {
 /** Whether a `function` reads its own `arguments`, where Vitest passes a suite body the test API. */
 function readsArguments(fn) {
   if (ts.isArrowFunction(fn)) return false;
-  const visit = (node) => {
-    if (ts.isIdentifier(node) && node.text === "arguments") return true;
-    if (ts.isFunctionLike(node) && !ts.isArrowFunction(node)) return undefined;
-    return ts.forEachChild(node, visit);
-  };
-  return ts.forEachChild(fn.body, visit) === true;
+  // An arrow shares its enclosing function's `arguments`; another function has its own.
+  return someInside(fn.body, (node) => ts.isIdentifier(node) && node.text === "arguments", (node) => ts.isFunctionLike(node) && !ts.isArrowFunction(node));
 }

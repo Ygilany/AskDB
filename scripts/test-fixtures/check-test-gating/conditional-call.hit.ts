@@ -3,14 +3,14 @@ if (!process.env.DATABASE_URL) it.skip("needs a database", () => {}); // HIT
 url ? it("a", run) : noop; // HIT
 process.env.DATABASE_URL ? noop : describe("db", run); // HIT
 process.env.DATABASE_URL && describe("db", run); // HIT
-if (process.env.DATABASE_URL) {
+if (hasEnv.DATABASE_URL) {
   describe("db", () => {}); // HIT
 } else {
   it("explains the skip", () => {}); // HIT
 }
 const ready = hasDriver() || test("fallback", run); // HIT
 const pick = ready ? noop : (flag ? it("nested", run) : describe("nested", run)); // HIT
-if (process.env.DATABASE_URL) {
+if (hasEnv.DATABASE_URL) {
   const url = process.env.DATABASE_URL;
   describe("not the first statement", run); // HIT
 }
@@ -71,7 +71,7 @@ loadDriver({ onReady: () => { describe("callback in an options object", run); } 
 loadDriver({ onReady() { describe("object-literal method", run); } }); // HIT
 promise.then(...[() => describe("spread callback", run)]); // HIT
 new Promise((resolve) => describe("in a Promise executor", run)); // HIT
-if (process.env.DATABASE_URL) {
+if (hasEnv.DATABASE_URL) {
   class Pg {
     static {
       describe("in a static block", run); // HIT
@@ -112,7 +112,7 @@ describe("a suite body's test API under an if", (t) => {
 });
 for (const u of [process.env.DATABASE_URL ? [] : "x"].flat()) it(`a mixed pick inside a flattened receiver ${u}`, run); // HIT
 for (let i = 0; i < (process.env.DATABASE_URL ? 1 : 0); i++) describe(`a for bound picked by a condition ${i}`, run); // HIT
-while (process.env.DATABASE_URL ?? false) {
+while (hasEnv.DATABASE_URL ?? false) {
   describe("a while condition holding a pick", run); // HIT
   break;
 }
@@ -120,7 +120,7 @@ for (const u of (0, process.env.DATABASE_URL ? [1] : [])) describe(`a loop table
 let repeats = 0;
 do {
   describe(`a do-while condition holding a pick ${repeats}`, run); // HIT
-} while (++repeats < (process.env.DATABASE_URL ? 2 : 1));
+} while (++repeats < (hasEnv.DATABASE_URL ? 2 : 1));
 let stepped = 0;
 for (; stepped < (process.env.DATABASE_URL ? 1 : 0); describe("a for incrementor under a picked condition", run)) stepped++; // HIT
 for (const u of [1].slice((process.env.DATABASE_URL ? 0 : 1) * 1)) describe(`a loop table sliced by arithmetic over a pick ${u}`, run); // HIT
@@ -144,17 +144,17 @@ const loopUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
 for (const url of loopUrls) describe(url, () => {}); // HIT
 loopUrls.forEach((url) => { describe(url, () => {}); }); // HIT
 const pushedEngines = ["sqlite"];
-if (process.env.PG_URL) pushedEngines.push("pg");
+if (hasEnv.PG_URL) pushedEngines.push("pg");
 for (const e of pushedEngines) describe(e, () => {}); // HIT
 const engineSet = new Set(["sqlite"]);
-if (process.env.PG_URL) engineSet.add("pg");
+if (hasEnv.PG_URL) engineSet.add("pg");
 engineSet.forEach((e) => { describe(e, () => {}); }); // HIT
 const loopPgUrl = process.env.DATABASE_URL;
 for (const url of [loopPgUrl, "sqlite"].filter(Boolean)) describe(url, () => {}); // HIT
-var varUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
+var varUrls = hasEnv.DATABASE_URL ? [hasEnv.DATABASE_URL] : [];
 for (const u of varUrls) describe(u, () => {}); // HIT
 const forInTables = { sqlite: 1 };
-if (process.env.PG_URL) forInTables.pg = 2;
+if (hasEnv.PG_URL) forInTables.pg = 2;
 for (const k in forInTables) describe(k, () => {}); // HIT
 {
   const { PG_URL: loopDefaulted = "" } = process.env;
@@ -174,11 +174,11 @@ for (const k in forInTables) describe(k, () => {}); // HIT
   const loopSuites = [{ name: "pg", engines: process.env.PG_URL ? ["pg"] : [] }];
   for (const s of loopSuites) for (const e of s.engines) describe(e, () => {}); // HIT
   for (const e of [{ name: "pg", env: "PG_URL" }]) {
-    if (!process.env[e.env]) continue;
+    if (!hasEnv[e.env]) continue;
     describe(e.name, () => {}); // HIT
   }
   earlyExit: {
-    if (!process.env.PG_URL) break earlyExit;
+    if (!hasEnv.PG_URL) break earlyExit;
     describe("after a labeled break", () => {}); // HIT
   }
   function definesAfterReturn() {
@@ -329,11 +329,11 @@ function suiteInsideAFunction() {
 }
 new class { constructor() { describe("a suite in a constructor called without parentheses", () => {}); } }; // HIT
 describe("a suite body that returns early", () => {
-  if (!process.env.DATABASE_URL) return;
+  if (!hasEnv.DATABASE_URL) return;
   it("after the early return", () => {}); // HIT
 });
 describe.each([1])("an each body that returns early %s", () => {
   for (const x of [1]) if (x) break;
-  if (!process.env.DATABASE_URL) return;
+  if (!hasEnv.DATABASE_URL) return;
   describe("after a return, past a loop whose break stays inside it", () => {}); // HIT
 });

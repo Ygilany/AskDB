@@ -30,13 +30,13 @@ describe("a body read off an object", suites.db); // HIT
 describe("a bound body", declaredBody.bind(null)); // HIT
 let assignedBody;
 assignedBody = (test) => {
-  test.skipIf(!process.env.DATABASE_URL)("query", run);
+  test.skipIf(!hasEnv.DATABASE_URL)("query", run);
 };
 describe("a body assigned after its declaration", assignedBody); // HIT
 describe("a named body after options", { timeout: 5 }, declaredBody); // HIT
 let assignedInline;
 let reassignedBody = () => {};
-if (!process.env.DATABASE_URL) reassignedBody = undefined;
+if (!hasEnv.DATABASE_URL) reassignedBody = undefined;
 describe("a let body reassigned under a condition", reassignedBody); // HIT
 function noParameterDeclaration() {}
 describe("a function declaration, which can be reassigned", noParameterDeclaration); // HIT
@@ -63,20 +63,20 @@ const timeoutCycleA = timeoutCycleB, timeoutCycleB = timeoutCycleA;
 it("a timeout converted from a cycle of consts", withDb(runDb), Number(timeoutCycleA)); // HIT
 const viHolder = { vi }; // HIT
 const vitestHolder = { vitest }; // HIT
-const { SUITE_BODY = (t) => { t.skipIf(!process.env.PG_URL)("q", () => {}); } } = process.env;
+const { SUITE_BODY = (t) => { t.skipIf(!hasEnv.PG_URL)("q", () => {}); } } = hasEnv;
 describe("a body defaulted in an env destructuring", SUITE_BODY); // HIT
-let { LET_BODY } = process.env;
-LET_BODY = (t) => { t.skipIf(!process.env.PG_URL)("q", () => {}); };
+let { LET_BODY } = hasEnv;
+LET_BODY = (t) => { t.skipIf(!hasEnv.PG_URL)("q", () => {}); };
 describe("a body destructured from env into a let", LET_BODY); // HIT
 let letItAlias = it; // HIT
 letItAlias("through a let alias of it", () => {});
 it.each((url && [url]) || [])("rows chosen by && and || %s", () => {}); // HIT
 {
-  const constPickedBody = process.env.DATABASE_URL ? () => {} : undefined;
+  const constPickedBody = hasEnv.DATABASE_URL ? () => {} : undefined;
   it("a test body held in a const pick", constPickedBody); // HIT
   it("a test body held in a const pick after options", {}, constPickedBody); // HIT
   it.each([1])("a row test body held in a const pick %s", constPickedBody); // HIT
-  let letBodyHeld = process.env.DATABASE_URL ? () => {} : undefined;
+  let letBodyHeld = hasEnv.DATABASE_URL ? () => {} : undefined;
   it("a test body held in a let", letBodyHeld); // HIT
   const constSkipOptions = { skip: !process.env.DATABASE_URL };
   it("options held in a const", constSkipOptions, () => {}); // HIT
@@ -85,50 +85,9 @@ describe("computed key", { [key]: false }, () => {}); // HIT
 describe("spread options", { ...opts }, () => {}); // HIT
 describe(...["spread arguments", { skip: !process.env.DATABASE_URL }, () => {}]); // HIT
 describe.each(...rowsAndMore)("spread rows %s", () => {}); // HIT
-describe.each(pushedUrls)("a table pushed to under an if %s", () => {}); // HIT
-describe.each(spreadPushed)("a table pushed a picked spread %s", () => {}); // HIT
-describe.each(truncated)("a table truncated under an if %s", () => {}); // HIT
-describe.each(pushedInSuite)("a table pushed to under an if in a suite body %s", () => {}); // HIT
-describe.each(pickTruncated)("a table truncated to a picked length %s", () => {}); // HIT
-describe.each([...engineMap])("a Map set under an if %s", () => {}); // HIT
-describe.each(indexWritten)("an index written under an if %s", () => {}); // HIT
-describe.each(lengthDecremented)("a length decremented under an if %s", () => {}); // HIT
-describe.each(lengthStepped)("a length stepped down under an if %s", () => {}); // HIT
-describe.each(reassignedRows)("a let reassigned under an if %s", () => {}); // HIT
-describe.each(letPicked)("a let declared with a pick %s", () => {}); // HIT
-describe.each(destructReassigned)("a let reassigned by destructuring under an if %s", () => {}); // HIT
-describe.each(Object.keys(dotTables))("an object key written under an if %s", () => {}); // HIT
-describe.each(Object.keys(deletedTables))("an object key deleted under an if %s", () => {}); // HIT
-describe.each(orderA)("the first of two tables that read each other %s", () => {}); // HIT
-describe.each(orderB)("the second of two tables that read each other %s", () => {}); // HIT
-describe.each(loopAssigned)("a let assigned as a for-of target %s", () => {}); // HIT
-describe.each(patternLength)("a length written by array destructuring under an if %s", () => {}); // HIT
-describe.each(objectPatternLength)("a length written by object destructuring under an if %s", () => {}); // HIT
-describe.each(loopLength)("a length written as a loop target %s", () => {}); // HIT
-const pushedInSuite: string[] = [];
-describe("a suite body runs at collection", () => { if (process.env.PG_URL) pushedInSuite.push("pg"); });
-const pickTruncated = ["pg", "sqlite"];
-pickTruncated.length = process.env.PG_URL ? 2 : 1;
-const pushedInLookalikeHook: string[] = [];
-setup.beforeAll(() => { if (process.env.PG_URL) pushedInLookalikeHook.push("pg"); });
-describe.each(pushedInLookalikeHook)("a table pushed to in an object's beforeAll %s", () => {}); // HIT
-function afterEach(f) { f(); }
-const pushedInLocalHook: string[] = [];
-afterEach(() => { if (process.env.PG_URL) pushedInLocalHook.push("pg"); });
-describe.each(pushedInLocalHook)("a table pushed to in a local afterEach %s", () => {}); // HIT
-import { beforeAll as helperBeforeAll } from "./helpers";
-const pushedInHelperHook: string[] = [];
-helperBeforeAll(() => { if (process.env.PG_URL) pushedInHelperHook.push("pg"); });
-describe.each(pushedInHelperHook)("a table pushed to in a hook from another module %s", () => {}); // HIT
 {
-  let { PG_URL: letPgUrl } = process.env;
+  let { PG_URL: letPgUrl } = hasEnv;
   describe.each([letPgUrl, "sqlite"].filter(Boolean))("an env name destructured into a let, filtered %s", () => {}); // HIT
-}
-{
-  const IfaceEngines: string[] = ["sqlite"];
-  interface IfaceEngines { length: number }
-  if (process.env.PG_URL) IfaceEngines.push("pg");
-  describe.each(IfaceEngines)("a resized const beside an interface of the same name %s", () => {}); // HIT
 }
 {
   var redeclared = ["sqlite"];
@@ -136,70 +95,17 @@ describe.each(pushedInHelperHook)("a table pushed to in a hook from another modu
   describe.each(redeclared)("a var declared twice %s", () => {}); // HIT
 }
 {
-  if (process.env.PG_URL) { var branchVar = ["pg", "sqlite"]; } else { var branchVar = ["sqlite"]; }
+  if (hasEnv.PG_URL) { var branchVar = ["pg", "sqlite"]; } else { var branchVar = ["sqlite"]; }
   describe.each(branchVar)("a var declared in each branch of an if %s", () => {}); // HIT
 }
 {
-  const config = { engines: ["sqlite"] };
-  if (process.env.PG_URL) config.engines.push("pg");
-  describe.each(config.engines)("a nested table pushed to under an if %s", () => {}); // HIT
-}
-{
-  const nestedLength = { engines: ["pg", "sqlite"] };
-  if (!process.env.PG_URL) nestedLength.engines.length = 1;
-  describe.each(nestedLength.engines)("a nested table truncated under an if %s", () => {}); // HIT
-}
-{
-  if (process.env.PG_URL) { var onlyBranchVar = ["pg", "sqlite"]; }
+  if (hasEnv.PG_URL) { var onlyBranchVar = ["pg", "sqlite"]; }
   describe.each(onlyBranchVar)("a var declared only under an if %s", () => {}); // HIT
 }
 {
-  const pushedByCall = ["sqlite"];
-  if (process.env.PG_URL) pushedByCall.push.call(pushedByCall, "pg");
-  describe.each(pushedByCall)("a table pushed to through call under an if %s", () => {}); // HIT
-  const pushedByApply = ["sqlite"];
-  if (process.env.PG_URL) pushedByApply.push.apply(pushedByApply, ["pg"]);
-  describe.each(pushedByApply)("a table pushed to through apply under an if %s", () => {}); // HIT
-  const aliasedTable = ["sqlite"];
-  const tableAlias = aliasedTable;
-  if (process.env.PG_URL) tableAlias.push("pg");
-  describe.each(aliasedTable)("a table pushed to through an alias under an if %s", () => {}); // HIT
-}
-{
-  const popRows = ["pg", "sqlite"];
-  if (!process.env.PG_URL) popRows.pop();
-  describe.each(popRows)("a table resized by pop under an if %s", () => {}); // HIT
-  const shiftRows = ["pg", "sqlite"];
-  if (!process.env.PG_URL) shiftRows.shift();
-  describe.each(shiftRows)("a table resized by shift under an if %s", () => {}); // HIT
-  const unshiftRows = ["sqlite"];
-  if (process.env.PG_URL) unshiftRows.unshift("pg");
-  describe.each(unshiftRows)("a table resized by unshift under an if %s", () => {}); // HIT
-  const spliceRows = ["pg", "sqlite"];
-  if (!process.env.PG_URL) spliceRows.splice(1);
-  describe.each(spliceRows)("a table resized by splice under an if %s", () => {}); // HIT
-  const clearedSet = new Set(["pg", "sqlite"]);
-  if (!process.env.PG_URL) clearedSet.clear();
-  describe.each([...clearedSet])("a Set cleared under an if %s", () => {}); // HIT
-  const deletedMap = new Map([["pg", 1], ["sqlite", 2]]);
-  if (!process.env.PG_URL) deletedMap.delete("pg");
-  describe.each([...deletedMap])("a Map entry deleted under an if %s", () => {}); // HIT
-}
-{
-  const pushedByBind = ["sqlite"];
-  if (process.env.PG_URL) pushedByBind.push.bind(pushedByBind)("pg");
-  describe.each(pushedByBind)("a table pushed to through bind under an if %s", () => {}); // HIT
-}
-{
   const noParameterRunHere = () => {};
-  const mixedPick = process.env.DATABASE_URL ? (t) => t.skipIf(!process.env.DATABASE_URL)("q", () => {}) : 5;
+  const mixedPick = hasEnv.DATABASE_URL ? (t) => t.skipIf(!hasEnv.DATABASE_URL)("q", () => {}) : 5;
   describe("a const pick with a function branch before a body", mixedPick, noParameterRunHere); // HIT
-}
-{
-  const memberAliasCfg = { engines: ["sqlite"] };
-  const memberAlias = memberAliasCfg.engines;
-  if (process.env.PG_URL) memberAlias.push("pg");
-  describe.each(memberAliasCfg.engines)("a table pushed to through an alias of its member %s", () => {}); // HIT
 }
 describe.each([{ name: "pg", engines: ["pg"] }])("$name", (s) => {
   describe.each(s.engines)("a table read off a row parameter %s", () => {}); // HIT
@@ -247,7 +153,7 @@ describe("a numeric timeout before a named body", 5_000, noParameterBody); // HI
 describe("null options before a named body", null, noParameterBody); // HIT
 describe.each(["url|port\n"], "x", 5432)("template values without a pick $url", () => {});
 const names = { a: "postgres" };
-describe(names[process.env.ENGINE ?? "a"], () => {
+describe(names[hasEnv.ENGINE ?? "a"], () => {
   it("q", () => {});
 });
 describe("a timeout behind a comma, before a named body", (0, 5_000), noParameterBody); // HIT
@@ -255,7 +161,7 @@ const cycleA = cycleB, cycleB = cycleA;
 describe.each(cycleA)("a cycle of consts ends %s", () => {});
 const alwaysPushed = ["sqlite"];
 alwaysPushed.push("pg");
-describe.each(alwaysPushed)("a table pushed to unconditionally %s", () => {}); // HIT
+describe.each(alwaysPushed)("a table pushed to unconditionally %s", () => {});
 const pushedInTest: string[] = [];
 describe.each(pushedInTest)("a table only pushed to inside a test %s", () => {
   it("pushes", () => { if (process.env.CI) pushedInTest.push("x"); });
@@ -269,11 +175,11 @@ setupOnce(() => { if (process.env.CI) pushedInRenamedHook.push("x"); });
 describe.each(pushedInRenamedHook)("a table pushed to in a renamed Vitest hook %s", () => {});
 const readOnlyRows = ["pg", "sqlite"];
 const hasPg = readOnlyRows.includes("pg");
-if (process.env.CI) { console.log(readOnlyRows.length); }
+if (hasEnv.CI) { console.log(readOnlyRows.length); }
 describe.each(readOnlyRows)("a table only read, never resized %s", () => {});
 import { IMPORTED_TIMEOUT } from "./timeouts";
 describe("a function body ignores what follows it", () => {}, IMPORTED_TIMEOUT); // HIT
-if (process.env.CI) console.log(-readOnlyRows.length, !readOnlyRows[0]);
+if (hasEnv.CI) console.log(-readOnlyRows.length, !readOnlyRows[0]);
 import { env as configEnv } from "./config";
 describe.each([configEnv.LABEL, "sqlite"].filter(Boolean))("an env object from another module %s", () => {});
 const { beforeAll: destructuredHook } = await import("vitest");
@@ -298,19 +204,19 @@ describe.each(pushedInNsHook)("a table pushed to in a namespace Vitest hook %s",
 const pushedInItEach = ["a"];
 it.each([1, 2])("row %s", () => { if (process.env.CI) pushedInItEach.push("x"); });
 describe.each(pushedInItEach)("a table only pushed to inside an it.each body %s", () => {});
-let letFixedSize = [process.env.CI ? "a" : "b", "c"];
+let letFixedSize = [hasEnv.CI ? "a" : "b", "c"];
 describe.each(letFixedSize)("a let table with a picked element but a fixed size %s", () => {}); // HIT
 const plainA = ["sqlite"];
 const plainB: string[] = [];
 for (const x of plainB) plainA.push(x);
 for (const x of plainA) plainB.push(x);
-describe.each(plainA)("two tables that read each other with no condition %s", () => {}); // HIT
+describe.each(plainA)("two tables that read each other with no condition %s", () => {});
 import configDefault from "./config";
 describe.each([configDefault.env.LABEL, "sqlite"].filter(Boolean))("a default import from another module %s", () => {});
 {
   const plainConfig = { engines: ["pg", "sqlite"] };
   plainConfig.engines.push("mysql");
-  describe.each(plainConfig.engines)("a nested table pushed to unconditionally %s", () => {}); // HIT
+  describe.each(plainConfig.engines)("a nested table pushed to unconditionally %s", () => {});
   const TypedFixed = ["pg", "sqlite"];
   type TypedFixed = string[];
   describe.each(TypedFixed)("a fixed const beside a type of the same name %s", () => {});
@@ -376,8 +282,8 @@ it("a trunc timeout", withDb(runDbClean), Math.trunc(Number(process.env.SLOW_TIM
 }
 {
   const callNoResize = ["pg", "sqlite"];
-  if (process.env.CI) callNoResize.slice.call(callNoResize, 0);
-  describe.each(callNoResize)("a table called through .call at collection time %s", () => {}); // HIT
+  if (hasEnv.CI) callNoResize.slice.call(callNoResize, 0);
+  describe.each(callNoResize)("a table called through .call at collection time %s", () => {});
 }
 describe("a body behind a comma", (0, (test) => test.skipIf(!process.env.DATABASE_URL)("query", run))); // HIT
 describe("a body assigned inside the call", assignedInline = (test) => test.skipIf(!process.env.DATABASE_URL)("query", run)); // HIT
@@ -389,10 +295,10 @@ it("a timeout read from the environment", () => {}, Number(process.env.SLOW_TIME
 {
   const passedRows = ["pg"];
   registerRows(passedRows);
-  describe.each(passedRows)("a table input passed to another function %s", () => {}); // HIT
+  describe.each(passedRows)("a table input passed to another function %s", () => {});
   const storedRows = ["pg"];
   const rowHolder = { storedRows };
-  describe.each(storedRows)("a table input stored in another object %s", () => {}); // HIT
+  describe.each(storedRows)("a table input stored in another object %s", () => {});
 }
 it("a timeout or a body", () => {}, ok ? 5 : fn); // HIT
 it("a timeout picked behind a comma", () => {}, process.env.SLOW ? (0, 60_000) : 5_000); // HIT
@@ -405,3 +311,12 @@ it("a timeout computed by a helper (Vitest takes only a number there)", () => {}
 it("a timeout parsed as a float", () => {}, parseFloat(process.env.SLOW_TIMEOUT ?? "5000")); // HIT
 it("a picked arithmetic timeout", () => {}, process.env.CI ? 60 * 1000 : 5_000); // HIT
 describe("a timeout computed at run time", () => {}, Number(process.env.SLOW_TIMEOUT ?? 60_000)); // HIT
+const namedSuiteBody = () => {};
+describe("a suite body passed by name", namedSuiteBody); // HIT
+const timeoutFn = () => {};
+it("a timeout of arithmetic over a function", () => {}, 5 * timeoutFn); // HIT
+it("options holding a function in an array", { meta: { hooks: [timeoutFn] } }, () => {}); // HIT
+{
+  const undefined = () => {};
+  it("a timeout through a shadowed undefined", () => {}, undefined); // HIT
+}

@@ -109,7 +109,7 @@ const dbTest = test.extend({ ...baseFixtures, todo: async ({}, use) => use([]) }
 it("skip: false", { skip: false }, () => {});
 test.scoped({ skip: maybe });
 it("a computed literal key", { ["skip"]: true }, run);
-it(process.env.NAME ?? "a name picked at run time", () => {});
+it(hasEnv.NAME ?? "a name picked at run time", () => {});
 it("an options object nested in a body's closure", () => {
   const options = { skip: !process.env.DATABASE_URL };
   expect(options).toBeDefined();

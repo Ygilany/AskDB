@@ -2,7 +2,7 @@
 // A definition the check can't show always runs (under a condition, in a loop, a callback or a
 // helper, or after a statement that can leave the block first) fails, rather than the check trying
 // to tell which conditions could depend on the environment (ADR 0019).
-import { isMemberLink, isPlainAssignment, isVariableInitializer, isWrapper, outermostWrapper, ts } from "./ast.mjs";
+import { isMemberLink, isPlainAssignment, isVariableInitializer, isWrapper, outermostWrapper, someInside, ts } from "./ast.mjs";
 import { vitestCallKind } from "./bindings.mjs";
 
 /**
@@ -65,14 +65,12 @@ function isVitestBody(fn, bindings) {
  */
 function exitsEarlier(statements, child) {
   const index = statements.indexOf(child);
-  return index > 0 && statements.slice(0, index).some((statement) => leaves(statement, statement));
+  return index > 0 && statements.slice(0, index).some(leaves);
 }
 
-function leaves(node, root) {
-  if (ts.isFunctionLike(node) || ts.isClassLike(node)) return false;
-  if (ts.isReturnStatement(node)) return true;
-  if ((ts.isBreakStatement(node) || ts.isContinueStatement(node)) && !targetInside(node, root)) return true;
-  return ts.forEachChild(node, (c) => (leaves(c, root) ? true : undefined)) === true;
+function leaves(statement) {
+  const exits = (node) => ts.isReturnStatement(node) || ((ts.isBreakStatement(node) || ts.isContinueStatement(node)) && !targetInside(node, statement));
+  return someInside(statement, exits, (node) => ts.isFunctionLike(node) || ts.isClassLike(node));
 }
 
 /**

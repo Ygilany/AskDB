@@ -8,6 +8,7 @@ import {
   destructuredFrom,
   firstParameter,
   importedFrom,
+  isConstDeclaration,
   isMemberLink,
   linkName,
   memberOn,
@@ -342,17 +343,18 @@ export function constInitializer(node, bindings) {
   const decls = bindings.declarationsOf(node);
   if (decls.length !== 1) return undefined;
   const [d] = decls;
-  if (!ts.isVariableDeclaration(d) || !ts.isIdentifier(d.name) || !d.initializer) return undefined;
-  if (!ts.isVariableDeclarationList(d.parent) || !(d.parent.flags & ts.NodeFlags.Const)) return undefined;
-  return unwrap(d.initializer);
+  return isConstDeclaration(d) && ts.isIdentifier(d.name) ? unwrap(d.initializer) : undefined;
 }
+
+
 
 // The `const` initializers `constHolds` is reading through, so a cycle (`const a = b, b = a`) ends.
 const initializersInProgress = new Set();
 
 /**
  * Whether `node` is a name bound by one `const` whose initializer passes `test`, reading each
- * initializer once per walk. The one way the check follows a `const` to its value.
+ * initializer once per walk: how a value check follows a `const`. The table walk (`tables.mjs`)
+ * instead reads the code of every `const` a table names, with the same `isConstDeclaration` test.
  */
 export function constHolds(node, bindings, test) {
   const init = constInitializer(node, bindings);
