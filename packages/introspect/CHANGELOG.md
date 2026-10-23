@@ -1,5 +1,66 @@
 # @askdb/introspect
 
+## 0.3.0-beta.18
+
+### Minor Changes
+
+- 440054a: Move the connector provider registry into `@askdb/introspect` with open provider ids. Engine adapters now own connection resolution, and the CLI and Studio per-engine switches are gone (ADR 0008).
+  
+  - **@askdb/introspect**:
+    - New root exports: `createConnectorRegistry`, `ConnectorProviderAdapter`, `ConnectorProviderAdapters`, `ConnectorConfig`, `ConnectorResult`, `ConnectorRegistry`, `ConnectorConnection`, `ConnectorConnectionRequest`, `ConnectorConnectionResult`, `ConnectorConnectionResolution`, `ConnectorRuntimeConfig`, `ConnectorProviderId`, `connectorProviderMissingMessage`, `BUILT_IN_CONNECTOR_PROVIDERS`, `BuiltInConnectorProvider`.
+    - Provider ids are typed `ConnectorProviderId = BuiltInConnectorProvider | (string & {})`, so a third-party engine can register its own id.
+    - Adapters can implement `resolveConnection({ explicit?, runtime, surface? })`, which merges explicit values (CLI flags) with AskDB runtime config into `{ url?, fromExport?, schemaPath? }` (or an error). The registry adds `sourceLabel`, built from the adapter's `connectionLabelParts` with `formatConnectionLabel`, so no adapter supplies label text.
+    - The registry exposes `resolveConnection(provider, request)`, `connectionLabel(provider, connection)` and `providers()`. `resolveConnection` treats a blank explicit value (empty or whitespace-only) as absent, so the configured connection applies. An adapter without `connectionLabelParts` is labeled `configured <provider> connection`.
+    - `createConnectorRegistry()` throws when two adapters use the same provider id, instead of silently keeping the last one.
+    - `@askdb/introspect/kit` adds `defineLiveConnectorProvider` for live-catalog-only engines (with `LiveConnectorProviderSpec`, `LiveCatalogInput`, and an optional `fromExportUnsupported` message, defaulting to `--from-export is not supported for --engine <id>.`), and `runtimeIntrospectionString(runtime, key)` for reading `runtime.introspection`.
+  - **@askdb/connectors**: deprecated. It is now a re-export shim of the `@askdb/introspect` registry and the `@askdb/introspect/kit` connection-label helpers. `CONNECTOR_PROVIDERS` aliases `BUILT_IN_CONNECTOR_PROVIDERS`. `ConnectorProvider` aliases `ConnectorProviderId` and is now an open string type instead of a closed union. Migrate imports to `@askdb/introspect`.
+  - **@askdb/postgres**, **@askdb/mysql**, **@askdb/sqlite**, **@askdb/sqlserver**, **@askdb/prisma**:
+    - Each provider adapter now implements `resolveConnection`. The logic and error messages are ported from the CLI and Studio. The label keeps coming from each adapter's `connectionLabelParts`; with no schema path, the Prisma label is now `configured prisma connection` (it was the fixed text `auto-discovered prisma/schema.prisma`).
+    - The adapters now take their types from `@askdb/introspect`, and the `@askdb/connectors` dependency is dropped. Their exported adapter's `provider` type widens from the closed five-id union to `ConnectorProviderId`, a type-level change, hence minor.
+    - MySQL, SQLite, and SQL Server adapters are built with `defineLiveConnectorProvider`.
+  - **askdb**:
+    - `askdb introspect` resolves `--engine` and connections through the registry, with no per-engine switch.
+    - Flag and config precedence and error messages are unchanged. The one exception: `askdb introspect templates --engine prisma` now prints the generic "does not provide SQL templates" error.
+    - Drops the `@askdb/connectors` dependency.
+  - **@askdb/studio**:
+    - The server-side introspection plan and run, and the source label, dispatch through the registry, with no per-engine switch.
+    - Messages are unchanged. The one visible change: a Prisma connection with no schema path is labelled `configured prisma connection` (it was `auto-discovered prisma/schema.prisma`).
+    - Drops the `@askdb/connectors` dependency.
+- 1ca3eba: Add `@askdb/introspect/kit`, the shared toolkit the engine packages are now built on, and remove ~600 lines of copy-pasted code from the engine packages. No behavior change, except one: when a driver is installed but fails to load (for example because one of its own dependencies such as `pg-connection-string` is missing), the error now reads "The optional `pg` peer dependency failed to load: …" with the real error, instead of the "install `pg`" hint, which is kept for a driver that resolves nowhere (including Yarn PnP's "tried to access pg").
+  
+  - **@askdb/introspect**: new `@askdb/introspect/kit` subpath export (importable and requireable) with `createOptionalDriverLoader` / `isDriverInstalled` / `missingDriverMessage` (lazy optional-driver loading with the `resolveFrom` project-root fallback) and `rethrowDriverImportError` (chained on each engine's driver `import()` so bundlers such as esbuild keep treating the driver as an optional peer) (the loader treats only a missing driver package or entry point as "not installed", so a missing file inside an installed driver reports the real load error), `compileTableFilters` / `ambiguousFilterWarnings`, `makeTableId` / `makeColumnId`, `rowsToRecords`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction`, and the connection-label helpers (`formatConnectionLabel`, `parseConnectionUrl`, `ConnectionLabelParts`).
+  - **@askdb/postgres**, **@askdb/mysql**, **@askdb/sqlite**, **@askdb/sqlserver**, **@askdb/prisma**: internal refactor onto the kit — the private `glob.ts` / `ids.ts` copies, the per-engine driver loaders, and the row-folding helpers are gone. Public exports (`loadPgDriver`, `isPgDriverInstalled`, `loadMysql2Driver`, `postgresConnectorProvider`, …), error messages, and introspection output are unchanged.
+  - **@askdb/connectors**: the connection-label helpers moved to `@askdb/introspect/kit`; `@askdb/connectors` re-exports them unchanged.
+- 9021e54: Raise the supported Node floor from `>=22.12` to `>=22.14` (`engines.node` in every published package). `better-sqlite3` 13, which the `@askdb/sqlite` and `@askdb/studio` peer ranges allow, segfaults on Node 22.12.0 through 22.13.1 and works from 22.14.0 (bisected on linux-x64; upstream WiseLibs/better-sqlite3#1514). Hosts on Node 22.12 or 22.13 should upgrade to Node 22.14 or newer.
+
+### Patch Changes
+
+- c55bfb3: Fix `askdb introspect --diff` reporting `changed: true` against an untouched artifact.
+  
+  `--diff` rendered its comparison body with `toV2SchemaJson(schema, schemaId)`, which dropped the connector-detected `provider` that `--out` writes, and it skipped the ID-anchored merge, so human-set `sensitive` flags in the existing `schema.json` also showed up as drift. In practice `--diff` said "changed" almost every time.
+  
+  **@askdb/introspect**: new pure `renderSchemaV2Body(schema, { schemaId, provider?, existingArtifactDir? })` returns `{ json, body, warnings }` — the exact bytes `renderToSchemaV2` writes, including the merge with an existing artifact. `renderToSchemaV2` now writes through it. New `isSchemaV2Json(value)` is the check applied to an existing `schema.json` before that merge: the shape the merge reads, including that each `sensitive` flag is a boolean when present, so a non-boolean flag is no longer copied into the new artifact.
+  
+  **askdb**: `--out`, `--print` and `--diff` all render through `renderSchemaV2Body`. `--diff` passes the connector's `provider` and merges with the existing artifact when the renderer accepts it as valid Schema v2 (an invalid `schema.json`, such as `{ "version": 2 }` with no tables, is compared without the merge and reported as changed, as before; any other merge error, such as malformed `tables/*.md` front matter, fails `--diff` the way it fails `--out`), and compares structurally so a key-reordered but equivalent file is not reported as changed.
+- c55bfb3: **@askdb/mysql**: fix two introspection correctness bugs.
+  
+  - **Cross-database foreign keys** were rendered as if the referenced table were local (`REFERENCES billing.users` became a relationship to the introspected database's `users`). A foreign key into a database that isn't introspected (any other database without `filters.schemas`, or an unlisted one with it) has no target in the artifact, so it is now omitted and reported as a `cross_database_fk` warning naming the referenced database and table. Foreign keys into another listed database are kept, matching database names as the catalog spells them, so `--schemas Shop` on a server with case-insensitive names keeps the FKs of the database stored as `shop`.
+  - **No database in the connection URL** (`mysql://user:pass@host:3306`) made `DATABASE()` NULL, so without `filters.schemas` every catalog query silently matched nothing and introspection produced an empty schema. It now throws a clear `AskDbError` asking for the database name in the URL path.
+  
+  **@askdb/introspect**: add the `cross_database_fk` variant to `IntrospectionWarning` (`{ code, table, constraint, referencedDatabase, referencedTable }`).
+- Updated dependencies [e7ea657]
+- Updated dependencies [c610168]
+- Updated dependencies [9d2e2b4]
+- Updated dependencies [224a05b]
+- Updated dependencies [d6e52ed]
+- Updated dependencies [ce8d837]
+- Updated dependencies [9021e54]
+- Updated dependencies [cca5656]
+- Updated dependencies [f2f6239]
+- Updated dependencies [7a0f777]
+- Updated dependencies [5d3a38b]
+  - @askdb/core@1.0.0-beta.44
+
 ## 0.3.0-beta.17
 
 ### Patch Changes
