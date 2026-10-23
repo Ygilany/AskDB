@@ -1,0 +1,4 @@
+# Codex has no equivalent of SKILL.md's disable-model-invocation. This turns off implicit
+# selection; an explicit $setup-factory-project still runs. Only a person onboards a repo.
+policy:
+  allow_implicit_invocation: false

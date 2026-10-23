@@ -1,0 +1,45 @@
+# Onboarded with setup-factory-project (docs/architecture.md, "First projects": AskDB, balanced).
+# A public library with real CI: the quick lane merges itself, the standard lane gets a two-hour veto window.
+slug: askdb
+tracker: { kind: github, repo: Ygilany/AskDB }
+base_branch: main
+identity: factory-app # the GitHub App: comments, labels and PRs come from ygilany-factory[bot]
+autonomy: balanced
+docs: { path: apps/docs-site } # the docs site (askdb.tools); for the docs stage (#23) once it returns
+# On top of the factory's always_sensitive paths (package.json, lockfiles, workflows, .env*).
+# From the "Sensitive areas" table in docs/agents/code-review.md.
+sensitive_paths:
+  - packages/core/src/sql/**
+  - packages/core/src/ask.ts
+  - packages/core/src/schema/**
+  - packages/core/src/retrieval/**
+  - packages/core/src/enrichment/**
+  - packages/core/src/logging/**
+  - packages/rag/src/chunker/**
+  - apps/studio/src/**
+  - apps/http-api/src/**
+  - "packages/*/src/exec/**"
+  - "packages/*/src/connector/provider.ts"
+  - packages/connectors/src/**
+  - packages/config/src/**
+  - apps/cli/src/init.ts
+  - apps/cli/src/introspect.ts
+  - apps/cli/src/project-config.ts
+  - packages/enrich/src/workspace.ts
+  - packages/ai/src/providers/**
+  - scripts/release-*
+  - scripts/pack-tarballs.sh
+  - .changeset/config.json
+# CI runs all of these on every PR; they are what the ticket thread runs at merge if a PR ever lacks CI.
+test_tiers:
+  unit: pnpm test
+  lint: pnpm lint
+  build: pnpm build
+board:
+  owner: Ygilany
+  number: 27
+  fields:
+    stage: Status
+    lane: Lane
+    attention: Attention
+    thread: Thread
