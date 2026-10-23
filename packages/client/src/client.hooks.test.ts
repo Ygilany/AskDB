@@ -72,7 +72,7 @@ describe("createAskDb hooks and core re-exports", () => {
         },
       ],
     };
-    const rebound: BoundQuery = bindPreparedQuery(prepared, { state_name: "Utah" });
+    const rebound: BoundQuery = bindPreparedQuery(prepared, { state_name: "Utah" }, { schema: { tables: [] } });
     expect(rebound.sql).toBe("SELECT count(*) FROM cities WHERE state = 'Utah'");
     expect(rebound.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
     expect(rebound.params).toEqual(["Utah"]);
