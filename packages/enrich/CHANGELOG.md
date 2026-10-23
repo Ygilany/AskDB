@@ -1,5 +1,35 @@
 # @askdb/enrich
 
+## 0.2.0-beta.15
+
+### Minor Changes
+
+- a8be801: Include `tenant-policy.md` in schema bundles, and make table markdown filenames collision-safe and confined to `tables/`.
+  
+  - `bundleSchemaDirectory()` (used by `askdb bundle`) now writes the raw `tenant-policy.md` content as `tenantPolicy`. Before this fix, bundles left the policy out, so a multi-tenant schema loaded from a bundle came up with no tenant policy, and `ask()` stopped requiring a `tenantScope` or injecting tenant predicates. Rebuild any bundle made from a directory that has a `tenant-policy.md`. `loadSchema(bundle)` now equals `loadSchema(directory)`.
+  - `bundleSchemaDirectory()` now fails, as `loadSchema()` does, when `tenant-policy.md`, `concepts.md` or `tables/` exists but can't be read (for example a symbolic link loop or a permission error). Only a missing file is left out of the bundle. Before, an unreadable file was skipped, so an unreadable tenant policy also produced a bundle without one.
+  - `bundleSchemaDirectory()` returns `BundledSchemaV2` from `@askdb/core`, which owns the bundle format. `BundledSchemaV2` from `@askdb/enrich` is now a deprecated alias of it; import it from `@askdb/core` instead.
+  - `loadWorkspace()` picks default filenames for tables that don't have a markdown file yet (ADR 0013). It uses `<schema>.<table>.md` when two tables share a bare name (for example `public.orders` and `archive.orders`), so saving one no longer overwrites the other. Names count as shared when a case-insensitive file system would store them as one file: case, Unicode normalization (NFC and NFD `café`) and full case folding (`straße`, `STRASSE` and `STRAẞE`) are ignored. It never reuses a name already in `tables/` under that comparison, including files the loader ignores, so `Orders.MD` blocks `orders.md`, but `orders.txt` doesn't. Existing files keep their names because they're matched by front-matter `id`.
+  - Default filenames are made filename-safe: path separators, NUL, control characters, lone UTF-16 surrogates, and Windows-reserved characters become `_`, and leading dots get a `_` prefix. A name longer than 200 bytes, which SQL Server's 128-character identifiers can produce, is shortened and ends in `~` plus an 8-character hash instead of failing with `ENAMETOOLONG`.
+  - `saveTable()` refuses any filename that would resolve outside `tables/`, so a table named like `../../x` can no longer write outside the schema directory. It also refuses to write when `tables/` or the target file is a symbolic link, and it writes through a temp file renamed over the target, so a hard link planted in `tables/` is replaced instead of written through. Saves are now atomic and `fsync`ed, and a read-only table file is still refused with `EACCES`. The replaced file keeps its permission bits and group (and its owner when the process may set it); when the group can't be kept, the group and others each get only the access both had. On macOS and Linux an existing file with `\` in its name still saves, since `\` separates paths only on Windows.
+- 9021e54: Raise the supported Node floor from `>=22.12` to `>=22.14` (`engines.node` in every published package). `better-sqlite3` 13, which the `@askdb/sqlite` and `@askdb/studio` peer ranges allow, segfaults on Node 22.12.0 through 22.13.1 and works from 22.14.0 (bisected on linux-x64; upstream WiseLibs/better-sqlite3#1514). Hosts on Node 22.12 or 22.13 should upgrade to Node 22.14 or newer.
+
+### Patch Changes
+
+- 7a0f777: **One rule for "mentions a sensitive column by name".** `@askdb/core` exports `findMentionedNames(text, names)`: a whole-word, case-insensitive match whose ends may not touch a letter, digit, or `_` of any script. `@askdb/rag`'s chunker and `@askdb/enrich`'s `findSensitiveColumnReferences` (Studio's authoring warning) both use it, so they agree on names like `ssn$` or `café`; before, enrich's `\b` boundaries missed `ssn$` and matched `caf` inside `café`. Studio keeps the details of a memory-store index in memory instead of `schema.lock.json`, which the indexer no longer writes for an ephemeral store.
+- Updated dependencies [e7ea657]
+- Updated dependencies [c610168]
+- Updated dependencies [9d2e2b4]
+- Updated dependencies [224a05b]
+- Updated dependencies [d6e52ed]
+- Updated dependencies [ce8d837]
+- Updated dependencies [9021e54]
+- Updated dependencies [cca5656]
+- Updated dependencies [f2f6239]
+- Updated dependencies [7a0f777]
+- Updated dependencies [5d3a38b]
+  - @askdb/core@1.0.0-beta.44
+
 ## 0.2.0-beta.14
 
 ### Patch Changes
