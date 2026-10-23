@@ -116,7 +116,7 @@ pnpm changeset
 
 AskDB is currently pre-1.0. Breaking public API changes should normally use a minor changeset unless the project intentionally moves a package to 1.0.
 
-Releases are automated: merged changesets collect in a "chore: version packages (beta)" PR, and merging it publishes to npm after a maintainer approves. See [`docs/release.md`](docs/release.md).
+Releases are automated: merged changesets collect in a "chore: version packages (beta)" PR, and once the maintainer approves and merges it, CI publishes to npm. Only that PR changes package versions. See [`docs/release.md`](docs/release.md).
 
 ## Safety Boundary
 
