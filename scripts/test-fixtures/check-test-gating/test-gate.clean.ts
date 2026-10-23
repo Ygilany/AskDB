@@ -1,0 +1,23 @@
+// Plain arguments: a literal skip on one test, plain options, plain timeouts, inline or `const` bodies.
+const run = () => {};
+const TIMEOUT = 30_000;
+it.skip("a skipped test", run);
+it.todo("a todo");
+it("a literal skip option", { skip: true }, run);
+it("a literal todo option", { todo: true }, run);
+it("a literal fails option", { fails: true }, run);
+it("skip false", { skip: false }, run);
+it("a computed literal key", { ["skip"]: true }, run);
+it("a numeric timeout", run, 5_000);
+it("an arithmetic timeout", run, 60 * 1000);
+it("a const timeout", run, TIMEOUT);
+it("a negative timeout", run, -1);
+it("undefined after the body", run, undefined);
+it("options with plain values", { timeout: 5_000, retry: 2, meta: { owner: "db", tags: ["slow"] } }, run);
+it("options alone", { timeout: 5_000 });
+it("a boolean option", { concurrent: true }, run);
+it("a null timeout", run, null);
+it("a string timeout", run, "5000");
+it("an inline async body", async () => {});
+it("a function expression body", function () {});
+it.each([1, 2])("a row test %s", (n) => {});
