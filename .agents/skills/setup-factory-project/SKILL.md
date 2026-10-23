@@ -32,7 +32,8 @@ Collect evidence for every manifest field, citing where each value came from:
 - **docs** and **site**: a documentation site and a marketing site or landing page, each by path. They are for the planned docs stage (#23): a repo that declares neither will skip it once it returns.
 - **T3 project id**: from T3's `t3_project_list`, matched on this repo's path.
 - **Identities available**: the `identities` in the factory's `factory.yaml` for this tracker's host. For each `github_app`, run `factory github-app status` to see whether it's installed on this repo.
-- **Boards**: any GitHub Project the repo already uses (`docs/agents/` files, or `gh project list --owner <owner>`), and whether other onboarded repos share a factory board (`board:` in their manifests).
+- **The project's own process**: the repo's labels, with their descriptions (`gh label list -R <repo> --limit 1000 --json name,description`), and any GitHub Project its issues sit on with its Status field's options (`gh project list --owner <owner> --limit 1000`, then `gh project field-list <number> --owner <owner> --limit 1000`), all read as the owner. These commands return only 30 entries unless given `--limit`, so keep it; a list cut short drops labels from the Process question without any error. Skip the labels that start with `factory` (the factory's own, `factory:*` and the intake label).
+- **Boards**: any GitHub Project the repo already uses (`docs/agents/` files, or `gh project list --owner <owner> --limit 1000`), and whether other onboarded repos share a factory board (`board:` in their manifests).
 
 Done when every field has a proposed value or an explicit "not present".
 
@@ -54,13 +55,14 @@ Show the proposed manifest, then ask the questions below one at a time, each wit
 5. **Quick-lane budget**: keep the global budget or tighten it.
 6. **Routing**: which Claude account this repo's work runs on (`accounts`), any role that needs a stronger or cheaper model, and whether to keep free models away from this repo (`routing.exclude_tags: [free]`; recommend it for client, company and other confidential code, since free tiers may log prompts).
    **Labels**: keep the default (attention-only with a board, full without) unless the user wants otherwise (`labels: full | attention | none`).
+7. **Process**: the meaning of the project's own labels and board statuses, so the factory reads their vocabulary and adds no second one beside it. Propose the `process:` block from what step 2 found, a meaning recommended for each label and status from its name and description: `category: <word>` (`bug`, `feature`), `priority: <word>`, `area: <word>`, or `ignore` when it says nothing the factory reads (`help wanted`, `wontfix`). The words are the project's own. Ask who the process is read as: the owner's `gh_user` identity, `me` or the host's default (`process.identity`; never the factory's App), and which board and field hold the statuses (`board: { owner, number, field }`, `Status` by default). The owner confirms or edits each entry. Labels the block doesn't name are left untouched, as `setup-labels` writes only `factory` and `factory:*` labels and never creates one the block names. Skip the question when the repo has no labels or board of its own worth mapping.
 
 Done when the user has confirmed every answer.
 
 ### 4. Write and verify
 
 1. Write `.factory/project.yaml`, with a comment on any value that isn't obvious.
-2. Run `factory config check` in the repo, and fix the manifest until it passes.
+2. Run `factory config check` in the repo, and fix the manifest until it passes. With a `process:` block it lists each label and status as `ok`, `missing` or `unchecked`: none may be `missing` (a name the repo doesn't have; fix it from the repo's real labels and board), and an `unchecked` one is the read failing, so fix `gh`'s sign-in as the process identity and run it again.
 3. Install the factory skills into the repo and commit them, so every worktree carries them however it was created. Ticket threads and stage workers run in this repo's worktrees and load the `factory-*` skills from there; a script run on worktree creation doesn't reach the worktrees `t3_thread_launch` makes (#99). Skip this step in the factory repo itself: it commits links to its own `skills/`. Otherwise:
    1. Run once, in the repo's checkout:
       ```sh

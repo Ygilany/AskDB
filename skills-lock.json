@@ -5,7 +5,7 @@
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-align/SKILL.md",
-      "computedHash": "7fb9926316994aef468f25876f3bae54654bb426e3b5830375bb5281207abb0c"
+      "computedHash": "910d9c604236a62279c89021b9c79b9b51119e6006ea9a30b397b2a730b3a8fc"
     },
     "factory-build-quick": {
       "source": "Ygilany/factory",
@@ -23,13 +23,13 @@
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-feature/SKILL.md",
-      "computedHash": "543affb330f48840e71103d984b96bf102bf941dad53339d842bee27a60e7264"
+      "computedHash": "fb2bd4f92ee065aa7a028a4e27c171f3e4c7067e366b26934f9bd2187e038a97"
     },
     "factory-grill": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-grill/SKILL.md",
-      "computedHash": "6f4cb43d450c45f1b07ad659dd13163e64051e6d1f9321f290518dda7be17526"
+      "computedHash": "71e734dfed0cf93c934a27e64c0e908d914dd06fd5181c0be0fedcf04e771db1"
     },
     "factory-open-pr": {
       "source": "Ygilany/factory",
@@ -71,7 +71,7 @@
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-triage/SKILL.md",
-      "computedHash": "0c96732e7c3b164d0881e1144076c100e3d5bfd1d0de8c1fd18ef0907575b9bb"
+      "computedHash": "f8baa5a7c6195ca533b61d36cb74dac91bfb4d55210b6d4e9ca96ffb2bb6777c"
     },
     "improve": {
       "source": "shadcn/improve",
@@ -83,7 +83,7 @@
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/setup-factory-project/SKILL.md",
-      "computedHash": "0119badf29ba6dfe6506d75c7ec503fd04de20179564bc94baae57d3abdf9281"
+      "computedHash": "90604797871bfba7532ca66ca1cb81b93e1d40049cc6c04dc2ded42be006b3d3"
     }
   }
 }
