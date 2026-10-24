@@ -5,73 +5,103 @@
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-align/SKILL.md",
-      "computedHash": "910d9c604236a62279c89021b9c79b9b51119e6006ea9a30b397b2a730b3a8fc"
+      "computedHash": "b4fe0b0bc5e58cdd52288203ca6622ba9ef5a208aeafd4e356291ad33d7049a6"
     },
     "factory-build-quick": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-build-quick/SKILL.md",
-      "computedHash": "65695d040176ae9ad632cb2ba0f5d1e2fd92eea1d5a6c0eea11acd90e3b6f6b4"
+      "computedHash": "e4f09e09d295279d53c32967588f396bb953199cf5a61eebe7a87604ea696c61"
     },
     "factory-build-standard": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-build-standard/SKILL.md",
-      "computedHash": "2b169f24f08d2df6d222147aa879af610033a529136f0a8b43b5705517d50364"
+      "computedHash": "58c4b3cd11325c66b270defb70049390b68e2dcce8eb58734f6511ddf2dd9d98"
+    },
+    "factory-code-review": {
+      "source": "Ygilany/factory",
+      "sourceType": "github",
+      "skillPath": "skills/factory-code-review/SKILL.md",
+      "computedHash": "81288cecbb2831b2eeb340d32b12e5fa045671c9dad117982e7219b5ae7c6e7a"
     },
     "factory-feature": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-feature/SKILL.md",
-      "computedHash": "fb2bd4f92ee065aa7a028a4e27c171f3e4c7067e366b26934f9bd2187e038a97"
+      "computedHash": "90100ed16f91f8ea1522bb71759c2724034dc62ce97e54b8379a6a9e3c175787"
     },
     "factory-grill": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-grill/SKILL.md",
-      "computedHash": "71e734dfed0cf93c934a27e64c0e908d914dd06fd5181c0be0fedcf04e771db1"
+      "computedHash": "c644152f3dd665f5bd7136ba9ef2fab8fee380a14cd5059f63bb4c3c8eee2596"
     },
     "factory-open-pr": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-open-pr/SKILL.md",
-      "computedHash": "bc3b21e197f98614f03630a993c050126ffe66b62a45e50cb131c02141c6ae1f"
+      "computedHash": "db4e889ea0e2bbd3c69edd3c75028afd0822c363cab04a035450e2f50d2e0bc8"
+    },
+    "factory-pr": {
+      "source": "Ygilany/factory",
+      "sourceType": "github",
+      "skillPath": "skills/factory-pr/SKILL.md",
+      "computedHash": "b9db9839c7f42f620147a30e5c992790ce82ca09f02b15370d2bcb12675619e1"
     },
     "factory-retro": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-retro/SKILL.md",
-      "computedHash": "4340cb44cda78ec17fa9230ef8f11cc1302101e5c88a2fb33608575ed1385219"
+      "computedHash": "d1752384b8df869f514f379bb75be74348ce036c98f502796df67d68882ee63e"
     },
     "factory-review": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-review/SKILL.md",
-      "computedHash": "eb236a29c871589fe9d901abe967b880c840170701b0ab0e5de9ae03359c2f0d"
+      "computedHash": "e1a0435e76403b8b19d38fbbf25a7a727fc5d1216ce749f7503c8b0630547afa"
     },
     "factory-router": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-router/SKILL.md",
-      "computedHash": "5bb6b9208f4a239b66a90878db2785ab9a610dea137330599edc47e1f81ac37f"
+      "computedHash": "2d0e7d015ec98599f34836740aaa008b139ff910ab62ca02324525d5076035ef"
+    },
+    "factory-tdd": {
+      "source": "Ygilany/factory",
+      "sourceType": "github",
+      "skillPath": "skills/factory-tdd/SKILL.md",
+      "computedHash": "0b8d6bb57d7bb2506ad29f6f88c1f65e9dac9abf353307dff5079cd7d64b38b9"
+    },
+    "factory-test-audit": {
+      "source": "Ygilany/factory",
+      "sourceType": "github",
+      "skillPath": "skills/factory-test-audit/SKILL.md",
+      "computedHash": "256b3fab0b42facd99207c4f5f933da6299b83a45721d306b012eee9f326680a"
     },
     "factory-test-campaign": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-test-campaign/SKILL.md",
-      "computedHash": "3c585b6a89897a68fa8cacc40d54d5aeafa7fb634f655f2e00f86663fa00da69"
+      "computedHash": "7e3aea7200a3951f9e4452ff5aa4945b705813ca041449650462467529c0f9f5"
     },
     "factory-ticket-thread": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-ticket-thread/SKILL.md",
-      "computedHash": "15e3ebee449a93f3276c815a35ff6efb45e25a4ad0119baf041b8bfd9c3f5fd6"
+      "computedHash": "2c66eae2f6c18a6dc3e394c8344f3a67d7750554c03028b3ff2cda210125aa69"
     },
     "factory-triage": {
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/factory-triage/SKILL.md",
-      "computedHash": "f8baa5a7c6195ca533b61d36cb74dac91bfb4d55210b6d4e9ca96ffb2bb6777c"
+      "computedHash": "2e6bb5bdb4f8e65b7047c06b62334e5be6a7757b8a0eea01b74708b7755700ae"
+    },
+    "factory-writing-for-decisions": {
+      "source": "Ygilany/factory",
+      "sourceType": "github",
+      "skillPath": "skills/factory-writing-for-decisions/SKILL.md",
+      "computedHash": "83208ddbb363db657ac09e033906183bb35f65958b2b2e3b44ec6ab4e16a6847"
     },
     "improve": {
       "source": "shadcn/improve",
@@ -83,7 +113,13 @@
       "source": "Ygilany/factory",
       "sourceType": "github",
       "skillPath": "skills/setup-factory-project/SKILL.md",
-      "computedHash": "90604797871bfba7532ca66ca1cb81b93e1d40049cc6c04dc2ded42be006b3d3"
+      "computedHash": "d8df9f58adbe9b16d90f5fe12c9eb5c43df7f1a26fa9298ad5672c41b86bfab2"
+    },
+    "start": {
+      "source": "Ygilany/factory",
+      "sourceType": "github",
+      "skillPath": "skills/start/SKILL.md",
+      "computedHash": "b42d7dae7e1cd539b50f5fe298d2b9315609a5f43fa6d2879f592d6aa70c3f22"
     }
   }
 }

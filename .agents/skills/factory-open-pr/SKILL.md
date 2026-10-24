@@ -14,9 +14,11 @@ The mode only ever makes a PR less ready, never more:
 
 Run every `factory` command from the worktree root, with `--json`, except `factory github-app token` inside a command substitution (§1).
 
+**The stage run.** Your caller's brief names its stage run, and its exit commands end `--run <run id>`. Add that `--run <run id>` to each `factory ticket escalate` below. If its output has `refused`, the ticket has left the caller's run: tell the caller to stop, with the refusal's reason, and stop.
+
 ## 1. Resolve the identity
 
-1. Read `base_branch` and `identity` from `.factory/project.yaml`. Without an `identity`, use `default_identities.<tracker host>` from `factory.yaml` (the path `factory --help` prints as the `--config` default). The tracker host is the manifest's `tracker.host`, or `github.com` without one.
+1. Read `base_branch` and `identity` from the project manifest (the file `factory config check --json` prints as `project`: `.factory/project.yaml`, or for a contributor project one in the factory checkout). Without an `identity`, use `default_identities.<tracker host>` from `factory.yaml` (the path `factory --help` prints as the `--config` default). The tracker host is the manifest's `tracker.host`, or `github.com` without one.
 2. Look the identity up in `factory.yaml`'s `identities` and build the token every `gh` write below uses:
 
    | Identity | Token for `gh` |
@@ -39,29 +41,30 @@ Done when you have the base branch, the tracker host and the token (or know to u
 
 ## 2. Push
 
-`git push -u origin HEAD`.
+Run `factory ticket push-target <n> --json`: it prints `{remote, head}`, `origin` and the branch for most projects, and for a contributor project without write access the owner's fork (it makes the fork and adds the `fork` remote when they are missing) and `<owner>:<branch>`. Then `git push -u <remote> HEAD`. The push uses the machine's git credentials.
 
 Done when the remote branch's head is the local `HEAD`.
 
 ## 3. Find the branch's open PRs
 
-Run `gh pr list --repo <host>/<repo> --head <branch> --state open --json number,url,headRefName,headRefOid,baseRefName,isDraft,body,author`.
+Run `gh pr list --repo <host>/<repo> --head <branch> --state open --json number,url,headRefName,headRefOid,headRepositoryOwner,baseRefName,isDraft,body,author`, where `<branch>` is the `head` from §2 without any `<owner>:` prefix, since `--head` here takes a branch name only. When `head` is `<owner>:<branch>`, keep only the PRs whose `headRepositoryOwner.login` is `<owner>`, then count as below.
 
-- **None:** write the body with the `pr` skill. Link the ticket's spec when it has one (the ledger's `stage_completed` event for `align`, from `factory ledger list --ticket <n> --json`: the file at the event's `doc` path is the spec the owner approved, and the event's `artifact` is its first comment on the ticket, where a long spec continues in the comments after it), put `Closes #<n>` on its own line, and, when the caller names criteria that review checks by reading, name them in the body's Evidence. When `factory ticket show <n> --json` prints `artifacts` as `thread`, no comment holds the spec: link it by its path on the branch, and write no AI disclaimer and no `<!-- factory:… -->` marker anywhere in the body, since the PR reads as an ordinary contribution. Open the PR with the identity's token:
+- **None:** write the body with the `factory-pr` skill, keeping its `## Merge Danger` section: a `**Door:**` line saying `one-way` or `two-way`, and a `**Blast Radius:**` line of at most 40 characters. Merge reads both from the body, and a body without them merges as `one-way` and `unknown`. Link the ticket's spec when it has one (the ledger's `stage_completed` event for `align`, from `factory ledger list --ticket <n> --json`: the file at the event's `doc` path is the spec the owner approved, and the event's `artifact` is its first comment on the ticket, where a long spec continues in the comments after it), put `Closes #<n>` on its own line, and, when the caller names criteria that review checks by reading, name them in the body's Evidence. When `factory ticket show <n> --json` prints `artifacts` as `thread`, no comment holds the spec: link it by its path on the branch, except when `contributor` is `true` in the same output, where the spec is an uncommitted file that is not on the branch: link no spec at all, and still put `Closes #<n>` on its own line. Write no AI disclaimer and no `<!-- factory:… -->` marker anywhere in the body, since the PR reads as an ordinary contribution. Open the PR with the identity's token:
 
   ```sh
-  gh pr create --repo <host>/<repo> --base <base_branch> --title "<conventional-commit title>" --body-file <file>
+  gh pr create --repo <host>/<repo> --base <base_branch> --head <head> --title "<conventional-commit title>" --body-file <file>
   ```
 
   Add `--draft` in `draft` mode.
 - **One:** reuse it. The push has already updated it. Then repair what can be repaired, with the identity's token:
   - not a draft in `draft` mode: `gh pr ready --undo <url>`. Nothing else changes a PR's draft state: in `ready` mode a draft stays a draft;
   - no `Closes #<n>` line in the body: add one with `gh pr edit <url> --body-file <file>`, keeping the rest of the body;
+  - no `## Merge Danger` section with `**Door:**` and `**Blast Radius:**` lines: add one in the `factory-pr` skill's form the same way;
   - a base other than `base_branch`: run `factory ticket escalate <n> --reason "PR <url> targets <base>, not <base_branch>" --json`, tell the caller to stop, and stop. Retargeting can pull in unrelated commits;
   - an author other than the project's identity (a PR someone opened by hand): keep it, since a PR's author can't change and a second PR would split the review. Name the author to the caller. Exception: when the identity is a `github_app` and the author is the logged-in user, no `pr_opened` event exists for the PR (§4) and it was not opened by hand, treat it as a failed token mint: run `factory ticket escalate <n> --reason "PR <url> was opened as <author>, not the project's identity" --json`, tell the caller to stop, and stop.
 - **More than one:** run `factory ticket escalate <n> --reason "<count> open PRs for <branch>: <urls>" --json`, tell the caller to stop, and stop.
 
-Done when exactly one open PR heads the branch, against `base_branch`, a draft in `draft` mode, and its body closes the ticket.
+Done when exactly one open PR heads the branch, against `base_branch`, a draft in `draft` mode, and its body closes the ticket and holds a Merge Danger section.
 
 ## 4. Record the opening
 

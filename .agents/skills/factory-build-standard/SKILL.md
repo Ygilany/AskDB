@@ -1,13 +1,15 @@
 ---
 name: factory-build-standard
-description: "Run a standard-lane ticket's build stage: write failing acceptance tests first, implement until they pass, or fix the findings a review sent back, gate each test with test-audit, push to the ticket's draft PR, then exit the stage with the factory CLI."
+description: "Run a standard-lane ticket's build stage: write failing acceptance tests first, implement until they pass, or fix the findings a review sent back, gate each test with factory-test-audit, push to the ticket's draft PR, then exit the stage with the factory CLI."
 ---
 
 # Factory build (standard lane)
 
 You are the implementer for one standard-lane ticket, running in its own worktree. Your brief names the ticket as `<repo>#<n>`. You build tests first against the approved spec, open the ticket's draft PR through `factory-open-pr`, and hand the ticket back to the `factory` CLI, which decides what happens next. Review follows you against that PR and only reports: when it finds blocking defects, the ticket comes back to you with them, and you are the one who fixes them (decision 0045).
 
-Run every `factory` command from the worktree root, with `--json`. The CLI finds the project manifest (`.factory/project.yaml`) from there.
+Run every `factory` command from the worktree root, with `--json`. The CLI finds the project manifest from there: `.factory/project.yaml`, or for a contributor project the file its registry entry names in the factory checkout. `factory config check --json` prints it as `project`.
+
+**The stage run.** The brief's exit commands (`factory ticket complete`, `fail` and `escalate`) end `--run <run id>`. Pass that `--run <run id>`, exactly as the brief has it, on every one of these commands, including those this skill spells out. If an output has `refused`, the ticket has left your run: reply with your result (what you would have recorded, and the refusal's reason), run no other exit command, and stop.
 
 ## 1. Confirm the ticket
 
@@ -24,7 +26,7 @@ Done when each acceptance criterion reads as a behavior a test can check, or as 
 
 Work on the worktree's branch. If it is the base branch (`base_branch` in the manifest), create the ticket's branch first (`state.branch` in `factory ticket show <n> --json`).
 
-**A fresh build:** write failing acceptance tests from the spec's criteria, run them to see them fail for the expected reason, and commit them on their own (for example `test: …`) before any implementation commit. Then implement with the `tdd` skill until they pass, adding unit tests as the code needs. Change a committed acceptance test only to fix a test that was wrong, never to fit the code, and say so in the commit message.
+**A fresh build:** write failing acceptance tests from the spec's criteria, run them to see them fail for the expected reason, and commit them on their own (for example `test: …`) before any implementation commit. Then implement with the `factory-tdd` skill until they pass, adding unit tests as the code needs. Change a committed acceptance test only to fix a test that was wrong, never to fit the code, and say so in the commit message.
 
 **A resumed build** starts from a branch that already has tests and code (a rework, a relaunched worker, an escalation resolved in build, or a ticket promoted from quick). Tests first then applies to behavior still missing, not to the whole ticket:
 
@@ -36,27 +38,36 @@ Work on the worktree's branch. If it is the base branch (`base_branch` in the ma
 
 A criterion that no test in the project can run (a skill's prose, say, or a doc) gets no test: the PR body's Evidence names how review checks it.
 
-Run the pinned `test-audit` skill's **authoring gate** on every test you wrote or changed, in a fresh build and a resumed one alike, and rewrite or drop each one that fails it. Run every command under `test_tiers` in `.factory/project.yaml`. Commit with conventional-commit messages.
+Run the `factory-test-audit` skill's **authoring gate** on every test you wrote or changed, in a fresh build and a resumed one alike, and rewrite or drop each one that fails it. Run every command under `test_tiers` in the project manifest (the file `factory config check --json` prints as `project`). Commit with conventional-commit messages.
 
 Done when every criterion has a test or is named in the Evidence as checked by review, every finding in a rework has a fix or a reason, every test you wrote or changed passes the authoring gate, every tier passes, and `git status` is clean.
 
 If the tiers stay red after an honest attempt, or the ticket can't be built as written, run `factory ticket fail <n> --reason "<what blocks it>" --json`, reply with the reason, and stop.
 
+If the build can't go on without the owner (a check in a screen no tool of yours reads, or a choice the spec leaves open), escalate it as an ask, as "Asking the owner" says: `factory ticket escalate <n> --reason "build: <what you need, in five words or fewer>; <the items>" --json`, then reply with the ask and stop. (A `fail` would escalate too, but as `build failed: <reason>`, with no items and no ask.)
+
 ## 3. Open or reuse the PR
 
-Run the `factory-open-pr` skill for `<repo>#<n>` with `draft`, telling it which criteria review checks by reading (§2), so a new PR's Evidence names them; in a rework it pushes the fixes to the PR that is already open. If it escalated or failed, reply with what it reported and stop.
+Run the `factory-open-pr` skill for `<repo>#<n>` with `draft`, passing it your run id, telling it which criteria review checks by reading (§2), so a new PR's Evidence names them; in a rework it pushes the fixes to the PR that is already open. If it escalated, failed or reported `refused`, reply with what it reported and stop.
 
 Done when it has returned the PR URL.
 
 ## 4. Exit the stage
 
-Run `factory ticket complete <n> --evidence tests_green=true --json`. Leave `within_budget` out: the CLI computes it from the branch's diff against the base.
+Run `factory ticket complete <n> --evidence tests_green=true --json`. Leave `within_budget` and `branch_pushed` out: the CLI computes them, the first from the branch's diff against the base, the second from your `HEAD` against `origin`'s copy of the ticket's branch. If it refuses with `push first`, run the push it names and complete again.
 
 If `factory ticket complete` fails with `git fetch failed` (the base branch could not be fetched from `origin`), run it once more; a brief network failure has usually cleared by then. If it fails again, run `factory ticket escalate <n> --reason "<the git fetch failed: … message>" --json`, quoting that message from the error output in full (the output can open with other lines, such as a source excerpt, so its first line may not carry git's reason), and reply `escalated <repo>#<n>: <the message>`. Every other failure keeps "When the CLI fails".
 
 Reply `built <repo>#<n>: <PR url>`, naming the PR's author if `factory-open-pr` reported one other than the project's identity.
 
 Done when `factory ticket complete` has succeeded and you have replied.
+
+## Asking the owner
+
+An escalation that asks the owner to decide or to do something has two parts, written from one numbered list. This section is the same in `factory-align`, `factory-triage`, `factory-build-standard` and `factory-build-quick`: change the four together.
+
+1. **The reason** (`--reason`) is one line, in the form the step that escalates gives. The next run's brief quotes it beside the owner's answer, so a short answer such as `ok 2B` still says what it chose. Number its items. A question gets its options as letters and your recommendation: `1. <question>: A <answer> (recommended), B <other>`. A step only the owner can take gets what to do and the reply that says it's done.
+2. **The ask** is your last reply: the same numbered items, written for the owner in the `factory-writing-for-decisions` house style. It has a header line, the summary table, and a card for each item, with a diagram where the item has a shape. Its last line is the reply line: `Reply: /answer ok takes every recommendation · /answer 2B changes one · /changes <guidance>`, where a step names its own reply in place of `ok`, such as `/answer done`. The ticket thread posts the ask under the escalation's first line, in place of the reason.
 
 ## When the CLI fails
 
