@@ -57,7 +57,7 @@ export type OptionalDriverLoader<T> = {
  * which the installed driver failed to load) does not count. Anything else is a
  * real error and must surface.
  */
-export function isModuleResolutionFailure(
+function isModuleResolutionFailure(
   cause: unknown,
   packageName: string,
   specifier: string = packageName,
