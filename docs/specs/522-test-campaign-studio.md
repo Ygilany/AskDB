@@ -7,7 +7,7 @@ This spec applies the studio test campaign's plan in one PR of test-only changes
 | Decision | Answer | Settled by | Undo |
 | --- | --- | --- | --- |
 | 1. Trim the Studio label table | Yes: keep the 9 Studio-wiring rows, retire the 29 parsing rows to the engine label tests (ADR 0011) | @Ygilany, grilling (Q1, option A) | Two-way: revert the PR |
-| 2. One PR or two | One PR does all of the plan, including the execute-status `it.each` table | @Ygilany, grilling (accepted triage's default) | Two-way |
+| 2. One PR or two | One PR does all of the plan, including the execute-status `it.each` table | Triage, default D1; accepted by @Ygilany in grilling | Two-way |
 | 3. The rest of the plan | As triage wrote it: `configured` asserted `false`, the C rows retired into their keepers with the `expectedDimensions: null` carry-over, no production code changed | @Ygilany, grilling | Two-way |
 
 ```text
@@ -64,7 +64,7 @@ The Studio server tests keep one proof per Studio contract. The execute-status d
 - **Test-only, two files.** The change touches the Studio server tests and the Studio pgvector integration test, and no production file. The test-only seams (`setStudioPgvectorStoreFactoryForTests`, `setStudioClientDirForTests`, `setSetupInstallerForTests`) stay: each is still used by a kept test (decision 3).
 - **F repaired (decision 3).** In the execute-status default test (`GET /api/execute/status returns postgres provider when no execute provider is configured`), `configured` is asserted to be `false` in place of its type check. With the shared test config, execute is off and `useIntrospectionConnection` is not set, so Studio has no execute connection and reports `configured: false`. Every other assertion in that test (provider, label, package, connection kind, install command, `enabled: false` with its reason, `canInstallFromStudio`, timeout and row cap) stays.
 - **"Not configured" test retired (decision 3).** `GET /api/execute/status reports not configured when no connection URL is set` is deleted; the repaired default test covers it. The "introspection URL present but not reused" contract stays with `POST /api/execute does not silently reuse the introspection connection`, which is untouched.
-- **Execute-status table (decisions 2 and 3).** The three tests for sqlserver, sqlite and mysql become one `it.each` table that keeps their configs (introspection on that engine with `studio.execute.enabled` and `useIntrospectionConnection` both `true`). Each row asserts:
+- **Execute-status table (decision 2, default D1, and decision 3).** The three tests for sqlserver, sqlite and mysql become one `it.each` table that keeps their configs (introspection on that engine with `studio.execute.enabled` and `useIntrospectionConnection` both `true`). Each row asserts:
 
   | Engine | Introspection connection | `provider` | `label` | `packageName` | `connectionKind` | `configured` |
   | --- | --- | --- | --- | --- | --- | --- |
