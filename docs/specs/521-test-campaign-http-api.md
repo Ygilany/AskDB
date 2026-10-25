@@ -20,7 +20,7 @@ server.integration.test.ts
 
 **Risks:** almost none. The deleted test's one unique input (no `mode` key at all, rather than `mode: null`) takes the same branch in the server, so no regression it could catch goes unseen. The change is test-only and ships no package output.
 
-**Done when:** the deleted test is gone and no other test is; the keeper asserts 400, "Invalid mode" and (D1) `nope`; `pnpm test` and `pnpm lint` pass; no changeset.
+**Done when:** the deleted test is gone and no other test is; the keeper asserts 400, "Invalid mode" and (D1) `nope`; `pnpm test` and `pnpm lint` pass; an empty changeset is added.
 
 **Needs you:** nothing. Veto D1 or D2 by name if you disagree.
 
@@ -51,7 +51,7 @@ Maintainers get one test per contract on the request-mode path. The redundant te
 - **Tighten the keeper (D1).** Add a check that the header-path error message contains `nope`. The core mode parser builds the message as `Invalid mode: "<raw value>". Expected one of: …`, so the value sent in the header appears in it. The check may be a second `toContain` or a single stricter match; either meets D1.
 - **Leave the rest (D2).** The SQL-validation test's `rule` check stays `toBeTruthy()`. No test is added for a valid `x-askdb-mode` header or for the body `execute` field.
 - **No production change, no seam change.** `server.ts` is untouched. The test-only export `mapAskError` and the runtime hooks `setAskDbRuntimeForTests` / `resetAskDbRuntimeForTests` stay: the layer plan found no seam this change unlocks.
-- **No changeset.** `@askdb/http-api` is published, but its build excludes test files, so the package's output doesn't change.
+- **Empty changeset.** `@askdb/http-api` is published, and changesets.yml treats `apps/http-api/src/` as publishable, so its `status` check requires a changeset even for a test-only change; build adds one with `pnpm changeset --empty`, since the package's output doesn't change.
 - **No rename.** `server.integration.test.ts` keeps its name even though it needs no database; the campaign noted the suffix is a misnomer but harmless.
 
 ## Testing Decisions
