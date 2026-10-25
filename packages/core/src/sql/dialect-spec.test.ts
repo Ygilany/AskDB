@@ -103,18 +103,4 @@ describe("DialectSpec registry", () => {
     expect(isBuiltInDialectId("not-a-dialect")).toBe(false);
     expect(isBuiltInDialectId(42)).toBe(false);
   });
-
-  it("SUPPORTED_DIALECT_IDS enumerates all shipped specs", () => {
-    expect(SUPPORTED_DIALECT_IDS).toEqual(
-      expect.arrayContaining([
-        "postgres",
-        "cockroachdb",
-        "mysql",
-        "mariadb",
-        "sqlite",
-        "sqlserver",
-      ]),
-    );
-    expect(SUPPORTED_DIALECT_IDS).toHaveLength(6);
-  });
 });

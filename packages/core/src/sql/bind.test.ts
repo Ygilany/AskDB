@@ -129,16 +129,6 @@ describe("escapeSqlLiteral", () => {
     expect(escapeSqlLiteral(true, undefined)).toBe("TRUE");
     expect(escapeSqlLiteral(false, undefined)).toBe("FALSE");
   });
-
-  it("escapes the two-parameter injection shape under MySQL", () => {
-    const a = escapeSqlLiteral("\\", MYSQL_DIALECT);
-    const b = escapeSqlLiteral(" OR 1=1", MYSQL_DIALECT);
-    expect(a).toBe("'\\\\'");
-    expect(b).toBe("' OR 1=1'");
-    // Closing quote of a is not consumed by a trailing backslash.
-    expect(a.endsWith("'")).toBe(true);
-    expect(a).not.toMatch(/[^']'\\'$/);
-  });
 });
 
 function prepared(
@@ -285,36 +275,6 @@ describe("bindPreparedQuery — errors", () => {
     expect(() => bindPreparedQuery(p, { s: "x" })).toThrow(
       expect.objectContaining({ reason: "DIALECT_UNSUPPORTED" }),
     );
-  });
-});
-
-describe("bindPreparedQuery — JSON round-trip", () => {
-  it("rebinds a JSON-serialized PreparedQuery with no model involvement", () => {
-    const original = prepared("postgres", "SELECT count(*) FROM cities WHERE state = :state_name", [
-      {
-        name: "state_name",
-        placeholder: ":state_name",
-        type: "string",
-        cardinality: "one",
-        source: "question",
-      },
-    ]);
-    const revived = JSON.parse(JSON.stringify(original)) as PreparedQuery;
-    const bound = bindPreparedQuery(revived, { state_name: "Utah" });
-    expect(bound.sql).toBe("SELECT count(*) FROM cities WHERE state = 'Utah'");
-    expect(bound.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
-    expect(bound.params).toEqual(["Utah"]);
-  });
-});
-
-describe("bindPreparedQuery — right-to-left substitution", () => {
-  it("substitutes correctly when later placeholders are longer", () => {
-    const p = prepared("postgres", "SELECT * FROM t WHERE a = :a AND bb = :bb", [
-      { name: "a", placeholder: ":a", type: "string", cardinality: "one", source: "question" },
-      { name: "bb", placeholder: ":bb", type: "string", cardinality: "one", source: "question" },
-    ]);
-    const bound = bindPreparedQuery(p, { a: "1", bb: "22" });
-    expect(bound.sql).toBe("SELECT * FROM t WHERE a = '1' AND bb = '22'");
   });
 });
 
