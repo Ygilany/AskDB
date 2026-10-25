@@ -5,6 +5,9 @@ tracker: { kind: github, repo: Ygilany/AskDB }
 base_branch: main
 identity: factory-app # the GitHub App: comments, labels and PRs come from ygilany-factory[bot]
 autonomy: balanced
+# The Claude roles run on the Learn21 account, in place of the personal one, from 2026-10-25 at the owner's word: "run through
+# [Learn21] before using the personal profile for now". Remove this line to move AskDB back to the personal account.
+accounts: { claudeAgent: claudeAgent_l21 }
 docs: { path: apps/docs-site } # the docs site (askdb.tools); for the docs stage (#23) once it returns
 # On top of the factory's always_sensitive paths (package.json, lockfiles, workflows, .env*).
 # From the "Sensitive areas" table in docs/agents/code-review.md.
