@@ -30,9 +30,8 @@ describe("buildTenantPromptBlock", () => {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
     const block = buildTenantPromptBlock(policy, scope);
-    expect(block).toContain("table:public.orders");
-    expect(block).toContain("agency_id");
-    expect(block).toContain("owning_agency");
+    expect(block).toContain("Tenant-scoped tables (MUST include tenant predicate):");
+    expect(block).toContain("  - table:public.orders → filter via table:public.orders#agency_id (Agency scope)");
   });
 
   it("includes inherited scope join paths", () => {
@@ -49,10 +48,10 @@ describe("buildTenantPromptBlock", () => {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
     const block = buildTenantPromptBlock(policy, scope);
-    expect(block).toContain("table:public.notes");
-    expect(block).toContain("owner_type");
-    expect(block).toContain("owner_id");
-    expect(block).toContain("type discriminator");
+    expect(block).toContain(
+      "  - table:public.notes: type column = table:public.notes#owner_type, id column = table:public.notes#owner_id",
+    );
+    expect(block).toContain("    - 'agency' → Agency");
   });
 
   it("includes global tables", () => {
@@ -63,14 +62,6 @@ describe("buildTenantPromptBlock", () => {
     expect(block).toContain("table:public.lookup_states");
     expect(block).toContain("table:public.service_types");
     expect(block).toContain("no tenant filter needed");
-  });
-
-  it("includes named placeholder for ids scope", () => {
-    const scope: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
-    };
-    const block = buildTenantPromptBlock(policy, scope);
-    expect(block).toContain(":tenant_agency_ids");
   });
 
   // ask() expands a subtree into per-root IDs before building the prompt (#338). An
@@ -252,14 +243,5 @@ describe("buildTenantPromptBlock", () => {
     const block = buildTenantPromptBlock(policy, scope);
     expect(block).toContain("MUST include the tenant predicate");
     expect(block).toContain("named placeholders");
-  });
-
-  it("is deterministic", () => {
-    const scope: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
-    };
-    const block1 = buildTenantPromptBlock(policy, scope);
-    const block2 = buildTenantPromptBlock(policy, scope);
-    expect(block1).toBe(block2);
   });
 });

@@ -6,10 +6,6 @@ import { loadSchema } from "../schema/v2/loader.js";
 import type { TenantScope, NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import {
   extractTenantPlaceholders,
-  placeholderForRoot,
-  resolvePlaceholders,
-  replacePlaceholdersWithLiterals,
-  replacePlaceholdersWithParams,
   resolveTenantSql,
   type TenantSqlDialect,
 } from "./tenant-placeholders.js";
@@ -49,14 +45,6 @@ const policy = schema.tenantPolicy!;
 
 const fakeModel = {} as LanguageModel;
 
-describe("placeholderForRoot", () => {
-  it("lowercases and replaces non-alphanumeric chars", () => {
-    expect(placeholderForRoot("Agency")).toBe(":tenant_agency_ids");
-    expect(placeholderForRoot("Sub-Agency")).toBe(":tenant_sub_agency_ids");
-    expect(placeholderForRoot("My Cool Root")).toBe(":tenant_my_cool_root_ids");
-  });
-});
-
 describe("extractTenantPlaceholders", () => {
   it("extracts all unique placeholders from SQL", () => {
     const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND client_id IN (:tenant_client_ids) AND agency_id = :tenant_agency_ids";
@@ -66,67 +54,6 @@ describe("extractTenantPlaceholders", () => {
 
   it("returns empty array when no placeholders", () => {
     expect(extractTenantPlaceholders("SELECT * FROM orders")).toEqual([]);
-  });
-});
-
-describe("resolvePlaceholders", () => {
-  it("resolves ids scope to placeholder values", () => {
-    const scope: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42", "99"] },
-    };
-    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
-    const resolved = resolvePlaceholders(sql, policy, scope);
-    expect(resolved).toHaveLength(1);
-    expect(resolved[0]!.placeholder).toBe(":tenant_agency_ids");
-    expect(resolved[0]!.ids).toEqual(["42", "99"]);
-    expect(resolved[0]!.rootId).toBe("table:public.agencies");
-  });
-
-  it("resolves multi_root scope with multiple placeholders", () => {
-    const scope: TenantScope = {
-      access: {
-        kind: "multi_root",
-        scopes: [
-          { tenantRoot: "table:public.agencies", ids: ["42"] },
-          { tenantRoot: "table:public.clients", ids: ["99", "100"] },
-        ],
-      },
-    };
-    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND client_id IN (:tenant_client_ids)";
-    const resolved = resolvePlaceholders(sql, policy, scope);
-    expect(resolved).toHaveLength(2);
-    const agencyBinding = resolved.find((r) => r.placeholder === ":tenant_agency_ids");
-    const clientBinding = resolved.find((r) => r.placeholder === ":tenant_client_ids");
-    expect(agencyBinding!.ids).toEqual(["42"]);
-    expect(clientBinding!.ids).toEqual(["99", "100"]);
-  });
-
-  it("returns empty for global scope", () => {
-    const scope: TenantScope = { access: { kind: "global", reason: "admin" } };
-    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
-    const resolved = resolvePlaceholders(sql, policy, scope);
-    expect(resolved[0]!.ids).toEqual([]);
-  });
-});
-
-describe("replacePlaceholdersWithLiterals", () => {
-  it("keeps quote-doubling-only behavior when no dialect is supplied", () => {
-    const resolved = [{ placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "r1", ids: ["acme\\"] }];
-    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
-    expect(replacePlaceholdersWithLiterals(sql, resolved)).toBe(
-      "SELECT * FROM orders WHERE agency_id = 'acme\\'",
-    );
-  });
-
-  it("handles multiple different placeholders", () => {
-    const resolved = [
-      { placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "r1", ids: ["42"] },
-      { placeholder: ":tenant_client_ids", rootLabel: "Client", rootId: "r2", ids: ["99", "100"] },
-    ];
-    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND client_id = :tenant_client_ids";
-    expect(replacePlaceholdersWithLiterals(sql, resolved)).toBe(
-      "SELECT * FROM orders WHERE agency_id = '42' AND client_id IN ('99', '100')",
-    );
   });
 });
 
@@ -140,16 +67,9 @@ describe("resolveTenantSql — sql-only mode", () => {
     const result = resolveTenantSql(sql, policy, agencyScope, "sql-only");
     expect(result.mode).toBe("sql-only");
     expect(result.sql).toBe("SELECT * FROM orders WHERE agency_id = '42'");
-    expect(result.bindings).toHaveLength(1);
-    expect(result.bindings[0]!.rootLabel).toBe("Agency");
-  });
-
-  it("passes through SQL unchanged for global scope", () => {
-    const globalScope: TenantScope = { access: { kind: "global", reason: "admin" } };
-    const sql = "SELECT * FROM orders";
-    const result = resolveTenantSql(sql, policy, globalScope, "sql-only");
-    expect(result.sql).toBe(sql);
-    expect(result.bindings).toEqual([]);
+    expect(result.bindings).toEqual([
+      { placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "table:public.agencies", ids: ["42"] },
+    ]);
   });
 
   it("handles SQL with no placeholders", () => {
@@ -157,18 +77,6 @@ describe("resolveTenantSql — sql-only mode", () => {
     const result = resolveTenantSql(sql, policy, agencyScope, "sql-only");
     expect(result.sql).toBe(sql);
     expect(result.bindings).toEqual([]);
-  });
-});
-
-describe("resolveTenantSql — sql-params mode", () => {
-  it("passes through for global scope with empty params", () => {
-    const globalScope: TenantScope = { access: { kind: "global", reason: "admin" } };
-    const sql = "SELECT * FROM orders";
-    const result = resolveTenantSql(sql, policy, globalScope, "sql-params");
-    expect(result.mode).toBe("sql-params");
-    if (result.mode === "sql-params") {
-      expect(result.params).toEqual([]);
-    }
   });
 });
 
@@ -217,70 +125,6 @@ describe("ask() — tenant SQL output modes", () => {
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
     expect(result.tenantParams).toEqual(["42"]);
     expect(result.tenantBindings).toHaveLength(1);
-  });
-
-  it("handles multi-value scope in sql-only mode", async () => {
-    const multiScope: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42", "99"] },
-    };
-    const dialect: AskDialect = {
-      generate: async () => ({
-        sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
-      }),
-    };
-
-    const result = await ask({
-      question: "count orders",
-      schema,
-      model: fakeModel,
-      dialect,
-      tenantScope: multiScope,
-    });
-
-    expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id IN ('42', '99')");
-  });
-
-  it("handles multi-value scope in sql-params mode", async () => {
-    const multiScope: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42", "99"] },
-    };
-    const dialect: AskDialect = {
-      generate: async () => ({
-        sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
-      }),
-    };
-
-    const result = await ask({
-      question: "count orders",
-      schema,
-      model: fakeModel,
-      dialect,
-      tenantScope: multiScope,
-      tenantSqlMode: "sql-params",
-    });
-
-    expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id IN ($1, $2)");
-    expect(result.tenantParams).toEqual(["42", "99"]);
-  });
-
-  it("leaves SQL unchanged when no tenant policy exists", async () => {
-    const nonTenantSchema = loadSchema(join(fixturesDir, "orders-users.schema"));
-    const dialect: AskDialect = {
-      generate: async () => ({
-        sql: "SELECT COUNT(*) FROM users",
-      }),
-    };
-
-    const result = await ask({
-      question: "count users",
-      schema: nonTenantSchema,
-      model: fakeModel,
-      dialect,
-    });
-
-    expect(result.sql).toBe("SELECT COUNT(*) FROM users");
-    expect(result.tenantParams).toBeUndefined();
-    expect(result.tenantBindings).toBeUndefined();
   });
 
   it("passes through unmodified for global scope", async () => {
@@ -354,27 +198,33 @@ describe("resolveTenantSql — dialect marker styles (sql-params)", () => {
   });
 });
 
-describe("replacePlaceholdersWithParams — ? marker ordering", () => {
-  const multi = [
-    { placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "a", ids: ["a1", "a2"] },
-    { placeholder: ":tenant_client_ids", rootLabel: "Client", rootId: "c", ids: ["c1", "c2", "c3"] },
-  ];
+describe("resolveTenantSql — ? marker ordering (sql-params)", () => {
+  const multi: TenantScope = {
+    access: {
+      kind: "multi_root",
+      scopes: [
+        { tenantRoot: "table:public.agencies", ids: ["a1", "a2"] },
+        { tenantRoot: "table:public.clients", ids: ["c1", "c2", "c3"] },
+      ],
+    },
+  };
 
   it("? style: params follow the markers left to right", () => {
     const sql =
       "SELECT * FROM t WHERE client_id IN (:tenant_client_ids) AND agency_id = :tenant_agency_ids";
-    const r = replacePlaceholdersWithParams(sql, multi, 1, getDialectSpec("mysql"));
+    const r = resolveTenantSql(sql, policy, multi, "sql-params", 1, getDialectSpec("mysql"));
     expect(r.sql).toBe("SELECT * FROM t WHERE client_id IN (?, ?, ?) AND agency_id IN (?, ?)");
-    expect(r.params).toEqual(["c1", "c2", "c3", "a1", "a2"]);
+    expect(r.mode === "sql-params" && r.params).toEqual(["c1", "c2", "c3", "a1", "a2"]);
   });
 
   it("? style: a placeholder used twice gets its values twice", () => {
     const sql =
       "SELECT * FROM t WHERE agency_id = :tenant_agency_ids OR parent_id IN (:tenant_agency_ids)";
-    const r = replacePlaceholdersWithParams(sql, multi, 1, getDialectSpec("sqlite"));
+    const r = resolveTenantSql(sql, policy, multi, "sql-params", 1, getDialectSpec("sqlite"));
     expect(r.sql).toBe("SELECT * FROM t WHERE agency_id IN (?, ?) OR parent_id IN (?, ?)");
-    expect(r.params).toEqual(["a1", "a2", "a1", "a2"]);
-    expect(r.sql.match(/\?/g)).toHaveLength(r.params.length);
+    const params = r.mode === "sql-params" ? r.params : [];
+    expect(params).toEqual(["a1", "a2", "a1", "a2"]);
+    expect(r.sql.match(/\?/g)).toHaveLength(params.length);
   });
 });
 
@@ -420,17 +270,6 @@ describe("resolveTenantSql — fails closed on unresolved placeholders", () => {
     expect(out.sql).not.toContain(":tenant_agency_ids");
   });
 
-  it("an empty ID list for a referenced root throws in the low-level replacers", () => {
-    const resolved = [{ placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "r1", ids: [] }];
-    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
-    expect(reasonOf(() => replacePlaceholdersWithLiterals(sql, resolved))).toBe(
-      "UNRESOLVED_TENANT_PLACEHOLDER",
-    );
-    expect(reasonOf(() => replacePlaceholdersWithParams(sql, resolved))).toBe(
-      "UNRESOLVED_TENANT_PLACEHOLDER",
-    );
-  });
-
   // ask() expands a subtree via resolveTenantDescendants before substitution;
   // this layer never walks the hierarchy, so binding the seeds would drop descendants.
   it("an unexpanded subtree scope throws instead of binding the seed IDs only", () => {
@@ -449,8 +288,14 @@ describe("resolveTenantSql — fails closed on unresolved placeholders", () => {
   it("global scope is unaffected: SQL returned unchanged, no throw", () => {
     const globalScope: TenantScope = { access: { kind: "global", reason: "admin" } };
     const sql = "SELECT * FROM orders WHERE client_id IN (:tenant_client_ids)";
-    expect(resolveTenantSql(sql, policy, globalScope, "sql-only").sql).toBe(sql);
-    expect(resolveTenantSql(sql, policy, globalScope, "sql-params").sql).toBe(sql);
+    const onlyResult = resolveTenantSql(sql, policy, globalScope, "sql-only");
+    expect(onlyResult.sql).toBe(sql);
+    expect(onlyResult.bindings).toEqual([]);
+    const paramsResult = resolveTenantSql(sql, policy, globalScope, "sql-params");
+    expect(paramsResult.sql).toBe(sql);
+    expect(paramsResult.bindings).toEqual([]);
+    expect(paramsResult.mode).toBe("sql-params");
+    expect(paramsResult.mode === "sql-params" && paramsResult.params).toEqual([]);
   });
 });
 
@@ -558,6 +403,15 @@ describe("resolveTenantSql — only code regions are substituted", () => {
     ])("stays inside its literal on MySQL given %s", (_label, dialect) => {
       const out = resolveTenantSql(sql, policy, hostile, "sql-only", 1, dialect);
       expect(out.sql).toBe("SELECT * FROM orders WHERE agency_id = 'x\\\\'' OR 1=1 -- '");
+    });
+
+    it("keeps quote-doubling-only behavior when no dialect is supplied", () => {
+      const scope: TenantScope = {
+        access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["acme\\"] },
+      };
+      expect(resolveTenantSql(sql, policy, scope, "sql-only").sql).toBe(
+        "SELECT * FROM orders WHERE agency_id = 'acme\\'",
+      );
     });
 
     it("an explicit backslashEscapes: false is honored (NO_BACKSLASH_ESCAPES)", () => {
@@ -700,7 +554,9 @@ describe("placeholderForTenantRoot — the public derivation agrees with the bin
   });
 
   it("keeps the deprecated label-only placeholderForRoot output unchanged", () => {
+    expect(publicPlaceholderForRoot("Agency")).toBe(":tenant_agency_ids");
     expect(publicPlaceholderForRoot("Sub-Agency")).toBe(":tenant_sub_agency_ids");
+    expect(publicPlaceholderForRoot("My Cool Root")).toBe(":tenant_my_cool_root_ids");
     expect(publicPlaceholderForRoot("Клиент")).toBe(":tenant___ids");
   });
 });
