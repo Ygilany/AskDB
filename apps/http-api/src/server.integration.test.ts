@@ -508,6 +508,7 @@ describe("http-api", () => {
       const headerMode = await postAsk(app.url, { question: "hi", mode: null }, { "x-askdb-mode": "nope" });
       expect(headerMode.status).toBe(400);
       expect(headerMode.json.error.message).toContain("Invalid mode");
+      expect(headerMode.json.error.message).toContain("nope");
     } finally {
       await app.close();
     }
