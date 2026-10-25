@@ -56,7 +56,7 @@ The suites keep the same contracts with fewer, truer tests. The misnamed generat
 11. As a maintainer, I want `SUPPORTED_DIALECT_IDS` compared as a sorted set, not by length, so that the check fails on a wrong id and not only on a wrong count.
 12. As a reviewer, I want no production file and no export changed, so that the PR is reviewable as test-only.
 13. As a reviewer, I want each removal traceable to its ledger row and keeper, so that I can confirm no unique input was lost.
-14. As a release manager, I want no changeset, since no published package output changes.
+14. As a release manager, I want an empty changeset, since the Changesets check fails on any `packages/core/src/**` change without one and no published package output changes.
 
 ## Implementation Decisions
 
@@ -67,7 +67,7 @@ The suites keep the same contracts with fewer, truer tests. The misnamed generat
 - **Bind deletion (D).** Remove the `bindPreparedQuery — JSON round-trip` describe. Remaining proof, which must still exist (decision 6): core's "binds string/number/boolean/date/datetime for postgres" and "allocates ? markers for mysql/sqlite and @pN for sqlserver" in `packages/core/src/sql/bind.test.ts`, which bind a `PreparedQuery` to inline SQL and to each dialect's markers; and the consumer lab's `bindPreparedQuery` import and rebind, which rebinds `ask()`'s real `preparedQuery` with a new value against live engines (`examples/consumer-lab/test/results.test.ts`, and `gradeCatalogAnswer` in `examples/consumer-lab/src/grade.ts`). The client hooks test is not part of this proof: sibling ticket #512 deletes `packages/client/src/client.hooks.test.ts`.
 - **Dialect-spec consolidation (C, decision 3).** Remove "SUPPORTED_DIALECT_IDS enumerates all shipped specs". In "BUILT_IN_DIALECTS covers every DialectId (exhaustive)", also iterate `SUPPORTED_DIALECT_IDS` with the same two assertions (spec defined, spec `id` equals the key), and assert the sorted copy of `SUPPORTED_DIALECT_IDS` equals the sorted typed id list. The typed list stays the source of truth, so a new `DialectId` fails to type-check until it's listed.
 - **No seams.** No production export is removed or added (decision 4): every export these tests import has a non-test caller.
-- **No changeset.** Test files are not in any package's published output.
+- **Empty changeset.** Test files are not in any package's published output, but the Changesets check wants a changeset file for any `packages/core/src/**` change, so the PR adds an empty one (`.changeset/test-campaign-core-sql.md`, no package listed), like `.changeset/test-audit-core.md`.
 
 ## Testing Decisions
 
