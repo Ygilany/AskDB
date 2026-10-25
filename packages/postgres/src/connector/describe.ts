@@ -222,9 +222,12 @@ export function foldIntrospectionResult(input: FoldInput): IntrospectionResult {
   for (const r of input.viewRows) {
     const qualified = `${r.schema_name}.${r.view_name}`;
     if (!input.tableFilter(qualified)) continue;
-    const viewColumns = (columnsByTable.get(qualified) ?? []).map((cr) =>
-      buildColumn(cr, /* primaryKeyNames */ new Set(), columnCommentsByQualified),
-    );
+    const viewColumns = (columnsByTable.get(qualified) ?? [])
+      .slice()
+      .sort((a, b) => a.ordinal_position - b.ordinal_position)
+      .map((cr) =>
+        buildColumn(cr, /* primaryKeyNames */ new Set(), columnCommentsByQualified),
+      );
     const view: SqlView = {
       schema: r.schema_name,
       name: r.view_name,
@@ -428,13 +431,17 @@ function normalizePgTextArray(value: unknown): Array<string | null> {
   if (!value.startsWith("{") || !value.endsWith("}")) return [value];
   const inner = value.slice(1, -1);
   if (inner === "") return [];
-  return inner.split(",").map((item) => {
-    if (item === "NULL") return null;
-    if (item.startsWith('"') && item.endsWith('"')) {
-      return item.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-    }
-    return item;
-  });
+  // Postgres array literal: items are comma-separated, and a double-quoted
+  // item may contain commas, `\"` and `\\`. An unquoted `NULL` is a null.
+  const items: Array<string | null> = [];
+  const itemPattern = /\s*(?:"((?:[^"\\]|\\.)*)"|([^,"]*))\s*(?:,|$)/y;
+  while (itemPattern.lastIndex < inner.length) {
+    const m = itemPattern.exec(inner);
+    if (!m) break;
+    if (m[1] !== undefined) items.push(m[1].replace(/\\(.)/g, "$1"));
+    else items.push(m[2] === "NULL" ? null : (m[2] ?? ""));
+  }
+  return items;
 }
 
 function enumRowOrder(a: EnumsRow, b: EnumsRow): number {
