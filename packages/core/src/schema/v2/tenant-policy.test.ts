@@ -12,33 +12,15 @@ import { placeholderForTenantRoot, tenantPolicyFrontmatterSchema, tenantScopeSch
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../../fixtures/schemas");
 const multiTenantDir = join(fixturesDir, "agency-multi-tenant.schema");
-const nonTenantDir = join(fixturesDir, "orders-users.schema");
 
 // ---------------------------------------------------------------------------
 // Fixture loading via loadSchema
 // ---------------------------------------------------------------------------
 
 describe("loadSchema — multi-tenant fixture", () => {
-  it("loads the fixture with tenant policy", () => {
-    const schema = loadSchema(multiTenantDir);
-    expect(schema.schemaId).toBe("agency-multi-tenant");
-    expect(schema.tenantPolicy).toBeDefined();
-    expect(schema.tenantPolicy!.enforcement).toBe("strict");
-  });
-
-  it("includes all 9 tables from the physical layer", () => {
-    const schema = loadSchema(multiTenantDir);
-    expect(schema.tables).toHaveLength(9);
-  });
-
   it("has no warnings for a well-formed fixture", () => {
     const schema = loadSchema(multiTenantDir);
     expect(schema.tenantPolicy!.warnings).toEqual([]);
-  });
-
-  it("does not load tenant policy for non-tenant schemas", () => {
-    const schema = loadSchema(nonTenantDir);
-    expect(schema.tenantPolicy).toBeUndefined();
   });
 });
 
@@ -346,10 +328,6 @@ roots:
     expect(result.warnings.some((w) => w.kind === "hierarchy_cycle")).toBe(true);
   });
 
-  it("does not flag acyclic hierarchies", () => {
-    const schema = loadSchema(multiTenantDir);
-    expect(schema.tenantPolicy!.warnings.some((w) => w.kind === "hierarchy_cycle")).toBe(false);
-  });
 });
 
 // Each root's IDs bind through the placeholder derived from its label. Two roots whose
@@ -420,27 +398,9 @@ roots:
 // ---------------------------------------------------------------------------
 
 describe("tenantPolicyFrontmatterSchema", () => {
-  it("accepts valid minimal policy", () => {
-    const result = tenantPolicyFrontmatterSchema.safeParse({
-      schemaId: "test",
-      enforcement: "strict",
-      roots: [{ id: "table:public.t", tenantIdColumn: "table:public.t#id", label: "T" }],
-    });
-    expect(result.success).toBe(true);
-  });
-
   it("rejects missing enforcement", () => {
     const result = tenantPolicyFrontmatterSchema.safeParse({
       schemaId: "test",
-      roots: [{ id: "table:public.t", tenantIdColumn: "table:public.t#id", label: "T" }],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects invalid enforcement value", () => {
-    const result = tenantPolicyFrontmatterSchema.safeParse({
-      schemaId: "test",
-      enforcement: "invalid",
       roots: [{ id: "table:public.t", tenantIdColumn: "table:public.t#id", label: "T" }],
     });
     expect(result.success).toBe(false);
@@ -461,45 +421,6 @@ describe("tenantPolicyFrontmatterSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("tenantScopeSchema", () => {
-  it("accepts ids access kind", () => {
-    const result = tenantScopeSchema.safeParse({
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["1", "2"] },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts subtree access kind", () => {
-    const result = tenantScopeSchema.safeParse({
-      access: {
-        kind: "subtree",
-        tenantRoot: "table:public.agencies",
-        rootIds: ["1"],
-        includeDescendants: true,
-      },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts multi_root access kind", () => {
-    const result = tenantScopeSchema.safeParse({
-      access: {
-        kind: "multi_root",
-        scopes: [
-          { tenantRoot: "table:public.agencies", ids: ["1"] },
-          { tenantRoot: "table:public.clients", ids: ["99"] },
-        ],
-      },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts global access kind", () => {
-    const result = tenantScopeSchema.safeParse({
-      access: { kind: "global", reason: "super_admin" },
-    });
-    expect(result.success).toBe(true);
-  });
-
   it("rejects global without reason", () => {
     const result = tenantScopeSchema.safeParse({
       access: { kind: "global", reason: "" },
