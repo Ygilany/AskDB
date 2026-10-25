@@ -1,13 +1,12 @@
 import {
-  SensitiveReferenceError,
   type SensitiveMatchKind,
   type SensitiveReference,
-  type SensitiveReferenceRuleCode,
   type SensitiveScopeIssue,
   type SensitiveScopeReport,
 } from "../errors.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { DialectSpec } from "./dialect-spec.js";
+import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } from "./guardrail-decide.js";
 import {
   ENGINE_LEXER_PROFILES,
   GENERIC_LEXER,
@@ -75,22 +74,24 @@ export function validateSensitiveReferences(
   schema: AnyNormalizedSchema,
   options?: ValidateSensitiveReferencesOptions,
 ): SensitiveGuardrailResult {
-  const mode = options?.mode ?? "warn";
-  const index = indexSchema(schema);
-
-  const result: SensitiveGuardrailResult = index.hasSensitive
-    ? scanSql(sql, index, options?.dialect)
-    : { passed: true, references: [] };
-
-  if (mode === "strict" && !result.passed) {
-    throw new SensitiveReferenceError(
-      buildStrictMessage(result),
-      ruleFor(result),
-      result.references,
-      result.unresolvedScope,
-    );
-  }
+  const sensitive = options?.mode ?? "warn";
+  const result = scanSensitiveReferences(sql, schema, options?.dialect);
+  // The rule plus a single-check decision, so the mode is read in one place.
+  throwIfDenied(decide(sensitiveFindings(result, "sql"), { sensitive }, "return"), { sensitive }, "return");
   return result;
+}
+
+/**
+ * The sensitive-identifier rule alone: the references `sql` makes, with no mode. Internal
+ * to `@askdb/core`; the guardrail checks and {@link validateSensitiveReferences} share it.
+ */
+export function scanSensitiveReferences(
+  sql: string,
+  schema: AnyNormalizedSchema,
+  dialect: Pick<DialectSpec, "id" | "backslashEscapes"> | undefined,
+): SensitiveGuardrailResult {
+  const index = indexSchema(schema);
+  return index.hasSensitive ? scanSql(sql, index, dialect) : { passed: true, references: [] };
 }
 
 /**
@@ -101,32 +102,7 @@ export function schemaHasSensitiveIdentifiers(schema: AnyNormalizedSchema): bool
   return indexSchema(schema).hasSensitive;
 }
 
-/** Render a reference as `schema.table.column` (or `table.column` when the schema has no namespace). */
-export function formatSensitiveReference(ref: SensitiveReference): string {
-  const table = ref.schema ? `${ref.schema}.${ref.table}` : ref.table;
-  return `${table}.${ref.column}`;
-}
-
-// ---------------------------------------------------------------------------
-// Strict-mode messaging
-// ---------------------------------------------------------------------------
-
-function ruleFor(result: SensitiveGuardrailResult): SensitiveReferenceRuleCode {
-  if (result.references.some((r) => r.matchKind === "table")) return "SENSITIVE_TABLE_REFERENCED";
-  if (result.references.length > 0) return "SENSITIVE_COLUMN_REFERENCED";
-  return "UNRESOLVED_TABLE_SCOPE";
-}
-
-function buildStrictMessage(result: SensitiveGuardrailResult): string {
-  const parts: string[] = [];
-  if (result.references.length > 0) {
-    parts.push(
-      `SQL references sensitive identifiers: ${result.references.map(formatSensitiveReference).join(", ")}`,
-    );
-  }
-  if (result.unresolvedScope) parts.push(result.unresolvedScope.message);
-  return `Sensitive-identifier guardrail failed (strict mode): ${parts.join("; ")}`;
-}
+export { formatSensitiveReference };
 
 // ---------------------------------------------------------------------------
 // Schema index

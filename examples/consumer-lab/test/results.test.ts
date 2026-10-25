@@ -36,13 +36,13 @@
  * Needs the `cli-introspect-engine` capability to build the schema artifacts, the fixture
  * (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
  */
-import { bindPreparedQuery } from "@askdb/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { askRaw, type AskResult } from "../src/ask.js";
 import { ensureArtifact } from "../src/artifacts.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { normalizeRows } from "../src/fixture.js";
+import { rebind } from "../src/grade.js";
 import { executeReadOnly } from "../src/host/execute.js";
 import { loadQuestions, type Question } from "../src/model/catalog.js";
 import { startReplayServer, type ReplayServer } from "../src/model/replay-server.js";
@@ -120,7 +120,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
     // The placeholder's name is the reply's: `start_date` in an authored reply, the model's choice in a recorded one.
     const name = result.parameters?.[0]?.name;
     expect(name, "ask() returned no named parameter binding for a reply with a manifest").toBeDefined();
-    const rebound = bindPreparedQuery(result.preparedQuery!, { [name!]: PARAMETERIZED.rebindTo });
+    const rebound = rebind(dialect, result.preparedQuery!, { [name!]: PARAMETERIZED.rebindTo });
     const want = expected(PARAMETERIZED.rows(PARAMETERIZED.rebindTo));
 
     // The new value must change the answer, or this couldn't tell a rebind from the original.

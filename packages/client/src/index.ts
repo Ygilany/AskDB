@@ -3,6 +3,7 @@ export {
   type AskDbClient,
   type CreateAskDbOptions,
   type AskOverrides,
+  type BindOptions,
   type SchemaSource,
   type DialectResolution,
 } from "./client.js";

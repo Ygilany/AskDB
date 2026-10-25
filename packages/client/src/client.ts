@@ -9,6 +9,8 @@ import {
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import {
   ask,
+  bindPreparedQuery,
+  expandTenantScope,
   isBuiltInDialectId,
   loadSchema,
   loadSchemaFromJson,
@@ -19,6 +21,11 @@ import {
   type AskGenerateDeps,
   type AskPipelineOptions,
   type AskPipelineResult,
+  type BindGuardrails,
+  type BoundQuery,
+  type PreparedQuery,
+  type QueryParameterValue,
+  type ResolveTenantDescendants,
 } from "@askdb/core";
 import type { BuiltInDialectId } from "@askdb/core";
 import {
@@ -48,6 +55,14 @@ export type AskOverrides = Omit<
    * Ignored when `model` or `deps.generateText` is also set (BYO paths).
    */
   reasoningEffort?: ReasoningEffort;
+};
+
+/** Options for {@link AskDbClient.bind}. Everything is optional; `schema` overrides the client's schema. */
+export type BindOptions = Omit<BindGuardrails, "schema"> & {
+  /** The schema to check the template under. Defaults to the schema `ask()` resolves. */
+  schema?: SchemaSource | AnyNormalizedSchema;
+  /** Expands a `subtree` `tenantScope` before binding, as in `ask()`. */
+  resolveTenantDescendants?: ResolveTenantDescendants;
 };
 
 export type DialectResolution = {
@@ -98,6 +113,17 @@ export type CreateAskDbOptions = {
 
 export type AskDbClient = {
   ask(question: string, overrides?: AskOverrides): Promise<AskPipelineResult>;
+  /**
+   * Rebind a stored `preparedQuery` with new values, without calling the model. Checks the
+   * template under the client's schema (the one `ask()` resolves, unless `options.schema`
+   * is set), the given tenant scope and modes, expands a `subtree` scope with
+   * `options.resolveTenantDescendants`, and forwards to `@askdb/core`'s `bindPreparedQuery()`.
+   */
+  bind(
+    prepared: PreparedQuery,
+    values: Record<string, QueryParameterValue | readonly QueryParameterValue[]>,
+    options?: BindOptions,
+  ): Promise<BoundQuery>;
   /** Drop cached schema + model so the next ask() re-resolves them. */
   reload(): void;
 };
@@ -256,6 +282,17 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       cachedSchema = undefined;
       cachedModel = undefined;
       cachedAiConfig = undefined;
+    },
+    async bind(prepared, values, options = {}) {
+      const { schema: schemaOverride, resolveTenantDescendants, tenantScope, ...guardrails } = options;
+      const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
+      const tenantPolicy = "schemaId" in schema ? schema.tenantPolicy : undefined;
+      // The same subtree expansion ask() runs, so a host never builds it by hand (ADR 0014).
+      const scope =
+        tenantPolicy && tenantScope
+          ? await expandTenantScope(tenantPolicy, tenantScope, resolveTenantDescendants)
+          : tenantScope;
+      return bindPreparedQuery(prepared, values, { ...guardrails, schema, ...(scope ? { tenantScope: scope } : {}) });
     },
     async ask(question, overrides = {}) {
       const {

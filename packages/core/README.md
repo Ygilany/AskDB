@@ -87,10 +87,8 @@ await pool.query(result.sql);                       // ready to run
 await pool.query(result.unboundSql!, result.params); // driver binding
 
 // Render a form from result.parameters, then rebind locally — no model call.
-const rebound = bindPreparedQuery(result.preparedQuery!, {
-  state_name: "Utah",
-  ":tenant_agency_ids": authorizedAgencyIds,
-});
+// The guardrails run again on the template under this schema and scope.
+const rebound = bindPreparedQuery(result.preparedQuery!, { state_name: "Utah" }, { schema, tenantScope });
 await pool.query(rebound.sql);
 ```
 
@@ -99,7 +97,7 @@ Key rules:
 - `parameterize` defaults to **true**. Set `parameterize: false` when the extra output tokens are not worth it.
 - If the model's extra blocks are missing or inconsistent, the extras are omitted and `result.sql` is unaffected. No new error reaches a caller who does not call `bindPreparedQuery()`.
 - The model decides what to parameterize, so a mistake changes the *form*, not the query. Constrain form inputs using returned `type` and `description`.
-- `bindPreparedQuery()` is mechanical: it checks names, types, and cardinality, and **does not authorize tenant IDs**. Authorization is the host's, exactly as when building `tenantScope`.
+- `bindPreparedQuery(prepared, values, { schema, tenantScope?, sensitiveGuardrailMode?, acceptWarnings? })` re-runs the read-only, tenant and sensitive checks on the stored template under the schema, scope and modes you pass, then binds. Tenant IDs come from `tenantScope`, never from `values`. Under a policy with `enforcement: warn`, a template that fails the tenant check is refused unless `acceptWarnings` includes `"tenant"`. Authorizing `tenantScope` is the host's job, exactly as for `ask()`. Expand a `subtree` scope with `expandTenantScope()` first.
 - Callers using the new fields must execute with `params`, not `tenantParams`.
 - List parameters are arity-stable in `unboundSql` only on PostgreSQL/CockroachDB (`= ANY($n)`); elsewhere a changed list length changes the marker count — rebind through `bindPreparedQuery()` rather than swapping the array.
 - Markers: `$N` (Postgres/CockroachDB), `?` (MySQL/MariaDB/SQLite), `@pN` (SQL Server, 0-based). Map values via `parameters[].markers` for SQL Server.
@@ -107,7 +105,8 @@ Key rules:
 ## What you get
 
 - `ask({ question, schema, model, dialect })` — generate checked SQL (plus optional `unboundSql` / `params` / `parameters` / `preparedQuery`).
-- `bindPreparedQuery(prepared, values)` — pure local rebind of a `PreparedQuery` (no model call).
+- `bindPreparedQuery(prepared, values, guardrails)` — local rebind of a `PreparedQuery` (no model call), re-checked under the given schema and tenant scope.
+- `expandTenantScope(policy, scope, resolveTenantDescendants)` — the `subtree` expansion `ask()` runs, for a rebind.
 - `AskDbLanguageModel` — AskDB's public name for the AI SDK language model contract.
 - `AskDialect` — the dialect adapter contract. `@askdb/postgres` exports a ready-made one.
 - `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.

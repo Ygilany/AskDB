@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AiConfig, AiProviderAdapter, AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import type { AnyNormalizedSchema, AskDialect } from "@askdb/core";
-import { loadSchema, loadSchemaFromJson } from "@askdb/core";
+import { loadSchema, loadSchemaFromJson, SensitiveReferenceError, TenantGuardrailError } from "@askdb/core";
 import type { DialectResolution } from "./client.js";
 import { createAskDb } from "./client.js";
 import {
@@ -618,5 +618,90 @@ describe("createAskDb — abortSignal", () => {
     controller.abort(reason);
     await expect(pending).rejects.toMatchObject({ name: "SqlGenerationError", cause: reason });
     expect(doGenerate.mock.calls[0]![0].abortSignal?.aborted).toBe(true);
+  });
+});
+
+describe("createAskDb — bind() rebinds a stored template under the guardrails (ADR 0010)", () => {
+  const multiTenantPath = join(here, "../../../fixtures/schemas/agency-multi-tenant.schema");
+  const agencies = "table:public.agencies";
+  const reply = (sql: string, unbound: string) =>
+    [
+      "```sql",
+      sql,
+      "```",
+      "```sql-unbound",
+      unbound,
+      "```",
+      "```json",
+      '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"shipped"}]}',
+      "```",
+    ].join("\n");
+  const agencyIds = (...ids: string[]) => ({ access: { kind: "ids" as const, tenantRoot: agencies, ids } });
+  const askdbReplying = (text: string) =>
+    createAskDb({ config: makeConfig({ schemaPath: multiTenantPath, mockSql: text, dialect: "postgres" }), registry: makeRegistry() });
+
+  it("loads the schema from host.schemaPath, renders the bind-time tenant IDs, and refuses what core refuses", async () => {
+    const askdb = askdbReplying(
+      reply(
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'shipped'",
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status_name",
+      ),
+    );
+    const { preparedQuery } = await askdb.ask("orders by status", { tenantScope: agencyIds("42") });
+
+    const bound = await askdb.bind(preparedQuery!, { status_name: "open" }, { tenantScope: agencyIds("7") });
+    expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '7' AND status = 'open'");
+    expect(bound.verdict.outcome).toBe("allow");
+
+    const unscoped = { ...preparedQuery!, namedSql: "SELECT count(*) FROM orders WHERE status = :status_name", parameters: preparedQuery!.parameters.filter((p) => p.source === "question") };
+    await expect(askdb.bind(unscoped, { status_name: "open" }, { tenantScope: agencyIds("7") })).rejects.toBeInstanceOf(
+      TenantGuardrailError,
+    );
+  });
+
+  it("forwards sensitiveGuardrailMode and checks under options.schema when it is set", async () => {
+    const askdb = askdbReplying("SELECT 1");
+    const readsEmail = {
+      version: 1 as const,
+      dialect: "postgres" as const,
+      namedSql: "SELECT c.email FROM clients c WHERE c.id IN (:tenant_client_ids) AND c.name = :status_name",
+      parameters: [
+        { name: "status_name", placeholder: ":status_name", type: "string" as const, cardinality: "one" as const, source: "question" as const },
+        { name: "tenant_client_ids", placeholder: ":tenant_client_ids", type: "string" as const, cardinality: "many" as const, source: "tenant" as const },
+      ],
+    };
+    const clientScope = { access: { kind: "ids" as const, tenantRoot: "table:public.clients", ids: ["5"] } };
+
+    const bound = await askdb.bind(readsEmail, { status_name: "x" }, { tenantScope: clientScope });
+    expect(bound.verdict.outcome).toBe("warn");
+    await expect(
+      askdb.bind(readsEmail, { status_name: "x" }, { tenantScope: clientScope, sensitiveGuardrailMode: "strict" }),
+    ).rejects.toBeInstanceOf(SensitiveReferenceError);
+
+    // The same template under a schema without a tenant policy can't render its placeholder.
+    const { tenantPolicy: _policy, ...noPolicy } = loadSchema(multiTenantPath);
+    await expect(
+      askdb.bind(readsEmail, { status_name: "x" }, { tenantScope: clientScope, schema: noPolicy as AnyNormalizedSchema }),
+    ).rejects.toMatchObject({ name: "TenantScopeError", reason: "UNRESOLVED_TENANT_PLACEHOLDER" });
+  });
+
+  it("expands a subtree scope with resolveTenantDescendants before binding", async () => {
+    const askdb = askdbReplying(
+      reply(
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'shipped'",
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status_name",
+      ),
+    );
+    const { preparedQuery } = await askdb.ask("orders by status", { tenantScope: agencyIds("42") });
+    const resolveTenantDescendants = vi.fn(async () => ({ [agencies]: ["2"] }));
+
+    const bound = await askdb.bind(preparedQuery!, { status_name: "open" }, {
+      tenantScope: { access: { kind: "subtree", tenantRoot: agencies, rootIds: ["1"], includeDescendants: true } },
+      resolveTenantDescendants,
+    });
+    expect(resolveTenantDescendants).toHaveBeenCalledWith(agencies, ["1"]);
+    expect(bound.sql).toBe(
+      "SELECT count(*) FROM orders WHERE agency_id IN ('1', '2') AND status = 'open'",
+    );
   });
 });

@@ -1,10 +1,4 @@
-import {
-  TenantGuardrailError,
-  type TenantGuardrailWarning,
-  type TenantGuardrailRuleCode,
-} from "../errors.js";
-import type { AskDbLogger } from "../logging/askdb-logger.js";
-import { AskDbLogEvent } from "../logging/log-events.js";
+import { type TenantGuardrailWarning, type TenantGuardrailRuleCode } from "../errors.js";
 import {
   placeholderForTenantRoot,
   type NormalizedTenantPolicy,
@@ -13,6 +7,7 @@ import {
   type PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
 import { startsDashComment } from "./lexer.js";
 
 export type TenantGuardrailResult = {
@@ -82,13 +77,28 @@ export function validateTenantGuardrails(
   scope: TenantScope,
   options?: ValidateTenantGuardrailsOptions,
 ): TenantGuardrailResult {
+  const warnings = tenantRuleWarnings(sql, policy, scope, options?.dialect);
+  // The rule plus a single-check decision, so the mode is read in one place.
+  const modes = { tenant: policy.enforcement, sensitive: "off" } as const;
+  throwIfDenied(decide(tenantFindings(warnings, "sql"), modes, "return"), modes, "return");
+  return { passed: warnings.length === 0, warnings };
+}
+
+/**
+ * The tenant rule alone: what {@link validateTenantGuardrails} finds in `sql`, with no
+ * mode. Internal to `@askdb/core`; the guardrail checks and the validator share it.
+ */
+export function tenantRuleWarnings(
+  sql: string,
+  policy: NormalizedTenantPolicy,
+  scope: TenantScope,
+  dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+): TenantGuardrailWarning[] {
   // Global scope bypasses tenant guardrails
-  if (scope.access.kind === "global") {
-    return { passed: true, warnings: [] };
-  }
+  if (scope.access.kind === "global") return [];
 
   const warnings: TenantGuardrailWarning[] = [];
-  const views = codeViews(sql, options?.dialect);
+  const views = codeViews(sql, dialect);
 
   // Check the roots this scope covers: a query on the root table itself is scoped by its tenant ID column.
   for (const rootId of scopeRootIds(scope)) {
@@ -132,85 +142,7 @@ export function validateTenantGuardrails(
     }
   }
 
-  const passed = warnings.length === 0;
-
-  if (!passed && policy.enforcement === "strict") {
-    throw new TenantGuardrailError(
-      `Tenant guardrail validation failed (strict mode): ${warnings.map((w) => w.message).join("; ")}`,
-      warnings,
-    );
-  }
-
-  return { passed, warnings };
-}
-
-/**
- * Run {@link validateTenantGuardrails} over every SQL form the caller is about to
- * hand out (e.g. the bound `sql` and, when present, the `unboundSql`), merge the
- * findings into one result, and log a single pass/fail event.
- *
- * Every form is checked in `warn` mode first so the merged result lists all
- * findings; when the policy is `strict` and anything failed, a single
- * `TenantGuardrailError` is thrown afterwards. `extra` lets a caller fold in a
- * result reported by a custom generator so its findings are never dropped.
- * `dialect` is the target engine, when known (undefined for a custom `AskDialect`).
- *
- * Internal to `@askdb/core` — `ask()` and `generateSelectSql()` share it so the
- * check always runs on the SQL that is actually returned.
- */
-export function enforceTenantGuardrails(
-  sqls: ReadonlyArray<string | undefined>,
-  policy: NormalizedTenantPolicy,
-  scope: TenantScope,
-  logger?: AskDbLogger,
-  extra?: TenantGuardrailResult,
-  dialect?: ValidateTenantGuardrailsOptions["dialect"],
-): TenantGuardrailResult {
-  const collectPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
-  const warnings: TenantGuardrailWarning[] = [];
-  const seen = new Set<string>();
-  const add = (w: TenantGuardrailWarning): void => {
-    const key = `${w.rule}\u0000${w.tableId}\u0000${w.message}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    warnings.push(w);
-  };
-
-  const checked = new Set<string>();
-  for (const sql of sqls) {
-    if (sql === undefined || checked.has(sql)) continue;
-    checked.add(sql);
-    for (const w of validateTenantGuardrails(sql, collectPolicy, scope, { dialect }).warnings) add(w);
-  }
-  for (const w of extra?.warnings ?? []) add(w);
-
-  const passed = warnings.length === 0 && extra?.passed !== false;
-
-  if (passed) {
-    logger?.info({ event: AskDbLogEvent.TenantGuardrailPassed }, "tenant guardrail validation passed");
-  } else {
-    logger?.info(
-      {
-        event: AskDbLogEvent.TenantGuardrailFailed,
-        warningCount: warnings.length,
-        enforcement: policy.enforcement,
-      },
-      "tenant guardrail validation found issues",
-    );
-  }
-
-  if (!passed && policy.enforcement === "strict") {
-    const detail =
-      warnings.length > 0
-        ? warnings.map((w) => w.message).join("; ")
-        : "the SQL generator reported a failed tenant guardrail";
-    throw new TenantGuardrailError(
-      `Tenant guardrail validation failed (strict mode): ${detail}`,
-      warnings,
-    );
-  }
-
-  return { passed, warnings };
+  return warnings;
 }
 
 // ---------------------------------------------------------------------------

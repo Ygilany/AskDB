@@ -104,13 +104,23 @@ interface AskPipelineResult {
   parameters?: QueryParameterBinding[] // named — for form UIs (includes values)
   preparedQuery?: PreparedQuery      // definitions + template only (no values)
   explain?: unknown
-  tenantGuardrail?: TenantGuardrailResult // checked on the returned sql (+ unboundSql); every dialect form
+  verdict: GuardrailVerdict          // every guardrail finding + outcome ('allow' | 'warn'); a 'deny' throws (ADR 0010)
+  sensitiveGuardrail?: SensitiveGuardrailResult // derived from verdict
+  tenantGuardrail?: TenantGuardrailResult // derived from verdict; checked on the model's sql (+ sql-unbound block) before rendering
   tenantParams?: unknown[]           // 'sql-params' only: tenant IDs for the markers in `sql` (run sql with these; never concat with params)
   tenantBindings?: TenantBinding[]
 }
 
-// Local rebind (no model call). Mechanical: names/types/cardinality only — does not authorize tenant IDs.
-bindPreparedQuery(prepared: PreparedQuery, values: Record<string, QueryParameterValue | QueryParameterValue[]>): BoundQuery
+// Local rebind (no model call). Re-checks the template under the bind-time schema, scope and
+// modes (ADR 0010), then binds business values and renders tenant IDs from tenantScope.
+bindPreparedQuery(
+  prepared: PreparedQuery,
+  values: Record<string, QueryParameterValue | QueryParameterValue[]>, // business values only
+  guardrails: { schema; tenantScope?; sensitiveGuardrailMode?; acceptWarnings?: ReadonlyArray<'tenant'> },
+): BoundQuery // { sql, unboundSql, params, bindings, verdict }
+
+// The subtree expansion ask() runs, for a host that rebinds (ADR 0014).
+expandTenantScope(policy, scope, resolveTenantDescendants): Promise<TenantScope>
 
 
 // Dialect input — all three forms accepted by ask()
@@ -120,7 +130,9 @@ type AskDialectInput =
   | AskDialect              // escape hatch: full custom { generate() } implementation
 ```
 
-A custom `AskDialect` bypasses the built-in SELECT-only validation. If the adapter should only emit read-only SQL, call the exported `validateSelectSql(spec, sql)` itself. Tenant enforcement does not depend on the dialect: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the model's SQL, with the tenant placeholders still named, and then substitutes them, for every dialect form. An unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
+A custom `AskDialect` bypasses the built-in SELECT-only validation. If the adapter should only emit read-only SQL, call the exported `validateSelectSql(spec, sql)` itself. Tenant enforcement does not depend on the dialect: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the model's SQL, with the tenant placeholders still named, and then substitutes them, for every dialect form.
+
+Guardrails ([ADR 0010](../adrs/0010-sql-guardrail-decision-point.md)): the read-only, tenant and sensitive checks are pure rules over the model's pre-render forms (its bound `sql` and its `sql-unbound` template). One decision maps their findings and the configured modes to `allow` / `warn` / `deny`, at two enforcement points: `ask()` / `generateSelectSql()` returning SQL, and `bindPreparedQuery()` rebinding a template. A `deny` throws the highest-ranked check's typed error (`SqlValidationError`, then `TenantGuardrailError`, then `SensitiveReferenceError`) with the verdict attached. At rebind a tenant `warn` is refused unless the caller passes `acceptWarnings: ["tenant"]`; a sensitive `warn` binds and is reported in the verdict. An unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 
 Key events emitted (stable field names, present on every log record):
 - `askdb.pipeline.started`

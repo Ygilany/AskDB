@@ -1,14 +1,13 @@
 export { extractSqlFromModelText, extractUnboundSqlFromModelText } from "./extract-sql.js";
 export {
-  bindPreparedQuery,
   escapeSqlLiteral,
   type QueryParameterType,
   type QueryParameterValue,
   type QueryParamSlot,
   type QueryParameterBinding,
   type PreparedQuery,
-  type BoundQuery,
 } from "./bind.js";
+export { bindPreparedQuery, type BindGuardrails, type BoundQuery } from "./rebind.js";
 export {
   parseParameterManifest,
   type ParameterManifest,

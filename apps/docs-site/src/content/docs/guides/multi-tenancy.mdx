@@ -138,21 +138,18 @@ It's a heuristic over the SQL's tokens, not a parser. Within one query it doesn'
 
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
-import { bindPreparedQuery } from "@askdb/core";
+const tenantScope = {
+  access: {
+    kind: "ids",
+    tenantRoot: "table:public.organizations",
+    ids: ["org_abc123"],
+  },
+} as const;
 
-const result = await askdb.ask(
-  "How many documents did we create this month?",
-  {
-    tenantScope: {
-      access: {
-        kind: "ids",
-        tenantRoot: "table:public.organizations",
-        ids: ["org_abc123"],
-      },
-    },
-    tenantSqlMode: "sql-params",
-  }
-);
+const result = await askdb.ask("How many documents did we create this month?", {
+  tenantScope,
+  tenantSqlMode: "sql-params",
+});
 
 // Two executable pairs — pick one, never concatenate the arrays.
 if (result.unboundSql && result.params) {
@@ -163,16 +160,17 @@ if (result.unboundSql && result.params) {
   await pool.query(result.sql, result.tenantParams);
 }
 
-// Local rebind — no model call. Authorization of tenant IDs remains yours.
+// Local rebind — no model call. The guardrails run again on the stored template under
+// this scope, and the tenant IDs come from it. Authorizing the scope remains yours.
 if (result.preparedQuery) {
-  const rebound = bindPreparedQuery(result.preparedQuery, {
-    ":tenant_organization_ids": ["org_abc123"],
-  });
-  await pool.query(rebound.sql);
+  const rebound = await askdb.bind(result.preparedQuery, { month: "2026-04" }, { tenantScope });
+  await pool.query(rebound.unboundSql, rebound.params);
 }
 ```
 
-`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (a root's IDs plus all descendants: `{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`; needs a `resolveTenantDescendants` callback that returns IDs per root, see [below](#hierarchical-scope-subtree)), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail; the tenant check is skipped). The optional `context` field carries advisory metadata (role, department) into the prompt. It isn't enforced.
+A rebind takes tenant IDs only from `tenantScope`; a `:tenant_*` key in the values throws. It runs the tenant check under the scope you pass now and the policy as it is now, so a template produced under a `global` scope, or before a policy change, is refused if it doesn't filter for this caller. Under `enforcement: warn`, a template that fails the tenant check is refused at rebind unless you pass `acceptWarnings: ["tenant"]`. Without `@askdb/client`, call core's [`bindPreparedQuery(prepared, values, { schema, tenantScope })`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails), expanding a `subtree` scope with `expandTenantScope()` first.
+
+`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (a root's IDs plus all descendants: `{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`; needs a `resolveTenantDescendants` callback that returns IDs per root, see [below](#hierarchical-scope-subtree)), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail; the tenant check is skipped, and SQL that still uses a tenant placeholder throws `TenantScopeError`, since a `global` scope has no IDs to bind). The optional `context` field carries advisory metadata (role, department) into the prompt. It isn't enforced.
 
 Polymorphic tables are declared in the policy and surfaced to the model through the prompt; there's no scope field for pre-resolving them at runtime.
 
