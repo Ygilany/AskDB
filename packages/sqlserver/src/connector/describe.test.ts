@@ -297,7 +297,24 @@ describe("describeSqlServer", () => {
   });
 
   it("marks isEmpty when nothing usable remains after filtering", async () => {
-    const result = await describeSqlServer({ runner: fakeRunner({}) });
+    const runner = fakeRunner({
+      tables: [{ schema_name: "dbo", table_name: "users", table_type: "BASE TABLE" }],
+      columns: [
+        {
+          schema_name: "dbo",
+          table_name: "users",
+          column_name: "id",
+          ordinal_position: 1,
+          type_name: "int",
+          max_length: 4,
+          precision_v: 10,
+          scale: 0,
+          is_nullable: 0,
+        },
+      ],
+    });
+    const result = await describeSqlServer({ runner, filters: { tables: ["dbo.none"] } });
+    expect(result.warnings).toEqual([{ code: "ambiguous_filter", filter: "dbo.none" }]);
     expect(result.isEmpty).toBe(true);
     expect(result.schema.schemas).toEqual([]);
     expect(result.provider).toBe("sqlserver");

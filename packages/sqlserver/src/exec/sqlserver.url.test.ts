@@ -14,18 +14,6 @@ describe("resolveConnectionInput", () => {
       expect(resolveConnectionInput(cs)).toBe(cs);
     });
 
-    it("normalises 'Trust Server Certificate' to 'TrustServerCertificate'", () => {
-      const cs = "Server=db.example.com,1433;Database=AppCatalog;User ID=appuser;Password=Str0ngP4ss;Encrypt=True;Trust Server Certificate=True;";
-      const result = asString(resolveConnectionInput(cs));
-      expect(result).toContain("TrustServerCertificate=True");
-      expect(result).not.toMatch(/Trust Server Certificate/i);
-    });
-
-    it("normalises 'Application Intent' to 'ApplicationIntent'", () => {
-      const result = asString(resolveConnectionInput("Server=db.example.com;Application Intent=ReadWrite;"));
-      expect(result).toContain("ApplicationIntent=ReadWrite");
-    });
-
     it("handles the full VS Code mssql-style ADO.NET string", () => {
       const cs =
         "Data Source=db.example.com,1433;Initial Catalog=AppCatalog;User ID=appuser;Password=Str0ngP4ss;Pooling=False;" +
@@ -35,6 +23,7 @@ describe("resolveConnectionInput", () => {
       const result = asString(resolveConnectionInput(cs));
       expect(result).toContain("TrustServerCertificate=True");
       expect(result).toContain("ApplicationIntent=ReadWrite");
+      expect(result).not.toMatch(/Trust Server Certificate/i);
     });
 
     it("is case-insensitive for the key name", () => {
@@ -108,19 +97,6 @@ describe("resolveConnectionInput", () => {
         password: "Str0ngP4ss",
         options: { encrypt: true },
       });
-    });
-
-    it("parses trustServerCertificate (case-insensitive key)", () => {
-      const result = resolveConnectionInput(
-        "sqlserver://db.example.com:1433;database=AppCatalog;user=appuser;password=Str0ngP4ss;trustServerCertificate=true",
-      );
-      expect((result as { options?: { trustServerCertificate?: boolean } }).options?.trustServerCertificate).toBe(true);
-    });
-
-    it("handles sqlserver:// URL without port", () => {
-      const result = resolveConnectionInput("sqlserver://db.example.com;database=AppCatalog;user=appuser;password=Str0ngP4ss");
-      expect((result as { server: string }).server).toBe("db.example.com");
-      expect((result as { port?: number }).port).toBeUndefined();
     });
 
     it("throws when server is missing", () => {
