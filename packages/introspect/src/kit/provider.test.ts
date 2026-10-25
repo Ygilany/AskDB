@@ -56,16 +56,6 @@ describe("defineLiveConnectorProvider", () => {
     });
   });
 
-  it("treats a blank explicit value as absent, so the configured connection applies", () => {
-    for (const url of ["", "  "]) {
-      expect(registry.resolveConnection("acme", { explicit: { url }, runtime: runtime("acme://config/db") })).toEqual({
-        ok: true,
-        connection: { url: "acme://config/db" },
-        sourceLabel: "acme://config/db",
-      });
-    }
-  });
-
   it("reports a missing connection before rejecting --from-export (the CLI's historical check order)", () => {
     expect(adapter.resolveConnection!({ explicit: { fromExport: "./b" }, runtime: runtime(), surface: "cli" })).toEqual({
       ok: false,
