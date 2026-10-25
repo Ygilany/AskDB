@@ -38,7 +38,9 @@ shim  auto-discovers prisma schema or errors + renamed to the error path only
 
 **Done when:** every ledger row is applied as above, `pnpm test` passes for `apps/cli` and `pnpm lint` passes, with no change outside `apps/cli`'s test files.
 
-**Needs you:** nothing.
+**Needs you:** one decision, escalated from align run 1 (the critic's coverage finding, confirmed by hand).
+
+> **`resolveInitDepSpecs` returns `"latest"` in the monorepo today.** It resolves `@askdb/config/package.json`, which `@askdb/config`'s `exports` doesn't list, so Node throws `ERR_PACKAGE_PATH_NOT_EXPORTED`, the `catch` returns `"latest"`, and `askdb init` run from the repo installs `@askdb/config@latest`. Published installs are unaffected (pnpm publish turns `workspace:*` into a version). The planned F repair (assert the spec equals `@askdb/config`'s version) therefore fails until production code changes, which this ticket rules out. Options: **A** keep this ticket test-only, drop this one F row, and file the bug with its test as its own ticket (recommended); **B** widen this ticket to fix `init.ts` (sensitive path) with a patch changeset; **C** stay test-only and weaken the repair to "not `workspace:*`", leaving the `latest` leak untested.
 
 Reply: `/approve` · `/changes <guidance>`
 
