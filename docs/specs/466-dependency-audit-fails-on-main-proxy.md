@@ -36,7 +36,7 @@ CI's `audit` job and step 2 of `pnpm preflight` run `pnpm run audit` (audit-ci o
 
 ## Solution
 
-Contributors and CI get a green audit again. The build stage installs the branch, runs the audit, and clears each reported advisory with the least lasting change that fixes it: a lockfile refresh where the patched version is already in range, a parent bump or a commented override where a parent pins a vulnerable range, and a path-scoped allowlist entry with a CONTRIBUTING.md rationale row only where no fix is reachable and the flaw is not exploitable in how AskDB uses the package. Published packages' `package.json` ranges stay as they are, so hosts see no change beyond what their own lockfiles pick up.
+Contributors and CI get a green audit again. The build stage installs the branch, runs the audit, and clears each reported advisory with the least lasting change that fixes it: a lockfile refresh where the patched version is already in range, a parent bump or a commented override where a parent pins a vulnerable range, and a path-scoped allowlist entry with a CONTRIBUTING.md rationale row only where no fix is reachable and the flaw is not exploitable in how AskDB uses the package. Published packages' `package.json` ranges are expected to stay as they are (`zod`'s by decision 4), so hosts see no change beyond what their own lockfiles pick up.
 
 ## User Stories
 
