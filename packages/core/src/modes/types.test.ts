@@ -24,7 +24,6 @@ describe("parseAskDbModeV1", () => {
 
 describe("formatAskDbModesV1", () => {
   it("lists pipe-separated ids for help text", () => {
-    expect(formatAskDbModesV1()).toMatch(/schema_only/);
-    expect(formatAskDbModesV1()).toMatch(/bounded_results/);
+    expect(formatAskDbModesV1()).toBe("schema_only|bounded_results");
   });
 });
