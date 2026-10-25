@@ -98,6 +98,10 @@ columns:
   it("buildFrontmatter omits empty optional fields", () => {
     const draft = buildTableDraft(physical as never, undefined);
     draft.description = "anything";
+    draft.aliases = [];
+    draft.tags = [];
+    draft.primaryEntity = "";
+    draft.columns["table:public.orders#status"] = { aliases: [], enum: [], description: "" };
     const fm = buildFrontmatter(physical as never, "orders-users", draft);
     expect(fm.aliases).toBeUndefined();
     expect(fm.primaryEntity).toBeUndefined();
@@ -115,14 +119,10 @@ columns:
     expect(refs).toEqual(["email"]);
   });
 
-  it.each<[string, string, string[]]>([
-    ["ssn$", "We hash the ssn$ value.", ["ssn$"]],
-    ["café", "Grouped by CAFÉ.", ["café"]],
-    ["café", "Grouped by cafés.", []],
-    ["caf", "Open the café.", []],
-  ])("findSensitiveColumnReferences uses core's mention rule for %j", (name, text, expected) => {
-    const table = { ...physical, columns: [{ ...physical.columns[0], name, sensitive: true }] };
-    expect(findSensitiveColumnReferences(text, table as never)).toEqual(expected);
+  it("findSensitiveColumnReferences delegates to core's mention rule", () => {
+    // A local `\b` regex would miss the trailing `$`; core's rule matches it.
+    const table = { ...physical, columns: [{ ...physical.columns[0], name: "ssn$", sensitive: true }] };
+    expect(findSensitiveColumnReferences("We hash the ssn$ value.", table as never)).toEqual(["ssn$"]);
   });
 
   it("findSensitiveColumnReferences ignores non-sensitive columns", () => {
