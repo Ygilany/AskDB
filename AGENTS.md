@@ -23,7 +23,7 @@ pnpm workspace + Turborepo, TypeScript. Node 22.14+ to develop; published packag
 pnpm install
 pnpm build           # turbo run build
 pnpm test            # turbo run test — integration tests run when DATABASE_URL is set
-pnpm lint            # turbo run lint — TypeScript noEmit
+pnpm lint            # check-test-gating's own tests, the check, then turbo run lint — TypeScript noEmit
 pnpm docs:dev         # docs site at 127.0.0.1:4310
 pnpm docs:build
 ```
@@ -68,9 +68,17 @@ Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line n
 - `docs/mission.md` — north star, principles, non-goals
 - `docs/architecture.md` — package boundaries, install profiles
 - `docs/contracts/` — formal contracts (modes, sensitive fields, schema format)
-- `docs/adrs/` — architecture decision records
+- `docs/adrs/` — architecture decision records; `docs/adrs/README.md` indexes them in one line each. Read the index before you plan a change.
 
 `apps/docs-site/src/content/docs/` is the public-facing docs (askdb.tools) — treat it as a product surface, not just documentation. If you change a package's public API or add a new integration pattern, the docs site needs a corresponding update or agents integrating AskDB elsewhere will get stale guidance.
+
+## Architecture and decisions
+
+Every change, whether you write it or review it, is checked against these three rules.
+
+- **Right layer, clean boundary.** Put each change in the package that owns the behavior, with imports pointing down the layers in `docs/architecture.md` ("Dependency boundaries"). Engine-specific code lives in its engine package, apart from the built-in `DialectSpec`s and dialect-keyed lexing and quoting, which stay in `@askdb/core` (ADR 0002); app-only concerns (transport, request guards, UI) stay in the app. Fix a defect at its owner, not in the caller that hit it.
+- **User-facing changes update the docs site in the same PR.** That covers a public API, CLI flag, config key, default, error text, Studio behavior, or integration pattern: update `apps/docs-site/src/content/docs/` in the same PR, not as a follow-up.
+- **Record choices between clean options in an ADR.** When a change picks between two or more viable designs, add `docs/adrs/NNNN-title.md` (status, context, options considered, decision, consequences) and a row in `docs/adrs/README.md` in the same PR. To change an accepted decision, amend or supersede its ADR; don't just change the code.
 
 ## Conventions
 
@@ -80,6 +88,7 @@ Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line n
 - Published ranges are what hosts install against, so a bump the range already allows moves only the lockfile. A floor rises by hand, for a security fix or a version AskDB needs, with a changeset naming which; raising an `ai` or `@ai-sdk/openai` floor raises the consumer lab's host pin with it, or its `host-peers` scenario fails (ADR 0015).
 - Add tests for behavior that affects public APIs, package output, SQL safety/validation, or user-facing workflows. Integration tests that need a live database run when their env var is set. Tests that need a real schema in every engine use the multi-engine fixture (`pnpm fixture:up`, `ASKDB_FIXTURE_HOST`; see `CONTRIBUTING.md`).
 - Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is pre-1.0 — breaking public API changes normally use a minor changeset unless the project is intentionally moving a package to 1.0.
+- A change that alters no behavior and no public type (tests, or comments outside exported declarations, since JSDoc on an export is part of the package's `.d.ts`) bumps no version. When the Changesets status check still requires an entry because a publishable `packages/*/src`, `apps/{cli,http-api,studio}/src` or a change to a publishable package's manifest (`packages/*/package.json`, `apps/{cli,http-api,studio}/package.json`) outside `devDependencies` triggered it (`.github/workflows/changesets.yml`), add an empty one (`pnpm changeset --empty`) instead of a patch bump. Docs-site edits are the exception: they take a patch changeset for `@askdb/docs-site` (`apps/docs-site/STYLE.md`). ADR 0020 records why.
 - Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names, APIs, or file paths there — verify against the actual source or existing docs content before writing a claim.
 - Markdown and MDX (docs, ADRs, skills, changesets, READMEs): one line per paragraph or list item, left for the editor to soft-wrap. Break lines only where the Markdown structure needs it — headings, list items, table rows, code blocks.
 - When opening an issue or PR, include a metadata section at the bottom with the originating thread ID and its worktree. Format: `Thread ID: <thread-uuid> (worktree <worktree-name>)`, e.g. `Thread ID: 743d36c3-aac8-423a-b74c-62e1bbc9fa00 (worktree t3code-a0ad9d56)`. The worktree directory name is not the thread ID; look the UUID up as described in `docs/agents/project-board.md` (**Thread lines**). This provides traceability back to the conversation that initiated the work and helps retrieve context later. A thread that picks up an existing issue adds `Worked on by: <thread-uuid> (worktree <worktree-name>)` below that footer.

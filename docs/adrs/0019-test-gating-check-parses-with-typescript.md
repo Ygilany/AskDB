@@ -1,0 +1,76 @@
+# ADR 0019 — The test-gating check parses test files with the TypeScript compiler
+
+## Status
+
+Proposed (2026-10-09, #326). Implemented in `scripts/check-test-gating.mjs`, run by the root `lint` script; its contract is the fixture corpus in `scripts/test-fixtures/check-test-gating/`.
+
+## Context
+
+CI sets `ASKDB_REQUIRE_INTEGRATION=1` so a missing database or driver fails an integration suite instead of skipping it. That works only for suites gated through `integrationSuite()` (`scripts/test-utils/integration.mjs`). A hand-rolled gate (`describe.skip`, `describe.skipIf(…)`, `cond ? describe : describe.skip`, `{ skip: cond }` options, or a suite defined under an `if`) skips silently, so a misconfigured job passes by running nothing. `pnpm lint` runs a check that rejects these gates in the `*.test.ts` and `*.test.tsx` files of every workspace package in `pnpm-workspace.yaml` except the consumer lab, which is its own pnpm root and fails on a missing fixture by design.
+
+A regex design, matching over the source after blanking comments and string, template and regex literals with a hand-written lexer, has two problems. A lexer that doesn't read JSX text treats a `/*` or a backtick in a `.test.tsx` file as the start of a comment or template, blanks the rest of the file, and the check passes it unread. And a conditional-call rule that looks only at the token before a call misses a suite defined as the second statement of an `if` block.
+
+## Options considered
+
+### A. Regexes over a hand-lexed source
+
+Rejected. Every construct the lexer misreads is a way past the gate, and the misreads fail open. Each fix adds lexer code (JSX, regex-versus-division, template nesting) that duplicates a parser the repo already installs.
+
+### B. An ESLint rule
+
+Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with a TypeScript parser and a custom rule plugin for one check adds a toolchain and its config to every package's lint, for no capability over C.
+
+### C. Walk the TypeScript AST (chosen)
+
+`typescript` is already a root devDependency (`^6.0.3`, locked in `pnpm-lock.yaml`). `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test` (the globals, a renamed or namespace import from `vitest`, `await import("vitest")` or `require("vitest")` (or a member read off one), a variable holding `test.extend({…})`, or a suite body's first parameter, the test API Vitest passes it; names resolve through the binder of a one-file program, so a local declaration that shadows one is not Vitest's): its modifier links, whether it is invoked, whether it is a ternary branch, whether it is defined in straight-line code, and whether its arguments and `.each` table take one of the plain forms option E lists. `integrationSuite({…})` and a variable holding its result are suite functions, so its own gate passes.
+
+### D. Fail CI's `test` job on any skipped test (not adopted here)
+
+The root and fixture Vitest configs already load `ciReporters()`, whose summary reporter counts skipped tests, and CI's `test` job runs with `ASKDB_REQUIRE_INTEGRATION=1`, under which `integrationSuite()` registers a test that fails instead of skipping the suite. A reporter that fails that job on any skipped test would catch what no syntax check can: `ctx.skip()`, or a table or helper imported from another module. It is not adopted in this PR: it turns every `it.skip` and `it.todo` into a CI failure, a policy change for the maintainer, and it fires only in the run where the environment is broken, not when the gate is written. It would complement C, not replace it.
+
+### E. What the check accepts: plain forms, not conditions it would have to read
+
+- **Read which conditions could depend on the environment.** Rejected after use: the check would have to tell, for each `if`, pick, loop, table step and alias, whether its outcome can change with the environment, which is data flow. Each review of that design found new syntax that hid a gate (a table held in a `const`, rows filtered by a callback, `push` through `.bind`, `globalThis.process`, an earlier `continue`), and the check grew past 2,000 lines without closing in.
+- **Accept only plain forms (chosen).** Repository tests already use only plain forms: inline bodies, literal or `const` tables, and no suite defined in a loop, a callback or under a condition. So the check accepts those and fails everything else, without asking why: a suite or test is defined only in straight-line code (`placement.mjs`); its arguments are an inline body (a test's may also be a `const` bound to a function), an options literal of plain values, and a plain timeout (`arguments.mjs`); a `.each` table is built only from code that reads no environment and loads no module, through names the check can pin, with no choice where its rows come from and no other code touching those names while Vitest collects (`tables.mjs`); and the environment is read only where nothing that runs while Vitest collects can depend on it: in tests, hooks, `integrationSuite()`'s options, plain `const`s and named functions used only there (`environment.mjs`). A new syntax form fails until someone adds it on purpose, so a review finds a missing allowance, not a hole. `CONTRIBUTING.md` ("Integration Tests") lists the forms.
+
+### F. Reading the workspace list
+
+- **Parse `pnpm-workspace.yaml` directly (chosen).** `scripts/check-test-gating/workspace.mjs` reads the `packages:` list, expands a trailing `/*` and literal `!` exclusions, throws on any other pattern, and skips a pattern that matches nothing, as pnpm does, so `pnpm lint` doesn't spawn pnpm for one list.
+- **Ask pnpm (`pnpm -r ls --json --depth -1`), as `scripts/release-unpublished.mjs` does.** Rejected for now: it adds a pnpm process to every lint run. The cost of the choice: a new glob form or a flow-style list in `pnpm-workspace.yaml` fails `pnpm lint` until `workspaceDirs()` learns it, which is loud, not silent. Switching to pnpm supersedes this bullet.
+
+### G. Where the check runs
+
+- **First step of the root `lint` script (chosen).** CI's lint job, `scripts/release-preflight.sh` and a local `pnpm lint` all call it, so there is one place to wire and nothing to keep in step.
+- **Its own CI job.** Rejected: it would run in CI only, not in preflight or locally, and a second job is one more list of steps to keep in step with lint.
+- **A Vitest test in a workspace package.** Rejected: the check reads every package, so it belongs to none of them, and `pnpm test` with a filter would skip it.
+- **A Turborepo root task (`//#check-test-gating`), cached.** Rejected: the check reads every workspace package's test files, so its cache inputs would have to list all of them plus the script and its fixtures, and an input list that misses one turns a cache hit into a pass that never read the new file. The uncached cost is a second or two for the check and five to eight for its own suite, depending on the machine, run once per `pnpm lint`.
+
+### H. Exempting a deliberate gate
+
+- **A reasoned line comment above the line (chosen).** `// check-test-gating-ignore-next-line: <reason>` sits next to the code it exempts, moves with it, and puts the reason where a reviewer reads the gate. A marker with no reason exempts nothing, so every exemption is explained.
+- **A checked-in allowlist of file and line.** Rejected: it goes stale whenever an edit moves the line, needs its own upkeep and its own check for stale entries, and keeps the reason away from the code.
+- **A directory or file exclusion.** Rejected: it exempts every future gate in that place, not the one that was reviewed, which is how the consumer lab would hide a new gate if it were scanned.
+
+## Decision
+
+The check parses each test file with `ts.createSourceFile` and applies its rules to the AST. It allows a literal skip on one test and rejects any skip on a suite, accepts only plain forms (E), reads the workspace list from `pnpm-workspace.yaml` (F, so the consumer lab is not scanned), runs first in the root `lint` script (G) and takes a reasoned line comment as the one exemption (H). A use of a Vitest function it can't read fails the check rather than passing; CONTRIBUTING.md ("Integration Tests") lists those forms, and this record gives the reasons. A file with parse errors fails the check, naming the file, instead of being skipped. Vitest loaded by `import()`, `require`, `module.require`, `globalThis.require`, a `createRequire(…)` function, `vi.importActual`, `vi.importMock`, `import.meta.vitest` or `import … = require(…)` is recognized on purpose, though no test loads it that way: each is a route to `describe` that would otherwise pass unread. For the same reason, `vi.importActual` or `vi.importMock` taken off `vi` before the call (`const { importActual } = vi`, `vi.importActual.call(…)`) fails closed, since the module it loads isn't read, and so does `vi` (or its other export name, `vitest`, including `v.vi` off a namespace) used other than through a member written out (`Reflect.get(vi, "importActual")`, `vi[k]`). Wrappers that leave a value unchanged (`(x)`, `x!`, `x as T`, `<T>x`, `x satisfies T`) are seen through. The script loads its modules (`scripts/check-test-gating/ast.mjs`, `bindings.mjs`, `placement.mjs`, `arguments.mjs`, `tables.mjs`, `environment.mjs`, `refs.mjs`, `workspace.mjs`) from its own real path, and `ast.mjs` loads `typescript` from its own, so a symlinked invocation finds the repo's install.
+
+The check runs first in the root `lint` script, so it runs wherever lint runs: locally, in CI's lint job and in `scripts/release-preflight.sh`. A line that needs a gate on purpose takes `// check-test-gating-ignore-next-line: <reason>` on the line above; a marker with no reason, or one in a block comment, string or JSX text, exempts nothing. The script's own tests use `node --test` with a fixture corpus beside it (`scripts/test-fixtures/check-test-gating/`, not the top-level `fixtures/`, which holds workspace packages and engine data; these files gate on purpose and belong to the script), because `scripts/` is not a workspace package that `pnpm test` runs and the root `vitest.config.ts` includes only `*.test.ts(x)`; `pnpm lint` runs them before the check.
+
+### What counts as a gate
+
+- **A literal skip on one test is allowed** (`it.skip(…)`, `it.todo(…)`, `it(name, { skip: true }, fn)`, and likewise a literal `{ todo: true }` or `{ fails: true }`): it skips the same way in every environment, so it can't hide a missing database, and CI's summary still counts it. Rejecting it too would leave no way to mark a known-broken test.
+- **A skip on a suite is rejected even when literal** (`describe.skip`, `describe.todo`, `{ skip: true }`, `{ todo: true }` or `{ fails: true }` on `describe`): integration suites are where a missing prerequisite hides, and a suite-wide skip is the shape `integrationSuite()` replaces.
+- **A table that could depend on the environment gates.** A suite missing from a `.each` table is never defined, so Vitest counts nothing as skipped and `ASKDB_REQUIRE_INTEGRATION=1` can't fail it. A table built from code that reads the environment, inline or through the `const`s and in-file functions it names, fails; so does one built from a name the check can't pin (a `let`, `var`, parameter or unknown global). The environment isn't the only thing that varies by machine: a driver that fails to load, a file that isn't there, the platform. So the code a table is built from loads no module, where its rows come from makes no choice (`driver ? [["sqlite", driver]] : []`), and the names it is built from are touched, while Vitest collects, only by the code of a table (`try { await import("pg"); rows.push("pg"); } catch {}`). A choice inside a row or a callback stays allowed (`rows.filter((r) => r.a && r.b)`): it needs one of those to drop a row by the machine.
+- **The environment is read only where collection can't depend on it.** Rather than follow every way code could change a table (a helper's return, a callback's array parameter, an alias), the check confines the environment: while Vitest collects, it may be read only into plain `const`s and named functions that are themselves used only in tests, hooks and `integrationSuite()`'s options. A plain `const` is an allowlist too: literals, written-out `process.env` reads, a few `process` facts, and operators, templates and literals over them, so its initializer can't act on what it reads.
+- **The consumer lab is not scanned.** It is its own pnpm root with its own lockfile, and its tests fail on a missing fixture by design (`CONTRIBUTING.md`, "Consumer lab"); `pnpm-workspace.yaml` excludes it and the check follows that list. Scanning it would need its install and would check tests that already fail closed.
+
+## Consequences
+
+- Comments, strings, templates, regexes and JSX text can't trip or hide a rule; only code can.
+- The check is tied to the TypeScript 5/6 compiler API. TypeScript 7 exports only `version` and `versionMajorMinor` from the package entry point and moves the API under `typescript/unstable/*`, so the PR that moves the root `typescript` to 7 must port this check to that API, or keep the 6.x API under an npm alias (`"typescript-ast": "npm:typescript@^6"`) and load that. Until then the check exits 1 with a message naming this ADR, so the upgrade can't pass lint silently.
+- The fixture corpus lives in `scripts/test-fixtures/check-test-gating/`, not the top-level `fixtures/`: those are database schemas and engine fixtures the packages' tests load, while this corpus is the contract of one root script, read only by its `node --test` file. Its `.hit.ts` and `.clean.ts` names match neither Vitest's include nor the check's own `*.test.ts` scan.
+- The check depends on the root install: `pnpm lint` already runs after `pnpm install` locally, in CI and in `scripts/release-preflight.sh`.
+- Parse errors come from `getSyntacticDiagnostics` on a one-file program with no lib, no module resolution and no emit, all public API. Any other error while checking a file also fails the check, naming the file.
+- Some gates still pass: `ctx.skip()` in a test body; a table, helper or module imported from another file that reads the environment or changes a table when it loads; and an imported probe (`existsSync`, `platform()`) whose result a table's callback uses (an import is something the check can't see into). `CONTRIBUTING.md` ("Integration Tests") lists them, and the review profile asks reviewers to read new suites for them.
+- A new way of writing a suite, table or argument fails `pnpm lint` until the check allows it, with a message that names the rule: the cost of an allowlist, paid when the form is first written.

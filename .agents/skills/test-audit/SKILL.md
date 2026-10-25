@@ -18,7 +18,9 @@ Before adding any test, answer four questions; a missing answer means do not add
 
 Then check the test against every [junk pattern](#junk-patterns); a match fails the gate unless the [retention bar](#retention-bar) names the contract it independently guards. A test that would break under behavior-preserving refactoring is asserting implementation, not behavior; rewrite it at the owning boundary before landing it.
 
-Bug regression tests must fail on the pre-fix code for the intended reason and pass after the owner-boundary repair. A regression test that never demonstrably failed proves the mock, not the fix. One regression at the owner boundary covers the bug; do not replay the same scenario at every layer it crosses.
+A test that needs a database, driver or environment variable runs under `integrationSuite()` (`scripts/test-utils/integration.mjs`; the consumer lab excepted, see `CONTRIBUTING.md`, "Consumer lab"), so `ASKDB_REQUIRE_INTEGRATION=1` can fail it in CI. A hand-rolled gate (`describe.skip`, `it.skipIf(…)`, `{ skip: cond }`, a suite under `if`) fails `pnpm lint`; `CONTRIBUTING.md` ("Integration Tests") lists the rejected forms.
+
+Bug regression tests must fail on the pre-fix code for the intended reason and pass after the owner-boundary repair. A regression test that never demonstrably failed proves the mock, not the fix. One regression at the owner boundary covers the bug; do not replay the same scenario at every layer it crosses. In a regression table that asserts through a permissive helper (one any rejection satisfies), each row must fail on the pre-fix code for the reason its name gives; assert the specific rule or error code rather than the helper.
 
 ## Junk patterns
 
@@ -84,6 +86,8 @@ Record every field below before editing. A missing field means the candidate is 
 ## Edit shape
 
 Choose one coherent owner-boundary batch. Delete obsolete test-only exports, globals, wrappers, and dead production paths instead of preserving aliases. Move retained regressions to their canonical owners. Consolidate repeated package or dependency assertions into one generic contract.
+
+When a removed test is one the PR description cites, keep one owner-boundary proof that drives the PR's new input end to end, and edit the PR description in the same push.
 
 Prefer net-negative production LOC. Do not add replacement tests that restate the same implementation, and do not convert uncertain candidates into cleanup to increase deletion counts.
 
