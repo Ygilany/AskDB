@@ -48,3 +48,30 @@ describe("postgresConnectorProvider.resolveConnection", () => {
     });
   });
 });
+
+describe("postgresConnectorProvider.createConnector", () => {
+  const filters = { schemas: ["public"] };
+
+  it("reads an export bundle even when a URL is also given", () => {
+    const result = postgresConnectorProvider.createConnector({
+      provider: "postgres",
+      url: "postgres://db/app",
+      fromExport: "./bundle",
+      filters,
+    });
+    expect(result.mode).toBe("from-export");
+    expect(result.input).toEqual({ mode: "from-export", bundlePath: "./bundle", filters });
+  });
+
+  it("requires a URL or an export bundle", () => {
+    expect(() => postgresConnectorProvider.createConnector({ provider: "postgres" })).toThrow(
+      /requires a connection URL/,
+    );
+  });
+
+  it("introspects live from a URL alone, without connecting at creation", () => {
+    const result = postgresConnectorProvider.createConnector({ provider: "postgres", url: "postgres://db/app", filters });
+    expect(result.mode).toBe("live");
+    expect(result.input).toEqual({ mode: "live", runner: expect.any(Function), filters });
+  });
+});
