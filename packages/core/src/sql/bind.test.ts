@@ -325,6 +325,16 @@ describe("bindPreparedQuery — escaping matrix for business values", () => {
     ];
     const my = bindPreparedQuery(prepared("mysql", "SELECT * FROM t WHERE s = :s", params), { s: "\\" });
     expect(my.sql).toBe("SELECT * FROM t WHERE s = '\\\\'");
+    // Two-parameter injection shape: the trailing backslash must not swallow the closing quote
+    // and let the next value break out.
+    const myTwo = bindPreparedQuery(
+      prepared("mysql", "SELECT * FROM t WHERE s = :s AND t = :t", [
+        ...params,
+        { name: "t", placeholder: ":t", type: "string" as const, cardinality: "one" as const, source: "question" as const },
+      ]),
+      { s: "\\", t: " OR 1=1" },
+    );
+    expect(myTwo.sql).toBe("SELECT * FROM t WHERE s = '\\\\' AND t = ' OR 1=1'");
     const pg = bindPreparedQuery(prepared("postgres", "SELECT * FROM t WHERE s = :s", params), { s: "\\" });
     expect(pg.sql).toBe("SELECT * FROM t WHERE s = '\\'");
   });

@@ -89,6 +89,11 @@ describe("DialectSpec registry", () => {
       expect(BUILT_IN_DIALECTS[id]).toBeDefined();
       expect(BUILT_IN_DIALECTS[id].id).toBe(id);
     }
+    for (const id of SUPPORTED_DIALECT_IDS) {
+      expect(BUILT_IN_DIALECTS[id]).toBeDefined();
+      expect(BUILT_IN_DIALECTS[id].id).toBe(id);
+    }
+    expect([...SUPPORTED_DIALECT_IDS].sort()).toEqual([...allIds].sort());
   });
 
   it("isBuiltInDialectId narrows every shipped id", () => {
