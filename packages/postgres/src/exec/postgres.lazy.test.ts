@@ -10,6 +10,8 @@ const pgState = vi.hoisted(() => ({
   imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
+  // When set, the mocked `pg` is a fake whose client records each statement it is sent.
+  recorder: null as null | { statements: string[]; failOn: string | null },
 }));
 vi.mock("pg", async () => {
   pgState.imports++;
@@ -17,6 +19,25 @@ vi.mock("pg", async () => {
     const err = new Error("Cannot find package 'pg' imported from postgres.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
     throw err;
+  }
+  if (pgState.recorder) {
+    // The factory result is cached across tests, so read the recorder at call time.
+    class Pool {
+      async connect() {
+        return {
+          async query(sql: string) {
+            const recorder = pgState.recorder!;
+            recorder.statements.push(sql);
+            if (sql === recorder.failOn) throw new Error("relation \"pg_nope\" does not exist");
+            if (sql === "SELECT 1") return { fields: [{ name: "n" }], rows: [{ n: 1 }] };
+            return { fields: [], rows: [] };
+          },
+          release() {},
+        };
+      }
+      async end() {}
+    }
+    return { default: { Pool }, Pool };
   }
   return await vi.importActual<typeof import("pg")>("pg");
 });
@@ -93,6 +114,7 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     pgState.projectResolvedPaths.clear();
     pgState.shouldFail = false;
     pgState.imports = 0;
+    pgState.recorder = null;
     process.chdir(originalCwd);
   });
 
@@ -156,5 +178,30 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
 
     const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: projectDir });
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+  });
+
+  // The runner is the read-only guard on live introspection: the exact statements it sends
+  // are the contract, so a dropped READ ONLY, COMMIT or ROLLBACK must fail a test.
+  it("runs the catalog query inside BEGIN READ ONLY and commits on success", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    pgState.recorder = { statements: [], failOn: null };
+
+    const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
+
+    await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+    expect(pgState.recorder.statements).toEqual(["BEGIN READ ONLY", "SELECT 1", "COMMIT"]);
+  });
+
+  it("rolls back, never commits, and rejects with an AskDbError when the catalog query fails", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    pgState.recorder = { statements: [], failOn: "SELECT 1" };
+
+    const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
+
+    const err = await runner("SELECT 1").catch((e: unknown) => e);
+
+    expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).toContain('relation "pg_nope" does not exist');
+    expect(pgState.recorder.statements).toEqual(["BEGIN READ ONLY", "SELECT 1", "ROLLBACK"]);
   });
 });
