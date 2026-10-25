@@ -75,7 +75,7 @@ The lazy-load test's fake `pg` client gains a statement recorder and a switch th
 ## Further Notes
 
 - The path sits under `packages/*/src/exec/**`, which the project rates sensitive, so the ticket runs in the standard lane although the diff is one test file.
-- The ticket passed a grill stage with no open decisions and no defaults; there is no grilling record, and nothing was defaulted.
+- The grill stage was skipped because triage left no open decisions (`decisions_open` 0) and took no defaults; there is no grilling record, and nothing was defaulted.
 
 ## Ticket coverage
 
