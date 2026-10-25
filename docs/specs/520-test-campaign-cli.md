@@ -2,11 +2,12 @@
 
 ## For the owner
 
-This spec applies the `cli` test campaign's plan to `apps/cli`'s tests: 4 weak tests are repaired so they can fail for the regression they name, 10 duplicate tests are deleted after their unique assertions move into the test that keeps the contract, and no production code changes.
+This spec applies the `cli` test campaign's plan to `apps/cli`'s tests: 3 of the 4 weak tests are repaired so they can fail for the regression they name, 10 duplicate tests are deleted after their unique assertions move into the test that keeps the contract, and no production code changes. The fourth weak test, `resolveInitDepSpecs`, moves to #525 with the bug it exposed.
 
 | Decision | Answer | Settled by | Undo |
 |---|---|---|---|
-| What changes | The issue's ledger: 4 F rows repaired, 10 C rows folded into their keepers, 0 D rows | Triage (#520 Triage comment, from the campaign plan in the issue body) | two-way: revert |
+| What changes | The issue's ledger: 10 C rows folded into their keepers, 0 D rows, and the F rows repaired, all but one (next row) | Triage (#520 Triage comment, from the campaign plan in the issue body) | two-way: revert |
+| The `resolveInitDepSpecs` F row | Dropped from this ticket: the test stays as it is. The bug (`require.resolve("@askdb/config/package.json")` throws `ERR_PACKAGE_PATH_NOT_EXPORTED`, so `configSpec` is `"latest"` in the monorepo) and its pinning test are #525 | Owner, option A of the align escalation (delegation of 2026-10-25) | two-way |
 | Plan size | The whole plan, including the per-provider table in the `renderInitConfig` tests; the plan's "drop it if over budget" fallback does not apply | Triage (standard lane, so the quick budget no longer caps the diff) | two-way |
 | Test-only production seams | All kept: `runInitCli`'s installer argument, `connectorRegistry`, the test-only `init.ts` exports, `defaultConnectorRegistry` | Triage (campaign plan, "Test-only production seams") | two-way |
 | The 4 possible product bugs in the issue | Out of scope; file separately if wanted | Triage (Out of scope) | two-way |
@@ -29,18 +30,18 @@ rag   rejects --api-key (space form)               -> rag "never repeats %s in i
 
 REPAIR (F)
 init  rejects unknown flags                  + stderr has "Unknown option: --nonexistent-flag"
-init  resolveInitDepSpecs ...                + configSpec equals @askdb/config's package version
 registry  explicit --url ...                 + resolveConnection got explicit.url "acme://flag"; renamed
 shim  auto-discovers prisma schema or errors + renamed to the error path only
+
+MOVED (unchanged here)
+init  resolveInitDepSpecs ...                -> #525 (fix the "latest" fallback, then pin the version)
 ```
 
 **Risks:** a carried-over assertion lost in a deletion leaves a contract untested; the coverage table below maps each one to its keeper. The table rework is the only rewritten test, and evaluates the rendered config, so a wrong expectation fails loudly.
 
-**Done when:** every ledger row is applied as above, `pnpm test` passes for `apps/cli` and `pnpm lint` passes, with no change outside `apps/cli`'s test files.
+**Done when:** every ledger row is applied as above (the `resolveInitDepSpecs` row left to #525), `pnpm test` passes for `apps/cli` and `pnpm lint` passes, with no change outside `apps/cli`'s test files.
 
-**Needs you:** one decision, escalated from align run 1 (the critic's coverage finding, confirmed by hand).
-
-> **`resolveInitDepSpecs` returns `"latest"` in the monorepo today.** It resolves `@askdb/config/package.json`, which `@askdb/config`'s `exports` doesn't list, so Node throws `ERR_PACKAGE_PATH_NOT_EXPORTED`, the `catch` returns `"latest"`, and `askdb init` run from the repo installs `@askdb/config@latest`. Published installs are unaffected (pnpm publish turns `workspace:*` into a version). The planned F repair (assert the spec equals `@askdb/config`'s version) therefore fails until production code changes, which this ticket rules out. Options: **A** keep this ticket test-only, drop this one F row, and file the bug with its test as its own ticket (recommended); **B** widen this ticket to fix `init.ts` (sensitive path) with a patch changeset; **C** stay test-only and weaken the repair to "not `workspace:*`", leaving the `latest` leak untested.
+**Needs you:** nothing. The one open decision, what to do about `resolveInitDepSpecs` returning `"latest"` in the monorepo, was settled as option A (see the table) and the bug is filed as #525.
 
 Reply: `/approve` · `/changes <guidance>`
 
@@ -55,17 +56,16 @@ Apply the campaign's plan, recorded in the issue body (`Ledger rows`, `Retire`, 
 ## User Stories
 
 1. As a maintainer, I want `askdb init`'s unknown-flag test to check the parser's message, so that it fails if unknown flags stop being rejected instead of passing because a later install step also returns 1.
-2. As a maintainer, I want the `resolveInitDepSpecs` test to pin the spec to `@askdb/config`'s version, so that `workspace:*` or `latest` leaking into the install command in the monorepo fails a test.
-3. As a maintainer, I want the registry's `--url` test to assert what the CLI forwards to the adapter, so that it tests the CLI rather than the precedence its own mock implements.
-4. As a maintainer, I want the Prisma error-path test named for what it runs, so that nobody believes auto-discovery success is covered here.
-5. As a maintainer, I want one table over every AI provider in the `renderInitConfig` tests, so that each provider's `providerConfig` shape (and `resourceName` only for azure and foundry) is checked on the evaluated config, not by substring.
-6. As a maintainer, I want the default Postgres `askdb init` test to also check `databaseUrl` and the absence of a `studio:` section, so that deleting the `renderInitConfig` Postgres test loses no assertion.
-7. As a maintainer, I want the `--database sqlserver` init test to also check `databaseUrl: env("DATABASE_URL")`, so that the connection-env default stays covered after the `resolveDefaultInitAnswers` override test goes.
-8. As a maintainer, I want the base install-plan test to also check `pg`, so that the identical "includes pg for postgres" test can go.
-9. As a maintainer, I want the duplicated spawned `introspect` tests removed, so that the slow spawned suite runs each command once.
-10. As a maintainer, I want the duplicated `--api-key` rejection test removed, so that the rejection is pinned once, in the table that checks no argv secret is echoed.
-11. As a reviewer, I want each deletion to point to its keeper, so that I can check no contract lost its only test.
-12. As a release owner, I want the change confined to test files, so that it needs no changeset and cannot change the published `askdb` binary.
+2. As a maintainer, I want the registry's `--url` test to assert what the CLI forwards to the adapter, so that it tests the CLI rather than the precedence its own mock implements.
+3. As a maintainer, I want the Prisma error-path test named for what it runs, so that nobody believes auto-discovery success is covered here.
+4. As a maintainer, I want one table over every AI provider in the `renderInitConfig` tests, so that each provider's `providerConfig` shape (and `resourceName` only for azure and foundry) is checked on the evaluated config, not by substring.
+5. As a maintainer, I want the default Postgres `askdb init` test to also check `databaseUrl` and the absence of a `studio:` section, so that deleting the `renderInitConfig` Postgres test loses no assertion.
+6. As a maintainer, I want the `--database sqlserver` init test to also check `databaseUrl: env("DATABASE_URL")`, so that the connection-env default stays covered after the `resolveDefaultInitAnswers` override test goes.
+7. As a maintainer, I want the base install-plan test to also check `pg`, so that the identical "includes pg for postgres" test can go.
+8. As a maintainer, I want the duplicated spawned `introspect` tests removed, so that the slow spawned suite runs each command once.
+9. As a maintainer, I want the duplicated `--api-key` rejection test removed, so that the rejection is pinned once, in the table that checks no argv secret is echoed.
+10. As a reviewer, I want each deletion to point to its keeper, so that I can check no contract lost its only test.
+11. As a release owner, I want the change confined to test files, so that it needs no changeset and cannot change the published `askdb` binary.
 
 ## Implementation Decisions
 
@@ -94,7 +94,7 @@ The test name keeps saying what azure and foundry get (the `resourceName`) and w
 **F rows: repair.**
 
 - `init.test.ts`, `option parser > rejects unknown flags`: keep `code === 1` and add that stderr contains `Unknown option: --nonexistent-flag`.
-- `init.test.ts`, `init helpers > resolveInitDepSpecs returns non-empty specs`: assert `configSpec` equals the `version` in `@askdb/config`'s `package.json`, and rename to say so. Read the version the way a test reads a workspace package's manifest (resolve `@askdb/config/package.json`), not by recomputing what `resolveInitDepSpecs` does.
+- `init.test.ts`, `init helpers > resolveInitDepSpecs returns non-empty specs`: not changed here. Asserting the version fails against today's `init.ts` (it returns `"latest"` in the monorepo), and this ticket changes no production code, so the repair goes with the fix in #525 (owner, option A).
 - `introspect-registry.test.ts`, `lets explicit --url win over the adapter's configured fallback`: assert the adapter's `resolveConnection` was called with `explicit` containing `url: "acme://flag"`, keep the `createConnector` url check, and rename to "forwards --url to the adapter as explicit.url".
 - `introspect-shim.test.ts`, `auto-discovers prisma schema or errors with a helpful message when none is found`: rename to "errors with an auto-discover message when no Prisma schema is found". Its assertions stay.
 
@@ -102,7 +102,7 @@ No production file, no other test file and no fixture changes. No whole test fil
 
 ## Testing Decisions
 
-- The changed tests are the deliverable. Each F repair is checked by breaking the behavior it names by hand (accept unknown flags; return `latest` from `resolveInitDepSpecs`; stop forwarding `--url`) and seeing the test fail, then restoring it. The rename-only F row has no regression to break.
+- The changed tests are the deliverable. Each F repair is checked by breaking the behavior it names by hand (accept unknown flags; stop forwarding `--url`) and seeing the test fail, then restoring it. The rename-only F row has no regression to break.
 - Each C deletion is checked against the coverage table below: every assertion it made is either in its keeper already or carried there.
 - Tests assert what users see: rendered or evaluated config, stderr text, exit codes, what crosses the adapter boundary. None asserts call order or internal helpers beyond what the plan names.
 - Prior art: the azure/foundry `it.each` (evaluated config), the spawn-first-run `it.each` (one row per command), and the rag `never repeats %s in its error` table.
@@ -112,7 +112,7 @@ No production file, no other test file and no fixture changes. No whole test fil
 
 | Ticket item | Met by |
 |---|---|
-| Each F row repaired, and can fail for its named regression | Implementation Decisions, "F rows: repair"; Testing Decisions, first bullet |
+| Each F row repaired, and can fail for its named regression | Implementation Decisions, "F rows: repair"; Testing Decisions, first bullet; the `resolveInitDepSpecs` row moved to #525 (decision "The `resolveInitDepSpecs` F row") |
 | Each C row consolidated into its keeper with the carried assertions | Implementation Decisions, "C rows" and "The per-provider table" |
 | Each D row deleted, its proof still passing | No D rows (ledger: D 0) |
 | Each test-only production seam the plan unlocks removed | None unlocked; all kept (decision "Test-only production seams") |
@@ -124,7 +124,7 @@ No production file, no other test file and no fixture changes. No whole test fil
 | Row: init includes pg (C) | C rows |
 | Row: init respects database override (C) | C rows |
 | Row: init rejects unknown flags (F) | F rows |
-| Row: init resolveInitDepSpecs (F) | F rows |
+| Row: init resolveInitDepSpecs (F) | Moved to #525 (decision "The `resolveInitDepSpecs` F row") |
 | Row: registry explicit --url (F) | F rows |
 | Row: shim templates Postgres (C) | C rows |
 | Row: shim templates Prisma (C) | C rows |
@@ -135,6 +135,7 @@ No production file, no other test file and no fixture changes. No whole test fil
 
 ## Out of Scope
 
+- The `resolveInitDepSpecs` `"latest"` fallback in the monorepo and the test that pins `@askdb/config`'s version: #525, since the fix touches `apps/cli/src/init.ts` (a sensitive path) and needs a changeset.
 - The four possible product bugs the campaign noted: the dead commander `init` action and its second help text, the install helpers duplicated in Studio, the stale comment in `init-help.test.ts`, and stderr replaced without `try/finally` in the init option-parser tests. File them separately if wanted.
 - Tests for the install branch of `runInitCli` (success, failure with the manual command, workspace-root skip): a follow-up candidate the plan names.
 - Removing any test-only export or seam in `init.ts` or `introspect.ts`.
