@@ -6,7 +6,7 @@ This spec applies the weekly test campaign's plan for `@askdb/core`'s ask pipeli
 
 | Decision | Answer | Settled by | Undo |
 | --- | --- | --- | --- |
-| 1. Scope | Test files only; no production file, no changeset, no test-only seam removed (the plan found none) | Campaign plan (issue body, Scope and Layer plan), verified at triage | Two-way: revert the PR |
+| 1. Scope | Test files only; no production file, an empty changeset only, no test-only seam removed (the plan found none) | Campaign plan (issue body, Scope and Layer plan), verified at triage | Two-way: revert the PR |
 | 2. Repairs (F) | Pipeline-mode test asserts one event logged before `generate`; providerOptions test renamed to what it asserts; log levels and mode ids pinned with exact strings | Campaign plan (Repairs), verified at triage against `ask.ts` | Two-way |
 | 3. Folds (C) | Each redundant test removed, its distinct assertions carried into the named keeper | Campaign plan (Keepers per contract, Carry-over assertions), verified at triage | Two-way |
 | 4. Product notes | The issue's possible bugs and coverage gaps stay out; filed separately if they hold | Campaign plan (Possible product bugs), triage Agent Brief Out of scope | Two-way |
@@ -66,7 +66,7 @@ All of these come from the campaign plan in the issue body, verified by triage a
 - **Mode ids for help text (repair).** "lists pipe-separated ids for help text" asserts the exact string `schema_only|bounded_results`.
 - **Tenant-policy chunks in retrieved DDL (fold).** "includes multiple tenant-policy chunks" is deleted. The first tenant-policy test gains a second `tenant-policy` chunk with id `chunk:tenant-policy#scope-rules` in its results and asserts the DDL contains that chunk's text, alongside its existing assertions on the first chunk, the section header and the table.
 - **Production code.** None changes. No test-only production seam is removed: the plan found every export the subsystem's tests touch has a non-test caller or is public API. `SuggestEnrichmentDeps.generateText` has no non-test caller but is public API, so removing it is out of scope.
-- **Release.** No changeset: no publishable package's output changes.
+- **Release.** An empty changeset (`pnpm changeset --empty`), no version bump: no publishable package's output changes, but the `changesets` workflow's `status` check counts any file under `packages/*/src`, test files included, as a publishable change and fails without one.
 
 ## Testing Decisions
 
@@ -83,7 +83,7 @@ All of these come from the campaign plan in the issue body, verified by triage a
 - The issue's low-confidence discrepancies: the review profile's wording on enrichment prompts and sensitive fields, `parseAskDbModeV1(" ")` throwing where `""` defaults, and the logger test's temp dir inside the source tree. Each is filed separately if it holds.
 - The coverage gaps the campaign noticed: the retriever's `schema_not_v2` skip, and `synthesizeRetrievedDdl`'s omit-sensitive branch and column, concept, relationship and question rendering.
 - Changes to the CLI's spawn-logs test, which stays the end-to-end keeper for the log constants.
-- A changeset.
+- A changeset that bumps a package version.
 
 ## Further Notes
 
