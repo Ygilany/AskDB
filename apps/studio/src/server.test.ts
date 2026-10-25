@@ -749,7 +749,7 @@ describe("AskDB Studio server", () => {
     expect(status.packageName).toBe("pg");
     expect(status.connectionKind).toBe("url");
     expect(typeof status.installed).toBe("boolean");
-    expect(typeof status.configured).toBe("boolean");
+    expect(status.configured).toBe(false);
     expect(status.installCommand).toBe("pnpm add pg");
     // Execute is opt-in: disabled by default, with an explanation for the UI.
     expect(status.enabled).toBe(false);
