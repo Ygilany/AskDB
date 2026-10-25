@@ -186,20 +186,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: mysql
-          MYSQL_DATABASE: askdb_test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h localhost -u root -pmysql"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 15
-          --health-start-period 30s
-
       sqlserver:
         image: mcr.microsoft.com/mssql/server:2022-latest
         env:
@@ -224,7 +210,6 @@ jobs:
       ASKDB_PGVECTOR_URL: postgres://postgres:postgres@localhost:5432/askdb_test
       # Multi-engine fixture (fixtures/multi-engine): Postgres, MySQL, MariaDB, SQL Server, SQLite.
       ASKDB_FIXTURE_HOST: 127.0.0.1
-      MYSQL_DATABASE_URL: mysql://root:mysql@127.0.0.1:3306/askdb_test
       MSSQL_DATABASE_URL: "Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false"
 
     steps:
