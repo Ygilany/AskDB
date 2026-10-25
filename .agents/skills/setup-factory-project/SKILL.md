@@ -1,6 +1,6 @@
 ---
 name: setup-factory-project
-description: "Onboard this repo into the software factory: project manifest, identity, board, autonomy profile, lane budgets, sensitive paths, model routing, tracker labels, a committed install of the factory skills and registry entry. Run once per repo, and again when its rules or the factory skills change."
+description: "Onboard this repo into the software factory: project manifest, identity, board, autonomy profile, lane budgets, sensitive paths, model routing, tracker labels, a committed install of the factory skills and registry entry. Run once per repo, and again when its rules or the factory skills change. For a repo the owner only contributes to, it writes only in the factory checkout."
 disable-model-invocation: true
 ---
 
@@ -10,6 +10,8 @@ Write `.factory/project.yaml`, the file the `factory` CLI reads to run this repo
 
 Explore, present what you found, confirm with the user, then write.
 
+Ask first whether the user only contributes to this repo (they have no say over what is committed in it, or can't install the App on it). If so, follow **The contributor path** at the end and skip the steps below. Otherwise continue.
+
 ## Process
 
 ### 1. Check prerequisites
@@ -17,9 +19,8 @@ Explore, present what you found, confirm with the user, then write.
 - `factory --help` runs. If it doesn't, the CLI isn't linked: ask the user to run `bun link` in their factory checkout.
 - `docs/agents/issue-tracker.md` exists. The factory reuses the tracker that `setup-ygilany-skills` configured. If the file is missing, stop and ask the user to run `/setup-ygilany-skills` first.
 
-- `factory skills check --json` exits zero: the `Ygilany/skills` skills installed on this machine are the ones the factory is pinned to. The stages and the feature thread compose `triage`, `grilling`, `to-spec`, `to-tickets`, `tdd`, `test-audit`, `code-review` and `pr` from that repo; they are installed once per machine, globally, at the pin, not in this repo. If the check fails, show the user the commands it printed, ask them to run them, and run it again. The factory launches no stage worker until it passes.
 
-Done when all three hold.
+Done when both hold.
 
 ### 2. Explore
 
@@ -56,6 +57,7 @@ Show the proposed manifest, then ask the questions below one at a time, each wit
 6. **Routing**: which Claude account this repo's work runs on (`accounts`), any role that needs a stronger or cheaper model, and whether to keep free models away from this repo (`routing.exclude_tags: [free]`; recommend it for client, company and other confidential code, since free tiers may log prompts).
    **Labels**: keep the default (attention-only with a board, full without) unless the user wants otherwise (`labels: full | attention | none`).
 7. **Process**: the meaning of the project's own labels and board statuses, so the factory reads their vocabulary and adds no second one beside it. Propose the `process:` block from what step 2 found, a meaning recommended for each label and status from its name and description: `category: <word>` (`bug`, `feature`), `priority: <word>`, `area: <word>`, or `ignore` when it says nothing the factory reads (`help wanted`, `wontfix`). The words are the project's own. Ask who the process is read as: the owner's `gh_user` identity, `me` or the host's default (`process.identity`; never the factory's App), and which board and field hold the statuses (`board: { owner, number, field }`, `Status` by default). The owner confirms or edits each entry. Labels the block doesn't name are left untouched, as `setup-labels` writes only `factory` and `factory:*` labels and never creates one the block names. Skip the question when the repo has no labels or board of its own worth mapping.
+8. **Roles**: what the owner does on this project, so the client's own act starts a ticket (`roles:`, which replaces `intake:`; see `docs/architecture.md`, "Roles and triggers"). Skip it for the factory's own repos and any project whose issues the owner files: they keep `intake`. Otherwise propose presets from what the owner says they do there: `analyst` (writes the spec only: started with `/start`), `developer` (takes an issue through merge: starts when the client assigns it to the owner) or `reviewer` (reviews pull requests: starts nothing yet, until #214). Ask each role's trigger when the preset's is wrong for the client: assignment, a label from step 7 (`{ label: <name> }`), a board column from step 7's statuses (`{ column: <status> }`), a review request, or `command`. Roles act as the process identity, so a project with roles needs step 7's identity to be a `gh_user`. Two roles can share only `command`. The owner confirms each role.
 
 Done when the user has confirmed every answer.
 
@@ -80,3 +82,19 @@ Done when the user has confirmed every answer.
 7. Commit the manifest and the skills install on a branch and open a PR in this repo, unless the user prefers another route.
 
 Done when `factory config check` passes in both repos, the factory skills are committed and a fresh worktree carries them, the tracker shows the factory labels, the chosen board shows the factory fields and views, and the PR (or the user's chosen alternative) exists.
+
+## The contributor path
+
+For a repo the owner only contributes to, nothing of the factory goes in the repo: no `.factory/project.yaml`, no skills install, no `docs/agents` files, no labels, no board and no PR. Everything is written in the factory checkout (`projects/`). Run it from there.
+
+1. **Check prerequisites.** `factory --help` runs. `docs/agents/issue-tracker.md` isn't needed: the repo's tracker is read from its remote (`git remote get-url origin`, in the checkout the user names).
+2. **Ask.** One at a time, each with your recommendation:
+   1. **Approvers**: the logins whose decisions count. Recommend the owner's own login only. Never leave it out: it would default to the repo's owner, an upstream maintainer, and assigned intake would start tickets on their assignments.
+   2. **Identity**: a `gh_user` identity of the owner's on the repo's host (`me` on github.com). The App isn't installed on this repo, and the factory's own account would show on it.
+   3. **The merge gate**: recommend `gates: { merge: block }`. With write access on the repo, `balanced` would merge upstream after its veto window.
+   4. **Autonomy, test tiers and routing**, as questions 3, 5 and 6 of step 3 above, if the user wants them.
+3. **Write** `projects/<slug>.yaml` with `contributor: true`, the `tracker`, `base_branch`, `approvers`, `identity`, any `gates` and `test_tiers`, and a comment on each value that isn't obvious. Leave out `artifacts`, `labels`, `intake` and `board`: `contributor: true` fixes them (`artifacts: thread`, `labels: none`, `intake: assigned`) and refuses a conflicting value. Add the entry to `projects/registry.yaml` (slug, repo, local path, T3 project id) with `manifest: projects/<slug>.yaml`.
+4. **Verify.** Run `factory config check --project-file projects/<slug>.yaml --json` in the factory checkout, and fix the manifest until it passes. Then, in the repo's checkout, run `factory config check --json`: its `project` is the factory-side manifest, found through the registry. Do not run `factory ticket setup-labels`: it refuses on a contributor project.
+5. **Leave the repo untouched** and say so: `git status --porcelain` in the checkout is as it was. The two factory-side files stay in the factory checkout, as a registry entry does; this skill commits neither. If the user links the factory's skills into the checkout by hand, that link goes in `.git/info/exclude`, never in a committed file.
+
+Done when `factory config check` passes on the manifest and the registry entry, the repo's checkout is unchanged, and the user has the two files to commit in the factory checkout when they choose.

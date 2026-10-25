@@ -1,0 +1,13 @@
+{
+  "repo": "Ygilany/skills",
+  "path": "skills/engineering/tdd",
+  "commit": "3ced435b74f366898f05c2ce65c6f8e2c3757941",
+  "derivedFrom": {
+    "source": "mattpocock/skills",
+    "sourceUrl": "https://github.com/mattpocock/skills.git",
+    "ref": "main",
+    "skillPath": "skills/engineering/tdd",
+    "commit": "6fd947921b935b7e1e69293a200400f0fdd5c15f",
+    "skillFolderHash": "bf1bf5ffcd63aa8abce830f2955a853c121fb463"
+  }
+}

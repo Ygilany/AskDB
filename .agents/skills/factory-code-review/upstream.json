@@ -1,0 +1,15 @@
+{
+  "repo": "Ygilany/skills",
+  "path": "skills/engineering/code-review",
+  "commit": "3ced435b74f366898f05c2ce65c6f8e2c3757941",
+  "derivedFrom": {
+    "source": "mattpocock/skills",
+    "sourceUrl": "https://github.com/mattpocock/skills.git",
+    "ref": "main",
+    "skillPath": "skills/engineering/code-review",
+    "commit": "24fe0ef7737efae15c87225755e9f6f5965e4888",
+    "skillFolderHash": "d8e341cee7980127dddda05159bedf25dc853615",
+    "derived": true,
+    "notes": "Not a copy. Upstream's Spec and Standards axes became lenses/spec.md and lenses/standards.md (the twelve-smell baseline lives in standards.md). Port upstream changes to those two axes into the matching lens; the rest of upstream (single-agent flow, issue-tracker setup) does not apply."
+  }
+}

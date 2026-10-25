@@ -1,0 +1,4 @@
+# Codex has no equivalent of SKILL.md's disable-model-invocation. This turns off implicit
+# selection; an explicit $start still runs. Only the owner starts an issue by hand.
+policy:
+  allow_implicit_invocation: false

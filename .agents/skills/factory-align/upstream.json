@@ -1,0 +1,13 @@
+{
+  "repo": "Ygilany/skills",
+  "path": "skills/engineering/to-spec",
+  "commit": "3ced435b74f366898f05c2ce65c6f8e2c3757941",
+  "derivedFrom": {
+    "source": "mattpocock/skills",
+    "sourceUrl": "https://github.com/mattpocock/skills.git",
+    "ref": "main",
+    "skillPath": "skills/engineering/to-spec",
+    "commit": "6fd947921b935b7e1e69293a200400f0fdd5c15f",
+    "skillFolderHash": "136b9651747cfccbfbb7c50a6b0dfb757e7547d2"
+  }
+}
