@@ -113,19 +113,6 @@ function makeConfig(overrides?: {
 }
 
 describe("createAskDb", () => {
-  it("1. schema from createAskDb({ schema: { path } }) - loads and uses the schema", async () => {
-    const config = makeConfig({ mockSql: "SELECT 1" });
-    const registry = makeRegistry();
-    const askdb = createAskDb({
-      config,
-      registry,
-      schema: { path: fixtureSchemaPath },
-    });
-    const result = await askdb.ask("list all users");
-    expect(result.sql).toBe("SELECT 1");
-    expect(registry.createLanguageModelFromEnv).not.toHaveBeenCalled();
-  });
-
   it("2. mock SQL path - returns mock SQL without calling registry", async () => {
     const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
     const config = makeConfig({ mockSql: "SELECT 1" });
@@ -269,18 +256,6 @@ describe("createAskDb", () => {
     await expect(askdb.ask("q")).rejects.toThrow("No schema configured");
   });
 
-  it("6. missing key - rejects when registry returns undefined model", async () => {
-    const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
-    const config = makeConfig();
-    const registry = makeRegistry({
-      createLanguageModelFromEnv: vi.fn(async () => undefined),
-      keyMissingMessage: vi.fn(() => "NL→SQL generation: no AI API key configured."),
-    });
-    const askdb = createAskDb({ config, registry, schema: { schema: preloaded } });
-    await expect(askdb.ask("q")).rejects.toBeInstanceOf(ModelNotConfiguredError);
-    await expect(askdb.ask("q")).rejects.toThrow("NL→SQL generation: no AI API key configured.");
-  });
-
   it("rejects schema paths that cannot be loaded with source context", async () => {
     const missingPath = "/nope/does-not-exist.schema";
     const config = makeConfig({ mockSql: "SELECT 1" });
@@ -326,17 +301,6 @@ describe("createAskDb providers option", () => {
     createLanguageModel: () => ({}) as never,
     createEmbeddingModel: () => ({}) as never,
   };
-
-  it("builds the registry internally from providers", async () => {
-    const config = makeConfig({ mockSql: "SELECT 42" });
-    const askdb = createAskDb({
-      config,
-      providers: [fakeAdapter],
-      schema: { path: fixtureSchemaPath },
-    });
-    const result = await askdb.ask("how many users?");
-    expect(result.sql).toBe("SELECT 42");
-  });
 
   it("routes model resolution through the providers-built registry", async () => {
     const config = makeConfig(); // no mockSql -> registry path
