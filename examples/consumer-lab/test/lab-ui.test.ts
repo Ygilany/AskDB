@@ -95,8 +95,12 @@ function runOnce(input: UiInput): Promise<UiRun> {
   return runs.get(key)!;
 }
 
-/** Postgres points at a socket that accepts and never answers; MySQL at a port nothing listens on. */
-const TIMEOUT_MS = 8_000;
+/**
+ * Postgres points at a socket that accepts and never answers; MySQL at a port nothing listens on.
+ * `lab ui` starts each engine's timer at the fork, so this must exceed five concurrent worker boots
+ * under CI load, or the healthy engines report `timeout` too (#528).
+ */
+const TIMEOUT_MS = 30_000;
 let failingUi: LabUiProcess | undefined;
 let silentServer: Server | undefined;
 const heldSockets: Socket[] = [];
