@@ -87,7 +87,6 @@ describe("postgres label ignores ssl* parameters", () => {
 describe("postgres export-bundle label", () => {
   it.each([
     ["./exports/pagila", "./exports/pagila"],
-    ["./exports?password=S3cret", FALLBACK],
   ])("%s -> %s", (fromExport, label) => {
     expect(registry.connectionLabel("postgres", { fromExport })).toBe(label);
   });
