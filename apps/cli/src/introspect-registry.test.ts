@@ -138,15 +138,18 @@ describe("askdb introspect — injected connector registry", () => {
     expect(stdout).toContain('"id": "table:main.widgets"');
   });
 
-  it("lets explicit --url win over the adapter's configured fallback", async () => {
+  it("forwards --url to the adapter as explicit.url", async () => {
     installRuntime({ databaseUrl: "acme://configured" });
-    const { adapter, createConnector } = acmeAdapter();
+    const { adapter, createConnector, resolveConnection } = acmeAdapter();
 
     const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://flag", "--print"], {
       connectorRegistry: createConnectorRegistry([adapter]),
     });
 
     expect(code).toBe(0);
+    expect(resolveConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ explicit: expect.objectContaining({ url: "acme://flag" }) }),
+    );
     expect(createConnector).toHaveBeenCalledWith(expect.objectContaining({ url: "acme://flag" }));
   });
 

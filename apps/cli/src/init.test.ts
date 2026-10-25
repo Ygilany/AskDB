@@ -62,17 +62,6 @@ function createRecordingPrompter(): { prompter: InitPrompter; messages: string[]
 // ---------------------------------------------------------------------------
 
 describe("renderInitConfig", () => {
-  it("Postgres: only postgres branch in introspection", () => {
-    const out = renderInitConfig(postgresAnswers());
-    expect(out).toContain('provider: "postgres"');
-    expect(out).toContain('databaseUrl: env("DATABASE_URL")');
-    expect(out).not.toContain("mysql");
-    expect(out).not.toContain("sqlserver");
-    expect(out).not.toContain("sqlite");
-    expect(out).not.toContain("prisma");
-    expect(out).not.toContain("studio:");
-  });
-
   it("SQL Server: sqlserver branch + studio.execute.provider when execute enabled", () => {
     const out = renderInitConfig(postgresAnswers({
       database: "sqlserver",
@@ -112,41 +101,29 @@ describe("renderInitConfig", () => {
     expect(out).not.toContain('"postgres"');
   });
 
-  it("Anthropic AI provider: only anthropic branch", () => {
-    const out = renderInitConfig(postgresAnswers({
-      aiProvider: "anthropic",
-      aiKeyEnv: "ANTHROPIC_API_KEY",
-      aiModelEnv: "ANTHROPIC_MODEL",
-    }));
-    expect(out).toContain('provider: "anthropic"');
-    expect(out).toContain('apiKey: env("ANTHROPIC_API_KEY")');
-    expect(out).not.toContain('"openai"');
-  });
-
-  it.each(["azure", "foundry"] as const)(
-    "%s AI provider: scaffolds resourceName so the adapter can build an endpoint",
-    (aiProvider) => {
-      const out = renderInitConfig(postgresAnswers({
-        aiProvider,
-        aiKeyEnv: "AZURE_OPENAI_API_KEY",
-        aiModelEnv: "AZURE_OPENAI_DEPLOYMENT",
-      }));
+  it.each([
+    { aiProvider: "openai", aiKeyEnv: "OPENAI_API_KEY", aiModelEnv: "OPENAI_MODEL" },
+    { aiProvider: "anthropic", aiKeyEnv: "ANTHROPIC_API_KEY", aiModelEnv: "ANTHROPIC_MODEL" },
+    { aiProvider: "google", aiKeyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", aiModelEnv: "GOOGLE_AI_MODEL" },
+    { aiProvider: "azure", aiKeyEnv: "AZURE_OPENAI_API_KEY", aiModelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+    { aiProvider: "foundry", aiKeyEnv: "AZURE_OPENAI_API_KEY", aiModelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+  ] as const)(
+    "$aiProvider AI provider: scaffolds only its own providerConfig (resourceName for azure and foundry, not the others)",
+    ({ aiProvider, aiKeyEnv, aiModelEnv }) => {
+      const out = renderInitConfig(postgresAnswers({ aiProvider, aiKeyEnv, aiModelEnv }));
       const config = evaluateRenderedConfig(out) as any;
+      const needsResourceName = aiProvider === "azure" || aiProvider === "foundry";
       expect(config.ai.provider).toBe(aiProvider);
-      // The connection holds no model; the deployment name is the language model.
+      // The connection holds no model; the language model is the one named by aiModelEnv.
       expect(config.ai.providerConfig).toEqual({
-        [aiProvider]: { apiKey: { env: "AZURE_OPENAI_API_KEY" }, resourceName: { env: "AZURE_RESOURCE_NAME" } },
+        [aiProvider]: {
+          apiKey: { env: aiKeyEnv },
+          ...(needsResourceName ? { resourceName: { env: "AZURE_RESOURCE_NAME" } } : {}),
+        },
       });
-      expect(config.ai.language).toEqual({ model: { env: "AZURE_OPENAI_DEPLOYMENT" } });
+      expect(config.ai.language).toEqual({ model: { env: aiModelEnv } });
     },
   );
-
-  it("non-Azure AI providers: no resourceName line", () => {
-    for (const aiProvider of ["openai", "anthropic", "google"] as const) {
-      const out = renderInitConfig(postgresAnswers({ aiProvider }));
-      expect(out).not.toContain("resourceName");
-    }
-  });
 
   it("pgvector RAG: only pgvector store branch", () => {
     const out = renderInitConfig(postgresAnswers({
@@ -220,12 +197,8 @@ describe("buildInitInstallPlan", () => {
   it("base packages always included", () => {
     const plan = buildInitInstallPlan(postgresAnswers(), FAKE_SPECS);
     expect(plan.packages).toContain("@askdb/config@1.0.0");
-    expect(plan.packages.some((p) => p.startsWith("dotenv"))).toBe(false);
-  });
-
-  it("includes pg for postgres", () => {
-    const plan = buildInitInstallPlan(postgresAnswers(), FAKE_SPECS);
     expect(plan.packages).toContain("pg");
+    expect(plan.packages.some((p) => p.startsWith("dotenv"))).toBe(false);
   });
 
   it("includes mssql for sqlserver", () => {
@@ -299,12 +272,6 @@ describe("resolveDefaultInitAnswers", () => {
     const out = renderInitConfig(a);
     expect(out).toContain('provider: "gateway"');
     expect(out).toContain('apiKey: env("AI_GATEWAY_API_KEY")');
-  });
-
-  it("respects database override", () => {
-    const a = resolveDefaultInitAnswers({ database: "sqlserver" });
-    expect(a.database).toBe("sqlserver");
-    expect(a.connectionEnv).toBe("DATABASE_URL");
   });
 
   it("respects studioExecute override", () => {
@@ -425,6 +392,7 @@ describe("option parser", () => {
     const code = await runInitCli(["--nonexistent-flag"]);
     process.stderr.write = origWrite;
     expect(code).toBe(1);
+    expect(writes.join("")).toContain("Unknown option: --nonexistent-flag");
   });
 
   it("--yes and --interactive conflict", async () => {
@@ -456,6 +424,8 @@ describe("runInitCli --yes --skip-install", () => {
       expect(content).toContain("satisfies AskDbConfig");
       expect(content).not.toContain('"mysql"');
       expect(content).not.toContain('"sqlserver"');
+      expect(content).toContain('databaseUrl: env("DATABASE_URL")');
+      expect(content).not.toContain("studio:");
       expect(noopInstaller).not.toHaveBeenCalled();
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -483,6 +453,7 @@ describe("runInitCli --yes --skip-install", () => {
       expect(code).toBe(0);
       const content = readFileSync(outPath, "utf8");
       expect(content).toContain('provider: "sqlserver"');
+      expect(content).toContain('databaseUrl: env("DATABASE_URL")');
       expect(content).not.toContain('"postgres"');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
