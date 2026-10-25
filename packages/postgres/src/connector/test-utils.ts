@@ -1,12 +1,7 @@
 /**
  * Test helpers for the Postgres connector — kept under `src/` (not under
  * `test/`) so vitest's path resolution stays simple. Excluded from `dist/`
- * by `tsconfig.build.json`'s `*.test.ts` filter — but this file isn't a
- * test, so we put it in a sibling that the build also excludes.
- *
- * NOTE: filename ends with `.test-utils.ts` only by convention; the build's
- * `exclude` glob is on `*.test.ts`, so this file *is* compiled into `dist/`.
- * That's fine — it's small and unused outside of tests.
+ * by name: `tsconfig.build.json` excludes `src/**/test-utils.ts`.
  */
 import { readFileSync } from "node:fs";
 import type { CatalogQueryResult, CatalogQueryRunner, SqlTemplate } from "@askdb/introspect";
