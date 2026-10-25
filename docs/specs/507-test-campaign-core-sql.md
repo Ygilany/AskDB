@@ -26,7 +26,9 @@ dialect-spec.test.ts  "SUPPORTED_DIALECT_IDS enumerates all…"       ──fold
 
 **Done when:** the seven rows are applied as above, the two keepers carry their new assertions, no production file changes, `pnpm test` and `pnpm lint` pass, and the consumer-lab rebind test passes against the fixture.
 
-**Needs you:** nothing.
+**Needs you:**
+
+> **Critic: the consumer-lab rebind run could test another AskDB version (after the last pass).** `pnpm lab:up` keeps a previously chosen lab install, so the run could pass without exercising this branch. I fixed it: Testing Decisions now runs `pnpm lab:use .` before `pnpm lab:up`. The fix came after the critic's last pass, so no critic checked it. **Recommendation:** approve as written.
 
 Reply `approve`, or `/changes` with what to change.
 
@@ -71,7 +73,7 @@ The suites keep the same contracts with fewer, truer tests. The misnamed generat
 - A good test here checks the public export's behavior (`generateSelectSql`, `validateSelectSql`, `bindPreparedQuery`, `escapeSqlLiteral`, the dialect registry exports), not internals. The edits keep every remaining test at that seam; no new seam is added.
 - The two extended keepers must fail for the regression they now name. Build checks this once by hand: break the MySQL backslash escaping (or the second placeholder's expected text) and see the bind keeper fail; drop an id from the typed list's sorted comparison and see the dialect keeper fail. Revert both before committing.
 - Run the four suites, then `pnpm test` and `pnpm lint` at the root. The test count for `@askdb/core` drops by exactly 6: two validate, three bind and one dialect-spec test go, and the renamed test stays.
-- The deleted round-trip test's remaining proof must exist and pass. The client hooks rebind test runs in `pnpm test`. The consumer-lab results test ("bindPreparedQuery rebinds the value…") is outside the workspace and needs the multi-engine fixture, so build runs it on its own: `pnpm lab:up`, then `pnpm -C examples/consumer-lab exec vitest run test/results.test.ts -t "bindPreparedQuery rebinds"`, and reports the result in the PR. It must pass, not skip (a missing `cli-introspect-engine` capability skips it). If build's environment can't start the fixture, build escalates for a run rather than marking the criterion met.
+- The deleted round-trip test's remaining proof must exist and pass. The client hooks rebind test runs in `pnpm test`. The consumer-lab results test ("bindPreparedQuery rebinds the value…") is outside the workspace and needs the multi-engine fixture, so build runs it on its own against this branch: `pnpm lab:use .` first (`lab:up` alone keeps whatever install the lab last chose, which may be another AskDB version), then `pnpm lab:up`, then `pnpm -C examples/consumer-lab exec vitest run test/results.test.ts -t "bindPreparedQuery rebinds"`, and reports the result in the PR. It must pass, not skip (a missing `cli-introspect-engine` capability skips it). If build's environment can't start the fixture, build escalates for a run rather than marking the criterion met.
 - Prior art: the existing per-dialect escaping matrix in the bind suite and the registry tests in the dialect-spec suite.
 
 ## Out of Scope
