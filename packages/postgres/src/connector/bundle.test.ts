@@ -129,6 +129,45 @@ describe("describePostgresFromExport", () => {
     ]);
   });
 
+  it("drops system schemas but keeps user schemas that only look like them", async () => {
+    const snapshot = loadFixture("orders-users.catalog.json");
+    const bundleDir = join(workDir, "bundle");
+    const names = [
+      "information_schema",
+      "pg_catalog",
+      "pg_toast",
+      "pg_temp_3",
+      "pg_toast_temp_3",
+      "pgxtoast",
+      "information_schema_x",
+    ];
+    writeCsvBundle(bundleDir, {
+      ...snapshot,
+      schemas: [...(snapshot.schemas ?? []), ...names.map((schema_name) => ({ schema_name }))],
+      tables: [
+        ...(snapshot.tables ?? []),
+        ...names.map((schema_name) => ({
+          schema_name,
+          table_name: "t",
+          relkind: "r",
+          row_level_security: false,
+          comment: null,
+        })),
+      ],
+    });
+
+    const result = await createPostgresConnector().describe({
+      mode: "from-export",
+      bundlePath: bundleDir,
+    });
+
+    expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "information_schema_x",
+      "pgxtoast",
+      "public",
+    ]);
+  });
+
   it("drops pg_catalog, information_schema and pg_toast rows from the bundle", async () => {
     const snapshot = withSchemaTables(loadFixture("orders-users.catalog.json"), [
       "pg_catalog",

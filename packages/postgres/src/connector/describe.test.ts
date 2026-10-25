@@ -238,6 +238,99 @@ describe("foldIntrospectionResult - live runner compatibility", () => {
   });
 });
 
+function foldWithIndexColumns(columns: string) {
+  return foldIntrospectionResult({
+    schemaId: "indexes",
+    declaredFilters: [],
+    tableFilter: () => true,
+    schemasRows: [{ schema_name: "public" }],
+    tablesRows: [
+      {
+        schema_name: "public",
+        table_name: "t",
+        relkind: "r",
+        row_level_security: false,
+        comment: null,
+      },
+    ],
+    columnsRows: [],
+    pkRows: [],
+    fkRows: [],
+    uniqueRows: [],
+    checkRows: [],
+    indexRows: [
+      {
+        schema_name: "public",
+        table_name: "t",
+        index_name: "t_idx",
+        is_unique: false,
+        method: "btree",
+        columns: columns as unknown as string[],
+        expressions: null,
+      },
+    ],
+    enumRows: [],
+    sequenceRows: [],
+    viewRows: [],
+    commentRows: [],
+  }).schema.schemas[0]!.tables[0]!.indexes[0]!.columns;
+}
+
+describe("foldIntrospectionResult - quoted text-array literals", () => {
+  it("keeps a comma inside a quoted item", () => {
+    expect(foldWithIndexColumns('{"a,b",c}')).toEqual(["a,b", "c"]);
+  });
+
+  it("unescapes quotes and backslashes in quoted items", () => {
+    expect(foldWithIndexColumns('{"say \\"hi\\"","back\\\\slash"}')).toEqual([
+      'say "hi"',
+      "back\\slash",
+    ]);
+  });
+
+  it("drops an unquoted NULL and keeps a quoted \"NULL\" as text", () => {
+    expect(foldWithIndexColumns('{a,NULL,"NULL"}')).toEqual(["a", "NULL"]);
+  });
+});
+
+describe("foldIntrospectionResult - view column order", () => {
+  it("orders view columns by ordinal_position regardless of row order", () => {
+    const column = (name: string, ordinal_position: number) => ({
+      schema_name: "public",
+      table_name: "v",
+      column_name: name,
+      ordinal_position,
+      data_type: "text",
+      udt_schema: "pg_catalog",
+      udt_name: "text",
+      is_nullable: true,
+      default_expression: null,
+      comment: null,
+    });
+    const result = foldIntrospectionResult({
+      schemaId: "views",
+      declaredFilters: [],
+      tableFilter: () => true,
+      schemasRows: [{ schema_name: "public" }],
+      tablesRows: [],
+      columnsRows: [column("z", 2), column("y", 1)],
+      pkRows: [],
+      fkRows: [],
+      uniqueRows: [],
+      checkRows: [],
+      indexRows: [],
+      enumRows: [],
+      sequenceRows: [],
+      viewRows: [
+        { schema_name: "public", view_name: "v", definition: "select 1", is_materialized: false },
+      ],
+      commentRows: [],
+    });
+
+    expect(result.schema.schemas[0]!.views[0]!.columns.map((c) => c.name)).toEqual(["y", "z"]);
+  });
+});
+
 describe("createPostgresConnector wiring", () => {
   it("describe() routes live mode through describePostgres", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");

@@ -52,9 +52,8 @@ export type PostgresSqlTemplate = {
 
 const SYSTEM_SCHEMA_PREDICATE = `
   n.nspname NOT IN ('information_schema', 'pg_catalog')
-  AND n.nspname NOT LIKE 'pg_toast%'
-  AND n.nspname NOT LIKE 'pg_temp_%'
-  AND n.nspname NOT LIKE 'pg_toast_temp_%'
+  AND n.nspname !~ '^pg_toast(_|$)'
+  AND n.nspname !~ '^pg_temp_'
 `.trim();
 
 const FILTER_PREDICATE = `

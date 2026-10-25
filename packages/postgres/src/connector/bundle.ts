@@ -35,6 +35,9 @@ const SYSTEM_SCHEMA_PATTERNS = [
   "pg_toast_temp_",
 ] as const;
 
+// Matches the live path's SYSTEM_SCHEMA_PREDICATE: these two are exact names only.
+const EXACT_SYSTEM_SCHEMAS: ReadonlySet<string> = new Set(["information_schema", "pg_catalog"]);
+
 type BundleManifest = {
   engine: "postgres";
   version: number;
@@ -165,9 +168,11 @@ function filterBundleRows(rows: BundleRows, filters?: IntrospectionFilters): Bun
 }
 
 function isSystemSchema(schema: string): boolean {
-  return SYSTEM_SCHEMA_PATTERNS.some((pattern) =>
-    pattern.endsWith("_") ? schema.startsWith(pattern) : schema === pattern || schema.startsWith(`${pattern}_`),
-  );
+  return SYSTEM_SCHEMA_PATTERNS.some((pattern) => {
+    if (pattern.endsWith("_")) return schema.startsWith(pattern);
+    if (EXACT_SYSTEM_SCHEMAS.has(pattern)) return schema === pattern;
+    return schema === pattern || schema.startsWith(`${pattern}_`);
+  });
 }
 
 function readBundleRows(bundlePath: string, manifest: BundleManifest): BundleRows {
