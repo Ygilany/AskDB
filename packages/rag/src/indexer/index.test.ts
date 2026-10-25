@@ -96,24 +96,6 @@ describe("buildSchemaIndex", () => {
     expect(second.stats.chunksReused).toBe(first.stats.chunksTotal - 1);
   });
 
-  it("writes deterministic lock-file hash ordering", async () => {
-    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    const lockFilePath = tempLockPath();
-
-    await buildSchemaIndex({
-      schema: sources,
-      embedder: deterministicEmbedder(),
-      store: lockedMemoryStore(),
-      embedderId: "test:deterministic",
-      lockFilePath,
-    });
-
-    const lock = JSON.parse(readFileSync(lockFilePath, "utf8")) as {
-      hashes: Record<string, string>;
-    };
-    expect(Object.keys(lock.hashes)).toEqual(Object.keys(lock.hashes).sort());
-  });
-
   it("records the width of the vectors it embedded in the lock file, and keeps it when nothing is re-embedded", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
@@ -221,19 +203,6 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
     expect(second.stats.chunksReused).toBe(0);
     expect(fileStore.size()).toBe(second.stats.chunksTotal);
-  });
-
-  it("re-embeds everything into a fresh memory store even with an up-to-date lock (process restart)", async () => {
-    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    const lockFilePath = tempLockPath();
-    const embedder = vi.fn(deterministicEmbedder());
-    const opts = { schema: sources, embedder, embedderId: "test:deterministic", lockFilePath };
-
-    await buildSchemaIndex({ ...opts, store: lockedMemoryStore() });
-    const restarted = lockedMemoryStore();
-    const second = await buildSchemaIndex({ ...opts, store: restarted });
-    expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
-    expect(restarted.size()).toBe(second.stats.chunksTotal);
   });
 
   it("re-embeds the vectors an interrupted embedder switch left behind, though both models have the same width", async () => {

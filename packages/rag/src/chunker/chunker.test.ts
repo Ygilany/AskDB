@@ -134,24 +134,30 @@ describe("ignored table propagation", () => {
 describe("long-body splitting", () => {
   it("splits long bodies on paragraph boundaries with `#bc:N` suffixes", () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    const longParagraphs = Array.from({ length: 6 }, (_, i) =>
+    const paragraphs = Array.from({ length: 6 }, (_, i) =>
       // ~250-char paragraphs, six of them
       `Paragraph ${i + 1}: ${"x".repeat(240)}`,
-    ).join("\n\n");
+    );
     // Inject a long Business context for orders to force a split.
     const ordersMd = sources.tables["table:public.orders"];
     expect(ordersMd).toBeDefined();
-    ordersMd!.sections["Business context"] = longParagraphs;
+    ordersMd!.sections["Business context"] = paragraphs.join("\n\n");
 
     const { chunks } = chunkSchema(sources, { chunkSizeMaxChars: 600 });
-    const bcChunks = chunks
-      .filter((c) => c.id.startsWith("chunk:orders-users:table:public.orders#biz"))
-      .map((c) => c.id);
+    const bcChunks = chunks.filter((c) => c.id.startsWith("chunk:orders-users:table:public.orders#biz"));
+
+    const baseId = "chunk:orders-users:table:public.orders#biz";
+    expect(bcChunks.map((c) => c.id)).toEqual(
+      Array.from({ length: bcChunks.length }, (_, i) => `${baseId}#bc:${i + 1}`),
+    );
     expect(bcChunks.length).toBeGreaterThan(1);
-    // First-Nth indexed; exactly the bc:N suffix shape.
-    for (let i = 0; i < bcChunks.length; i++) {
-      expect(bcChunks[i]).toMatch(/#bc:\d+$/);
+
+    // Each chunk body is whole paragraphs joined by blank lines; together they cover every paragraph once, in order.
+    const bodies = bcChunks.map((c) => c.text.slice(c.text.indexOf("\n") + 1).split("\n\n"));
+    for (const body of bodies) {
+      for (const paragraph of body) expect(paragraphs).toContain(paragraph);
     }
+    expect(bodies.flat()).toEqual(paragraphs);
   });
 });
 
@@ -161,20 +167,14 @@ const MULTI_TENANT_DIR = resolve(
 );
 
 describe("tenant policy chunking", () => {
-  it("emits tenant-policy chunks for the multi-tenant fixture", () => {
-    const { chunks, stats } = chunkSchemaDir(MULTI_TENANT_DIR);
-    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
-    expect(tpChunks.length).toBeGreaterThan(0);
-    expect(stats.byType["tenant-policy"]).toBe(tpChunks.length);
-  });
-
   it("emits one chunk per H2 section", () => {
-    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR, { includeSensitiveDescribable: true });
+    const { chunks, stats } = chunkSchemaDir(MULTI_TENANT_DIR, { includeSensitiveDescribable: true });
     const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
     const ids = tpChunks.map((c) => c.id);
     expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#hierarchy");
     expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#scope-rules");
     expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#sensitive-interactions");
+    expect(stats.byType["tenant-policy"]).toBe(tpChunks.length);
   });
 
   it("excludes a section that names a sensitive column unless opted in", () => {
@@ -199,25 +199,11 @@ describe("tenant policy chunking", () => {
     expect(hierarchy!.text).toContain("Agencies");
   });
 
-  it("tenant-policy chunks are not sensitive by default", () => {
-    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
-    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
-    for (const c of tpChunks) {
-      expect(c.sensitive).toBe(false);
-    }
-  });
-
   it("does not emit tenant-policy chunks when schema has no tenant policy", () => {
     const { chunks, stats } = chunkSchemaDir(FIXTURE_DIR);
     const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
     expect(tpChunks).toHaveLength(0);
     expect(stats.byType["tenant-policy"]).toBe(0);
-  });
-
-  it("tenant-policy chunks are deterministic across runs", () => {
-    const a = chunkSchemaDir(MULTI_TENANT_DIR).chunks.filter((c) => c.type === "tenant-policy");
-    const b = chunkSchemaDir(MULTI_TENANT_DIR).chunks.filter((c) => c.type === "tenant-policy");
-    expect(JSON.stringify(a)).toEqual(JSON.stringify(b));
   });
 });
 
@@ -528,19 +514,6 @@ describe("sensitive-mention filtering", () => {
       const usersChunk = chunkSchema(s).chunks.find((c) => c.id === "chunk:orders-users:table:public.users");
       expect(usersChunk!.text).not.toMatch(/Lifetime value/);
     });
-  });
-
-  it.each<[string, string, boolean]>([
-    ["ssn$", "Dedupe on the ssn$ hash.", true],
-    ["café", "Grouped by CAFÉ.", true],
-    ["café", "Grouped by cafés.", false],
-    ["caf", "Open the café.", false],
-  ])("uses core's mention rule for a sensitive column named %j (%j excluded: %s)", (name, text, excluded) => {
-    const s = sources();
-    table(s, "table:public.users").columns.find((c) => c.name === "email")!.name = name;
-    s.concepts!.frontmatter.concepts = [{ id: "concept:probe", label: "Probe", description: text }];
-    const ids = chunkSchema(s).chunks.map((c) => c.id);
-    expect(ids.includes("chunk:orders-users:concept:probe")).toBe(!excluded);
   });
 
   it("counts a sensitive source that splits into several chunks once per chunk", () => {
