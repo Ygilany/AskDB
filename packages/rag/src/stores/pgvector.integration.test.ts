@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
@@ -144,9 +144,12 @@ run("createPgvectorStore integration", () => {
     const lockFilePath = join(dir, "schema.lock.json");
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     try {
-      // Lock written against a memory store (e.g. committed from a dev machine).
+      // Lock written against a non-ephemeral store (e.g. committed from a dev machine). A plain memory store is
+      // ephemeral, so the indexer would neither read nor write a lock for it.
       const { createMemoryStore } = await import("./memory.js");
-      await buildSchemaIndex({ schema: sources, embedder, store: createMemoryStore(), embedderId: "e", lockFilePath });
+      const lockedMemory = { ...createMemoryStore(), describe: () => ({ kind: "memory" }) };
+      await buildSchemaIndex({ schema: sources, embedder, store: lockedMemory, embedderId: "e", lockFilePath });
+      expect(existsSync(lockFilePath)).toBe(true);
 
       const store = createPgvectorStore({ connectionString, dimensions: 2, table, indexStrategy: "none" });
       try {

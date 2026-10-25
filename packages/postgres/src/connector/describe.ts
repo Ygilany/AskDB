@@ -44,7 +44,6 @@ import type {
 } from "./row-types.js";
 import {
   PG_FK_ACTION_BY_CODE,
-  POSTGRES_TEMPLATES,
   findTemplate,
 } from "./templates.js";
 
@@ -451,8 +450,3 @@ function enumRowOrder(a: EnumsRow, b: EnumsRow): number {
   if (a.enum_name !== b.enum_name) return a.enum_name.localeCompare(b.enum_name);
   return a.enum_position - b.enum_position;
 }
-
-// `POSTGRES_TEMPLATES` is unused at runtime here but referenced in tests; keep
-// the import live so type-checkers see the dep without needing a side-effect
-// import elsewhere.
-void POSTGRES_TEMPLATES;

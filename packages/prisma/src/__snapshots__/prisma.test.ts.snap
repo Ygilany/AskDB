@@ -2,6 +2,7 @@
 
 exports[`describePrismaSchema > wires through the Connector contract and renders Schema v2 JSON 1`] = `
 {
+  "provider": "postgres",
   "schemaId": "simple",
   "tables": [
     {

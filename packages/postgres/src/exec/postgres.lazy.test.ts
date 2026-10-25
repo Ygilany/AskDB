@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { missingDriverMessage } from "@askdb/introspect/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock `pg` so we can simulate "peer dep missing" without uninstalling the workspace dev dep.
@@ -122,12 +123,7 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     const err = await runner("SELECT 1").catch((e: unknown) => e);
 
     expect((err as Error).name).toBe("AskDbError");
-    const msg = (err as Error).message;
-    expect(msg).toMatch(/optional `pg` peer dependency/);
-    expect(msg).toMatch(/`pnpm add pg`/);
-    expect(msg).toMatch(/`pnpm dlx -p askdb -p pg askdb \.\.\.`/);
-    expect(msg).toMatch(/`npx -p askdb -p pg askdb \.\.\.`/);
-    expect(msg).toMatch(/catalog query runner/);
+    expect((err as Error).message).toBe(missingDriverMessage({ engine: "Postgres", packageName: "pg" }));
   });
 
   it("resolves `pg` from the caller project cwd when the adapter import cannot see it", async () => {

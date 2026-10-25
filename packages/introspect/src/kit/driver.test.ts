@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createOptionalDriverLoader,
   isDriverInstalled,
-  isModuleResolutionFailure,
   missingDriverMessage,
 } from "./driver.js";
 
@@ -15,6 +14,22 @@ function notFound(pkg = PKG): Error {
   const err = new Error(`Cannot find package '${pkg}' imported from somewhere`);
   (err as { code?: string }).code = "ERR_MODULE_NOT_FOUND";
   return err;
+}
+
+function cjsNotFound(specifier: string): Error {
+  return Object.assign(new Error(`Cannot find module '${specifier}'\nRequire stack:\n- /app/index.js`), {
+    code: "MODULE_NOT_FOUND",
+  });
+}
+
+function pnpUndeclared(name: string): Error {
+  return Object.assign(
+    new Error(
+      `Your application tried to access ${name}, but it isn't declared in your dependencies; ` +
+        "this makes the require call ambiguous and unsound.\n\nRequired package: " + name,
+    ),
+    { code: "MODULE_NOT_FOUND" },
+  );
 }
 
 const originalCwd = process.cwd();
@@ -37,47 +52,6 @@ afterEach(async () => {
   process.chdir(originalCwd);
   await Promise.all(tempDirs.map((dir) => rm(dir, { force: true, recursive: true })));
   tempDirs = [];
-});
-
-describe("isModuleResolutionFailure", () => {
-  it("matches resolution codes that name the package, including nested causes", () => {
-    expect(isModuleResolutionFailure(notFound(), PKG)).toBe(true);
-    expect(isModuleResolutionFailure(notFound("other"), PKG)).toBe(false);
-    expect(isModuleResolutionFailure(new Error(`boom ${PKG}`), PKG)).toBe(false);
-    expect(isModuleResolutionFailure(new Error("wrapper", { cause: notFound() }), PKG)).toBe(true);
-    expect(isModuleResolutionFailure("not an error", PKG)).toBe(false);
-  });
-
-  const cjsNotFound = (specifier: string) =>
-    Object.assign(new Error(`Cannot find module '${specifier}'\nRequire stack:\n- /app/index.js`), {
-      code: "MODULE_NOT_FOUND",
-    });
-
-  it("matches the entry point the loader asks for, not other files of the package", () => {
-    expect(isModuleResolutionFailure(cjsNotFound("mysql2/promise"), "mysql2", "mysql2/promise")).toBe(true);
-    expect(isModuleResolutionFailure(cjsNotFound("pg/lib/missing"), "pg")).toBe(false);
-  });
-
-  it("does not match a different missing package whose name contains it (a broken driver install)", () => {
-    expect(isModuleResolutionFailure(notFound("pg-connection-string"), "pg")).toBe(false);
-  });
-
-  it("does not match a missing path that merely contains the package name", () => {
-    expect(isModuleResolutionFailure(cjsNotFound("/home/mssqluser/app/db.js"), "mssql")).toBe(false);
-  });
-
-  it("recognises Yarn PnP's undeclared-dependency wording for the exact package", () => {
-    const pnp = (name: string) =>
-      Object.assign(
-        new Error(
-          `Your application tried to access ${name}, but it isn't declared in your dependencies; ` +
-            "this makes the require call ambiguous and unsound.\n\nRequired package: " + name,
-        ),
-        { code: "MODULE_NOT_FOUND" },
-      );
-    expect(isModuleResolutionFailure(pnp("pg"), "pg")).toBe(true);
-    expect(isModuleResolutionFailure(pnp("pg-connection-string"), "pg")).toBe(false);
-  });
 });
 
 describe("createOptionalDriverLoader", () => {
@@ -249,6 +223,55 @@ describe("createOptionalDriverLoader", () => {
     );
     expect((err as { cause?: unknown }).cause).toBe(ownFile);
   });
+  // Error classification: only a resolution failure naming exactly the package (or the
+  // entry point the loader asks for) means "not installed"; anything else is a broken
+  // install and surfaces as itself. Fake names keep a real `node_modules` from satisfying
+  // the project fallback.
+  const NOT_FOUND = "install it";
+  const failedToLoad = (detail: string) => `The optional \`${PKG}\` peer dependency failed to load: ${detail}`;
+  it.each([
+    { name: "own not-found", thrown: notFound(), match: true },
+    { name: "nested cause", thrown: new Error("wrapper", { cause: notFound() }), match: true },
+    {
+      name: "subpath entry point",
+      thrown: cjsNotFound(`${PKG}/promise`),
+      specifier: `${PKG}/promise`,
+      match: true,
+    },
+    { name: "Yarn PnP, exact", thrown: pnpUndeclared(PKG), match: true },
+    { name: "other package", thrown: notFound("askdb-kit-other-driver"), match: false },
+    { name: "name-prefix package", thrown: notFound(`${PKG}-connection-string`), match: false },
+    {
+      name: "path containing the name",
+      thrown: cjsNotFound(`/home/${PKG}user/app/db.js`),
+      match: false,
+    },
+    { name: "Yarn PnP, near-miss", thrown: pnpUndeclared(`${PKG}-connection-string`), match: false },
+    { name: "generic error naming the package", thrown: new Error(`boom ${PKG}`), match: false },
+    { name: "non-Error throw", thrown: "not an error", match: false },
+  ] as Array<{ name: string; thrown: unknown; specifier?: string; match: boolean }>)(
+    "classifies an import failure: $name",
+    async ({ thrown, specifier, match }) => {
+      const loader = createOptionalDriverLoader({
+        packageName: PKG,
+        specifier,
+        importDriver: async () => {
+          throw thrown;
+        },
+        missingMessage: NOT_FOUND,
+      });
+
+      const err = await loader.load({ resolveFrom: await tempProject(false) }).catch((e: unknown) => e);
+
+      expect((err as Error).name).toBe("AskDbError");
+      if (match) {
+        expect((err as Error).message).toBe(NOT_FOUND);
+      } else {
+        expect((err as Error).message).toBe(failedToLoad(thrown instanceof Error ? thrown.message : String(thrown)));
+        expect((err as { cause?: unknown }).cause).toBe(thrown);
+      }
+    },
+  );
 });
 
 describe("isDriverInstalled", () => {

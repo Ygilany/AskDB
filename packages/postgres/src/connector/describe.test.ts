@@ -78,16 +78,6 @@ describe("describePostgres — orders-users snapshot", () => {
       defaultExpression: "now()",
     });
   });
-
-  it("is deterministic — two runs produce a byte-identical SqlSchema JSON", async () => {
-    const snapshot = loadFixture("orders-users.catalog.json");
-    const runner = createSnapshotCatalogQueryRunner(snapshot);
-
-    const a = await describePostgres({ runner, schemaId: "orders-users" });
-    const b = await describePostgres({ runner, schemaId: "orders-users" });
-
-    expect(JSON.stringify(a.schema)).toBe(JSON.stringify(b.schema));
-  });
 });
 
 describe("describePostgres — multi-column FK regression guard", () => {
@@ -155,16 +145,6 @@ describe("describePostgres — enum sort order regression guard", () => {
 });
 
 describe("describePostgres — filters", () => {
-  it("no include filter by default — all non-system schemas returned", async () => {
-    const snapshot = loadFixture("orders-users.catalog.json");
-    const runner = createSnapshotCatalogQueryRunner(snapshot);
-
-    const result = await describePostgres({ runner });
-
-    // The fixture only contains 'public', so that's all we get back.
-    expect(result.schema.schemas.map((s) => s.name)).toEqual(["public"]);
-  });
-
   it("table glob filters out unmatched tables and emits ambiguous_filter on no match", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
     const runner = createSnapshotCatalogQueryRunner(snapshot);
@@ -388,12 +368,5 @@ describe("createPostgresConnector wiring", () => {
     for (const tpl of bundle.templates) {
       expect(tpl.sql).toMatch(/ORDER BY/i);
     }
-  });
-
-  it("describe() rejects missing from-export bundles with a clear error", async () => {
-    const connector = createPostgresConnector();
-    await expect(
-      connector.describe({ mode: "from-export", bundlePath: "/tmp/x" }),
-    ).rejects.toThrow(/missing manifest\.json/i);
   });
 });

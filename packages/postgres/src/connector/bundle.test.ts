@@ -168,6 +168,67 @@ describe("describePostgresFromExport", () => {
     ]);
   });
 
+  it("drops pg_catalog, information_schema and pg_toast rows from the bundle", async () => {
+    const snapshot = withSchemaTables(loadFixture("orders-users.catalog.json"), [
+      "pg_catalog",
+      "information_schema",
+      "pg_toast",
+    ]);
+    const bundleDir = join(workDir, "bundle");
+    writeCsvBundle(bundleDir, snapshot);
+
+    const result = await createPostgresConnector().describe({
+      mode: "from-export",
+      bundlePath: bundleDir,
+    });
+
+    expect(result.schema.schemas.map((schema) => schema.name)).toEqual(["public"]);
+    expect(result.schema.schemas[0]!.tables.map((table) => table.name)).toEqual([
+      "orders",
+      "users",
+    ]);
+  });
+
+  it("keeps only the schemas named in filters.schemas", async () => {
+    const snapshot = withSchemaTables(loadFixture("orders-users.catalog.json"), [
+      "billing",
+      "private",
+    ]);
+    const bundleDir = join(workDir, "bundle");
+    writeCsvBundle(bundleDir, snapshot);
+
+    const result = await createPostgresConnector().describe({
+      mode: "from-export",
+      bundlePath: bundleDir,
+      filters: { schemas: ["billing", "private"] },
+    });
+
+    expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "billing",
+      "private",
+    ]);
+  });
+
+  it("drops the schemas named in filters.excludeSchemas", async () => {
+    const snapshot = withSchemaTables(loadFixture("orders-users.catalog.json"), [
+      "billing",
+      "private",
+    ]);
+    const bundleDir = join(workDir, "bundle");
+    writeCsvBundle(bundleDir, snapshot);
+
+    const result = await createPostgresConnector().describe({
+      mode: "from-export",
+      bundlePath: bundleDir,
+      filters: { excludeSchemas: ["private"] },
+    });
+
+    expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "billing",
+      "public",
+    ]);
+  });
+
   it("rejects bundles without manifest.json", async () => {
     const bundleDir = join(workDir, "bundle");
     mkdirSync(bundleDir, { recursive: true });
@@ -226,6 +287,29 @@ describe("describePostgresFromExport", () => {
 
 function loadFixture(name: string): CatalogSnapshot {
   return loadCatalogSnapshot(resolve(FIXTURE_DIR, name));
+}
+
+function withSchemaTables(
+  snapshot: CatalogSnapshot,
+  schemaNames: readonly string[],
+): CatalogSnapshot {
+  return {
+    ...snapshot,
+    schemas: [
+      ...(snapshot.schemas ?? []),
+      ...schemaNames.map((schema_name) => ({ schema_name })),
+    ],
+    tables: [
+      ...(snapshot.tables ?? []),
+      ...schemaNames.map((schema_name) => ({
+        schema_name,
+        table_name: "extra_table",
+        relkind: "r",
+        row_level_security: false,
+        comment: null,
+      })),
+    ],
+  };
 }
 
 function writeCsvBundle(bundleDir: string, snapshot: CatalogSnapshot): void {

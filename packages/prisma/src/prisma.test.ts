@@ -202,6 +202,6 @@ describe("describePrismaSchema", () => {
       schemaId: "simple",
     });
 
-    expect(toV2SchemaJson(result.schema, "simple")).toMatchSnapshot();
+    expect(toV2SchemaJson(result.schema, "simple", result.provider)).toMatchSnapshot();
   });
 });
