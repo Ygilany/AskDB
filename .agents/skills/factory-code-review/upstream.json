@@ -11,5 +11,8 @@
     "skillFolderHash": "d8e341cee7980127dddda05159bedf25dc853615",
     "derived": true,
     "notes": "Not a copy. Upstream's Spec and Standards axes became lenses/spec.md and lenses/standards.md (the twelve-smell baseline lives in standards.md). Port upstream changes to those two axes into the matching lens; the rest of upstream (single-agent flow, issue-tracker setup) does not apply."
-  }
+  },
+  "localChanges": [
+    "SKILL.md (Profile, Working rules) and references/case-file.md (every agent prompt): no agent runs the project's full test suite, every command runs in the foreground with no background command, and a reply that holds no path is interim: the lead waits on the agent again and sends one follow-up before starting it afresh. Keep these when porting an upstream change. Decisions 2026-10-25-the-machine-caps-active-builds-and-ci-runs-the-full-suite and 2026-10-25-337-a-child-s-reply-without-its-result-is-interim."
+  ]
 }

@@ -32,9 +32,9 @@ Done when every effect is carried out or its error reported.
 
 ## `launch_ticket_thread`
 
-The effect carries `repo`, `issue`, `projectFile`, `title`, `message` (the thread's first message) and `launch` (`projectId`, `title`, `workspaceStrategy`, `modelSelection`, `fallbacks`).
+The effect carries `repo`, `issue`, `projectFile`, `title`, `message` (the thread's first message), `replaces` (only when the ticket's thread was lost: its id) and `launch` (`projectId`, `title`, `workspaceStrategy`, `modelSelection`, `fallbacks`).
 
-1. **Find one a lost response left.** Call `t3_thread_list` with `launch.projectId` and `titleContains: "[<repo name>#<issue>]"` (the repo's name without its owner). If a top-level thread whose status isn't `failed` is listed, take the newest, send it `message` with `t3_thread_send` (`mode: "queue"`), and go to step 3 with it.
+1. **Find one a lost response left.** Call `t3_thread_list` with `launch.projectId` and `titleContains: "[<repo name>#<issue>]"` (the repo's name without its owner). If a top-level thread whose status isn't `failed` is listed, and whose id isn't the effect's `replaces` (the lost thread this launch replaces, which T3 may still list), take the newest, send it `message` with `t3_thread_send` (`mode: "queue"`), and go to step 3 with it.
 2. **Launch.** Call `t3_thread_launch` with `launch.projectId`, `launch.title`, `launch.workspaceStrategy`, `launch.modelSelection` and the effect's `message`. Then call `t3_thread_wait` on the new thread with `timeoutMs: 20000`: a model T3 can't run still launches, and its run fails within seconds. `timedOut: true` or any status but `failed` means it runs.
    - When the run `failed` or the launch call errored: archive a failed thread with `t3_thread_organize` (`action: "archive"`), and after an error look for the thread as step 1 does (T3 may have created it). Otherwise launch again with the next of `launch.fallbacks` as `modelSelection`, then wait again. When the failed thread created the ticket's worktree (`t3_worktree_list` lists one on `launch.workspaceStrategy.branch`), launch in it: `workspaceStrategy` `{ "type": "existing_worktree", "worktreePath": <its path>, "branch": <the branch> }`.
    - With no fallback left, report the last error as "When the CLI fails" says, and go to the next effect: the next sweep asks again.
@@ -46,7 +46,7 @@ The effect carries `repo`, `issue`, `projectFile`, `title`, `message` (the threa
 The effect carries `repo`, `issue`, `threadId`, `message` and `clientRequestId`. A PR merged with nobody's approval is one too (`<repo>#<n>: PR #<m> merged by <login>, and nobody approved it: escalated to you.`): send it like any other.
 
 1. Call `t3_thread_send` with `threadId`, `message` as it is, `mode: "queue"` and `clientRequestId`. A repeat of the same `clientRequestId` arrives once.
-2. Reply `<repo>#<issue>: told [the ticket thread](t3-thread://v1/<threadId>): <message's first line, cut to 80 characters>`. When T3 can't find the thread, reply `<repo>#<issue>: its ticket thread <threadId> is gone` and go on: the owner relaunches it.
+2. Reply `<repo>#<issue>: told [the ticket thread](t3-thread://v1/<threadId>): <message's first line, cut to 80 characters>`. When T3 can't find the thread (the send fails because the thread does not exist; any other error is reported as "When the CLI fails" says and records nothing), run `factory thread lost <issue> --project-file <projectFile> --thread <threadId> --json`. Reply `<repo>#<issue>: its ticket thread <threadId> is gone: recorded lost, the next sweep replaces it` when it answers `lost: true`, or `<repo>#<issue>: its ticket thread <threadId> is gone: <reason>` with the command's `reason` when it wrote nothing. A thread that is only idle, or whose last run `failed`, accepts the message: it is never lost.
 
 ## `refresh_capabilities`
 
