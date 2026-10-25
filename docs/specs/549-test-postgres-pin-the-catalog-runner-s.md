@@ -2,13 +2,13 @@
 
 ## For the owner
 
-This spec adds a test that records every statement the built-in Postgres catalog query runner sends, and asserts the exact order on success (`BEGIN READ ONLY`, the query, `COMMIT`) and on a failing query (`BEGIN READ ONLY`, the query, `ROLLBACK`, then an `AskDbError`), so dropping `READ ONLY` or the failure-path `ROLLBACK` fails a test. Test-only: no production code, no changeset.
+This spec adds a test that records every statement the built-in Postgres catalog query runner sends, and asserts the exact order on success (`BEGIN READ ONLY`, the query, `COMMIT`) and on a failing query (`BEGIN READ ONLY`, the query, `ROLLBACK`, then an `AskDbError`), so dropping `READ ONLY` or the failure-path `ROLLBACK` fails a test. Test-only: no production code, and an empty changeset (the repo's changeset check requires one even for test-only changes).
 
 | Decision | Answer | Settled by | Undo |
 | --- | --- | --- | --- |
 | 1. Where the test lives | In the existing `pg`-mocking lazy-load test beside the runner, not a new file | Issue body's suggested shape, taken by triage (Agent Brief, Key interfaces) | Two-way: revert the PR |
 | 2. What it asserts | Exact statement lists: success `["BEGIN READ ONLY", sql, "COMMIT"]`; failure `["BEGIN READ ONLY", sql, "ROLLBACK"]` plus rejection with an `AskDbError` naming the underlying failure | Triage, acceptance criteria | Two-way |
-| 3. What stays out | No change to `postgres.ts` or other production code, other engines' runners, the Studio test or the integration test; no changeset | Triage, Out of scope | Two-way |
+| 3. What stays out | No change to `postgres.ts` or other production code, other engines' runners, the Studio test or the integration test; the changeset is empty (no package bump) | Triage, Out of scope | Two-way |
 
 ```text
 runner(sql) ──▶ fake pg client  [changed: records each statement]
@@ -70,7 +70,7 @@ The lazy-load test's fake `pg` client gains a statement recorder and a switch th
 - Statement-recording tests for the MySQL, SQL Server or SQLite runners.
 - Changes to Studio's execute-registry test or the Postgres integration test.
 - Asserting the parameterized branch (`query(sql, params)`) or that the client is released and the pool ended: not in the ticket's criteria; a later ticket can add them.
-- A changeset: the change is test-only.
+- A package version bump: the change is test-only, so the changeset is empty.
 
 ## Further Notes
 
@@ -88,4 +88,4 @@ The lazy-load test's fake `pg` client gains a statement recorder and a switch th
 | AC: mutation check, `READ ONLY` removed | Testing Decisions, mutation check |
 | AC: mutation check, `ROLLBACK` dropped | Testing Decisions, mutation check |
 | AC: existing lazy-load tests still pass unchanged | Implementation Decisions, which `pg` the runner reaches; Testing Decisions, unchanged |
-| Out of scope: production code, other engines, Studio and integration tests, changeset | Decision 3; Out of Scope |
+| Out of scope: production code, other engines, Studio and integration tests, package bump | Decision 3; Out of Scope |
