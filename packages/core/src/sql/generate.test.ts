@@ -251,7 +251,7 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
 });
 
 describe("generateSelectSql — parameterize prompt + extras", () => {
-  it("keeps the flag-off prompt byte-identical to the pre-parameterize path", async () => {
+  it("parameterize false and omitted send the same prompt, without parameterize instructions", async () => {
     const generateTextOff = vi.fn(async () => ({
       text: "```sql\nSELECT id FROM users\n```",
     }));
