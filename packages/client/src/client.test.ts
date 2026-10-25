@@ -130,10 +130,18 @@ describe("createAskDb", () => {
     const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
     const config = makeConfig({ mockSql: "SELECT 1" });
     const registry = makeRegistry();
-    const askdb = createAskDb({ config, registry, schema: { schema: preloaded } });
+    let modelSource: string | undefined;
+    const askdb = createAskDb({
+      config,
+      registry,
+      schema: { schema: preloaded },
+      onResolve: (info) => { modelSource = info.modelSource; },
+    });
     const result = await askdb.ask("count users");
     expect(result.sql).toBe("SELECT 1");
-    expect(registry.createLanguageModelFromEnv).not.toHaveBeenCalled();
+    expect(modelSource).toBe("mock");
+    expect(registry.resolveAiConfig).not.toHaveBeenCalled();
+    expect(registry.createLanguageModel).not.toHaveBeenCalled();
   });
 
   it("3. model override - uses override model/deps without calling registry", async () => {
@@ -141,13 +149,21 @@ describe("createAskDb", () => {
     const config = makeConfig();
     const registry = makeRegistry();
     const sentinelModel = { kind: "sentinel-model" } as never;
-    const askdb = createAskDb({ config, registry, schema: { schema: preloaded } });
+    let modelSource: string | undefined;
+    const askdb = createAskDb({
+      config,
+      registry,
+      schema: { schema: preloaded },
+      onResolve: (info) => { modelSource = info.modelSource; },
+    });
     const result = await askdb.ask("q", {
       model: sentinelModel,
       deps: { generateText: async () => ({ text: "SELECT 2" } as any) as any },
     });
     expect(result.sql).toBe("SELECT 2");
-    expect(registry.createLanguageModelFromEnv).not.toHaveBeenCalled();
+    expect(modelSource).toBe("override");
+    expect(registry.resolveAiConfig).not.toHaveBeenCalled();
+    expect(registry.createLanguageModel).not.toHaveBeenCalled();
   });
 
   describe("4. dialect precedence", () => {
