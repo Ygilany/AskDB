@@ -16,25 +16,61 @@ permissions:
 jobs:
   status:
     runs-on: ubuntu-latest
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      # The Version PR that release.yml opens. Only a branch pushed to this repo counts,
+      # not a fork's.
+      IS_VERSION_PR: ${{ github.head_ref == 'changeset-release/main' && github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      # The Version PR that release.yml opens applies the pending changesets, so it
-      # changes every bumped package.json but adds no changeset, and
-      # `changeset status --since` fails on it by design. Skip the check there (the job
-      # still reports success). Only a branch pushed to this repo counts, not a fork's.
+      # Merging a PR that leaves an unpublished version on `main` publishes it with no
+      # further approval: approving the Version PR is the release approval (release.yml).
+      # So no other PR may add a public `name@version` that npm doesn't have: not a
+      # version bump, a new public package, or a package made public. A version already
+      # on npm passes, like a new package's first version, published by hand.
+      - name: Check that only the Version PR adds unpublished versions
+        if: env.IS_VERSION_PR != 'true'
+        run: |
+          base="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          # `name@version` of the manifest at $1 when it's public; empty when it's private,
+          # missing, or can't be parsed.
+          public_version() {
+            git show "$1" 2>/dev/null \
+              | jq -r 'select(.private != true and .name and .version) | "\(.name)@\(.version)"' 2>/dev/null \
+              || true
+          }
+          status=0
+          for path in $(git diff --name-only "${base}" HEAD | grep -E '(^|/)package\.json$'); do
+            after="$(public_version "HEAD:${path}")"
+            if [ -z "${after}" ] || [ "${after}" = "$(public_version "${base}:${path}")" ]; then
+              continue
+            fi
+            # Only a 404 means unpublished; any other failure fails the check.
+            if out="$(npm view "${after}" version 2>&1)"; then
+              continue
+            elif ! grep -q E404 <<< "${out}"; then
+              echo "${out}"
+              echo "::error file=${path}::npm view ${after} failed"
+              exit 1
+            fi
+            echo "::error file=${path}::${after} isn't on npm, and merging this PR would publish it. Only the Version PR changes versions: revert the version and add a changeset (pnpm changeset). A new public package needs its first version published by hand (docs/release.md)."
+            status=1
+          done
+          exit "${status}"
+
+      # The Version PR applies the pending changesets, so it changes every bumped
+      # package.json but adds no changeset, and `changeset status --since` fails on it by
+      # design. Skip the check there (the job still reports success).
       #
       # A package.json change counts only outside `devDependencies`, which hosts never
       # install. A dev-only bump, like a Dependabot major of a build or test tool, needs no
       # changeset; a change to a range hosts install still does (docs/adrs/0015).
       - name: Detect changes to publishable sources
         id: changes
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          IS_VERSION_PR: ${{ github.head_ref == 'changeset-release/main' && github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           if [ "${IS_VERSION_PR}" = "true" ]; then
             echo "publishable=false" >> "$GITHUB_OUTPUT"
@@ -81,6 +117,4 @@ jobs:
 
       - name: Verify a changeset is present for this PR
         if: steps.changes.outputs.publishable == 'true'
-        env:
-          BASE_REF: ${{ github.base_ref }}
         run: pnpm changeset status --since="origin/${BASE_REF}"
