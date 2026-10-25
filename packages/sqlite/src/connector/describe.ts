@@ -183,7 +183,7 @@ type FoldInput = {
   declaredFilters: ReadonlyArray<string>;
 };
 
-export function foldSqliteResult(input: FoldInput): IntrospectionResult {
+function foldSqliteResult(input: FoldInput): IntrospectionResult {
   const warnings: IntrospectionWarning[] = [];
 
   const columnsByTable = groupBy(input.columnRows, (r) => r.table_name);

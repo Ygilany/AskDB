@@ -121,14 +121,14 @@ suite("describeSqlite (live in-memory database)", () => {
     expect(names).toEqual(["SqliteUsers", "counters", "sqliteXlog"].sort());
   });
 
-  it("classifies UNIQUE constraints (origin 'u') vs CREATE INDEX (origin 'c')", async () => {
+  it("classifies UNIQUE constraints (origin 'u') vs CREATE UNIQUE INDEX (origin 'c')", async () => {
     db.exec(`
       CREATE TABLE people (id INTEGER PRIMARY KEY, email TEXT UNIQUE, city TEXT);
-      CREATE INDEX idx_people_city ON people (city);
+      CREATE UNIQUE INDEX idx_people_city ON people (city);
     `);
     const people = (await tables()).find((t) => t.name === "people")!;
     expect(people.uniqueConstraints.map((u) => u.columns)).toEqual([["email"]]);
     const cityIdx = people.indexes.find((i) => i.name === "idx_people_city")!;
-    expect(cityIdx.unique).toBe(false);
+    expect(cityIdx.unique).toBe(true);
   });
 });

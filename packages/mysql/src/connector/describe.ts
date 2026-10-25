@@ -158,7 +158,7 @@ ORDER BY table_schema, table_name`,
   } as const;
 }
 
-/** Internal: the default (connection-database) catalog SQL strings, exposed for snapshot-based tests. */
+/** The default (connection-database) catalog SQL strings the connector issues, keyed by query name. */
 export const MYSQL_CATALOG_SQL = {
   current_database: SQL_CURRENT_DATABASE,
   ...catalogSql(connectionDatabase),
@@ -304,7 +304,7 @@ function tableKey(row: { table_schema: string; table_name: string }): string {
   return `${row.table_schema}\u0000${row.table_name}`;
 }
 
-export function foldMysqlResult(input: FoldInput): IntrospectionResult {
+function foldMysqlResult(input: FoldInput): IntrospectionResult {
   const warnings: IntrospectionWarning[] = [];
 
   const columnsByTable = groupBy(input.columnRows, tableKey);

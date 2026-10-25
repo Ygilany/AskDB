@@ -11,7 +11,7 @@ const multiTenantDir = join(fixturesDir, "agency-multi-tenant.schema");
 const ordersDir = join(fixturesDir, "orders-users.schema");
 
 describe("synthesizeRetrievedDdl — tenant-policy chunks", () => {
-  it("includes tenant-policy chunks in synthesized DDL", () => {
+  it("includes every tenant-policy chunk in synthesized DDL", () => {
     const schema = loadSchema(multiTenantDir);
     const results: RetrievedResult[] = [
       {
@@ -21,6 +21,18 @@ describe("synthesizeRetrievedDdl — tenant-policy chunks", () => {
           id: "chunk:tenant-policy#hierarchy",
           type: "tenant-policy",
           text: "# Tenant policy — Hierarchy\nAgencies are the top-level tenants.",
+          schemaId: schema.schemaId,
+          refs: [],
+          sensitive: false,
+        },
+      },
+      {
+        id: "chunk:tenant-policy#scope-rules",
+        score: 0.85,
+        payload: {
+          id: "chunk:tenant-policy#scope-rules",
+          type: "tenant-policy",
+          text: "# Tenant policy — Scope rules\nScope rules description here.",
           schemaId: schema.schemaId,
           refs: [],
           sensitive: false,
@@ -42,6 +54,7 @@ describe("synthesizeRetrievedDdl — tenant-policy chunks", () => {
 
     const { ddl } = synthesizeRetrievedDdl({ schema, results });
     expect(ddl).toContain("-- tenant policy context --");
+    expect(ddl).toContain("Scope rules description here.");
     expect(ddl).toContain("Agencies are the top-level tenants.");
     expect(ddl).toContain("TABLE public.orders");
   });
@@ -65,39 +78,5 @@ describe("synthesizeRetrievedDdl — tenant-policy chunks", () => {
 
     const { ddl } = synthesizeRetrievedDdl({ schema, results });
     expect(ddl).not.toContain("tenant policy context");
-  });
-
-  it("includes multiple tenant-policy chunks", () => {
-    const schema = loadSchema(multiTenantDir);
-    const results: RetrievedResult[] = [
-      {
-        id: "chunk:tenant-policy#hierarchy",
-        score: 0.9,
-        payload: {
-          id: "chunk:tenant-policy#hierarchy",
-          type: "tenant-policy",
-          text: "# Tenant policy — Hierarchy\nHierarchy description here.",
-          schemaId: schema.schemaId,
-          refs: [],
-          sensitive: false,
-        },
-      },
-      {
-        id: "chunk:tenant-policy#scope-rules",
-        score: 0.85,
-        payload: {
-          id: "chunk:tenant-policy#scope-rules",
-          type: "tenant-policy",
-          text: "# Tenant policy — Scope rules\nScope rules description here.",
-          schemaId: schema.schemaId,
-          refs: [],
-          sensitive: false,
-        },
-      },
-    ];
-
-    const { ddl } = synthesizeRetrievedDdl({ schema, results });
-    expect(ddl).toContain("Hierarchy description here.");
-    expect(ddl).toContain("Scope rules description here.");
   });
 });

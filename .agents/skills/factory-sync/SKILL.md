@@ -14,10 +14,13 @@ Run every `factory` command from the worktree root, with `--json`. The CLI finds
 ## 1. Confirm the ticket
 
 1. Run `factory ticket show <n> --json`. Go on only when `state.stage` is `sync` and `state.status` is `active`; otherwise reply with what you found and stop.
-2. Take the PR, the base and the checked head from your brief. `git rev-parse HEAD` must be the checked head: if the branch is behind its remote's copy of it (the `remote` that `factory ticket push-target <n> --json` prints: `origin`, or `fork` for a contributor project without write access), `git fetch <remote> <branch>`, then `git merge --ff-only FETCH_HEAD`; if it has commits the checked head lacks, or is ahead of it, stop and escalate (a head nobody checked is not yours to merge onto).
+2. Take the PR, the base and the checked head from your brief, and the branch's remote from `factory ticket push-target <n> --json` (`origin`, or `fork` for a contributor project without write access). Fetch the remote's copy of the branch first (`git fetch <remote> <branch>`; a predecessor may have pushed a merge from another worktree, which a worker at the checked head would not otherwise see) and record its SHA once as `<remote head>` (`git rev-parse FETCH_HEAD`): every later `git fetch` overwrites `FETCH_HEAD`, so use the recorded SHA, not `FETCH_HEAD`, from here on. Then compare `git rev-parse HEAD` with the checked head:
+   - **Behind `<remote head>`** (`HEAD` is an ancestor of it, including `HEAD` at the checked head): `git merge --ff-only <remote head>`, and compare again. If the remote's branch has commits the checked head lacks that are not a descendant of it, stop and escalate.
+   - **At the checked head, and `<remote head>` is the checked head:** go on to §2.
+   - **Past the checked head:** it is your predecessor's merge when all of these hold: `HEAD` has exactly two parents and the first is the checked head; the second is in `origin/<base>` (`git fetch origin <base>`, then `git merge-base --is-ancestor <second parent> origin/<base>`); and the remote's branch is at `HEAD` (`<remote head>` is `HEAD`). Then the merge and its tests are already done: skip §2 and §3 and go to §4's **Done** with `HEAD`'s SHA as `head_sha`. Anything else past the checked head (a plain commit, a merge onto another parent, a merge not pushed) is a head nobody checked: stop and escalate.
 3. Read the project's `AGENTS.md` (or `CLAUDE.md`) for its conventions, and its `test_tiers`.
 
-Done when you are on the checked head, clean.
+Done when you are on the checked head, clean, or have found your predecessor's pushed merge.
 
 ## 2. Merge the base
 
