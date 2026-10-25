@@ -23,9 +23,16 @@ describe("createConnectorRegistry", () => {
     const mysqlAdapter = makeAdapter("mysql");
     const registry = createConnectorRegistry({ postgres: pgAdapter, mysql: mysqlAdapter });
 
-    registry.createConnector({ provider: "mysql", url: "mysql://localhost/db" });
+    const config: ConnectorConfig = {
+      provider: "mysql",
+      url: "mysql://localhost/db",
+      fromExport: "/path/to/export",
+      filters: { schemas: ["public"] },
+      schemaId: "my-schema",
+    };
+    registry.createConnector(config);
 
-    expect(mysqlAdapter.createConnector).toHaveBeenCalled();
+    expect(mysqlAdapter.createConnector).toHaveBeenCalledWith(config);
     expect(pgAdapter.createConnector).not.toHaveBeenCalled();
   });
 
@@ -53,22 +60,6 @@ describe("createConnectorRegistry", () => {
     expect(() => createConnectorRegistry([makeAdapter("acme"), makeAdapter("acme")])).toThrow(
       'Connector provider "acme" is registered twice.',
     );
-  });
-
-  it("passes all config fields through to the adapter", () => {
-    const adapter = makeAdapter("postgres");
-    const registry = createConnectorRegistry([adapter]);
-
-    const config: ConnectorConfig = {
-      provider: "postgres",
-      url: "postgres://localhost/db",
-      fromExport: "/path/to/export",
-      filters: { schemas: ["public"] },
-      schemaId: "my-schema",
-    };
-    registry.createConnector(config);
-
-    expect(adapter.createConnector).toHaveBeenCalledWith(config);
   });
 
   it("getTemplates returns the bundle from an adapter that implements it", () => {
