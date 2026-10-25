@@ -129,16 +129,6 @@ describe("escapeSqlLiteral", () => {
     expect(escapeSqlLiteral(true, undefined)).toBe("TRUE");
     expect(escapeSqlLiteral(false, undefined)).toBe("FALSE");
   });
-
-  it("escapes the two-parameter injection shape under MySQL", () => {
-    const a = escapeSqlLiteral("\\", MYSQL_DIALECT);
-    const b = escapeSqlLiteral(" OR 1=1", MYSQL_DIALECT);
-    expect(a).toBe("'\\\\'");
-    expect(b).toBe("' OR 1=1'");
-    // Closing quote of a is not consumed by a trailing backslash.
-    expect(a.endsWith("'")).toBe(true);
-    expect(a).not.toMatch(/[^']'\\'$/);
-  });
 });
 
 function prepared(
@@ -288,36 +278,6 @@ describe("bindPreparedQuery — errors", () => {
   });
 });
 
-describe("bindPreparedQuery — JSON round-trip", () => {
-  it("rebinds a JSON-serialized PreparedQuery with no model involvement", () => {
-    const original = prepared("postgres", "SELECT count(*) FROM cities WHERE state = :state_name", [
-      {
-        name: "state_name",
-        placeholder: ":state_name",
-        type: "string",
-        cardinality: "one",
-        source: "question",
-      },
-    ]);
-    const revived = JSON.parse(JSON.stringify(original)) as PreparedQuery;
-    const bound = bindPreparedQuery(revived, { state_name: "Utah" });
-    expect(bound.sql).toBe("SELECT count(*) FROM cities WHERE state = 'Utah'");
-    expect(bound.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
-    expect(bound.params).toEqual(["Utah"]);
-  });
-});
-
-describe("bindPreparedQuery — right-to-left substitution", () => {
-  it("substitutes correctly when later placeholders are longer", () => {
-    const p = prepared("postgres", "SELECT * FROM t WHERE a = :a AND bb = :bb", [
-      { name: "a", placeholder: ":a", type: "string", cardinality: "one", source: "question" },
-      { name: "bb", placeholder: ":bb", type: "string", cardinality: "one", source: "question" },
-    ]);
-    const bound = bindPreparedQuery(p, { a: "1", bb: "22" });
-    expect(bound.sql).toBe("SELECT * FROM t WHERE a = '1' AND bb = '22'");
-  });
-});
-
 describe("bindPreparedQuery — escaping matrix for business values", () => {
   it("escapes trailing backslash under MySQL but not Postgres", () => {
     const params = [
@@ -325,6 +285,16 @@ describe("bindPreparedQuery — escaping matrix for business values", () => {
     ];
     const my = bindPreparedQuery(prepared("mysql", "SELECT * FROM t WHERE s = :s", params), { s: "\\" });
     expect(my.sql).toBe("SELECT * FROM t WHERE s = '\\\\'");
+    // Two-parameter injection shape: the trailing backslash must not swallow the closing quote
+    // and let the next value break out.
+    const myTwo = bindPreparedQuery(
+      prepared("mysql", "SELECT * FROM t WHERE s = :s AND t = :t", [
+        ...params,
+        { name: "t", placeholder: ":t", type: "string" as const, cardinality: "one" as const, source: "question" as const },
+      ]),
+      { s: "\\", t: " OR 1=1" },
+    );
+    expect(myTwo.sql).toBe("SELECT * FROM t WHERE s = '\\\\' AND t = ' OR 1=1'");
     const pg = bindPreparedQuery(prepared("postgres", "SELECT * FROM t WHERE s = :s", params), { s: "\\" });
     expect(pg.sql).toBe("SELECT * FROM t WHERE s = '\\'");
   });

@@ -12,6 +12,8 @@ It composes the factory's copies of three skills from `Ygilany/skills`: the gril
 
 **The project.** `<file>` is the manifest `factory config check --json` prints as `project`, run from this thread's working directory (the nearest `.factory/project.yaml` above it, or a contributor project's manifest in the factory checkout); `<repo>` is its `tracker.repo`, `<host>` its `tracker.host` (`github.com` without one), `<base>` its `base_branch`. Run every `factory` command with `--project-file <file> --json`. `factory --help` lists them.
 
+**The owner reads the turn's last message.** Every post below (a round, the confirm, the breakdown, the spec's artifact, the started tickets) is written as `factory-ticket-thread`'s "The turn's last message" says: after every tool call of the turn, as its final message.
+
 **The artifacts mode.** `factory config check` prints the project; `artifacts` in `<file>` is `tracker` (the default) or `thread`. Under `thread` this skill posts no comment on the parent and files each child with its title and approved body only: no label and no inheritance block. It files the parent with no label either, records each child's inheritance with `factory ticket inherit <child> --from <n> --project-file <file> --json` once the parent is started and its spec committed, just before starting the child, and posts the spec nowhere (`post-doc` records it).
 
 **Acting as the project's identity.** Every issue, comment, relation and PR this skill writes on GitHub is the project's identity's, so its grilled marker counts (only the identity's or an approver's does) and the router starts nothing it files. `factory config check` names the identity (step 1). Its token command, `<token>`, is:
@@ -51,7 +53,7 @@ The parent is the ticket, and it starts at the grill this thread ran: triage is 
 5. `factory ticket post-doc <n> --doc docs/specs/<n>-<slug>.md --project-file <file> --json`.
 6. Record each critic pass: `factory ledger record <n> --type critique_round --data '<json>' --project-file <file> --json`, as `factory-align` step 5 says.
 7. `factory ticket complete <n> --evidence doc=docs/specs/<n>-<slug>.md --evidence critic=<verdict> --evidence findings=0 --evidence rounds=<passes> --project-file <file> --json`: the spec's `spec_approval` gate passes or waits as the profile has it, never skipped.
-8. Post align's artifact as `factory-ticket-thread`'s "Posting a stage's artifact" says for `align`, with the spec's posted URL as its link. Then go to step 8 of Steps above.
+8. Build align's artifact as `factory-ticket-thread`'s "Posting a stage's artifact" says for `align`, with the spec's posted URL as its link (its page is published now, as a tool call). Keep its text for the turn's final message: go to step 8 of Steps above, and end the turn with the artifact and what step 8's action posts, in the order "The turn's last message" gives.
 
 The spec, terms and records reach `<base>` in the build's PR: the build works on `<branch>`.
 
@@ -81,9 +83,9 @@ The spec, terms and records reach `<base>` in the build's PR: the build works on
    1. Under `thread`, first `factory ticket inherit <child> --from <n> --project-file <file> --json`, run from this worktree: it reads the parent's spec, committed here as `docs/specs/<n>-<slug>.md` (a parent in the parent lane has no stage records), and must show `grilled` true. Then `factory ticket start <child> --project-file <file> --json` must show `stage` `triage` and `grilled` true: its triage takes the parent's decisions as settled.
    2. `factory thread plan <child> --project-file <file> --json`; with `refreshCapabilities`, refresh the snapshot as `factory-ticket-thread` says and plan again.
    3. Launch and record it exactly as the `factory-router` skill's `launch_ticket_thread` steps 1 to 3 say, with the plan as the effect: `t3_thread_launch`, `t3_thread_wait`, the fallbacks, then `factory thread record <child> --thread <threadId> --branch <launch.workspaceStrategy.branch> --project-file <file> --json`.
-   Post `started [<title>](t3-thread://v1/<threadId>)` for each. A child whose launch fails on every model is left to the sweep, which launches a thread for any started ticket with none: name it in your post.
+   Keep a line `started [<title>](t3-thread://v1/<threadId>)` for each, for the turn's final message, which holds them with what step 8's action posts, in the order "The turn's last message" gives. A child whose launch fails on every model is left to the sweep, which launches a thread for any started ticket with none: name it in those lines.
 7. Go to step 8 of Steps above.
 
 ## When a command fails
 
-Reply with the command and the first line of its error, and stop; the owner decides from there. What is filed stays filed: a parent left unstarted is started by running the rest of these steps again from the one that failed, and a ticket started without its thread gets one from the sweep.
+Write the turn's final message and stop: every post the turn held back, with the command and the first line of its error below them; the owner decides from there. What is filed stays filed: a parent left unstarted is started by running the rest of these steps again from the one that failed, and a ticket started without its thread gets one from the sweep.

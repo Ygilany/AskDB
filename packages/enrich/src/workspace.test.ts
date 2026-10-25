@@ -61,16 +61,6 @@ describe("workspace", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("loadWorkspace pairs physical tables with markdown by id", () => {
-    const ws = loadWorkspace(schemaDir);
-    expect(ws.physical.schemaId).toBe("orders-users");
-    expect(ws.tables).toHaveLength(2);
-    const orders = ws.tables.find((t) => t.physical.name === "orders");
-    expect(orders).toBeDefined();
-    expect(orders?.filename).toBe("orders.md");
-    expect(orders?.parsed?.frontmatter.id).toBe("table:public.orders");
-  });
-
   it("saveTable updates description and re-parses to the saved state", () => {
     const ws = loadWorkspace(schemaDir);
     const orders = ws.tables.find((t) => t.physical.name === "orders")!;
@@ -88,6 +78,9 @@ describe("workspace", () => {
     expect(onDisk).toContain("## Business context");
     // Original frontmatter aliases preserved
     expect(onDisk).toContain("primaryEntity: order");
+
+    // The workspace held in memory sees the saved state too
+    expect(orders.parsed?.body).toContain("Updated order description.");
 
     // Re-load to confirm round-trip
     const ws2 = loadWorkspace(schemaDir);
@@ -176,6 +169,15 @@ describe("workspace", () => {
         { id: "concept:bad", label: "Bad", links: ["table:public.missing"] },
       ]),
     ).toEqual(["table:public.missing"]);
+
+    const conceptsPath = join(schemaDir, "concepts.md");
+    const before = readFileSync(conceptsPath, "utf8");
+    expect(() =>
+      saveConcepts(ws, {
+        concepts: [{ id: "concept:bad", label: "Bad", links: ["table:public.missing"] }],
+      }),
+    ).toThrow(/Invalid concept link/);
+    expect(readFileSync(conceptsPath, "utf8")).toBe(before);
 
     saveConcepts(ws, {
       concepts: [

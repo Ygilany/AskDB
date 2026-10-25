@@ -18,7 +18,7 @@ The `factory` CLI decides lanes, routing and limits. Call it with `--json`.
 - **Lenses**: your brief's line "The `<lane>` lane's review lenses: …" (`lanes.<lane>.review_lenses` in `factory.yaml`). Each is a lens of the `factory-code-review` skill, with its brief in that skill's `lenses/` folder and its tier in its Lenses table.
 - **PR**: the open PR for this branch, `gh pr view --json number,url,baseRefName,headRefOid,body`. With none, `factory ticket fail <n> --reason "no open PR for review" --json` (build opens it) and go to step 5's reply.
 - **Base**: `origin/<baseRefName>` after `git fetch origin <baseRefName>`, and its merge-base with the head.
-- **Last reviewed head**: your brief's line "Range from: …". The CLI computes it: the head the loop's last round reviewed, or `none` when no round has reviewed one since the loop last started (the ticket started, was moved, changed lane, or passed review). This round is a **range** round when it names a head and that head differs from the PR's head: build pushed a fix since. Otherwise it is a **full** round, over the whole PR.
+- **Last reviewed head**: your brief's line "Range from: …". The CLI computes it: the head the loop's last round reviewed, or `none` when no round has reviewed one since the loop last started (the ticket started, was moved, changed lane, or passed review). This round is a **range** round when it names a head and that head differs from the PR's head: build pushed a fix since. Otherwise it is a **full** round, over the whole PR. A range round in a lane whose lenses include `defects` owes a **full defects read** before it can pass (step 2).
 - **A merge round**: your brief says "Range: merge `<sha>`" in place of "Range from: …" when the ticket's sync stage merged the base into the PR branch and resolved a conflict (decision 2026-10-25-200). The round reviews that merge commit, not the commits the base brought in, each of which was reviewed in its own PR. Its diff for the lenses is `git show --remerge-diff <sha>`, what the resolution changed against git's own merge of the two parents, conflict markers included, plus the conflicted files (`git show --remerge-diff --name-only <sha>`) read at the head. `<sha>` is the PR's head. The next round, after build fixed what this one found, is a range round from the head this round reviewed, as usual.
 - **Earlier findings**: the `findings` of the ticket's latest `review_round` event (`factory ledger list --ticket <n> --json`) when the brief names a head, and the reason the brief quotes when it says the stage is running again after a send-back to build.
 - **Author**: the model that wrote the PR, named in your brief; otherwise `chosen.model` from `factory route implementer --lane <lane> --json`.
@@ -47,11 +47,13 @@ Start these in one turn, so they run in parallel:
 
   Wait for it with `task_status`. If the task fails or its model is unavailable, retry once on the next qualifying fallback.
 
-**Mark every agent you start.** The first two lines of each agent's prompt (above `factory-code-review`'s own text, and above "Act as…" wording T3 may add) are your brief's `Stage run: <key>, attempt <n>` line, copied as it stands, and a `Usage:` line, written out in full: `Usage: lens <lens>` with the lens's name for a lens agent (say `Usage: lens defects`), and exactly `Usage: lens second_opinion` for the second opinion. Never drop the word `lens`. `factory usage scan` attributes the agent's tokens to this round and lens by them; nothing else reads them.
+**Mark every agent you start.** The first two lines of each agent's prompt (above `factory-code-review`'s own text, and above "Act as…" wording T3 may add) are your brief's `Stage run: <key>, attempt <n>` line, copied as it stands, and a `Usage:` line, written out in full: `Usage: lens <lens>` with the lens's name for a lens agent (say `Usage: lens defects`), exactly `Usage: lens second_opinion` for the second opinion and exactly `Usage: lens defects_full` for the full defects read. Never drop the word `lens`. `factory usage scan` attributes the agent's tokens to this round and lens by them; nothing else reads them.
 
-These are all the agents the round starts: you are the lead and the merger.
+These are all the agents the round starts, bar the full defects read below: you are the lead and the merger.
 
-Done when every lens agent has returned its report path and the second opinion has replied.
+**The full defects read (a range round only).** A range round's lenses read only the commits since the last reviewed head, so a pass would certify code they were never shown again (decision 2026-10-25-282). When the round is a range round, the lane's lenses include `defects`, and the lens reports and the second opinion, merged as step 3 says, leave **no blocking finding**, start one more fresh agent before you record the round: the defects lens at its tier (profile overrides applied), with the same lens agent prompt, marked `Usage: lens defects_full`, and a case file whose diff is the **whole PR**, `git diff <merge-base>...<head sha>`, and whose prior findings file is the round's. Its blocking findings join the round's under lens `defects_full`, merged by anchor as in step 3, and fail the round like any lens's. Start it after the other agents have returned, and not at all when a finding already blocks the round: build fixes those, and the next range round that would pass runs the read. A full round (no head named, or the head unchanged) and a merge round run no full defects read: a full round's defects lens already read the whole PR, and a merge round keeps decision 2026-10-25-200's rule. A lane whose lenses lack `defects` runs none.
+
+Done when every lens agent has returned its report path, the second opinion has replied and, on a range round that would pass, the full defects read has returned.
 
 ## 3. Merge the verdict
 
@@ -63,8 +65,8 @@ Record the round:
 factory ledger record <n> --type review_round --json --data '{"round":<r>,"maxRounds":<limit>,"pr":<pr number>,"headSha":"<head sha>","lenses":[{"lens":"<lens>","model":"<model id>","blocking":<count>,"nonBlocking":<count>},…],"blocking":<count>,"security":0,"findings":[{"lens":"<lens>","file":"<path>","line":<line>,"summary":"<one line>"},…]}'
 ```
 
-- `lenses`: one entry per lens that ran, and one for the second opinion (lens `second_opinion`, its model, its blocking count after dropping duplicates, `nonBlocking` 0).
-- `findings`: one entry per blocking finding; the second opinion's carry lens `second_opinion`. The retro reads them.
+- `lenses`: one entry per lens that ran, and one for the second opinion (lens `second_opinion`, its model, its blocking count after dropping duplicates, `nonBlocking` 0). A full defects read that ran has its own entry, lens `defects_full`, and the CLI refuses a passing range round whose record has none.
+- `findings`: one entry per blocking finding; the second opinion's carry lens `second_opinion`, the full defects read's `defects_full`. The retro reads them.
 - `security` stays 0: no security pass runs in the review stage.
 
 The CLI rejects an event whose fields are missing, misnamed or of the wrong type; fix the data and record it again.
@@ -79,7 +81,7 @@ Done when the round is recorded with its blocking count and findings.
 
 **On a contributor project (`contributor: true` in `factory ticket show <n> --json`) post nothing on the PR:** no review, summary or line comment, since the maintainers review an ordinary contribution (decision D7 of #191). The verdict stays in the `review_round` event and in your reply, which the ticket thread posts; the blocking findings go to build in the `fail` reason. Skip to step 5, and done-when for this step is met.
 
-Post one comment on the PR (under `artifacts: thread`, which `factory ticket show <n> --json` prints, with no AI disclaimer and no `<!-- factory:… -->` marker): the round (`<r>` of `<limit>`, full, range or merge, the head SHA reviewed), the models that ran (each lens and the second opinion), each blocking finding with its `file:line`, failure scenario and lens, each earlier finding as fixed or still open, the non-blocking findings, and the outcome. Post it as the project's identity, resolved as `factory-open-pr` §1 says (the manifest's `identity`, else `default_identities.<tracker host>`), and fail closed: for a `github_app` identity `<key>`, `t=$(factory github-app token --repo <repo> --identity <key>) && [ -n "$t" ] && GH_TOKEN=$t gh pr comment <pr> --body-file <file>` (`GH_ENTERPRISE_TOKEN` off `github.com`). If the mint fails, post nothing, keep its error line for your reply, and still exit the stage.
+Post one comment on the PR (under `artifacts: thread`, which `factory ticket show <n> --json` prints, with no AI disclaimer and no `<!-- factory:… -->` marker): the round (`<r>` of `<limit>`, full, range or merge, the head SHA reviewed), the models that ran (each lens, the second opinion and the full defects read), each blocking finding with its `file:line`, failure scenario and lens, each earlier finding as fixed or still open, the non-blocking findings, and the outcome. Post it as the project's identity, resolved as `factory-open-pr` §1 says (the manifest's `identity`, else `default_identities.<tracker host>`), and fail closed: for a `github_app` identity `<key>`, `t=$(factory github-app token --repo <repo> --identity <key>) && [ -n "$t" ] && GH_TOKEN=$t gh pr comment <pr> --body-file <file>` (`GH_ENTERPRISE_TOKEN` off `github.com`). If the mint fails, post nothing, keep its error line for your reply, and still exit the stage.
 
 Done when the comment is posted, the mint's error line is kept, or, on a contributor project, nothing was posted.
 
@@ -87,7 +89,7 @@ Done when the comment is posted, the mint's error line is kept, or, on a contrib
 
 Unless the round stalled:
 
-- **Zero blocking findings**: `factory ticket complete <n> --evidence blocking=0 --evidence pr=<pr url> --evidence head_sha=<head sha reviewed> --evidence rounds=<r> --json`. The merge stage merges that head only.
+- **Zero blocking findings**: `factory ticket complete <n> --evidence blocking=0 --evidence pr=<pr url> --evidence head_sha=<head sha reviewed> --evidence rounds=<r> --json`. The merge stage merges that head only. On a range round this is accepted only with a `defects_full` entry in the recorded round; without it the CLI refuses and names the read.
 - **Blocking findings**: `factory ticket fail <n> --reason "<count> blocking: <file>:<line> <one line>; …" --json`, one entry per blocking finding. The CLI sends the ticket to build with this reason in its brief, or escalates when `r` was the last round.
 - **A decision only a person can make** (the spec and the code disagree on what was asked, say): `factory ticket escalate <n> --reason "<the question>" --json`. The CLI records the round itself.
 

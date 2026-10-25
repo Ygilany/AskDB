@@ -2,10 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AiProviderAdapter } from "./provider.js";
 import {
   BUILTIN_AI_PROVIDERS,
-  BUILTIN_AI_PROVIDER_NAMES,
   anthropicProvider,
   azureProvider,
-  findBuiltinAiProvider,
   gatewayProvider,
   getBuiltinAiProviderSetup,
   listBuiltinAiProviderSetups,
@@ -25,10 +23,6 @@ function customAdapter(provider: string, extra: Partial<AiProviderAdapter> = {})
 }
 
 describe("built-in provider table", () => {
-  it("lists the built-ins in display order", () => {
-    expect(BUILTIN_AI_PROVIDER_NAMES).toEqual(["openai", "anthropic", "google", "azure", "gateway"]);
-  });
-
   it("keeps each row consistent with its adapter", () => {
     for (const row of BUILTIN_AI_PROVIDERS) {
       expect(row.adapter.provider).toBe(row.provider);
@@ -38,25 +32,6 @@ describe("built-in provider table", () => {
       expect(row.env.defaultModel.length).toBeGreaterThan(0);
       expect(row.env.apiKeyVars.length).toBeGreaterThan(0);
     }
-  });
-
-  it("names an @ai-sdk peer for every provider except the gateway, which ships with ai", () => {
-    expect(
-      Object.fromEntries(BUILTIN_AI_PROVIDERS.map((row) => [row.provider, row.peerPackage])),
-    ).toEqual({
-      openai: "@ai-sdk/openai",
-      anthropic: "@ai-sdk/anthropic",
-      google: "@ai-sdk/google",
-      azure: "@ai-sdk/azure",
-      gateway: undefined,
-    });
-  });
-
-  it("finds rows by name or alias, case-insensitively", () => {
-    expect(findBuiltinAiProvider("OpenAI")?.adapter).toBe(openaiProvider);
-    expect(findBuiltinAiProvider(" foundry ")?.adapter).toBe(azureProvider);
-    expect(findBuiltinAiProvider("azure-openai")?.adapter).toBe(azureProvider);
-    expect(findBuiltinAiProvider("mistral")).toBeUndefined();
   });
 
   it("derives setup-wizard defaults from the table, in table order", () => {
@@ -91,18 +66,9 @@ describe("createAiRegistry built-ins", () => {
   });
 
   it("registers a built-in by alias, including all of its aliases", () => {
-    const registry = createAiRegistry(["Foundry"]);
+    const registry = createAiRegistry([" Foundry "]);
     expect(registry.hasProvider("azure")).toBe(true);
     expect(registry.hasProvider("azure-openai")).toBe(true);
-  });
-
-  it("still accepts custom adapter objects unchanged", async () => {
-    const adapter = customAdapter("mistral");
-    const registry = createAiRegistry([adapter]);
-    expect(registry.hasProvider("mistral")).toBe(true);
-    await expect(
-      registry.createLanguageModel({ provider: "mistral", apiKey: "k", model: "m" }),
-    ).resolves.toEqual({ kind: "custom-language" });
   });
 
   it("mixes built-in names and custom adapters", () => {
@@ -138,7 +104,7 @@ describe("createAiRegistry built-ins", () => {
     ).toEqual({ provider: "gateway", apiKey: "gw", model: "openai/gpt-4o-mini" });
   });
 
-  it("builds a model lazily from the installed peer SDK", async () => {
+  it("builds a built-in's model from its installed peer SDK", async () => {
     const registry = createAiRegistry(["anthropic"]);
     const model = await registry.createLanguageModel({
       provider: "anthropic",

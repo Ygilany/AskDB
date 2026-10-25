@@ -640,50 +640,6 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results[0].score).toEqual(expect.any(Number));
   });
 
-  it("learns a new pgvector table's width from the embedding model when none is configured", async () => {
-    const embeddingServer = createEmbeddingServer(); // returns 4-wide vectors unless asked for another width
-    embeddingServers.push(embeddingServer);
-    const embeddingBaseUrl = await listen(embeddingServer);
-    const backingStore = createMemoryStore();
-    let tableWidth: number | undefined;
-    const provisionedWith: (number | undefined)[] = [];
-    setStudioPgvectorStoreFactoryForTests((options) => ({
-      upsert: backingStore.upsert,
-      query: backingStore.query,
-      delete: backingStore.delete,
-      hashesByPrefix: backingStore.hashesByPrefix,
-      count: async () => backingStore.size(),
-      setupSql: () => "",
-      ensureSchema: async () => {
-        provisionedWith.push(options.dimensions);
-        tableWidth ??= options.dimensions;
-      },
-      tableDimensions: async () => tableWidth,
-      close: async () => {},
-    }));
-    installStudioRuntime({}, {
-      ...STUDIO_TEST_BASE,
-      ai: {
-        provider: "openai",
-        providerConfig: { openai: { apiKey: "test-key", baseUrl: embeddingBaseUrl } },
-        embedding: { model: "text-embedding-3-small" },
-      },
-      rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pgvector.test/askdb" } } },
-    });
-    const server = createStudioServer({ schema: copyFixture() });
-    servers.push(server);
-    const baseUrl = await listen(server);
-
-    const before = await getJson(`${baseUrl}/api/rag/status`);
-    expect(before).toMatchObject({ hasIndex: false, chunksIndexed: 0, dimensions: null });
-    expect(provisionedWith).toEqual([]);
-
-    const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
-    expect(provisionedWith).toEqual([4]);
-    expect(indexed.status).toMatchObject({ hasIndex: true, stale: false, dimensions: 4, expectedDimensions: null });
-    expect(indexed.status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:default");
-  });
-
   it.each([
     { dimensions: undefined, source: "embedding model text-embedding-3-small returns 4" },
     { dimensions: 6, source: "ai.embedding.dimensions asks for 6" },
@@ -749,7 +705,7 @@ describe("AskDB Studio server", () => {
     expect(status.packageName).toBe("pg");
     expect(status.connectionKind).toBe("url");
     expect(typeof status.installed).toBe("boolean");
-    expect(typeof status.configured).toBe("boolean");
+    expect(status.configured).toBe(false);
     expect(status.installCommand).toBe("pnpm add pg");
     // Execute is opt-in: disabled by default, with an explanation for the UI.
     expect(status.enabled).toBe(false);
@@ -759,68 +715,41 @@ describe("AskDB Studio server", () => {
     expect(status.maxRows).toBe(500);
   });
 
-  it("GET /api/execute/status reports sqlserver provider when introspection is sqlserver", async () => {
-    const sqlserverConfig: AskDbConfig = {
-      ...STUDIO_TEST_BASE,
-      introspection: {
-        provider: "sqlserver",
-        providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } },
-        outputDir: "./askdb/",
-      },
-      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
-    };
-    installStudioRuntime({}, sqlserverConfig);
-    const schemaDir = copyFixture();
-    const server = createStudioServer({ schema: schemaDir });
-    servers.push(server);
-    const baseUrl = await listen(server);
-
-    const status = await getJson(`${baseUrl}/api/execute/status`);
-    expect(status.provider).toBe("sqlserver");
-    expect(status.label).toBe("SQL Server");
-    expect(status.packageName).toBe("mssql");
-    expect(status.connectionKind).toBe("url");
-    expect(status.configured).toBe(true);
-  });
-
-  it("GET /api/execute/status reports sqlite provider with file connection kind", async () => {
-    const sqliteConfig: AskDbConfig = {
-      ...STUDIO_TEST_BASE,
-      introspection: {
-        provider: "sqlite",
-        providerConfig: { sqlite: { file: "./data/app.db" } },
-        outputDir: "./askdb/",
-      },
-      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
-    };
-    installStudioRuntime({}, sqliteConfig);
-    const schemaDir = copyFixture();
-    const server = createStudioServer({ schema: schemaDir });
-    servers.push(server);
-    const baseUrl = await listen(server);
-
-    const status = await getJson(`${baseUrl}/api/execute/status`);
-    expect(status.provider).toBe("sqlite");
-    expect(status.label).toBe("SQLite");
-    expect(status.packageName).toBe("better-sqlite3");
-    expect(status.connectionKind).toBe("file");
-    expect(status.configured).toBe(true);
-  });
-
-  it("GET /api/execute/status reports not configured when no connection URL is set", async () => {
-    // postgres provider but no database URL anywhere
+  it.each([
+    {
+      provider: "sqlserver",
+      introspection: { provider: "sqlserver", providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } }, outputDir: "./askdb/" },
+      label: "SQL Server",
+      packageName: "mssql",
+      connectionKind: "url",
+    },
+    {
+      provider: "sqlite",
+      introspection: { provider: "sqlite", providerConfig: { sqlite: { file: "./data/app.db" } }, outputDir: "./askdb/" },
+      label: "SQLite",
+      packageName: "better-sqlite3",
+      connectionKind: "file",
+    },
+    {
+      provider: "mysql",
+      introspection: { provider: "mysql", providerConfig: { mysql: { databaseUrl: "mysql://localhost/db" } }, outputDir: "./askdb/" },
+      label: "MySQL",
+      packageName: "mysql2",
+      connectionKind: "url",
+    },
+  ] as const)("GET /api/execute/status reports $provider provider when introspection is $provider", async ({ introspection, ...expected }) => {
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,
-      introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-    }, { omitFlatKeys: ["ASKDB_INTROSPECT_POSTGRES_URL", "ASKDB_STUDIO_DATABASE_URL"] });
+      introspection,
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
+    });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
     const baseUrl = await listen(server);
 
     const status = await getJson(`${baseUrl}/api/execute/status`);
-    expect(status.provider).toBe("postgres");
-    expect(status.configured).toBe(false);
+    expect(status).toMatchObject({ ...expected, configured: true });
   });
 
   it("POST /api/execute/install-driver rejects unknown and inherited provider keys with 400", async () => {
@@ -897,29 +826,6 @@ describe("AskDB Studio server", () => {
     const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/No execute connection configured/);
-  });
-
-  it("GET /api/execute/status reports mysql provider when introspection is mysql", async () => {
-    const mysqlConfig: AskDbConfig = {
-      ...STUDIO_TEST_BASE,
-      introspection: {
-        provider: "mysql",
-        providerConfig: { mysql: { databaseUrl: "mysql://localhost/db" } },
-        outputDir: "./askdb/",
-      },
-      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
-    };
-    installStudioRuntime({}, mysqlConfig);
-    const schemaDir = copyFixture();
-    const server = createStudioServer({ schema: schemaDir });
-    servers.push(server);
-    const baseUrl = await listen(server);
-
-    const status = await getJson(`${baseUrl}/api/execute/status`);
-    expect(status.provider).toBe("mysql");
-    expect(status.packageName).toBe("mysql2");
-    expect(status.connectionKind).toBe("url");
-    expect(status.configured).toBe(true);
   });
 
   describe("execute against a real SQLite database", () => {
@@ -1108,62 +1014,20 @@ describe("AskDB Studio server", () => {
     expect(typeof workspace.schemaPathRelative).toBe("string");
   });
 
-  // Every class of input that leaked a secret through the earlier masking
-  // redactor (ADR 0011, "Context"), plus ordinary strings per engine.
-  // The label is built only from parsed host/port/database (or a SQLite path);
-  // anything that doesn't parse cleanly is "configured <engine> connection".
+  // Studio's wiring from each engine's connection config to the status label
+  // (ADR 0011): one ordinary row per engine, a fallback row, and the rows that
+  // are Studio's own. The label parsing corpora live in each engine's
+  // label.test.ts and in packages/prisma/src/provider.test.ts.
   it.each([
-    // Ordinary strings.
     ["postgres", "postgres://app:S3cret@db:5432/app?sslmode=require", "postgres://db:5432/app"],
     ["mysql", "mysql://root:S3cret@db:3306/shop", "mysql://db:3306/shop"],
     ["sqlserver", "mssql://sa:S3cret@db:1433/app", "sqlserver://db:1433/app"],
-    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=S3cret;encrypt=true", "sqlserver://db:1433/app"],
     ["sqlserver", "Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;", "sqlserver://db:1433/app"],
     ["sqlite", "./data/app.db", "./data/app.db"],
-    // A password containing @, / or #.
+    // An input that doesn't parse cleanly reaches the response as the fallback label.
     ["postgres", "postgres://app:pa/ss@db:5432/app", "configured postgres connection"],
-    ["postgres", "postgres://app:p@ss/w#rd@db:5432/app", "configured postgres connection"],
-    ["mysql", "mysql://root:pa/ss@db:3306/shop", "configured mysql connection"],
-    ["sqlserver", "mssql://sa:S3/cr@t#@db:1433/app", "configured sqlserver connection"],
-    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=p@ssw0rd", "configured sqlserver connection"],
-    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true", "configured sqlserver connection"],
-    // An unescaped ; inside an unquoted password; SQLite URI keys.
-    // The driver reads `cd;Database` as one key, so no database is shown.
-    ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
-    // An unbraced ; inside a value is ambiguous: the label falls back.
-    ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "configured sqlserver connection"],
-    ["sqlite", "file:./data/app.db?mode=ro&key=S3cret", "./data/app.db"],
-    // A quoted or braced value followed by trailing text.
-    ["postgres", "postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
-    ["sqlserver", "Server=db;Database=app;Password='ab'cd;", "configured sqlserver connection"],
-    ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "configured sqlserver connection"],
-    // JDBC and near-miss URL forms.
-    ["postgres", "jdbc:postgresql://u:secret@h/db", "configured postgres connection"],
-    ["postgres", '"postgres://u:secret@h/db"', "configured postgres connection"],
-    ["postgres", "postgres:/u:secret@h/db", "configured postgres connection"],
-    ["sqlserver", "sqlserver://sa:se;cret@h", "configured sqlserver connection"],
-    // A percent-encoded SQLite key name.
-    ["sqlite", "file:app.db?%6Bey=secret", "app.db"],
-    // Inputs that were only in the engine tables: leading whitespace, and a # or / in a URL password.
-    // (@askdb/config trims config values, so the leading space never reaches the parser.)
+    // @askdb/config trims config values, so the leading space never reaches the parser.
     ["postgres", " postgres://app:S3cret@db:5432/app", "postgres://db:5432/app"],
-    ["postgres", "postgres://app:pa#ss@db:5432/app", "configured postgres connection"],
-    ["sqlserver", "mssql://sa:S3/cret@host:1433/db", "configured sqlserver connection"],
-    // ADO.NET spellings the driver reads as part of the password.
-    // The driver reads the rest as part of the password: no database comes from it.
-    ["sqlserver", "Server=h;User Id=sa;Password=p;;Database=leak", "sqlserver://h"],
-    ["sqlserver", "Server=h;User Id=sa;Password=;Database=leak", "sqlserver://h"],
-    ["sqlserver", "Data Source=h;Password=x;;Initial Catalog=leak", "sqlserver://h"],
-    ["sqlserver", "User Id=sa;Password=p;;Server=leakhost", "configured sqlserver connection"],
-    // Unicode whitespace before ";" (NBSP, U+FEFF).
-    ["sqlserver", "Server=h;User Id=sa;Password=\u00a0;Database=leak", "sqlserver://h"],
-    ["sqlserver", "Server=h;User Id=sa;Password=\ufeff;Database=leak", "sqlserver://h"],
-    ["sqlserver", "User Id=sa;Password=\u00a0;Server=leakhost", "configured sqlserver connection"],
-    // A ;database= inside a Prisma {…} value or a quote. The
-    // string can be read more than one way, so the label falls back.
-    ["sqlserver", "sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", "configured sqlserver connection"],
-    ["sqlserver", "sqlserver://h;user={a;database=leak;}", "configured sqlserver connection"],
-    ["sqlserver", 'sqlserver://h;user=sa;password="S3c;database=ret;"', "configured sqlserver connection"],
     // Prisma schema paths go through the same allowlist.
     ["prisma", "./prisma/schema.prisma", "./prisma/schema.prisma"],
     ["prisma", "file:schema.prisma?key=S3cret", "configured prisma connection"],
@@ -1204,20 +1068,6 @@ describe("AskDB Studio server", () => {
     expect(plan.engine).toBe("sqlite");
     expect(plan.error).toContain("introspection.providerConfig.sqlite.file");
     expect(plan.error).not.toContain("--url");
-  });
-
-  it("GET /api/introspect/status gives a prisma source with no schemaPath the generic label (the connector auto-discovers the schema)", async () => {
-    installStudioRuntime({}, {
-      ...STUDIO_TEST_BASE,
-      introspection: { provider: "prisma", providerConfig: { prisma: {} }, outputDir: "./askdb/" },
-    });
-    const schemaDir = copyFixture();
-    const server = createStudioServer({ schema: schemaDir });
-    servers.push(server);
-    const baseUrl = await listen(server);
-
-    const plan = await getJson(`${baseUrl}/api/introspect/status`);
-    expect(plan).toEqual({ ok: true, engine: "prisma", sourceLabel: "configured prisma connection" });
   });
 
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {

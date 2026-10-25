@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
-import { describeMysql, foldMysqlResult, MYSQL_CATALOG_SQL } from "./describe.js";
-import { compileTableFilters } from "@askdb/introspect/kit";
+import { describeMysql, MYSQL_CATALOG_SQL } from "./describe.js";
 
 type RowMap = Record<string, ReadonlyArray<Record<string, unknown>>>;
 

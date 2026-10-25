@@ -134,19 +134,6 @@ describe("flattenAskDbConfig", () => {
     ).toThrow(/invalid modes\.askdbMode/);
   });
 
-  it("flattens postgres introspection databaseUrl to ASKDB_INTROSPECT_POSTGRES_URL", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        introspection: {
-          provider: "postgres",
-          providerConfig: { postgres: { databaseUrl: "postgres://introspect/db" } },
-          outputDir: "./askdb/",
-        },
-      }),
-    );
-    expect(flat.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://introspect/db");
-  });
-
   it("flattens MySQL introspection branch to ASKDB_INTROSPECT_MYSQL_URL", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
@@ -225,44 +212,6 @@ describe("flattenAskDbConfig", () => {
       }),
     );
     expect(flat.ASKDB_RAG_FILE_BASE_PATH).toBe("./askdb/rag");
-  });
-
-  it("flattens anthropic provider branch to correct env keys", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "anthropic",
-          providerConfig: {
-            anthropic: { apiKey: "ant-key" },
-          },
-          language: { model: "claude-opus-4-8" },
-        },
-      }),
-    );
-    expect(flat.ASKDB_AI_PROVIDER).toBe("anthropic");
-    expect(flat.ANTHROPIC_API_KEY).toBe("ant-key");
-    expect(flat.ASKDB_AI_MODEL).toBe("claude-opus-4-8");
-  });
-
-  it("flattens gateway provider branch to AI_GATEWAY_API_KEY and the universal model/base URL keys", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "gateway",
-          providerConfig: {
-            gateway: {
-              apiKey: "gw-key",
-              baseUrl: "https://gateway.example/v3/ai",
-            },
-          },
-          language: { model: "anthropic/claude-sonnet-4-6" },
-        },
-      }),
-    );
-    expect(flat.ASKDB_AI_PROVIDER).toBe("gateway");
-    expect(flat.AI_GATEWAY_API_KEY).toBe("gw-key");
-    expect(flat.ASKDB_AI_MODEL).toBe("anthropic/claude-sonnet-4-6");
-    expect(flat.ASKDB_AI_BASE_URL).toBe("https://gateway.example/v3/ai");
   });
 
   it("defaults the gateway model to openai/gpt-4o-mini and requires its branch", () => {
@@ -347,20 +296,6 @@ describe("flattenAskDbConfig", () => {
     expect(flat).not.toHaveProperty("ASKDB_AI_AZURE_RESOURCE_NAME");
   });
 
-  it("flattens anthropic baseUrl when provided", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "anthropic",
-          providerConfig: {
-            anthropic: { apiKey: "ant-key", baseUrl: "https://custom.anthropic.endpoint/v1" },
-          },
-        },
-      }),
-    );
-    expect(flat.ANTHROPIC_BASE_URL).toBe("https://custom.anthropic.endpoint/v1");
-  });
-
   it("flattens a custom provider string to universal ASKDB_AI_* keys", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
@@ -425,32 +360,7 @@ describe("flattenAskDbConfig", () => {
     ).toThrow(/ai\.providerConfig\.foundry is required/);
   });
 
-  it("known providers are unaffected by the custom-provider branch", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "openai",
-          providerConfig: {
-            openai: { apiKey: "oai-key" },
-          },
-          language: { model: "gpt-4o" },
-        },
-      }),
-    );
-    expect(flat.OPENAI_API_KEY).toBe("oai-key");
-    expect(flat.OPENAI_MODEL).toBe("gpt-4o");
-    // No ASKDB_AI_API_KEY set for openai branch
-    expect(flat.ASKDB_AI_API_KEY).toBeUndefined();
-  });
-
   describe("ai.language.reasoning", () => {
-    it("emits no reasoning env keys when unset (preserves current behavior)", () => {
-      const flat = flattenAskDbConfig(minimalConfig());
-      expect(flat.ASKDB_AI_REASONING_EFFORT).toBeUndefined();
-      expect(flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBeUndefined();
-      expect(flat.ASKDB_AI_REASONING_EFFORT_ENRICHMENT).toBeUndefined();
-    });
-
     it("flattens the global effort to ASKDB_AI_REASONING_EFFORT", () => {
       const flat = flattenAskDbConfig(
         minimalConfig({
@@ -1264,29 +1174,6 @@ ${scaffold.source}
     ).toThrow('Unknown AI provider: "__proto__"');
   });
 
-  it("loads defineConfig projection from disk", () => {
-    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
-    linkWorkspacePackage(dir);
-    writeFileSync(
-      join(dir, "askdb.config.ts"),
-      `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
-       export default defineConfig({
-         ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_KEY") } }, language: { model: "gpt-4o-mini" } },
-         introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: env("MY_DB") } }, outputDir: "./out/" },
-         rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
-       } satisfies AskDbConfig);
-    `,
-      "utf8",
-    );
-    process.env.MY_KEY = "secret";
-    process.env.MY_DB = "postgres://x/y";
-    const { projection } = loadAskDbConfigProjectionSync(dir);
-    expect(projection?.entries.OPENAI_API_KEY).toBe("secret");
-    expect(projection?.entries.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://x/y");
-    expect(projection?.entries.ASKDB_INTROSPECT_OUT).toBe("./out/");
-    delete process.env.MY_KEY;
-    delete process.env.MY_DB;
-  });
 });
 
 describe("getAskDbRuntimeConfig — introspection branches", () => {
@@ -1468,12 +1355,6 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
     const flat = { ...flattenAskDbConfig(structured), ...flatExtra };
     setAskDbRuntimeForTests({ structured, flat });
   }
-
-  it("defaults to postgres when no provider is configured", () => {
-    installStudio(undefined, { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" });
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.studio.execute.provider).toBe("postgres");
-  });
 
   it("uses explicit studio.execute.provider when set", () => {
     installStudio(

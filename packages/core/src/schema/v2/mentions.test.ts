@@ -20,7 +20,7 @@ describe("findMentionedNames", () => {
     ["CAFÉ opening hours", "café", true],
     ["the cafés nearby", "café", false],
     ["the xcafé nearby", "café", false],
-    ["open the café", "caf", false],
+    ["Open the café", "caf", false],
     // A bare name is literal, dots included.
     ["the a.b column", "a.b", true],
     ["the a . b column", "a.b", false],

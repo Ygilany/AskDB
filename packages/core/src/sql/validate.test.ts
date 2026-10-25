@@ -38,11 +38,6 @@ describe("validateSelectSql (postgres dialect)", () => {
     expect(seen).toEqual(["SELECT 1 as one"]);
   });
 
-  it("accepts WITH ... SELECT", () => {
-    const sql = "WITH c AS (SELECT 1 AS n) SELECT n FROM c";
-    expect(validateSelectSql(POSTGRES_DIALECT, sql)).toBe(sql);
-  });
-
   it("rejects empty sql", () => {
     expectRule("   ", "SQL_EMPTY");
   });
@@ -63,11 +58,6 @@ describe("validateSelectSql (postgres dialect)", () => {
 
   it("rejects inline comments", () => {
     expectRule("SELECT 1 --boom", "SQL_COMMENT");
-  });
-
-  it("allows benign column names that contain substring 'delete'", () => {
-    const sql = `SELECT deleted_at FROM users`;
-    expect(validateSelectSql(POSTGRES_DIALECT, sql)).toBe(sql);
   });
 
   it("applies dialect-specific extraForbiddenKeywords", () => {

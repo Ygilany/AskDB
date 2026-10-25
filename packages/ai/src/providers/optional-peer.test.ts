@@ -6,11 +6,6 @@ function moduleNotFound(message: string, code = "ERR_MODULE_NOT_FOUND"): Error {
 }
 
 describe("rethrowMissingPeer", () => {
-  it("passes the loaded module through when the peer is installed", async () => {
-    const mod = { createThing: () => "ok" };
-    await expect(Promise.resolve(mod).catch(rethrowMissingPeer("google", "@ai-sdk/google"))).resolves.toBe(mod);
-  });
-
   it("rethrows a missing peer (ESM) as an actionable install message", async () => {
     const cause = moduleNotFound(
       "Cannot find package '@ai-sdk/google' imported from /app/node_modules/@askdb/ai/dist/providers/google.js",

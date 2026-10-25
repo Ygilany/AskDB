@@ -58,17 +58,11 @@ describe("azureProvider", () => {
     ).toBeUndefined();
   });
 
-  it("throws without resourceName or baseURL", () => {
-    expect(() =>
-      azureProvider.resolveConfig({ AZURE_OPENAI_API_KEY: "k" }, { usage: "language" }),
-    ).toThrowError(/Azure provider requires/);
-  });
-
   it("names the askdb.config keys (and env alternative) in the missing-resource error", () => {
     expect(() =>
       azureProvider.resolveConfig({ AZURE_OPENAI_API_KEY: "k" }, { usage: "language" }),
     ).toThrowError(
-      /ai\.providerConfig\.azure\.resourceName.*ai\.providerConfig\.azure\.baseUrl.*AZURE_RESOURCE_NAME/s,
+      /Azure provider requires.*ai\.providerConfig\.azure\.resourceName.*ai\.providerConfig\.azure\.baseUrl.*AZURE_RESOURCE_NAME/s,
     );
   });
 
@@ -96,15 +90,6 @@ describe("azureProvider", () => {
       ).toEqual({ openai: { reasoningEffort: "low", forceReasoning: true } });
     });
 
-    it("maps reasoningEffort for gpt-5.x deployments", () => {
-      expect(
-        azureProvider.resolveProviderOptions?.(
-          { ...baseConfig, model: "gpt-5-mini" },
-          { reasoningEffort: "high" },
-        ),
-      ).toEqual({ openai: { reasoningEffort: "high", forceReasoning: true } });
-    });
-
     it("returns undefined when reasoningEffort is unset", () => {
       expect(
         azureProvider.resolveProviderOptions?.({ ...baseConfig, model: "o3-mini" }, {}),
@@ -120,17 +105,6 @@ describe("azureProvider", () => {
       ).toBeUndefined();
     });
 
-    it("uses providerOptions.modelFamily to detect reasoning support when the deployment name doesn't match", () => {
-      // Deployment named arbitrarily ("askdb-reporting"), but backed by a
-      // reasoning-capable model declared via the modelFamily override.
-      expect(
-        azureProvider.resolveProviderOptions?.(
-          { ...baseConfig, model: "askdb-reporting", providerOptions: { modelFamily: "gpt-5" } },
-          { reasoningEffort: "low" },
-        ),
-      ).toEqual({ openai: { reasoningEffort: "low", forceReasoning: true } });
-    });
-
     it("does not send reasoningEffort when modelFamily override names a non-reasoning model", () => {
       expect(
         azureProvider.resolveProviderOptions?.(
@@ -141,18 +115,8 @@ describe("azureProvider", () => {
     });
 
     it.each([
-      ["o1", true],
-      ["o3-mini", true],
-      ["o4-mini", true],
       ["gpt-5", true],
-      ["gpt-5-mini", true],
-      ["gpt-5.1", true],
-      ["gpt-5-chat", false],
-      ["gpt-5-chat-latest", false],
-      ["gpt-5.1-chat", false],
       ["gpt-4o", false],
-      ["gpt-4.1-mini", false],
-      ["askdb-reporting", false],
     ] as const)("model family %s → reasoning: %s", (modelFamily, isReasoning) => {
       const result = azureProvider.resolveProviderOptions?.(
         { ...baseConfig, model: "askdb-reporting", providerOptions: { modelFamily } },

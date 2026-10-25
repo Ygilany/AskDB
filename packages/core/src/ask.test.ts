@@ -64,23 +64,33 @@ const promptForwardingDialect: AskDialect = {
 describe("ask (mode + logging)", () => {
   it("emits pipeline mode before generation", async () => {
     const info = vi.fn();
+    let infoCallsAtGenerate = -1;
+    const recordingDialect: AskDialect = {
+      generate: async () => {
+        infoCallsAtGenerate = info.mock.calls.length;
+        return { sql: "SELECT COUNT(*) AS n FROM users" };
+      },
+    };
     await ask({
       question: "count users",
       schema: minimalSchema,
       model: fakeModel,
-      dialect: cannedDialect,
+      dialect: recordingDialect,
       mode: "bounded_results",
       logger: { info, error: vi.fn() },
     });
 
-    const modes = info.mock.calls.filter((c) => (c[0] as { event?: string })?.event === AskDbLogEvent.PipelineMode);
-    expect(modes.length).toBeGreaterThanOrEqual(1);
-    expect(modes[0]![0]).toMatchObject({ mode: "bounded_results" });
+    const modeIndexes = info.mock.calls.flatMap((c, i) =>
+      (c[0] as { event?: string })?.event === AskDbLogEvent.PipelineMode ? [i] : [],
+    );
+    expect(modeIndexes).toHaveLength(1);
+    expect(modeIndexes[0]!).toBeLessThan(infoCallsAtGenerate);
+    expect(info.mock.calls[modeIndexes[0]!]![0]).toMatchObject({ mode: "bounded_results" });
   });
 });
 
 describe("ask — providerOptions passthrough", () => {
-  it("does not forward a providerOptions key to the dialect when deps.providerOptions is unset", async () => {
+  it("leaves options.providerOptions undefined when deps.providerOptions is unset", async () => {
     let seen: unknown;
     const capturingDialect: AskDialect = {
       async generate(_question, _schema, _model, options) {
@@ -705,18 +715,6 @@ describe("ask — parameterize", () => {
     expect(result).toEqual({ sql: "SELECT id FROM users" });
     const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
     expect(prompt).not.toContain("Parameterized output format");
-  });
-
-  it("custom AskDialect is unaffected and returns no extras", async () => {
-    const result = await ask({
-      question: "count",
-      schema: minimalSchema,
-      model: fakeModel,
-      dialect: cannedDialect,
-    });
-    expect(result.sql).toBe("SELECT COUNT(*) AS n FROM users");
-    expect(result.unboundSql).toBeUndefined();
-    expect(result.preparedQuery).toBeUndefined();
   });
 
   const businessPlusTenantReply = [

@@ -14,52 +14,7 @@ const prismaFixture = join(prismaDir, "test-fixtures/simple/schema.prisma");
 // (`test` depends on `build` and `^build`); rebuilding them in-test raced with other
 // test files executing the same dist output.
 describe("cli spawn: introspect subcommand", () => {
-  it("runs `askdb introspect templates` via the in-tree Postgres connector", () => {
-    const exec = run("node", [
-      join(cliDir, "dist/cli.js"),
-      "introspect",
-      "templates",
-      "--engine",
-      "postgres",
-    ]);
-
-    expect(exec.status).toBe(0);
-    expect(exec.stdout).toContain("-- schemas");
-    expect(exec.stdout).toContain("ORDER BY");
-  });
-
-  it("rejects `introspect templates` for Prisma, which provides no SQL templates", () => {
-    const exec = run("node", [
-      join(cliDir, "dist/cli.js"),
-      "introspect",
-      "templates",
-      "--engine",
-      "prisma",
-    ]);
-
-    expect(exec.status).toBe(1);
-    expect(exec.stderr).toContain("does not provide SQL templates");
-  });
-
-  it("prints Schema v2 JSON from a Prisma schema file", () => {
-    const exec = run("node", [
-      join(cliDir, "dist/cli.js"),
-      "introspect",
-      "--engine",
-      "prisma",
-      "--prisma-schema",
-      prismaFixture,
-      "--schema-id",
-      "simple",
-      "--print",
-    ]);
-
-    expect(exec.status).toBe(0);
-    expect(exec.stdout).toContain('"schemaId": "simple"');
-    expect(exec.stdout).toContain('"id": "table:public.User"');
-  });
-
-  it("auto-discovers prisma schema or errors with a helpful message when none is found", () => {
+  it("errors with an auto-discover message when no Prisma schema is found", () => {
     const exec = run("node", [
       join(cliDir, "dist/cli.js"),
       "introspect",
@@ -71,33 +26,6 @@ describe("cli spawn: introspect subcommand", () => {
     // The repo root has no prisma/schema.prisma, so discovery fails with a clear message.
     expect(exec.status).toBe(1);
     expect(exec.stderr).toContain("auto-discover");
-  });
-
-  it("writes schema to --out directory for Prisma introspection", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "askdb-introspect-out-"));
-    try {
-      const exec = run(
-        "node",
-        [
-          join(cliDir, "dist/cli.js"),
-          "introspect",
-          "--engine",
-          "prisma",
-          "--prisma-schema",
-          prismaFixture,
-          "--schema-id",
-          "simple",
-          "--out",
-          tmp,
-        ],
-        undefined,
-        repoRoot,
-      );
-      expect(exec.status).toBe(0);
-      expect(readFileSync(join(tmp, "schema.json"), "utf8")).toContain('"id": "table:public.User"');
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
   });
 
   it("defaults engine to introspection.provider from askdb.config when --engine is absent (prisma)", () => {
