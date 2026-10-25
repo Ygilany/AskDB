@@ -107,7 +107,7 @@ The Studio server tests keep one proof per Studio contract. The execute-status d
 - New tests for the gaps the campaign noticed: `cache-control: no-store`, `content-security-policy: frame-ancestors 'none'`, and `/assets/` path containment.
 - Any production code change, and removing the test-only seams (all three are still used).
 - Edits to tests outside `apps/studio`: the engine label tests, the prisma provider tests and the config tests are keepers only.
-- A changeset with a package listed: `apps/studio` test files are not published package output. The Changesets check still fails on any `apps/studio/src/**` change without a changeset file, so the PR adds an empty one (`.changeset/test-campaign-studio.md`, no package listed), like `.changeset/test-campaign-core-sql.md`.
+- A changeset with a package listed: `apps/studio` test files are not published package output. The Changesets check still fails on any `apps/studio/src/**` change without a changeset file, so the PR adds an empty one (`.changeset/test-campaign-studio.md`, no package listed), like `.changeset/test-audit-core.md`.
 
 ## Further Notes
 
