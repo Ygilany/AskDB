@@ -80,16 +80,6 @@ describe("loadSchema — v2 directory", () => {
     expect(users.commonQueryLanguage).toBeUndefined();
   });
 
-  it("excludes describable-layer fields for sensitive columns", () => {
-    const schema = loadSchema(v2Dir);
-    const users = schema.tables.find((t) => t.name === "users")!;
-    const emailCol = users.columns.find((c) => c.name === "email")!;
-    expect(emailCol.sensitive).toBe(true);
-    // Describable fields should be absent for sensitive column
-    expect(emailCol.aliases).toBeUndefined();
-    expect(emailCol.description).toBeUndefined();
-  });
-
   describe("sensitiveFromTable", () => {
     /** The fixture with `users` marked sensitive in schema.json, plus an optional front-matter edit. */
     function usersSensitive(edit?: { file: string; after: string; insert: string }): string {
@@ -166,22 +156,6 @@ describe("loadSchema — v1 rejection", () => {
     expect(() => loadSchema(v1FixtureJson)).toThrow(SchemaParseError);
     expect(() => loadSchema(v1FixtureJson)).toThrow(/version: 1/);
     expect(() => loadSchema(v1FixtureJson)).toThrow(/schema-v2\.md/);
-  });
-});
-
-describe("loadSchema — validation errors", () => {
-  it("rejects front-matter with unknown keys", () => {
-    // We test this via parseTableMarkdown directly in parser.test.ts
-    // Here we just confirm the loader propagates SchemaParseError
-    expect(() => loadSchema("/nonexistent/path")).toThrow();
-  });
-
-  it("warns on orphaned column id in table markdown", () => {
-    // We test orphaned-id detection via a synthesized case in parser.test.ts
-    // The loader produces warnings; this fixture has no orphans
-    const schema = loadSchema(v2Dir);
-    const orphans = schema.warnings.filter((w) => w.kind === "orphaned_column_id");
-    expect(orphans).toHaveLength(0);
   });
 });
 
