@@ -139,6 +139,7 @@ describe("describePostgresFromExport", () => {
       "pg_temp_3",
       "pg_toast_temp_3",
       "pgxtoast",
+      "information_schema_x",
     ];
     writeCsvBundle(bundleDir, {
       ...snapshot,
@@ -160,7 +161,11 @@ describe("describePostgresFromExport", () => {
       bundlePath: bundleDir,
     });
 
-    expect(result.schema.schemas.map((schema) => schema.name)).toEqual(["pgxtoast", "public"]);
+    expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "information_schema_x",
+      "pgxtoast",
+      "public",
+    ]);
   });
 
   it("rejects bundles without manifest.json", async () => {
