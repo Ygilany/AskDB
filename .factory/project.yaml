@@ -5,6 +5,9 @@ tracker: { kind: github, repo: Ygilany/AskDB }
 base_branch: main
 identity: factory-app # the GitHub App: comments, labels and PRs come from ygilany-factory[bot]
 autonomy: balanced
+# The shared store (docs/shared-store-runbook.md in Ygilany/factory): AskDB's history moves to the factory's Postgres store, at the owner's
+# word on 2026-10-25 ("I want to do all the projects but we can do them staged").
+store: shared
 # The Claude roles run on the Learn21 account, in place of the personal one, from 2026-10-25 at the owner's word: "run through
 # [Learn21] before using the personal profile for now". Remove this line to move AskDB back to the personal account.
 accounts: { claudeAgent: claudeAgent_l21 }
