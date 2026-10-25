@@ -11,7 +11,7 @@ This spec applies the `cli` test campaign's plan to `apps/cli`'s tests: 3 of the
 | Plan size | The whole plan, including the per-provider table in the `renderInitConfig` tests; the plan's "drop it if over budget" fallback does not apply | Triage (standard lane, so the quick budget no longer caps the diff) | two-way |
 | Test-only production seams | All kept: `runInitCli`'s installer argument, `connectorRegistry`, the test-only `init.ts` exports, `defaultConnectorRegistry` | Triage (campaign plan, "Test-only production seams") | two-way |
 | The 4 possible product bugs in the issue | Out of scope; file separately if wanted | Triage (Out of scope) | two-way |
-| Production code and changeset | None: test files only, so no changeset | Triage (acceptance criteria) | two-way |
+| Production code and changeset | No production code. An empty changeset (`.changeset/test-audit-cli.md`), because CI's `changeset status` fails on changed packages with no changeset file | Triage (acceptance criteria); amended after CI failed on d0c787e | two-way |
 
 No defaults: triage took none, and the grill stage closed with nothing to settle.
 
@@ -65,7 +65,7 @@ Apply the campaign's plan, recorded in the issue body (`Ledger rows`, `Retire`, 
 8. As a maintainer, I want the duplicated spawned `introspect` tests removed, so that the slow spawned suite runs each command once.
 9. As a maintainer, I want the duplicated `--api-key` rejection test removed, so that the rejection is pinned once, in the table that checks no argv secret is echoed.
 10. As a reviewer, I want each deletion to point to its keeper, so that I can check no contract lost its only test.
-11. As a release owner, I want the change confined to test files, so that it needs no changeset and cannot change the published `askdb` binary.
+11. As a release owner, I want the change confined to test files, so that it needs only an empty changeset (CI requires a changeset file) and cannot change the published `askdb` binary.
 
 ## Implementation Decisions
 
@@ -117,7 +117,7 @@ No production file, no other test file and no fixture changes. No whole test fil
 | Each D row deleted, its proof still passing | No D rows (ledger: D 0) |
 | Each test-only production seam the plan unlocks removed | None unlocked; all kept (decision "Test-only production seams") |
 | Tests green with `pnpm test`, `pnpm lint` passes | Testing Decisions, last bullet |
-| No production code changes, no changeset (triage) | Decision "Production code and changeset" |
+| No production code changes, an empty changeset (triage, amended after CI) | Decision "Production code and changeset" |
 | Row: init Postgres renderInitConfig (C) | C rows, first bullet |
 | Row: init Anthropic (C) | C rows; the per-provider table |
 | Row: init non-Azure no resourceName (C) | C rows; the per-provider table |
