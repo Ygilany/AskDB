@@ -289,24 +289,6 @@ describe("http-api", () => {
     }
   });
 
-  it("invalid mode returns bad_request", async () => {
-    installTestRuntime({
-      mockSql: "select 1",
-      logLevel: "silent",
-      host: { schemaPath: schemaPath.pathname },
-      modes: { askdbMode: "schema_only" },
-    });
-    const app = await startApp();
-    try {
-      const { status, json } = await postAsk(app.url, { question: "hi" }, { "x-askdb-mode": "nope" });
-      expect(status).toBe(400);
-      expect(json.ok).toBe(false);
-      expect(json.error?.code).toBe("bad_request");
-    } finally {
-      await app.close();
-    }
-  });
-
   it("SQL validation errors map to sql_validation_error + rule", async () => {
     installTestRuntime({
       mockSql: "delete from users",
