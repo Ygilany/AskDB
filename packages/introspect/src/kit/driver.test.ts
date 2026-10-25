@@ -17,6 +17,7 @@ function notFound(pkg = PKG): Error {
   return err;
 }
 
+const originalCwd = process.cwd();
 let tempDirs: string[] = [];
 
 async function tempProject(withDriver: boolean): Promise<string> {
@@ -33,6 +34,7 @@ async function tempProject(withDriver: boolean): Promise<string> {
 }
 
 afterEach(async () => {
+  process.chdir(originalCwd);
   await Promise.all(tempDirs.map((dir) => rm(dir, { force: true, recursive: true })));
   tempDirs = [];
 });
@@ -99,6 +101,21 @@ describe("createOptionalDriverLoader", () => {
     });
 
     const mod = await loader.load({ resolveFrom: project });
+    expect(mod.default?.from ?? mod.from).toBe("project");
+  });
+
+  it("defaults resolveFrom to process.cwd()", async () => {
+    const project = await tempProject(true);
+    process.chdir(project);
+    const loader = createOptionalDriverLoader<{ from?: string; default?: { from: string } }>({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "missing",
+    });
+
+    const mod = await loader.load();
     expect(mod.default?.from ?? mod.from).toBe("project");
   });
 
