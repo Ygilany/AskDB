@@ -11,6 +11,21 @@
     "GHSA-hp3w-g68c-fv3c|fixtures__multi-engine>mssql>tedious>sprintf-js",
     "GHSA-hp3w-g68c-fv3c|fixtures__multi-engine>@types/mssql>tedious>sprintf-js",
     "GHSA-hp3w-g68c-fv3c|apps__studio>mssql>tedious>sprintf-js",
-    "GHSA-hp3w-g68c-fv3c|apps__studio>@types/mssql>tedious>sprintf-js"
+    "GHSA-hp3w-g68c-fv3c|apps__studio>@types/mssql>tedious>sprintf-js",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>@astrojs/starlight>@astrojs/mdx>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>@astrojs/starlight>astro-expressive-code>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>@astrojs/starlight>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>starlight-llms-txt>@astrojs/mdx>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>starlight-llms-txt>@astrojs/starlight>@astrojs/mdx>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>starlight-llms-txt>@astrojs/starlight>astro-expressive-code>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>starlight-llms-txt>@astrojs/starlight>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__docs-site>starlight-llms-txt>astro>unstorage>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__studio>@types/mssql>tedious>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|apps__studio>mssql>tedious>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|fixtures__multi-engine>@types/mssql>tedious>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|fixtures__multi-engine>mssql>tedious>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|packages__sqlserver>@types/mssql>tedious>@azure/identity>@azure/msal-node",
+    "GHSA-xcx6-jx8p-x3h5|packages__sqlserver>mssql>tedious>@azure/identity>@azure/msal-node"
   ]
 }
