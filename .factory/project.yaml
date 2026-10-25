@@ -8,6 +8,9 @@ autonomy: balanced
 # The Claude roles run on the Learn21 account, in place of the personal one, from 2026-10-25 at the owner's word: "run through
 # [Learn21] before using the personal profile for now". Remove this line to move AskDB back to the personal account.
 accounts: { claudeAgent: claudeAgent_l21 }
+# This project's WIP cap, in place of factory.yaml's wip.max_active_builds (3): raised to 8 on 2026-10-25 at the owner's word
+# ("I'm okay with you raising the limit to 8"; "why would we waste it" of Learn21's unused window) while the test-campaign queue drains.
+wip: { max_active_builds: 8 }
 docs: { path: apps/docs-site } # the docs site (askdb.tools); for the docs stage (#23) once it returns
 # On top of the factory's always_sensitive paths (package.json, lockfiles, workflows, .env*).
 # From the "Sensitive areas" table in docs/agents/code-review.md.
