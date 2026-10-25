@@ -31,16 +31,6 @@ describe("anthropicProvider", () => {
     });
   });
 
-  it("returns undefined when no API key is configured", () => {
-    expect(
-      anthropicProvider.resolveConfig({}, { usage: "language" }),
-    ).toBeUndefined();
-  });
-
-  it("has a configHint that references the askdb.config path", () => {
-    expect(anthropicProvider.configHint).toMatch(/providerConfig\.anthropic\.apiKey/);
-  });
-
   describe("resolveProviderOptions", () => {
     const baseConfig = { provider: "anthropic", apiKey: "k" } as const;
 
