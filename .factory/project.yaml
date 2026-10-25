@@ -7,7 +7,8 @@ identity: factory-app # the GitHub App: comments, labels and PRs come from ygila
 autonomy: balanced
 # The Claude roles run on the Learn21 account, in place of the personal one, from 2026-10-25 at the owner's word: "run through
 # [Learn21] before using the personal profile for now". Remove this line to move AskDB back to the personal account.
-accounts: { claudeAgent: claudeAgent_l21 }
+# Learn21's 5-hour window ran out at 19:36 UTC on 2026-10-25 and resets at 20:30: Personal carries the work until then.
+# accounts: { claudeAgent: claudeAgent_l21 }
 # This project's WIP cap, in place of factory.yaml's wip.max_active_builds (3): raised to 8 on 2026-10-25 at the owner's word
 # ("I'm okay with you raising the limit to 8"; "why would we waste it" of Learn21's unused window) while the test-campaign queue drains.
 wip: { max_active_builds: 8 }
