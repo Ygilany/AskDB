@@ -24,7 +24,7 @@ dialect-spec.test.ts  "SUPPORTED_DIALECT_IDS enumerates all…"       ──fold
 
 **Risks:** a removed test could hold an input its keeper doesn't; the ledger and triage checked each pair, and the spec repeats the check below. The files sit under a sensitive path (`packages/core/src/sql/**`), which is why this runs in the standard lane.
 
-**Done when:** the seven rows are applied as above, the two keepers carry their new assertions, no production file changes, and `pnpm test` and `pnpm lint` pass.
+**Done when:** the seven rows are applied as above, the two keepers carry their new assertions, no production file changes, `pnpm test` and `pnpm lint` pass, and the consumer-lab rebind test passes against the fixture.
 
 **Needs you:** nothing.
 
@@ -48,7 +48,7 @@ The suites keep the same contracts with fewer, truer tests. The misnamed generat
 6. As a maintainer, I want the Postgres half of the trailing-backslash test unchanged, so that the per-dialect contrast stays.
 7. As a maintainer, I want the right-to-left substitution test removed, so that the offset proof lives in the scalar-binding tests, whose literals all differ in length from their placeholders.
 8. As a maintainer, I want the JSON round-trip test removed, so that the suite doesn't claim serialization proof it can't give.
-9. As a maintainer, I want the consumer-lab rebind test and the client's rebind test still present, so that rebinding a stored `PreparedQuery` stays proven after the round-trip test goes.
+9. As a maintainer, I want the consumer-lab rebind test and the client's rebind test still present and passing, so that rebinding a stored `PreparedQuery` stays proven after the round-trip test goes.
 10. As a maintainer of `dialect-spec.ts`, I want one test that checks the registry, its keys, each spec's `id` and the exported `SUPPORTED_DIALECT_IDS` list against the typed `DialectId` list, so that adding a dialect means updating one test.
 11. As a maintainer, I want `SUPPORTED_DIALECT_IDS` compared as a sorted set, not by length, so that the check fails on a wrong id and not only on a wrong count.
 12. As a reviewer, I want no production file and no export changed, so that the PR is reviewable as test-only.
@@ -71,7 +71,7 @@ The suites keep the same contracts with fewer, truer tests. The misnamed generat
 - A good test here checks the public export's behavior (`generateSelectSql`, `validateSelectSql`, `bindPreparedQuery`, `escapeSqlLiteral`, the dialect registry exports), not internals. The edits keep every remaining test at that seam; no new seam is added.
 - The two extended keepers must fail for the regression they now name. Build checks this once by hand: break the MySQL backslash escaping (or the second placeholder's expected text) and see the bind keeper fail; drop an id from the typed list's sorted comparison and see the dialect keeper fail. Revert both before committing.
 - Run the four suites, then `pnpm test` and `pnpm lint` at the root. The test count for `@askdb/core` drops by exactly 6: two validate, three bind and one dialect-spec test go, and the renamed test stays.
-- Confirm the consumer-lab results rebind test and the client hooks rebind test still exist on the branch; the unit run covers the client one, and the consumer-lab one needs live engines, so build reports it as present, not run.
+- The deleted round-trip test's remaining proof must exist and pass. The client hooks rebind test runs in `pnpm test`. The consumer-lab results test ("bindPreparedQuery rebinds the value…") is outside the workspace and needs the multi-engine fixture, so build runs it on its own: `pnpm lab:up`, then `pnpm -C examples/consumer-lab exec vitest run test/results.test.ts -t "bindPreparedQuery rebinds"`, and reports the result in the PR. It must pass, not skip (a missing `cli-introspect-engine` capability skips it). If build's environment can't start the fixture, build escalates for a run rather than marking the criterion met.
 - Prior art: the existing per-dialect escaping matrix in the bind suite and the registry tests in the dialect-spec suite.
 
 ## Out of Scope
@@ -86,14 +86,14 @@ The suites keep the same contracts with fewer, truer tests. The misnamed generat
 | --- | --- |
 | Each F row repaired (generate rename) | Implementation Decisions: Rename; decision 1 |
 | Each C row consolidated into its keeper, with carry-over assertions | Validate consolidations; bind consolidations; dialect-spec consolidation; decisions 2 and 3 |
-| Each D row deleted, remaining proof still exists and passes | Bind deletion; Testing Decisions (remaining-proof check) |
+| Each D row deleted, remaining proof still exists and passes | Bind deletion; Testing Decisions (client rebind test in `pnpm test`, consumer-lab rebind test run against the fixture) |
 | Each test-only seam removed (none) | No seams; decision 4 |
 | `pnpm test` green and `pnpm lint` passes | Testing Decisions |
 | Triage: generate test renamed, assertions unchanged | Rename |
 | Triage: two validate duplicates gone, keepers unchanged | Validate consolidations |
 | Triage: three bind tests removed, MySQL keeper asserts the two-parameter shape on the bound statement | Bind consolidations and deletion; decision 2 |
 | Triage: dialect-spec duplicate gone, keeper asserts sorted `SUPPORTED_DIALECT_IDS` equals `allIds` | Dialect-spec consolidation; decision 3 |
-| Triage: consumer-lab and client rebind tests still exist | Bind deletion; Testing Decisions |
+| Triage: consumer-lab and client rebind tests still exist | Bind deletion; Testing Decisions (both run and pass) |
 | Triage: no production file changes, no new test-only exports | No seams; decision 4 |
 
 ## Further Notes
