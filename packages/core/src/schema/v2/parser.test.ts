@@ -34,6 +34,7 @@ describe("parseTableMarkdown", () => {
     const statusCol = parsed.frontmatter.columns?.find((c) => c.id === "table:public.orders#status");
     expect(statusCol).toBeDefined();
     expect(statusCol!.enum).toEqual(["pending", "paid", "shipped", "cancelled"]);
+    expect(statusCol!.aliases).toEqual(["order_status"]);
     expect(statusCol!.description).toContain("lifecycle state");
   });
 
@@ -49,7 +50,8 @@ describe("parseTableMarkdown", () => {
   it("preserves body verbatim", () => {
     const content = readFileSync(ordersPath, "utf8");
     const parsed = parseTableMarkdown(content, ordersPath);
-    expect(parsed.body).toContain("# Table: orders");
+    const afterFrontmatter = content.slice(content.indexOf("\n---\n", 3) + "\n---\n".length);
+    expect(parsed.body).toBe(afterFrontmatter);
   });
 
   it("rejects front-matter with unknown keys", () => {

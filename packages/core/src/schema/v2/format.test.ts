@@ -28,6 +28,7 @@ describe("formatSchemaV2ForNlToSql — enriched fixture", () => {
     // status column should have its enum and description
     expect(ddl).toContain("pending|paid|shipped|cancelled");
     expect(ddl).toContain("lifecycle state");
+    expect(ddl).toContain("aliases: order_status");
   });
 
   it("includes common query language block", () => {
@@ -39,12 +40,15 @@ describe("formatSchemaV2ForNlToSql — enriched fixture", () => {
 
   it("excludes sensitive column describable fields from DDL", () => {
     const schema = loadSchema(v2Dir);
+    // The loader strips these from sensitive columns; set them here so only the formatter's own exclusion is under test.
+    const email = schema.tables
+      .find((t) => t.name === "users")!
+      .columns.find((c) => c.name === "email")!;
+    email.description = "Login address.";
+    email.aliases = ["mail"];
     const { ddl } = formatSchemaV2ForNlToSql(schema);
-    // email is sensitive — should be listed but no aliases/description
-    expect(ddl).toContain("email");
-    expect(ddl).toContain("(sensitive)");
-    // No description or alias text for the email column
     const emailLine = ddl.split("\n").find((l) => l.includes("  - email"))!;
+    expect(emailLine).toMatch(/\(sensitive\)$/);
     expect(emailLine).not.toContain("--");
   });
 
@@ -61,16 +65,9 @@ describe("formatSchemaV2ForNlToSql — schema.json only (bare baseline)", () => 
     const { ddl } = formatSchemaV2ForNlToSql(schema);
     // No aliases annotation on TABLE line — just schema-qualified name
     expect(ddl).toContain("TABLE public.orders\n");
+    expect(ddl).toContain("TABLE public.users");
     expect(ddl).not.toContain("aliases:");
     expect(ddl).not.toContain("-- common query language");
-  });
-
-  it("still lists tables and columns with qualified names", () => {
-    const schema = loadSchemaFromJson(readFileSync(v2SchemaJson, "utf8"));
-    const { ddl } = formatSchemaV2ForNlToSql(schema);
-    expect(ddl).toContain("TABLE public.users");
-    expect(ddl).toContain("TABLE public.orders");
-    expect(ddl).toContain("  - email");
   });
 });
 

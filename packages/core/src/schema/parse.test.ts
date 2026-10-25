@@ -17,17 +17,22 @@ describe("parseAskDbSchemaJson", () => {
   });
 
   it("normalizes nullable and primaryKey defaults", () => {
-    const raw = readFileSync(fixturePath, "utf8");
-    const norm = loadNormalizedSchemaFromJson(raw);
-    const u = norm.tables.find((t) => t.name === "users");
-    expect(u?.columns.find((c) => c.name === "id")).toMatchObject({
-      nullable: false,
-      primaryKey: true,
-    });
+    const norm = loadNormalizedSchemaFromJson(
+      JSON.stringify({
+        version: 1,
+        tables: [{ name: "t", columns: [{ name: "x", type: "int" }] }],
+      }),
+    );
+    expect(norm.tables[0]?.columns[0]).toMatchObject({ nullable: true, primaryKey: false });
   });
 
-  it("rejects invalid JSON payload", () => {
+  it("rejects a schema-invalid payload", () => {
     expect(() => parseAskDbSchemaJson("{}")).toThrow(SchemaParseError);
+  });
+
+  it("rejects a payload that is not JSON", () => {
+    expect(() => parseAskDbSchemaJson("not json")).toThrow(SchemaParseError);
+    expect(() => parseAskDbSchemaJson("not json")).toThrow(/Failed to parse schema JSON/);
   });
 
   it("rejects duplicate tables", () => {
@@ -59,11 +64,12 @@ describe("parseAskDbSchemaJson", () => {
         {
           name: "t",
           sensitive: true,
-          columns: [{ name: "x", type: "int" }],
+          columns: [{ name: "x", type: "int", sensitive: true }],
         },
       ],
     });
     const parsed = parseAskDbSchemaJson(raw);
     expect(parsed.tables[0]?.sensitive).toBe(true);
+    expect(parsed.tables[0]?.columns[0]?.sensitive).toBe(true);
   });
 });
