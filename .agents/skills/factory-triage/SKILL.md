@@ -68,7 +68,16 @@ Done when the triage notes are on the issue (under `tracker`) and the escalation
 An escalation that asks the owner to decide or to do something has two parts, written from one numbered list. This section is the same in `factory-align`, `factory-triage`, `factory-build-standard` and `factory-build-quick`: change the four together.
 
 1. **The reason** (`--reason`) is one line, in the form the step that escalates gives. The next run's brief quotes it beside the owner's answer, so a short answer such as `ok 2B` still says what it chose. Number its items. A question gets its options as letters and your recommendation: `1. <question>: A <answer> (recommended), B <other>`. A step only the owner can take gets what to do and the reply that says it's done.
-2. **The ask** is your last reply: the same numbered items, written for the owner in the `factory-writing-for-decisions` house style. It has a header line, the summary table, and a card for each item, with a diagram where the item has a shape. Its last line is the reply line: `Reply: /answer ok takes every recommendation · /answer 2B changes one · /changes <guidance>`, where a step names its own reply in place of `ok`, such as `/answer done`. The ticket thread posts the ask under the escalation's first line, in place of the reason.
+2. **The ask** is your last reply: the same numbered items, written for the owner as one round of the `factory-writing-for-decisions` house style, with every part below. Run its "Before you send" checks on it.
+   - A round header: `Round <k> · <topic>`, then the counts line.
+   - A decision map, when there are three or more questions or one waits on another.
+   - The summary table `| # | Decision | Recommend | Undo |`, one-way questions first. The undo rating, one-way or two-way, is a required field of every question: in its table row and on its card.
+   - A card for each question, in the table's order, recommendation first, then the options, one `Why` line and a `Checked:` line for each fact it rests on.
+   - A diagram in a `mermaid` code fence, never ASCII, where a question has a shape, with what the answer changes highlighted and labelled.
+   - A step only the owner can take keeps its form: what to do and the reply that says it's done, with no options or undo rating.
+   - The last line is the reply line: `Reply: /answer ok takes every recommendation · /answer 2B changes one · /changes <guidance>`, where a step names its own reply in place of `ok`, such as `/answer done`.
+
+   The ticket thread posts the ask under the escalation's first line, in place of the reason, and publishes it as a rendered page.
 
 ## When the CLI fails
 

@@ -1,6 +1,6 @@
 ---
 name: factory-sync
-description: "Run a sync detour: merge origin/<base> into the ticket's PR branch as one merge commit, resolve any conflict, rerun the project's tests, push, then exit the stage with the factory CLI."
+description: "Run a sync detour: merge origin/<base> into the ticket's PR branch as one merge commit, resolve any conflict, rerun the tests for what it resolved, push, then exit the stage with the factory CLI."
 ---
 
 # Factory sync
@@ -35,11 +35,13 @@ Done when `git status` is clean and `HEAD` is a merge commit whose parents are t
 
 ## 3. Test and push
 
-Run every command under `test_tiers` in the project manifest (the file `factory config check --json` prints as `project`). If a tier fails on a change the merge brought in, fix it with the smallest edit the merge needs and fold it into the merge commit before you push (`git commit --amend --no-edit`): `HEAD` must stay the one merge commit, and an edit inside it makes the merge `resolved`. If the tiers stay red after an honest attempt, escalate (§4): this is not build's to retry.
+Run the tests for the files the merge resolved (`git show --remerge-diff --name-only HEAD`; none on a clean merge) and their test files, in the foreground, with the runner the manifest's test tier uses (the file `factory config check --json` prints as `project`), and in full each `test_tiers` command that checks the project without running its tests, such as a typecheck. Leave the full suite to CI, which runs it on the new head before the merge stage goes on (decision 2026-10-25-the-machine-caps-active-builds-and-ci-runs-the-full-suite); on a project with no CI (no files under `.github/workflows`), run every `test_tiers` command in full. If one fails on a change the merge brought in, fix it with the smallest edit the merge needs and fold it into the merge commit before you push (`git commit --amend --no-edit`): `HEAD` must stay the one merge commit, and an edit inside it makes the merge `resolved`. If the tiers stay red after an honest attempt, escalate (§4): this is not build's to retry.
 
 Then push to the branch's remote, never forced: run `factory ticket push-target <n> --json` (it prints `{remote, head}`: `origin` for most projects, the owner's `fork` for a contributor project without write access, where `origin` would reject the push), then `git push <remote> <branch>`. The base is still fetched from `origin`. If the push is rejected because the branch moved, stop and escalate: someone pushed to it.
 
-Done when every tier passes and the branch is pushed.
+Done when those tests and checks pass and the branch is pushed.
+
+**Children.** If you start agents of your own, their end is not their result: a reply that holds no result (a background command still running, "I'll report when it finishes") is **interim**. Don't act on it and don't end your turn: wait on the same child again (`task_status` until its `workState` is `result_available`, or `t3_thread_wait` on its thread), and if it is idle with no result, send it one follow-up asking for its result now and wait again. Use another child only when it fails or still gives none. Never end your turn while a child you started owes a reply (decision 2026-10-25-337-a-child-s-reply-without-its-result-is-interim).
 
 ## 4. Exit the stage
 

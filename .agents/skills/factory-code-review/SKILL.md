@@ -46,9 +46,13 @@ Every agent prompt ends with: "Do not invoke `factory-code-review` or spawn furt
 
 Project-specific rules live in the target repo's `docs/agents/code-review.md`, one section per lens plus shared ones: when review is required, what code review flags, verification commands, guardrails, posting, stacked PRs. It overrides this skill's defaults wherever the two differ. The lens briefs name the sections they read; every lens reads *What code review flags*, the classes of finding the repo's reviewers keep raising, and weights its hunting toward its own.
 
-If the profile is missing, review on the defaults, run only type-checks and unit tests, and have the aggregator end the report with a **draft profile** built from what the lenses inferred; tell the user to run `/setup-ygilany-skills` to turn it into the real one. Review never writes the profile: a lens that relied on an inferred rule emits a *Proposed profile addition* (section name and paste-ready text), and the report collects them.
+If the profile is missing, review on the defaults, run only type-checks and the unit tests the diff touches, and have the aggregator end the report with a **draft profile** built from what the lenses inferred; tell the user to run `/setup-ygilany-skills` to turn it into the real one. Review never writes the profile: a lens that relied on an inferred rule emits a *Proposed profile addition* (section name and paste-ready text), and the report collects them.
 
 ## Working rules
+
+No agent runs the project's full test suite: CI runs it on the PR, and its required check is the authority a merge waits on. Agents run type-checks and single tests by name or file, each command in the foreground, and start no background command, so an agent's turn ends with its result.
+
+An agent's reply that holds no path (a lens, the aggregator, a verifier) is **interim**, even when its task reports done: don't use it and don't end your turn. Wait on the same agent again, and if it is idle with no path, send it one follow-up asking for the path in the required form, then wait again; start it afresh only when it fails or still gives none. Never end your turn while an agent you started owes a reply.
 
 Everything is read-only: tracked files, the branch and the PR stay as you found them, and experiments go in a temp directory or scratch worktree. Run only what the profile's *Guardrails* allow; shared databases, containers and services stay as you found them.
 
