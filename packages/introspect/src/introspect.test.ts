@@ -133,15 +133,24 @@ describe("introspect() — engine-agnostic orchestrator", () => {
         };
       },
     };
+    // An existing artifact without the fake schema's column makes the render report it as new.
+    const existingDir = join(workDir, "existing.schema");
+    mkdirSync(existingDir, { recursive: true });
+    writeFileSync(
+      join(existingDir, "schema.json"),
+      JSON.stringify({ version: 2, schemaId: "fake", tables: [] }),
+      "utf8",
+    );
     const outDir = join(workDir, "fake.schema");
     const result = await introspect<FakeInput>(
       { tag: "warn" },
-      { outDir, schemaId: "fake" },
+      { outDir, schemaId: "fake", existingArtifactDir: existingDir },
       { connector },
     );
 
     expect(result.warnings).toEqual([
       { code: "ambiguous_filter", filter: "public.missing" },
+      { code: "new_column", id: "table:public.users#id", tableId: "table:public.users" },
     ]);
   });
 });
