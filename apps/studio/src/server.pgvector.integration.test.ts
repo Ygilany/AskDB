@@ -68,6 +68,7 @@ run("Studio RAG on pgvector", () => {
       hasIndex: true,
       stale: false,
       dimensions: 4,
+      expectedDimensions: null,
       expectedEmbedderId: "ai-sdk:openai:text-embedding-3-small:default",
     });
     expect(await rowCount(table)).toBe(first.body.status.chunksIndexed);
