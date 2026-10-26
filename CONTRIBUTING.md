@@ -109,7 +109,7 @@ pnpm smoke:install
 pnpm preflight
 ```
 
-Add a changeset for publishable package changes:
+Add a changeset for publishable package changes. A change confined to test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`) needs none, and CI doesn't require one:
 
 ```bash
 pnpm changeset
