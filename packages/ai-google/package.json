@@ -1,6 +1,6 @@
 {
   "name": "@askdb/ai-google",
-  "version": "1.0.0-beta.7",
+  "version": "1.0.0-beta.8",
   "description": "[Deprecated] Re-exports the Google Gemini provider now built into @askdb/ai. Install @askdb/ai + @ai-sdk/google instead; removed before 1.0.",
   "keywords": [
     "askdb",
