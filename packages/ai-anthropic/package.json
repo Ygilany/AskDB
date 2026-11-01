@@ -1,6 +1,6 @@
 {
   "name": "@askdb/ai-anthropic",
-  "version": "1.0.0-beta.5",
+  "version": "1.0.0-beta.6",
   "description": "[Deprecated] Re-exports the Anthropic provider now built into @askdb/ai. Install @askdb/ai + @ai-sdk/anthropic instead; removed before 1.0.",
   "keywords": [
     "askdb",
