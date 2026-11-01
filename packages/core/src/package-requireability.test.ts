@@ -29,7 +29,7 @@ function sourcePathForTarget(directory: string, target: string) {
 
 function relativeStaticImports(source: string) {
   const specifiers: string[] = [];
-  const matcher = /\b(?:import|export)\s+(?:type\s+)?(?:[^'"\n]*?\s+from\s+)?["'](\.[^"']+)["']/g;
+  const matcher = /\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?["'](\.[^"']+)["']/g;
   for (const match of source.matchAll(matcher)) specifiers.push(match[1]!);
   return specifiers;
 }
@@ -53,6 +53,12 @@ function exportedModuleGraph(entryPoint: string) {
   return [...reached];
 }
 
+const topLevelAwaitPatterns = [
+  /^(?:export\s+)?(?:const|let|var)\s[^\n]*=\s*await\s/m,
+  /^(?:export\s+default\s+)?await\s/m,
+  /^for\s+await\b/m,
+];
+
 describe("published package requireability", () => {
   it("keeps default last in every export map", () => {
     for (const { directory, manifest } of publishedPackages()) {
@@ -72,8 +78,8 @@ describe("published package requireability", () => {
         if (!conditions.default) return [];
         const entryPoint = sourcePathForTarget(directory, conditions.default);
         return exportedModuleGraph(entryPoint).filter((path) => {
-        const source = readFileSync(path, "utf8");
-        return /^await /m.test(source) || /^const .* = await /m.test(source);
+          const source = readFileSync(path, "utf8");
+          return topLevelAwaitPatterns.some((pattern) => pattern.test(source));
         });
       }),
     );
