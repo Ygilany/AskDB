@@ -84,11 +84,6 @@ describe("scanPlaceholders", () => {
     expect(scanPlaceholders(sql).map((p) => p.name)).toEqual(["foo", "bar"]);
   });
 
-  it("does not detect a quoted ':name' marker", () => {
-    const sql = "SELECT * FROM t WHERE a = ':state_name'";
-    expect(scanPlaceholders(sql)).toEqual([]);
-  });
-
   it("leaves placeholder-looking text inside every quote form untouched", () => {
     const sql =
       "SELECT ':a', \":b\", `:c`, [:d], $tag$ :e $tag$ FROM t WHERE x = :real";
@@ -252,6 +247,19 @@ describe("bindPreparedQuery — errors", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(QueryParameterError);
       expect((e as QueryParameterError).reason).toBe("MISSING_VALUE");
+    }
+  });
+
+  it("throws INVALID_VALUE without echoing a rejected date value", () => {
+    const p = prepared("postgres", "SELECT * FROM t WHERE d = :d", [
+      { name: "d", placeholder: ":d", type: "date", cardinality: "one", source: "question" },
+    ]);
+    try {
+      bindPreparedQuery(p, { d: "colorado-secret" });
+      expect.fail("expected throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(QueryParameterError);
+      expect((e as QueryParameterError).reason).toBe("INVALID_VALUE");
       expect((e as Error).message).not.toMatch(/colorado|secret/i);
     }
   });
