@@ -44,10 +44,10 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.71",
-    "@ai-sdk/azure": "^4.0.90",
-    "@ai-sdk/google": "^4.0.87",
-    "@ai-sdk/openai": "^4.0.83",
+    "@ai-sdk/anthropic": "^4.0.94",
+    "@ai-sdk/azure": "^4.0.114",
+    "@ai-sdk/google": "^4.0.109",
+    "@ai-sdk/openai": "^4.0.106",
     "@askdb/ai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
@@ -61,12 +61,12 @@
     "@askdb/sqlite": "workspace:*",
     "@askdb/sqlserver": "workspace:*",
     "@askdb/studio": "workspace:*",
-    "@inquirer/prompts": "^8.7.3",
+    "@inquirer/prompts": "^8.7.5",
     "ai": "^7.0.51",
     "commander": "^15.0.0"
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }

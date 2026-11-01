@@ -63,8 +63,8 @@
   },
   "devDependencies": {
     "@types/mssql": "^12.3.0",
-    "mssql": "^12.5.5",
+    "mssql": "^12.7.13",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }

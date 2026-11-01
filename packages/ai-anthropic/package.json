@@ -45,7 +45,7 @@
     "lint": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.71",
+    "@ai-sdk/anthropic": "^4.0.94",
     "@askdb/ai": "workspace:^"
   },
   "peerDependencies": {

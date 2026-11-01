@@ -48,9 +48,11 @@ overrides:
   # http-cache-semantics: GHSA-ch52-4w7c-c8xp (high) — max-stale handling discloses cross-user cached responses.
   #   Only in apps/docs-site via astro (dev only, not published). Patched in 4.3.0.
   http-cache-semantics: ^4.3.0
-  # braces: GHSA-vfj7-8cjw-p6xm (high) — stack exhaustion on deeply nested patterns.
-  #   Only in apps/docs-site via starlight-llms-txt (dev only, not published).
-  #   No patched version published yet (latest is 3.0.3); allowlisted in .audit-ci.json.
+  # @azure/msal-node: GHSA-xcx6-jx8p-x3h5 (high) — authorization-code flow may disclose parameters to an attacker-controlled endpoint.
+  #   Reached through `@azure/identity` (via tedious/mssql, devDependency-only, and astro's unstorage in apps/docs-site).
+  #   `@azure/identity` 4.14.1 depends on `@azure/msal-node` ^7.1.0 (patched in 7.1.0), and tedious/unstorage already allow it.
+  #   Drop this once the lockfile's `@azure/identity` moves past 4.14.1 on its own.
+  "@azure/identity": ^4.14.1
 allowBuilds:
   '@prisma/engines': true
   better-sqlite3: true

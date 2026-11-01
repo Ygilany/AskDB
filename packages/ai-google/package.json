@@ -45,7 +45,7 @@
     "lint": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/google": "^4.0.87",
+    "@ai-sdk/google": "^4.0.109",
     "@askdb/ai": "workspace:^"
   },
   "peerDependencies": {
