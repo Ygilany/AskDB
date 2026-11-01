@@ -13,13 +13,13 @@
     "test:links": "node ./scripts/check-base-links.mjs /"
   },
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
     "@astrojs/markdown-remark": "^7.3.5",
     "@astrojs/starlight": "^0.42.8",
-    "astro": "~7.3.8",
+    "astro": "^7.4.4",
     "sharp": "^0.35.5",
     "starlight-llms-txt": "^0.12.0"
   }

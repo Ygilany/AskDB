@@ -13,8 +13,5 @@
   ],
   "format": [
     "group"
-  ],
-  "reject": [
-    "astro"
   ]
 }
