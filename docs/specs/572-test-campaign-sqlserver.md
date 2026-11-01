@@ -91,6 +91,7 @@ The sqlserver suite keeps one test per contract, at the keeper the campaign's la
 | Each D row deleted; its proof exists and passes | None in this plan (D 0) |
 | Each test-only production seam removed | None unlocked, per the plan; nothing to do |
 | `pnpm test` green and `pnpm lint` passes | Testing: suite |
+| No production file changes and no changeset (test-only change under `src`; triage) | Implementation: "Not touched" and "No changeset" |
 | Row `exec/sqlserver.lazy.test.ts:114` (F) | Implementation: repair |
 | Row `exec/sqlserver.lazy.test.ts:130` (C) | Implementation: retire cwd-default lazy test; Testing: keepers |
 | Row `exec/sqlserver.integration.test.ts:84` (C) | Implementation: retire live runner smoke test; Testing: keepers |
