@@ -83,6 +83,9 @@ describe("validateSelectSql (postgres dialect)", () => {
     };
     expect(() => validateSelectSql(noStarSelect, "SELECT * FROM users")).toThrow(SqlValidationError);
     expect(validateSelectSql(noStarSelect, "SELECT id FROM users")).toBe("SELECT id FROM users");
+    // Multi-statement SQL also matches the hook. Base checks must reject it as
+    // SQL_MULTI_STATEMENT; SQL_FORBIDDEN_KEYWORD would mean extraValidate ran first.
+    expectRule("SELECT * FROM users; SELECT 1", "SQL_MULTI_STATEMENT", noStarSelect);
   });
 });
 
@@ -272,7 +275,11 @@ describe("validateSelectSql — unknown dialect ids lex conservatively", () => {
   const legacy = { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec;
 
   it("rejects SQL that any built-in dialect would read as a write", () => {
-    expectRejected(`SELECT '\\'', 1; DROP TABLE t; SELECT 'x'`, legacy);
+    // MySQL treats \' as an escaped quote, so this is a DROP after a closed string.
+    // Postgres (and the other non-MySQL lexers) keep the quote open and accept it.
+    const mysqlOnlyWrite = `SELECT 'a\\' AS x, '; DROP TABLE t; SELECT 'b\\' c'`;
+    expectRejected(mysqlOnlyWrite, legacy);
+    expect(validateSelectSql(POSTGRES_DIALECT, mysqlOnlyWrite)).toBe(mysqlOnlyWrite);
     expectRejected(`SELECT 1 WAITFOR DELAY '00:10'`, legacy);
   });
 
