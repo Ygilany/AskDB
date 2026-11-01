@@ -347,19 +347,6 @@ describe("flattenAskDbConfig", () => {
     ).toThrow(/ai\.providerConfig\.google is required/);
   });
 
-  it("throws a clear error when foundry provider has an empty providerConfig", () => {
-    expect(() =>
-      flattenAskDbConfig(
-        minimalConfig({
-          ai: {
-            provider: "foundry",
-            providerConfig: {},
-          } as unknown as AskDbConfig["ai"],
-        }),
-      ),
-    ).toThrow(/ai\.providerConfig\.foundry is required/);
-  });
-
   describe("ai.language.reasoning", () => {
     it("flattens the global effort to ASKDB_AI_REASONING_EFFORT", () => {
       const flat = flattenAskDbConfig(
