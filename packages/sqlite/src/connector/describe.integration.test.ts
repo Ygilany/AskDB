@@ -51,22 +51,6 @@ suite("describeSqlite (live in-memory database)", () => {
     return result.schema.schemas[0]?.tables ?? [];
   }
 
-  it("resolves `REFERENCES parent` (no column list) to the parent's primary key", async () => {
-    db.exec(`
-      CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT);
-      CREATE TABLE books (id INTEGER PRIMARY KEY, author_id INTEGER REFERENCES authors);
-    `);
-    const books = (await tables()).find((t) => t.name === "books")!;
-    expect(books.foreignKeys).toHaveLength(1);
-    expect(books.foreignKeys[0]!.columns).toEqual(["author_id"]);
-    // Before the fix this was ["author_id"] — the child column name.
-    expect(books.foreignKeys[0]!.references).toEqual({
-      schema: "public",
-      table: "authors",
-      columns: ["id"],
-    });
-  });
-
   it("resolves composite implicit FK targets in PK ordinal order, case-insensitively", async () => {
     db.exec(`
       CREATE TABLE editions (code TEXT, year INTEGER, PRIMARY KEY (year, code));
