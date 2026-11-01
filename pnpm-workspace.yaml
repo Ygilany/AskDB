@@ -49,9 +49,10 @@ overrides:
   #   Only in apps/docs-site via astro (dev only, not published). Patched in 4.3.0.
   http-cache-semantics: ^4.3.0
   # @azure/msal-node: GHSA-xcx6-jx8p-x3h5 (high) — authorization-code flow may disclose parameters to an attacker-controlled endpoint.
-  #   Reached through `@azure/identity` (via tedious/mssql, devDependency-only, and astro's unstorage in apps/docs-site).
-  #   `@azure/identity` 4.14.1 depends on `@azure/msal-node` ^7.1.0 (patched in 7.1.0), and tedious/unstorage already allow it.
-  #   Drop this once tedious and unstorage raise their own `@azure/identity` floor to 4.14.1.
+  #   Reached through `@azure/identity` under tedious (via mssql, an optional peer of @askdb/sqlserver and Studio that hosts install themselves)
+  #   and under astro's unstorage (apps/docs-site only, dev only, not published).
+  #   `@azure/identity` 4.14.1 depends on `@azure/msal-node` ^7.1.0 (the patched line), and tedious and unstorage already admit it.
+  #   Drop this once tedious raises its own `@azure/identity` floor to 4.14.1.
   "@azure/identity": ^4.14.1
 allowBuilds:
   '@prisma/engines': true

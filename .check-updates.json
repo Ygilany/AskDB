@@ -13,5 +13,8 @@
   ],
   "format": [
     "group"
+  ],
+  "reject": [
+    "astro"
   ]
 }
