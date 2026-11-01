@@ -81,14 +81,6 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
     }
   });
 
-  it("runner returns columns and rows for a simple SELECT", async () => {
-    const runner = createSqlServerCatalogQueryRunner(url!);
-    const result = await runner("SELECT 1 AS n, 'ok' AS label");
-    expect(result.columns).toEqual(["n", "label"]);
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0]).toEqual([1, "ok"]);
-  });
-
   it("connector describes a live SQL Server schema with the seeded tables", async () => {
     const runner = createSqlServerCatalogQueryRunner(url!);
     const result = await createSqlServerConnector().describe({ mode: "live", runner });

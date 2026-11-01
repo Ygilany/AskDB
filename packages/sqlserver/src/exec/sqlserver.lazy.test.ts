@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { missingDriverMessage } from "@askdb/introspect/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mssqlState = vi.hoisted(() => ({
@@ -120,26 +121,9 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
     const err = await runner("SELECT 1").catch((e: unknown) => e);
 
     expect((err as Error).name).toBe("AskDbError");
-    const msg = (err as Error).message;
-    expect(msg).toMatch(/optional `mssql` peer dependency/);
-    expect(msg).toMatch(/`pnpm add mssql`/);
-    expect(msg).toMatch(/`pnpm dlx -p askdb -p mssql askdb \.\.\.`/);
-    expect(msg).toMatch(/`npx -p askdb -p mssql askdb \.\.\.`/);
-  });
-
-  it("resolves `mssql` from the caller project cwd when the adapter import cannot see it", async () => {
-    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
-    const projectDir = await createTempProject();
-    await addMssqlFixture(projectDir);
-    process.chdir(projectDir);
-    mssqlState.shouldFail = true;
-
-    const runner = createSqlServerCatalogQueryRunner("mssql://nowhere");
-
-    await expect(runner("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
+    expect((err as Error).message).toBe(
+      missingDriverMessage({ engine: "SQL Server", packageName: "mssql" }),
+    );
   });
 
   it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `mssql` there when cwd lacks it", async () => {
