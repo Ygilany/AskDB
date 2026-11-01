@@ -100,36 +100,7 @@ describe("describePostgresFromExport", () => {
     ]);
   });
 
-  it("includes all non-system schemas by default (no include filter)", async () => {
-    const snapshot = loadFixture("orders-users.catalog.json");
-    const bundleDir = join(workDir, "bundle");
-    writeCsvBundle(bundleDir, {
-      ...snapshot,
-      schemas: [...(snapshot.schemas ?? []), { schema_name: "private" }],
-      tables: [
-        ...(snapshot.tables ?? []),
-        {
-          schema_name: "private",
-          table_name: "audit_log",
-          relkind: "r",
-          row_level_security: false,
-          comment: null,
-        },
-      ],
-    });
-
-    const result = await createPostgresConnector().describe({
-      mode: "from-export",
-      bundlePath: bundleDir,
-    });
-
-    expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
-      "private",
-      "public",
-    ]);
-  });
-
-  it("drops system schemas but keeps user schemas that only look like them", async () => {
+  it("with no schema filter, keeps every user schema (look-alikes included) and drops system schemas", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
     const bundleDir = join(workDir, "bundle");
     const names = [
@@ -165,27 +136,6 @@ describe("describePostgresFromExport", () => {
       "information_schema_x",
       "pgxtoast",
       "public",
-    ]);
-  });
-
-  it("drops pg_catalog, information_schema and pg_toast rows from the bundle", async () => {
-    const snapshot = withSchemaTables(loadFixture("orders-users.catalog.json"), [
-      "pg_catalog",
-      "information_schema",
-      "pg_toast",
-    ]);
-    const bundleDir = join(workDir, "bundle");
-    writeCsvBundle(bundleDir, snapshot);
-
-    const result = await createPostgresConnector().describe({
-      mode: "from-export",
-      bundlePath: bundleDir,
-    });
-
-    expect(result.schema.schemas.map((schema) => schema.name)).toEqual(["public"]);
-    expect(result.schema.schemas[0]!.tables.map((table) => table.name)).toEqual([
-      "orders",
-      "users",
     ]);
   });
 
