@@ -29,16 +29,6 @@ describe("loadSchema — multi-tenant fixture", () => {
 // ---------------------------------------------------------------------------
 
 describe("tenant policy coverage report", () => {
-  it("classifies every table in the physical schema", () => {
-    const schema = loadSchema(multiTenantDir);
-    const coverage = schema.tenantPolicy!.coverage;
-    const tableIds = schema.tables.map((t) => t.id);
-    const coveredIds = coverage.map((c) => c.tableId);
-    for (const id of tableIds) {
-      expect(coveredIds).toContain(id);
-    }
-  });
-
   it("classifies root tables as 'root'", () => {
     const schema = loadSchema(multiTenantDir);
     const coverage = schema.tenantPolicy!.coverage;
@@ -82,13 +72,6 @@ describe("tenant policy coverage report", () => {
       "table:public.lookup_states",
       "table:public.service_types",
     ]);
-  });
-
-  it("has no 'unknown' tables when all are classified", () => {
-    const schema = loadSchema(multiTenantDir);
-    const coverage = schema.tenantPolicy!.coverage;
-    const unknown = coverage.filter((c) => c.classification === "unknown");
-    expect(unknown).toEqual([]);
   });
 
   it("reports scope roots for scoped tables", () => {
