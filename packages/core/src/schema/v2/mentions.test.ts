@@ -58,7 +58,8 @@ describe("createMentionMatcher", () => {
   });
 
   it("mentions nothing for an empty list or empty names", () => {
-    expect(createMentionMatcher([]).mentionsAny("anything")).toBe(false);
-    expect(createMentionMatcher(["", { table: "", column: "x" }]).mentionsAny("x")).toBe(false);
+    expect(createMentionMatcher([]).mentionsAny("anything, at all")).toBe(false);
+    expect(createMentionMatcher([""]).mentionsAny("anything, at all")).toBe(false);
+    expect(createMentionMatcher([{ table: "", column: "x" }]).mentionsAny("read .x, at all")).toBe(false);
   });
 });
