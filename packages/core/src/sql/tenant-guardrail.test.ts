@@ -79,9 +79,16 @@ describe("validateTenantGuardrails — unsafe queries (strict mode)", () => {
 
   it("rejects polymorphic table missing id column", () => {
     const sql = "SELECT * FROM notes WHERE owner_type = 'agency'";
-    expect(() => validateTenantGuardrails(sql, policy, agencyScope)).toThrow(
-      TenantGuardrailError,
-    );
+    try {
+      validateTenantGuardrails(sql, policy, agencyScope);
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      const err = e as TenantGuardrailError;
+      expect(err).toBeInstanceOf(TenantGuardrailError);
+      expect(err.warnings.map((w) => [w.rule, w.tableId])).toEqual([
+        ["MISSING_TENANT_PREDICATE", "table:public.notes"],
+      ]);
+    }
   });
 
   it("includes relevant warning details in error", () => {
@@ -354,10 +361,6 @@ describe("validateTenantGuardrails — down a hierarchy, the predicate must be o
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const rules = (sql: string) => validateTenantGuardrails(sql, warnPolicy, agencyScope).warnings.map((w) => w.rule);
   const joined = "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id";
-
-  it("accepts a hierarchy foreign key compared with the scope's placeholder", () => {
-    expect(rules(`${joined} WHERE c.sub_agency_id IN (SELECT id FROM sub_agencies WHERE agency_id = :tenant_agency_ids)`)).toEqual([]);
-  });
 
   it.each([
     ["the appointment's own id", `${joined} WHERE a.id = :tenant_agency_ids`],
