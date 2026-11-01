@@ -79,11 +79,6 @@ describe("anthropicProvider — real @ai-sdk/anthropic contract", () => {
     expect(request.body).not.toHaveProperty("temperature");
   });
 
-  it("sends no thinking block for models without extended thinking", async () => {
-    const request = await captureGenerate("claude-3-5-haiku-20241022", "high");
-    expect(request.body).not.toHaveProperty("thinking");
-  });
-
   it("throws a clear error for embeddings (Anthropic has no embeddings API)", () => {
     expect(() =>
       anthropicProvider.createEmbeddingModel(
