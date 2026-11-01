@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { select, input, confirm } from "@inquirer/prompts";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildInitInstallPlan,
@@ -16,6 +17,13 @@ import {
   type InitDepSpecs,
   type InitPrompter,
 } from "./init.js";
+
+// Only buildInquirerPrompter imports this; the runWizard tests pass their own prompter.
+vi.mock("@inquirer/prompts", () => ({
+  select: vi.fn().mockRejectedValue(new Error("unexpected prompt")),
+  input: vi.fn().mockRejectedValue(new Error("unexpected prompt")),
+  confirm: vi.fn().mockRejectedValue(new Error("unexpected prompt")),
+}));
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -432,15 +440,26 @@ describe("runInitCli --yes --skip-install", () => {
     }
   });
 
-  it("--no-interactive also works without prompts", async () => {
+  it.each(["--no-interactive", "--yes"])("%s never prompts, even in a TTY", async (flag) => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    const stdinTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutTTY = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
     try {
       const outPath = join(tmp, "askdb.config.ts");
-      const code = await runInitCli(["--no-interactive", "--skip-install", "--path", outPath]);
+      const code = await runInitCli([flag, "--skip-install", "--path", outPath]);
       expect(code).toBe(0);
       const content = readFileSync(outPath, "utf8");
       expect(content).toContain('provider: "postgres"');
+      expect(select).not.toHaveBeenCalled();
+      expect(input).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
     } finally {
+      if (stdinTTY) Object.defineProperty(process.stdin, "isTTY", stdinTTY);
+      else delete (process.stdin as { isTTY?: boolean }).isTTY;
+      if (stdoutTTY) Object.defineProperty(process.stdout, "isTTY", stdoutTTY);
+      else delete (process.stdout as { isTTY?: boolean }).isTTY;
       rmSync(tmp, { recursive: true, force: true });
     }
   });

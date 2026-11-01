@@ -38,14 +38,14 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/azure": "^4.0.90",
+    "@ai-sdk/azure": "^4.0.114",
     "@askdb/ai": "workspace:^"
   },
   "peerDependencies": {

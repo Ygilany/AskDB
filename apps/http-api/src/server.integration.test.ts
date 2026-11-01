@@ -301,7 +301,7 @@ describe("http-api", () => {
       expect(status).toBe(400);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("sql_validation_error");
-      expect(json.error?.rule).toBeTruthy();
+      expect(json.error?.rule).toBe("SQL_NOT_SELECT_OR_WITH");
     } finally {
       await app.close();
     }
@@ -470,6 +470,12 @@ describe("http-api", () => {
       const nonString = await postAsk(app.url, { question: "hi", mode: 42 });
       expect(nonString.status).toBe(400);
       expect(nonString.json.error.code).toBe("bad_request");
+      expect(nonString.json.error.message).toContain("Invalid mode");
+
+      const blank = await postAsk(app.url, { question: "hi", mode: "" });
+      expect(blank.status).toBe(400);
+      expect(blank.json.error.code).toBe("bad_request");
+      expect(blank.json.error.message).toContain("Invalid mode");
 
       const ok = await postAsk(app.url, { question: "hi", mode: "bounded_results" });
       expect(ok.status).toBe(200);
