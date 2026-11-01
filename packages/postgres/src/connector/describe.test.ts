@@ -168,76 +168,6 @@ describe("describePostgres — filters", () => {
   });
 });
 
-describe("foldIntrospectionResult - live runner compatibility", () => {
-  it("normalizes Postgres text-array literals for index columns", () => {
-    const result = foldIntrospectionResult({
-      schemaId: "indexes",
-      declaredFilters: [],
-      tableFilter: () => true,
-      schemasRows: [{ schema_name: "public" }],
-      tablesRows: [
-        {
-          schema_name: "public",
-          table_name: "users",
-          relkind: "r",
-          row_level_security: false,
-          comment: null,
-        },
-      ],
-      columnsRows: [
-        {
-          schema_name: "public",
-          table_name: "users",
-          column_name: "email",
-          ordinal_position: 1,
-          data_type: "text",
-          udt_schema: "pg_catalog",
-          udt_name: "text",
-          is_nullable: false,
-          default_expression: null,
-          comment: null,
-        },
-        {
-          schema_name: "public",
-          table_name: "users",
-          column_name: "created_at",
-          ordinal_position: 2,
-          data_type: "timestamp with time zone",
-          udt_schema: "pg_catalog",
-          udt_name: "timestamptz",
-          is_nullable: false,
-          default_expression: null,
-          comment: null,
-        },
-      ],
-      pkRows: [],
-      fkRows: [],
-      uniqueRows: [],
-      checkRows: [],
-      indexRows: [
-        {
-          schema_name: "public",
-          table_name: "users",
-          index_name: "users_email_created_at_idx",
-          is_unique: false,
-          method: "btree",
-          columns: "{email,created_at}" as unknown as string[],
-          expressions: null,
-        },
-      ],
-      enumRows: [],
-      sequenceRows: [],
-      viewRows: [],
-      commentRows: [],
-    });
-
-    expect(result.schema.schemas[0]!.tables[0]!.indexes[0]!.columns).toEqual([
-      "email",
-      "created_at",
-    ]);
-  });
-});
-
 function foldWithIndexColumns(columns: string) {
   return foldIntrospectionResult({
     schemaId: "indexes",
@@ -276,7 +206,11 @@ function foldWithIndexColumns(columns: string) {
   }).schema.schemas[0]!.tables[0]!.indexes[0]!.columns;
 }
 
-describe("foldIntrospectionResult - quoted text-array literals", () => {
+describe("foldIntrospectionResult - text-array literals", () => {
+  it("splits an unquoted literal", () => {
+    expect(foldWithIndexColumns("{email,created_at}")).toEqual(["email", "created_at"]);
+  });
+
   it("keeps a comma inside a quoted item", () => {
     expect(foldWithIndexColumns('{"a,b",c}')).toEqual(["a,b", "c"]);
   });
