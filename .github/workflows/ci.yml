@@ -112,7 +112,7 @@ jobs:
         run: pnpm run audit
 
   # ── 1d. Supported Node versions ───────────────────────────────────────────
-  # The published libraries declare `engines.node >=22.14`; this proves the
+  # The published libraries declare `engines.node >=22.23.4`; this proves the
   # floor and the current LTS both build and pass the unit suites. It is a
   # clean build (no Turbo cache) so the build itself runs on each version.
   # Integration suites skip here: no DB URLs are set, and
@@ -124,7 +124,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["22.14.0", "24"]
+        node: ["22.23.4", "24"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
