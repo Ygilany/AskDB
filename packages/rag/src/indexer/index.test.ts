@@ -275,7 +275,9 @@ describe("buildSchemaIndex — store is the source of truth", () => {
   it("treats a missing-vs-present embedderId as an embedder change", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const store = lockedMemoryStore();
+    // The store must not report hashes: they are scoped to the embedder id, so
+    // a hash-reporting store would force the reindex without the lock's rule.
+    const store = lockOnlyStore(lockedMemoryStore(), { kind: "custom" });
     const embedder = vi.fn(deterministicEmbedder());
 
     await buildSchemaIndex({ schema: sources, embedder, store, lockFilePath });
