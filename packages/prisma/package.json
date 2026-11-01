@@ -38,7 +38,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -47,10 +47,10 @@
   },
   "dependencies": {
     "@askdb/introspect": "workspace:*",
-    "@prisma/internals": "^7.10.0"
+    "@prisma/internals": "^7.10.1"
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }
