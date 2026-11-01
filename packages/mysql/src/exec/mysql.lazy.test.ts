@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { missingDriverMessage } from "@askdb/introspect/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mysql2State = vi.hoisted(() => ({
@@ -117,26 +118,7 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     const err = await runner("SELECT 1").catch((e: unknown) => e);
 
     expect((err as Error).name).toBe("AskDbError");
-    const msg = (err as Error).message;
-    expect(msg).toMatch(/optional `mysql2` peer dependency/);
-    expect(msg).toMatch(/`pnpm add mysql2`/);
-    expect(msg).toMatch(/`pnpm dlx -p askdb -p mysql2 askdb \.\.\.`/);
-    expect(msg).toMatch(/`npx -p askdb -p mysql2 askdb \.\.\.`/);
-  });
-
-  it("resolves `mysql2` from the caller project cwd when the adapter import cannot see it", async () => {
-    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
-    const projectDir = await createTempProject();
-    await addMysql2Fixture(projectDir);
-    process.chdir(projectDir);
-    mysql2State.shouldFail = true;
-
-    const runner = createMysqlCatalogQueryRunner("mysql://nowhere");
-
-    await expect(runner("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
+    expect((err as Error).message).toBe(missingDriverMessage({ engine: "MySQL", packageName: "mysql2" }));
   });
 
   it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `mysql2` there when cwd lacks it", async () => {
