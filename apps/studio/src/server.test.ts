@@ -1011,7 +1011,7 @@ describe("AskDB Studio server", () => {
 
     const workspace = await getJson(`${baseUrl}/api/workspace`);
     expect(workspace.dialect).toBe("postgres");
-    expect(typeof workspace.schemaPathRelative).toBe("string");
+    expect(workspace.schemaPathRelative).toBe(schemaDir);
   });
 
   // Studio's wiring from each engine's connection config to the status label
@@ -1085,6 +1085,7 @@ describe("AskDB Studio server", () => {
     const schemaDir = copyFixture();
     const usersMd = join(schemaDir, "tables", "users.md");
     expect(existsSync(usersMd)).toBe(true);
+    const usersMdBefore = readFileSync(usersMd, "utf8");
 
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -1097,11 +1098,13 @@ describe("AskDB Studio server", () => {
     const result = await postJson(`${baseUrl}/api/introspect`, {});
     expect(result.ok).toBe(true);
     expect(result.engine).toBe("prisma");
-    expect(result.tables).toBeGreaterThan(0);
-    expect(result.workspace.tables.length).toBeGreaterThan(0);
+    expect(result.workspace.tables.map((table: { physical: { id: string } }) => table.physical.id).sort()).toEqual([
+      "table:public.Order",
+      "table:public.User",
+    ]);
 
     // The physical layer was regenerated; the enrichment markdown survives on disk.
-    expect(existsSync(usersMd)).toBe(true);
+    expect(readFileSync(usersMd, "utf8")).toBe(usersMdBefore);
   });
 
   it("runs the guided setup flow end to end with a prisma source", async () => {
