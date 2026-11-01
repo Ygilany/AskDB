@@ -2,33 +2,34 @@
 
 ## For the owner
 
-CI's `unit-node-matrix` runs the unit suites on Node 22, 24 and 26, each by major line, and the workflow comment and the two docs that name the matrix say Node 22, 24 and 26; the supported range (`>=22.23.4`) does not change.
+CI's `unit-node-matrix` runs the unit suites on Node 22, 24 and 26, each by major line, and the workflow comment and the two docs that name the matrix label them 22 = floor, 24 = Maintenance LTS, 26 = Active LTS; the supported range (`>=22.23.4`) does not change.
 
 | Decision | Answer | Settled by | Undo |
 | --- | --- | --- | --- |
-| 1. What the matrix runs | `["22", "24", "26"]`: add `"26"`, keep 24, and write the Node 22 entry as the major `"22"` instead of `"22.23.4"` | owner, issue #589 body (Step 1, STOP), and the change request on spec v1 (T3 ticket thread, quoted on the issue) | two-way: edit the list |
+| 1. What the matrix runs | `["22", "24", "26"]`: add `"26"`, keep 24, and write the Node 22 entry as the major `"22"` instead of `"22.23.4"` | owner, issue #589 body (Step 1, STOP), and the change requests on spec v1 and v2 (T3 ticket thread, quoted on the issue) | two-way: edit the list |
 | 2. The published range | `engines.node` stays `>=22.23.4` in every package | owner, issue #589 body (STOP) | two-way |
 | 3. If `unit (Node 26)` fails | File what broke as its own issue and escalate the ticket; never drop 22 or 24 or edit the matrix to go green | owner, issue #589 body (Step 3) | two-way |
-| 4. Docs to update | The `ci.yml` comment above the job, `CONTRIBUTING.md` and `docs/agents/code-review.md` say Node 22, 24 and 26 | owner, issue #589 body (Step 2 and Why), and the change request on spec v1 | two-way |
+| 4. Docs to update, and how they label the lines | The `ci.yml` comment above the job, `CONTRIBUTING.md` and `docs/agents/code-review.md` name Node 22, 24 and 26 with their roles: 22 = floor, 24 = Maintenance LTS, 26 = Active LTS | owner, issue #589 body (Step 2 and Why), and the change request on v2 | two-way |
 
 ```mermaid
 flowchart LR
-  ci["ci.yml unit-node-matrix<br/>fail-fast: false"] --> n22["unit (Node 22)<br/>floor's line, newest 22.x"]:::renamed
+  ci["ci.yml unit-node-matrix<br/>fail-fast: false"] --> n22["unit (Node 22)<br/>floor"]:::renamed
   ci --> n24["unit (Node 24)<br/>Maintenance LTS"]
   ci --> n26["unit (Node 26)<br/>Active LTS"]:::new
   classDef new fill:#fde68a,stroke:#b45309,stroke-width:2px
   classDef renamed fill:#e0e7ff,stroke:#4338ca,stroke-width:2px
 ```
 
-The yellow job is new; the blue one was `unit (Node 22.23.4)` and is now `unit (Node 22)`. Every other CI job stays as it is.
+The yellow job is new; the blue one was `unit (Node 22.23.4)` and is now `unit (Node 22)`. Each box's second line is the label the three docs give it. Every other CI job stays as it is.
 
 **Risks:** Node 26 may break the build or a unit suite, most likely the native `better-sqlite3` dependency (no prebuild yet for a new Node major). Only CI can tell; decision 3 says what happens then.
-With `"22"` the job runs the newest Node 22 release, so CI no longer runs the exact floor 22.23.4; a break that only affects 22.23.4 itself would go unseen.
+With `"22"` the job runs the newest Node 22 release, so CI no longer runs the exact floor 22.23.4; a break that only affects 22.23.4 itself would go unseen. "Floor" names the floor's line, and the floor version stays stated beside it (`>=22.23.4`).
+The LTS labels are true as of 2026-10-28 and go stale when Node 26 enters Maintenance LTS; that edit is a later ticket's.
 This branch predates the 22.23.4 floor, so build merges `origin/main` first or the doc edits would put 22.14 back.
 
-**Done when:** `unit (Node 22)`, `unit (Node 24)` and `unit (Node 26)` are green on the PR; the workflow comment, `CONTRIBUTING.md` and `docs/agents/code-review.md` say the unit suites run on Node 22, 24 and 26 and name no 22.14; no `engines.node` changes.
+**Done when:** `unit (Node 22)`, `unit (Node 24)` and `unit (Node 26)` are green on the PR; the workflow comment, `CONTRIBUTING.md` and `docs/agents/code-review.md` name Node 22 (floor), 24 (Maintenance LTS) and 26 (Active LTS) and no 22.14; no `engines.node` changes.
 
-**Needs you:** nothing open. There are no defaults; every decision comes from the issue body you wrote and your change request on v1.
+**Needs you:** nothing open. There are no defaults; every decision comes from the issue body you wrote and your change requests on v1 and v2.
 
 Reply: `/answer ok` approves the spec · `/changes <guidance>`
 
@@ -38,7 +39,7 @@ AskDB's published libraries declare `engines.node >=22.23.4`, which admits Node 
 
 ## Solution
 
-The matrix gains a third job, `unit (Node 26)`, beside Node 22 and Node 24, and the Node 22 entry becomes the major `"22"`, so its job is `unit (Node 22)` and runs the newest 22.x. Each job still does a clean build and runs the unit suites, and `fail-fast: false` keeps one version's failure from cancelling the others. The comment above the job says it runs Node 22, 24 and 26. `CONTRIBUTING.md` and the review profile (`docs/agents/code-review.md`) say CI runs the unit suites on Node 22, 24 and 26. Nothing about who AskDB supports changes: hosts on 22 and 24 stay supported until those lines reach EOL. If Node 26 fails, the failure is filed as its own issue and the PR waits on it; the matrix is not edited to hide it.
+The matrix gains a third job, `unit (Node 26)`, beside Node 22 and Node 24, and the Node 22 entry becomes the major `"22"`, so its job is `unit (Node 22)` and runs the newest 22.x. Each job still does a clean build and runs the unit suites, and `fail-fast: false` keeps one version's failure from cancelling the others. The comment above the job, `CONTRIBUTING.md` and the review profile (`docs/agents/code-review.md`) say CI runs the unit suites on Node 22 (floor), 24 (Maintenance LTS) and 26 (Active LTS), so a reader sees why each line is there. Nothing about who AskDB supports changes: hosts on 22 and 24 stay supported until those lines reach EOL. If Node 26 fails, the failure is filed as its own issue and the PR waits on it; the matrix is not edited to hide it.
 
 ## User Stories
 
@@ -49,17 +50,17 @@ The matrix gains a third job, `unit (Node 26)`, beside Node 22 and Node 24, and 
 5. As a maintainer, I want one version's failure not to cancel the other jobs, so that a Node 26 break still shows whether 22 and 24 pass.
 6. As a maintainer, I want a Node 26 failure filed as its own issue with the failing step and log excerpt, so that the fix is tracked and not lost inside this CI change.
 7. As a maintainer, I want the supported range left alone in this change, so that adding proof for 26 is never mistaken for a floor change.
-8. As a contributor reading `CONTRIBUTING.md`, I want it to name the Node versions CI runs, so that I know which versions to check locally when I touch native or version-sensitive code.
-9. As a reviewer following `docs/agents/code-review.md`, I want its list of CI workflows to name the versions `unit-node-matrix` runs, so that I can tell whether a PR's checks cover the versions its change affects.
-10. As an agent reading the workflow, I want the comment above `unit-node-matrix` to name the three lines it runs, so that I don't remove the previous LTS thinking it redundant.
+8. As a contributor reading `CONTRIBUTING.md`, I want it to name the Node versions CI runs and what each one is (floor, Maintenance LTS, Active LTS), so that I know which versions to check locally when I touch native or version-sensitive code.
+9. As a reviewer following `docs/agents/code-review.md`, I want its list of CI workflows to name the versions `unit-node-matrix` runs with their roles, so that I can tell whether a PR's checks cover the versions its change affects.
+10. As an agent reading the workflow, I want the comment above `unit-node-matrix` to label each line it runs (floor, Maintenance LTS, Active LTS), so that I don't remove the Maintenance LTS line thinking it redundant.
 11. As a maintainer, I want the docs edits to start from the 22.23.4 floor on `main`, so that they don't put the old 22.14 floor back.
 12. As a maintainer, I want no changeset on this PR, so that a CI-only change doesn't produce a release.
 
 ## Implementation Decisions
 
-- **Matrix.** The `unit-node-matrix` job's `matrix.node` list becomes `["22", "24", "26"]`. All three are major-only, so `actions/setup-node` installs the newest release of each line; the exact floor 22.23.4 is no longer what the Node 22 job runs (owner's change request on v1). The job name template `unit (Node ${{ matrix.node }})` and the check run title derived from the matrix yield `unit (Node 22)`, `unit (Node 24)` and `unit (Node 26)`; neither template needs an edit. `fail-fast: false` stays.
-- **Workflow comment.** The comment above the job says the unit suites build and pass on Node 22, 24 and 26 (today it says "proves the floor and the current LTS"). Its first line, that the published libraries declare `engines.node >=22.23.4`, stays, as does the rest (clean build, integration suites skip here, the `test` job owns integration on Node 22).
-- **Docs.** The sentence in `CONTRIBUTING.md` ("CI builds and runs the unit suites on Node 22.23.4 and 24") and the "CI workflows that run tests" entry in `docs/agents/code-review.md` (`unit-node-matrix` on Node 22.23.4 and 24) say Node 22, 24 and 26. The floor statements beside them ("Use Node 22.23.4 or newer", `>=22.23.4`, and line 38 of the review profile) stay, since the floor doesn't change. Triage searched the ADRs, `docs/architecture.md`, `docs/contracts`, the docs site, `scripts` and the other workflows; nothing else names the matrix. `AGENTS.md` and `README.md` name only the floor, which doesn't change.
+- **Matrix.** The `unit-node-matrix` job's `matrix.node` list becomes `["22", "24", "26"]`. All three are major-only, so `actions/setup-node` installs the newest release of each line; the exact floor 22.23.4 is no longer what the Node 22 job runs (owner's change requests on v1 and v2). The job name template `unit (Node ${{ matrix.node }})` and the check run title derived from the matrix yield `unit (Node 22)`, `unit (Node 24)` and `unit (Node 26)`; neither template needs an edit. `fail-fast: false` stays.
+- **Workflow comment.** The comment above the job says the unit suites build and pass on Node 22 (the floor), 24 (Maintenance LTS) and 26 (Active LTS); today it says "proves the floor and the current LTS". Its opening clause, that the published libraries declare `engines.node >=22.23.4`, stays, as does the rest (clean build, integration suites skip here, the `test` job owns integration on Node 22).
+- **Docs.** The sentence in `CONTRIBUTING.md` ("CI builds and runs the unit suites on Node 22.23.4 and 24") and the "CI workflows that run tests" entry in `docs/agents/code-review.md` (`unit-node-matrix` on Node 22.23.4 and 24) name Node 22 (floor), 24 (Maintenance LTS) and 26 (Active LTS). The exact wording is build's; each of the three places carries all three versions and all three labels. The floor statements beside them ("Use Node 22.23.4 or newer", `>=22.23.4`, and the `engines.node` line of the review profile's standards list) stay, since the floor doesn't change. Triage searched the ADRs, `docs/architecture.md`, `docs/contracts`, the docs site, `scripts` and the other workflows; nothing else names the matrix. `AGENTS.md` and `README.md` name only the floor, which doesn't change.
 - **Base.** The branch was cut five commits behind `origin/main`, before the floor rose to 22.23.4 (#586). Build merges `origin/main` into the branch before editing, so the edits land on the 22.23.4 text.
 - **Unchanged.** `engines.node` in every package; the `test`, `preflight` and `consumer-lab` jobs' Node version (they stay on Node 22); the Node versions in other workflows.
 - **On a Node 26 failure.** The PR stays draft. Build files one issue naming the failing step with a log excerpt, and escalates the ticket. It does not remove 26, drop 22 or 24, mark the job `continue-on-error`, or work around the break in this ticket.
@@ -70,7 +71,7 @@ The matrix gains a third job, `unit (Node 26)`, beside Node 22 and Node 24, and 
 - The test is CI itself: the three jobs `unit (Node 22)`, `unit (Node 24)` and `unit (Node 26)` on the PR are the acceptance check. There is no unit test to write; a test that parsed `ci.yml` for the matrix list would only restate the edit.
 - A good check here proves behaviour on the real runtime: each job runs a clean build (no Turbo cache) and `pnpm test` without DB URLs, so the native `better-sqlite3` build and every unit suite run on each version.
 - Local check before pushing: `pnpm smoke:install` and `pnpm preflight` per `AGENTS.md`. No Node 26 is installed locally, so only CI proves 26.
-- Docs check: `grep` for `22.14` in the three edited files returns nothing, and each says the unit suites run on Node 22, 24 and 26.
+- Docs check: `grep` for `22.14` in the three edited files returns nothing, and each names Node 22, 24 and 26 with the labels floor, Maintenance LTS and Active LTS.
 - Prior art: the floor-raise PR (#586) changed the same matrix line and the same two doc sentences.
 
 ## Ticket coverage
@@ -78,8 +79,8 @@ The matrix gains a third job, `unit (Node 26)`, beside Node 22 and Node 24, and 
 | Done when (issue #589 and triage criteria) | Met by |
 | --- | --- |
 | `unit-node-matrix` lists `"26"` alongside the floor and `"24"` (Step 1) | Decision 1; Implementation Decisions, Matrix |
-| `CONTRIBUTING.md` and `docs/agents/code-review.md` name the three versions (Step 2; Node 22, 24 and 26 per the change request on v1) | Decision 4; Implementation Decisions, Docs |
-| The workflow comment names Node 22, 24 and 26, and no stale 22.14 remains | Decision 4; Implementation Decisions, Workflow comment and Base |
+| `CONTRIBUTING.md` and `docs/agents/code-review.md` name the three versions (Step 2; Node 22, 24 and 26 with their labels, per the change requests on v1 and v2) | Decision 4; Implementation Decisions, Docs |
+| The workflow comment names the three versions and their roles, and no stale 22.14 remains | Decision 4; Implementation Decisions, Workflow comment and Base |
 | `unit (Node 26)` green with the Node 22 job (now `unit (Node 22)`) and `unit (Node 24)` (Verification) | Decision 1; Testing Decisions |
 | `engines.node` unchanged; neither 22 nor 24 leaves the matrix (STOP) | Decisions 1 and 2; Implementation Decisions, Unchanged |
 | If 26 fails, file what broke; the matrix is not edited to hide it (Step 3) | Decision 3; Implementation Decisions, On a Node 26 failure |
@@ -90,6 +91,7 @@ The matrix gains a third job, `unit (Node 26)`, beside Node 22 and Node 24, and 
 - Moving the `test`, `preflight` or `consumer-lab` jobs off Node 22.
 - Fixing a Node 26 incompatibility in this ticket; it gets its own issue.
 - Pinning any matrix entry to a patch version, including the floor 22.23.4.
+- Updating the LTS labels when the Node release schedule moves on (Node 26 entering Maintenance LTS); that is a later ticket's edit.
 - A changeset.
 
 ## Further Notes
