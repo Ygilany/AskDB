@@ -1,6 +1,6 @@
 {
   "name": "@askdb/ai-openai",
-  "version": "1.0.0-beta.7",
+  "version": "1.0.0-beta.8",
   "description": "[Deprecated] Re-exports the OpenAI provider now built into @askdb/ai. Install @askdb/ai + @ai-sdk/openai instead; removed before 1.0.",
   "keywords": [
     "askdb",
