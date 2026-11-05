@@ -128,6 +128,7 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | `defineConfig(config)` | Type-safe config builder. |
 | `bootstrapAskDbEnv(options)` | Load `.env` + `askdb.config.*` and install the runtime snapshot. |
 | `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). |
+| `isAskDbRuntimeInitialized()` | `true` once the runtime snapshot is installed, so code can bootstrap only when its host hasn't. |
 | `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
 | `env`, `requiredEnv` | Typed env-var accessors. |
 | `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |

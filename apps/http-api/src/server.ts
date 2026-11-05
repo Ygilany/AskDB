@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createNodeServer } from "node:http";
-import { getAskDbRuntimeConfig } from "@askdb/config";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig, isAskDbRuntimeInitialized } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
@@ -32,9 +32,9 @@ import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } fro
 const ai = createAiRegistry();
 
 export type AskDbHttpServerOptions = {
-  /** Default: 3000 */
+  /** Port to listen on. Precedence: this option → `httpApi.listen.port` config → 3000. */
   port?: number;
-  /** Default: 127.0.0.1 */
+  /** Bind address. Precedence: this option → `httpApi.listen.host` config → 127.0.0.1. */
   host?: string;
   /** Server-default schema artifact path. Precedence: this option → `host.schemaPath` config → `ASKDB_SCHEMA_PATH` env. */
   schemaPath?: string;
@@ -221,8 +221,16 @@ export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: num
 }
 
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
-  const host = options.host ?? "127.0.0.1";
-  const port = options.port ?? 3000;
+  // A host that bootstrapped keeps its runtime. Otherwise load `.env` and askdb.config.* from
+  // the working directory, as the askdb-http binary does. A broken `.env` throws here rather
+  // than setting the host's `process.exitCode`.
+  if (!isAskDbRuntimeInitialized()) {
+    bootstrapAskDbEnv({ cwd: process.cwd(), dotenvNonFatal: false });
+  }
+
+  const { listen } = getAskDbRuntimeConfig().httpApi;
+  const host = options.host ?? listen.host;
+  const port = options.port ?? listen.port;
   const optionSchemaPath = options.schemaPath;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
 
