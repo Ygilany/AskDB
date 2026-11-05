@@ -310,6 +310,8 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
 export type InitInstallPlan = {
   packages: string[];
   labels: string[];
+  /** Dependencies whose install scripts pnpm must be told to run (`pnpm add --allow-build=<name>`). */
+  allowBuilds: string[];
 };
 
 /** Package maps — names come from an allowlist, not from user input */
@@ -320,13 +322,23 @@ const DB_DRIVER_PACKAGES: Record<string, string> = {
   sqlserver: "mssql",
 };
 
-export type InitDepSpecs = { configSpec: string };
+export type InitDepSpecs = { configSpec: string; prismaSpec: string };
 
 export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs): InitInstallPlan {
   const packages: string[] = [
     `@askdb/config@${specs.configSpec}`,
   ];
   const labels: string[] = ["@askdb/config"];
+  const allowBuilds: string[] = [];
+
+  // `@askdb/prisma` is an optional peer of askdb (#259). It depends on Prisma, whose
+  // `@prisma/engines` postinstall pnpm 11 refuses to run until it's approved, and then
+  // exits 1. A Prisma project approves it anyway, so the install does it here.
+  if (answers.database === "prisma") {
+    packages.push(`@askdb/prisma@${specs.prismaSpec}`);
+    labels.push("@askdb/prisma");
+    allowBuilds.push("@prisma/engines");
+  }
 
   const driversNeeded = new Set<string>();
 
@@ -348,7 +360,7 @@ export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs):
     }
   }
 
-  return { packages, labels };
+  return { packages, labels, allowBuilds };
 }
 
 // ---------------------------------------------------------------------------
@@ -398,67 +410,65 @@ export function detectPackageManager(packageDir: string): PackageManager {
   return "npm";
 }
 
-/** Resolve `@askdb/config` semver spec for `askdb init` installs (published + monorepo dev). */
+/**
+ * The versions `askdb init` installs: `@askdb/config` and `@askdb/prisma` at the versions
+ * this CLI was built with. Published, those are its `@askdb/config` dependency and the floor
+ * of its `@askdb/prisma` peer range (`^x` → `x`); in the monorepo, the workspace packages'.
+ */
 export function resolveInitDepSpecs(): InitDepSpecs {
   const cliPkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
-  const cliPkg = JSON.parse(readFileSync(cliPkgPath, "utf8")) as { dependencies?: Record<string, string> };
-  const raw = cliPkg.dependencies?.["@askdb/config"] ?? "latest";
-  let configSpec = raw;
-  if (raw.startsWith("workspace:")) {
-    try {
-      const cfgPkgPath = require.resolve("@askdb/config/package.json");
-      const v = JSON.parse(readFileSync(cfgPkgPath, "utf8")) as { version?: string };
-      configSpec = v.version ?? "latest";
-    } catch {
-      configSpec = "latest";
-    }
+  const cliPkg = JSON.parse(readFileSync(cliPkgPath, "utf8")) as {
+    dependencies?: Record<string, string>;
+    peerDependencies?: Record<string, string>;
+  };
+  return {
+    configSpec: builtWithVersion("@askdb/config", cliPkg.dependencies?.["@askdb/config"]),
+    prismaSpec: builtWithVersion("@askdb/prisma", cliPkg.peerDependencies?.["@askdb/prisma"]),
+  };
+}
+
+function builtWithVersion(packageName: string, declared: string | undefined): string {
+  if (!declared) return "latest";
+  if (!declared.startsWith("workspace:")) return declared.replace(/^[\^~]/, "");
+  try {
+    // Resolve the entry point and walk up: `exports` may not expose `./package.json`.
+    const pkgDir = findNearestPackageJsonDir(dirname(require.resolve(packageName)));
+    const v = pkgDir ? (JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")) as { version?: string }) : {};
+    return v.version ?? "latest";
+  } catch {
+    return "latest";
   }
-  return { configSpec };
 }
 
 // ---------------------------------------------------------------------------
 // Package manager install
 // ---------------------------------------------------------------------------
 
-type InstallFn = (pm: PackageManager, packageDir: string, packages: string[]) => boolean;
+/** Runs the package manager's add command; `allowBuilds` are the pnpm build approvals it passes. */
+type InstallFn = (pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]) => boolean;
 
-function defaultInstaller(pm: PackageManager, packageDir: string, packages: string[]): boolean {
+function defaultInstaller(pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]): boolean {
   const env = { ...process.env, CI: process.env.CI ?? "true" };
   const win = process.platform === "win32";
-  let cmd: string;
-  let args: string[];
-  switch (pm) {
-    case "pnpm":
-      cmd = win ? "pnpm.CMD" : "pnpm";
-      args = ["add", ...packages];
-      break;
-    case "yarn":
-      cmd = win ? "yarn.cmd" : "yarn";
-      args = ["add", ...packages];
-      break;
-    case "bun":
-      cmd = win ? "bun.exe" : "bun";
-      args = ["add", ...packages];
-      break;
-    default:
-      cmd = win ? "npm.cmd" : "npm";
-      args = ["install", "--save", ...packages];
-  }
-  const r = spawnSync(cmd, args, { cwd: packageDir, stdio: "inherit", env, shell: false });
+  const cmd = win ? { pnpm: "pnpm.CMD", yarn: "yarn.cmd", bun: "bun.exe", npm: "npm.cmd" }[pm] : pm;
+  const r = spawnSync(cmd, installArgs(pm, packages, allowBuilds), { cwd: packageDir, stdio: "inherit", env, shell: false });
   return r.status === 0;
 }
 
-function formatManualInstallCommand(pm: PackageManager, packages: string[]): string {
-  const pkgList = packages.join(" ");
+function formatManualInstallCommand(pm: PackageManager, packages: string[], allowBuilds: string[]): string {
+  return [pm, ...installArgs(pm, packages, allowBuilds)].join(" ");
+}
+
+/** The add command's arguments. Build approvals apply to pnpm only: npm and Yarn run install scripts, and Bun skips untrusted ones without failing. */
+function installArgs(pm: PackageManager, packages: string[], allowBuilds: string[]): string[] {
   switch (pm) {
     case "pnpm":
-      return `pnpm add ${pkgList}`;
+      return ["add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...packages];
     case "yarn":
-      return `yarn add ${pkgList}`;
     case "bun":
-      return `bun add ${pkgList}`;
+      return ["add", ...packages];
     default:
-      return `npm install --save ${pkgList}`;
+      return ["install", "--save", ...packages];
   }
 }
 
@@ -1052,12 +1062,12 @@ async function finishInit(
     } else {
       const pm = detectPackageManager(pkgRoot);
       process.stdout.write(`\nInstalling dependencies with ${pm} in ${pkgRoot} …\n`);
-      const ok = installer(pm, pkgRoot, plan.packages);
+      const ok = installer(pm, pkgRoot, plan.packages, plan.allowBuilds);
       if (!ok) {
         process.stderr.write(
           "Dependency install failed. The config file was written, but packages are not installed yet.\n" +
             `  cd ${pkgRoot}\n` +
-            `  ${formatManualInstallCommand(pm, plan.packages)}\n`,
+            `  ${formatManualInstallCommand(pm, plan.packages, plan.allowBuilds)}\n`,
         );
         return 1;
       }

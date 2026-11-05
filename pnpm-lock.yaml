@@ -89,9 +89,6 @@ importers:
       '@askdb/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
-      '@askdb/prisma':
-        specifier: workspace:*
-        version: link:../../packages/prisma
       '@askdb/rag':
         specifier: workspace:*
         version: link:../../packages/rag
@@ -114,6 +111,9 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0
     devDependencies:
+      '@askdb/prisma':
+        specifier: workspace:*
+        version: link:../../packages/prisma
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
