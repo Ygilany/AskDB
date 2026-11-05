@@ -217,9 +217,6 @@ importers:
       '@askdb/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
-      '@askdb/prisma':
-        specifier: workspace:*
-        version: link:../../packages/prisma
       '@askdb/rag':
         specifier: workspace:*
         version: link:../../packages/rag
@@ -233,6 +230,9 @@ importers:
         specifier: ^7.0.51
         version: 7.0.159(zod@4.6.7)
     devDependencies:
+      '@askdb/prisma':
+        specifier: workspace:*
+        version: link:../../packages/prisma
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.14.0(jiti@2.7.0)(supports-color@10.2.2))

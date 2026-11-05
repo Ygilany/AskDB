@@ -375,6 +375,14 @@ function ensureProjectDependencies(
   if (!canResolveFrom(cwd, "@askdb/config")) {
     missing.push(`@askdb/config@${resolveConfigSpec()}`);
   }
+  const allowBuilds: string[] = [];
+  // `@askdb/prisma` is an optional peer of Studio (#259). It depends on Prisma, whose
+  // `@prisma/engines` postinstall pnpm 11 refuses to run until it's approved, and then
+  // exits 1. A Prisma project approves it anyway, so the install does it here.
+  if (database === "prisma" && !canResolveFrom(cwd, "@askdb/prisma")) {
+    missing.push(`@askdb/prisma@${resolvePrismaSpec()}`);
+    allowBuilds.push("@prisma/engines");
+  }
   const driversNeeded = new Set<string>();
   if (DB_DRIVER_PACKAGES[database]) driversNeeded.add(database);
   if (studioExecuteProvider && DB_DRIVER_PACKAGES[studioExecuteProvider]) driversNeeded.add(studioExecuteProvider);
@@ -407,17 +415,17 @@ function ensureProjectDependencies(
   if (pkgDir !== resolve(cwd) || (isLikelyWorkspaceRoot(pkgDir) && !packageJsonCreated)) {
     return {
       installed: null,
-      manualInstallCommand: formatInstallCommand(pm, missing),
+      manualInstallCommand: formatInstallCommand(pm, missing, allowBuilds),
       packageJsonCreated,
     };
   }
 
   const installer = setupInstallerForTests ?? runInstall;
-  const ok = installer(pm, pkgDir, missing);
+  const ok = installer(pm, pkgDir, missing, allowBuilds);
   if (!ok) {
     return {
       installed: null,
-      manualInstallCommand: formatInstallCommand(pm, missing),
+      manualInstallCommand: formatInstallCommand(pm, missing, allowBuilds),
       packageJsonCreated,
     };
   }
@@ -458,6 +466,25 @@ function resolveConfigSpec(): string {
   return readStudioConfigPackageJson()?.version ?? "latest";
 }
 
+/**
+ * Pin `@askdb/prisma` to the version Studio was built with: the floor of Studio's
+ * published peer range (`^x` → `x`), or the workspace package's version in the monorepo.
+ */
+function resolvePrismaSpec(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    const studioPkg = require("../package.json") as { peerDependencies?: Record<string, string> };
+    const declared = studioPkg.peerDependencies?.["@askdb/prisma"];
+    if (!declared) return "latest";
+    if (!declared.startsWith("workspace:")) return declared.replace(/^[\^~]/, "");
+    const pkgDir = findNearestPackageJsonDir(dirname(require.resolve("@askdb/prisma")));
+    if (!pkgDir) return "latest";
+    return (JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")) as { version?: string }).version ?? "latest";
+  } catch {
+    return "latest";
+  }
+}
+
 function findNearestPackageJsonDir(startDir: string): string | undefined {
   let dir = resolve(startDir);
   for (let i = 0; i < 40; i += 1) {
@@ -486,7 +513,8 @@ function isLikelyWorkspaceRoot(packageDir: string): boolean {
   }
 }
 
-type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[]) => boolean;
+/** Runs the package manager's add command; `allowBuilds` are the pnpm build approvals it passes. */
+type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]) => boolean;
 
 let setupInstallerForTests: SetupInstaller | undefined;
 
@@ -507,10 +535,10 @@ function detectPackageManager(packageDir: string): PackageManager {
   return "npm";
 }
 
-function runInstall(pm: PackageManager, packageDir: string, packages: string[]): boolean {
+function runInstall(pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]): boolean {
   const env = { ...process.env, CI: process.env.CI ?? "true" };
   try {
-    const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages));
+    const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages, allowBuilds));
     const result = spawnSync(command, args, { cwd: packageDir, stdio: "ignore", env, shell });
     return result.status === 0;
   } catch {

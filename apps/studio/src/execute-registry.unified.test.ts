@@ -364,8 +364,17 @@ describe("packageManagerSpawnSpec", () => {
     });
   });
 
+  // Setup approves @prisma/engines on pnpm 11 when it installs @askdb/prisma (#259).
+  it("passes a pnpm build approval for a package name", () => {
+    expect(packageManagerSpawnSpec("pnpm", ["add", "--allow-build=@prisma/engines", "@askdb/prisma@0.2.0"], "win32").args).toEqual([
+      "add",
+      "--allow-build=@prisma/engines",
+      "@askdb/prisma@0.2.0",
+    ]);
+  });
+
   it("refuses arguments a shell could interpret", () => {
-    for (const bad of ["pg && calc", "pg;rm", "$(x)", "pg|x", "a b", "`x`"]) {
+    for (const bad of ["pg && calc", "pg;rm", "$(x)", "pg|x", "a b", "`x`", "--allow-build=x&calc", "--allow-build=$(x)", "--x=y"]) {
       expect(() => packageManagerSpawnSpec("pnpm", ["add", bad], "win32")).toThrow(/unsafe argument/);
     }
   });

@@ -1,6 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { resetAskDbRuntimeForTests } from "@askdb/config";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SetupError, setSetupInstallerForTests, writeSetupConfig, type SetupConfigInput } from "./setup.js";
@@ -133,3 +135,57 @@ function evaluateGeneratedConfig(source: string): unknown {
     (name: string) => ({ env: name }),
   );
 }
+
+// @askdb/prisma is an optional peer of Studio and askdb (#259): a Prisma project installs
+// it, and pnpm 11 must approve its @prisma/engines build or the install exits 1.
+//
+// These run the built module in a child process without NODE_PATH: pnpm's bin shim puts
+// the workspace's hoisted node_modules on NODE_PATH for the test runner, so every package
+// would resolve from any directory and setup would see nothing to install.
+describe("writeSetupConfig dependency install", () => {
+  const repoRoot = join(import.meta.dirname, "../../..");
+  const setupJs = join(import.meta.dirname, "../dist/setup.js");
+  const version = (pkg: string) =>
+    (JSON.parse(readFileSync(join(repoRoot, "packages", pkg, "package.json"), "utf8")) as { version: string }).version;
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** writeSetupConfig in a fresh pnpm project whose install fails: the installer calls and the fallback command. */
+  function setupInPnpmProject(input: SetupConfigInput): { dir: string; calls: unknown[][]; manualInstallCommand: string | null } {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "askdb-setup-install-")));
+    dirs.push(dir);
+    writeFileSync(join(dir, "package.json"), '{ "name": "app", "private": true }\n');
+    writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    const script = `
+      const { setSetupInstallerForTests, writeSetupConfig } = await import(${JSON.stringify(pathToFileURL(setupJs).href)});
+      const calls = [];
+      setSetupInstallerForTests((...args) => (calls.push(args), false));
+      const { manualInstallCommand } = writeSetupConfig(${JSON.stringify(dir)}, ${JSON.stringify(input)});
+      console.log(JSON.stringify({ calls, manualInstallCommand }));
+    `;
+    const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, NODE_PATH: "" },
+    });
+    if (run.status !== 0) throw new Error(run.stderr);
+    return { dir, ...JSON.parse(run.stdout) };
+  }
+
+  it("installs @askdb/prisma for a Prisma source, approving @prisma/engines on pnpm", () => {
+    const { dir, calls, manualInstallCommand } = setupInPnpmProject({ database: "prisma", aiProvider: "openai" });
+
+    const packages = [`@askdb/config@${version("config")}`, `@askdb/prisma@${version("prisma")}`];
+    expect(calls).toEqual([["pnpm", dir, packages, ["@prisma/engines"]]]);
+    expect(manualInstallCommand).toBe(`pnpm add --allow-build=@prisma/engines ${packages.join(" ")}`);
+  });
+
+  it("installs no engine package and approves no build for a live engine", () => {
+    const { manualInstallCommand } = setupInPnpmProject({ database: "postgres", aiProvider: "openai" });
+
+    expect(manualInstallCommand).toBe(`pnpm add @askdb/config@${version("config")} pg`);
+  });
+});

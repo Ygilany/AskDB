@@ -67,19 +67,22 @@
     "@askdb/introspect": "workspace:*",
     "@askdb/mysql": "workspace:*",
     "@askdb/postgres": "workspace:*",
-    "@askdb/prisma": "workspace:*",
     "@askdb/rag": "workspace:*",
     "@askdb/sqlite": "workspace:*",
     "@askdb/sqlserver": "workspace:*",
     "ai": "^7.0.51"
   },
   "peerDependencies": {
+    "@askdb/prisma": "workspace:^",
     "better-sqlite3": ">=12",
     "mssql": ">=12",
     "mysql2": ">=3",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {
+    "@askdb/prisma": {
+      "optional": true
+    },
     "better-sqlite3": {
       "optional": true
     },
@@ -94,6 +97,7 @@
     }
   },
   "devDependencies": {
+    "@askdb/prisma": "workspace:*",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^7.6.13",
