@@ -28,6 +28,13 @@ export type SqlValidationRuleCode =
   | "SQL_UNTERMINATED";
 
 export class SqlValidationError extends AskDbError {
+  /**
+   * Every guardrail finding for the statement, when the error comes from an enforcement
+   * point (`ask()`, `generateSelectSql()`, `bindPreparedQuery()`). Absent when thrown by a
+   * direct `validateSelectSql()` call.
+   */
+  verdict?: GuardrailVerdict;
+
   constructor(
     message: string,
     public readonly rule: SqlValidationRuleCode,
@@ -98,7 +105,13 @@ export type QueryParameterRejectionReason =
   | "MISSING_VALUE"
   | "UNRESOLVED_PLACEHOLDER"
   | "INVALID_LIST_CONTEXT"
-  | "DIALECT_UNSUPPORTED";
+  | "DIALECT_UNSUPPORTED"
+  /** `bindPreparedQuery()` was called without its third argument (`BindGuardrails`), or without `schema` in it. */
+  | "MISSING_GUARDRAIL_CONTEXT"
+  /** `values` has a `:tenant_*` key. Tenant IDs come from `tenantScope` only. */
+  | "TENANT_VALUE_SUPPLIED"
+  /** The tenant markers in `unboundSql` can't be lined up with the business parameters. */
+  | "TENANT_PARAM_ALIGNMENT";
 
 export class QueryParameterError extends AskDbError {
   constructor(
@@ -125,6 +138,9 @@ export type TenantGuardrailWarning = {
 };
 
 export class TenantGuardrailError extends AskDbError {
+  /** Every guardrail finding for the statement, when thrown by an enforcement point. */
+  verdict?: GuardrailVerdict;
+
   constructor(
     message: string,
     public readonly warnings: TenantGuardrailWarning[],
@@ -190,6 +206,9 @@ export type SensitiveReferenceRuleCode =
   | "UNRESOLVED_TABLE_SCOPE";
 
 export class SensitiveReferenceError extends AskDbError {
+  /** Every guardrail finding for the statement, when thrown by an enforcement point. */
+  verdict?: GuardrailVerdict;
+
   constructor(
     message: string,
     public readonly rule: SensitiveReferenceRuleCode,
@@ -200,3 +219,58 @@ export class SensitiveReferenceError extends AskDbError {
     this.name = "SensitiveReferenceError";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Guardrail verdicts (ADR 0010)
+// ---------------------------------------------------------------------------
+
+/** The SQL checks AskDB runs on model-generated SQL. */
+export type GuardrailCheckId = "read-only" | "tenant" | "sensitive";
+
+/**
+ * Which form of the statement a finding is about, before AskDB renders it: `sql` is the
+ * model's bound SQL, `template` is its `sql-unbound` block (`preparedQuery.namedSql`),
+ * both with their `:tenant_<root>_ids` placeholders in place.
+ */
+export type GuardrailForm = "sql" | "template";
+
+/** `allow`: no findings. `warn`: returned (or bound) and reported. `deny`: refused with a typed error. */
+export type GuardrailOutcome = "allow" | "warn" | "deny";
+
+/** One problem a check found. The `check` field says which check, and which detail fields are set. */
+export type GuardrailFinding =
+  | {
+      check: "read-only";
+      form: GuardrailForm;
+      rule: SqlValidationRuleCode;
+      message: string;
+      hint?: string;
+    }
+  | {
+      check: "tenant";
+      /** `"generator"`: reported by a custom `AskDialect`'s `tenantGuardrail`. */
+      form: GuardrailForm | "generator";
+      rule: TenantGuardrailRuleCode;
+      message: string;
+      /** The table the finding is about; empty for a custom generator's failure with no details. */
+      tableId: string;
+    }
+  | {
+      check: "sensitive";
+      form: GuardrailForm;
+      rule: SensitiveReferenceRuleCode;
+      message: string;
+      /** The sensitive table or column referenced (`SENSITIVE_TABLE_REFERENCED` / `SENSITIVE_COLUMN_REFERENCED`). */
+      reference?: SensitiveReference;
+      /** Why the table scope couldn't be resolved (`UNRESOLVED_TABLE_SCOPE`). */
+      unresolvedScope?: SensitiveScopeReport;
+    };
+
+/**
+ * The decision for one statement: the most severe outcome across its findings, and every
+ * finding. In-memory only: AskDB doesn't persist it, so it carries no format version.
+ */
+export type GuardrailVerdict = {
+  outcome: GuardrailOutcome;
+  findings: GuardrailFinding[];
+};

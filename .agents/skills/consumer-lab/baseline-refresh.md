@@ -63,4 +63,4 @@ Check `src/capabilities.ts` for the current list: a capability added since this 
 1. In `examples/consumer-lab/known-release-failures.json`, delete the entries for releases older than the new baseline: no `npm:latest` run installs them again.
 2. Stage exactly the three files: `git add examples/consumer-lab/package.json examples/consumer-lab/pnpm-workspace.yaml examples/consumer-lab/pnpm-lock.yaml`, plus `git add examples/consumer-lab/known-release-failures.json` if step 1 changed it. Then `git diff --cached --name-only` must print those and nothing else.
 3. Commit, for example `chore(lab): refresh the npm:latest baseline to askdb@<version>`. No changeset: the lab isn't published. The installed lab now matches the commit, so `pnpm lab:use --restore` isn't needed.
-4. The PR body gives the versions before and after, the `FAIL` cells and their triage, the verdict for each capability, and the findings filed, and ends with the `Thread ID:` line.
+4. The PR body gives the versions before and after, the `FAIL` cells and their triage, the verdict for each capability, and the findings filed.

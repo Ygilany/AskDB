@@ -71,7 +71,6 @@ Done when every cell that `matrix-cells.mjs` lists has a verdict: each `FAIL` on
 
 - **A `known (#N)` cell turned `FAIL`** because #N was fixed: its `it.fails` test now passes, which `it.fails` reports as a failure. Change `it.fails` back to `it`, drop the `(#N)` from its name, and confirm the cell is `pass` on every dialect with `pnpm lab:matrix -t '<scenario-id>'`. The change belongs with the fix, on `lab:use .`; on an npm target the cell then reads `FAIL` until the fix is released, which the triage below calls "fixed on `main` but not released".
 - **A new `FAIL` where the docs and AskDB disagree:** file a `discrepancy` issue as [`docs/agents/issue-tracker.md`](../../../docs/agents/issue-tracker.md) says: quote both sides with file paths, state the observed behavior per dialect, and name the decision needed. Then mark the test `it.fails("… (#N)")` so its cell reads `known (#N)`. The test keeps asserting the documented behavior; the lab never bends a test to match the code.
-- **Every issue and PR you open** ends with the `Thread ID:` line AGENTS.md asks for; its value is the session's T3 worktree name (`t3code-…`).
 
 Done when every `FAIL` cell you judged a product problem has an issue, and every `it.fails` you added or removed names the right one.
 

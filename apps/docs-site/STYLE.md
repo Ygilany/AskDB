@@ -29,7 +29,7 @@ In priority order (from `docs/mission.md`):
 
 Introduce these only after the reader understands the product — fine in concept and reference pages, too early on Start pages and the first guides: Schema v2, RAG, BYO runtime, MCP, bounded results, headless contracts, dialect-agnostic, optional peers, runtime snapshot.
 
-Model wiring has two first-party paths — `@askdb/ai-*` adapters and a raw Vercel AI SDK `LanguageModel` passed to `ask()`. Present both as equally supported; choose between them by who owns provider config.
+Model wiring has two first-party paths: `@askdb/ai`'s built-in providers (`createAiRegistry()`, `createAskDb({ config })`) and a raw Vercel AI SDK `LanguageModel` passed to `ask()`. Present both as equally supported; choose between them by who owns provider config. Name the deprecated `@askdb/ai-*` shims only in deprecation notes and migration tables.
 
 ## Site structure
 
@@ -57,7 +57,7 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 ## Components
 
 - `InstallTabs` (`<InstallTabs pkgs="…" />`) for every package install.
-- `Tabs` with a `syncKey` so choices persist site-wide: `pkg` (labels exactly npm / pnpm / yarn), `engine` (database engines), `wiring` (adapter vs raw model).
+- `Tabs` with a `syncKey` so choices persist site-wide: `pkg` (labels exactly npm / pnpm / yarn), `engine` (database engines), `wiring` (config-driven vs direct model).
 - `Aside` for prerequisites and real hazards — `note`, `tip`, `caution`; keep them rare.
 - `ExampleLink` to point at a runnable example in the repo.
 - Diagrams live in `src/assets/diagrams/` as SVG.
