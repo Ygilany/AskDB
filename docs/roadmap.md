@@ -211,9 +211,12 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 
 **Milestone:** [1.0.0-rc.1 — public launch](https://github.com/Ygilany/AskDB/milestone/2). There is no fixed date: rc.1 ships when the milestone's gates close.
 
+**Decision:** [ADR 0030 — 1.0 promises checked SQL only](adrs/0030-1-0-promises-checked-sql-only.md).
+
 - **1.0 promises checked SQL only** — the library, the CLI and the HTTP API return checked SQL and never execute it (Studio's optional Playground **Execute** is a local development tool). Reports, result summaries and a non-stub `bounded_results` come after 1.0 (Phase 12).
 - **Surfaces at 1.0** — the library (`@askdb/core`, `@askdb/client`), the `askdb` CLI, the HTTP API (`@askdb/http-api`) and Studio. Agents use the CLI and the HTTP API; MCP comes after 1.0 (Phase 14).
 - **The 1.0 package set** — `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. Studio, `@askdb/enrich` and `@askdb/rag` stay 0.x, and their APIs may still move (#354).
+- **Experimental surfaces in the 1.0 set** — the `studio` and `rag` blocks of `defineConfig` in `@askdb/config`, and the `askdb studio`, `enrich`, `bundle` and `rag` commands, follow their 0.x packages. They are marked experimental, and a minor release may change them.
 - **Engines** — all five engine families (PostgreSQL, MySQL, MariaDB, SQLite, SQL Server) are supported, and the consumer lab covers each one, including its tenant suite.
 - **Gates** — an item blocks rc.1 only if it is a security or cross-tenant bug, a breaking change that can't happen after the API freeze, docs that overstate a safety or trust guarantee, a break on the first-run path, or the RC release pipeline. The release process is in [`release.md`](release.md).
 
@@ -224,7 +227,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 **Milestone:** [1.0.0 — stable](https://github.com/Ygilany/AskDB/milestone/3).
 
 - **Should-do work between rc.1 and 1.0.0** — gaps in the defense-in-depth SQL checks (the database enforces isolation, [ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)), reference-doc accuracy, and user-visible bugs. None of it blocks the RC.
-- **After 1.0.0** — a breaking change to a package in the 1.0 set needs a major version (see [`platform.md`](platform.md#release-and-versioning)).
+- **After 1.0.0** — a breaking change to a package in the 1.0 set needs a major version, unless it is confined to the experimental surfaces above (see [`platform.md`](platform.md#release-and-versioning)).
 
 ---
 

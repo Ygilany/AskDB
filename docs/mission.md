@@ -1,6 +1,6 @@
 # Mission
 
-AskDB turns natural language into **checked, schema-grounded SQL** so teams can ask questions about their own data without becoming SQL experts. The library, the CLI and the HTTP API return the SQL and never execute it: the host application runs it under its own database controls. The one exception is Studio's optional Playground **Execute**, a local development tool that is off by default (see [`SECURITY.md`](../SECURITY.md#studio-execute)). Reports and result summaries come after 1.0 (see [`roadmap.md`](roadmap.md), Phase 12).
+AskDB turns natural language into **checked, schema-grounded SQL** so teams can ask questions about their own data without becoming SQL experts. The library, the CLI and the HTTP API return the SQL and never execute it: the host application runs it under its own database controls. The one exception is Studio's optional Playground **Execute**, a local development tool that is off by default (see [`SECURITY.md`](../SECURITY.md#studio-execute)). Reports and result summaries come after 1.0 (see [`roadmap.md`](roadmap.md), Phase 12, and [ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)).
 
 ## Target audience
 

@@ -109,8 +109,9 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 ## Release and versioning
 
 - Packages are published to npm with **semver** discipline, using **Changesets**. For `@askdb/core`, the contract surface (exports from `packages/core/src/index.ts` plus the formal contract docs under `docs/contracts/`) is the boundary that semver applies to. The release process and checklist live in [`docs/release.md`](release.md).
-- **At 1.0**, `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` stay 0.x, and their APIs may still move (#354).
-- Pre-1.0 versions allow contract evolution; once 1.0 ships, breaking changes to a 1.0 package require a contract doc bump where a contract changes (e.g. `schema-v2` → `schema-v3`) and a major version.
+- **At 1.0**, `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` stay 0.x, and their APIs may still move (#354, [ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)).
+- **Experimental surfaces in the 1.0 set** — the `studio` and `rag` blocks of `defineConfig` in `@askdb/config`, and the `askdb studio`, `enrich`, `bundle` and `rag` commands, follow their 0.x packages. They are marked experimental, and a minor release of `@askdb/config` or `askdb` may change them.
+- Pre-1.0 versions allow contract evolution; once 1.0 ships, breaking changes to a 1.0 package outside those experimental surfaces require a contract doc bump where a contract changes (e.g. `schema-v2` → `schema-v3`) and a major version.
 
 ## Other tooling
 
