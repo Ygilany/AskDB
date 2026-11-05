@@ -14,7 +14,7 @@ import { join } from "node:path";
 import type { AskGenerateDeps } from "@askdb/core";
 import type { TestContext } from "vitest";
 import { ensureArtifact, requireInstallTarget } from "./artifacts.js";
-import { ASKDB_BIN, introspectFixture } from "./introspect.js";
+import { ASKDB_BIN, askdbInProject, introspectFixture, sqliteIntrospection } from "./introspect.js";
 import { LAB_ROOT } from "./paths.js";
 
 /**
@@ -53,6 +53,27 @@ function mysqlReadsListedDatabases(): boolean {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * The errors earlier releases refuse a plain-object `askdb.config.mjs` with, as #264 and #265
+ * quote them: the synchronous loader rejected `.mjs`, then any export but `defineConfig(…)`.
+ */
+const REFUSED_CONFIG_FORM = /Cannot load AskDB config synchronously|must export default defineConfig/;
+
+/**
+ * Whether the installed CLI loads a plain-object `askdb.config.mjs`: `reference/config.mdx`
+ * ("File discovery") lists `mjs` among the config extensions, and the guides
+ * (`guides/switch-engines.mdx`) show a plain `export default { … }`. The probe is the documented
+ * behavior itself, `askdb introspect --print` on the fixture's SQLite file from a project whose
+ * only config is that file. A refusal with one of the errors earlier releases gave means
+ * "absent"; any other failure is a broken install, and throws.
+ */
+function cliLoadsPlainMjsConfig(): boolean {
+  const run = askdbInProject(sqliteIntrospection(), ["introspect", "--print", "--schema-id", "multi-engine"], "plain-object-mjs");
+  if (run.status === 0) return true;
+  if (REFUSED_CONFIG_FORM.test(run.stderr)) return false;
+  throw new Error(`askdb introspect failed while probing config-plain-mjs (exit ${run.status}):\n${run.stderr}`);
 }
 
 /** The database drivers the docs call optional peers (`reference/packages.mdx`, `guides/switch-engines.mdx`). */
@@ -265,6 +286,12 @@ const DETECTORS = {
    * providers (#198), the client needed an adapter from a separate `@askdb/ai-*` package.
    */
   "client-built-in-providers": clientHasBuiltInProviders,
+  /**
+   * A plain-object `askdb.config.mjs`: a documented extension and a documented export that the
+   * lab's other projects don't write (`reference/config.mdx`). Before #264 and #265 were fixed,
+   * the CLI refused it.
+   */
+  "config-plain-mjs": cliLoadsPlainMjsConfig,
 } satisfies Record<string, () => boolean>;
 
 /** Capabilities whose probe runs `ask()`, which is async. A scenario awaits `needsCapability` for these. */
