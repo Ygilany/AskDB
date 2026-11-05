@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-29). Adopted by PR #184. Corrected 2026-10-07 (#483): Decision 3 described #371's fix as landed; it is still open. It replaces the "Strict mode fails closed" design decision in `docs/specs/multi-tenancy.md` and the parser-based design in `docs/contracts/tenant-policy.md` ("Guardrail validation").
+Accepted (2026-09-29). Adopted by PR #184. Corrected 2026-10-07 (#483): Decision 3 described #371's fix as landed; it is still open. Updated 2026-11-05 (#327): the SQL Server second-`SELECT` gap named in Context and Consequences is narrowed. On SQL Server the read-only checks now reject a second statement written without `;` (a second `SELECT`, a parenthesized query after a complete value, a label, and control-flow verbs); one that starts with `FETCH`, or with `END`, `GET` or `MOVE CONVERSATION`, still passes. It replaces the "Strict mode fails closed" design decision in `docs/specs/multi-tenancy.md` and the parser-based design in `docs/contracts/tenant-policy.md` ("Guardrail validation").
 
 ## Context
 

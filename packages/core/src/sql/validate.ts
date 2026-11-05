@@ -8,6 +8,7 @@ import {
   type SqlLexerProfile,
   type SqlToken,
 } from "./lexer.js";
+import { findTsqlStatementBoundary } from "./tsql-batch.js";
 
 /**
  * Keywords rejected in every dialect. Matched against unquoted word tokens only, so
@@ -54,9 +55,11 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 3. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
  * 4. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
  * 5. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
- * 6. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 6. `SQL_MULTI_STATEMENT`, SQL Server lexer only — a second statement written without
+ *    `;`, which T-SQL doesn't need (see `tsql-batch.ts`).
+ * 7. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 7. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 8. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
@@ -147,6 +150,24 @@ function checkWithProfile(
       `SQL must start with SELECT or WITH (got '${got || "none"}').`,
       "Regenerate as a read-only SELECT (optionally with WITH). INSERT/UPDATE/DELETE and procedural calls are blocked in dev guardrails.",
     );
+  }
+
+  if (profile.id === "sqlserver") {
+    const statement = isPunct(tokens[tokens.length - 1], ";") ? tokens.slice(0, -1) : tokens;
+    const boundary = findTsqlStatementBoundary(statement);
+    if (boundary) {
+      const what =
+        boundary.kind === "select"
+          ? "a second SELECT"
+          : boundary.kind === "query"
+            ? "a parenthesized query after a complete value"
+            : `the label '${boundary.token.text}:'`;
+      throw validationError(
+        "SQL_MULTI_STATEMENT",
+        `Multiple SQL statements are not allowed: T-SQL needs no semicolon between statements, so ${what} starts a second statement.`,
+        "Ask for a single SELECT (WITH … SELECT allowed). Combine results with UNION, a CTE, or a subquery after an operator, a comma, or a keyword such as IN, EXISTS, FROM or APPLY.",
+      );
+    }
   }
 
   for (const t of tokens) {
