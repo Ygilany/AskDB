@@ -89,7 +89,7 @@ askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
 askdb introspect --from-export ./pg-export-bundle --out my-app.schema --schema-id my-app
 ```
 
-Prisma schema-file introspection does not connect to the database:
+Prisma schema-file introspection does not connect to the database. It needs `@askdb/prisma`, which `askdb` doesn't install: add it to your project (on pnpm 11, `pnpm add --allow-build=@prisma/engines @askdb/prisma`; see [the Prisma guide](https://askdb.tools/guides/integrations/prisma/#install)):
 
 ```bash
 askdb introspect --engine prisma --prisma-schema ./prisma --out my-app.schema

@@ -166,20 +166,25 @@ describe("askdb introspect — injected connector registry", () => {
     expect(createConnector).not.toHaveBeenCalled();
   });
 
-  it("names the registered engines that provide templates when `introspect templates` targets one that doesn't", async () => {
+  // A lazy entry's package may be absent and costly to import (#339), so the hint names
+  // only the engines already loaded rather than importing the others to ask them.
+  it("names the loaded engines that provide templates when `introspect templates` targets one that doesn't, loading no other engine", async () => {
     installRuntime();
     const beta: ConnectorProviderAdapter = {
       ...acmeAdapter().adapter,
       provider: "beta",
       getTemplates: () => ({ engine: "beta", version: 1, templates: [] }),
     };
+    const gamma = { ...beta, provider: "gamma" };
+    const loadGamma = vi.fn(async () => gamma);
     const code = await runIntrospectCli(["templates", "--engine", "acme"], {
-      connectorRegistry: createConnectorRegistry([acmeAdapter().adapter, beta]),
+      connectorRegistry: createConnectorRegistry([acmeAdapter().adapter, beta, { provider: "gamma", load: loadGamma }]),
     });
     expect(code).toBe(1);
     expect(stderr).toContain(
       "Engine 'acme' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine beta.",
     );
+    expect(loadGamma).not.toHaveBeenCalled();
   });
 
   it("lists the registered engines when --engine is unknown", async () => {

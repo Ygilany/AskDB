@@ -288,7 +288,9 @@ Autodetects and loads a v2 schema artifact. Accepts:
 - A **schema directory** (`<name>.schema/`) — the output of `askdb introspect`
 - A **bundled JSON file** (`*.bundle.json` or any JSON with `bundled: true`) — the output of `askdb bundle`
 - A direct path to a `schema.json` file, matched in any case (`Schema.json` works too). This loads the enclosing directory, so sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md` apply just as they do for the directory path.
-- Any other JSON file, loaded as the physical layer only. If its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, `loadSchema()` throws `SchemaParseError` instead, because loading the file alone would ignore them: a copy such as `prod-schema.json` would load without its tenant policy. Pass the directory, or pass the file's content to `loadSchemaFromJson()` to load only the physical layer.
+- Any other JSON file, loaded as the physical layer only. If its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, in any case, `loadSchema()` throws `SchemaParseError` instead, because loading the file alone would ignore them: a copy such as `prod-schema.json` would load without its tenant policy. Pass the directory, or pass the file's content to `loadSchemaFromJson()` to load only the physical layer.
+
+The file names `loadSchema()` looks up in a directory are exact: `schema.json`, `tenant-policy.md`, `concepts.md`, `tables/`, and the `.md` extension in `tables/`. A file whose name matches one only when case is ignored, such as `Tenant-Policy.md` or `tables/orders.MD`, throws `SchemaParseError` on every OS, and the error names each rename. On Linux, where file names are case-sensitive, the file would otherwise be skipped, and a skipped `tenant-policy.md` turns tenant enforcement off.
 
 Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy", and the error names the file and the bundle, for example `tenant-policy.md (in /srv/prod.bundle.json)`. A broken `tenant-policy.md` never silently turns tenant enforcement off.
 
@@ -306,6 +308,18 @@ const schema = loadSchemaFromJson(bundleJsonString);
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
 
 The bundle's shape is exported as the `BundledSchemaV2` type: `{ bundled: true, physical, tables, concepts?, tenantPolicy? }`, where `physical` is the `schema.json` object, `tables` maps each `tables/` filename to its raw markdown, and `concepts` and `tenantPolicy` hold the raw `concepts.md` and `tenant-policy.md` when those files exist. `askdb bundle` writes it.
+
+### `readSchemaDirectory(dir)`
+
+```ts
+import { readSchemaDirectory } from "@askdb/core";
+import { writeFileSync } from "node:fs";
+
+const bundle = readSchemaDirectory("./my-app.schema"); // synchronous
+writeFileSync("./my-app.schema.bundle.json", `${JSON.stringify(bundle, null, 2)}\n`);
+```
+
+Reads a schema directory into its bundle form, a `BundledSchemaV2`. `loadSchema()` reads every directory through this function, and `askdb bundle` and `@askdb/enrich`'s `bundleSchemaDirectory()` return it, so `loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir)))` gives the same schema as `loadSchema(dir)`. It follows the directory rules of `loadSchema()`: names must be spelled exactly, an optional file is absent only when the directory doesn't list it, and a listed file that can't be read throws `SchemaParseError`. It validates `schema.json` and returns the markdown files unparsed.
 
 ### `findMentionedNames(text, names)`, `createMentionMatcher(names)` and `sensitiveMentionNames(schema)`
 

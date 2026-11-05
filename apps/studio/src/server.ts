@@ -296,7 +296,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       }
       if (req.method === "GET" && url.pathname === "/api/introspect/status") {
         requireWorkspace(state);
-        return writeJson(res, 200, buildIntrospectionPlanDto());
+        return writeJson(res, 200, await buildIntrospectionPlanDto());
       }
       if (req.method === "POST" && url.pathname === "/api/introspect") {
         if (!isLoopbackRequest(req)) {
@@ -573,8 +573,8 @@ async function handleResync(state: StudioState): Promise<IntrospectRunResponse> 
   };
 }
 
-function buildIntrospectionPlanDto(): IntrospectionPlanDto {
-  const plan = resolveStudioIntrospectionPlan();
+async function buildIntrospectionPlanDto(): Promise<IntrospectionPlanDto> {
+  const plan = await resolveStudioIntrospectionPlan();
   return plan.ok
     ? { ok: true, engine: plan.engine, sourceLabel: plan.sourceLabel }
     : { ok: false, engine: plan.engine, error: plan.error };
