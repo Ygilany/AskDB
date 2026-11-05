@@ -231,7 +231,11 @@ The SQL uses a `:tenant_<root>_ids` placeholder that the scope has no IDs for, s
 
 ### `TenantScopeError: UNESCAPABLE_TENANT_ID`
 
-A tenant ID in the scope contains a backslash, and AskDB was asked to inline it as a literal: `ask()` with `tenantSqlMode: "sql-only"`, or `bindPreparedQuery()` / `askdb.bind()`, whose `sql` always inlines the IDs. No literal form of a backslash reads the same under every server string setting, so AskDB refuses it on every dialect instead of returning SQL whose tenant filter a server could read differently. Use the default `tenantSqlMode: "sql-params"`, which passes tenant IDs as driver parameters, and run `sql` with `tenantParams` (or `unboundSql` with `params`).
+A tenant ID in the scope contains a backslash or a character outside printable ASCII (an accented letter, `¥`, CJK), and AskDB was asked to inline it as a literal: `ask()` with `tenantSqlMode: "sql-only"`, or `bindPreparedQuery()` / `askdb.bind()`, whose `sql` always inlines the IDs. Such a literal can read differently on the server: a backslash depends on its string settings, and a non-ASCII character's bytes depend on the connection charset (`¥` is a backslash under `sjis`). So AskDB refuses it on every dialect instead of returning SQL whose tenant filter a server could read differently. Use the default `tenantSqlMode: "sql-params"`, which passes tenant IDs as driver parameters, and run `sql` with `tenantParams` (or `unboundSql` with `params`). A rebind can't do that yet ([#664](https://github.com/Ygilany/AskDB/issues/664)).
+
+### `TenantScopeError: TENANT_SQL_MODE_REQUIRED`
+
+`ask()` got a custom `AskDialect`, a schema with a tenant policy, and no `tenantSqlMode`. AskDB can't tell which parameter markers a custom dialect's driver takes, so it doesn't guess: the default `$1, $2, …` would be read as money constants on SQL Server and filter to the wrong tenant. Set `tenantSqlMode: "sql-params"` if your driver binds `$1`-style markers, or `tenantSqlMode: "sql-only"` to get the tenant IDs inlined as escaped literals. Built-in dialect ids and `DialectSpec`s don't need it.
 
 ### Driver error: `there is no parameter $1` / `Too few parameter values` after upgrading
 
