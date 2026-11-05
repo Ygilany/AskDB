@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Fixtures shared by the `saveSchemaFile` test files. `tsconfig.build.json` leaves
-// this file out of `dist`; `pnpm lint` type-checks it with the tests.
+// this file out of `dist`.
+
+/** Why a test of POSIX permission bits can't run here, or `false`. */
+export const posixModesUnavailable =
+  process.platform === "win32" ? "POSIX file modes are required (not Windows)" : false;
 
 /**
  * A group, other than the one new files in a temp directory get, that this

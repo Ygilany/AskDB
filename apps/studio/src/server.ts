@@ -1520,7 +1520,7 @@ function appendPlaygroundHistory(
  *   rules `askdb init` writes (plan 043) — unless the schema dir is the project
  *   root, where ignoring `.env` is the project's call, not Studio's.
  * - Existing `.gitignore` without the entry: add the entry at the end and keep
- *   every existing line as it was.
+ *   every existing byte as it was.
  * - Both are saved with `saveSchemaFile()`, so a `.gitignore` that is a symbolic
  *   link is refused, not written through (ADR 0028).
  * - Failure is non-fatal: history still saves.
@@ -1529,15 +1529,14 @@ function ensureSchemaDirGitignore(schemaDir: string): void {
   const gitignorePath = join(schemaDir, ".gitignore");
   try {
     if (existsSync(gitignorePath)) {
-      const content = readFileSync(gitignorePath, "utf8");
-      const lines = content.split(/\r?\n/).map((line) => line.trim());
+      // Kept as bytes: Git matches patterns byte for byte, and a non-UTF-8 file name
+      // in an existing line must survive the rewrite.
+      const content = readFileSync(gitignorePath);
+      const lines = content.toString("utf8").split(/\r?\n/).map((line) => line.trim());
       if (lines.includes(HISTORY_FILE_NAME) || lines.includes(`/${HISTORY_FILE_NAME}`)) return;
-      const separator = content === "" || content.endsWith("\n") ? "" : "\n";
-      saveSchemaFile(
-        schemaDir,
-        ".gitignore",
-        `${content}${separator}# AskDB Studio Playground history (local only)\n${HISTORY_FILE_NAME}\n`,
-      );
+      const separator = content.length === 0 || content.at(-1) === 0x0a ? "" : "\n";
+      const entry = `${separator}# AskDB Studio Playground history (local only)\n${HISTORY_FILE_NAME}\n`;
+      saveSchemaFile(schemaDir, ".gitignore", Buffer.concat([content, Buffer.from(entry, "utf8")]));
       return;
     }
     const lines = [

@@ -1133,6 +1133,23 @@ describe("AskDB Studio server", () => {
     expect(gitignore).not.toContain(".env");
   });
 
+  // Git matches ignore patterns as bytes, so a non-UTF-8 file name (here Latin-1 `é`)
+  // must survive the rewrite, as it did when Studio appended to the file.
+  it("keeps the existing .gitignore bytes when it adds the history entry", async () => {
+    installStudioRuntime();
+    const schemaDir = copyFixture();
+    const original = Buffer.from("# mine\ncaf\xe9.log\n", "latin1");
+    writeFileSync(join(schemaDir, ".gitignore"), original);
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    await postJson(`${baseUrl}/api/history`, { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1" });
+    expect(readFileSync(join(schemaDir, ".gitignore"))).toEqual(
+      Buffer.concat([original, Buffer.from("# AskDB Studio Playground history (local only)\nplayground-history.json\n")]),
+    );
+  });
+
   // A checkout can carry a symbolic link at either file (git stores them), and the
   // Playground writes both on every generate.
   it("refuses to save or delete Playground history through a symbolic link", async () => {

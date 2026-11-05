@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { integrationSuite } from "../../../../../scripts/test-utils/integration.mjs";
 import { saveSchemaFile } from "../../index.js";
-import { otherGroup, otherGroupUnavailable } from "./test-utils.js";
+import { otherGroup, otherGroupUnavailable, posixModesUnavailable } from "./test-utils.js";
 
 let tmp: string;
 let schemaDir: string;
@@ -104,11 +104,8 @@ describe("saveSchemaFile", () => {
 // File modes only mean this on POSIX, and root passes every write-permission check.
 integrationSuite({
   unavailable:
-    process.platform === "win32"
-      ? "POSIX file modes are required (not Windows)"
-      : process.getuid?.() === 0
-        ? "running as root, where every file is writable"
-        : false,
+    posixModesUnavailable ||
+    (process.getuid?.() === 0 ? "running as root, where every file is writable" : false),
 })("saveSchemaFile on a read-only file", () => {
   it("refuses with EACCES and leaves the file unchanged", () => {
     const target = join(schemaDir, "tables", "orders.md");
@@ -122,9 +119,7 @@ integrationSuite({
   });
 });
 
-integrationSuite({
-  unavailable: process.platform === "win32" ? "POSIX file modes are required (not Windows)" : false,
-})("saveSchemaFile and file permission bits", () => {
+integrationSuite({ unavailable: posixModesUnavailable })("saveSchemaFile and file permission bits", () => {
   it("keeps the replaced file's mode", () => {
     const target = join(schemaDir, "tables", "orders.md");
     writeFileSync(target, "Private notes.\n", "utf8");

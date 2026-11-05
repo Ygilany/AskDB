@@ -17,8 +17,9 @@ import {
 import { join } from "node:path";
 
 /**
- * Write `content` to a file inside a schema directory so that no link can redirect
- * the write out of it (ADR 0028). `relativePath` names the file from `schemaDir`
+ * Write `content` (a string, written as UTF-8, or bytes written as given) to a file
+ * inside a schema directory so that no link can redirect the write out of it
+ * (ADR 0028). `relativePath` names the file from `schemaDir`
  * with `/` between its parts (`schema.json`, `tables/orders.md`). Every AskDB writer
  * into a schema directory goes through here: `@askdb/enrich`'s saves, Studio's
  * Playground history and `.gitignore`, and `@askdb/introspect`'s `schema.json`. A
@@ -61,7 +62,11 @@ import { join } from "node:path";
  * may write it) makes the saver its owner. On Windows, the rename fails with `EPERM`
  * while another process holds the target open without delete sharing.
  */
-export function saveSchemaFile(schemaDir: string, relativePath: string, content: string): void {
+export function saveSchemaFile(
+  schemaDir: string,
+  relativePath: string,
+  content: string | Uint8Array,
+): void {
   const refuse = (why: string) =>
     new Error(`Refusing to write ${relativePath} outside the schema directory: ${why}`);
   const dirs = relativePath.split("/");
@@ -103,7 +108,7 @@ export function saveSchemaFile(schemaDir: string, relativePath: string, content:
         const groupKept = keepOwnerAndGroup(fd, existing);
         fchmodSync(fd, groupKept ? mode : modeWhenGroupLost(mode));
       }
-      writeFileSync(fd, content, "utf8");
+      writeFileSync(fd, content);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
