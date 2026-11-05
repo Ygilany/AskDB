@@ -69,6 +69,37 @@ const rebound = bindPreparedQuery(
 
 With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
 
+### Run tenant-scoped SQL with its `tenantParams`
+
+`ask()` now binds tenant IDs as driver parameters by default (`tenantSqlMode: "sql-params"`, [#231](https://github.com/Ygilany/AskDB/issues/231), ADR 0024). If you pass `tenantScope` without `tenantSqlMode`, `result.sql` holds your dialect's driver markers (`$1`, `?` or `@p0`) where the tenant IDs used to be inlined, and the IDs are in `result.tenantParams`. Run each SQL form with its own params array:
+
+```ts
+// Before
+await conn.execute(result.sql);
+
+// After
+if (result.unboundSql && result.params) {
+  await conn.execute(result.unboundSql, result.params); // params already holds the tenant IDs
+} else {
+  await conn.execute(result.sql, result.tenantParams ?? []);
+}
+```
+
+- **Never concatenate `params` and `tenantParams`.** Running the new `sql` without its params fails at the driver (Postgres: `there is no parameter $1`; better-sqlite3: `Too few parameter values`; MySQL: a syntax error). It never returns other tenants' rows.
+- **To keep the IDs inlined,** set `tenantSqlMode: "sql-only"`.
+- **A custom `AskDialect` has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call. Set `"sql-params"` if your driver binds `$1`-style markers, or `"sql-only"`: on SQL Server, `$1` is a money constant. A value other than these two throws the same error on every dialect.
+- **`@askdb/client`'s `askdb.ask()`** forwards to `ask()`, so it changes the same way. Studio's Playground now starts in `sql-params`.
+
+[Executing the result](/reference/core-api/#executing-the-result) describes both SQL forms.
+
+### Use `sql-params` for tenant IDs outside printable ASCII
+
+Wherever AskDB inlines a tenant ID, the ID must now be printable ASCII without a backslash, on every dialect ([#360](https://github.com/Ygilany/AskDB/issues/360), [#371](https://github.com/Ygilany/AskDB/issues/371), ADR 0024). That covers `tenantSqlMode: "sql-only"` and the `sql` that `bindPreparedQuery()` returns. Any other ID throws `TenantScopeError` (`UNESCAPABLE_TENANT_ID`). Before, such an ID could end its literal early on a server whose string settings or connection charset differ from the dialect's, and the query lost its tenant filter.
+
+- **With `ask()`,** use `tenantSqlMode: "sql-params"`, the default, which passes any ID as a driver parameter.
+- **`bindPreparedQuery()` and `askdb.bind()`** always inline the tenant IDs in their `sql`, so they can't rebind such an ID yet ([#664](https://github.com/Ygilany/AskDB/issues/664)).
+- **A control character in a tenant ID** now throws this `TenantScopeError` instead of `QueryParameterError`.
+
 ### Load a schema directory, not a renamed copy of its JSON file
 
 A JSON file inside a schema directory must be named `schema.json` ([#330](https://github.com/Ygilany/AskDB/issues/330), ADR 0019). If you pass `loadSchema()` any other JSON file that has `tenant-policy.md`, `tables/` or `concepts.md` beside it, such as `prod-schema.json`, it now throws `SchemaParseError`. Before, it loaded the file without the tenant policy and without the `sensitive: true` marks in `tables/*.md`. A bundle, a JSON file with `bundled: true` such as `prod.bundle.json`, still loads as before. To fix it, do one of these:
