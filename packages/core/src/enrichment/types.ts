@@ -22,6 +22,18 @@ export type EnrichmentCandidate = {
   text: string;
 };
 
+/** How the enrichment prompt treats sensitive columns. */
+export type EnrichmentPromptOptions = {
+  /**
+   * When true, sensitive columns and every column of a sensitive table are left out of the
+   * prompt, by the same rule as `ask()`'s `omitSensitiveIdentifiersFromNlToSqlPrompt`; a
+   * sensitive table keeps its name. A target that is itself a sensitive column is refused with
+   * `SensitiveEnrichmentTargetError`. Hosts pass their `modes.omitSensitiveFromPrompt` here.
+   * Default false: sensitive columns are listed, tagged `(sensitive)`.
+   */
+  omitSensitiveIdentifiersFromPrompt?: boolean;
+};
+
 /**
  * Optional context: neighboring tables (joined via FK) and the schema id, so
  * the model can ground suggestions beyond the immediate table.

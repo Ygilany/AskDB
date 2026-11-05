@@ -90,11 +90,11 @@ describe("AskDB Studio server", () => {
   });
 
   /**
-   * Starts Studio on the clinic schema with OpenAI pointed at a fake endpoint, asks for a
-   * tenant-policy draft, and returns the draft and the text of the prompt the model received.
+   * Starts Studio on the clinic schema with OpenAI pointed at a fake endpoint that answers
+   * every call with `reply`. `model.requests` holds the text of each prompt the model received.
    */
-  async function suggestTenantPolicyFor(options: { omitSensitiveFromPrompt: boolean }) {
-    const model = createModelServer(JSON.stringify(CANNED_TENANT_POLICY));
+  async function startClinicStudio(options: { omitSensitiveFromPrompt: boolean; reply: string }) {
+    const model = createModelServer(options.reply);
     modelServers.push(model.server);
     const modelBaseUrl = await listen(model.server);
     installStudioRuntime({}, {
@@ -108,7 +108,15 @@ describe("AskDB Studio server", () => {
     });
     const server = createStudioServer({ schema: writeClinicSchema() });
     servers.push(server);
-    const baseUrl = await listen(server);
+    return { baseUrl: await listen(server), model };
+  }
+
+  /** Asks the clinic Studio for a tenant-policy draft; returns the draft and the prompt the model received. */
+  async function suggestTenantPolicyFor(options: { omitSensitiveFromPrompt: boolean }) {
+    const { baseUrl, model } = await startClinicStudio({
+      ...options,
+      reply: JSON.stringify(CANNED_TENANT_POLICY),
+    });
 
     const draft = await postJson(`${baseUrl}/api/suggest-tenant-policy`, {});
     expect(model.requests).toHaveLength(1);
@@ -264,6 +272,85 @@ describe("AskDB Studio server", () => {
     for (const text of ["deduplicated by", "inpatients", "matched to the registry", "readmissions"]) {
       expect(prompt).not.toContain(text);
     }
+  });
+
+  // #601: the Playground must apply modes.omitSensitiveFromPrompt, as @askdb/client does.
+  it("generates Playground SQL without listing any sensitive column when omitSensitiveFromPrompt is on", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: true,
+      reply: "SELECT count(*) FROM public.patients",
+    });
+
+    const generated = await postJson(`${baseUrl}/api/ask`, { question: "How many patients are there?" });
+
+    expect(generated.sql).toContain("count(*)");
+    expect(model.requests).toHaveLength(1);
+    const prompt = model.requests[0];
+    // Sensitive in schema.json, escalated by table front-matter, and inherited from a sensitive table.
+    for (const column of ["diagnosis_code", "salary_band", "ledger_key"]) {
+      expect(prompt).not.toContain(column);
+    }
+    // The schema's prose also names ssn_digits; withholding that text is #374's.
+    expect(prompt).not.toMatch(/- ssn_digits /);
+    expect(prompt).toContain("payroll_ledger");
+    expect(prompt).toContain("admitted_on");
+  });
+
+  // #625: AI enrichment suggestions follow the same rule as ask().
+  it("suggests enrichment without sending any sensitive column when omitSensitiveFromPrompt is on", async () => {
+    const { baseUrl, model } = await startClinicStudio({ omitSensitiveFromPrompt: true, reply: "A suggestion." });
+
+    for (const tableId of ["table:public.patients", "table:public.payroll_ledger"]) {
+      await postJson(`${baseUrl}/api/suggest`, { source: { scope: "table", tableId, field: "description" } });
+    }
+
+    expect(model.requests).toHaveLength(2);
+    const [patients, payrollLedger] = model.requests;
+    // Sensitive in schema.json, and escalated by table front-matter.
+    for (const column of ["ssn_digits", "diagnosis_code"]) {
+      expect(patients).not.toContain(column);
+    }
+    expect(patients).toContain("admitted_on");
+    // A sensitive table keeps its name, as in ask()'s prompt, but none of its columns.
+    expect(payrollLedger).toContain("public.payroll_ledger");
+    for (const column of ["ledger_key", "salary_band"]) {
+      expect(payrollLedger).not.toContain(column);
+    }
+  });
+
+  it("suggests enrichment with front-matter sensitivity tagged when omitSensitiveFromPrompt is off", async () => {
+    const { baseUrl, model } = await startClinicStudio({ omitSensitiveFromPrompt: false, reply: "A suggestion." });
+
+    await postJson(`${baseUrl}/api/suggest`, {
+      source: { scope: "table", tableId: "table:public.patients", field: "description" },
+    });
+
+    const [prompt] = model.requests;
+    // Sensitive in schema.json, and escalated by table front-matter (Studio's Sensitivity tab).
+    for (const column of ["ssn_digits", "diagnosis_code"]) {
+      expect(prompt).toMatch(new RegExp(`- ${column} .*sensitive`));
+    }
+    expect(prompt).not.toMatch(/- admitted_on .*sensitive/);
+  });
+
+  it("refuses a suggestion for a sensitive column when omitSensitiveFromPrompt is on, and calls no model", async () => {
+    const { baseUrl, model } = await startClinicStudio({ omitSensitiveFromPrompt: true, reply: "A suggestion." });
+
+    const response = await postRaw(`${baseUrl}/api/suggest`, {
+      source: {
+        scope: "column",
+        tableId: "table:public.patients",
+        columnId: "table:public.patients#diagnosis_code",
+        field: "description",
+      },
+    });
+
+    expect(response.status).toBe(400);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toContain("modes.omitSensitiveFromPrompt");
+    // Error messages never name a sensitive identifier.
+    expect(message).not.toContain("diagnosis_code");
+    expect(model.requests).toHaveLength(0);
   });
 
   it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {

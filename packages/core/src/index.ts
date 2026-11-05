@@ -148,6 +148,7 @@ export {
 export type {
   EnrichmentCandidate,
   EnrichmentContext,
+  EnrichmentPromptOptions,
   EnrichmentTarget,
   SuggestEnrichmentDeps,
 } from "./enrichment/index.js";
