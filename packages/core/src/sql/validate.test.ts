@@ -271,6 +271,9 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     [`SELECT 1 AS a #@:DELETE FROM t`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 #1#:SELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 #$a:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT (1):SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 1:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a.:SELECT 2`, "SQL_MULTI_STATEMENT"],
     // ASCII control characters are not plain code.
     [`SELECT 1\x00SELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1\x7fSELECT 2`, "SQL_MULTI_STATEMENT"],
@@ -372,7 +375,7 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
   });
 
   // Each statement returned one result set on SQL Server 2022 (#327), except the last
-  // row, whose `:name` placeholders AskDB binds before the SQL runs.
+  // two rows, whose `:name` placeholders AskDB binds before the SQL runs.
   it.each([
     [`SELECT 1 AS id UNION ALL SELECT 2 EXCEPT SELECT 3 INTERSECT SELECT 4`],
     [`WITH x AS (SELECT 1 AS a), y (b) AS (SELECT 2) SELECT a, b FROM x CROSS JOIN y`],
@@ -430,6 +433,7 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     // A colon that is no label: `::` and AskDB's `:name` placeholders.
     [`SELECT geography::Point(47.6, -122.3, 4326).STAsText() AS p`],
     [`SELECT id FROM t WHERE org_id IN (:tenant_org_ids) AND id = :id`],
+    [`SELECT id FROM t WHERE a=:id AND b>=:lo AND c+:d>1 AND e IN (1,:f)`],
   ])("accepts the single SQL Server statement %s", (sql) => {
     accept(SQLSERVER_DIALECT, sql);
   });

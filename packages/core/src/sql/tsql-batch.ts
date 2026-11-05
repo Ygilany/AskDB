@@ -16,7 +16,7 @@
  * - a top-level `(SELECT …` right after a complete expression, such as
  *   `SELECT 1 (SELECT 2)`. After a keyword, an operator, a comma or a function name
  *   the bracket opens a subquery instead;
- * - a `name:` label.
+ * - a label: a `:` written directly against anything but `(`, a comma or an operator.
  *
  * It also rejects code SQL Server may split into tokens differently from the lexer
  * ({@link findAmbiguousTsqlText}): rather than copy every corner of SQL Server's
@@ -30,7 +30,7 @@ export type TsqlStatementBoundary = {
   token: SqlToken;
   /**
    * `select`: a top-level SELECT that continues nothing. `query`: a top-level
-   * `(SELECT …` after a complete expression. `label`: a `name:` label.
+   * `(SELECT …` after a complete expression. `label`: a `:` that ends a label.
    */
   kind: "select" | "query" | "label";
 };
@@ -226,6 +226,7 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
     if (isPunct(t, ")")) {
       const openIndex = open.pop();
       if (openIndex !== undefined) opener.set(i, openIndex);
+      if (open.length === 0 && startsLabel(t, tokens[i + 1])) return { token: t, kind: "label" };
       continue;
     }
     if (!headSeen) {

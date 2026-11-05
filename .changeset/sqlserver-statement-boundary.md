@@ -11,8 +11,8 @@
   - on SQL Server, an unquoted name that is one of the new denylist words; all but `throw` are T-SQL reserved words already, so SQL Server itself needed them quoted;
   - on SQL Server, a parenthesized subquery after a token the check doesn't list as starting an expression, such as an ODBC escape `{fn …}`;
   - on SQL Server, code outside strings and quoted names that isn't plain, as above, such as a bare `$` or a money sign other than `$`;
-  - on SQL Server, a `:` written directly against a name or symbol, which now counts as a label (`#@:`).
-- **Now passes on SQL Server:** a denylist word joined to a name through `@` (`a@delete`), because SQL Server reads the whole thing as one name.
+  - on SQL Server, a `:` written directly against anything but `(`, a comma or an operator (a name, a number, a string, a quoted name, a `)` or a symbol such as `#@`), which now counts as a label; AskDB's `:name` placeholders after `=`, `(` or `,` still pass;
   - on a dialect id that is no built-in engine: those names and shapes, plus MySQL `IF(…)`, Postgres `LATERAL (SELECT …)` and `ARRAY(SELECT …)`, and unquoted names such as `open` or `close`.
+- **Now passes on SQL Server:** a denylist word joined to a name through `@` (`a@delete`), because SQL Server reads the whole thing as one name.
 - A second statement that starts with `FETCH`, or with `END`, `GET` or `MOVE CONVERSATION`, still passes, because those words also appear in ordinary queries or as column names. Studio's runtime guard for SQL Server batches is #373.
 - Docs: Safety boundaries, Studio, Troubleshooting and the HTTP API reference describe the SQL Server check and what it still misses.
