@@ -22,6 +22,7 @@ export type {
   AskDbRuntimeStudioConfig,
 } from "./runtime-config.js";
 export {
+  isAskDbRuntimeInitialized,
   mergeAskDbFlatIntoEnvMap,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
