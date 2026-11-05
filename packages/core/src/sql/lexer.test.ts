@@ -52,7 +52,7 @@ describe("lexSql", () => {
   });
 
   it("ends SQL Server literals and names where SQL Server does", () => {
-    expect(kinds("0xSELECT 0x1F 1ESELECT 1E5 $1SELECT $5.00 $action €SELECT a b a​b", SQLSERVER_LEXER)).toEqual([
+    expect(kinds("0xSELECT 0x1F 1ESELECT 1E5 $1SELECT $5.00 $action \u20acSELECT a\u00a0b a\u200bb a\ufeffb", SQLSERVER_LEXER)).toEqual([
       "number:0x",
       "word:SELECT",
       "number:0x1F",
@@ -63,24 +63,25 @@ describe("lexSql", () => {
       "word:SELECT",
       "number:$5.00",
       "parameter:$action",
-      "number:€",
+      "number:\u20ac",
       "word:SELECT",
       "word:a",
       "word:b",
       "word:a",
       "word:b",
+      "word:a\ufeffb",
     ]);
   });
 
   it.each([POSTGRES_LEXER, MYSQL_LEXER, SQLITE_LEXER, GENERIC_LEXER])("keeps $id's reading of the SQL Server forms", (profile) => {
-    expect(kinds("0xSELECT 1ESELECT $1SELECT €SELECT a b", profile)).toEqual([
+    expect(kinds("0xSELECT 1ESELECT $1SELECT \u20acSELECT a\u00a0b", profile)).toEqual([
       "number:0",
       "word:xSELECT",
       "number:1",
       "word:ESELECT",
       "parameter:$1SELECT",
-      "word:€SELECT",
-      "word:a b",
+      "word:\u20acSELECT",
+      "word:a\u00a0b",
     ]);
   });
 

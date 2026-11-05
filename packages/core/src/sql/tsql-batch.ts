@@ -17,6 +17,10 @@
  *   `SELECT 1 (SELECT 2)`. After a keyword, an operator, a comma or a function name
  *   the bracket opens a subquery instead;
  * - a `name:` label.
+ *
+ * It also rejects code SQL Server may split into tokens differently from the lexer
+ * ({@link findAmbiguousTsqlText}): rather than copy every corner of SQL Server's
+ * tokenizer, the check accepts plain code only.
  */
 import type { SqlToken } from "./lexer.js";
 import { SQLSERVER_RESERVED_WORDS } from "./reserved-words.js";
@@ -56,6 +60,54 @@ const RESERVED_FUNCTIONS = new Set([
 const EXPRESSION_PUNCTUATION = new Set(["(", ",", "=", "<", ">", "+", "-", "*", "/", "%", "&", "|", "^", "~", ".", "::"]);
 
 const RESERVED = new Set(SQLSERVER_RESERVED_WORDS);
+
+/**
+ * A character allowed in T-SQL code outside strings and quoted names: printable ASCII
+ * except `\`, tab, line feed, carriage return, and Unicode letters, combining marks
+ * and decimal digits.
+ */
+const PLAIN_CODE = /[\t\n\r\x20-\x5b\x5d-\x7e\p{L}\p{M}\p{Nd}]/u;
+const MONEY_SIGN = /^\p{Sc}$/u;
+
+/**
+ * Code SQL Server may split into tokens differently from the lexer, described for an
+ * error message, or `undefined`. Text inside strings and quoted identifiers is not
+ * checked; `tokens` holds no comments. Fails closed on:
+ *
+ * - a character outside {@link PLAIN_CODE}: Unicode whitespace and format characters
+ *   (U+00A0, U+200B, U+FEFF), symbols, currency signs other than `$`, `\` (a money
+ *   sign to SQL Server) and ASCII control characters;
+ * - a money sign with no digits after it (`$ .5` is one money literal to SQL Server);
+ * - a number written directly against a word or variable (`1ESELECT`, `0xSELECT`).
+ *
+ * Model-written SQL contains none of these.
+ */
+export function findAmbiguousTsqlText(sql: string, tokens: readonly SqlToken[]): string | undefined {
+  let from = 0;
+  const scanTo = (end: number): string | undefined => {
+    for (const ch of sql.slice(from, end)) {
+      if (PLAIN_CODE.test(ch)) continue;
+      if (ch === "\\") return "the character '\\'";
+      return `the character U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
+    }
+    return undefined;
+  };
+  for (const [i, t] of tokens.entries()) {
+    if (t.kind === "string" || t.kind === "quoted_identifier") {
+      const found = scanTo(t.start);
+      if (found) return found;
+      from = t.end;
+      continue;
+    }
+    if (t.kind !== "number") continue;
+    if (MONEY_SIGN.test(t.text)) return `the money sign '${t.text}'`;
+    const next = tokens[i + 1];
+    if (next?.start === t.end && (next.kind === "word" || next.kind === "parameter")) {
+      return `'${t.text}${next.text}', a number written against a word`;
+    }
+  }
+  return scanTo(sql.length);
+}
 const SET_OPERATORS = new Set(["union", "except", "intersect"]);
 
 /**
@@ -107,7 +159,7 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
    * subquery. Fails closed: anything not listed (a value, a name, `}`, an unknown
    * keyword) ends the statement, and a `(SELECT …` after it starts a second one.
    */
-  const continuesExpression = (j: number): boolean => {
+  const expressionMayFollow = (j: number): boolean => {
     const t = tokens[j];
     if (!t) return true;
     switch (t.kind) {
@@ -141,7 +193,7 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
     const callable =
       (name?.kind === "quoted_identifier" && isPunct(tokens[i - 2], ".")) ||
       (name?.kind === "word" && (!RESERVED.has(name.lower) || RESERVED_FUNCTIONS.has(name.lower)));
-    return callable && continuesExpression(i - 2);
+    return callable && expressionMayFollow(i - 2);
   };
 
   const open: number[] = [];
@@ -158,7 +210,7 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
           // A CTE body.
         } else if (mainPending && isPunct(prev, ")")) {
           mainPending = false;
-        } else if (!continuesExpression(i - 1) && !opensCallArgument(i)) {
+        } else if (!expressionMayFollow(i - 1) && !opensCallArgument(i)) {
           return { token: t, kind: "query" };
         }
       }

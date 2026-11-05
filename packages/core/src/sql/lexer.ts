@@ -19,7 +19,8 @@
  * | `#` line comment          | —        | yes                    | —          | —      |
  * | `--` line comment         | yes      | only before whitespace | yes        | yes    |
  * | nested `/* … *\/`         | yes      | no (`/*! … *\/` runs)  | yes        | no     |
- * | `0x`, `1E`, `$`/`€` money  | —        | —                      | literal (`tsqlLiterals`) | — |
+ * | `0x`, `1E`, `$`/`€` money | —        | —                      | literal (`tsqlLiterals`) | — |
+ * | Unicode space ends a name | —        | —                      | yes, not U+FEFF | —  |
  *
  * The lexer never throws: a string, quoted identifier, or comment that runs off the end
  * of the input is returned with `unterminated: true` so callers can fail closed.
@@ -53,10 +54,11 @@ export type SqlLexerProfile = {
   /** SQL Server `#temp` / `##temp` table names. */
   hashIdentifiers: boolean;
   /**
-   * SQL Server literal and whitespace forms: `0x` with no hex digits, an exponent with no
-   * digits (`1E`, `1E+`), money literals that start with a currency symbol (`$`, `$1.5`,
-   * `€`), and U+200B and U+0085 as whitespace. SQL Server ends the literal there, so a
-   * keyword written right after one must be its own token.
+   * SQL Server's token ends: `0x` with no hex digits, an exponent with no digits (`1E`,
+   * `1E+`), and money literals that start with a currency symbol (`$`, `$1.5`, `€`) are
+   * complete literals; U+200B and U+0085 are whitespace; and a name or variable ends at
+   * any whitespace character except U+FEFF. A keyword written right after one of these
+   * is its own token, as it is to SQL Server.
    */
   tsqlLiterals: boolean;
 };
@@ -233,9 +235,9 @@ const HEX = /[0-9A-Fa-f]/;
 /** Currency symbols. SQL Server starts a money literal with one (its list is a subset). */
 const CURRENCY = /\p{Sc}/u;
 /**
- * Characters SQL Server reads as whitespace that `\s` does not match. With `\s` they are
- * the only characters at or above U+0080 that end a T-SQL name or number (every BMP
- * character probed on SQL Server 2022, #327).
+ * Characters SQL Server reads as whitespace that `\s` does not match. With `\s` minus
+ * U+FEFF they are the only characters at or above U+0080 that end a T-SQL name or
+ * number (every BMP character probed on SQL Server 2022, #327); U+FEFF continues a name.
  */
 const TSQL_EXTRA_SPACE = /[\u200b\u0085]/;
 const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
@@ -261,7 +263,8 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
 
   const isSpace = (c: string): boolean => /\s/.test(c) || (profile.tsqlLiterals && TSQL_EXTRA_SPACE.test(c));
   /** `WORD_CHAR`, except that SQL Server ends a name at Unicode whitespace. */
-  const isWordChar = (c: string): boolean => WORD_CHAR.test(c) && !(profile.tsqlLiterals && isSpace(c));
+  const isWordChar = (c: string): boolean =>
+    WORD_CHAR.test(c) && !(profile.tsqlLiterals && c !== "\ufeff" && isSpace(c));
 
   const push = (
     kind: SqlTokenKind,

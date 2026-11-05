@@ -8,7 +8,7 @@ import {
   type SqlLexerProfile,
   type SqlToken,
 } from "./lexer.js";
-import { findTsqlStatementBoundary } from "./tsql-batch.js";
+import { findAmbiguousTsqlText, findTsqlStatementBoundary } from "./tsql-batch.js";
 
 /**
  * Keywords rejected in every dialect. Matched against unquoted word tokens only, so
@@ -55,8 +55,9 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 3. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
  * 4. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
  * 5. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
- * 6. `SQL_MULTI_STATEMENT`, SQL Server lexer only — a second statement written without
- *    `;`, which T-SQL doesn't need (see `tsql-batch.ts`).
+ * 6. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
+ *    built-in engine) — a second statement written without `;`, which T-SQL doesn't
+ *    need, or code SQL Server may split differently from the lexer (see `tsql-batch.ts`).
  * 7. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
  * 8. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
@@ -153,6 +154,14 @@ function checkWithProfile(
   }
 
   if (profile.id === "sqlserver") {
+    const ambiguous = findAmbiguousTsqlText(sql, tokens);
+    if (ambiguous) {
+      throw validationError(
+        "SQL_MULTI_STATEMENT",
+        `Multiple SQL statements are not allowed: SQL Server may split code at ${ambiguous}, so the check can't tell where one statement ends.`,
+        "Separate keywords, names and numbers with ASCII spaces, and keep other characters inside string literals or [bracketed] names.",
+      );
+    }
     const statement = isPunct(tokens[tokens.length - 1], ";") ? tokens.slice(0, -1) : tokens;
     const boundary = findTsqlStatementBoundary(statement);
     if (boundary) {

@@ -237,11 +237,21 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     [`SELECT \u20acSELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1\u200bSELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1\u0085SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // Code outside strings and quoted names must be plain, since SQL Server may split
+    // statements at anything else: U+FEFF continues a name there, `$ .5` is money.
+    [`SELECT 1 a\ufeffunion SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a\ufefffrom (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $ . (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT \\. (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $ .x((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 + \u20ac . (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 AS a\u00a0b`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1x AS a`, "SQL_MULTI_STATEMENT"],
     // …and inside a name or a variable, where it ends the token.
     [`SELECT 1 a\u00a0SELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 a\u200bSELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT @@spid\u3000SELECT 2`, "SQL_MULTI_STATEMENT"],
-    [`SELECT 1 a\u2028PRINT 'x'`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 a\u2028PRINT 'x'`, "SQL_MULTI_STATEMENT"],
     // After a leading WITH list's main query, and before a trailing `;`.
     [`WITH x AS (SELECT 1 a) SELECT a FROM x SELECT 2`, "SQL_MULTI_STATEMENT"],
     [`WITH x AS (SELECT 1 a) SELECT a FROM x (SELECT 2)`, "SQL_MULTI_STATEMENT"],
@@ -376,6 +386,8 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     [`SELECT name FROM sys.objects ORDER BY name OFFSET 0 ROWS FETCH FIRST (SELECT 1) ROWS ONLY`],
     [`SELECT 1 AS offset ORDER BY offset OFFSET (SELECT 0) ROWS`],
     [`SELECT SYSDATETIMEOFFSET() AT TIME ZONE (SELECT 'UTC') AS z`],
+    // Unicode letters in names, any text in strings and quoted names, and money with digits.
+    [`SELECT N'caf\u00e9 \u20ac\u00a0' AS [n\u00e9e \u2028], 1 AS \u00e9t\u00e9, $5.00 AS m`],
     [`SELECT 1 AS a, ((SELECT 1)) AS b`],
     [`SELECT 1 AS a WHERE 1 IN ((SELECT 1))`],
     [`SELECT COALESCE((SELECT 1), 0) AS v`],
@@ -426,6 +438,9 @@ describe("validateSelectSql — unknown dialect ids lex conservatively", () => {
       "SELECT id FROM t WHERE x = 'a'",
     );
     const materialized = "WITH x AS MATERIALIZED (SELECT 1 AS a) SELECT a FROM x";
+    // AskDB binds an unknown id's parameters as $1, $2 (`markerStyleForDialect`).
+    const dollarParams = "SELECT id FROM t WHERE id = $1 AND org IN ($2, $3)";
+    expect(validateSelectSql(legacy, dollarParams)).toBe(dollarParams);
     expect(validateSelectSql(legacy, materialized)).toBe(materialized);
   });
 });
