@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createMentionMatcher, findMentionedNames, type MentionName } from "./mentions.js";
+import { createMentionMatcher, findMentionedNames, sensitiveMentionNames, type MentionName } from "./mentions.js";
+import type { NormalizedSchemaV2, NormalizedV2Column } from "./normalized.js";
 
 const orgId = { table: "users", column: "org_id" };
 
@@ -51,15 +52,84 @@ describe("findMentionedNames", () => {
 
 describe("createMentionMatcher", () => {
   it("answers mentionsAny the same way find does", () => {
-    const matcher = createMentionMatcher(["email", orgId]);
-    for (const text of ["filter by email", "read users.org_id", "read org_id", "users. Org_id", ""]) {
+    // Two columns of one table, one a prefix of the other, and the same column under another table.
+    const org = { table: "users", column: "org" };
+    const matcher = createMentionMatcher(["email", orgId, org, { table: "accounts", column: "org_id" }]);
+    for (const text of [
+      "filter by email",
+      "read users.org_id",
+      "read users.org",
+      "read users.orgx",
+      'read "users" . [org]',
+      "read accounts.org_id",
+      "read org_id",
+      "users. Org_id",
+      "",
+    ]) {
       expect(matcher.mentionsAny(text)).toBe(matcher.find(text).length > 0);
     }
+  });
+
+  it("costs about the same for 30 sensitive tables whether each has 1 column or 30", () => {
+    // 30 tables of `{ table, column }` names; texts that name none. The cost must follow the number
+    // of tables, not of columns: one alternative per name made 900 names about 30 times slower than 30.
+    const names = (columns: number) =>
+      Array.from({ length: 30 * columns }, (_, i) => ({ table: `t${i % 30}`, column: `col_${Math.floor(i / 30)}` }));
+    const texts = Array.from({ length: 20_000 }, (_, i) => `the t${i % 30} order total for region ${i}`);
+    const fastest = (matcher: ReturnType<typeof createMentionMatcher>) => {
+      let best = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        for (const text of texts) if (matcher.mentionsAny(text)) throw new Error(`unexpected mention in ${text}`);
+        best = Math.min(best, performance.now() - started);
+      }
+      return best;
+    };
+    const oneColumnEach = fastest(createMentionMatcher(names(1)));
+    const thirtyColumnsEach = fastest(createMentionMatcher(names(30)));
+    expect(thirtyColumnsEach / oneColumnEach).toBeLessThan(5);
   });
 
   it("mentions nothing for an empty list or empty names", () => {
     expect(createMentionMatcher([]).mentionsAny("anything, at all")).toBe(false);
     expect(createMentionMatcher([""]).mentionsAny("anything, at all")).toBe(false);
     expect(createMentionMatcher([{ table: "", column: "x" }]).mentionsAny("read .x, at all")).toBe(false);
+  });
+});
+
+describe("sensitiveMentionNames", () => {
+  const col = (name: string, sensitive: boolean, extra: Partial<NormalizedV2Column> = {}): NormalizedV2Column => ({
+    id: `col:${name}`,
+    name,
+    type: "text",
+    nullable: true,
+    primaryKey: false,
+    sensitive,
+    ...extra,
+  });
+
+  it("lists marked columns bare and table-inherited columns qualified, across the whole schema (ADR 0017)", () => {
+    const schema: NormalizedSchemaV2 = {
+      schemaId: "s",
+      warnings: [],
+      tables: [
+        { id: "t:customers", name: "customers", schema: "public", sensitive: false, columns: [col("id", false), col("email", true)] },
+        {
+          id: "t:users",
+          name: "users",
+          schema: "public",
+          sensitive: true,
+          columns: [
+            col("org_id", true, { sensitiveFromTable: true }),
+            // Marked itself as well as through its table: bare.
+            col("email", true),
+            // Normalized without the provenance field: the conservative, bare reading.
+            col("ssn", true),
+          ],
+        },
+        { id: "t:audit", name: "audit", schema: "public", sensitive: false, tracked: false, columns: [col("api_key", true)] },
+      ],
+    };
+    expect(sensitiveMentionNames(schema)).toEqual(["email", { table: "users", column: "org_id" }, "ssn", "api_key"]);
   });
 });
