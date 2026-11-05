@@ -1,8 +1,8 @@
 /**
  * The lab's model: a small OpenAI-compatible HTTP server that answers from cassettes,
  * so the lab runs with no API key. Any OpenAI client works against it; the lab points
- * `createOpenAI({ baseURL })` (the raw-model path) and `@askdb/ai-openai` configured
- * with `providerConfig.openai.baseUrl` (the adapter path) at it.
+ * `createOpenAI({ baseURL })` (the raw-model path) and `createAskDb`'s built-in `openai`
+ * provider configured with `providerConfig.openai.baseUrl` (the adapter path) at it.
  *
  *   POST /<dialect>/v1/responses          the Responses API, which `openai(model)` uses (non-streaming)
  *   POST /<dialect>/v1/chat/completions   the Chat Completions API, which `openai.chat(model)` uses

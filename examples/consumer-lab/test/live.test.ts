@@ -25,7 +25,7 @@
  * Contract: the full path with a real provider works on every engine: the prompt goes out over
  * the network, and the reply comes back and is extracted, validated, bound and executed, through
  * the raw-model path (`createOpenAI()` → `ask()`, `guides/bring-your-own-model.mdx`) and the
- * adapter path (`createAskDb` with `@askdb/ai-openai` from config, `reference/client-api.mdx`).
+ * adapter path (`createAskDb` with its built-in `openai` provider from config, `reference/client-api.mdx`).
  * And AskDB's guarantees hold for SQL a real model writes: tenant scoping
  * (`guides/multi-tenancy.mdx`) and strict sensitive-column checks
  * (`docs/contracts/sensitive-fields-and-modes.md`), as well as read-only validation.
@@ -40,15 +40,14 @@
  *
  * The tenant and sensitive questions are asked through the raw path only: their enforcement is
  * in `ask()`, which both paths share, and the catalog questions already cover the adapter path.
- * The adapter path uses `@askdb/ai-openai`, deprecated on `main` but the documented adapter on
- * the releases the lab also targets (`npm:latest`), as `lab ask --via client` does.
+ * The adapter path uses `createAskDb`'s built-in `openai` provider, as `lab ask --via client` does;
+ * a target whose client has none reports it `n/a` (`client-built-in-providers`).
  * A tenant answer whose columns differ from the oracle's can't be checked for a leak from its
  * rows; its miss says the scope is unchecked.
  *
  * Needs the fixture, an installed lab, `OPENAI_API_KEY` (shell or `.env.live`), and the
  * capabilities the replay suites need for the same questions.
  */
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -107,7 +106,7 @@ interface Asked {
 function askLive(via: Via, dialect: SupportedDialect, question: string, schemaDir: string, extras = {}): Asked {
   if (via === "client") {
     // The dialect is passed explicitly: MariaDB is introspected with the MySQL engine.
-    const answer = createAskDb({ config: getAskDbRuntimeConfig(), providers: [openaiProvider], schema: { path: schemaDir }, dialect }).ask(question);
+    const answer = createAskDb({ config: getAskDbRuntimeConfig(), schema: { path: schemaDir }, dialect }).ask(question);
     return { answer, reply: () => null };
   }
   const { model, reply } = liveModel(settings);
@@ -156,6 +155,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
     "live-%s: through the %s path, the live model's SQL returns the oracle's rows",
     async ([id, via, text], ctx) => {
       needsCapability(ctx, "cli-introspect-engine");
+      if (via === "client") needsCapability(ctx, "client-built-in-providers");
       const asked = askLive(via, dialect, text, ensureArtifact(dialect));
       report(ctx, dialect, `live-${id}`, via, await graded(gradeCatalogAnswer(dialect, id, await settle(asked.answer))), asked.reply());
     },

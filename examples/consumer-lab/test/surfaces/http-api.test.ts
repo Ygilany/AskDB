@@ -46,7 +46,6 @@ import { randomUUID } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
@@ -155,13 +154,14 @@ async function promptOf(dialect: SupportedDialect, run: () => Promise<unknown>):
  */
 function askLibrary(dialect: SupportedDialect, question: string) {
   bootstrapAskDbEnv({ cwd: LAB_ROOT });
-  const askdb = createAskDb({ config: getAskDbRuntimeConfig(), providers: [openaiProvider], schema: { path: ensureArtifact(dialect) } });
+  const askdb = createAskDb({ config: getAskDbRuntimeConfig(), schema: { path: ensureArtifact(dialect) } });
   const model = createOpenAI({ baseURL: replay.baseURL(dialect), apiKey: "lab-replay-no-key" })("gpt-4o-mini");
   return askdb.ask(question, { model });
 }
 
 describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] http-ask", (dialect) => {
   it("POST /ask answers 200 { ok, correlationId, sql, usage } with the model's SQL, from the prompt the library builds", async (ctx) => {
+    needsCapability(ctx, "client-built-in-providers");
     const http = await labServer(ctx, dialect);
     const question = QUESTIONS.find((q) => q.id === "top-paid-agencies")!;
     let reply!: HttpReply;

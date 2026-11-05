@@ -52,8 +52,9 @@ The first cases: once a release includes the change, the capability's `n/a` cell
 | `subtree-resolver` | #270 (fixes #232) |
 | `tenant-driver-markers` | #197 (fixes #231) |
 | `tenant-predicate-required` | #341 (fixes #315) |
+| `client-built-in-providers` | #198 (`@askdb/client` 1.0.0-beta.7) |
 
-All five shipped in `askdb@1.0.0-beta.43`, so its baseline has no `n/a` cell. They gate cells again only on an older target (`npm:askdb@<version>`).
+The first five shipped in `askdb@1.0.0-beta.43` and `client-built-in-providers` in `askdb@1.0.0-beta.44`, so the beta.44 baseline has no `n/a` cell. They gate cells again only on an older target (`npm:askdb@<version>`).
 
 Check `src/capabilities.ts` for the current list: a capability added since this table was written is checked the same way.
 

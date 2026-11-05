@@ -17,7 +17,7 @@
  * through the same code path, side by side (`src/ui/server.ts`).
  */
 import { parseArgs, type ParseArgsConfig } from "node:util";
-import { askAndRun, MODELS, VIAS, type Via } from "./ask-run.js";
+import { askAndRun, clientPathUnavailable, MODELS, VIAS, type Via } from "./ask-run.js";
 import { requireInstallTarget } from "./artifacts.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect } from "./dialects.js";
 import { LiveModelError, liveSettings, type LiveSettings } from "./model/live.js";
@@ -56,6 +56,11 @@ async function askCommand(argv: string[]): Promise<number> {
   const modelOk = (MODELS as readonly string[]).includes(values.model) && !(values.model === "live" && values.sql !== undefined);
   if (!dialect || !isSupportedDialect(dialect) || !(VIAS as readonly string[]).includes(via) || !sqlOk || !modelOk) {
     console.error(USAGE);
+    return 2;
+  }
+  const noClient = via === "client" && values.sql === undefined ? clientPathUnavailable() : undefined;
+  if (noClient) {
+    console.error(`lab ask: ${noClient}`);
     return 2;
   }
   let live: LiveSettings | undefined;
