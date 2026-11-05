@@ -18,6 +18,7 @@ import {
 } from "@askdb/ai";
 import {
   ask,
+  DEFAULT_TENANT_SQL_MODE,
   formatSchemaV2ForNlToSql,
   formatSensitiveReference,
   isBuiltInDialectId,
@@ -967,7 +968,7 @@ async function askSampleQuestion(
     tenant: options.tenantScope
       ? {
           enabled: true,
-          sqlMode: options.tenantSqlMode ?? "sql-only",
+          sqlMode: options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE,
           bindings: result.tenantBindings ?? [],
           params: result.tenantParams ?? [],
         }

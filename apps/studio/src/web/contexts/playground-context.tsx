@@ -68,7 +68,8 @@ const initialPlaygroundState: PlaygroundState = {
   askMode: "full",
   askMessage: null,
   askResult: null,
-  askTenantSqlMode: "sql-only",
+  // The library default (DEFAULT_TENANT_SQL_MODE), written out: the web bundle imports only types from core.
+  askTenantSqlMode: "sql-params",
   executeResult: null,
   executeMessage: null,
   executeStatus: null,
