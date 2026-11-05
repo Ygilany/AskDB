@@ -473,7 +473,7 @@ Policy errors include: the table ID(s) involved, the expected scope path, and wh
 
 ### Always injected (not chunked)
 
-The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. Tenant scoping in generated SQL depends on the model seeing the policy, so it must never be lost through RAG retrieval gaps.
+The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. Tenant scoping in generated SQL depends on the model seeing the policy, so it must never be lost through RAG retrieval gaps. This holds under `omitSensitiveIdentifiersFromNlToSqlPrompt` too: the block keeps naming the tenant columns the policy lists, sensitive ones included. It is the one exception to omission ([`sensitive-fields-and-modes.md` → Which prompts follow omission](./sensitive-fields-and-modes.md#which-prompts-follow-omission), [ADR 0026](../adrs/0026-every-prompt-follows-omission.md)).
 
 ### Chunked for RAG retrieval
 

@@ -118,7 +118,7 @@ Front-matter sensitivity is escalate-only. It can mark a column sensitive (or a 
 Then choose the prompt-construction behavior per deployment:
 
 - **Default** — sensitive columns appear in the prompt with a sensitivity tag. The model knows to be cautious.
-- **Strict** — set `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` (or pass `--omit-sensitive-from-prompt`) to omit sensitive columns from the prompt entirely. The model can't propose them because it doesn't know they exist.
+- **Strict** — set `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` (or pass `--omit-sensitive-from-prompt`) to omit sensitive columns from the prompt entirely. The model can't propose them because it doesn't know they exist. The exception is a column your tenant policy filters on, which stays in the prompt so the tenant check can work.
 
 See [Privacy model](/concepts/privacy-model/) for what crosses the boundary in each mode.
 
