@@ -1,6 +1,6 @@
 # Platform
 
-This document records the **initial** technical baseline for AskDB (runtime, stack, and repo shape). Adjustments are expected as requirements sharpen; the constitution should stay aligned with `mission.md` and `roadmap.md`.
+This document records the technical baseline for AskDB (runtime, stack, and repo shape). Adjustments are expected as requirements sharpen; the constitution should stay aligned with `mission.md` and `roadmap.md`.
 
 For the package-level architecture, diagrams, dependency boundaries, install profiles, and connector-vs-peer guidance, see [`docs/architecture.md`](architecture.md).
 
@@ -12,22 +12,31 @@ For the package-level architecture, diagrams, dependency boundaries, install pro
 ## Language and repo layout
 
 - **TypeScript** as the primary language for application code, shared libraries, and tooling.
-- **Monorepo** layout: separate packages for reusable core logic, headless surfaces, RAG, and the future web/embed experience.
-- **Example consumer application (later)** — For development and QA, the repo may include a **small example app** that consumes the embeddable UI/SDK so we can exercise integration without relying on every consumer’s production host (see `roadmap.md`).
-  - **Workspace conventions** — packages live under `packages/*`; each package owns its `build` / `test` scripts. Root scripts invoke Turbo to run these consistently.
+- **Monorepo** layout: separate packages for reusable core logic, AI providers, configuration, introspection and engines, RAG and enrichment, plus apps for the CLI, the HTTP API, Studio and the docs site.
+- **Example consumer applications** — `examples/` holds small consumer apps (`ask-question`, `express-server`), an install smoke test (`installable-smoke`) and the consumer lab, which tests installed AskDB as a black box (see `roadmap.md`).
+  - **Workspace conventions** — libraries live under `packages/*` and first-party apps under `apps/*`; each one owns its `build` / `test` scripts. Root scripts invoke Turbo to run these consistently.
 
 ### Published packages
 
-AskDB ships as a small set of focused npm packages. Each one has a single responsibility and is consumable on its own:
+AskDB ships as a set of focused npm packages. Each one has a single responsibility and is consumable on its own. Today every package publishes `-beta.N` prereleases. The **At 1.0** column is the maintainer's 2026-11-05 decision (#354).
 
-| Package | Role | Status |
+| Package | Role | At 1.0 |
 |---|---|---|
-| `@askdb/core` | Headless library: schema parsing, prompt assembly, NL→SQL, validation, modes, logging, and retrieval input. Returns SQL only. Stable, semver-versioned. Schema v2 reader/writer/prompt-assembly land in Phase 5. | Phase 4 (publish), Phase 5 (Schema v2) |
-| `askdb` | `askdb` binary; thin wrapper over `@askdb/core`. Already shipped; published alongside core. | Phase 4 (publish) |
-| `@askdb/http-api` | HTTP server surface; thin wrapper over `@askdb/core`. Already shipped (Phase 3). | Phase 4 (publish) |
-| `@askdb/introspect` | Schema introspection: per-engine connector pattern that reads database catalogs (Postgres first) and emits a Schema v2 physical artifact. Live (`CatalogQueryRunner`) and air-gapped (run SQL templates, hand off the export bundle) front doors share one connector. | Phase 6 |
-| `@askdb/enrich` | Headless Schema v2 enrichment workspace helpers: load/save authoring workspaces, build table drafts, preserve markdown sections, validate concept links, bundle split artifacts, and build AI suggestion targets/context. Shared by Studio and custom authoring surfaces. | Phase 7 follow-up |
-| `@askdb/rag` | Chunker + retriever; **bring-your-own embedder** (AI SDK `embed()` style) and **bring-your-own vector store** (in-memory default, file-backed, pgvector adapters). Wires into `@askdb/core` `ask()` as an optional retriever. | Phase 8 |
+| `@askdb/core` | Headless library: schema parsing, prompt assembly, NL→SQL, validation, modes, logging, and retrieval input. Returns SQL only. | 1.0.0 |
+| `@askdb/client` | Config-aware facade (`createAskDb`): resolves schema, model, and dialect from config so callers only pass a question. | 1.0.0 |
+| `@askdb/config` | `defineConfig`, `env()`, and `askdb.config.*` discovery for first-party apps. | 1.0.0 |
+| `@askdb/ai` | AI provider registry: resolves AskDB config into AI SDK language and embedding models, with built-in OpenAI, Azure OpenAI, Google Gemini, Anthropic, and Vercel AI Gateway providers. | 1.0.0 |
+| `askdb` | The `askdb` binary (`init`, `introspect`, `ask`, `studio`, `enrich`, `bundle`, `rag`); a wrapper over the other packages. | 1.0.0 |
+| `@askdb/http-api` | HTTP server surface over `@askdb/core`; `POST /ask` returns checked SQL only. | 1.0.0 |
+| `@askdb/introspect` | Schema introspection: engine-agnostic `Connector` contract, orchestrator, connector registry (`createConnectorRegistry`), `@askdb/introspect/kit` helpers that engine packages build on, and Schema v2 renderer. Engine packages supply the connectors. | 1.0.0 |
+| `@askdb/postgres` | Postgres engine package: introspection connector (live and from-export bundle), catalog SQL templates, and a `pg`-backed catalog query runner. | 1.0.0 |
+| `@askdb/mysql` | MySQL and MariaDB engine package: introspection connector via `information_schema` and a `mysql2`-backed catalog query runner. | 1.0.0 |
+| `@askdb/sqlite` | SQLite engine package: introspection connector via `sqlite_master` and PRAGMA functions, and a `better-sqlite3`-backed catalog query runner. | 1.0.0 |
+| `@askdb/sqlserver` | SQL Server engine package: introspection connector via `sys.*` catalog views and an `mssql`-backed catalog query runner. | 1.0.0 |
+| `@askdb/prisma` | Schema-file introspection connector for Prisma schemas. | 1.0.0 |
+| `@askdb/enrich` | Headless Schema v2 enrichment workspace helpers: load/save authoring workspaces, build table drafts, preserve markdown sections, validate concept links, bundle split artifacts, and build AI suggestion targets/context. Shared by Studio and custom authoring surfaces. | stays 0.x |
+| `@askdb/rag` | Chunker + retriever; **bring-your-own embedder** (AI SDK `embed()` style) and **bring-your-own vector store** (in-memory default, file-backed, pgvector adapters). Wires into `@askdb/core` `ask()` as an optional retriever. | stays 0.x |
+| `@askdb/studio` | Local browser UI for Schema v2 enrichment and sample NL-to-SQL checks, built on `@askdb/enrich`. `askdb studio` opens it. | stays 0.x |
 
 A future **`@askdb/sdk`** + **embeddable UI** package may follow once the headless surfaces stabilize (later phase).
 
@@ -35,24 +44,18 @@ Shared dependencies are layered by concern. `@askdb/core` is the schema/NL-to-SQ
 
 ## Runtime and frameworks
 
-- **Node.js** for CLI, local execution, and server-side packages.
-- **Next.js** for the web application and embed-friendly UI, deployed on a **Vercel-friendly** workflow (preview deployments, environment separation).
+- **Node.js** for the CLI, the HTTP API, Studio's local server, and the other server-side packages.
+- **Vite + React** for Studio, a local browser app that the `askdb studio` command serves on the developer's machine.
 
 ## Web UI (first-party AskDB app)
 
-The **AskDB web application** (anything we own and ship as our product UI) uses **Tailwind CSS** and **shadcn/ui**—no parallel in-repo component systems for that app.
+The **AskDB web application** (anything we own and ship as our product UI, today Studio) uses **Tailwind CSS** and **shadcn/ui**—no parallel in-repo component systems for that app.
 
-Initialize shadcn for our Next monorepo app with this preset:
-
-```bash
-pnpm dlx shadcn@latest init --preset bdvw9Yrj --template next --monorepo
-```
-
-After init, add components with `pnpm dlx shadcn@latest add …` as needed.
+Studio's shadcn setup lives in `apps/studio/components.json`. Add components from `apps/studio` with `pnpm dlx shadcn@latest add …` as needed.
 
 ## Integrators and headless use
 
-**Headless** flows (CLI, MCP, HTTP API, SDK) do not require any AskDB UI. Users **bring their own frontend**: any framework and design system they choose. We publish contracts (types, API shapes, SDK calls)—not a mandated UI stack for consumers.
+**Headless** flows (library, CLI, HTTP API; MCP after 1.0) do not require any AskDB UI. Users **bring their own frontend**: any framework and design system they choose. We publish contracts (types, API shapes, library calls)—not a mandated UI stack for consumers.
 
 ## Schema vs. database connectivity
 
@@ -67,10 +70,10 @@ After init, add components with `pnpm dlx shadcn@latest add …` as needed.
 
 `@askdb/introspect` (Phase 6) is the package that turns a real database into a Schema v2 physical artifact.
 
-- **Connector pattern** — One small `Connector` interface per engine. Phase 6 ships **only the Postgres connector** (`@askdb/introspect/postgres`); the seam is the entry point for additional engines added one at a time in [`roadmap.md`](roadmap.md) Phase 11.
-- **Two front doors, one connector** — Both modes produce the **same** `IntrospectionResult` and the **same** on-disk artifact:
-  - **Live** — pass a `CatalogQueryRunner`; the connector runs documented `pg_catalog` / `information_schema` queries against the live database.
-  - **Air-gapped** — run the same SQL templates in `psql`, an IDE, or CI; export the rows as a bundle (CSV/JSON); hand the bundle path to `@askdb/introspect` and get an identical artifact without AskDB ever touching credentials.
+- **Connector pattern** — One small `Connector` interface per engine. Each engine package supplies its connector: `@askdb/postgres` (Phase 6), then `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlite`, `@askdb/sqlserver`, and `@askdb/prisma` for Prisma schema files, added one at a time in [`roadmap.md`](roadmap.md) Phase 11. Each engine package also exports a connector provider adapter, which hosts register with `createConnectorRegistry` (ADR 0008).
+- **Two front doors, one connector** — For Postgres, both modes produce the **same** `IntrospectionResult` and the **same** on-disk artifact. MySQL, MariaDB, SQLite and SQL Server support the live front door only. `@askdb/prisma` needs no database: it reads a Prisma schema file and rejects a connection URL.
+  - **Live** — pass a `CatalogQueryRunner`; the connector runs documented catalog queries against the live database (`pg_catalog` / `information_schema` on Postgres, `information_schema` on MySQL and MariaDB, `sqlite_master` and PRAGMA functions on SQLite, `sys.*` views on SQL Server).
+  - **Air-gapped** (Postgres only) — run the same SQL templates in `psql`, an IDE, or CI; export the rows as a bundle (CSV/JSON); hand the bundle path to `@askdb/introspect` and get an identical artifact without AskDB ever touching credentials.
 - **Output** — a `<schemaId>.schema/` directory whose `schema.json` is the Schema v2 physical layer ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)). The describable layer (`tables/*.md`, `concepts.md`) is **never written or rewritten** by introspection; that belongs to `@askdb/enrich`-backed authoring surfaces (`@askdb/studio` or custom UIs) or hand-authoring.
 - **ID-anchored re-introspection** — On a second run against an existing artifact, only `schema.json` is rewritten. Stable IDs from the previous run are preserved; new columns appear with new IDs; orphaned IDs (deleted columns) surface as `IntrospectionResult.warnings` for authoring surfaces to act on. The describable layer is preserved verbatim.
 - **Determinism** — Catalog queries always include explicit `ORDER BY`; multi-column foreign keys preserve the constraint's column ordering, not the table's; enum values preserve their declared sort order. Two runs against an unchanged database produce a byte-identical `schema.json`.
@@ -87,13 +90,13 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 
 ## Data access
 
-- **Postgres-first** — The first shipped path targets **PostgreSQL** for dialect assumptions in generation, validation guardrails, and live introspection. Treat this as the **reference implementation** quality bar.
+- **Postgres is the reference engine** — Postgres shipped first and stays the **reference implementation** quality bar for dialect assumptions in generation, validation guardrails, and introspection.
+- **Five engine families at 1.0** — PostgreSQL, MySQL, MariaDB, SQLite and SQL Server are supported. They were added in roadmap Phase 11 **one database at a time** (driver, dialect-aware generation and validation, tests) so we do not dilute safety or correctness. The consumer lab covers every one, including its tenant suite.
 - **No generated-SQL execution in core** — `@askdb/core` returns checked SQL only. Applications own any later approval, execution, read-only roles, network policy, and audit logging outside AskDB.
-- **Other databases later** — Support for **additional engines** (beyond Postgres) lands in a **later roadmap phase**: per-engine drivers, dialect-aware generation/validation, and tests—rolled out **one database at a time** so we do not dilute safety or correctness. See **`roadmap.md`** (multi-database phase).
 
 ## AI and integrations
 
-- **BYO language model** — `ask({ model })` accepts any AI SDK `LanguageModel`. Customers wire OpenAI, Anthropic, Google, Bedrock, AI Gateway, Ollama, etc. without changes inside AskDB. Per-provider config recipes (OpenAI, Azure OpenAI / Foundry, Google Gemini, Anthropic) in [`docs/integration/installable-package.md`](integration/installable-package.md).
+- **Two equal ways to supply a model** — `ask({ model })` accepts any AI SDK `LanguageModel`, so customers can wire OpenAI, Anthropic, Google, Bedrock, AI Gateway, Ollama, etc. without changes inside AskDB. `@askdb/ai`'s built-in providers (OpenAI, Azure OpenAI, Google Gemini, Anthropic, Vercel AI Gateway) resolve a model from AskDB config through `createAiRegistry()` or `createAskDb({ config })`. Pick by who owns provider config: the host app, or `askdb.config`. Per-provider config recipes in [`docs/integration/installable-package.md`](integration/installable-package.md).
 - **BYO embedder** (Phase 8) — `@askdb/rag` chunking and retrieval accept any embedder function (AI SDK `embed()` / `embedMany()` shape). Default reference: `text-embedding-3-small`; nothing in `@askdb/core` requires it.
 - **BYO vector store** (Phase 8) — `@askdb/rag` ships an `VectorStore` interface with adapters added one at a time: in-memory (default, zero deps), file-backed (`*.embeddings.bin` checked in next to the schema artifact), pgvector, then others as demand drives. Consumers pick the adapter or implement their own.
 - **No mandatory vendors** — Nothing in the package requires an AskDB-owned account or service. Every external dependency is a seam the integrator chooses.
@@ -105,9 +108,10 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 
 ## Release and versioning
 
-- `@askdb/core` is published to npm with **semver** discipline. The contract surface (exports from `packages/core/src/index.ts` plus the formal contract docs under `docs/contracts/`) is the boundary that semver applies to.
-- Companion packages (`askdb`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/enrich`, `@askdb/rag`) are versioned in lockstep where shared types matter; release tooling lives at the repo root (e.g. **changesets** — exact tooling decided in Phase 4).
-- Pre-1.0 versions allow contract evolution; once 1.0 ships, breaking changes require a contract doc bump (e.g. `schema-v2` → `schema-v3`) and a major version.
+- Packages are published to npm with **semver** discipline, using **Changesets**. For `@askdb/core`, the contract surface (exports from `packages/core/src/index.ts` plus the formal contract docs under `docs/contracts/`) is the boundary that semver applies to. The release process and checklist live in [`docs/release.md`](release.md).
+- **At 1.0**, `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` stay 0.x, and their APIs may still move (#354, [ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)).
+- **Experimental surfaces in the 1.0 set** — the `studio` and `rag` blocks of `defineConfig` in `@askdb/config` (with the types and environment variables that feed them), the `askdb studio`, `enrich`, `bundle` and `rag` commands, and `askdb init`'s RAG and Studio flags follow their 0.x packages. They are experimental, and a minor release of `@askdb/config` or `askdb` may change them ([ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)).
+- Pre-1.0 versions allow contract evolution; once 1.0 ships, breaking changes to a 1.0 package outside those experimental surfaces require a contract doc bump where a contract changes (e.g. `schema-v2` → `schema-v3`) and a major version.
 
 ## Other tooling
 

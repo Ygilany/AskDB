@@ -195,6 +195,16 @@ describe("askdb introspect — injected connector registry", () => {
     expect(code).toBe(1);
     expect(stderr).toContain("Unsupported introspection engine 'nope' (expected one of: acme).");
   });
+
+  it("lists the registered engines under --engine in --help", async () => {
+    const code = await runIntrospectCli(["--help"], {
+      connectorRegistry: createConnectorRegistry([acmeAdapter().adapter]),
+    });
+    expect(code).toBe(0);
+    const engineLine = stdout.split("\n").find((line) => line.trimStart().startsWith("--engine <id>"));
+    expect(engineLine).toContain("acme");
+    expect(engineLine).not.toContain("mysql");
+  });
 });
 
 describe("askdb introspect — CLI-owned errors with the built-in registry", () => {

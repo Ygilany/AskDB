@@ -98,17 +98,14 @@ function parseOptions(argv: readonly string[]): CliOptions {
     }
   })();
   const listen = rt?.structured.studio?.listen;
-  const portFromEnv = rt?.ai.aiEnv.ASKDB_STUDIO_PORT;
-  const parsedPort =
-    listen?.port ??
-    (portFromEnv !== undefined && portFromEnv.trim() !== "" ? Number(portFromEnv) : NaN);
   const introspectOut = rt?.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR;
   const opts: CliOptions = {
     schema: introspectOut,
     schemaFromFlag: false,
-    host: listen?.host ?? rt?.ai.aiEnv.ASKDB_STUDIO_HOST ?? "127.0.0.1",
-    port: Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 5556,
+    host: listen?.host ?? "127.0.0.1",
+    port: 5556,
   };
+  let portFromFlag = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
@@ -128,6 +125,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
           throw new Error(`Invalid --port: ${raw}`);
         }
         opts.port = port;
+        portFromFlag = true;
         break;
       }
       case "--help":
@@ -141,6 +139,19 @@ function parseOptions(argv: readonly string[]): CliOptions {
       default:
         throw new Error(`Unknown option: ${arg}`);
     }
+  }
+
+  // A bad configured port must fail, not quietly bind 5556. `NaN` (`Number(env("X"))` with X
+  // unset) counts as unset, as it does in @askdb/config; a numeric string works like a number.
+  const configPort = listen?.port;
+  if (!portFromFlag && !opts.help && !opts.version && configPort !== undefined && !Number.isNaN(configPort)) {
+    const port = Number(configPort);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error(
+        `Invalid studio.listen.port in askdb.config: ${String(configPort)} (expected an integer from 1 to 65535).`,
+      );
+    }
+    opts.port = port;
   }
 
   return opts;
@@ -175,14 +186,15 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "",
       "Options:",
       "  -s, --schema <dir>   Schema v2 directory (default: introspection.outputDir from",
-      "                       askdb.config, or ASKDB_INTROSPECT_OUT env, or ./askdb/)",
-      "  --port <number>      Port to listen on (default: 5556 or ASKDB_STUDIO_PORT)",
-      "  --host <host>        Host to bind (default: 127.0.0.1 or ASKDB_STUDIO_HOST)",
+      "                       askdb.config, or ./askdb/)",
+      "  --port <number>      Port to listen on (default: studio.listen.port from askdb.config, or 5556)",
+      "  --host <host>        Host to bind (default: studio.listen.host from askdb.config, or 127.0.0.1)",
       "  -V, --version        Print package version",
       "  -h, --help           Print this help",
       "",
-      "AI enrichment and sample NL-to-SQL use OPENAI_API_KEY. Override the model",
-      "with ASKDB_AI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
+      "AI enrichment and sample NL-to-SQL use the ai block in askdb.config: ai.provider,",
+      "the key in ai.providerConfig.<provider>.apiKey, and the model in ai.language.model.",
+      "Bind any value to an environment variable with env(\"NAME\").",
       "",
     ].join("\n"),
   );

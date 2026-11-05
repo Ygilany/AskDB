@@ -92,6 +92,14 @@ function isBuiltinProvider(provider: string): boolean {
   return isMember(provider, ASKDB_AI_PROVIDERS);
 }
 
+/**
+ * A plain `{ ... }` object: not null, an array, a Promise or a module namespace. Read through
+ * `Object.prototype.toString`, so an object from another realm still counts.
+ */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Object.prototype.toString.call(value) === "[object Object]";
+}
+
 function nonBlank(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -395,6 +403,19 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
   config: NormalizedAskDbConfig;
   deprecations: string[];
 } {
+  // The type requires both blocks, but a JS config (or a TS one run without a type check) can
+  // leave one out. Name it here rather than crash on it below (#626).
+  if (!isPlainObject(config.ai)) {
+    throw new Error(
+      'askdb.config: the config has no ai block; add ai: { provider, providerConfig: { <provider>: { apiKey } } }. ' +
+        "AskDB needs it even when you only run askdb introspect.",
+    );
+  }
+  if (!isPlainObject(config.introspection)) {
+    throw new Error(
+      "askdb.config: the config has no introspection block; add introspection: { provider, providerConfig }.",
+    );
+  }
   const deprecations: string[] = [];
   const warn = (message: string): void => {
     if (!deprecations.includes(message)) deprecations.push(message);

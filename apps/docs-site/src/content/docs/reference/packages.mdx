@@ -33,6 +33,7 @@ Every package on this page that depends on `@askdb/core` also needs `ai` install
 | --- | --- |
 | `ask(options)` | The main pipeline. Returns checked SQL. See [full API reference](/reference/core-api/). |
 | `loadSchema(path)` | Load a schema artifact from a directory, bundle, or `schema.json`. |
+| `saveSchemaFile(schemaDir, relativePath, content)` | Write one file inside a schema directory. Refuses a symbolic link at the file or at a directory below the schema directory, and writes through a temporary file renamed over the target. |
 | `validateTenantScope` / `resolveTenantSql` | Tenant-scope validation and placeholder binding. |
 | `createAskDbLogger` | Structured logger that emits AskDB log events. |
 | `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
@@ -149,19 +150,19 @@ PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based
 
 <InstallTabs pkgs="@askdb/mysql ai" />
 
-MySQL dialect, connector, catalog SQL templates, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
+MySQL dialect, connector, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
 
 ### `@askdb/sqlite`
 
 <InstallTabs pkgs="@askdb/sqlite ai" />
 
-SQLite dialect, connector, catalog SQL templates, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
+SQLite dialect, connector, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
 
 ### `@askdb/sqlserver`
 
 <InstallTabs pkgs="@askdb/sqlserver ai" />
 
-SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
+SQL Server (T-SQL) dialect, connector, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
 
 ## Introspection
 
@@ -171,7 +172,7 @@ The engine-agnostic introspection contract and the schema-directory writer. Use 
 
 <InstallTabs pkgs="@askdb/introspect ai" />
 
-To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. Its options type is `RenderBodyOptions` (`schemaId`, optional `provider` and `existingArtifactDir`), and it returns a `RenderBodyResult`: `{ json, body, warnings }`, the Schema v2 document, the exact file contents and the merge warnings. It applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`. `isSchemaV2Json(value)` is the check it applies to an existing `schema.json` before merging (the shape the merge reads: version, schema id, table and column ids, names and types, and boolean `sensitive` flags; not every field of Schema v2), for callers that need to decide up front.
+To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. Its options type is `RenderBodyOptions` (`schemaId`, optional `provider` and `existingArtifactDir`), and it returns a `RenderBodyResult`: `{ json, body, warnings }`, the Schema v2 document, the exact file contents and the merge warnings. It applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`. `introspect()` and `renderToSchemaV2()` write `schema.json` with `@askdb/core`'s `saveSchemaFile()`, so they throw instead of writing when `schema.json` is a symbolic link. `isSchemaV2Json(value)` is the check it applies to an existing `schema.json` before merging (the shape the merge reads: version, schema id, table and column ids, names and types, and boolean `sensitive` flags; not every field of Schema v2), for callers that need to decide up front.
 
 It also exports the **connector provider registry**, which config-driven hosts use to pick an engine by id. Each engine package exports a `ConnectorProviderAdapter` (`postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`). Provider ids are open strings, so a third-party engine can register its own id.
 
@@ -241,7 +242,7 @@ Headless schema-authoring helpers used by Studio. Use directly when building a c
 | `saveTenantPolicy(workspace, frontmatter, body)` | Save `tenant-policy.md`. Throws `SchemaParseError`, and writes nothing, if `loadSchema()` would reject the policy. |
 | `bundleSchemaDirectory(schemaDir)` | Bundle a schema directory into one JSON object, as `askdb bundle` does. Returns `@askdb/core`'s `readSchemaDirectory(schemaDir)`. |
 
-The save functions write only inside the schema directory. Each one refuses to write when the target file, or `tables/` for a table file, is a symbolic link, and saves through a temporary file renamed over the target, so a save is atomic and a hard link is replaced rather than written through.
+The save functions write only inside the schema directory, through `@askdb/core`'s `saveSchemaFile()`. Each one refuses to write when the target file, or `tables/` for a table file, is a symbolic link, and saves through a temporary file renamed over the target, so a save is atomic and a hard link is replaced rather than written through.
 
 ## Retrieval
 

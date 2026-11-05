@@ -105,7 +105,7 @@ Rebinds a stored `preparedQuery` with new values, without calling the model. It 
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` `tenantScope`, as for `ask()`. Required for `subtree` scopes. |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | Default `"warn"`: sensitive references bind and are reported in `verdict`. `"strict"` refuses them. |
 | `acceptWarnings` | `ReadonlyArray<"tenant">` | With a policy whose `enforcement` is `warn`, a template that fails the tenant check is refused unless this includes `"tenant"`. |
-| `schema` | `SchemaSource \| AnyNormalizedSchema` | Override the schema for this call only. Default: the schema `ask()` resolves (`createAskDb({ schema })`, then `host.schemaJson` / `ASKDB_SCHEMA_JSON`, then `host.schemaPath` / `ASKDB_SCHEMA_PATH`). |
+| `schema` | `SchemaSource \| AnyNormalizedSchema` | Override the schema for this call only. Default: the schema `ask()` resolves (`createAskDb({ schema })`, then `host.schemaJson`, then `host.schemaPath`). |
 
 ---
 

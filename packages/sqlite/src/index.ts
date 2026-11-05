@@ -14,7 +14,6 @@ export {
 export {
   createSqliteConnector,
   describeSqlite,
-  SQLITE_CATALOG_SQL,
   type DescribeSqliteInput,
   type SqliteIntrospectionInput,
 } from "./connector/index.js";

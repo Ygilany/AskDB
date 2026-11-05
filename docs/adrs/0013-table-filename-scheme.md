@@ -6,6 +6,8 @@ Accepted (2026-09-29). Implemented by PR #181 (`assignDefaultTableFilenames()` i
 
 > **Amendment (2026-11, #372):** The write rule under *Decision* ("Writes are also contained") now covers every file `@askdb/enrich` saves in a schema directory, through one internal helper. `saveConcepts()` writes `concepts.md` and the new `saveTenantPolicy()` writes `tenant-policy.md` the same way: a symbolic link at the file is refused, and the save goes through a temp file renamed over the target. Studio's tenant-policy route calls `saveTenantPolicy()` instead of writing the file itself. The schema directory itself may be a symbolic link. The Windows `EPERM` consequence below applies to those saves too, and they now need write access to the schema directory for the temp file, where an in-place write needed only the file.
 
+> **Amendment (2026-11, #617):** The helper moved to `@askdb/core` as the public `saveSchemaFile()` ([ADR 0028](0028-core-writes-schema-directory-files.md)), and every AskDB writer into a schema directory now uses it: the `@askdb/enrich` saves above, Studio's `playground-history.json` and `.gitignore`, and `@askdb/introspect`'s `schema.json`. The rules under *Decision* are unchanged. A refusal now reads `Refusing to write <path> outside the schema directory: <why>`, so a table save names `tables/<file>.md`.
+
 ## Context
 
 A Schema v2 directory has one optional markdown file per described table under `tables/` ([schema-v2 contract](../contracts/schema-v2.md#describable-layer--tablestablemd)). The loader pairs a file with its table by the front-matter `id`, never by filename, so any filename works once a file exists.

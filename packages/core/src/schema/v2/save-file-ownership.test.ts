@@ -2,9 +2,9 @@ import { chmodSync, chownSync, mkdtempSync, readFileSync, rmSync, statSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";
-import { otherGroup, otherGroupUnavailable, table, tableMd, writeSchema } from "./test-utils.js";
-import { buildDefaultTableBody, loadWorkspace, modeWhenGroupLost, saveTable } from "./workspace.js";
+import { integrationSuite } from "../../../../../scripts/test-utils/integration.mjs";
+import { modeWhenGroupLost, saveSchemaFile } from "./save-file.js";
+import { otherGroup, otherGroupUnavailable } from "./test-utils.js";
 
 // A save by a process that may not set the file's group, as when the saver
 // doesn't belong to it.
@@ -29,14 +29,11 @@ describe("modeWhenGroupLost", () => {
   });
 });
 
-integrationSuite({ unavailable: otherGroupUnavailable })("saveTable when the file's group can't be kept", () => {
+integrationSuite({ unavailable: otherGroupUnavailable })("saveSchemaFile when the file's group can't be kept", () => {
   let tmp: string;
-  let schemaDir: string;
 
   beforeEach(() => {
-    tmp = mkdtempSync(join(tmpdir(), "askdb-enrich-own-"));
-    schemaDir = join(tmp, "fname.schema");
-    writeSchema(schemaDir, [table("public", "orders")]);
+    tmp = mkdtempSync(join(tmpdir(), "askdb-core-own-"));
   });
 
   afterEach(() => {
@@ -44,19 +41,13 @@ integrationSuite({ unavailable: otherGroupUnavailable })("saveTable when the fil
   });
 
   it("doesn't hand the group's access to the group the new file lands in", () => {
-    const target = join(schemaDir, "tables", "orders.md");
-    writeFileSync(target, tableMd("public", "orders", "Written before."), "utf8");
+    const target = join(tmp, "concepts.md");
+    writeFileSync(target, "Written before.\n", "utf8");
     chownSync(target, -1, otherGroup!);
     chmodSync(target, 0o660);
-    const ws = loadWorkspace(schemaDir);
 
-    saveTable(
-      ws,
-      "table:public.orders",
-      { id: "table:public.orders", name: "orders", schemaId: "fname" },
-      buildDefaultTableBody("orders", "Shared with one team."),
-    );
-    expect(readFileSync(target, "utf8")).toContain("Shared with one team.");
+    saveSchemaFile(tmp, "concepts.md", "Shared with one team.\n");
+    expect(readFileSync(target, "utf8")).toBe("Shared with one team.\n");
     expect(statSync(target).gid).not.toBe(otherGroup);
     expect(statSync(target).mode & 0o777).toBe(0o600);
   });
