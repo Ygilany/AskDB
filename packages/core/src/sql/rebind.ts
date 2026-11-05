@@ -106,20 +106,6 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
       throw unexpandedSubtreeError(scope.access.tenantRoot, "bindPreparedQuery()");
     }
   }
-  // A placeholder nothing can render: any one without a policy, or one in another casing.
-  const placeholder = findTenantPlaceholderAnyCase(prepared.namedSql, spec);
-  if (placeholder !== undefined && (!policy || !isTenantPlaceholderName(placeholder.slice(1)))) {
-    throw new TenantScopeError(
-      policy
-        ? `The template references ${placeholder}, which isn't a tenant placeholder AskDB can render: ` +
-            "they are written exactly :tenant_<root>_ids, in lowercase, with nothing glued to the name. " +
-            "Refusing to bind an unsubstituted tenant placeholder."
-        : `The template references ${placeholder}, but the schema has no tenant policy to render it ` +
-            "from. Refusing to bind a template with an unsubstituted tenant placeholder.",
-      "UNRESOLVED_TENANT_PLACEHOLDER",
-    );
-  }
-
   const { checks, modes } = guardrailPlan("rebind", {
     dialect: spec,
     schema,
@@ -138,6 +124,22 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   );
   const verdict = decide(findings, modes, "rebind");
   throwIfDenied(verdict, modes, "rebind");
+
+  // A placeholder nothing can render: any one without a policy, or one in another casing.
+  // Refused after the decision, as `ask()` refuses it in tenant substitution, so a `deny`
+  // keeps its error and verdict; and before binding, so it never binds as a business value.
+  const placeholder = findTenantPlaceholderAnyCase(prepared.namedSql, spec);
+  if (placeholder !== undefined && (!policy || !isTenantPlaceholderName(placeholder.slice(1)))) {
+    throw new TenantScopeError(
+      policy
+        ? `The template references ${placeholder}, which isn't a tenant placeholder AskDB can render: ` +
+            "they are written exactly :tenant_<root>_ids, in lowercase, with nothing glued to the name. " +
+            "Refusing to bind an unsubstituted tenant placeholder."
+        : `The template references ${placeholder}, but the schema has no tenant policy to render it ` +
+            "from. Refusing to bind a template with an unsubstituted tenant placeholder.",
+      "UNRESOLVED_TENANT_PLACEHOLDER",
+    );
+  }
 
   let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true });
   if (policy && scope) {

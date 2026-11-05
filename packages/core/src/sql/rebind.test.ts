@@ -244,17 +244,28 @@ describe("bindPreparedQuery — tenant placeholders nothing can render", () => {
     expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE status = 'open'");
   });
 
-  // A placeholder nothing can render is refused as such, before the tenant check reports
-  // the predicate it doesn't recognize as missing.
+  // As in ask(): the tenant check doesn't count a placeholder nothing can render, so a
+  // strict policy denies with its verdict; a template the decision lets through is still
+  // refused before binding.
   it.each([":TENANT_AGENCY_IDS", ":tenant_agency_idsOR"])(
-    "throws UNRESOLVED_TENANT_PLACEHOLDER for %s under a strict tenant policy",
+    "refuses %s: TenantGuardrailError under strict, UNRESOLVED_TENANT_PLACEHOLDER once a warn is accepted",
     (placeholder) => {
       const sql = scopedOrders.replace(":tenant_agency_ids", placeholder);
-      const error = catchError(() =>
+      const denied = catchError(() =>
         bindPreparedQuery(template(sql), { status_name: "open" }, { schema: strictSchema, tenantScope: agencyIds("2") }),
       );
-      expect(error).toBeInstanceOf(TenantScopeError);
-      expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+      expect(denied).toBeInstanceOf(TenantGuardrailError);
+      expect((denied as TenantGuardrailError).verdict?.outcome).toBe("deny");
+
+      const accepted = catchError(() =>
+        bindPreparedQuery(template(sql), { status_name: "open" }, {
+          schema: warnSchema,
+          tenantScope: agencyIds("2"),
+          acceptWarnings: ["tenant"],
+        }),
+      );
+      expect(accepted).toBeInstanceOf(TenantScopeError);
+      expect((accepted as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
     },
   );
 

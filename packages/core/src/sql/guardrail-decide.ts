@@ -57,7 +57,7 @@ function outcomeOf(check: GuardrailCheckId, modes: GuardrailModes, point: Guardr
     case "read-only":
       return "deny";
     case "tenant":
-      // No mode can only mean a finding without a policy: fail closed.
+      // A tenant finding without a recognized mode (no policy, or an unknown value) fails closed.
       if (modes.tenant !== "warn") return "deny";
       if (point === "rebind" && !modes.acceptWarnings?.includes("tenant")) return "deny";
       return "warn";

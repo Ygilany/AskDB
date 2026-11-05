@@ -70,7 +70,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 | Paths | Apply |
 |---|---|
 | `packages/core/src/sql/{validate,lexer,dialect-spec,extract-sql,sensitive-guardrail}.ts` | security review, SQL guardrails, latent defects block |
-| `packages/core/src/sql/tenant-*.ts`, `packages/core/src/sql/{bind,parameter-manifest}.ts`, `packages/core/src/ask.ts` | security review, Tenant scope, latent defects block |
+| `packages/core/src/sql/tenant-*.ts`, `packages/core/src/sql/{bind,rebind,guardrails,guardrail-decide,parameter-manifest}.ts`, `packages/core/src/ask.ts` | security review, Tenant scope, latent defects block |
 | `packages/core/src/sql/{sensitive-guardrail,prompt}.ts`, `packages/core/src/schema/**`, `packages/core/src/retrieval/**`, `packages/core/src/enrichment/**`, `packages/core/src/logging/**`, `packages/rag/src/chunker/**` | security review, Sensitive fields |
 | `apps/studio/src/{server,request-guard,execute-registry,introspection,setup}.ts`, `apps/studio/src/web/**`, `apps/http-api/src/**` | security review, Local servers |
 | `packages/*/src/exec/**`, `packages/*/src/connector/provider.ts`, `packages/connectors/src/**`, `packages/config/src/**`, `apps/cli/src/{init,introspect,project-config}.ts` | security review, Connection strings and secrets |

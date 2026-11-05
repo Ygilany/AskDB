@@ -37,7 +37,7 @@ const { sql } = await ask({
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines escaped literal tenant values; `"sql-params"` replaces them with the dialect's driver markers (`$N` Postgres/CockroachDB and custom `AskDialect`s, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. See [Executing the result](#executing-the-result). |
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => TenantIdsByRoot \| Promise<TenantIdsByRoot>`, where `TenantIdsByRoot` is `Record<rootTableId, string[]>`. Returns the subtree's IDs grouped by tenant root: the seeds and same-table descendants under `tenantRoot`, each descendant root's IDs under that root, e.g. `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. `ask()` unions the seeds in and binds each root's IDs to its own placeholder (a `multi_root` scope). Without it, or when it returns a flat array or an invalid result, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
 | `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
-| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` reports them in `result.verdict` and `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. See [Guardrail verdict](#guardrail-verdict) and [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` reports them in `result.verdict` and `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. Any other value refuses a sensitive reference, as `"strict"` does. See [Guardrail verdict](#guardrail-verdict) and [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
 | `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
 | `retrievalK` | `number` | no | `8` | Top-k passed to the retriever. |
 | `retrievalThresholdChunks` | `number` | no | `30` | Chunk count below which the full DDL is used even if a retriever is supplied. |
@@ -112,6 +112,10 @@ type GuardrailFinding =
       reference?: SensitiveReference;         // SENSITIVE_TABLE_REFERENCED / SENSITIVE_COLUMN_REFERENCED
       unresolvedScope?: SensitiveScopeReport; // UNRESOLVED_TABLE_SCOPE
     };
+
+type GuardrailOutcome = "allow" | "warn" | "deny";
+type GuardrailCheckId = "read-only" | "tenant" | "sensitive";
+type GuardrailForm = "sql" | "template";
 ```
 
 `form` says which form the finding is about: `"sql"` is the model's bound SQL, `"template"` is its `sql-unbound` block (`preparedQuery.namedSql`), and `"generator"` is a finding a custom [`AskDialect`](#askdialect) reported. `generateSelectSql()` returns the same `verdict` for its read-only and tenant checks; it runs no sensitive check. The verdict is in-memory API: AskDB doesn't store it, so a host that wants to show "had warnings" later stores `result.verdict` itself. The checks are heuristics: they catch model mistakes early, and the database stays the boundary (see [Safety boundaries](/concepts/safety-boundaries/)).
