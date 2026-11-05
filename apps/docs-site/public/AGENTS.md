@@ -21,6 +21,7 @@ AskDB is a workspace of small, layered packages — install only what your use c
 - **`@askdb/client`** — config-driven facade (`createAskDb()`); resolves schema, model, and dialect from `askdb.config.ts`.
 - **`@askdb/ai`** — config-driven AI provider registry used by `@askdb/client` and the first-party surfaces. OpenAI, Anthropic, Google, Azure/Foundry, and Vercel AI Gateway providers are built in; install the matching `@ai-sdk/*` package (an optional peer, e.g. `@ai-sdk/openai`). The former `@askdb/ai-openai` / `-anthropic` / `-google` / `-azure` packages were removed before 1.0: use `@askdb/ai` and the `@ai-sdk/*` package instead.
 - **`@askdb/postgres` / `-mysql` / `-sqlite` / `-sqlserver`** — engine adapters: introspection connector, catalog templates, and a re-export of that engine's dialect (the dialect specs themselves ship inside `@askdb/core`).
+- **`@askdb/prisma`** — introspection connector for `.prisma` schema files, with no database connection. An optional peer of `askdb` and `@askdb/studio`: install it next to them for Prisma introspection. It brings in Prisma, whose `@prisma/engines` build pnpm 11 must approve (`pnpm add --allow-build=@prisma/engines @askdb/prisma`). See `/guides/integrations/prisma/`.
 - **`@askdb/rag`** — schema chunking, indexing, and retrieval for large schemas.
 - **`@askdb/http-api`** — minimal HTTP wrapper over `ask()` (`POST /ask`, `GET /health`).
 - **`@askdb/studio`** — browser UI for schema enrichment and sample NL-to-SQL checks.
