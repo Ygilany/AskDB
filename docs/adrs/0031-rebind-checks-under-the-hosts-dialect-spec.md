@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-05). The coordinator settled the shape for #660 (Q1 A, Q2 A, Q3 B) under the release's rule that safety wins over convenience. Implemented by the `dialectRules` field of `PreparedQuery` (`packages/core/src/sql/bind.ts`), set in `ask()`, and the `dialect` option of `BindGuardrails` with its resolution in `rebindSpec()` (`packages/core/src/sql/rebind.ts`). It extends [ADR 0010](0010-sql-guardrail-decision-point.md)'s re-check at rebind: the bind-time schema, scope and modes now come with the bind-time dialect rules.
+Accepted (2026-11-05). Settled on [#660](https://github.com/Ygilany/AskDB/issues/660) under the release's rule that safety wins over convenience. Implemented by the `dialectRules` field of `PreparedQuery` (`packages/core/src/sql/bind.ts`), set in `ask()`, and the `dialect` option of `BindGuardrails` with its resolution in `rebindSpec()` (`packages/core/src/sql/rebind.ts`). It extends [ADR 0010](0010-sql-guardrail-decision-point.md)'s re-check at rebind: the bind-time schema, scope and modes now come with the bind-time dialect rules.
 
 ## Context
 
@@ -33,4 +33,5 @@ The stored `PreparedQuery` recorded only the spec's `id`, so `bindPreparedQuery(
 - **Breaking for stored artifacts.** A `PreparedQuery` stored before `dialectRules` existed is refused at rebind until the host passes `dialect`. A built-in id is enough when `ask()` ran with the built-in rules.
 - **Breaking for hosts that spread a spec.** They pass the same spec to `bindPreparedQuery()` or `askdb.bind()`. A host whose app loads two copies of `@askdb/core` passes `dialect` too, or the built-in id.
 - **The host's spec is trusted as given.** A rebind can't tell whether the passed spec is the one `ask()` ran with; it checks the SQL under the spec the host passes.
-- **Hand-built templates** need `dialectRules: "builtin"`, or `dialect` at rebind.
+- **A template built by hand** has no `dialectRules`, so it needs `dialect` at rebind.
+- **The label is the host's own stored data.** AskDB doesn't sign the artifact, as it doesn't sign `namedSql`. A host that rewrites `dialectRules` to `"builtin"` gets the built-in rules, so the docs never tell a host to set the label by hand. This keeps [ADR 0010](0010-sql-guardrail-decision-point.md)'s rule of no stored verdict: the rebind still re-checks the template, and the label only says which rules the host must name. A host that wants its rules applied whatever the artifact says passes `dialect` on every rebind.

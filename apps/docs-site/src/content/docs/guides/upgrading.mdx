@@ -71,7 +71,7 @@ const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, { schema, tena
 - **A template `ask()` made under your own `DialectSpec`** (`dialectRules: "host"`), even an unchanged spread, throws `QueryParameterError` (`DIALECT_SPEC_REQUIRED`) without `dialect`. Pass the same spec.
 - **A template stored before this release** has no `dialectRules`, so it throws the same error until you pass `dialect`. If `ask()` ran with a built-in id, the id is enough, such as `dialect: "postgres"`.
 - **A `dialect` with another `id`** than the template's throws `QueryParameterError` (`DIALECT_UNSUPPORTED`).
-- **Templates you build by hand** need `dialectRules: "builtin"`, or `dialect` at rebind.
+- **A template you build by hand** has no `dialectRules`, so pass `dialect` when you rebind it.
 - **An app that loads two copies of `@askdb/core`**, such as ESM beside CJS, gets `"host"` templates, because the other copy's constants are different objects. Pass `dialect`.
 
 ## 1.0.0-beta.45

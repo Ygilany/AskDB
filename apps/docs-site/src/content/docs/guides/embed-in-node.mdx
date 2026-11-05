@@ -104,7 +104,7 @@ if (result.usage) {
 }
 ```
 
-Every `ask()` is still one model call. Set `{ parameterize: false }` to skip the extra output tokens. `askdb.bind()` re-runs the guardrails on the stored template and renders tenant IDs from the `tenantScope` you pass, so authorizing that scope stays your job, as for `ask()`. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options).
+Every `ask()` is still one model call. Set `{ parameterize: false }` to skip the extra output tokens. `askdb.bind()` re-runs the guardrails on the stored template and renders tenant IDs from the `tenantScope` you pass, so authorizing that scope stays your job, as for `ask()`. If `askdb.ask()` ran with your own `DialectSpec`, pass the same spec as `dialect` to `askdb.bind()`, or it refuses. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options).
 
 The full result and option types are in the [@askdb/core API reference](/reference/core-api/).
 
