@@ -6,26 +6,21 @@ settings:
 
 overrides:
   deepmerge-ts: ^8.0.2
-  '@askdb/ai': 0.1.0-beta.7
-  '@askdb/ai-anthropic': 1.0.0-beta.5
-  '@askdb/ai-azure': 1.0.0-beta.7
-  '@askdb/ai-google': 1.0.0-beta.7
-  '@askdb/ai-openai': 1.0.0-beta.7
-  '@askdb/client': 1.0.0-beta.6
-  '@askdb/config': 1.0.0-beta.12
-  '@askdb/connectors': 0.1.0-beta.8
-  '@askdb/core': 1.0.0-beta.43
-  '@askdb/enrich': 0.2.0-beta.14
-  '@askdb/http-api': 1.0.0-beta.43
-  '@askdb/introspect': 0.3.0-beta.17
-  '@askdb/mysql': 0.1.0-beta.18
-  '@askdb/postgres': 0.2.0-beta.19
-  '@askdb/prisma': 0.2.0-beta.17
-  '@askdb/rag': 0.2.0-beta.23
-  '@askdb/sqlite': 0.1.0-beta.18
-  '@askdb/sqlserver': 0.1.0-beta.19
-  '@askdb/studio': 0.2.0-beta.36
-  askdb: 1.0.0-beta.43
+  '@askdb/ai': 0.1.0-beta.8
+  '@askdb/client': 1.0.0-beta.7
+  '@askdb/config': 1.0.0-beta.13
+  '@askdb/core': 1.0.0-beta.44
+  '@askdb/enrich': 0.2.0-beta.15
+  '@askdb/http-api': 1.0.0-beta.44
+  '@askdb/introspect': 0.3.0-beta.18
+  '@askdb/mysql': 0.1.0-beta.19
+  '@askdb/postgres': 0.2.0-beta.20
+  '@askdb/prisma': 0.2.0-beta.18
+  '@askdb/rag': 0.2.0-beta.24
+  '@askdb/sqlite': 0.1.0-beta.19
+  '@askdb/sqlserver': 0.1.0-beta.20
+  '@askdb/studio': 0.2.0-beta.37
+  askdb: 1.0.0-beta.44
 
 importers:
 
@@ -34,30 +29,27 @@ importers:
       '@ai-sdk/openai':
         specifier: 4.0.29
         version: 4.0.29(zod@4.6.5)
-      '@askdb/ai-openai':
-        specifier: 1.0.0-beta.7
-        version: 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))(zod@4.6.5)
       '@askdb/client':
-        specifier: 1.0.0-beta.6
-        version: 1.0.0-beta.6(@askdb/config@1.0.0-beta.12)(@askdb/core@1.0.0-beta.43)(ai@7.0.51(zod@4.6.5))
+        specifier: 1.0.0-beta.7
+        version: 1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
       '@askdb/config':
-        specifier: 1.0.0-beta.12
-        version: 1.0.0-beta.12
+        specifier: 1.0.0-beta.13
+        version: 1.0.0-beta.13
       '@askdb/core':
-        specifier: 1.0.0-beta.43
-        version: 1.0.0-beta.43
+        specifier: 1.0.0-beta.44
+        version: 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
       '@askdb/http-api':
-        specifier: 1.0.0-beta.43
-        version: 1.0.0-beta.43(pg@8.23.1)(zod@4.6.5)
+        specifier: 1.0.0-beta.44
+        version: 1.0.0-beta.44(zod@4.6.5)
       '@askdb/studio':
-        specifier: 0.2.0-beta.36
-        version: 0.2.0-beta.36(@ai-sdk/openai@4.0.29(zod@4.6.5))(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
+        specifier: 0.2.0-beta.37
+        version: 0.2.0-beta.37(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
       ai:
         specifier: 7.0.51
         version: 7.0.51(zod@4.6.5)
       askdb:
-        specifier: 1.0.0-beta.43
-        version: 1.0.0-beta.43(@ai-sdk/openai@4.0.29(zod@4.6.5))(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
+        specifier: 1.0.0-beta.44
+        version: 1.0.0-beta.44(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -98,26 +90,20 @@ importers:
 
 packages:
 
-  '@ai-sdk/anthropic@4.0.65':
-    resolution: {integrity: sha512-3fmxxn5xWGOPU1wGrUCI30YFW5r6h2WrY+sz3rokkVlBHrDr889hPYP1yNoSmOVvtAwCFWlm79P2lRngIPOObg==}
+  '@ai-sdk/anthropic@4.0.96':
+    resolution: {integrity: sha512-eq6rKebpYwvOmFkvhbgrQ7J+TtPsGk3KoEDr+Hu0R1EANm562CAly4s0zaCAQW7Xzw1261oWhOnU8zYLPRxzhA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/azure@4.0.81':
-    resolution: {integrity: sha512-GRuumGejrXvV3c6KA/8b58HB6UgPnrkoxcWDJVeoL/fGs2xNtPO3WNWr596xTdn5IdYbbV1YRSJTu6rapLHCLA==}
+  '@ai-sdk/azure@4.0.116':
+    resolution: {integrity: sha512-oUPtwslcchLXzafygcsbfOXU5dU9AJfZ01JejSQRO4zwQEDAyp6OO06ExR49RSTaMQRtRcTRRIbHlWoQ8CCeHQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/deepseek@3.0.54':
-    resolution: {integrity: sha512-1ByKYV/uis+3U66kueMJgF2DjN0DcJVtacZf7s1+BttKQwIRmHhKnQ3aqDRlIzpc2as59eqO5dxGi8Bfii2Pnw==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/gateway@4.0.100':
-    resolution: {integrity: sha512-diJXVW2D1/NUW2JSg99b8yTpN8eW9AK5ntXSW4B7NrsW5STqwcGJAAOFlfOrQBzYHJlWReyy11WefWetdx4Qsw==}
+  '@ai-sdk/deepseek@3.0.79':
+    resolution: {integrity: sha512-mUiZXlcVdDT8GOuqu0NadbK0RWLrhGk/mRJGwKS7ZK5dLT9fOCqkURlezCU28NDGN2sawNHaQLbyHaWS9LtrPA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -128,8 +114,14 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/google@4.0.82':
-    resolution: {integrity: sha512-2zPYyBSyIcywLtOEJRxlrtXjBjz4KxEU19Qqg/Dk8I9BrsB08+ghG2jv155dtuDZj8qZMrh6LO8J+Wt5O4xVhg==}
+  '@ai-sdk/google@4.0.111':
+    resolution: {integrity: sha512-od/9ubTtYKEA/XVmla44fMZse3uB962VS8HiwZDhC0SxjWLGKKNcJW8vo3P8O40Fl/L0tZofPzi1t8NknY1f6w==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/openai@4.0.108':
+    resolution: {integrity: sha512-XmCnCVnahoFs9VUWsSzn4LyONdDkFivBVs5t7YUWi74giDRwh8VRX4hnk/BtBKEhiBNGRQd80/QTWlf6GsVtng==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -140,138 +132,118 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/openai@4.0.77':
-    resolution: {integrity: sha512-KUCeRneOIww8az/mH3dy68csmOTqa7s0F6fiHEkdXtr1u0xUoQTIU4y7k0YrjjBuyybpX2yN94rf9elhPu4zFg==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   '@ai-sdk/provider-utils@5.0.20':
     resolution: {integrity: sha512-9W8c2mXiGgbo9sBBT4ybEWF8znxla2CO8VTim8t5oCCLP4aDH4o6RvkHfwL/iLC6mEbO4a6LpS2FBbQHccU+ig==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.49':
-    resolution: {integrity: sha512-T+/H8DCvqJoCqLhltVatS7ffA779Iyk/ZZrgNXkrgv51E0n2Cd6eIdCmtwhCGIKqtbTtwCvTmQdAMv5Z8rOGHQ==}
+  '@ai-sdk/provider-utils@5.0.74':
+    resolution: {integrity: sha512-42R/bzs520oy3PMj8FI1KGegjLEjaUsNcaEltb6yxN0KnmhihWvlgMb19pEF8CKKqv6Bq6+qMVji8mtyrMubSQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.51':
-    resolution: {integrity: sha512-z0IsEsDx+dxlZqyCtDjMbBj16NGmxFVTgQcP3+n3EFm9ttNU6wjOgL/kgvaPwtmZM6F7JbtRuLyzr6WOfo5DMw==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/provider@4.0.18':
-    resolution: {integrity: sha512-+GZJIgz1jk86pwEbb3f1BD2bdoSKyWE4Jg4YUc7NMnMozbWemSKYZcw2F4nMaO5qwsL5A8RmioAKW81YktRpIQ==}
-    engines: {node: '>=22'}
-
-  '@ai-sdk/provider@4.0.19':
-    resolution: {integrity: sha512-ryVZSSfmpEsr4bM8rbt9cSBWal+KGYRrm57C+k/hiPQHMiMahaqg2bPF0MpxSUWY8mGpt7s/ajM6PAqNTMKqPQ==}
+  '@ai-sdk/provider@4.0.35':
+    resolution: {integrity: sha512-yBz6fmLS8MSCIzy7NiHEUAq56ZLD4ZA1GR6bpXBxgbwUacP1La7LuwAr/xy9jSzthem4F8Xu2OrhvU/JrE9fYA==}
     engines: {node: '>=22'}
 
   '@ai-sdk/provider@4.0.5':
     resolution: {integrity: sha512-9WAerTaPU2jcVi8dh8x27tySEuLur1Kfg7Go74GuCmsC/2MDSvrTkrK8ZrXWjryEevKfcPPmO1enveE7eqlzoA==}
     engines: {node: '>=22'}
 
-  '@askdb/ai-anthropic@1.0.0-beta.5':
-    resolution: {integrity: sha512-87MYq50Xd3oQ7rNBFIYwNXSfe9ukK8y8jZrvHhoAvLWqR0rDBHB9WMhSTSjzvMp1FBHJSrShjoNResdcEE47Og==}
-    engines: {node: '>=22.12'}
+  '@askdb/ai@0.1.0-beta.8':
+    resolution: {integrity: sha512-Tjzdb5ciLxCAYHrUdrmOdi4rCR4gLuY42gpIGWRU5OpN7YwH3vMmtO24Cl/DeIEKFwjAWFgWyAXaloZ2Z6YUtA==}
+    engines: {node: '>=22.23.4'}
     peerDependencies:
-      '@askdb/ai': 0.1.0-beta.7
-      ai: ^7.0.113
+      '@ai-sdk/anthropic': ^4.0.0
+      '@ai-sdk/azure': ^4.0.0
+      '@ai-sdk/google': ^4.0.0
+      '@ai-sdk/openai': ^4.0.0
+      ai: ^7.0.51
+    peerDependenciesMeta:
+      '@ai-sdk/anthropic':
+        optional: true
+      '@ai-sdk/azure':
+        optional: true
+      '@ai-sdk/google':
+        optional: true
+      '@ai-sdk/openai':
+        optional: true
 
-  '@askdb/ai-azure@1.0.0-beta.7':
-    resolution: {integrity: sha512-p7L3jKyDzG6doKcPpFrAt09K2KRVPhrBSCLVA0HHp5nO+TcJBypRiwxsOngcwznYxKZmThG4hbqyST7i5l0/Xg==}
-    engines: {node: '>=22.12'}
+  '@askdb/client@1.0.0-beta.7':
+    resolution: {integrity: sha512-1FkxP3h0pztRJn4xNP2oMQ5ND7WVeg2oa6ZcLXgvmjEmUpafqjD27MysD0cxYUlbs4SDL29FT1oO/ITGlly/ww==}
+    engines: {node: '>=22.23.4'}
     peerDependencies:
-      '@askdb/ai': 0.1.0-beta.7
-      ai: ^7.0.113
+      '@ai-sdk/anthropic': ^4.0.0
+      '@ai-sdk/azure': ^4.0.0
+      '@ai-sdk/google': ^4.0.0
+      '@ai-sdk/openai': ^4.0.0
+      '@askdb/config': 1.0.0-beta.13
+      '@askdb/core': 1.0.0-beta.44
+      ai: ^7.0.51
+    peerDependenciesMeta:
+      '@ai-sdk/anthropic':
+        optional: true
+      '@ai-sdk/azure':
+        optional: true
+      '@ai-sdk/google':
+        optional: true
+      '@ai-sdk/openai':
+        optional: true
 
-  '@askdb/ai-google@1.0.0-beta.7':
-    resolution: {integrity: sha512-VIbjvOsmufKSNzFPlMSo/FuTQEQ7SYPdY5v081zXRVC7qy9/2+btY6LyiEdHvlO4DTTznYSi9RbQfFTHkhVtvQ==}
-    engines: {node: '>=22.12'}
+  '@askdb/config@1.0.0-beta.13':
+    resolution: {integrity: sha512-4Lnuem5IMQ8igoXRKLlJso/17sd6ksI4rbMsu9IcBrYy69chtahGcGZX+ub7nhKyUd3yK+fyL4d0ZkOwZYFwnQ==}
+    engines: {node: '>=22.23.4'}
+
+  '@askdb/core@1.0.0-beta.44':
+    resolution: {integrity: sha512-p8SVFFdLy5YLljmpi8W3ufvgW+tdAxzy6zH/jAP/rUuaLRUbEDYTcdZtFtrtpzdnsWIBaRg/Z/mg2xrjBeV9vA==}
+    engines: {node: '>=22.23.4'}
     peerDependencies:
-      '@askdb/ai': 0.1.0-beta.7
-      ai: ^7.0.113
+      ai: ^6.0.0 || ^7.0.51
 
-  '@askdb/ai-openai@1.0.0-beta.7':
-    resolution: {integrity: sha512-lJcccwwzDSAgyOFBi0PjrweAHqkv/7R23xlk2CstzbrMuYvRt5qpis5ZRlUTa8Dqubmvl1pacA0/FYWOihFMnw==}
-    engines: {node: '>=22.12'}
-    peerDependencies:
-      '@askdb/ai': 0.1.0-beta.7
-      ai: ^7.0.113
+  '@askdb/enrich@0.2.0-beta.15':
+    resolution: {integrity: sha512-uBvuORck6+rpOdAEfS5U26wylshit1xKTFP3t31X96b99vyzzSpm78TMAfK630+DouXxDguLHRWHEhTbVJc2tQ==}
+    engines: {node: '>=22.23.4'}
 
-  '@askdb/ai@0.1.0-beta.7':
-    resolution: {integrity: sha512-pmoj8scren+gXNQzHkfWY4m4xLLt1TWkDKKH7LJYu11MqNE2rdgljN8DRSu9TmNkV3uhs6drfM4SbSMlhhb9+A==}
-    engines: {node: '>=22.12'}
-    peerDependencies:
-      ai: ^7.0.113
-
-  '@askdb/client@1.0.0-beta.6':
-    resolution: {integrity: sha512-IWlNXu337QZk7YRJCNn+9GMRvnu3Rn7lAAaa4dCR45VG6vosa0RvoD5gzbxfRos3icAa3HgUQIVVDPtm7mpS8Q==}
-    engines: {node: '>=22.12'}
-    peerDependencies:
-      '@askdb/config': 1.0.0-beta.12
-      '@askdb/core': 1.0.0-beta.43
-      ai: ^7.0.113
-
-  '@askdb/config@1.0.0-beta.12':
-    resolution: {integrity: sha512-p9SC3mEpiWlm24GP8FC6gtyFRh5siK+6UhBZjJTcudfsaiafo0mvxyLFdDCOx99PYbS1Lgbh6C3HKVH7037lIQ==}
-    engines: {node: '>=22.12'}
-
-  '@askdb/connectors@0.1.0-beta.8':
-    resolution: {integrity: sha512-AJKI+bF0PCPLypiqE3LlIumvW249zD69w238b5zxsNjngDofUQgIDIv+tyjD+RaiDArQebNzyIK2b2dA2e37Fg==}
-    engines: {node: '>=22.12'}
-
-  '@askdb/core@1.0.0-beta.43':
-    resolution: {integrity: sha512-eI1C3pHrSI78CMaxb5dEdahFzmbl2bFoZsuh0dXilR2NZuC73kFzQBmuwiIFeHu2IppQ2lhfsJXbFaAKEiTYHg==}
-    engines: {node: '>=22.12'}
-
-  '@askdb/enrich@0.2.0-beta.14':
-    resolution: {integrity: sha512-NOaCiPQ5WL2UkSgn8k7Ykdux9yS0v0iCmskmJgiUA+XSzU5H0R8TSWjB/g5HNGDfM6LJgvXw7ruuQMUnAceitA==}
-    engines: {node: '>=22.12'}
-
-  '@askdb/http-api@1.0.0-beta.43':
-    resolution: {integrity: sha512-kWW4TF+WF3pIv0lcaXCGS9UMtNioXycK18zSip3GZLOMU+PWOwcjDBb5O1hXFeVlYBF2OxDqqRplSA9qVnuzwQ==}
-    engines: {node: '>=22.12'}
+  '@askdb/http-api@1.0.0-beta.44':
+    resolution: {integrity: sha512-rxto7aiCiMsWP5E5ObVvJcfZvfG1hvOUoAcva5QsQRfOA7a9YbTERRHMuweRRPec6dXldDtC1ZqV7S007kwx3Q==}
+    engines: {node: '>=22.23.4'}
     hasBin: true
 
-  '@askdb/introspect@0.3.0-beta.17':
-    resolution: {integrity: sha512-IjahQQadxBF1tESk0pIwVSg9dv66HnCtnqCAPEy2GzNXtBRtA6p4XeRcp+0NWPITIB5Okz5EcdrZ6k0xnqTWww==}
-    engines: {node: '>=22.12'}
+  '@askdb/introspect@0.3.0-beta.18':
+    resolution: {integrity: sha512-M40IaztZ3QTjnJ3IHYKHIZiYNOv6K+ClFnvGLDlglH0XkyFoStJgPR/oqArvbsj2Isq139siFa/4ir+0CtFNGA==}
+    engines: {node: '>=22.23.4'}
 
-  '@askdb/mysql@0.1.0-beta.18':
-    resolution: {integrity: sha512-U91obppTnRrdjyNZ5DV37mIytFMdD7Smh0gXetUoCihbgXLA1altfQHK2ysHMkpiB091ucOFuJ29fc4Vt4DVFg==}
-    engines: {node: '>=22.12'}
+  '@askdb/mysql@0.1.0-beta.19':
+    resolution: {integrity: sha512-Gd6tiBR23jtxFNjtA4A2KV4n/UJ7hBMKYU3Al5WbNSBOfVFStcKVWffYV/s79sIB5MB3o9QcPCz0J1ao3j5mjw==}
+    engines: {node: '>=22.23.4'}
     peerDependencies:
       mysql2: '>=3'
     peerDependenciesMeta:
       mysql2:
         optional: true
 
-  '@askdb/postgres@0.2.0-beta.19':
-    resolution: {integrity: sha512-EI3QAk7nOkT4wTp7D0VS+jDCMEBF79zej4/i1oVQIuibK73SJupfETm5aULkz8+dIjTyxQ0Ayr6UWxfjWf8FvA==}
-    engines: {node: '>=22.12'}
+  '@askdb/postgres@0.2.0-beta.20':
+    resolution: {integrity: sha512-cv4RaU0U5PIFx/UTzpLn2KJ1lRgAs+NCtxDjQAilwiqpz+HwCuek2GT1hC3Sw94lomd3tEsjthzay/4U/hl+fA==}
+    engines: {node: '>=22.23.4'}
     peerDependencies:
       pg: '>=8'
     peerDependenciesMeta:
       pg:
         optional: true
 
-  '@askdb/prisma@0.2.0-beta.17':
-    resolution: {integrity: sha512-nsHl4zN1aQ7YGjMf1R/KaRICXLsVcQ5JHbLQ8zKZUqZug1nAPpg3WAqGSwz/NKgG0uz/r+kSOQTEbUoOGxEExA==}
-    engines: {node: '>=22.12'}
+  '@askdb/prisma@0.2.0-beta.18':
+    resolution: {integrity: sha512-NfKP0wCWWAHaYUBoQ+kWiKsJvbiauviWeOhaw2GhYFGOHxVaI07HhnHyorsACxedSL/NKmitutQaMpuTNLSWGw==}
+    engines: {node: '>=22.23.4'}
 
-  '@askdb/rag@0.2.0-beta.23':
-    resolution: {integrity: sha512-mgl1JkKNBM/17f2sBFHVG1YDHcQlHfJRYdTz4HlaEsXKLb0DTqMGlwLgNmQT/qZSg56gPUPbEcOX0QHnHIEU+Q==}
-    engines: {node: '>=22.12'}
+  '@askdb/rag@0.2.0-beta.24':
+    resolution: {integrity: sha512-MLs9vJrioMswCKiqLR3kpaBU3J9dXzr/YyxUpTfU9ooh952BSUWuwkGu7v9t+h+NgLk6hVaWSbNeYOn2S1cEbA==}
+    engines: {node: '>=22.23.4'}
     hasBin: true
     peerDependencies:
-      '@ai-sdk/openai': ^4.0.74
-      ai: ^7.0.113
+      '@ai-sdk/openai': ^3.0.0 || ^4.0.29
+      ai: ^6.0.0 || ^7.0.51
       pg: '>=8'
     peerDependenciesMeta:
       '@ai-sdk/openai':
@@ -281,31 +253,31 @@ packages:
       pg:
         optional: true
 
-  '@askdb/sqlite@0.1.0-beta.18':
-    resolution: {integrity: sha512-MLzkgcLF2P7P9WMgaIVyZl3hUkdY9zV0c+SJnufxoStJI/uQ7lzPmX2qMQRS6YZvlSSH2DuRCecT8MfUFNCXIA==}
-    engines: {node: '>=22.12'}
+  '@askdb/sqlite@0.1.0-beta.19':
+    resolution: {integrity: sha512-XPK3ZkkGAFriXlCB5hn3f5MdIqXQnvvGnv92uiKkzYibfXmbVUfWllvNlVZ7WddWpYsAP+xntW6hGvOFJm5CKg==}
+    engines: {node: '>=22.23.4'}
     peerDependencies:
       better-sqlite3: '>=12'
     peerDependenciesMeta:
       better-sqlite3:
         optional: true
 
-  '@askdb/sqlserver@0.1.0-beta.19':
-    resolution: {integrity: sha512-HQA0zqLx5zXPOAt7sHcT9NGpR5j/M5q8OJiMOzWBBUqLixKVsNp3uW3xZrC2/hxRBoVsgGtGGgB5txLxxgHdEg==}
-    engines: {node: '>=22.12'}
+  '@askdb/sqlserver@0.1.0-beta.20':
+    resolution: {integrity: sha512-Hop1V+UevUM99K24b0lP2jX3BSDpO2dHzFgGQ4E++2Dce0M7xcmmX+duZo9zAPb3zDT+o8kdxHXQcuRU7H5p/Q==}
+    engines: {node: '>=22.23.4'}
     peerDependencies:
       mssql: '>=12'
     peerDependenciesMeta:
       mssql:
         optional: true
 
-  '@askdb/studio@0.2.0-beta.36':
-    resolution: {integrity: sha512-fENnYY2z7MFVH0Qg3A1V/rw7xf+rre/hDNf1FAiE20EcDtJTSTzkntPJUQaAPugiCEYHaaQqJyZJ8GDYGIQ5sg==}
-    engines: {node: '>=22.12'}
+  '@askdb/studio@0.2.0-beta.37':
+    resolution: {integrity: sha512-fMv6O38uvhLm/Pf3yLRAgcUSWPhP5lc0LSBN+E7N47OrEpNtwyEE89FV7biLccaK3E0XUfQvSId6PT5oCHcGFw==}
+    engines: {node: '>=22.23.4'}
     hasBin: true
     peerDependencies:
-      better-sqlite3: '>=9'
-      mssql: '>=10'
+      better-sqlite3: '>=12'
+      mssql: '>=12'
       mysql2: '>=3'
       pg: '>=8'
     peerDependenciesMeta:
@@ -542,21 +514,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inquirer/ansi@2.0.8':
-    resolution: {integrity: sha512-WpQM+Ti6Z40EFwwt+uL2p4UabT+W179zHp6HhLVOzfbwnVn05IPO/eXIZXGNqcT1jbQ15SujNLzQ39k4QPPxBQ==}
+  '@inquirer/ansi@2.0.10':
+    resolution: {integrity: sha512-dwrc+1aqVZpHNkNDswXGtn1typ+Pxpo5FHZRyBw1le7onEJUkPUkYOY1FIFC1LvFMYUqqLuWBwElhAmencL7MQ==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
 
-  '@inquirer/checkbox@5.2.5':
-    resolution: {integrity: sha512-bRt8J8m+Fot9CXv+zNQGXUq2ET0MggR1fPz7v6edN6MFYmsbfGnMmkmWZJEegMKqrAC8ej/o1sqisHZXZJMAfQ==}
-    engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
-    peerDependencies:
-      '@types/node': '>=18'
-    peerDependenciesMeta:
-      '@types/node':
-        optional: true
-
-  '@inquirer/confirm@6.3.2':
-    resolution: {integrity: sha512-Xvr/0HggjddPtGppuqVmxhTw+Hr8PvsZ/k0HmOEaAqQEt80OITNkFWnsdNmyT0/eM4Ab+iJLx2R8rctlEyfSVg==}
+  '@inquirer/checkbox@5.2.8':
+    resolution: {integrity: sha512-NY/S1EalQhlonqhwwsarrcnkH7s9ByQuvjWYdk1jB2Gb9EPQJjKkhCTWjM3yQ0UpHaLm1XbIL89b+32G8rhO5w==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -564,8 +527,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/core@12.0.3':
-    resolution: {integrity: sha512-wsSy0sznmXwkty+2PzZwx00Cazc/E0r0B7mAzdGROz2Ct+DFZXaK7WDjGZvgjRldxH5ZhFVfF2lgkYrqgOw2KA==}
+  '@inquirer/confirm@6.3.5':
+    resolution: {integrity: sha512-BJ59BOyURiZiAxdr9AuRu38/k+rV+DcTIM2fUF/c/BXrab6H8zMZTTOl3LgkSJH96Xob2vOJxDiBkHiz32Xx2w==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -573,8 +536,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/editor@5.3.3':
-    resolution: {integrity: sha512-YsKkS2q63IiLtaDK/9nqzdComN97SDQrmKiyNggN+ceP4ty+Z6VwyTz3FpjeUWeW1Efss2xHFKCC9sx7hnrsxg==}
+  '@inquirer/core@12.0.6':
+    resolution: {integrity: sha512-5yxn2LsJ8Tu4ei2a+yNkmFRhM/cb+JMEsEs/AW6CCOnBnpMy4IjYiPMFyHtYq8weOmlTyqqCx40y0DsD7OsEPw==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -582,8 +545,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/expand@5.1.5':
-    resolution: {integrity: sha512-uHuXLmXW+TtIfT/9vSBotypAkqn1n34Ul+CLGPos/xANyO4Ff5xZzkYhbKR4NEcfVK4a9mHQOpwVZzluSHFRGw==}
+  '@inquirer/editor@5.3.6':
+    resolution: {integrity: sha512-Z5SOeRC5VNkINfKN4rY8BSaYKb3GYi8iSEqZZRqogsE2GhBBToQ0Xw25SbI+4bcatLzU009mZ5d9EuJNiJuUCg==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -591,8 +554,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/external-editor@3.0.5':
-    resolution: {integrity: sha512-f3QQJRIX5ZEneBHNUIuPjmbdzHnmRFJA8r2dkcb8q+OM5Uv5KtnuAttQumnrjcBVBM3mcTX1CkmtAkU58VRZxg==}
+  '@inquirer/expand@5.1.8':
+    resolution: {integrity: sha512-dMEnTkpLqzM/sbILwL7QJgx9iX5hoEM8+bh6shgwd9mYJamdOnth7y2mMaFd08Glj9AXEFKllWcGYyBqnJsHrA==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -600,12 +563,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/figures@2.0.9':
-    resolution: {integrity: sha512-EAWgUTGQ/Umgga51dE3B2PUHbufuXarDfg86uVgoSgNHNNQnyFKcOrQLWVqYMghuSyHh8+2HUH0Js9cTC1WAdg==}
-    engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
-
-  '@inquirer/input@5.1.6':
-    resolution: {integrity: sha512-HtcJhB2QFVXbLuJ5S3syhNbTUVxYvwqV4VRBDkQceBloC9bmTViUoRFP5PbSaDZb3HzfPmpuU/gG4ybVBz4FHA==}
+  '@inquirer/external-editor@3.0.7':
+    resolution: {integrity: sha512-enNqTJpojgISCG+a5acjnfJ02hcRTFUBVm8uXiCY40PRPZtSzFnNLskOTU+kDUUEODYma90syxuea1rRtUFh0Q==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -613,8 +572,12 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/number@4.2.3':
-    resolution: {integrity: sha512-6Yuwh1NGSbu1Lo4N1EWjXs1jKRntLg/ZCwhmeorEHde90v1XxAozdbd4Iu30eOQLW+6h1hp2O9ujNfLSbTPJnA==}
+  '@inquirer/figures@2.0.10':
+    resolution: {integrity: sha512-51elrUJV3jZpvD0ygz8+U10Kc6+Lzqln+/tYmnbhy6jo5oXpE6hMCcv+OTBC0enwJXsb3JIuT3VtEinRNCSK2A==}
+    engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
+
+  '@inquirer/input@5.1.9':
+    resolution: {integrity: sha512-2Vd5T7lTxfgJMpAd3aOu6bQpbUnCU7tBgvTQIZkP/7juJzmRmTM2t5XfOCuirFduWLTSJI/WZp32Cq1E01TVeg==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -622,8 +585,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/password@5.2.2':
-    resolution: {integrity: sha512-W9zYdyzogK+6110mqwaSJWCBu2yA5Q/OfnGSjjZB1bNpHlmUozXxTl0+QOZBNeVd6Qo81/qT75gW05gLAtITxw==}
+  '@inquirer/number@4.2.6':
+    resolution: {integrity: sha512-22LnGGCDm1M/pKXxxF8n6ppr/1IztdsxqeqeBRUMTTNnJTkjIBiAkewiDM4u/gjtazj/FvZS+nk9AbO/vEcBFQ==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -631,8 +594,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/prompts@8.7.2':
-    resolution: {integrity: sha512-QoRB4wFIjgH5iOhSjoIKMkTvSHDuV+O3OITlIqAYO0oK5x364GJILXiMBvlPiE+klg7Xx9tq5XVqQHcGUDYYPA==}
+  '@inquirer/password@5.2.5':
+    resolution: {integrity: sha512-0v0wLQA4uhWbybmdH6oPl7ooxCiymNylkvi2gCSc+mA5ZQB6QoJLVhoHq12T82lhozpp9fpMJnJkC1nJrU/A+A==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -640,8 +603,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/rawlist@5.3.5':
-    resolution: {integrity: sha512-1oHky1ONfCOwNrnkQGDE1oaSij/3fI6HFMSf2H/WsGO2lEyDX9My82iggITSy9ddSZ8yk8j9v41OI0fVoSIoaA==}
+  '@inquirer/prompts@8.7.5':
+    resolution: {integrity: sha512-l/IWwC+QhOyXgxkZloOh+n5quGzc1m5ZawyzBmoizCZaxbJeLRdS3pStoqg/JVInJRXaG5aHMhjK6H6oYiBC9A==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -649,8 +612,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/search@4.3.3':
-    resolution: {integrity: sha512-fyuIU1Nbpvwlikjg3gXwJFDI11+EFjqQ7P+iByfmivIKQ1vmaykNrD/vy5unHuUqUpsOsnvJ25//tPF7E/RBRA==}
+  '@inquirer/rawlist@5.3.8':
+    resolution: {integrity: sha512-h+6Y4pPvYvuRbksn1kIBdD9tCYD+E468W5sIcVfLmoLP5IasnY0r33N+r+46ej/P8b2PCREjyKR+MnnfPGdTzg==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -658,8 +621,8 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/select@5.2.5':
-    resolution: {integrity: sha512-9kc15hr8r/kI+3DO/xLog5nOzTz1jqsHXa6JBFzmQKhkoJ8Slda1I1L/uD8ZSZ9tF1yp79wwXe7mclvX1rqR2Q==}
+  '@inquirer/search@4.3.6':
+    resolution: {integrity: sha512-JZj9ttkIvuaFQIc2oxsyqC1ad05WL02ku6W/INVKTCzNaVq1KkhP3AfTRC0m7OWlKZyw+EWwPBFZfYiG9jF6Yw==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -667,8 +630,17 @@ packages:
       '@types/node':
         optional: true
 
-  '@inquirer/type@4.1.1':
-    resolution: {integrity: sha512-yJoHYrMnxIsJZCY+0Vb66Dy3he3kL3e2wOBKhoSwWWAzZAY82emlxwgprCtp6yRixvNRNq9ztfRWQYPNr3Go7A==}
+  '@inquirer/select@5.2.8':
+    resolution: {integrity: sha512-BklkkAAOpjdCfuQw5fVGcDuhKxA7T1iBpn6b2JUvDDdkIsO3Ftlg+WnWUCVpkUBFagL2o036OFW+xL4lC9wIPw==}
+    engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
+  '@inquirer/type@4.2.1':
+    resolution: {integrity: sha512-lDkPsnv5M5CcYB2T1qTc3dobNTPkVr4DU3Ic2Q6SW8/qVRHgvzdRdmVZ6YqG9Ag1aJTeMsLU0s0WPRh3CZWDQQ==}
     engines: {node: '>=23.5.0 || ^22.13.0 || ^20.17.0'}
     peerDependencies:
       '@types/node': '>=18'
@@ -695,55 +667,55 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
-  '@prisma/config@7.10.0':
-    resolution: {integrity: sha512-Rcg828gIRE3HOQ3pOATFjV5d/P0U9OIobxhd/IMxlfWjA4vru0eGwb0AIwFw0rmcLMVShohZYWPixVxkBHsxUA==}
+  '@prisma/config@7.10.1':
+    resolution: {integrity: sha512-+0swF5ELUa3P/9cIR26+gpYjjCbGE0qvEBZhV4zMDkYsrtHjZ884MQbOnWFWXj600N0sSJNnHbtBqe12yDngWg==}
 
-  '@prisma/debug@7.10.0':
-    resolution: {integrity: sha512-caygJKtltmRIgdJ3jRpkOr7yM4DW6zxo5uOmojKWFb3asnxWoRkQOwZmXBgD8FZp4htrX+nMpcWqDwzlQ1+Y4g==}
+  '@prisma/debug@7.10.1':
+    resolution: {integrity: sha512-eFCAkGZ13D/qPg48JBlG5IWi9cSBBOC7oG3abDPcAkYioDWlIjh0YJJLK2J7qo5S+xWWD8I6egAN/8KbCaiMCA==}
 
-  '@prisma/dmmf@7.10.0':
-    resolution: {integrity: sha512-TSw3Vo+TFKGRXNH/D2/M755Vm9rD3h3F0xoFfexPvEcPunQWlxUmj5VU/k8Pe3afQ4jFjUVBxem+/+A7YFwvsg==}
+  '@prisma/dmmf@7.10.1':
+    resolution: {integrity: sha512-56mAUF8wlLAqe9jCVBJKwo5UgaAksctB4vGrIK34X6+8UOUU2gDNVz8I+CNra9BeqFrRiCZUWvQJJu88ukPsmA==}
 
-  '@prisma/driver-adapter-utils@7.10.0':
-    resolution: {integrity: sha512-u8zkcRLlaryO652T4qavBg0HmzNW5tSKdsCn6hc1PhWAp/J6k0vrxLuUs+b9o+HcjsK7Dfa01o4OFSn0frauJA==}
+  '@prisma/driver-adapter-utils@7.10.1':
+    resolution: {integrity: sha512-DJ4c6xvVnm3s9ZUyql9nCUicADSqyvH+CjXRCM9L6m5zJxCNmebCElG6X4irICq3rosBwlX+S19Dxq/4IrZk3A==}
 
-  '@prisma/engines-version@7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3':
-    resolution: {integrity: sha512-8OJ6RuZTZ06eFUOtBwxVmv8XMmOW6HWN5F+uxUbZkGxR0Bfab1dfAdXaHPmR5mb59E+fmUo8IOzXlbLY1SClbw==}
+  '@prisma/engines-version@8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8':
+    resolution: {integrity: sha512-XjXmwjN2NE340RpXoXv8ZF8aNAvr0FE+7gNfkKeW6vyjXs7F8uxvEbWQoVrhioXDQoIsnNmv7r+wxvzfdEZaWA==}
 
-  '@prisma/engines@7.10.0':
-    resolution: {integrity: sha512-KNumN6NHFwybvfdYzTee9pqwx5PvknpWAaHn6L5NsbrKdl+SQrsVZs9opKs6U6SAsvB26HDt3WybRjOhgoWOYQ==}
+  '@prisma/engines@7.10.1':
+    resolution: {integrity: sha512-R6/ghv1Bu36FhCdQLFof1pNtyoWoeDzJLYeTKjgqb4eGtOAJx7ZqJtcm4pzkahLfZ9rYz8AkmsMDwkyiYbXPCQ==}
 
-  '@prisma/fetch-engine@7.10.0':
-    resolution: {integrity: sha512-Zqyu8DY14t6W/xwmAxUYWCXtHrvQnSvT644EAZSsdM8NSmCS74vJJbBKdVsK3ucFpnUWkEpbO1a0CxJXrg130g==}
+  '@prisma/fetch-engine@7.10.1':
+    resolution: {integrity: sha512-qZezeaExLWG2ptbHOrMxdiWluKHgqEclTdJbvY6pk6+Wg7EiVkeq5U3cXz9ti8nd0bngNvsDgledLHVRg5LF1w==}
 
-  '@prisma/generator-helper@7.10.0':
-    resolution: {integrity: sha512-hEOsOo4pxmsJJjw64hu8Yh2PYYl3cvoSQT0xMDKkYDmgRNBARshnjrJJ/DJT35iFEsoej5ndViEpHmt3G3Aeaw==}
+  '@prisma/generator-helper@7.10.1':
+    resolution: {integrity: sha512-JnejJ/ricWKO+yCrNEkHa0zLo7VyNRvlHtA6O5AmCPgAp8XUcoGdonssdOauNjTgXCUzQ1YOBWNryNM9y6Ivdg==}
 
-  '@prisma/generator@7.10.0':
-    resolution: {integrity: sha512-GJfd4E7buRlOjc4FT1Sfo9SW4zlzYbmkmGy6OVWedzsZdBA4C+ommdfDDmMc8ZcokccpUmZK/zJ1A3tdR0tKFg==}
+  '@prisma/generator@7.10.1':
+    resolution: {integrity: sha512-SGrXz4CmQgoxQVoT70wzhL5vD5XLEhMYT7keQQL2zMNFE0WYO9hQ2HJHKHAsMYI9LyordFRrjYj/W9EpN/YyQw==}
 
-  '@prisma/get-dmmf@7.10.0':
-    resolution: {integrity: sha512-xM587l93A+mFJbJTiW/66uImbMmAsjSZspj00N/35v3C+F5B9zPy2Fo1gWzzUUH6LCP6VeRY2BImjiKiNHkHtQ==}
+  '@prisma/get-dmmf@7.10.1':
+    resolution: {integrity: sha512-0TsPcjsoPgANetgcfg7J/ZW2g8vT6W9bT7OuuDu4chwDuEUs6nKnCT50Q+linm7qBHWQ3QYIv2BwO5b+YR7Oww==}
 
-  '@prisma/get-platform@7.10.0':
-    resolution: {integrity: sha512-0bra1LFYi8xNw0yqV62bHJNQk4BKleOngZiqPWIQc7a3+9q6rqsnqJ15BuepP8943PFMvtmgnP52juZsyYkA6w==}
+  '@prisma/get-platform@7.10.1':
+    resolution: {integrity: sha512-iVnghHne5vcaobBjPVCMEjh5r/1UCj394EIGTUclasFRatpR/MQwcM2veLv5kgoFSyYP54nch/lNFCQRYcDxvg==}
 
-  '@prisma/internals@7.10.0':
-    resolution: {integrity: sha512-a4RV6QUKeQmmUXWxjjEjZugRcvN3cjtfWQdX5+N2O4CH3psVubYeA5keYq/V6G284PJTzqMXJM6UfFV4c20HMw==}
+  '@prisma/internals@7.10.1':
+    resolution: {integrity: sha512-E4EdbTqv/Q1EjKCzev4coeP5SpQsJ1UjQyEqHOAc884k9Tzln7zE7EO21bk9uqndfFeAMMVvfE2X0c6nJaC6zQ==}
     peerDependencies:
       typescript: '>=5.4.0'
     peerDependenciesMeta:
       typescript:
         optional: true
 
-  '@prisma/prisma-schema-wasm@7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3':
-    resolution: {integrity: sha512-ijAY8XcHDmBKZaazLCPGzQIASpyZHPNlx2xynI3SaLtQFEeHxyfi+ih0J80aDtWriH11782ccHIx+qDtlLxGhw==}
+  '@prisma/prisma-schema-wasm@8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8':
+    resolution: {integrity: sha512-VG5rgJX6+nNIPxTt0ehpz7ETZG37IXqmgUWz9HDqZgbI8xHoDS7NBKaoBddTYk8TZELK+CvdqKrTCu3IMSI31A==}
 
-  '@prisma/schema-engine-wasm@7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3':
-    resolution: {integrity: sha512-wKt56UDR7JoOs9VQjnwht0NaUJgiMn5WRNwqp52vKbnBcRutt8RbHDzr5wUAlm4aHcskFoEcgSw3+Tc7YHRmFg==}
+  '@prisma/schema-engine-wasm@8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8':
+    resolution: {integrity: sha512-ikOnuIEIEbNOic5nG1CaVaNrqF9xrpATcATx9/8GLLqbWW6lJRNYR4MpAAHDgefIA59gcKlOehdOhd3kdPZdfg==}
 
-  '@prisma/schema-files-loader@7.10.0':
-    resolution: {integrity: sha512-8BZ4C/ChYKOL8/4aAGlOpfLsg851BXVYmlR78F6xq1gwNiM2iG224iTJ2Pb/w51i2Ci+WQJ8RLqVPTVo1Ro5yg==}
+  '@prisma/schema-files-loader@7.10.1':
+    resolution: {integrity: sha512-6WZn60Eg9BHwYY3LH6R5gx5lNIBMvS7oas77mI0Wkeux2SyYwhOAUvpjN7MGGhLGK4gu5D1+rhMZ0wLiYPvKxg==}
 
   '@rolldown/binding-android-arm-eabi@1.2.11':
     resolution: {integrity: sha512-A5kXfGKvKWWZE0TtPrfsvT+q4Y5d1QG8gGUzpYjGydM+fARM9MuX90PrXYXe0XbsDVgyxxNzHo6giCj90bsFNw==}
@@ -1030,12 +1002,6 @@ packages:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
 
-  ai@7.0.122:
-    resolution: {integrity: sha512-Un4yVROG+BMd6Q62xUxb9yV+wlTrUGeXhRtg5ltEFDV0p3lOYQaQHK9ozB6rdPdqlH3LyaszfbFdUkZ1p00nIQ==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   ai@7.0.51:
     resolution: {integrity: sha512-yyxSDZmlpTZs2oepyjzHMXrPk0mJ2ITpw8TfXYiF53yo0WkQJ1qm6MbpUiYclh640D35nNJ8bq57RffSrX+Qzg==}
     engines: {node: '>=22'}
@@ -1048,9 +1014,9 @@ packages:
   argparse@1.0.10:
     resolution: {integrity: sha512-o5Roy6tNG4SL/FOkCAN6RzjiakZS25RLYFrcMttJqbdd8BWrnA+fGz57iN5Pb06pvBGvl5gQ0B48dJlslXvoTg==}
 
-  askdb@1.0.0-beta.43:
-    resolution: {integrity: sha512-Z3A2Gftv/a2UITaaRTUjzZwAtsUPzvNVmEEgHYeYTItZBCMxysOvPH0RnBEnzUOg+0P4d49eXf5CCN9VhXKtpg==}
-    engines: {node: '>=22.12'}
+  askdb@1.0.0-beta.44:
+    resolution: {integrity: sha512-KFPF2KWTC6dHqMqIaFlMXeKJP8aJWafdqR2RWxU2Gob1SDT9aW/aHVuaDVQ/XJp73+H/9VMWdnxOMuLateI/+Q==}
+    engines: {node: '>=22.23.4'}
     hasBin: true
 
   assertion-error@2.0.1:
@@ -1160,6 +1126,11 @@ packages:
   dotenv@17.4.2:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
+
+  dotenv@18.0.9:
+    resolution: {integrity: sha512-3fVOW4cB02R066PUSwn8O4TJyz9NckQl7F81blIbaq9jKBm2tSmOKky7ZHIXzGvkVPXCSn6jkpziBPZdGFs8Tw==}
+    engines: {node: '>=12'}
+    hasBin: true
 
   ecdsa-sig-formatter@1.0.11:
     resolution: {integrity: sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ==}
@@ -1539,8 +1510,8 @@ packages:
   pino-std-serializers@7.1.0:
     resolution: {integrity: sha512-BndPH67/JxGExRgiX1dX0w1FvZck5Wa4aal9198SrRhZjH3GxKQUKIBnYJTdj2HDN3UQAS06HlfcSbQj2OHmaw==}
 
-  pino@10.3.1:
-    resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
+  pino@10.4.0:
+    resolution: {integrity: sha512-bk1ZMTwG/Vymx+zPoa28MhNzucFvXJWp3csrSuxuHPSMeUettaCoQ5Jvg07mtC4JGNpcfTwz41oVCnNgBK9+vA==}
     hasBin: true
 
   pkg-types@2.3.3:
@@ -1597,10 +1568,6 @@ packages:
   readdirp@5.1.1:
     resolution: {integrity: sha512-Kko+Y5XQ6fM+Ce3dq3m9YGxnacYZYl9cA1wZjaF3Vbry2L3i1qVg8+CAgNPsXRArPMUMCaOR7oa9Nqntc43JKA==}
     engines: {node: '>= 20.19.0'}
-
-  real-require@0.2.0:
-    resolution: {integrity: sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg==}
-    engines: {node: '>= 12.13.0'}
 
   real-require@1.0.0:
     resolution: {integrity: sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g==}
@@ -1819,33 +1786,29 @@ packages:
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
+
 snapshots:
 
-  '@ai-sdk/anthropic@4.0.65(zod@4.6.5)':
+  '@ai-sdk/anthropic@4.0.96(zod@4.6.5)':
     dependencies:
-      '@ai-sdk/provider': 4.0.18
-      '@ai-sdk/provider-utils': 5.0.49(zod@4.6.5)
+      '@ai-sdk/provider': 4.0.35
+      '@ai-sdk/provider-utils': 5.0.74(zod@4.6.5)
       zod: 4.6.5
 
-  '@ai-sdk/azure@4.0.81(zod@4.6.5)':
+  '@ai-sdk/azure@4.0.116(zod@4.6.5)':
     dependencies:
-      '@ai-sdk/deepseek': 3.0.54(zod@4.6.5)
-      '@ai-sdk/openai': 4.0.77(zod@4.6.5)
-      '@ai-sdk/provider': 4.0.18
-      '@ai-sdk/provider-utils': 5.0.49(zod@4.6.5)
+      '@ai-sdk/deepseek': 3.0.79(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.108(zod@4.6.5)
+      '@ai-sdk/provider': 4.0.35
+      '@ai-sdk/provider-utils': 5.0.74(zod@4.6.5)
       zod: 4.6.5
 
-  '@ai-sdk/deepseek@3.0.54(zod@4.6.5)':
+  '@ai-sdk/deepseek@3.0.79(zod@4.6.5)':
     dependencies:
-      '@ai-sdk/provider': 4.0.18
-      '@ai-sdk/provider-utils': 5.0.49(zod@4.6.5)
-      zod: 4.6.5
-
-  '@ai-sdk/gateway@4.0.100(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.19
-      '@ai-sdk/provider-utils': 5.0.51(zod@4.6.5)
-      '@vercel/oidc': 3.2.0
+      '@ai-sdk/provider': 4.0.35
+      '@ai-sdk/provider-utils': 5.0.74(zod@4.6.5)
       zod: 4.6.5
 
   '@ai-sdk/gateway@4.0.40(zod@4.6.5)':
@@ -1855,22 +1818,22 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.6.5
 
-  '@ai-sdk/google@4.0.82(zod@4.6.5)':
+  '@ai-sdk/google@4.0.111(zod@4.6.5)':
     dependencies:
-      '@ai-sdk/provider': 4.0.18
-      '@ai-sdk/provider-utils': 5.0.49(zod@4.6.5)
+      '@ai-sdk/provider': 4.0.35
+      '@ai-sdk/provider-utils': 5.0.74(zod@4.6.5)
+      zod: 4.6.5
+
+  '@ai-sdk/openai@4.0.108(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.35
+      '@ai-sdk/provider-utils': 5.0.74(zod@4.6.5)
       zod: 4.6.5
 
   '@ai-sdk/openai@4.0.29(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.5
       '@ai-sdk/provider-utils': 5.0.20(zod@4.6.5)
-      zod: 4.6.5
-
-  '@ai-sdk/openai@4.0.77(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.18
-      '@ai-sdk/provider-utils': 5.0.49(zod@4.6.5)
       zod: 4.6.5
 
   '@ai-sdk/provider-utils@5.0.20(zod@4.6.5)':
@@ -1882,29 +1845,16 @@ snapshots:
       undici: 7.30.0
       zod: 4.6.5
 
-  '@ai-sdk/provider-utils@5.0.49(zod@4.6.5)':
+  '@ai-sdk/provider-utils@5.0.74(zod@4.6.5)':
     dependencies:
-      '@ai-sdk/provider': 4.0.18
+      '@ai-sdk/provider': 4.0.35
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.1
       undici: 7.30.0
       zod: 4.6.5
 
-  '@ai-sdk/provider-utils@5.0.51(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.19
-      '@standard-schema/spec': 1.1.0
-      '@workflow/serde': 4.1.0
-      eventsource-parser: 3.1.1
-      undici: 7.30.0
-      zod: 4.6.5
-
-  '@ai-sdk/provider@4.0.18':
-    dependencies:
-      json-schema: 0.4.0
-
-  '@ai-sdk/provider@4.0.19':
+  '@ai-sdk/provider@4.0.35':
     dependencies:
       json-schema: 0.4.0
 
@@ -1912,184 +1862,165 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@askdb/ai-anthropic@1.0.0-beta.5(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/anthropic': 4.0.65(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      ai: 7.0.122(zod@4.6.5)
-    transitivePeerDependencies:
-      - zod
-
-  '@askdb/ai-azure@1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/azure': 4.0.81(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      ai: 7.0.122(zod@4.6.5)
-    transitivePeerDependencies:
-      - zod
-
-  '@askdb/ai-google@1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/google': 4.0.82(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      ai: 7.0.122(zod@4.6.5)
-    transitivePeerDependencies:
-      - zod
-
-  '@askdb/ai-openai@1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/openai': 4.0.77(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      ai: 7.0.122(zod@4.6.5)
-    transitivePeerDependencies:
-      - zod
-
-  '@askdb/ai-openai@1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/openai': 4.0.77(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.51(zod@4.6.5))
-      ai: 7.0.51(zod@4.6.5)
-    transitivePeerDependencies:
-      - zod
-
-  '@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5))':
-    dependencies:
-      ai: 7.0.122(zod@4.6.5)
-
-  '@askdb/ai@0.1.0-beta.7(ai@7.0.51(zod@4.6.5))':
+  '@askdb/ai@0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))':
     dependencies:
       ai: 7.0.51(zod@4.6.5)
+    optionalDependencies:
+      '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
+      '@ai-sdk/azure': 4.0.116(zod@4.6.5)
+      '@ai-sdk/google': 4.0.111(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.108(zod@4.6.5)
 
-  '@askdb/client@1.0.0-beta.6(@askdb/config@1.0.0-beta.12)(@askdb/core@1.0.0-beta.43)(ai@7.0.122(zod@4.6.5))':
+  '@askdb/ai@0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.12
-      '@askdb/core': 1.0.0-beta.43
-      ai: 7.0.122(zod@4.6.5)
-
-  '@askdb/client@1.0.0-beta.6(@askdb/config@1.0.0-beta.12)(@askdb/core@1.0.0-beta.43)(ai@7.0.51(zod@4.6.5))':
-    dependencies:
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.51(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.12
-      '@askdb/core': 1.0.0-beta.43
       ai: 7.0.51(zod@4.6.5)
+    optionalDependencies:
+      '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
+      '@ai-sdk/azure': 4.0.116(zod@4.6.5)
+      '@ai-sdk/google': 4.0.111(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.29(zod@4.6.5)
 
-  '@askdb/config@1.0.0-beta.12':
+  '@askdb/client@1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      dotenv: 17.4.2
+      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.13
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      ai: 7.0.51(zod@4.6.5)
+    optionalDependencies:
+      '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
+      '@ai-sdk/azure': 4.0.116(zod@4.6.5)
+      '@ai-sdk/google': 4.0.111(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.108(zod@4.6.5)
+
+  '@askdb/client@1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))':
+    dependencies:
+      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.13
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      ai: 7.0.51(zod@4.6.5)
+    optionalDependencies:
+      '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
+      '@ai-sdk/azure': 4.0.116(zod@4.6.5)
+      '@ai-sdk/google': 4.0.111(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.29(zod@4.6.5)
+
+  '@askdb/config@1.0.0-beta.13':
+    dependencies:
+      dotenv: 18.0.9
       jiti: 2.7.0
 
-  '@askdb/connectors@0.1.0-beta.8':
+  '@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/introspect': 0.3.0-beta.17
-
-  '@askdb/core@1.0.0-beta.43':
-    dependencies:
-      ai: 7.0.122(zod@4.6.5)
+      ai: 7.0.51(zod@4.6.5)
       gray-matter: 4.0.3
-      pino: 10.3.1
-      zod: 4.6.5
+      pino: 10.4.0
+      zod: 4.6.7
 
-  '@askdb/enrich@0.2.0-beta.14':
+  '@askdb/enrich@0.2.0-beta.15(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/core': 1.0.0-beta.43
-
-  '@askdb/http-api@1.0.0-beta.43(pg@8.23.1)(zod@4.6.5)':
-    dependencies:
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      '@askdb/ai-anthropic': 1.0.0-beta.5(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-azure': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-google': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-openai': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/client': 1.0.0-beta.6(@askdb/config@1.0.0-beta.12)(@askdb/core@1.0.0-beta.43)(ai@7.0.122(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.12
-      '@askdb/core': 1.0.0-beta.43
-      '@askdb/postgres': 0.2.0-beta.19(pg@8.23.1)
-      ai: 7.0.122(zod@4.6.5)
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
     transitivePeerDependencies:
-      - pg
+      - ai
+
+  '@askdb/http-api@1.0.0-beta.44(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
+      '@ai-sdk/azure': 4.0.116(zod@4.6.5)
+      '@ai-sdk/google': 4.0.111(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.108(zod@4.6.5)
+      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/client': 1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.13
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      ai: 7.0.51(zod@4.6.5)
+    transitivePeerDependencies:
       - zod
 
-  '@askdb/introspect@0.3.0-beta.17':
+  '@askdb/introspect@0.3.0-beta.18(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/core': 1.0.0-beta.43
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+    transitivePeerDependencies:
+      - ai
 
-  '@askdb/mysql@0.1.0-beta.18(mysql2@3.24.5(@types/node@22.20.4))':
+  '@askdb/mysql@0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))':
     dependencies:
-      '@askdb/connectors': 0.1.0-beta.8
-      '@askdb/core': 1.0.0-beta.43
-      '@askdb/introspect': 0.3.0-beta.17
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
     optionalDependencies:
       mysql2: 3.24.5(@types/node@22.20.4)
+    transitivePeerDependencies:
+      - ai
 
-  '@askdb/postgres@0.2.0-beta.19(pg@8.23.1)':
+  '@askdb/postgres@0.2.0-beta.20(ai@7.0.51(zod@4.6.5))(pg@8.23.1)':
     dependencies:
-      '@askdb/connectors': 0.1.0-beta.8
-      '@askdb/core': 1.0.0-beta.43
-      '@askdb/introspect': 0.3.0-beta.17
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      pg-connection-string: 2.14.1
     optionalDependencies:
       pg: 8.23.1
-
-  '@askdb/prisma@0.2.0-beta.17(typescript@7.0.2)':
-    dependencies:
-      '@askdb/connectors': 0.1.0-beta.8
-      '@askdb/introspect': 0.3.0-beta.17
-      '@prisma/internals': 7.10.0(typescript@7.0.2)
     transitivePeerDependencies:
+      - ai
+
+  '@askdb/prisma@0.2.0-beta.18(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)':
+    dependencies:
+      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@prisma/internals': 7.10.1(typescript@7.0.2)
+    transitivePeerDependencies:
+      - ai
       - magicast
       - typescript
 
-  '@askdb/rag@0.2.0-beta.23(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.122(zod@4.6.5))(pg@8.23.1)':
+  '@askdb/rag@0.2.0-beta.24(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)':
     dependencies:
-      '@askdb/config': 1.0.0-beta.12
-      '@askdb/core': 1.0.0-beta.43
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
     optionalDependencies:
-      '@ai-sdk/openai': 4.0.29(zod@4.6.5)
-      ai: 7.0.122(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.108(zod@4.6.5)
+      ai: 7.0.51(zod@4.6.5)
       pg: 8.23.1
 
-  '@askdb/sqlite@0.1.0-beta.18(better-sqlite3@13.0.3)':
+  '@askdb/sqlite@0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)':
     dependencies:
-      '@askdb/connectors': 0.1.0-beta.8
-      '@askdb/core': 1.0.0-beta.43
-      '@askdb/introspect': 0.3.0-beta.17
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
     optionalDependencies:
       better-sqlite3: 13.0.3
+    transitivePeerDependencies:
+      - ai
 
-  '@askdb/sqlserver@0.1.0-beta.19(mssql@12.7.2)':
+  '@askdb/sqlserver@0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)':
     dependencies:
-      '@askdb/connectors': 0.1.0-beta.8
-      '@askdb/core': 1.0.0-beta.43
-      '@askdb/introspect': 0.3.0-beta.17
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@tediousjs/connection-string': 1.1.0
     optionalDependencies:
       mssql: 12.7.2
+    transitivePeerDependencies:
+      - ai
 
-  '@askdb/studio@0.2.0-beta.36(@ai-sdk/openai@4.0.29(zod@4.6.5))(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)':
+  '@askdb/studio@0.2.0-beta.37(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)':
     dependencies:
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      '@askdb/ai-anthropic': 1.0.0-beta.5(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-azure': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-google': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-openai': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/config': 1.0.0-beta.12
-      '@askdb/connectors': 0.1.0-beta.8
-      '@askdb/core': 1.0.0-beta.43
-      '@askdb/enrich': 0.2.0-beta.14
-      '@askdb/introspect': 0.3.0-beta.17
-      '@askdb/mysql': 0.1.0-beta.18(mysql2@3.24.5(@types/node@22.20.4))
-      '@askdb/postgres': 0.2.0-beta.19(pg@8.23.1)
-      '@askdb/prisma': 0.2.0-beta.17(typescript@7.0.2)
-      '@askdb/rag': 0.2.0-beta.23(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.122(zod@4.6.5))(pg@8.23.1)
-      '@askdb/sqlite': 0.1.0-beta.18(better-sqlite3@13.0.3)
-      '@askdb/sqlserver': 0.1.0-beta.19(mssql@12.7.2)
-      ai: 7.0.122(zod@4.6.5)
+      '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
+      '@ai-sdk/azure': 4.0.116(zod@4.6.5)
+      '@ai-sdk/google': 4.0.111(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.108(zod@4.6.5)
+      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.13
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/enrich': 0.2.0-beta.15(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@askdb/mysql': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))
+      '@askdb/postgres': 0.2.0-beta.20(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/prisma': 0.2.0-beta.18(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)
+      '@askdb/rag': 0.2.0-beta.24(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/sqlite': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)
+      '@askdb/sqlserver': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)
+      ai: 7.0.51(zod@4.6.5)
     optionalDependencies:
       better-sqlite3: 13.0.3
       mssql: 12.7.2
       mysql2: 3.24.5(@types/node@22.20.4)
       pg: 8.23.1
     transitivePeerDependencies:
-      - '@ai-sdk/openai'
       - magicast
       - typescript
       - zod
@@ -2310,29 +2241,29 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@inquirer/ansi@2.0.8': {}
+  '@inquirer/ansi@2.0.10': {}
 
-  '@inquirer/checkbox@5.2.5(@types/node@22.20.4)':
+  '@inquirer/checkbox@5.2.8(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/ansi': 2.0.8
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/figures': 2.0.9
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/ansi': 2.0.10
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/figures': 2.0.10
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/confirm@6.3.2(@types/node@22.20.4)':
+  '@inquirer/confirm@6.3.5(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/core@12.0.3(@types/node@22.20.4)':
+  '@inquirer/core@12.0.6(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/ansi': 2.0.8
-      '@inquirer/figures': 2.0.9
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/ansi': 2.0.10
+      '@inquirer/figures': 2.0.10
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
       cli-width: 4.1.0
       fast-wrap-ansi: 0.2.2
       mute-stream: 3.0.0
@@ -2340,92 +2271,92 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/editor@5.3.3(@types/node@22.20.4)':
+  '@inquirer/editor@5.3.6(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/external-editor': 3.0.5(@types/node@22.20.4)
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/external-editor': 3.0.7(@types/node@22.20.4)
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/expand@5.1.5(@types/node@22.20.4)':
+  '@inquirer/expand@5.1.8(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/external-editor@3.0.5(@types/node@22.20.4)':
+  '@inquirer/external-editor@3.0.7(@types/node@22.20.4)':
     dependencies:
       chardet: 2.2.0
       iconv-lite: 0.7.3
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/figures@2.0.9': {}
+  '@inquirer/figures@2.0.10': {}
 
-  '@inquirer/input@5.1.6(@types/node@22.20.4)':
+  '@inquirer/input@5.1.9(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/number@4.2.3(@types/node@22.20.4)':
+  '@inquirer/number@4.2.6(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/password@5.2.2(@types/node@22.20.4)':
+  '@inquirer/password@5.2.5(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/ansi': 2.0.8
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/ansi': 2.0.10
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/prompts@8.7.2(@types/node@22.20.4)':
+  '@inquirer/prompts@8.7.5(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/checkbox': 5.2.5(@types/node@22.20.4)
-      '@inquirer/confirm': 6.3.2(@types/node@22.20.4)
-      '@inquirer/editor': 5.3.3(@types/node@22.20.4)
-      '@inquirer/expand': 5.1.5(@types/node@22.20.4)
-      '@inquirer/input': 5.1.6(@types/node@22.20.4)
-      '@inquirer/number': 4.2.3(@types/node@22.20.4)
-      '@inquirer/password': 5.2.2(@types/node@22.20.4)
-      '@inquirer/rawlist': 5.3.5(@types/node@22.20.4)
-      '@inquirer/search': 4.3.3(@types/node@22.20.4)
-      '@inquirer/select': 5.2.5(@types/node@22.20.4)
+      '@inquirer/checkbox': 5.2.8(@types/node@22.20.4)
+      '@inquirer/confirm': 6.3.5(@types/node@22.20.4)
+      '@inquirer/editor': 5.3.6(@types/node@22.20.4)
+      '@inquirer/expand': 5.1.8(@types/node@22.20.4)
+      '@inquirer/input': 5.1.9(@types/node@22.20.4)
+      '@inquirer/number': 4.2.6(@types/node@22.20.4)
+      '@inquirer/password': 5.2.5(@types/node@22.20.4)
+      '@inquirer/rawlist': 5.3.8(@types/node@22.20.4)
+      '@inquirer/search': 4.3.6(@types/node@22.20.4)
+      '@inquirer/select': 5.2.8(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/rawlist@5.3.5(@types/node@22.20.4)':
+  '@inquirer/rawlist@5.3.8(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/search@4.3.3(@types/node@22.20.4)':
+  '@inquirer/search@4.3.6(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/figures': 2.0.9
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/figures': 2.0.10
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/select@5.2.5(@types/node@22.20.4)':
+  '@inquirer/select@5.2.8(@types/node@22.20.4)':
     dependencies:
-      '@inquirer/ansi': 2.0.8
-      '@inquirer/core': 12.0.3(@types/node@22.20.4)
-      '@inquirer/figures': 2.0.9
-      '@inquirer/type': 4.1.1(@types/node@22.20.4)
+      '@inquirer/ansi': 2.0.10
+      '@inquirer/core': 12.0.6(@types/node@22.20.4)
+      '@inquirer/figures': 2.0.10
+      '@inquirer/type': 4.2.1(@types/node@22.20.4)
     optionalDependencies:
       '@types/node': 22.20.4
 
-  '@inquirer/type@4.1.1(@types/node@22.20.4)':
+  '@inquirer/type@4.2.1(@types/node@22.20.4)':
     optionalDependencies:
       '@types/node': 22.20.4
 
@@ -2444,7 +2375,7 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@prisma/config@7.10.0':
+  '@prisma/config@7.10.1':
     dependencies:
       c12: 3.3.4
       deepmerge-ts: 8.0.2
@@ -2453,64 +2384,64 @@ snapshots:
     transitivePeerDependencies:
       - magicast
 
-  '@prisma/debug@7.10.0': {}
+  '@prisma/debug@7.10.1': {}
 
-  '@prisma/dmmf@7.10.0': {}
+  '@prisma/dmmf@7.10.1': {}
 
-  '@prisma/driver-adapter-utils@7.10.0':
+  '@prisma/driver-adapter-utils@7.10.1':
     dependencies:
-      '@prisma/debug': 7.10.0
+      '@prisma/debug': 7.10.1
 
-  '@prisma/engines-version@7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3': {}
+  '@prisma/engines-version@8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8': {}
 
-  '@prisma/engines@7.10.0':
+  '@prisma/engines@7.10.1':
     dependencies:
-      '@prisma/debug': 7.10.0
-      '@prisma/engines-version': 7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3
-      '@prisma/fetch-engine': 7.10.0
-      '@prisma/get-platform': 7.10.0
+      '@prisma/debug': 7.10.1
+      '@prisma/engines-version': 8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8
+      '@prisma/fetch-engine': 7.10.1
+      '@prisma/get-platform': 7.10.1
 
-  '@prisma/fetch-engine@7.10.0':
+  '@prisma/fetch-engine@7.10.1':
     dependencies:
-      '@prisma/debug': 7.10.0
-      '@prisma/engines-version': 7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3
-      '@prisma/get-platform': 7.10.0
+      '@prisma/debug': 7.10.1
+      '@prisma/engines-version': 8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8
+      '@prisma/get-platform': 7.10.1
 
-  '@prisma/generator-helper@7.10.0':
+  '@prisma/generator-helper@7.10.1':
     dependencies:
-      '@prisma/debug': 7.10.0
-      '@prisma/dmmf': 7.10.0
-      '@prisma/generator': 7.10.0
+      '@prisma/debug': 7.10.1
+      '@prisma/dmmf': 7.10.1
+      '@prisma/generator': 7.10.1
 
-  '@prisma/generator@7.10.0': {}
+  '@prisma/generator@7.10.1': {}
 
-  '@prisma/get-dmmf@7.10.0':
+  '@prisma/get-dmmf@7.10.1':
     dependencies:
-      '@prisma/debug': 7.10.0
-      '@prisma/dmmf': 7.10.0
-      '@prisma/prisma-schema-wasm': 7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3
+      '@prisma/debug': 7.10.1
+      '@prisma/dmmf': 7.10.1
+      '@prisma/prisma-schema-wasm': 8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8
       '@streamparser/json': 0.0.22
       pluralize: 8.0.0
 
-  '@prisma/get-platform@7.10.0':
+  '@prisma/get-platform@7.10.1':
     dependencies:
-      '@prisma/debug': 7.10.0
+      '@prisma/debug': 7.10.1
 
-  '@prisma/internals@7.10.0(typescript@7.0.2)':
+  '@prisma/internals@7.10.1(typescript@7.0.2)':
     dependencies:
-      '@prisma/config': 7.10.0
-      '@prisma/debug': 7.10.0
-      '@prisma/dmmf': 7.10.0
-      '@prisma/driver-adapter-utils': 7.10.0
-      '@prisma/engines': 7.10.0
-      '@prisma/fetch-engine': 7.10.0
-      '@prisma/generator': 7.10.0
-      '@prisma/generator-helper': 7.10.0
-      '@prisma/get-dmmf': 7.10.0
-      '@prisma/get-platform': 7.10.0
-      '@prisma/prisma-schema-wasm': 7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3
-      '@prisma/schema-engine-wasm': 7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3
-      '@prisma/schema-files-loader': 7.10.0
+      '@prisma/config': 7.10.1
+      '@prisma/debug': 7.10.1
+      '@prisma/dmmf': 7.10.1
+      '@prisma/driver-adapter-utils': 7.10.1
+      '@prisma/engines': 7.10.1
+      '@prisma/fetch-engine': 7.10.1
+      '@prisma/generator': 7.10.1
+      '@prisma/generator-helper': 7.10.1
+      '@prisma/get-dmmf': 7.10.1
+      '@prisma/get-platform': 7.10.1
+      '@prisma/prisma-schema-wasm': 8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8
+      '@prisma/schema-engine-wasm': 8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8
+      '@prisma/schema-files-loader': 7.10.1
       '@streamparser/json': 0.0.22
       arg: 5.0.2
       prompts: 2.4.2
@@ -2519,13 +2450,13 @@ snapshots:
     transitivePeerDependencies:
       - magicast
 
-  '@prisma/prisma-schema-wasm@7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3': {}
+  '@prisma/prisma-schema-wasm@8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8': {}
 
-  '@prisma/schema-engine-wasm@7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3': {}
+  '@prisma/schema-engine-wasm@8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8': {}
 
-  '@prisma/schema-files-loader@7.10.0':
+  '@prisma/schema-files-loader@7.10.1':
     dependencies:
-      '@prisma/prisma-schema-wasm': 7.10.0-4.0edf323efd1d98336f3f0a68684b56f689b900d3
+      '@prisma/prisma-schema-wasm': 8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8
       fs-extra: 11.3.0
 
   '@rolldown/binding-android-arm-eabi@1.2.11':
@@ -2705,13 +2636,6 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@7.0.122(zod@4.6.5):
-    dependencies:
-      '@ai-sdk/gateway': 4.0.100(zod@4.6.5)
-      '@ai-sdk/provider': 4.0.19
-      '@ai-sdk/provider-utils': 5.0.51(zod@4.6.5)
-      zod: 4.6.5
-
   ai@7.0.51(zod@4.6.5):
     dependencies:
       '@ai-sdk/gateway': 4.0.40(zod@4.6.5)
@@ -2725,30 +2649,29 @@ snapshots:
     dependencies:
       sprintf-js: 1.0.3
 
-  askdb@1.0.0-beta.43(@ai-sdk/openai@4.0.29(zod@4.6.5))(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5):
+  askdb@1.0.0-beta.44(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5):
     dependencies:
-      '@askdb/ai': 0.1.0-beta.7(ai@7.0.122(zod@4.6.5))
-      '@askdb/ai-anthropic': 1.0.0-beta.5(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-azure': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-google': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/ai-openai': 1.0.0-beta.7(@askdb/ai@0.1.0-beta.7(ai@7.0.122(zod@4.6.5)))(ai@7.0.122(zod@4.6.5))(zod@4.6.5)
-      '@askdb/client': 1.0.0-beta.6(@askdb/config@1.0.0-beta.12)(@askdb/core@1.0.0-beta.43)(ai@7.0.122(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.12
-      '@askdb/connectors': 0.1.0-beta.8
-      '@askdb/core': 1.0.0-beta.43
-      '@askdb/enrich': 0.2.0-beta.14
-      '@askdb/introspect': 0.3.0-beta.17
-      '@askdb/mysql': 0.1.0-beta.18(mysql2@3.24.5(@types/node@22.20.4))
-      '@askdb/postgres': 0.2.0-beta.19(pg@8.23.1)
-      '@askdb/prisma': 0.2.0-beta.17(typescript@7.0.2)
-      '@askdb/sqlite': 0.1.0-beta.18(better-sqlite3@13.0.3)
-      '@askdb/sqlserver': 0.1.0-beta.19(mssql@12.7.2)
-      '@askdb/studio': 0.2.0-beta.36(@ai-sdk/openai@4.0.29(zod@4.6.5))(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
-      '@inquirer/prompts': 8.7.2(@types/node@22.20.4)
-      ai: 7.0.122(zod@4.6.5)
+      '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
+      '@ai-sdk/azure': 4.0.116(zod@4.6.5)
+      '@ai-sdk/google': 4.0.111(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.108(zod@4.6.5)
+      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/client': 1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.13
+      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/enrich': 0.2.0-beta.15(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@askdb/mysql': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))
+      '@askdb/postgres': 0.2.0-beta.20(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/prisma': 0.2.0-beta.18(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)
+      '@askdb/rag': 0.2.0-beta.24(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/sqlite': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)
+      '@askdb/sqlserver': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)
+      '@askdb/studio': 0.2.0-beta.37(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
+      '@inquirer/prompts': 8.7.5(@types/node@22.20.4)
+      ai: 7.0.51(zod@4.6.5)
       commander: 15.0.0
     transitivePeerDependencies:
-      - '@ai-sdk/openai'
       - '@types/node'
       - better-sqlite3
       - magicast
@@ -2843,6 +2766,8 @@ snapshots:
   detect-libc@2.1.2: {}
 
   dotenv@17.4.2: {}
+
+  dotenv@18.0.9: {}
 
   ecdsa-sig-formatter@1.0.11:
     dependencies:
@@ -3199,7 +3124,7 @@ snapshots:
 
   pino-std-serializers@7.1.0: {}
 
-  pino@10.3.1:
+  pino@10.4.0:
     dependencies:
       '@pinojs/redact': 0.4.0
       atomic-sleep: 1.0.0
@@ -3208,7 +3133,7 @@ snapshots:
       pino-std-serializers: 7.1.0
       process-warning: 5.1.0
       quick-format-unescaped: 4.0.4
-      real-require: 0.2.0
+      real-require: 1.0.0
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
@@ -3264,8 +3189,6 @@ snapshots:
       string_decoder: 1.3.0
 
   readdirp@5.1.1: {}
-
-  real-require@0.2.0: {}
 
   real-require@1.0.0: {}
 
@@ -3442,3 +3365,5 @@ snapshots:
   xtend@4.0.2: {}
 
   zod@4.6.5: {}
+
+  zod@4.6.7: {}
