@@ -23,7 +23,6 @@ export const DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS = 60_000;
  * A larger `AbortSignal.timeout()` fires after 1 ms, or throws `ERR_OUT_OF_RANGE` past 2^32 - 1.
  */
 export const MAX_HTTP_API_REQUEST_TIMEOUT_MS = 2_147_483_647;
-export const DEFAULT_LOCAL_POSTGRES_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres";
 /**
  * @deprecated AskDB has no default embedding model: set `ai.embedding.model`. This is only the
  * model a legacy `rag.embedder: "openai"` config translates to. Removed at 1.0.

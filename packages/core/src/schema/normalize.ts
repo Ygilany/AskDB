@@ -131,8 +131,3 @@ export function formatSchemaForNlToSql(
     },
   };
 }
-
-/** Same DDL as {@link formatSchemaForNlToSql} with default options (sensitive names included, tagged). */
-export function formatSchemaForPrompt(schema: NormalizedSchema, options?: FormatNlToSqlOptions): string {
-  return formatSchemaForNlToSql(schema, options).ddl;
-}
