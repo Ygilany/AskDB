@@ -18,6 +18,12 @@ _Avoid_: chat model, generation model
 The model that turns text into vectors for retrieval. It is always a different model from the language model, even when both come from the same provider.
 _Avoid_: embeddings model
 
+### SQL generation
+
+**Dialect spec**:
+The SQL rules for one engine family that NL-to-SQL generation follows: the prompt brief, the forbidden keywords and functions, list binding, escaping and quoting, the namespace rules and the reserved words. `@askdb/core` owns the six built-in dialect specs (`postgres`, `cockroachdb`, `mysql`, `mariadb`, `sqlite`, `sqlserver`), and the engine packages re-export them (ADR 0029). A host can pass its own spec, spread from a built-in one.
+_Avoid_: dialect package
+
 ### Retrieval
 
 **Embedder**:

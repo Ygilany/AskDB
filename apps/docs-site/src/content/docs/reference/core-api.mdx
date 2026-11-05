@@ -346,7 +346,7 @@ dialect: "postgres"  // or "mysql" | "sqlite" | "sqlserver" | "cockroachdb" | "m
 | `"sqlite"` | SQLite — dynamic typing, `LIKE`, `date('now')`, `\|\|` concat, `LIMIT` |
 | `"sqlserver"` | SQL Server (T-SQL) — `[bracket]` or `"` quotes, `GETDATE()`, `+`/`CONCAT()`, `CAST()`/`CONVERT()` |
 
-The engine adapter packages (`@askdb/postgres`, `@askdb/mysql`, etc.) re-export core's dialect constants (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …) for convenience, but passing the string id to `ask()` is sufficient — you don't need to install the engine adapter just for SQL generation.
+The engine packages (`@askdb/postgres`, `@askdb/mysql`, etc.) re-export core's dialect constants (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …) for convenience, but passing the string id to `ask()` is sufficient — you don't need to install an engine package just for SQL generation.
 
 ### `DialectSpec`
 

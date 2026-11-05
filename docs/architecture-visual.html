@@ -1348,9 +1348,9 @@
       <tbody>
         <tr>
           <td><strong>Minimal Postgres SQL generation</strong></td>
-          <td><code>@askdb/core @askdb/postgres</code></td>
+          <td><code>@askdb/core ai</code></td>
           <td>AI SDK provider package (e.g. <code>@ai-sdk/openai</code>), optionally with <code>@askdb/ai</code> for config-driven model selection</td>
-          <td>No <code>pg</code> needed. Uses <code>ask()</code> + <code>postgresDialect</code>.</td>
+          <td>Neither <code>@askdb/postgres</code> nor <code>pg</code> needed. Uses <code>ask({ dialect: "postgres" })</code>; the spec is core's (ADR 0029).</td>
         </tr>
         <tr>
           <td><strong>Live Postgres introspection</strong></td>

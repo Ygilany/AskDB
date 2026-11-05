@@ -13,7 +13,7 @@ import InstallTabs from "../../../../components/InstallTabs.astro";
 
 - You have a `schema.prisma` and want to skip the live-database introspection step.
 - You're working in CI, on a laptop without DB access, or in an air-gapped environment.
-- You pair it with `@askdb/postgres` (or another engine) for the actual SQL dialect at generation time.
+- You pass `ask()` the matching `dialect` id at generation time (see [Supported providers](#supported-providers)); no engine package is needed for that.
 
 ## Install
 

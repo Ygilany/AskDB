@@ -47,16 +47,14 @@ The detailed first-run paths live in the [docs-site quickstart](https://askdb.to
 ```bash
 # `ai` (Vercel AI SDK 6 or 7) is a required peer dependency — your app owns its version
 pnpm add @askdb/core ai
-pnpm add @askdb/postgres
 # Example provider for the code below
 pnpm add @ai-sdk/openai
 ```
 
-`pg` is optional and only needed for live Postgres introspection through `@askdb/postgres`.
+The built-in dialects ship in `@askdb/core`, so SQL generation needs no engine package. Add `@askdb/postgres` (and its optional `pg` peer) only for live Postgres introspection.
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
 import { createOpenAI } from "@ai-sdk/openai";
 
 const schema = loadSchema("./my-app.schema");
@@ -66,7 +64,7 @@ const { sql } = await ask({
   question: "How many users signed up last week?",
   schema,
   model: openai("gpt-4o-mini"),
-  dialect: postgresDialect,
+  dialect: "postgres",
 });
 ```
 
@@ -99,7 +97,7 @@ Product direction and technical baseline live in **`docs/`**:
 - [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
 - [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.
 - [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — connector contract, connector registry, `@askdb/introspect/kit` engine helpers, Schema v2 renderer.
-- [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres dialect, introspection connector, catalog templates, and `pg`-backed runner.
+- [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres introspection connector, catalog templates, `pg`-backed runner, and a re-export of core's Postgres dialect.
 - [`packages/mysql`](packages/mysql) (`@askdb/mysql`) — MySQL introspection connector and `mysql2`-backed catalog runner.
 - [`packages/sqlite`](packages/sqlite) (`@askdb/sqlite`) — SQLite introspection connector and `better-sqlite3`-backed catalog runner.
 - [`packages/sqlserver`](packages/sqlserver) (`@askdb/sqlserver`) — SQL Server introspection connector and `mssql`-backed catalog runner.
@@ -200,7 +198,7 @@ pnpm exec askdb ask \
 
 AskDB returns SQL for review; it does not execute generated SQL. Treat generated SQL as untrusted: approve it and run it under your own least-privilege, read-only database roles, database-enforced tenant isolation (for example Postgres row-level security), statement timeouts, and audit logging. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely) and [SECURITY.md](SECURITY.md#security-model).
 
-**Engines:** PostgreSQL, MySQL, SQLite, and SQL Server are all first-class — install the matching `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, or `@askdb/sqlserver` adapter and pass the dialect to `ask()`. Postgres is the reference dialect; the others ship dialect and introspection with parity tracked on the roadmap.
+**Engines:** PostgreSQL, MySQL, SQLite, and SQL Server are all first-class — pass the dialect id to `ask()` (the dialects ship in `@askdb/core`), and install the matching `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, or `@askdb/sqlserver` package to introspect that engine. Postgres is the reference dialect; the others ship dialect and introspection with parity tracked on the roadmap.
 
 **Current limitations (pre-1.0 / dev):** AskDB returns SQL only (execution stays in your app); SQL guardrails are heuristic (not a full SQL parser); a first-party MCP server, richer report generation, and a hosted dashboard are roadmap work. Per-feature scope and status: [`docs/specs/`](docs/specs).
 
