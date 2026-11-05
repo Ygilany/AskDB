@@ -15,7 +15,9 @@
  * No production seam: a separate pnpm project that runs the documented commands.
  *
  * The project is a fresh pnpm root in the system temp directory (`src/fresh-project.ts`)
- * that pins every `@askdb/*` package to the lab's install target and approves no build.
+ * that pins every `@askdb/*` package but `@askdb/prisma` to the lab's install target and
+ * approves no build. Pinning `@askdb/prisma` to a `file:` tarball would make pnpm install
+ * `askdb`'s optional peer as a dependency.
  *
  * Needs the `askdb-optional-prisma` capability: a target whose `askdb` still depends on
  * `@askdb/prisma` (the published 1.0.0-beta.44 does) reports
@@ -51,7 +53,7 @@ describe("[postgres] askdb-no-prisma", () => {
     needsCapability(ctx, "askdb-optional-prisma");
     const pins = labPins();
 
-    const install = installFreshProject(project, "lab-askdb-no-prisma", ["askdb"]);
+    const install = installFreshProject(project, "lab-askdb-no-prisma", ["askdb"], { unpinned: ["@askdb/prisma"] });
 
     expect(install.status, install.stderr).toBe(0);
     const locked = lockedPackages(readFileSync(join(project, "pnpm-lock.yaml"), "utf8"));

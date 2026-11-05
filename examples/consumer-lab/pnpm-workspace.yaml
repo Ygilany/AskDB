@@ -5,10 +5,10 @@ allowBuilds:
   # The host's SQLite driver, and the one `askdb introspect` loads for SQLite; it builds a native addon.
   better-sqlite3: true
   esbuild: true
-  # Only the committed baseline needs it: askdb@1.0.0-beta.44 depends on @askdb/prisma, whose
-  # @prisma/engines has a postinstall script pnpm 11 refuses to run unapproved. From the release
-  # that makes @askdb/prisma an optional peer (#259), askdb installs no Prisma package: remove
-  # this entry at the first baseline refresh to it (`askdb-no-prisma` checks that install).
+  # @askdb/prisma's @prisma/engines has a postinstall script pnpm 11 refuses to run unapproved.
+  # askdb@1.0.0-beta.44 (the committed baseline) depends on @askdb/prisma. From #259 askdb only
+  # peers it, but a target `lab:use` packs (`.`, a path, `git:<ref>`) still installs it: pnpm
+  # installs an optional peer whose override is a `file:` tarball as a dependency. Keep it.
   "@prisma/engines": true
 # pnpm 11 holds back versions published less than a day ago (`minimumReleaseAge` defaults
 # to 1440 minutes). A just-published AskDB release still installs, since the lab pins it

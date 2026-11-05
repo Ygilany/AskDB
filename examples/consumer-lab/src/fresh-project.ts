@@ -61,11 +61,21 @@ export function targetSpec(name: string, pins = labPins()): string {
 /**
  * Write `package.json` (`packages` at `targetSpec`) and `pnpm-workspace.yaml` (the pins) into
  * `dir`, then `pnpm install`. Returns the install's result; it does not throw on a non-zero exit.
+ *
+ * `unpinned` leaves packages out of the overrides. A project that must not install an
+ * optional peer needs it: pnpm installs an optional peer whose override is a `file:`
+ * tarball (any target `lab:use` packs) as if it were a dependency.
  */
-export function installFreshProject(dir: string, name: string, packages: readonly string[]): SpawnSyncReturns<string> {
+export function installFreshProject(
+  dir: string,
+  name: string,
+  packages: readonly string[],
+  { unpinned = [] }: { unpinned?: readonly string[] } = {},
+): SpawnSyncReturns<string> {
   const pins = labPins();
   const dependencies = Object.fromEntries(packages.map((pkg) => [pkg, targetSpec(pkg, pins)]));
+  const overrides = [...pins].filter(([pkg]) => !unpinned.includes(pkg));
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name, private: true, type: "module", dependencies }, null, 2));
-  writeFileSync(join(dir, "pnpm-workspace.yaml"), `overrides:\n${[...pins].map(([pkg, spec]) => `  "${pkg}": "${spec}"`).join("\n")}\n`);
+  writeFileSync(join(dir, "pnpm-workspace.yaml"), `overrides:\n${overrides.map(([pkg, spec]) => `  "${pkg}": "${spec}"`).join("\n")}\n`);
   return spawnSync("pnpm", ["install", "--no-frozen-lockfile"], { cwd: dir, encoding: "utf8" });
 }

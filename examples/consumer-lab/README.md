@@ -470,7 +470,7 @@ The baseline pins the lab's third-party dependencies exactly, so they stay the s
 
 A vulnerable transitive dependency that no parent release fixes yet gets an `overrides` entry above the `lab:use` block, with its advisory and removal condition in a comment, mirroring the monorepo's `pnpm-workspace.yaml`. Today that is `deepmerge-ts` (GHSA-ggr8-5vv4-36mx), which `@prisma/config` pins at 7.1.5.
 
-The lab approves the `@prisma/engines` build in `pnpm-workspace.yaml` because its committed baseline still needs it: `askdb@1.0.0-beta.44` depends on `@askdb/prisma`, whose `@prisma/engines` has a postinstall script that pnpm 11 won't run until it's approved. From the release that makes `@askdb/prisma` an optional peer (#259), `askdb` installs no Prisma package, so remove the entry at the first baseline refresh to that release; `askdb-no-prisma` checks the install without it. The lab approves the `better-sqlite3` build the same way, for the host's SQLite driver.
+The lab approves the `@prisma/engines` build in `pnpm-workspace.yaml`, because `@prisma/engines` has a postinstall script that pnpm 11 won't run until it's approved. The committed baseline needs it: `askdb@1.0.0-beta.44` depends on `@askdb/prisma`. From #259 `askdb` only peers `@askdb/prisma`, but a target that `lab:use` packs (`.`, a path, `git:<ref>`) still installs it: pnpm installs an optional peer whose override is a `file:` tarball as a dependency. So keep the entry. `askdb-no-prisma` leaves `@askdb/prisma` out of its own project's overrides for the same reason. The lab approves the `better-sqlite3` build the same way, for the host's SQLite driver.
 
 ## Capabilities: testing older targets
 
