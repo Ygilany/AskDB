@@ -17,7 +17,6 @@ import {
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
-  DEFAULT_ASKDB_MODE,
   SensitiveReferenceError,
   SqlGenerationError,
   SqlValidationError,
@@ -119,8 +118,9 @@ function badRequest(message: string): AskHttpErrorResponse["error"] {
 
 /**
  * Resolve the caller-requested mode. Precedence: body `mode` → `x-askdb-mode` header.
- * Returns `undefined` when the caller did not ask for one (the server then uses config
- * `modes.askdbMode`, else {@link DEFAULT_ASKDB_MODE}). Throws on an invalid value (→ `400`).
+ * Returns `undefined` when the caller did not ask for one. The facade applies config
+ * `modes.askdbMode` (ADR 0025): a request mode can tighten it, never loosen it.
+ * Throws on an invalid value (→ `400`).
  */
 function resolveRequestMode(bodyMode: unknown, headerMode: string | undefined): AskDbModeV1 | undefined {
   if (bodyMode !== undefined && bodyMode !== null) {
@@ -321,9 +321,6 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       return;
     }
 
-    // Config mode was validated when askdb.config.* was flattened.
-    const mode: AskDbModeV1 = requestedMode ?? parseAskDbModeV1(rt.modes.askdbMode);
-
     // Strictly boolean (`null` counts as absent): `Boolean(...)` used to read a string or
     // number as `true`, and ignoring one would silently send sensitive identifiers to the model.
     for (const field of ["omitSensitiveFromPrompt", "explain"] as const) {
@@ -366,7 +363,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       });
     }
 
-    logger.info({ event: AskDbLogEvent.RunStart, mode }, "askdb http run start");
+    logger.info({ event: AskDbLogEvent.RunStart }, "askdb http run start");
 
     const timeoutMs = rt.httpApi.requestTimeoutMs;
     const abortSignal = AbortSignal.timeout(timeoutMs);
@@ -375,7 +372,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       const out = await askdb.ask(body.question, {
         schema: requestOverride ? { json: requestOverride } : undefined,
         logger,
-        mode,
+        ...(requestedMode ? { mode: requestedMode } : {}),
         explain: body.explain === true,
         // The facade treats config `modes.omitSensitiveFromPrompt` as a floor:
         // a request can tighten it but never loosen it.
