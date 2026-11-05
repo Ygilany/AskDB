@@ -249,7 +249,7 @@ describe("AskDB Studio server", () => {
     expect(draft.warnings[0]).not.toContain("ssn_digits");
   });
 
-  it("drafts a tenant policy with sensitive columns tagged and untracked tables left out when omitSensitiveFromPrompt is off", async () => {
+  it("drafts a tenant policy from the tracked tables' physical layer, sensitive columns tagged, when omitSensitiveFromPrompt is off", async () => {
     const { draft, prompt } = await suggestTenantPolicyFor({ omitSensitiveFromPrompt: false });
 
     for (const column of ["ssn_digits", "diagnosis_code", "salary_band", "ledger_key"]) {
@@ -260,6 +260,10 @@ describe("AskDB Studio server", () => {
     // Untracked: not in the table list, the table IDs, or the foreign key that targets it.
     expect(prompt).toContain("audit_ref");
     expect(prompt).not.toContain("audit_trail");
+    // No describable text: description, alias, column description, common query language.
+    for (const text of ["deduplicated by", "inpatients", "matched to the registry", "readmissions"]) {
+      expect(prompt).not.toContain(text);
+    }
   });
 
   it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {
@@ -1497,7 +1501,8 @@ function collectStrings(value: unknown): string[] {
 /**
  * A schema with one sensitive column from each source: `patients.ssn_digits` in
  * schema.json, `patients.diagnosis_code` escalated by table front-matter, and every column
- * of the sensitive `payroll_ledger` table. `claims.payroll_entry` is a visible foreign key
+ * of the sensitive `payroll_ledger` table. The `patients` description, alias, column
+ * description and common query language each name `ssn_digits`. `claims.payroll_entry` is a visible foreign key
  * into the ledger's withheld primary key, and `claims.audit_ref` one into the untracked
  * `audit_trail` table.
  */
@@ -1576,12 +1581,21 @@ function writeClinicSchema(): string {
       "id: table:public.patients",
       "name: patients",
       "schemaId: clinic",
+      "aliases: [inpatients]",
       "columns:",
+      "  - id: table:public.patients#admitted_on",
+      "    description: Admission date, matched to the registry by ssn_digits.",
       "  - id: table:public.patients#diagnosis_code",
       "    sensitive: true",
       "---",
       "",
       "# Table: patients",
+      "",
+      "Admitted patients, deduplicated by ssn_digits.",
+      "",
+      "## Common query language",
+      "",
+      '- "readmissions" means a second admission for the same ssn_digits.',
       "",
     ].join("\n"),
   );
