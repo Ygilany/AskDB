@@ -45,6 +45,17 @@ Health check:
 curl -sS http://127.0.0.1:3000/health
 ```
 
+## Embed in your own process
+
+```ts
+import { createAskDbHttpServer } from "@askdb/http-api";
+
+const server = createAskDbHttpServer({ port: 3000 });
+await server.listen();
+```
+
+`createAskDbHttpServer()` uses the config your process already loaded with `bootstrapAskDbEnv()` from `@askdb/config`. If there is none, it loads `.env` and `askdb.config.*` from the working directory, and throws when it finds no config. Omitted `port` and `host` options fall back to `httpApi.listen.*`. See the [HTTP API reference](https://askdb.tools/reference/http-api/).
+
 ## Ask (curl)
 
 ```bash
