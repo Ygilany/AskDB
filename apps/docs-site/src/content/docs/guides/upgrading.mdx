@@ -12,10 +12,10 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 ## Before you upgrade
 
 1. **Check your Node version.** Every AskDB package needs Node 22.23.4 or newer, since 1.0.0-beta.44.
-2. **Find the releases you cross.** A release is named by the version of `askdb`, which `@askdb/core` and `@askdb/http-api` share. Read every section between your current version and the new one, and apply them oldest first.
-3. **Upgrade every AskDB package in one step,** so they all come from the same release. Betas publish under npm's `latest` tag. List every `@askdb/*` package your `package.json` has, not only the ones below:
+2. **Find the releases you cross.** Each section is named after a release's `askdb` version, and the line under its heading names the other packages' versions in it. Read every section between your current versions and the new ones, and apply them oldest first.
+3. **Upgrade the AskDB packages your app already lists, in one step,** so they all come from the same release. Betas publish under npm's `latest` tag. Name each `askdb` and `@askdb/*` package in your `package.json`, and no others. For example, for an app that lists `@askdb/client` and `@askdb/core`:
 
-<InstallTabs pkgs="askdb@latest @askdb/core@latest @askdb/client@latest" />
+<InstallTabs pkgs="@askdb/client@latest @askdb/core@latest" />
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
@@ -25,12 +25,13 @@ Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/en
 
 ### Replace the removed `@askdb/ai-*` and `@askdb/connectors` packages
 
-`@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` and `@askdb/connectors` are no longer published ([#347](https://github.com/Ygilany/AskDB/issues/347)). Their last versions stay on npm, so an existing install keeps working, but it gets no fixes. Install `@askdb/ai` and the AI SDK package for your provider instead:
+`@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` and `@askdb/connectors` are no longer published ([#347](https://github.com/Ygilany/AskDB/issues/347)). Their last versions stay on npm, so an existing install keeps working, but it gets no fixes. Uninstall the one you use, and install `@askdb/ai` and the AI SDK package for your provider instead:
+
+<InstallTabs pkgs="@askdb/ai @ai-sdk/openai" />
+
+Then drop the old import:
 
 ```diff
-- npm i @askdb/ai-openai
-+ npm i @askdb/ai @ai-sdk/openai
-
 - import { openaiProvider } from "@askdb/ai-openai";
 - const askdb = createAskDb({ config, providers: [openaiProvider] });
 + const askdb = createAskDb({ config }); // or providers: ["openai"]
@@ -62,6 +63,7 @@ const rebound = bindPreparedQuery(
 
 - **Without the third argument**, it throws `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`). Without a tenant policy, `{ schema }` is enough.
 - **A `:tenant_*` key in `values`** throws `QueryParameterError` (`TENANT_VALUE_SUPPLIED`). Pass the IDs in `tenantScope`. Expand a `subtree` scope with `expandTenantScope()` first.
+- **A template with a `:tenant_*` placeholder** can't be rebound under a `global` scope, or with a schema that has no tenant policy. Both throw `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`).
 - **With a tenant policy whose `enforcement` is `warn`**, a template that fails the tenant check is refused with `TenantGuardrailError`. To bind it anyway, pass `acceptWarnings: ["tenant"]`.
 - **Stored `PreparedQuery` objects keep working.** The checks use the schema and scope you pass now, so a tightened policy applies at the next rebind.
 
@@ -252,7 +254,7 @@ const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
 | `OpenaiConfig`, `AzureConfig` and the other `<Provider>Config` types | `OpenaiConnection`, `AzureConnection`, … | 1.0 |
 | `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0 |
 | `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0 |
-| `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | `DEFAULT_*_LANGUAGE_MODEL` | 1.0 |
+| `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | [`DEFAULT_*_LANGUAGE_MODEL`](/reference/packages/#askdbconfig) | 1.0 |
 | `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warns with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model` | 1.0 |
 | `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0 |
 | The `askdb-rag` binary | `askdb rag` | 1.0 |

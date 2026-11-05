@@ -37,14 +37,14 @@ Releases run in `.github/workflows/release.yml`, triggered when `CI` passes on a
 4. When CI passes on the merge commit, the `publish` job waits for approval in the `npm-publish` environment. Approve it from the workflow run. It builds and runs `pnpm -r publish --access public --tag latest`, which publishes every public package whose version isn't on npm yet.
 5. The `tag` job pushes a `<name>@<version>` git tag for each published package.
 6. Check the package pages, and install one package from npm in a clean directory.
-7. Publish a GitHub Release for the new `askdb@<version>` tag, by hand. Its body lists each breaking change in one line, and links the release's section of the [upgrade notes](../apps/docs-site/src/content/docs/guides/upgrading.mdx) (askdb.tools/guides/upgrading/) and the package CHANGELOGs. Add that section before the Version PR merges, so the Release has something to link. While AskDB is in beta, mark the Release pre-release:
+7. Publish a GitHub Release for the new `askdb@<version>` tag, by hand. Its body lists each breaking change in one line, and links the release's section of the [upgrade notes](../apps/docs-site/src/content/docs/guides/upgrading.mdx) (askdb.tools/guides/upgrading/) and the package CHANGELOGs. Add that section before the Version PR merges, so the Release has something to link. While AskDB is in beta, mark the Release pre-release. Write the body to an untracked file, such as `release-notes.md` outside the repo, then run:
 
    ```bash
    gh release create askdb@<version> --verify-tag --prerelease \
      --title "askdb <version>" --notes-file release-notes.md
    ```
 
-   Other packages' tags get no Release.
+   Other packages' tags get no Release. `askdb` depends on every other published package except `@askdb/http-api`, so a release publishes a new `askdb` unless it changes only `@askdb/http-api`. Such a release gets no Release of its own: if it has a breaking change, add an upgrade-notes section named after its `@askdb/http-api` version.
 
 A push to `main` with nothing new to publish doesn't ask for approval: `scripts/release-unpublished.mjs` compares every public package's version with npm first. If a publish fails partway, use "Re-run failed jobs" on the run; versions already on npm are skipped.
 
