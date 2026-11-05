@@ -44,6 +44,7 @@ import {
   type SensitiveGuardrailResult,
 } from "./sql/sensitive-guardrail.js";
 import {
+  TenantScopeError,
   UnknownDialectError,
   type GuardrailFinding,
   type GuardrailVerdict,
@@ -225,12 +226,15 @@ export type AskPipelineOptions = {
   /**
    * SQL output mode for tenant placeholders. Default `"sql-params"`
    * ({@link DEFAULT_TENANT_SQL_MODE}) replaces them with the dialect's driver
-   * markers (`$N` for Postgres/CockroachDB and custom `AskDialect`s, `?` for
-   * MySQL/MariaDB/SQLite, `@pN` for SQL Server): run `sql` with `tenantParams`, or
-   * `unboundSql` with `params`, never with the two arrays concatenated.
+   * markers (`$N` for Postgres/CockroachDB, `?` for MySQL/MariaDB/SQLite, `@pN` for
+   * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
+   * with the two arrays concatenated. A custom `AskDialect` has no default: with a
+   * tenant scope it must set this (`"sql-params"` gives `$N` markers), or `ask()`
+   * throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call.
    * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
    * parameters (a tool that takes one SQL string); it throws `TenantScopeError`
-   * (`UNESCAPABLE_TENANT_ID`) for a tenant ID containing a backslash.
+   * (`UNESCAPABLE_TENANT_ID`) for a tenant ID that isn't printable ASCII or that
+   * contains a backslash.
    */
   tenantSqlMode?: TenantSqlOutputMode;
   /**
@@ -351,6 +355,17 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     tenantPolicy && options.tenantScope
       ? await expandTenantScope(tenantPolicy, options.tenantScope, options.resolveTenantDescendants)
       : options.tenantScope;
+  // AskDB can't know a custom AskDialect's driver markers, and the `$N` the default would
+  // emit is a money constant on SQL Server (`agency_id = $1` runs and matches agency 1).
+  // So the host chooses the mode, before any retrieval or model call (ADR 0024).
+  if (tenantPolicy && options.tenantSqlMode == null && typeof options.dialect === "object" && isAskDialect(options.dialect)) {
+    throw new TenantScopeError(
+      "A custom AskDialect with a tenant scope needs an explicit tenantSqlMode: AskDB can't tell which " +
+        "parameter markers its driver takes. Set tenantSqlMode: 'sql-params' if the driver binds $1, $2, … " +
+        "(not SQL Server, which reads $1 as a money constant), or 'sql-only' to inline the IDs as escaped literals.",
+      "TENANT_SQL_MODE_REQUIRED",
+    );
+  }
 
   const explainRequested = options.explain ?? false;
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;

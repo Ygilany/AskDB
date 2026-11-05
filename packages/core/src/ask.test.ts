@@ -1296,7 +1296,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = { generate: async () => ({ sql: "SELECT * FROM orders" }) };
     await expect(
-      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
+      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" }),
     ).rejects.toThrow(TenantGuardrailError);
   });
 
@@ -1309,7 +1309,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
       }),
     };
     await expect(
-      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
+      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" }),
     ).rejects.toThrow(TenantGuardrailError);
   });
 
@@ -1347,7 +1347,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
         sql: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids",
       }),
     };
-    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope });
+    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
   });
 
@@ -1517,7 +1517,7 @@ describe("ask — one guardrail decision point (ADR 0010)", () => {
         tenantGuardrail: { passed: false, warnings: [] },
       }),
     };
-    const result = await ask({ question: "q", schema: warn, model: fakeModel, dialect, tenantScope: agencyScope });
+    const result = await ask({ question: "q", schema: warn, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
 
     expect(result.verdict.outcome).toBe("warn");
     expect(result.verdict.findings).toEqual([
@@ -1841,6 +1841,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect("SELECT id FROM notes WHERE owner_type = 'sub_agency' AND owner_id IN (:tenant_sub_agency_ids)"),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: [], [clients]: ["5"] }),
     }).catch((e: unknown) => e);
 
@@ -1890,6 +1891,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(ordersByAgency),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => {
         roots.find((root) => root.id === subAgencies)!.label = "agency";
         return { [agencies]: ["1"], [subAgencies]: ["5"] };
@@ -1913,6 +1915,7 @@ describe("ask — subtree tenant scope expansion", () => {
         "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
       ),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => resolved,
     }).catch((e: unknown) => e);
 
@@ -1982,6 +1985,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(sql),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"], [clients]: ["5"] }),
     }).catch((e: unknown) => e);
 
@@ -2018,6 +2022,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(sql),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => resolved,
     }).catch((e: unknown) => e);
 
@@ -2046,6 +2051,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect,
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"] }),
     });
 
@@ -2069,6 +2075,7 @@ describe("ask — subtree tenant scope expansion", () => {
           ],
         },
       },
+      tenantSqlMode: "sql-only",
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(TenantScopeError);

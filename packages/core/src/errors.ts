@@ -82,13 +82,21 @@ export type TenantScopeRejectionReason =
   /** A multi-ID scope met a tenant predicate with no list form (e.g. `<=`). */
   | "UNSUPPORTED_TENANT_PREDICATE"
   /**
-   * A tenant ID containing a backslash would be inlined as a literal: by `ask()` or
-   * `resolveTenantSql()` in `sql-only` mode, or in the `sql` that `bindPreparedQuery()`
-   * returns. It's refused on every dialect, because a server whose string settings
-   * differ from the dialect's can read a backslash as the end of the literal. Use
-   * `tenantSqlMode: "sql-params"` (the default) to pass such IDs as driver parameters.
+   * A tenant ID that isn't printable ASCII (U+0020 to U+007E), or that contains a
+   * backslash, would be inlined as a literal: by `ask()` or `resolveTenantSql()` in
+   * `sql-only` mode, or in the `sql` that `bindPreparedQuery()` returns. It's refused on
+   * every dialect, because a server whose string settings or connection charset differ
+   * from the dialect's can read part of it as the end of the literal (a backslash, or a
+   * `¥` sent as byte 0x5C under `sjis`). Use `tenantSqlMode: "sql-params"` (the default)
+   * to pass such IDs as driver parameters.
    */
-  | "UNESCAPABLE_TENANT_ID";
+  | "UNESCAPABLE_TENANT_ID"
+  /**
+   * `ask()` got a custom `AskDialect`, a tenant scope and no `tenantSqlMode`. AskDB can't
+   * know which driver markers a custom dialect takes, and its `$N` default is a money
+   * constant on SQL Server, so the host must choose `"sql-params"` or `"sql-only"`.
+   */
+  | "TENANT_SQL_MODE_REQUIRED";
 
 export class TenantScopeError extends AskDbError {
   constructor(
