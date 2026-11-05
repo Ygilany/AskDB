@@ -331,6 +331,19 @@ describe("AskDB Studio server", () => {
     expect(prompt).not.toMatch(/- admitted_on .*sensitive/);
   });
 
+  it("leaves untracked tables out of an enrichment suggestion's related tables", async () => {
+    const { baseUrl, model } = await startClinicStudio({ omitSensitiveFromPrompt: false, reply: "A suggestion." });
+
+    await postJson(`${baseUrl}/api/suggest`, {
+      source: { scope: "table", tableId: "table:public.claims", field: "description" },
+    });
+
+    const [prompt] = model.requests;
+    // claims has foreign keys into payroll_ledger (tracked) and audit_trail (`tracked: false`).
+    expect(prompt).toContain("public.payroll_ledger");
+    expect(prompt).not.toContain("audit_trail");
+  });
+
   it("refuses a suggestion for a sensitive column when omitSensitiveFromPrompt is on, and calls no model", async () => {
     const { baseUrl, model } = await startClinicStudio({ omitSensitiveFromPrompt: true, reply: "A suggestion." });
 

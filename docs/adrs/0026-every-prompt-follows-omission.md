@@ -1,8 +1,8 @@
-# ADR 0026 — Every model call follows `ask()`'s omission rule; the tenant policy block is the one exception
+# ADR 0026 — Every prompt follows `ask()`'s omission rule; the tenant policy block is the one exception
 
 ## Status
 
-Accepted (2026-11-05). The maintainer settled #624 and #625 in the 2026-11-05 planning round (each issue's "Decision (2026-11-05)" section). The coordinating thread took this work's plan recommendations the same day. Implemented in the PR that closes #601, #624 and #625: `askSampleQuestion` and `suggestForSource` in `apps/studio/src/server.ts`, `buildEnrichmentUserPrompt` in `packages/core/src/enrichment/prompt.ts`, and `buildSuggestionTarget` and `buildSuggestionContext` in `packages/enrich/src/suggest.ts`. Contract: [`sensitive-fields-and-modes.md` → Which model calls follow omission](../contracts/sensitive-fields-and-modes.md#which-model-calls-follow-omission).
+Accepted (2026-11-05). The maintainer settled #624 and #625 in the 2026-11-05 planning round (each issue's "Decision (2026-11-05)" section). The coordinating thread took this work's plan recommendations the same day. Implemented in the PR that closes #601, #624 and #625: `askSampleQuestion` and `suggestForSource` in `apps/studio/src/server.ts`, `buildEnrichmentUserPrompt` in `packages/core/src/enrichment/prompt.ts`, and `buildSuggestionTarget` and `buildSuggestionContext` in `packages/enrich/src/suggest.ts`. Contract: [`sensitive-fields-and-modes.md` → Which prompts follow omission](../contracts/sensitive-fields-and-modes.md#which-prompts-follow-omission).
 
 ## Context
 
@@ -12,7 +12,7 @@ Accepted (2026-11-05). The maintainer settled #624 and #625 in the 2026-11-05 pl
 - **Studio's enrichment suggestions** (`POST /api/suggest` → `suggestEnrichment`) listed every column of the target table as `name type [sensitive]`, with no omission option (#625). The tables came from `schema.json` through `@askdb/enrich`'s `Workspace`, so a column made sensitive in table front-matter, which is what Studio's Sensitivity tab writes, wasn't even tagged.
 - **The tenant policy block** that `buildTenantPromptBlock` adds to the NL→SQL prompt names every scope, join-path, polymorphic and root column the policy front-matter lists, sensitive or not (#624). The tenant check needs the model to filter on those columns.
 
-ADR 0021 made Studio's tenant-policy draft follow `ask()`'s rule through core's formatter, and ADR 0022 extended omission to text that names a sensitive column.
+ADR 0021 made Studio's tenant-policy draft follow `ask()`'s rule through core's formatter, and ADR 0022 extended omission to text that names a sensitive column. Embedding calls are out of scope: they don't read the setting, and the RAG chunker leaves sensitive content out of the index by default unless `includeSensitiveDescribable` opts in.
 
 ## Decision
 
@@ -24,7 +24,7 @@ ADR 0021 made Studio's tenant-policy draft follow `ask()`'s rule through core's 
 
 ## Options considered
 
-- **Leave enrichment unchanged and correct the review profile instead (#625, option B).** Rejected by the maintainer. Enrichment is authoring on the operator's own schema, but the setting is a floor for every model call, and a second rule invites drift.
+- **Leave enrichment unchanged and correct the review profile instead (#625, option B).** Rejected by the maintainer. Enrichment is authoring on the operator's own schema, but the setting is a floor for every prompt sent to a language model, and a second rule invites drift.
 - **Keep `Workspace` in the builders and merge the front-matter flags in `@askdb/enrich`.** Rejected: a third copy of the loader's escalation rule, after `loadSchema()` and Studio's `web/lib/sensitivity.ts`.
 - **Keep enrichment's own `name type [pk] [sensitive]` lines and copy the omission rule into them.** Rejected for the reason ADR 0021 gives: the tag, the stub and the omission rule would have two homes.
 - **Send a sensitive column's suggestion prompt without its name.** Rejected: the model would suggest blind.

@@ -58,7 +58,10 @@ export function buildSuggestionTarget(
   }
 }
 
-/** The target table's foreign-key neighbors (at most 4) and the schema id, from `loadSchema()`'s result. */
+/**
+ * The target table's foreign-key neighbors (at most 4) and the schema id, from `loadSchema()`'s
+ * result. Untracked tables (`tracked: false`) stay out, as they do from `ask()`'s prompt.
+ */
 export function buildSuggestionContext(
   schema: NormalizedSchemaV2,
   tableId: string,
@@ -67,9 +70,10 @@ export function buildSuggestionContext(
   const relatedIds = new Set<string>();
   const columnToTable = new Map<string, string>();
 
-  for (const candidate of schema.tables) {
-    for (const column of candidate.columns) {
-      columnToTable.set(column.id, candidate.id);
+  for (const other of schema.tables) {
+    if (other.tracked === false) continue;
+    for (const column of other.columns) {
+      columnToTable.set(column.id, other.id);
     }
   }
 
@@ -81,7 +85,7 @@ export function buildSuggestionContext(
   }
 
   const neighbors = [...relatedIds]
-    .map((id) => schema.tables.find((candidate) => candidate.id === id))
+    .map((id) => schema.tables.find((other) => other.id === id))
     .filter((t): t is NormalizedV2Table => Boolean(t))
     .slice(0, 4);
 
@@ -92,7 +96,7 @@ export function buildSuggestionContext(
 }
 
 function findTable(schema: NormalizedSchemaV2, tableId: string): NormalizedV2Table {
-  const table = schema.tables.find((candidate) => candidate.id === tableId);
+  const table = schema.tables.find((t) => t.id === tableId);
   if (!table) throw new Error(`No such table: ${tableId}`);
   return table;
 }

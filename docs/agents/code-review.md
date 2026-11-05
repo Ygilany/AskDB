@@ -103,7 +103,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 #### Sensitive fields
 
 - A `sensitive` mark propagates as `docs/contracts/schema-v2.md` ("Sensitive propagation") says, through the loader, normalizer and writer.
-- With `omitSensitiveFromPrompt`, sensitive columns, and text that names one, are absent from every model call: the prompt, synthesized DDL, Studio's Playground, tenant-policy draft and enrichment prompts; a sensitive table keeps a one-line stub with its name. RAG chunks leave them out by default. A new model call follows the setting (`docs/contracts/sensitive-fields-and-modes.md`, "Which model calls follow omission"; ADR 0026).
+- With `omitSensitiveFromPrompt`, sensitive columns, and text that names one, are absent from every prompt sent to a language model: the prompt, synthesized DDL, Studio's Playground, tenant-policy draft and enrichment prompts; a sensitive table keeps a one-line stub with its name. RAG chunks leave them out by default, whatever the mode. A new prompt follows the setting (`docs/contracts/sensitive-fields-and-modes.md`, "Which prompts follow omission"; ADR 0026).
 - The one exception: the tenant policy block keeps naming the tenant columns the policy lists, sensitive ones included, because the tenant check needs them (#624). Don't flag that as a leak.
 - The sensitive-reference check reports named sensitive columns, sensitive tables in `FROM`/`JOIN`, and columns reached through `SELECT *`, `t.*` or a whole-row reference; its known misses (#306 to #309) stay listed in `SECURITY.md`.
 - Logs, error messages and redaction notices never contain sensitive identifiers or values.

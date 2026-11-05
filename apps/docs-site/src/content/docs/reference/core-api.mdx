@@ -346,7 +346,7 @@ const candidates = await suggestEnrichment(
 // → [{ text: "Registered user accounts." }, { text: "People who can place orders." }]
 ```
 
-Asks the model for up to three candidate values for one describable field, which a person reviews before anything is saved: a table's description, aliases, primary entity or common query language, or a column's description or aliases. Studio's **Suggest** buttons call it. `target` names the field and carries its table; `context` carries the schema id and up to four tables linked to it by foreign key. `@askdb/enrich`'s `buildSuggestionTarget(schema, source)` and `buildSuggestionContext(schema, tableId)` build both from `loadSchema()`'s result, so the effective `sensitive` flags apply.
+Asks the model for up to three candidate values for one describable field, which a person reviews before anything is saved: a table's description, aliases, primary entity or common query language, or a column's description or aliases. Studio's **Suggest** buttons call it. `target` names the field and carries its table; `context` carries the schema id and up to four tables linked to it by foreign key. `@askdb/enrich`'s `buildSuggestionTarget(schema, source)` and `buildSuggestionContext(schema, tableId)` build both from `loadSchema()`'s result, so the effective `sensitive` flags apply. Build them that way: a table read straight from `schema.json` lacks front-matter sensitivity, so a column marked sensitive only in `tables/*.md` would be listed untagged and not withheld.
 
 The prompt lists the target table the way `ask()`'s prompt does (`TABLE public.users`, then one line per column), with no descriptions, and tags sensitive columns `(sensitive)`. `deps` takes:
 
@@ -356,6 +356,8 @@ The prompt lists the target table the way `ask()`'s prompt does (`TABLE public.u
 | `providerOptions` | — | Forwarded to the AI SDK's `generateText` unchanged. |
 | `temperature` | `0.4` | Sampling temperature. |
 | `maxCandidates` | `3` | The most candidates returned. |
+
+The option's type is exported as `EnrichmentPromptOptions`. `buildEnrichmentUserPrompt(target, context, options?)` returns the user prompt `suggestEnrichment` sends, with the same `options`, for hosts that call their model themselves; it throws `SensitiveEnrichmentTargetError` in the same case. `ENRICHMENT_SYSTEM_PROMPT` is the system prompt, and `parseCandidates(text, max)` splits a reply into candidates.
 
 ---
 

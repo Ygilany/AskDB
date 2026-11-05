@@ -4,6 +4,11 @@ import type { V2Table } from "../schema/v2/physical.js";
  * What to suggest for. An authoring surface (Studio) builds one of these per
  * active prompt and asks `suggestEnrichment` for 1–3 candidates the user
  * reviews and confirms.
+ *
+ * `table` must carry effective sensitivity: pass a table from `loadSchema()`'s
+ * result, as `@askdb/enrich`'s `buildSuggestionTarget` does. A table read straight
+ * from `schema.json` lacks front-matter escalation, so a column marked sensitive
+ * only there would be listed untagged, and not withheld under omission.
  */
 export type EnrichmentTarget =
   | { kind: "table-description"; table: V2Table }
@@ -40,6 +45,9 @@ export type EnrichmentPromptOptions = {
  */
 export type EnrichmentContext = {
   schemaId: string;
-  /** Tables linked to the target table by foreign keys. Capped by the caller. */
+  /**
+   * Tables linked to the target table by foreign keys, from `loadSchema()`'s result
+   * like the target. Capped by the caller; untracked tables are the caller's to leave out.
+   */
   neighbors?: V2Table[];
 };

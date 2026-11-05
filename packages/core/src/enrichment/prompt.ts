@@ -13,7 +13,8 @@ Rules:
 - Common query language: 2–4 short bullet lines mapping a colloquial term
   to the SQL filter or aggregation it implies.
 - Never invent columns, tables, or relationships not in the schema.
-- Never suggest values for sensitive columns (they will be excluded by RAG).
+- Never suggest values for a column tagged (sensitive), and don't name one in
+  other text: AskDB keeps text that names a sensitive column out of its index.
 - Reply with 1–3 candidate options separated by exactly the line "---".
   Do not number, prefix, or label the candidates.`;
 
