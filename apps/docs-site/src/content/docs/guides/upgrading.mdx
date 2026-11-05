@@ -130,6 +130,23 @@ const context = buildSuggestionContext(schema, source.tableId);
 
 The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
 
+### Replace imports of removed exports
+
+These exports are gone, because nothing in AskDB called them and no page documented them ([#356](https://github.com/Ygilany/AskDB/issues/356), [#275](https://github.com/Ygilany/AskDB/issues/275)). If your app imports one, it no longer typechecks or loads. Replace each one:
+
+| Package | Removed export | Use instead |
+| --- | --- | --- |
+| `@askdb/core` | `formatSchemaForPrompt(schema, options)` | `formatSchemaForNlToSql(schema, options).ddl`, which returns the same string |
+| `@askdb/config` | `DEFAULT_LOCAL_POSTGRES_URL` | Your own local connection string |
+| `@askdb/enrich` | `parseListInput(value)` | `value.split(",").map((s) => s.trim()).filter(Boolean)` |
+| `@askdb/enrich` | `formatList(list)` | `list?.join(", ") ?? ""` |
+| `@askdb/enrich` | `hasAnyColumnDescribable`, `isEnumCandidate` | Nothing |
+| `@askdb/mysql` | `MYSQL_CATALOG_SQL` | Nothing: `createMysqlConnector()` runs the catalog queries |
+| `@askdb/sqlite` | `SQLITE_CATALOG_SQL` | Nothing: `createSqliteConnector()` runs the catalog queries |
+| `@askdb/sqlserver` | `SQLSERVER_CATALOG_SQL` | Nothing: `createSqlServerConnector()` runs the catalog queries |
+
+`@askdb/postgres` keeps `POSTGRES_TEMPLATE_BUNDLE`, because [`askdb introspect --from-export`](/reference/cli/#askdb-introspect) has you run its templates against the database by hand first.
+
 ### Other changes you may notice in beta.45
 
 - **`ask()` under a `global` scope** throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) when the SQL still holds a `:tenant_*` placeholder, instead of returning it unfilled. Admin SQL without a placeholder is unaffected.
