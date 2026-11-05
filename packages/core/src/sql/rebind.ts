@@ -16,7 +16,14 @@ import { BUILT_IN_DIALECTS, isBuiltInDialectId, type BuiltInDialectId, type Dial
 import { decide, throwIfDenied } from "./guardrail-decide.js";
 import { evaluateGuardrails, guardrailPlan } from "./guardrails.js";
 import type { SensitiveGuardrailMode } from "./sensitive-guardrail.js";
-import { findTenantPlaceholderAnyCase, resolveTenantSql, unexpandedSubtreeError } from "./tenant-placeholders.js";
+import {
+  assertTenantSqlMode,
+  DEFAULT_TENANT_SQL_MODE,
+  findTenantPlaceholderAnyCase,
+  resolveTenantSql,
+  unexpandedSubtreeError,
+  type TenantSqlOutputMode,
+} from "./tenant-placeholders.js";
 import { validateTenantScope } from "./tenant-scope-validate.js";
 import { validateSelectSql } from "./validate.js";
 
@@ -50,11 +57,26 @@ export type BindGuardrails = {
    * defaults to the built-in spec (ADR 0032).
    */
   dialect?: DialectSpec | BuiltInDialectId;
+  /**
+   * How `sql` carries the tenant IDs, as in `ask()`. The default, `"sql-params"`, keeps the
+   * business values inlined and replaces the tenant placeholders with driver markers: run
+   * `sql` with `tenantParams`. `"sql-only"` inlines the IDs as escaped literals, and refuses
+   * one that isn't printable ASCII or that contains a backslash (`UNESCAPABLE_TENANT_ID`).
+   */
+  tenantSqlMode?: TenantSqlOutputMode;
 };
 
 export type BoundQuery = {
-  /** Ready to run as-is: business values and tenant IDs inlined as escaped literals. */
+  /**
+   * Business values inlined as escaped literals. Tenant IDs are driver markers, run with
+   * `tenantParams`, in `"sql-params"` mode (the default), or inlined literals in `"sql-only"`.
+   */
   sql: string;
+  /**
+   * `"sql-params"` mode, with a tenant scope that binds IDs: the tenant IDs for the markers in
+   * `sql`, in marker order. `sql` + `tenantParams` is an executable pair on its own.
+   */
+  tenantParams?: unknown[];
   /** The same statement with driver markers instead of literals; run it with `params`. */
   unboundSql: string;
   /** Values for `unboundSql`, in marker order, tenant IDs included. */
@@ -78,9 +100,11 @@ type Values = Record<string, QueryParameterValue | readonly QueryParameterValue[
  *   `guardrails.acceptWarnings` includes `"tenant"`; a sensitive `warn` binds and is
  *   reported in `verdict`.
  * - Binds the business values from `values`, then renders each `:tenant_<root>_ids`
- *   placeholder from `guardrails.tenantScope`: escaped literals in `sql`, driver markers
- *   after the business markers in `unboundSql` (in source order for `?` dialects), with
- *   the IDs folded into `params`. `bindings` lists the business parameters.
+ *   placeholder from `guardrails.tenantScope`. In `sql`: driver markers numbered from the
+ *   first slot with the IDs in `tenantParams` (`tenantSqlMode: "sql-params"`, the default),
+ *   or escaped literals (`"sql-only"`). In `unboundSql`: driver markers after the business
+ *   markers (in source order for `?` dialects), with the IDs folded into `params`.
+ *   `bindings` lists the business parameters.
  *
  * Throws `QueryParameterError` without `guardrails` (`MISSING_GUARDRAIL_CONTEXT`), for a
  * `:tenant_*` key in `values` (`TENANT_VALUE_SUPPLIED`), and when the tenant markers can't
@@ -103,6 +127,8 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
     throw new QueryParameterError(`Unknown dialect '${prepared.dialect}'.`, "DIALECT_UNSUPPORTED");
   }
   const spec = rebindSpec(prepared, guardrails.dialect);
+  const tenantMode = guardrails.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
+  assertTenantSqlMode(tenantMode, "bindPreparedQuery()");
   rejectTenantValues(values);
 
   const { schema } = guardrails;
@@ -151,8 +177,18 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   }
 
   let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true, dialect: spec });
+  let tenantParams: unknown[] | undefined;
   if (policy && scope) {
-    const sql = inlineTenantIdsForRebind(bound.sql, policy, scope, spec);
+    // `sql` carries business values as inlined literals, so its only markers are tenant
+    // markers, numbered from the first slot, as in ask() (ADR 0024).
+    let sql: string;
+    if (tenantMode === "sql-only") {
+      sql = inlineTenantIdsForRebind(bound.sql, policy, scope, spec);
+    } else {
+      const resolved = resolveTenantSql(bound.sql, policy, scope, "sql-params", 1, spec);
+      sql = resolved.sql;
+      if (resolved.mode === "sql-params" && resolved.params.length > 0) tenantParams = resolved.params;
+    }
     const unbound = bindTenantIntoUnboundSql(bound, {
       namedSql: prepared.namedSql,
       tenantPolicy: policy,
@@ -174,7 +210,7 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   }
   validateSelectSql(spec, bound.sql);
   validateSelectSql(spec, bound.unboundSql);
-  return { ...bound, verdict };
+  return { ...bound, ...(tenantParams ? { tenantParams } : {}), verdict };
 }
 
 function rejectTenantValues(values: Values): void {
@@ -275,9 +311,8 @@ export function bindTenantIntoUnboundSql(
 }
 
 /**
- * The rebind's `sql` always inlines the tenant IDs, so an ID that can't be inlined has no
- * other mode to go to here: say so, instead of `resolveTenantSql()`'s advice to switch
- * `tenantSqlMode`, which `bindPreparedQuery()` doesn't take.
+ * In `"sql-only"` mode the rebind's `sql` inlines the tenant IDs. An ID that can't be inlined
+ * gets a message that names `bindPreparedQuery()` and points at its own `tenantSqlMode`.
  */
 function inlineTenantIdsForRebind(
   sql: string,
@@ -290,10 +325,10 @@ function inlineTenantIdsForRebind(
   } catch (error) {
     if (error instanceof TenantScopeError && error.reason === "UNESCAPABLE_TENANT_ID") {
       throw new TenantScopeError(
-        "A tenant ID contains a backslash or a character outside printable ASCII, and bindPreparedQuery() " +
-          "inlines tenant IDs into the sql it returns: a server whose string settings or connection charset " +
-          "differ from the dialect's can read such an ID as the end of the literal, so it can't be rebound. " +
-          "ask() with tenantSqlMode 'sql-params' (the default) passes it as a driver parameter instead.",
+        "A tenant ID contains a backslash or a character outside printable ASCII, and in tenantSqlMode " +
+          "'sql-only' bindPreparedQuery() inlines tenant IDs into the sql it returns: a server whose string " +
+          "settings or connection charset differ from the dialect's can read such an ID as the end of the " +
+          "literal. Use tenantSqlMode 'sql-params' (the default), which passes it as a driver parameter.",
         "UNESCAPABLE_TENANT_ID",
       );
     }

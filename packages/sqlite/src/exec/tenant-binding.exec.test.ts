@@ -11,7 +11,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type DatabaseCtor from "better-sqlite3";
-import { ask, loadSchema, type TenantScope } from "@askdb/core";
+import { ask, bindPreparedQuery, loadSchema, type TenantScope } from "@askdb/core";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 type Bs3Namespace = { default: typeof DatabaseCtor };
@@ -150,6 +150,35 @@ suite("tenant parameter binding executes on SQLite (better-sqlite3)", () => {
       });
       expect(count(literal.sql)).toBe(2);
       expect(count(literal.unboundSql!, literal.params)).toBe(2);
+    },
+  );
+
+  // A rebind follows ask()'s default (#664, ADR 0024): `sql` + `tenantParams` is an executable
+  // pair under every dialect's markers, and a tenant ID no literal can carry safely binds too.
+  it.each(["postgres", "mysql", "sqlite", "sqlserver"] as const)(
+    "%s rebind: sql + tenantParams and unboundSql + params return the bind-time scope's rows, a non-ASCII ID included",
+    async (dialect) => {
+      const result = await ask({
+        question: "paid orders over 10",
+        schema,
+        model: fakeModel,
+        dialect,
+        tenantScope: twoAgencies,
+        deps: { generateText: scopedCount as never },
+      });
+      db.prepare("INSERT INTO orders VALUES ('agência', 'paid', 40, 'f')").run();
+      try {
+        for (const [id, rows] of [["7", 2], ["agência", 1]] as const) {
+          const bound = bindPreparedQuery(result.preparedQuery!, { status_name: "paid", min_total: 10 }, {
+            schema,
+            tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [id] } },
+          });
+          expect(count(bound.sql, bound.tenantParams), id).toBe(rows);
+          expect(count(bound.unboundSql, bound.params), id).toBe(rows);
+        }
+      } finally {
+        db.prepare("DELETE FROM orders WHERE agency_id = 'agência'").run();
+      }
     },
   );
 

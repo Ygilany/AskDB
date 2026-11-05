@@ -109,6 +109,7 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
   it("renders the scope's IDs into the tenant predicate, and a passing template's verdict is allow", () => {
     const bound = bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
       schema: strictSchema,
+      tenantSqlMode: "sql-only",
       tenantScope: agencyIds("2"),
     });
     expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '2' AND status = 'open'");
@@ -134,6 +135,7 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
       "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id = :tenant_client_ids";
     const bound = bindPreparedQuery(template(sql), { status_name: "open" }, {
       schema: strictSchema,
+      tenantSqlMode: "sql-only",
       tenantScope: {
         access: {
           kind: "multi_root",
@@ -197,6 +199,7 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     });
     const bound = bindPreparedQuery(prepared, { status_name: "open" }, {
       schema: strictSchema,
+      tenantSqlMode: "sql-only",
       tenantScope: agencyIds("7", "8"),
     });
     expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id IN ('7', '8') AND status = 'open'");
@@ -211,28 +214,52 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     const token = "__askdb_tenant_agency_ids__";
     const bound = bindPreparedQuery(template(scopedOrders), { status_name: token }, {
       schema: strictSchema,
+      tenantSqlMode: "sql-only",
       tenantScope: agencyIds("2"),
     });
     expect(bound.sql).toBe(`SELECT count(*) FROM orders WHERE agency_id = '2' AND status = '${token}'`);
     expect(bound.params).toEqual([token, "2"]);
   });
 
-  // The `sql` a rebind returns always inlines the tenant IDs, and only printable ASCII
-  // without a backslash reads the same under every server string setting and connection
-  // charset (#371; `¥` goes out as 0x5C under sjis), so the rebind refuses any other ID
-  // rather than return a `sql` that can lose its tenant predicate (ADR 0024). A rebind has
-  // no tenantSqlMode, so the message must not send the caller to one.
-  it.each(["x\\' OR 1=1 -- ", "2\u00a5' OR 1=1 -- "])("throws UNESCAPABLE_TENANT_ID for the tenant ID %j", (id) => {
+  // As in ask() (ADR 0024), a rebind's default is tenantSqlMode "sql-params": `sql` keeps the
+  // business values inlined and holds tenant markers, run with `tenantParams`, so a tenant ID
+  // that no literal can carry safely (#664: agência; #371: a backslash, `¥` under sjis) binds.
+  it.each(["agência", "x\\' OR 1=1 -- ", "2¥' OR 1=1 -- "])("binds the tenant ID %j as a driver parameter by default", (id) => {
+    const bound = bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
+      schema: strictSchema,
+      tenantScope: agencyIds(id),
+    });
+    expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = $1 AND status = 'open'");
+    expect(bound.tenantParams).toEqual([id]);
+    expect(bound.params).toContain(id);
+  });
+
+  // A mode the rebind doesn't recognise is refused, as in ask(), never read as either mode.
+  it("refuses a tenantSqlMode it doesn't recognise", () => {
+    expect(() =>
+      bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
+        schema: strictSchema,
+        tenantScope: agencyIds("2"),
+        tenantSqlMode: "sql_only" as never,
+      }),
+    ).toThrow(expect.objectContaining({ name: "TenantScopeError", reason: "TENANT_SQL_MODE_REQUIRED" }));
+  });
+
+  // In "sql-only" mode the rebind inlines the IDs, and only printable ASCII without a
+  // backslash reads the same under every server string setting and connection charset, so
+  // it refuses any other ID, and names the mode that binds it.
+  it.each(["agência", "x\\' OR 1=1 -- ", "2¥' OR 1=1 -- "])("in sql-only mode, throws UNESCAPABLE_TENANT_ID for the tenant ID %j", (id) => {
     expect(() =>
       bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
         schema: strictSchema,
         tenantScope: agencyIds(id),
+        tenantSqlMode: "sql-only",
       }),
     ).toThrow(
       expect.objectContaining({
         name: "TenantScopeError",
         reason: "UNESCAPABLE_TENANT_ID",
-        message: expect.stringContaining("bindPreparedQuery()"),
+        message: expect.stringContaining("'sql-params'"),
       }),
     );
   });
@@ -467,7 +494,7 @@ function catchError(fn: () => unknown): unknown {
 describe("bindPreparedQuery — the host's DialectSpec (#660)", () => {
   const hostPostgres: DialectSpec = { ...POSTGRES_DIALECT, backslashEscapes: true };
   const shippedSql = "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'shipped'";
-  const guardrails = { schema: strictSchema, tenantScope: agencyIds("4") };
+  const guardrails = { schema: strictSchema, tenantScope: agencyIds("4"), tenantSqlMode: "sql-only" as const };
 
   // Any spec object other than the exported constant carries the host's rules: an unchanged
   // spread too, and a second copy of @askdb/core (ESM beside CJS), whose constants are other objects.
