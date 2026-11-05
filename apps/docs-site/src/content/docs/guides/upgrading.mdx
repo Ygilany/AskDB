@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.45
 
-Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.
+Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/config` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.
 
 ### Replace the removed `@askdb/ai-*` and `@askdb/connectors` packages
 
@@ -88,6 +88,23 @@ On SQL Server, `validateSelectSql` and `ask({ dialect: "sqlserver" })` now refus
 - **The same checks for a dialect id that is no built-in engine**, because its SQL must pass every engine's checks.
 
 If you validate SQL you didn't get from `ask()`, check it against these rules. [Troubleshooting](/getting-started/troubleshooting/#sqlvalidationerror-sql_multi_statement) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks) describe the check.
+
+### Set `modes.askdbMode` in config to allow `bounded_results`
+
+`@askdb/client` now applies config `modes.askdbMode`, as the loosest mode a call gets ([#279](https://github.com/Ygilany/AskDB/issues/279), ADR 0025). The CLI and the HTTP API follow the same rule:
+
+- **A per-call `bounded_results` no longer loosens the config.** `askdb ask --mode bounded_results`, a client call's `mode: "bounded_results"` and an HTTP request's `mode: "bounded_results"` now run `schema_only`, with no error, unless `askdb.config.*` sets `modes: { askdbMode: "bounded_results" }`. The SQL doesn't change today, because `bounded_results` produces the same SQL as `schema_only`.
+- **The `askdb.run.start` log line** from the CLI and the HTTP API no longer carries `mode`. Read it from `askdb.pipeline.mode`, in the same log stream.
+- **An unknown `mode`** in a client call, or an invalid `modes.askdbMode` in a hand-built `AskDbRuntimeConfig`, now throws `AskDbError`.
+
+### Give an embedded HTTP server a config to load
+
+`createAskDbHttpServer()` from `@askdb/http-api` now loads its config when you create it, unless your process already called `bootstrapAskDbEnv()` ([#280](https://github.com/Ygilany/AskDB/issues/280)):
+
+- **With no config loaded yet,** it loads `.env` and `askdb.config.*` from `process.cwd()`. It throws when it finds no `askdb.config.*` there, or can't read an existing `.env`. Before, it started anyway and returned `500 internal_error` on every `POST /ask`. If your config lives in another directory, call `bootstrapAskDbEnv()` first.
+- **Omitted `port` and `host` options** now fall back to `httpApi.listen.port` and `httpApi.listen.host`, then to `3000` and `127.0.0.1`. If your config sets `httpApi.listen`, the server now listens there.
+
+[Config loading](/reference/http-api/#config-loading) describes the rule.
 
 ### Replace a symbolic link at `concepts.md`
 
