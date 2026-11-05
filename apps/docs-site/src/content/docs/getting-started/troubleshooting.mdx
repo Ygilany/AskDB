@@ -51,7 +51,7 @@ Run `ls my-app.schema/` to confirm the directory was created by `askdb introspec
 
 ### `SchemaParseError: Refusing to load … as a standalone physical layer`
 
-You passed a JSON file that isn't named `schema.json`, such as `prod-schema.json`, and its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`. Loading the file alone would ignore those files, so `ask()` would run without your tenant policy and without the `sensitive: true` marks in `tables/*.md`. AskDB refuses instead.
+You passed a JSON file that isn't named `schema.json`, such as `prod-schema.json`, and its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, in any case (`Tenant-Policy.md` counts). Loading the file alone would ignore those files, so `ask()` would run without your tenant policy and without the `sensitive: true` marks in `tables/*.md`. AskDB refuses instead.
 
 Pass the directory to `--schema` or `loadSchema()`, or rename the file to `schema.json`. To load only the physical layer, pass the file's content to `loadSchemaFromJson()`.
 
@@ -59,7 +59,7 @@ Pass the directory to `--schema` or `loadSchema()`, or rename the file to `schem
 
 A file in the schema directory has the right name in the wrong case, such as `Tenant-Policy.md`, `Concepts.md`, `Tables/` or `tables/orders.MD`. AskDB reads these names exactly. On Linux, where file names are case-sensitive, it would skip the file: a skipped `tenant-policy.md` means `ask()` runs with no tenant policy, and a skipped table file drops its `sensitive: true` marks. macOS and Windows would load the same directory, so AskDB refuses it on every OS, and you find out before you deploy.
 
-Rename each file the error names, for example `git mv Tenant-Policy.md tenant-policy.md`. `askdb bundle` refuses the directory the same way.
+Rename each file the error names, for example `git mv Tenant-Policy.md tenant-policy.md`. If the error says `keep one of Tenant-Policy.md, tenant-policy.md`, the directory holds both spellings, which only a case-sensitive filesystem allows. Merge them into the correctly named file and delete the other; a rename would overwrite it. `askdb bundle` refuses the directory the same way.
 
 ### `SchemaParseError: Missing required field …`
 

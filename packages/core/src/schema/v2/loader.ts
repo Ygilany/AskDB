@@ -146,9 +146,9 @@ const SCHEMA_DIRECTORY_FILES = {
  * any case: a wrong-case `Tenant-Policy.md` is still a schema file the load would ignore.
  */
 function assertNotInSchemaDirectory(filePath: string): void {
-  const siblingNames = new Set<string>(Object.values(SCHEMA_DIRECTORY_FILES));
+  const siblingKeys = new Set(Object.values(SCHEMA_DIRECTORY_FILES).map(caseKey));
   const present = readRequiredDir(dirname(filePath))
-    .filter((entry) => siblingNames.has(entry.toLowerCase()))
+    .filter((entry) => siblingKeys.has(caseKey(entry)))
     .sort();
   if (present.length === 0) return;
   throw new SchemaParseError(
@@ -189,12 +189,11 @@ const SCHEMA_JSON = "schema.json";
 function readDirectory(dir: string, schemaJsonPath?: string): BundledSchemaV2 {
   const entries = readRequiredDir(dir);
   const listed = new Set(entries);
-  const tableDir = join(dir, SCHEMA_DIRECTORY_FILES.tables);
+  const tables = SCHEMA_DIRECTORY_FILES.tables;
+  const tableDir = join(dir, tables);
   // Sorted so warning order is deterministic (readdir order is filesystem-dependent)
   // and matches the bundle loader, which sorts its `tables` keys the same way.
-  const tableEntries = listed.has(SCHEMA_DIRECTORY_FILES.tables)
-    ? readRequiredDir(tableDir).sort()
-    : [];
+  const tableEntries = listed.has(tables) ? readRequiredDir(tableDir).sort() : [];
   assertExactNames(dir, entries, tableEntries, schemaJsonPath === undefined);
 
   if (schemaJsonPath === undefined && !listed.has(SCHEMA_JSON)) {
@@ -210,11 +209,11 @@ function readDirectory(dir: string, schemaJsonPath?: string): BundledSchemaV2 {
   }
   const physical = parsePhysicalLayer(parsed, physicalPath);
 
-  const tables: Record<string, string> = {};
+  const tableFiles: Record<string, string> = {};
   for (const entry of tableEntries) {
-    if (entry.endsWith(".md")) tables[entry] = readRequiredFile(join(tableDir, entry));
+    if (entry.endsWith(".md")) tableFiles[entry] = readRequiredFile(join(tableDir, entry));
   }
-  const bundle: BundledSchemaV2 = { bundled: true, physical, tables };
+  const bundle: BundledSchemaV2 = { bundled: true, physical, tables: tableFiles };
   for (const key of ["concepts", "tenantPolicy"] as const) {
     const name = SCHEMA_DIRECTORY_FILES[key];
     if (listed.has(name)) bundle[key] = readRequiredFile(join(dir, name));
@@ -223,11 +222,26 @@ function readDirectory(dir: string, schemaJsonPath?: string): BundledSchemaV2 {
 }
 
 /**
+ * The key two names share when a case-insensitive filesystem stores them as one file.
+ * It is ADR 0013's key, checked there against Unicode full case folding: APFS folds
+ * `tableſ` (long s) to `tables`, which `toLowerCase()` alone misses.
+ */
+function caseKey(name: string): string {
+  return name.normalize("NFC").toLowerCase().toUpperCase().toLowerCase();
+}
+
+/** A `tables/` entry's name with its extension lowercased: `users.MD` → `users.md`. */
+function tableFileKey(entry: string): string {
+  return entry.slice(0, -3) + entry.slice(-3).toLowerCase();
+}
+
+/**
  * Throw when a directory entry matches a name the loader looks up only when case is
  * ignored. Where file names are case-sensitive (Linux), the loader would skip that
  * file; on macOS and Windows the same directory loads. Checking on every OS makes a
  * directory fail on a laptop the way it would fail open in production. One error
- * names every rename, so the user fixes them in one pass.
+ * names every problem, including the files in a wrong-case `Tables/`, so the user
+ * fixes them in one pass.
  */
 function assertExactNames(
   dir: string,
@@ -235,28 +249,63 @@ function assertExactNames(
   tableEntries: readonly string[],
   checkSchemaJson: boolean,
 ): void {
-  const names: string[] = [
-    ...(checkSchemaJson ? [SCHEMA_JSON] : []),
-    ...Object.values(SCHEMA_DIRECTORY_FILES),
+  const tables = SCHEMA_DIRECTORY_FILES.tables;
+  const names = [...(checkSchemaJson ? [SCHEMA_JSON] : []), ...Object.values(SCHEMA_DIRECTORY_FILES)];
+  const problems = spellingProblems(entries, names, caseKey, "");
+
+  // A lone wrong-case `Tables/` is listed too, so its files are named in this error.
+  const tablesSpellings = entries.filter((entry) => caseKey(entry) === tables);
+  const wrongCaseTables =
+    tablesSpellings.length === 1 && tablesSpellings[0] !== tables
+      ? listOrEmpty(join(dir, tablesSpellings[0]!)).sort()
+      : [];
+  const files = [...tableEntries, ...wrongCaseTables];
+  const mdNames = [
+    ...new Set(files.map(tableFileKey).filter((key) => key.endsWith(".md"))),
   ];
-  const renames: string[] = [];
-  for (const entry of [...entries].sort()) {
-    const name = names.find((n) => n === entry.toLowerCase());
-    if (name !== undefined && name !== entry) renames.push(`${entry} to ${name}`);
-  }
-  for (const entry of tableEntries) {
-    if (!entry.endsWith(".md") && entry.toLowerCase().endsWith(".md")) {
-      const tables = SCHEMA_DIRECTORY_FILES.tables;
-      renames.push(`${tables}/${entry} to ${tables}/${entry.slice(0, -".md".length)}.md`);
-    }
-  }
-  if (renames.length === 0) return;
+  problems.push(...spellingProblems(files, mdNames, tableFileKey, `${tables}/`));
+
+  if (problems.length === 0) return;
   throw new SchemaParseError(
-    `Schema directory ${dir} has a file name in the wrong case: rename ${renames.join(", ")}. ` +
+    `Schema directory ${dir} has a file name in the wrong case: ${problems.join("; ")}. ` +
       `The loader reads these names exactly. Where file names are case-sensitive (Linux) it ` +
       `would skip the file, and a skipped tenant-policy.md turns tenant enforcement off, so it ` +
       `refuses on every OS.`,
   );
+}
+
+/**
+ * For each name, the entries that spell it differently under `key`: one wrong spelling
+ * is a rename. Two or more spellings can coexist only where names are case-sensitive,
+ * and renaming one onto the other would overwrite a file or move a directory inside
+ * the other, so the problem says to keep one instead.
+ */
+function spellingProblems(
+  entries: readonly string[],
+  names: readonly string[],
+  key: (name: string) => string,
+  prefix: string,
+): string[] {
+  const problems: string[] = [];
+  for (const name of names) {
+    const spellings = entries.filter((entry) => key(entry) === key(name)).sort();
+    if (spellings.length === 0 || (spellings.length === 1 && spellings[0] === name)) continue;
+    problems.push(
+      spellings.length === 1
+        ? `rename ${prefix}${spellings[0]} to ${prefix}${name}`
+        : `keep one of ${spellings.map((s) => prefix + s).join(", ")}, named ${prefix}${name}`,
+    );
+  }
+  return problems;
+}
+
+/** List a directory whose contents only add detail to an error: `[]` if it can't be listed. */
+function listOrEmpty(path: string): string[] {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
 }
 
 function loadFromDirectory(dir: string, schemaJsonPath?: string): NormalizedSchemaV2 {

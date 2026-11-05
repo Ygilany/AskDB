@@ -40,11 +40,11 @@ Rejected. Two copies of a tenant-safety rule in two packages is how #181's bundl
 ## Decision
 
 - `readSchemaDirectory(dir)` in `@askdb/core` reads a schema directory into its bundle form. `loadSchema()` reads every directory through it, and `@askdb/enrich`'s `bundleSchemaDirectory()` returns it.
-- The names the loader looks up are exact: `schema.json`, `tenant-policy.md`, `concepts.md`, `tables/`, and the `.md` extension in `tables/`. An entry that matches one only when case is ignored throws `SchemaParseError` on every OS. One error names every rename (`rename Tenant-Policy.md to tenant-policy.md, tables/users.MD to tables/users.md`).
+- The names the loader looks up are exact: `schema.json`, `tenant-policy.md`, `concepts.md`, `tables/`, and the `.md` extension in `tables/`. An entry that matches one only when case is ignored throws `SchemaParseError` on every OS. One error names every problem, including the files in a wrong-case `Tables/` (`rename Tenant-Policy.md to tenant-policy.md; rename tables/users.MD to tables/users.md`). Where both spellings exist (only on a case-sensitive filesystem), it says to keep one instead (`keep one of Tenant-Policy.md, tenant-policy.md, named tenant-policy.md`): a rename would overwrite the file, or move `Tables/` inside `tables/` where the loader never looks.
 - A path the caller passes is read as given, so `loadSchema("<dir>/Schema.json")` still loads (ADR 0019). Only the names the loader looks up itself are checked. A directory path needs `schema.json` exactly.
 - An optional file is absent only when the directory listing doesn't have it. A listed file that can't be read throws, including a symbolic link whose target is missing.
 - ADR 0019's stray-JSON guard reads the same listing and counts a sibling in any case, so `prod-schema.json` beside `Tenant-Policy.md` throws on Linux too.
-- "Wrong case" means equal after `toLowerCase()`. Other near-misses (`tenant_policy.md`, `.markdown`) are not schema files and are ignored.
+- "Wrong case" means the two names share [ADR 0013](0013-table-filename-scheme.md)'s key, `normalize("NFC").toLowerCase().toUpperCase().toLowerCase()`, which ADR 0013 checked against Unicode full case folding. APFS folds `tableſ` (long s) to `tables`, which `toLowerCase()` alone misses; the stray-JSON guard uses the same key. Other near-misses (`tenant_policy.md`, `.markdown`) are not schema files and are ignored.
 
 ## Consequences
 

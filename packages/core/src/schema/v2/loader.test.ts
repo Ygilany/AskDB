@@ -1,6 +1,7 @@
 import {
   copyFileSync,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { integrationSuite } from "../../../../../scripts/test-utils/integration.mjs";
 import { SchemaParseError } from "../../errors.js";
 import { loadSchema, loadSchemaFromJson } from "./loader.js";
 
@@ -247,11 +249,16 @@ describe("loadSchema — a schema directory's file names must be spelled exactly
     { fixture: multiTenantDir, renames: [["tenant-policy.md", "Tenant-Policy.md"]] },
     { fixture: v2Dir, renames: [["tables", "Tables"]] },
     { fixture: v2Dir, renames: [["schema.json", "Schema.json"]] },
+    // A long s: APFS stores `tableſ` and `tables` as one name, so on macOS it opened as
+    // `tables/` but wasn't listed under that name.
+    { fixture: v2Dir, renames: [["tables", "tableſ"]] },
     {
+      // One error names them all, including a file inside the wrong-case Tables/.
       fixture: v2Dir,
       renames: [
         ["concepts.md", "Concepts.md"],
         ["tables/users.md", "tables/users.MD"],
+        ["tables", "Tables"],
       ],
     },
   ])("a directory holding $renames.0.1 throws SchemaParseError naming each rename", ({ fixture, renames }) => {
@@ -271,6 +278,39 @@ describe("loadSchema — a schema directory's file names must be spelled exactly
     expect(() => loadSchema(join(dir, "schema.json"))).toThrow(SchemaParseError);
   });
 });
+
+/** Why the temp directory can't hold two names that differ only in case, or `false`. */
+const caseInsensitiveTmp = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "askdb-loader-case-"));
+  try {
+    writeFileSync(join(dir, "a"), "");
+    return existsSync(join(dir, "A")) && "the temp directory's filesystem ignores case (macOS and Windows defaults)";
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
+integrationSuite({ unavailable: caseInsensitiveTmp })(
+  "loadSchema — both spellings of a name, on a case-sensitive filesystem",
+  () => {
+    // Renaming one spelling onto the other would overwrite tenant-policy.md or move
+    // Tables/ inside tables/, where the loader never looks, so the error says to keep one.
+    it.each([
+      { fixture: multiTenantDir, exact: "tenant-policy.md", wrong: "Tenant-Policy.md" },
+      { fixture: v2Dir, exact: "tables", wrong: "Tables" },
+      { fixture: v2Dir, exact: "tables/users.md", wrong: "tables/users.MD" },
+    ])("$wrong beside $exact throws SchemaParseError saying to keep one", ({ fixture, exact, wrong }) => {
+      const dir = copyFixture(fixture);
+      cpSync(join(dir, exact), join(dir, wrong), { recursive: true });
+
+      const caught = thrownBy(() => loadSchema(dir));
+      expect(caught).toBeInstanceOf(SchemaParseError);
+      expect((caught as SchemaParseError).message).toContain(
+        `keep one of ${wrong}, ${exact}, named ${exact}`,
+      );
+    });
+  },
+);
 
 describe("loadSchema — optional files fail closed when present but broken", () => {
   it("missing tenant-policy.md loads with no tenant policy", () => {
