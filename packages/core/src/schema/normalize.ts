@@ -46,6 +46,12 @@ export type NlToSqlSchemaFormatStats = {
   listedSensitiveColumnCount: number;
   /** Tables excluded from the DDL because they are marked as untracked. */
   untrackedTableCount: number;
+  /**
+   * When omitting (schema v2): describable texts withheld because they name a sensitive column (a
+   * description, an alias, a column's annotation, a common query language block). When including,
+   * and for a v1 schema: always 0.
+   */
+  mentionDroppedCount: number;
 };
 
 function columnLine(
@@ -128,6 +134,7 @@ export function formatSchemaForNlToSql(
       sensitiveTableStubCount,
       listedSensitiveColumnCount,
       untrackedTableCount: 0,
+      mentionDroppedCount: 0,
     },
   };
 }
