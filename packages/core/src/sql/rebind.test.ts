@@ -514,7 +514,7 @@ describe("bindPreparedQuery — the host's DialectSpec (#660)", () => {
     const hostMysql: DialectSpec = { ...MYSQL_DIALECT, blockedFunctions: [...(MYSQL_DIALECT.blockedFunctions ?? []), "my_udf"] };
 
     expect(() => bindPreparedQuery(prepared, { status_name: "open" }, { ...guardrails, dialect: hostMysql })).toThrow(
-      SqlValidationError,
+      expect.objectContaining({ name: "SqlValidationError", message: expect.stringContaining("my_udf") }),
     );
   });
 
@@ -538,5 +538,33 @@ describe("bindPreparedQuery — the host's DialectSpec (#660)", () => {
     expect(bindPreparedQuery(stored, { status_name: "open" }, { ...guardrails, dialect: "postgres" }).sql).toBe(
       "SELECT count(*) FROM orders WHERE agency_id = '4' AND status = 'open'",
     );
+  });
+
+  // A value that is neither label, such as a typo in a template loaded from JSON, is refused
+  // too, and the message names it rather than say the field is missing.
+  it("names an unrecognised dialectRules value when it refuses the template", () => {
+    const typo = { ...template(scopedOrders), dialectRules: "built-in" } as unknown as PreparedQuery;
+    expect(() => bindPreparedQuery(typo, { status_name: "open" }, guardrails)).toThrow(
+      expect.objectContaining({ reason: "DIALECT_SPEC_REQUIRED", message: expect.stringContaining("'built-in'") }),
+    );
+  });
+
+  // ask() checks its own render against the model's SQL. Under the built-in rules, a value
+  // with a backslash renders differently from the host's escaping, and ask() would drop the
+  // reuse artifacts.
+  it("keeps the reuse artifacts when a value renders differently under the host's spec", async () => {
+    const result = await ask({
+      question: "orders by status",
+      schema: strictSchema,
+      model: fakeModel,
+      dialect: hostPostgres,
+      tenantScope: agencyIds("4"),
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: reply("SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'a\\\\b'", scopedOrders, "a\\b"),
+        })) as never,
+      },
+    });
+    expect(result.preparedQuery?.dialectRules).toBe("host");
   });
 });

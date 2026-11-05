@@ -741,6 +741,25 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     ]);
   });
 
+  // A template stored before AskDB recorded dialectRules needs the rules named at rebind;
+  // askdb.bind() must pass `dialect` on to core, or a host can't rebind it at all (#660).
+  it("passes dialect to the rebind, which a template stored without dialectRules needs", async () => {
+    const askdb = askdbReplying(
+      reply(
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'shipped'",
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status_name",
+      ),
+    );
+    const { preparedQuery } = await askdb.ask("orders by status", { tenantScope: agencyIds("42") });
+    const { dialectRules: _rules, ...stored } = preparedQuery!;
+
+    await expect(askdb.bind(stored, { status_name: "open" }, { tenantScope: agencyIds("7") })).rejects.toMatchObject({
+      reason: "DIALECT_SPEC_REQUIRED",
+    });
+    const bound = await askdb.bind(stored, { status_name: "open" }, { tenantScope: agencyIds("7"), dialect: "postgres" });
+    expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '7' AND status = 'open'");
+  });
+
   it("expands a subtree scope with resolveTenantDescendants before binding", async () => {
     const askdb = askdbReplying(
       reply(

@@ -309,14 +309,20 @@ function inlineTenantIdsForRebind(
 function rebindSpec(prepared: PreparedQuery, dialect: BindGuardrails["dialect"]): DialectSpec {
   if (dialect === undefined) {
     if (prepared.dialectRules === "builtin") return BUILT_IN_DIALECTS[prepared.dialect];
+    const fix =
+      `Pass guardrails.dialect: the DialectSpec ask() ran with, or the built-in id '${prepared.dialect}' ` +
+      "if it ran with the built-in rules.";
+    const rules = prepared.dialectRules as unknown;
     throw new QueryParameterError(
-      prepared.dialectRules === "host"
+      rules === "host"
         ? "This template was made by ask() under a host's DialectSpec (dialectRules: 'host'), so " +
-            "bindPreparedQuery() checks and renders it only under that spec. Pass it as guardrails.dialect. " +
-            `If ask() ran with the built-in rules from another copy of @askdb/core, '${prepared.dialect}' is enough.`
-        : "This template has no dialectRules: it was stored before AskDB recorded which dialect rules ask() " +
-            "used, so bindPreparedQuery() won't guess. Pass guardrails.dialect: the DialectSpec ask() ran with, " +
-            `or the built-in id '${prepared.dialect}' if it ran with the built-in rules.`,
+            `bindPreparedQuery() checks and renders it only under that spec. ${fix} A constant from another ` +
+            "copy of @askdb/core counts as a host's spec."
+        : rules === undefined || rules === null
+          ? "This template has no dialectRules: it was stored before AskDB recorded which dialect rules ask() " +
+              `used, so bindPreparedQuery() won't guess. ${fix}`
+          : `This template has dialectRules ${JSON.stringify(rules).replace(/"/g, "'")}, which is neither 'builtin' ` +
+              `nor 'host', so bindPreparedQuery() won't guess. ${fix}`,
       "DIALECT_SPEC_REQUIRED",
     );
   }

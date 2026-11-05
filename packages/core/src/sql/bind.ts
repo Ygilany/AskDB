@@ -3,7 +3,6 @@ import {
   type QueryParameterRejectionReason,
 } from "../errors.js";
 import {
-  BUILT_IN_DIALECTS,
   isBuiltInDialectId,
   type BuiltInDialectId,
   type DialectSpec,
@@ -418,17 +417,18 @@ type Edit = { start: number; end: number; literal: string; marker: string };
  *
  * With `skipTenantPlaceholders`, every `:tenant_<root>_ids` placeholder is left in place,
  * by name from the lexer scan, and its declaration is ignored: the caller renders tenant
- * IDs from a tenant scope afterwards.
+ * IDs from a tenant scope afterwards. `dialect` is the spec to escape and lex under, which
+ * the caller resolves (ADR 0031): there is no built-in fallback.
  */
 export function renderPreparedQuery(
   prepared: PreparedQuery,
   values: Record<string, QueryParameterValue | readonly QueryParameterValue[]>,
-  options: { skipTenantPlaceholders?: boolean; dialect?: DialectSpec } = {},
+  options: { skipTenantPlaceholders?: boolean; dialect: DialectSpec },
 ): RenderedQuery {
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw paramError("DIALECT_UNSUPPORTED", `Unknown dialect '${prepared.dialect}'.`);
   }
-  const spec = options.dialect ?? BUILT_IN_DIALECTS[prepared.dialect];
+  const spec = options.dialect;
   const listBinding = listBindingOf(spec);
   const style = markerStyleForDialect(prepared.dialect);
   const namedSql = prepared.namedSql;
