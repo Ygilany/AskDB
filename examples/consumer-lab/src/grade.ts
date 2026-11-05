@@ -24,7 +24,8 @@
  *
  * A miss reason never holds "; ", which the matrix uses to join them.
  */
-import { SensitiveReferenceError, SqlValidationError, TenantGuardrailError, TenantScopeError, bindPreparedQuery } from "@askdb/core";
+import { SensitiveReferenceError, SqlValidationError, TenantGuardrailError, TenantScopeError, bindPreparedQuery, loadSchema } from "@askdb/core";
+import { ensureArtifact } from "./artifacts.js";
 import type { Settled } from "./ask.js";
 import type { SupportedDialect } from "./dialects.js";
 import { normalizeRows, type LogicalType } from "./fixture.js";
@@ -153,6 +154,18 @@ async function compare(dialect: SupportedDialect, sql: string, params: readonly 
   return null;
 }
 
+type Bind = typeof bindPreparedQuery;
+
+/**
+ * `bindPreparedQuery` with the guardrail context it re-checks the template under (ADR 0010):
+ * the dialect's schema artifact, which has no tenant policy. Typed by hand so the lab
+ * typechecks against a target from before the third argument; an older binder ignores it.
+ */
+export function rebind(dialect: SupportedDialect, prepared: Parameters<Bind>[0], values: Parameters<Bind>[1]): ReturnType<Bind> {
+  const bind = bindPreparedQuery as (p: Parameters<Bind>[0], v: Parameters<Bind>[1], g: { schema: ReturnType<typeof loadSchema> }) => ReturnType<Bind>;
+  return bind(prepared, values, { schema: loadSchema(ensureArtifact(dialect)) });
+}
+
 /**
  * A catalog question's answer (`scenarios/questions.json`), graded as `results.test.ts` checks
  * it: `sql` returns the oracle's rows, and for the parameterized question `unboundSql` + `params`
@@ -177,7 +190,7 @@ export async function gradeCatalogAnswer(dialect: SupportedDialect, questionId: 
   if (unbound) return { ...unbound, reason: `unboundSql + params: ${unbound.reason}` };
   let rebound: ReturnType<typeof bindPreparedQuery>;
   try {
-    rebound = bindPreparedQuery(result.preparedQuery, { [name]: PARAMETERIZED.rebindTo });
+    rebound = rebind(dialect, result.preparedQuery, { [name]: PARAMETERIZED.rebindTo });
   } catch (error) {
     return { status: "miss", reason: `bindPreparedQuery refused to rebind ${name}: ${firstLine(error)}`, sql };
   }
