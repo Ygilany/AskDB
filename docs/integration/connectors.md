@@ -219,7 +219,7 @@ Required published exports:
 
 Depend on `@askdb/introspect` (the contract, the registry types, and `@askdb/introspect/kit`) and on `@askdb/core` if you re-export a dialect.
 
-For a **first-party** engine, also add the package to `pnpm-workspace.yaml`, register its adapter in the `createConnectorRegistry([...])` calls in `apps/cli/src/introspect.ts` (`defaultConnectorRegistry`) and `apps/studio/src/introspection.ts`, give it a branch in `@askdb/config`'s typed `introspection` config, and update [`docs/integration/installable-package.md`](installable-package.md) and the `Packages` section of the docs site. The apps contain no per-engine switches — the adapter's `resolveConnection` carries the engine-specific logic.
+For a **first-party** engine, also add the package to `pnpm-workspace.yaml`, register its adapter in the `createConnectorRegistry([...])` calls in `apps/cli/src/introspect.ts` (`defaultConnectorRegistry`) and `apps/studio/src/introspection.ts`, give it a branch in `@askdb/config`'s typed `introspection` config, and update [`docs/integration/installable-package.md`](installable-package.md) and the `Packages` section of the docs site. The apps contain no per-engine switches — the adapter's `resolveConnection` carries the engine-specific logic. An engine package that `askdb` and `@askdb/studio` don't depend on (an optional peer, as `@askdb/prisma` is, because it brings in Prisma) is registered as a lazy entry instead; see [Registering an engine that may not be installed](#registering-an-engine-that-may-not-be-installed).
 
 ---
 
@@ -310,6 +310,30 @@ const resolved = connectorRegistry.resolveConnection("oracle", { runtime: getAsk
 if (!resolved.ok) throw new Error(resolved.error);
 const { connector, input } = connectorRegistry.createConnector({ provider: "oracle", ...resolved.connection });
 await introspect(input, { outDir: "./askdb", schemaId: "app" }, { connector });
+```
+
+### Registering an engine that may not be installed
+
+When the engine package is optional for your host's users, register a **lazy entry** instead of the adapter: `{ provider, load }`, where `load()` imports the package and returns its adapter. `hasProvider()` and `providers()` list it without loading it. Once the engine is selected, call `await registry.load(provider)`: it imports the package once (concurrent calls share the import; a failed one is retried on the next call) and checks that the adapter's `provider` matches. Until then, `createConnector`, `resolveConnection`, `getTemplates` and `connectionLabel` throw for that entry rather than fall back. `registry.load()` resolves an adapter object as it is, so a host can call it for every engine.
+
+`registry.load()` passes `load()`'s errors through unchanged, so give a missing package its install hint in `load`. The CLI and Studio register `@askdb/prisma` with the kit's `createOptionalDriverLoader`, which imports it from the host's own install first, then from the project in the working directory, and throws `connectorPackageMissingMessage(...)` when it resolves from neither. Write the `import()` literally, with `.catch(rethrowDriverImportError)` chained on it, as for a driver:
+
+```ts
+import { connectorPackageMissingMessage, createConnectorRegistry } from "@askdb/introspect";
+import { createOptionalDriverLoader, rethrowDriverImportError } from "@askdb/introspect/kit";
+
+const prismaPackage = createOptionalDriverLoader({
+  packageName: "@askdb/prisma",
+  importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
+  missingMessage: connectorPackageMissingMessage({ provider: "prisma", packageName: "@askdb/prisma" }),
+});
+
+const connectorRegistry = createConnectorRegistry([
+  postgresConnectorProvider,
+  { provider: "prisma", load: async () => (await prismaPackage.load()).prismaConnectorProvider },
+]);
+
+await connectorRegistry.load(engine); // before resolveConnection / createConnector
 ```
 
 The shipped `askdb` binary registers only the first-party engines (there is no plugin discovery yet). Its introspect command is written against an injected registry — `runIntrospectCli(argv, { connectorRegistry })` in `apps/cli/src/introspect.ts`, exercised with a custom adapter in `apps/cli/src/introspect-registry.test.ts` — so it contains no engine-specific code; that function is internal to the CLI, not a published API.

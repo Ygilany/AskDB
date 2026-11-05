@@ -3,6 +3,8 @@ title: "Install"
 description: "Choose the AskDB packages for your use case."
 ---
 
+import InstallTabs from "../../components/InstallTabs.astro";
+
 <p class="doc-eyebrow">Start · Install</p>
 
 <p class="doc-lede">AskDB is a set of focused packages — install only what your use case needs. Pick your path below; each guide starts with the exact install commands, and the <a href="/reference/packages/">package reference</a> covers every package individually.</p>
@@ -10,8 +12,16 @@ description: "Choose the AskDB packages for your use case."
 ## What to install — by use case
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect, enrich, and ask from the CLI.</span></a>
+  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect a database, enrich, and ask from the CLI.</span></a>
   <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/client</code> + <code>@askdb/core</code> + <code>@askdb/config</code> + <code>ai</code> + an AI SDK provider package such as <code>@ai-sdk/openai</code>.</span></a>
   <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
 </div>
+
+## Reading a Prisma schema file
+
+To introspect a `schema.prisma` file instead of a live database, install `@askdb/prisma` next to `askdb`. `askdb` doesn't bring it in, because it pulls in Prisma itself:
+
+<InstallTabs pkgs="askdb @askdb/prisma" />
+
+On pnpm 11, `@askdb/prisma` also needs its Prisma build approved, or `pnpm add` exits 1. The [Prisma guide](/guides/integrations/prisma/#install) shows how. `askdb init --database prisma` installs it and approves the build for you.

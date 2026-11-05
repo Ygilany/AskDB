@@ -67,6 +67,8 @@ askdb --help
   </TabItem>
 </Tabs>
 
+To introspect a Prisma schema file, also install `@askdb/prisma`, in the same place or in the project you run `askdb` from. `askdb` loads it only for `--engine prisma`, and on pnpm 11 it needs its `@prisma/engines` build approved (see [the Prisma guide](/guides/integrations/prisma/#install)).
+
 ## Help, version, and first run
 
 | Flag | Description |
@@ -82,7 +84,7 @@ Commands that don't read the config work in any directory, including one with no
 
 ### `askdb init`
 
-Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently.
+Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, and with pnpm it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`).
 
 ```bash
 npx askdb@latest init          # wizard in a terminal
@@ -167,6 +169,8 @@ Live introspection requires the matching engine driver (`pg`, `mysql2`, `better-
 pnpm dlx -p askdb -p pg askdb introspect --engine postgres --url "$DATABASE_URL"
 npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
 ```
+
+Prisma introspection needs `@askdb/prisma` the same way: in the project running `askdb`, or in the one-off command (`npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`). Without it, `askdb introspect --engine prisma` exits 1 and names the package to install.
 
 ### `askdb enrich`
 
