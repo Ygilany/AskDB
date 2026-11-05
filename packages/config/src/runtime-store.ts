@@ -16,6 +16,14 @@ export function clearAskDbRuntime(): void {
   stored = undefined;
 }
 
+/**
+ * `true` once `bootstrapAskDbEnv()` (or another installer) has set the runtime snapshot.
+ * A host-facing factory can use it to bootstrap only when its host hasn't already done so.
+ */
+export function isAskDbRuntimeInitialized(): boolean {
+  return stored !== undefined;
+}
+
 export function getAskDbRuntimeStore(): AskDbRuntimeStore {
   if (!stored) {
     throw new Error(

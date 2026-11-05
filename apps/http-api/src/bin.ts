@@ -1,8 +1,5 @@
 #!/usr/bin/env node
-import {
-  bootstrapAskDbEnv,
-  getAskDbRuntimeConfig,
-} from "@askdb/config";
+import { bootstrapAskDbEnv } from "@askdb/config";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,20 +46,20 @@ if (cliOptions.help) {
   }
 }
 
-// Defensive: bootstrap installs only flattened, already-validated values (an invalid
-// `httpApi.requestTimeoutMs` fails above), so this is not expected to throw.
-let httpApi: ReturnType<typeof getAskDbRuntimeConfig>["httpApi"];
+// The server reuses the runtime installed above and falls back to `httpApi.listen.*` for
+// an omitted flag. Defensive: bootstrap installs only flattened, already-validated values (an
+// invalid `httpApi.requestTimeoutMs` fails above), so building the server is not expected to throw.
+let app: ReturnType<typeof createAskDbHttpServer>;
 try {
-  ({ httpApi } = getAskDbRuntimeConfig());
+  app = createAskDbHttpServer({
+    port: cliOptions.port,
+    host: cliOptions.host,
+    schemaPath: cliOptions.schemaPath,
+  });
 } catch (error) {
   process.stderr.write(`askdb-http: ${formatError(error)}\n`);
   process.exit(1);
 }
-const app = createAskDbHttpServer({
-  port: cliOptions.port ?? httpApi.listen.port,
-  host: cliOptions.host ?? httpApi.listen.host,
-  schemaPath: cliOptions.schemaPath,
-});
 try {
   await app.listen();
 } catch (error) {

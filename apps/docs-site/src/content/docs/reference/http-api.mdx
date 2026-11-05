@@ -18,17 +18,33 @@ const server = createAskDbHttpServer({
   maxBodyBytes: 1024 * 1024,
 });
 
-server.listen();
+await server.listen();
 ```
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `port` | `3000` | Port to listen on. Config fallback: `httpApi.listen.port`. |
-| `host` | `127.0.0.1` | Bind address. Bind to `0.0.0.0` only behind a gateway. Config fallback: `httpApi.listen.host`. |
-| `schemaPath` | — | Server-default schema artifact path. Falls back to `host.schemaPath` in `askdb.config.ts`. |
+| `port` | `httpApi.listen.port`, else `3000` | Port to listen on. |
+| `host` | `httpApi.listen.host`, else `127.0.0.1` | Bind address. Bind to `0.0.0.0` only behind a gateway. |
+| `schemaPath` | `host.schemaPath` | Server-default schema artifact path. |
 | `maxBodyBytes` | `1048576` (1 MiB) | Request body size limit. Larger requests return `payload_too_large`. |
 
-The server reads its schema and AI provider settings from `askdb.config.ts` via `@askdb/config` — see [Configuration](/reference/config/) for the resolution rules.
+`createAskDbHttpServer()` returns an object with these members:
+
+| Member | Description |
+| --- | --- |
+| `host`, `port` | The bind address and port the server uses, after the defaults above. |
+| `server` | The underlying Node `http.Server`, for hosts that manage its lifecycle themselves. |
+| `listen()` | Starts listening. Returns a `Promise<void>` that resolves once the server listens, and rejects on a listen error such as `EADDRINUSE`. |
+| `close()` | Stops the server. Returns a `Promise<void>` that resolves once it has closed. |
+
+### Config loading
+
+The server reads its schema and AI provider settings from `askdb.config.ts` via `@askdb/config` — see [Configuration](/reference/config/) for the resolution rules. It gets them when you call `createAskDbHttpServer()`:
+
+- If your process already called `bootstrapAskDbEnv()`, the server uses that config and loads nothing.
+- Otherwise the server calls `bootstrapAskDbEnv()` itself, which loads `.env` and `askdb.config.*` from the current working directory. If it finds no config, or an existing `.env` can't be read, `createAskDbHttpServer()` throws.
+
+To load the config from another directory, call `bootstrapAskDbEnv({ cwd: "/path/to/project" })` before you create the server.
 
 ### Server config (`httpApi`)
 

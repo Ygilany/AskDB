@@ -374,6 +374,8 @@ const embeddingModel = rt.ai.embedding
 
 AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.
 
+`getAskDbRuntimeConfig()` throws until a snapshot is installed. `isAskDbRuntimeInitialized()` returns `true` once one is, so code that may run before or after its host's bootstrap can call `bootstrapAskDbEnv()` only when it's needed. `createAskDbHttpServer()` works this way (see [HTTP API → Config loading](/reference/http-api/#config-loading)).
+
 ## Config precedence
 
 For any given setting, the precedence (highest wins) is:
