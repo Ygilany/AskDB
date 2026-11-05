@@ -11,6 +11,8 @@ This spec retires `@askdb/mysql`'s live `mysql.integration.test.ts` after moving
 | 3. Optional `provider.test.ts:17-18` trim | Skip it | @Ygilany's `ok` to triage's D2, grilling | Two-way |
 | 4. CI/fixture/docs cleanup after the retirement | Not in this PR; a separate follow-up issue | @Ygilany's `ok` to triage's D3, grilling | Two-way |
 
+**Superseded (2026-11-05):** decision 2 no longer holds. `@askdb/mysql` stopped exporting `MYSQL_CATALOG_SQL` before the 1.0 freeze (#275, ADR 0030); the constant stays in `connector/describe.ts` for the connector and its unit test.
+
 ```text
 packages/mysql/src
 ├─ exec/mysql.integration.test.ts          ✗ deleted (77 lines, MYSQL_DATABASE_URL)
@@ -70,7 +72,7 @@ The live MySQL coverage lives in one place, the multi-engine fixture suite. Its 
   The artifact's `SchemaJson` shape carries primary keys as a per-column `primaryKey` flag and relationships as `{ from, to }` column-id pairs; build asserts against that shape (or the fixture's existing comparison helper scoped to `org`, if it fits without changing the fixture package). The fixture's connection database is `org`, so these are the live default-mode PK and FK path the retired describe test covered.
 - **Retirement.** `exec/mysql.integration.test.ts` is deleted whole, including its CREATE/DROP seeding hooks. No replacement file.
 - **Test-only seam.** `foldMysqlResult` loses its `export` keyword and stays a module-private function. It is not re-exported from the connector index or the package index, and the package's exports map is `"."` only, so no public surface changes. `describe.test.ts` drops its unused `foldMysqlResult` and `compileTableFilters` imports.
-- **`MYSQL_CATALOG_SQL` (decision 2).** The export and its value are unchanged. Only the doc comment changes: it drops "exposed for snapshot-based tests" and says what the strings are (the default, connection-database catalog SQL the connector issues), without claiming a test kind that doesn't exist.
+- **`MYSQL_CATALOG_SQL` (decision 2, since superseded; see the note under the decision table).** The export and its value are unchanged. Only the doc comment changes: it drops "exposed for snapshot-based tests" and says what the strings are (the default, connection-database catalog SQL the connector issues), without claiming a test kind that doesn't exist.
 - **`mysql.lazy.test.ts:127` (decision 1).** Unchanged. The campaign's acceptance row for it reads "left in place, deferred to the cross-dialect batch".
 - **`provider.test.ts` (decision 3).** Unchanged.
 - **Infra (decision 4).** `.github/workflows/ci.yml`, `turbo.json`, `fixtures/mysql/`, `CONTRIBUTING.md` and `docs/agents/code-review.md` are not edited. Build files a follow-up issue naming each of them (the issue's "Infra the retirement unlocks" list) and links it from the PR.

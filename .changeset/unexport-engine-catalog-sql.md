@@ -5,7 +5,7 @@
 "@askdb/docs-site": patch
 ---
 
-Stop exporting the internal catalog SQL from the MySQL, SQLite and SQL Server packages, before the 1.0 API freeze (#275). Each connector still runs the same queries; only the export is gone. `@askdb/postgres` keeps its `POSTGRES_TEMPLATE_BUNDLE`, because the air-gapped export flow runs those templates by hand.
+Stop exporting the internal catalog SQL from the MySQL, SQLite and SQL Server packages, before the 1.0 API freeze (#275, ADR 0030). Each connector still runs the same queries; only the export is gone. `@askdb/postgres` keeps its `POSTGRES_TEMPLATE_BUNDLE`, because the air-gapped export flow runs those templates by hand.
 
 **Upgrade notes (breaking):**
 

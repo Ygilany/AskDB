@@ -5,7 +5,7 @@
 "@askdb/studio": patch
 ---
 
-Remove public exports that nothing in AskDB calls and no page documents, before the 1.0 API freeze (#356).
+Remove public exports that nothing in AskDB calls and no page documents, before the 1.0 API freeze (#356, ADR 0030).
 
 **Upgrade notes (breaking):**
 
