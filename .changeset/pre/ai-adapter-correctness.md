@@ -1,8 +1,4 @@
 ---
-"@askdb/ai-azure": patch
-"@askdb/ai-google": patch
-"@askdb/ai-openai": patch
-"@askdb/ai-anthropic": patch
 "@askdb/ai": patch
 "@askdb/config": minor
 "askdb": patch

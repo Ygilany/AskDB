@@ -26,8 +26,6 @@ Embedding models have no default in `askdb.config.*`: `rag.embedder: "ai"` requi
 
 Each built-in provider imports its SDK package lazily, the first time it builds a model, so registering all of them costs nothing. If the package isn't installed, model creation fails with: `Provider 'google' requires the optional peer dependency @ai-sdk/google. Install it: npm i @ai-sdk/google`. The same data is exported as `BUILTIN_AI_PROVIDERS`.
 
-> The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are deprecated re-export shims of these built-ins and will be removed before 1.0 (#347).
-
 ## Usage
 
 ```ts

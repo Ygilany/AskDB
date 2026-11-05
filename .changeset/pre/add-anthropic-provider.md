@@ -1,13 +1,9 @@
 ---
-"@askdb/ai-anthropic": minor
 "@askdb/ai": minor
 "@askdb/config": minor
 "askdb": minor
 "@askdb/http-api": minor
 "@askdb/studio": minor
-"@askdb/ai-openai": patch
-"@askdb/ai-azure": patch
-"@askdb/ai-google": patch
 ---
 
 Add Anthropic Claude as a supported AI provider, open the config provider union for custom adapters, and make the key-missing message registry-driven.

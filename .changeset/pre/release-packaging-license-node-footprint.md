@@ -3,13 +3,8 @@
 "@askdb/http-api": patch
 "@askdb/studio": patch
 "@askdb/ai": patch
-"@askdb/ai-anthropic": patch
-"@askdb/ai-azure": patch
-"@askdb/ai-google": patch
-"@askdb/ai-openai": patch
 "@askdb/client": patch
 "@askdb/config": patch
-"@askdb/connectors": patch
 "@askdb/core": patch
 "@askdb/enrich": patch
 "@askdb/introspect": patch

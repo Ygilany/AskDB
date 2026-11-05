@@ -5,10 +5,6 @@
 "@askdb/core": patch
 "@askdb/client": patch
 "@askdb/ai": patch
-"@askdb/ai-openai": patch
-"@askdb/ai-anthropic": patch
-"@askdb/ai-azure": patch
-"@askdb/ai-google": patch
 "@askdb/rag": patch
 ---
 

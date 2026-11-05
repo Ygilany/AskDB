@@ -1,6 +1,5 @@
 ---
 "@askdb/introspect": minor
-"@askdb/connectors": minor
 "@askdb/postgres": minor
 "@askdb/mysql": minor
 "@askdb/sqlite": minor
