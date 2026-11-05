@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-29). Adopted by PR #184. Corrected 2026-10-07 (#483): Decision 3 described #371's fix as landed; it is still open. Amended 2026-11-05 (#327): the SQL Server check for a second statement written without `;`, and how it fails closed (see Amendments). Context records the gap as it stood; Consequences lists what is left.
+Accepted (2026-09-29). Adopted by PR #184. Corrected 2026-10-07 (#483): Decision 3 described #371's fix as landed; it is still open. It replaces the "Strict mode fails closed" design decision in `docs/specs/multi-tenancy.md` and the parser-based design in `docs/contracts/tenant-policy.md` ("Guardrail validation"). Amended 2026-11-05 (#327): the SQL Server check for a second statement written without `;`, and how it fails closed (see Amendments). Context records the gap as it stood; Consequences lists what is left.
 
 ## Context
 
@@ -84,6 +84,6 @@ Option B.
 
 - **Copy more of SQL Server's tokenizer.** Each round fixed the cases found and the next round found more. Rejected: it does not converge, and SQL Server's tokenizer is not specified anywhere AskDB can check against.
 - **Fix the cases found and rely on a runtime guard.** Studio's single-result-set guard (#373) would catch a second statement in Execute, but nothing would catch one in SQL that `ask()` returns to a host. Rejected as the only defense; #373 stays as a second layer.
-- **Accept only plain code on SQL Server (chosen).** Outside strings and quoted names, SQL Server code must be printable ASCII (no `\`) or Unicode letters, marks and digits, with no bare money sign, no number written against a word and no `?` written against a name. Names continue through `@`, `$` and `#`, as SQL Server's identifier rules say. Anything else throws `SQL_MULTI_STATEMENT`. Model-written SQL has none of these (all 160 recorded consumer-lab replies pass), and the rule turns an open-ended list of tokenizer cases into a short list of allowed text.
+- **Accept only plain code on SQL Server (chosen).** Outside strings and quoted names, SQL Server code must be printable ASCII (no `\`) or Unicode letters, marks and digits, with no bare money sign, no number written against a word and no `?` written against a name or number. A `:` written directly against anything but `(`, a comma or an operator counts as a label, whatever the name looks like. Names continue through `@`, `$` and `#`, as SQL Server's identifier rules say. Anything else throws `SQL_MULTI_STATEMENT`. Model-written SQL has none of these (all 160 recorded consumer-lab replies pass), and the rule turns an open-ended list of tokenizer cases into a short list of allowed text.
 
 This keeps the Decision: the checks are still defense in depth, and the database role is still the boundary. A second statement that starts with `FETCH`, or with `END`, `GET` or `MOVE CONVERSATION`, still passes; those words also appear in ordinary queries or as column names.

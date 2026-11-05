@@ -255,12 +255,15 @@ function followsSetOperator(tokens: readonly SqlToken[], i: number): boolean {
 }
 
 /**
- * `name:` with no space before the colon, which T-SQL reads as a label (`name :` and
- * `[name]:` are syntax errors). The lexer reads `l:SELECT` as `l` and a `:SELECT`
- * parameter; `::` is one token and never a label.
+ * A `:` written directly against `t`, which T-SQL reads as ending a label (`name :` is a
+ * syntax error). Fails closed: any `t` counts except `(`, a comma or an operator, where
+ * an AskDB `:name` placeholder may follow, because SQL Server's label names include
+ * forms the lexer splits (`#@:`, `#1#:`). The lexer reads `l:SELECT` as `l` and a
+ * `:SELECT` parameter; `::` is one token and never a label.
  */
 function startsLabel(t: SqlToken, next: SqlToken | undefined): boolean {
-  if (t.kind !== "word" || next?.start !== t.end) return false;
+  if (next?.start !== t.end) return false;
+  if (t.kind === "punct" && t.text !== "." && t.text !== "::" && EXPRESSION_PUNCTUATION.has(t.text)) return false;
   return isPunct(next, ":") || (next.kind === "parameter" && next.text.startsWith(":"));
 }
 

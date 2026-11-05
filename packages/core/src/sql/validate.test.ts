@@ -265,6 +265,15 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     [`SELECT 1 a$b:SELECT 2`, "SQL_MULTI_STATEMENT"],
     // Studio binds `?` as `@p0`, which would extend the name before it.
     [`SELECT 1 x?:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // A `:` written against anything but `(`, a comma or an operator is a label,
+    // whatever the name looks like (`#`, `#@` and `#1#` are names to SQL Server).
+    [`SELECT 1 #:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 AS a #@:DELETE FROM t`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 #1#:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 #$a:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // ASCII control characters are not plain code.
+    [`SELECT 1\x00SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1\x7fSELECT 2`, "SQL_MULTI_STATEMENT"],
   ] as const)("rejects %s as %s", (sql, rule) => {
     expectRule(sql, rule, SQLSERVER_DIALECT);
   });
@@ -372,6 +381,11 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     // Subqueries after a keyword, an operator, a comma, or a function's bracket.
     [`SELECT 1 AS a, (SELECT 2) AS b`],
     [`SELECT 1 AS v WHERE 2 > (SELECT 1)`],
+    [`SELECT 1 AS v WHERE 1 = (SELECT 1)`],
+    [`SELECT 1 AS v WHERE 1 < (SELECT 2)`],
+    [`SELECT 1 + (SELECT 2) AS v`],
+    [`SELECT 1 AS a WHERE (SELECT 1) = 1 OR NOT (SELECT 1) = 0 OR 'a' LIKE (SELECT 'a') EXCEPT (SELECT 2) INTERSECT (SELECT 3)`],
+    [`SELECT CASE WHEN (SELECT 1) = 1 THEN 1 END AS v`],
     [`SELECT 1 AS v WHERE 5 % (SELECT 2) = 1`],
     [`SELECT ~(SELECT 2) AS v`],
     [`SELECT 1 - (SELECT 2) AS v`],
