@@ -45,6 +45,7 @@ For 1.0:
 
 - `ask({ dialect: "<id>" })` keeps working with only `@askdb/core` installed.
 - `DialectId` stays a closed union of the six built-in ids.
+- `cockroachdb` is a built-in dialect id that reuses the Postgres spec, adding CockroachDB's extra reserved words. The consumer lab doesn't cover it, so it sits outside the 1.0 support claim, which covers five engine families: PostgreSQL, MySQL, MariaDB, SQLite and SQL Server.
 - The behaviour core selects by `id` (lexing, prompt quoting, parameter markers, SELECT modifiers, the tenant check's code readings) stays in core's switches. It does not become data on `DialectSpec` before 1.0.
 
 ## Why moving the specs would risk a cycle

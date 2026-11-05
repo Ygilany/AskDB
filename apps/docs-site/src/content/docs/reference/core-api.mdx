@@ -340,7 +340,7 @@ dialect: "postgres"  // or "mysql" | "sqlite" | "sqlserver" | "cockroachdb" | "m
 | Id | Engine |
 | --- | --- |
 | `"postgres"` | PostgreSQL — `"` quotes, `ILIKE`, `::type` cast, `NOW()`, `\|\|` concat |
-| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres prompt |
+| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres spec and prompt. Outside the 1.0 support claim: AskDB's end-to-end tests don't cover it. |
 | `"mysql"` | MySQL — `` ` `` quotes, `CONCAT()`, `LIKE`, `CAST()`, `NOW()` |
 | `"mariadb"` | MariaDB — MySQL-protocol-compatible; reuses the MySQL prompt |
 | `"sqlite"` | SQLite — dynamic typing, `LIKE`, `date('now')`, `\|\|` concat, `LIMIT` |
