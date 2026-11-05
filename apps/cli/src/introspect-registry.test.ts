@@ -11,6 +11,9 @@ import {
   type ConnectorProviderAdapter,
   type IntrospectionResult,
 } from "@askdb/introspect";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runIntrospectCli } from "./introspect.js";
 
@@ -214,4 +217,46 @@ describe("askdb introspect — CLI-owned errors with the built-in registry", () 
       "Unsupported introspection engine 'oracle' (expected one of: postgres, mysql, sqlite, sqlserver, prisma).",
     );
   });
+});
+
+// Re-introspecting can drop a column the tenant policy names. `--out` checks the
+// policy against the new schema.json and says so, under either enforcement (#332).
+describe("askdb introspect --out — tenant policy check", () => {
+  const tempDirs: string[] = [];
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it.each(["strict", "warn"] as const)(
+    "%s: names the policy's column the new schema.json lacks, and still exits 0",
+    async (enforcement) => {
+      installRuntime();
+      const outDir = mkdtempSync(join(tmpdir(), "askdb-introspect-policy-"));
+      tempDirs.push(outDir);
+      writeFileSync(
+        join(outDir, "tenant-policy.md"),
+        [
+          "---",
+          "schemaId: acme",
+          `enforcement: ${enforcement}`,
+          "roots:",
+          "  - id: table:main.widgets",
+          "    tenantIdColumn: table:main.widgets#tenant_id",
+          "    label: Widget",
+          "---",
+          "",
+        ].join("\n"),
+      );
+
+      const code = await runIntrospectCli(
+        ["--engine", "acme", "--url", "acme://flag", "--out", outDir],
+        { connectorRegistry: createConnectorRegistry([acmeAdapter().adapter]) },
+      );
+
+      expect(code).toBe(0);
+      expect(existsSync(join(outDir, "schema.json"))).toBe(true);
+      expect(stderr).toContain("tenant-policy.md");
+      expect(stderr).toContain("table:main.widgets#tenant_id");
+    },
+  );
 });

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { getAskDbRuntimeConfig } from "@askdb/config";
+import { formatTenantPolicyWarning, loadSchema, type TenantPolicyWarning } from "@askdb/core";
 import {
   createConnectorRegistry,
   introspect,
@@ -192,6 +193,7 @@ async function runIntrospectCommand(
       },
       "askdb introspection completed",
     );
+    if (opts.out) reportTenantPolicy(opts.out);
     return 0;
   } catch (error) {
     logger.error(
@@ -410,6 +412,28 @@ function printHelp(): void {
       "  --correlation-id <id>",
       "",
     ].join("\n"),
+  );
+}
+
+/**
+ * Re-introspecting can drop a column or table that `tenant-policy.md` names. Load the
+ * new directory the way `loadSchema()` will and say what no longer matches. The write
+ * already succeeded, so this warns on stderr and doesn't change the exit code (ADR 0023).
+ */
+function reportTenantPolicy(outDir: string): void {
+  const policyPath = join(outDir, "tenant-policy.md");
+  if (!existsSync(policyPath)) return;
+  let warnings: readonly TenantPolicyWarning[];
+  try {
+    warnings = loadSchema(outDir).tenantPolicy?.warnings ?? [];
+  } catch (error) {
+    process.stderr.write(`Warning: the schema in ${outDir} no longer loads: ${formatError(error)}\n`);
+    return;
+  }
+  if (warnings.length === 0) return;
+  process.stderr.write(
+    `Warning: ${policyPath} doesn't match the new schema.json:\n` +
+      warnings.map((warning) => `  - ${formatTenantPolicyWarning(warning)}\n`).join(""),
   );
 }
 
