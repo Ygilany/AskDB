@@ -249,7 +249,7 @@ describe("AskDB Studio server", () => {
     expect(draft.warnings[0]).not.toContain("ssn_digits");
   });
 
-  it("drafts a tenant policy with sensitive columns tagged when omitSensitiveFromPrompt is off", async () => {
+  it("drafts a tenant policy with sensitive columns tagged and untracked tables left out when omitSensitiveFromPrompt is off", async () => {
     const { draft, prompt } = await suggestTenantPolicyFor({ omitSensitiveFromPrompt: false });
 
     for (const column of ["ssn_digits", "diagnosis_code", "salary_band", "ledger_key"]) {
@@ -257,6 +257,9 @@ describe("AskDB Studio server", () => {
     }
     expect(prompt).not.toMatch(/- admitted_on .*\(sensitive\)$/m);
     expect(draft.warnings).toEqual([]);
+    // Untracked: not in the table list, the table IDs, or the foreign key that targets it.
+    expect(prompt).toContain("audit_ref");
+    expect(prompt).not.toContain("audit_trail");
   });
 
   it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {
@@ -1495,7 +1498,8 @@ function collectStrings(value: unknown): string[] {
  * A schema with one sensitive column from each source: `patients.ssn_digits` in
  * schema.json, `patients.diagnosis_code` escalated by table front-matter, and every column
  * of the sensitive `payroll_ledger` table. `claims.payroll_entry` is a visible foreign key
- * into the ledger's withheld primary key.
+ * into the ledger's withheld primary key, and `claims.audit_ref` one into the untracked
+ * `audit_trail` table.
  */
 function writeClinicSchema(): string {
   const schemaDir = join(mkdtempSync(join(tmpdir(), "askdb-studio-")), "clinic.schema");
@@ -1545,8 +1549,21 @@ function writeClinicSchema(): string {
         id: "table:public.claims",
         name: "claims",
         schema: "public",
-        columns: [column("claims", "id", { primaryKey: true }), column("claims", "payroll_entry")],
-        relationships: [{ from: "table:public.claims#payroll_entry", to: "table:public.payroll_ledger#ledger_key" }],
+        columns: [
+          column("claims", "id", { primaryKey: true }),
+          column("claims", "payroll_entry"),
+          column("claims", "audit_ref"),
+        ],
+        relationships: [
+          { from: "table:public.claims#payroll_entry", to: "table:public.payroll_ledger#ledger_key" },
+          { from: "table:public.claims#audit_ref", to: "table:public.audit_trail#id" },
+        ],
+      },
+      {
+        id: "table:public.audit_trail",
+        name: "audit_trail",
+        schema: "public",
+        columns: [column("audit_trail", "id", { primaryKey: true })],
       },
     ],
   };
@@ -1567,6 +1584,10 @@ function writeClinicSchema(): string {
       "# Table: patients",
       "",
     ].join("\n"),
+  );
+  writeFileSync(
+    join(schemaDir, "tables", "audit_trail.md"),
+    ["---", "id: table:public.audit_trail", "name: audit_trail", "schemaId: clinic", "tracked: false", "---", ""].join("\n"),
   );
   return schemaDir;
 }

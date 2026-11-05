@@ -716,7 +716,7 @@ function TenancyReviewDraft({
               <div className="card-hd"><h3>Withheld from the model</h3></div>
               <div className="card-bd" style={{ display: "grid", gap: 8 }}>
                 {warnings.map((warning) => (
-                  <p className="warning-block" key={warning}>{warning}</p>
+                  <pre className="warning-block" key={warning}>{warning}</pre>
                 ))}
               </div>
             </section>

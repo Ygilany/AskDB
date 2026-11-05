@@ -762,32 +762,35 @@ function tenantPolicySchemaForPrompt(
   };
   const { ddl } = formatSchemaV2ForNlToSql(physical, { omitSensitiveIdentifiersFromPrompt: omitSensitive });
 
-  const allColumns = schema.tables.flatMap((table) => table.columns.map((column) => ({ table, column })));
-  const withheld = new Set(
-    omitSensitive ? allColumns.filter(({ column }) => column.sensitive).map(({ column }) => column.id) : [],
-  );
-  const listed = new Set(
-    tracked.flatMap((table) => table.columns.map((column) => column.id)).filter((id) => !withheld.has(id)),
-  );
-  const relationships = tracked.flatMap((table) => table.relationships ?? []);
-  const foreignKeys = relationships
-    .filter((fk) => listed.has(fk.from) && listed.has(fk.to))
-    .map((fk) => `- ${fk.from} -> ${fk.to}`);
-
-  const names = new Map(
-    allColumns.map(({ table, column }) => [column.id, `${table.schema}.${table.name}.${column.name}`] as const),
-  );
+  // The formatter prints no foreign keys yet, so Studio lists them, mirroring the formatter's
+  // omission rule (packages/core/src/schema/v2/format.ts): a column is withheld when omission
+  // is on and it is sensitive, which `loadSchema()` sets on every column of a sensitive table.
+  // When core prints foreign keys (#349, step 5), use its lines and delete this block (ADR 0021).
+  const names = new Map<string, string>();
+  const withheld = new Set<string>();
+  for (const table of schema.tables) {
+    for (const column of table.columns) {
+      names.set(column.id, `${table.schema}.${table.name}.${column.name}`);
+      if (omitSensitive && column.sensitive) withheld.add(column.id);
+    }
+  }
   const nameOf = (id: string) => names.get(id) ?? id;
-  const withheldKeys = [
-    ...tracked.flatMap((table) =>
-      table.columns
-        .filter((column) => column.primaryKey && withheld.has(column.id))
-        .map((column) => `${nameOf(column.id)} (primary key)`),
-    ),
-    ...relationships
-      .filter((fk) => withheld.has(fk.from) || withheld.has(fk.to))
-      .map((fk) => `${nameOf(fk.from)} → ${nameOf(fk.to)} (foreign key)`),
-  ];
+
+  const listed = new Set<string>();
+  const withheldKeys: string[] = [];
+  for (const table of tracked) {
+    for (const column of table.columns) {
+      if (!withheld.has(column.id)) listed.add(column.id);
+      else if (column.primaryKey) withheldKeys.push(`${nameOf(column.id)} (primary key)`);
+    }
+  }
+  const foreignKeys: string[] = [];
+  for (const fk of tracked.flatMap((table) => table.relationships ?? [])) {
+    if (listed.has(fk.from) && listed.has(fk.to)) foreignKeys.push(`- ${fk.from} -> ${fk.to}`);
+    else if (withheld.has(fk.from) || withheld.has(fk.to)) {
+      withheldKeys.push(`${nameOf(fk.from)} → ${nameOf(fk.to)} (foreign key)`);
+    }
+  }
   const warnings =
     withheldKeys.length > 0
       ? [
