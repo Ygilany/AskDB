@@ -44,7 +44,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Domain terms are used as `CONTEXT.md` and `docs/contracts/` define them (`docs/agents/domain.md`)
 - Markdown and MDX use one line per paragraph or list item, with no hard wraps in prose (`AGENTS.md`, "Conventions")
 - **Enforced by tooling:** `pnpm lint` (each package's `tsc --noEmit`, Studio's ESLint and `tsconfig.web.json` typecheck, the docs site's `astro check`); `pnpm run audit` (moderate or higher advisories, stale allowlist entries); the Changesets workflow (a changeset exists when a non-test file under `packages/*/src` or `apps/{cli,http-api,studio}/src`, or a manifest outside `devDependencies`, changes, but not its bump level, and not for `apps/docs-site`; test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`) are exempt, per `scripts/publishable-paths.sh`); the consumer-lab job's frozen-lockfile check of the lab's manifest against its lockfile; `pnpm test:ai-floors` (AI SDK peer floors); `pnpm smoke:install` and the publish dry-run; React Doctor on PRs. There is no formatter.
-- **Smell baseline:** applies by default. Endorsed here: `@askdb/config`'s own provider list duplicating `BUILTIN_AI_PROVIDERS`, guarded by a drift test in `@askdb/client` (`docs/architecture.md`, "Dependency boundaries"); the `packages/ai-*` re-export shims (Middle Man) until #347 removes them.
+- **Smell baseline:** applies by default. Endorsed here: `@askdb/config`'s own provider list duplicating `BUILTIN_AI_PROVIDERS`, guarded by a drift test in `@askdb/client` (`docs/architecture.md`, "Dependency boundaries").
 
 ## Architecture
 
@@ -73,7 +73,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 | `packages/core/src/sql/tenant-*.ts`, `packages/core/src/sql/{bind,parameter-manifest}.ts`, `packages/core/src/ask.ts` | security review, Tenant scope, latent defects block |
 | `packages/core/src/sql/{sensitive-guardrail,prompt}.ts`, `packages/core/src/schema/**`, `packages/core/src/retrieval/**`, `packages/core/src/enrichment/**`, `packages/core/src/logging/**`, `packages/rag/src/chunker/**` | security review, Sensitive fields |
 | `apps/studio/src/{server,request-guard,execute-registry,introspection,setup}.ts`, `apps/studio/src/web/**`, `apps/http-api/src/**` | security review, Local servers |
-| `packages/*/src/exec/**`, `packages/*/src/connector/provider.ts`, `packages/config/src/**`, `apps/cli/src/{init,introspect,project-config}.ts` | security review, Connection strings and secrets |
+| `packages/*/src/exec/**`, `packages/*/src/connector/provider.ts`, `packages/introspect/src/kit/label.ts`, `packages/config/src/**`, `apps/cli/src/{init,introspect,project-config}.ts` | security review, Connection strings and secrets |
 | `packages/enrich/src/workspace.ts` | security review, File writes |
 | `packages/ai/src/providers/**`, `packages/*/src/exec/**` | Optional peers |
 | `.github/workflows/**`, `scripts/release-*`, `scripts/pack-tarballs.sh`, `.changeset/config.json` | security review, CI and release gates |

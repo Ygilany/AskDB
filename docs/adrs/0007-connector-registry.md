@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-06-11). Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md): the registry now lives in `@askdb/introspect` with open provider ids, adapters resolve their own connection, and `@askdb/connectors` is a deprecated re-export shim.
+Accepted (2026-06-11). Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md): the registry now lives in `@askdb/introspect` with open provider ids, adapters resolve their own connection, and `@askdb/connectors`, then a deprecated re-export shim, was removed before 1.0 (#347).
 
 ## Context
 
