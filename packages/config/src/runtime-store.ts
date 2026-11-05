@@ -12,10 +12,6 @@ export function setAskDbRuntime(data: AskDbRuntimeStore): void {
   stored = data;
 }
 
-export function clearAskDbRuntime(): void {
-  stored = undefined;
-}
-
 export function getAskDbRuntimeStore(): AskDbRuntimeStore {
   if (!stored) {
     throw new Error(
