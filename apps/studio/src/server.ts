@@ -18,6 +18,7 @@ import {
 } from "@askdb/ai";
 import {
   ask,
+  formatSchemaV2ForNlToSql,
   formatSensitiveReference,
   isBuiltInDialectId,
   loadSchema,
@@ -29,6 +30,7 @@ import {
   type AskDialectInput,
   type AskGenerateDeps,
   type DialectSpec,
+  type NormalizedSchemaV2,
   type TenantPolicyFrontmatter,
   type TenantScope,
   type TenantSqlOutputMode,
@@ -714,6 +716,85 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
   return candidates.map((candidate) => ({ text: candidate.text }));
 }
 
+/**
+ * The schema as the tenant-policy draft sends it to the model, with the sensitivity rules
+ * `ask()` applies (#324): `formatSchemaV2ForNlToSql` tags sensitive columns, or withholds
+ * them when `omitSensitive` is on. Only the physical layer goes in (names, types, keys and
+ * foreign keys), never descriptions, aliases or common query language, and untracked tables
+ * stay out as they do for `ask()`. A foreign key is listed only when both of its columns are.
+ * `warnings` names the primary and foreign keys withheld as sensitive, which the draft can't
+ * scope through.
+ */
+function tenantPolicySchemaForPrompt(
+  schema: NormalizedSchemaV2,
+  omitSensitive: boolean,
+): { schemaId: string; schemaDdl: string; tableIds: string[]; warnings: string[] } {
+  const tracked = schema.tables.filter((table) => table.tracked !== false);
+  const physical: NormalizedSchemaV2 = {
+    schemaId: schema.schemaId,
+    warnings: [],
+    tables: tracked.map((table) => ({
+      id: table.id,
+      name: table.name,
+      schema: table.schema,
+      sensitive: table.sensitive,
+      columns: table.columns.map((column) => ({
+        id: column.id,
+        name: column.name,
+        type: column.type,
+        nullable: column.nullable,
+        primaryKey: column.primaryKey,
+        sensitive: column.sensitive,
+      })),
+    })),
+  };
+  const { ddl } = formatSchemaV2ForNlToSql(physical, { omitSensitiveIdentifiersFromPrompt: omitSensitive });
+
+  // The formatter prints no foreign keys yet, so Studio lists them, mirroring the formatter's
+  // omission rule (packages/core/src/schema/v2/format.ts): a column is withheld when omission
+  // is on and it is sensitive, which `loadSchema()` sets on every column of a sensitive table.
+  // When core prints foreign keys (#349, step 5), use its lines and delete this block (ADR 0021).
+  const names = new Map<string, string>();
+  const withheld = new Set<string>();
+  for (const table of schema.tables) {
+    for (const column of table.columns) {
+      names.set(column.id, `${table.schema}.${table.name}.${column.name}`);
+      if (omitSensitive && column.sensitive) withheld.add(column.id);
+    }
+  }
+  const nameOf = (id: string) => names.get(id) ?? id;
+
+  const listed = new Set<string>();
+  const withheldKeys: string[] = [];
+  for (const table of tracked) {
+    for (const column of table.columns) {
+      if (!withheld.has(column.id)) listed.add(column.id);
+      else if (column.primaryKey) withheldKeys.push(`${nameOf(column.id)} (primary key)`);
+    }
+  }
+  const foreignKeys: string[] = [];
+  for (const fk of tracked.flatMap((table) => table.relationships ?? [])) {
+    if (listed.has(fk.from) && listed.has(fk.to)) foreignKeys.push(`- ${fk.from} -> ${fk.to}`);
+    else if (withheld.has(fk.from) || withheld.has(fk.to)) {
+      withheldKeys.push(`${nameOf(fk.from)} → ${nameOf(fk.to)} (foreign key)`);
+    }
+  }
+  const warnings =
+    withheldKeys.length > 0
+      ? [
+          `Withheld from the model because they're marked sensitive: ${withheldKeys.join(", ")}. ` +
+            "If any of them carries tenant scope, add it to the policy by hand.",
+        ]
+      : [];
+
+  return {
+    schemaId: schema.schemaId,
+    schemaDdl: foreignKeys.length > 0 ? `${ddl}\n\nForeign keys:\n${foreignKeys.join("\n")}` : ddl,
+    tableIds: tracked.map((table) => table.id),
+    warnings,
+  };
+}
+
 async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTenantPolicyResponse> {
   const rt = getAskDbRuntimeConfig();
   const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
@@ -721,27 +802,11 @@ async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTena
     throw new StudioHttpError(400, ai.keyMissingMessage("AI tenant policy suggestion"));
   }
 
-  // Build a compact DDL-like representation of the schema for the prompt
-  const workspace = requireWorkspace(state);
-  const schemaId = workspace.physical.schemaId;
-  const schemaDdl = workspace.tables
-    .map((t) => {
-      const cols = t.physical.columns
-        .map((c) => {
-          const parts = [c.name, c.type];
-          if (c.primaryKey) parts.push("PRIMARY KEY");
-          if (!c.nullable) parts.push("NOT NULL");
-          return `  ${parts.join(" ")}`;
-        })
-        .join(",\n");
-      const rels = (t.physical.relationships ?? [])
-        .map((r) => `  -- FK: ${r.from} -> ${r.to}`)
-        .join("\n");
-      return `CREATE TABLE ${t.physical.schema}.${t.physical.name} (\n${cols}\n);\n${rels}`.trim();
-    })
-    .join("\n\n");
-
-  const tableIds = workspace.tables.map((t) => t.physical.id);
+  requireWorkspace(state);
+  const { schemaId, schemaDdl, tableIds, warnings } = tenantPolicySchemaForPrompt(
+    loadSchema(state.schemaDir),
+    rt.modes.omitSensitiveFromPrompt,
+  );
 
   const systemPrompt = `You are an expert database architect specializing in multi-tenant SaaS systems.
 You analyze database schemas and produce a tenant-policy configuration in a specific JSON format.
@@ -792,9 +857,9 @@ If the schema has no clear multi-tenant pattern, still make your best guess at w
     prompt: userPrompt,
   });
 
-  let parsed: SuggestTenantPolicyResponse;
+  let parsed: Pick<SuggestTenantPolicyResponse, "frontmatter" | "body">;
   try {
-    parsed = JSON.parse(result.text) as SuggestTenantPolicyResponse;
+    parsed = JSON.parse(result.text) as typeof parsed;
   } catch {
     throw new StudioHttpError(500, `AI returned invalid JSON for tenant policy suggestion. Raw text: ${result.text.slice(0, 500)}`);
   }
@@ -807,9 +872,7 @@ If the schema has no clear multi-tenant pattern, still make your best guess at w
       `AI-generated tenant policy frontmatter is invalid: ${validation.error.issues.map((i) => i.message).join("; ")}`,
     );
   }
-  parsed.frontmatter = validation.data;
-
-  return parsed;
+  return { frontmatter: validation.data, body: parsed.body, warnings };
 }
 
 async function askSampleQuestion(

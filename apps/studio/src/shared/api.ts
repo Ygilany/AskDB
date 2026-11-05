@@ -59,6 +59,11 @@ export type SaveTenantPolicyRequest = {
 export type SuggestTenantPolicyResponse = {
   frontmatter: TenantPolicyFrontmatter;
   body: string;
+  /**
+   * Written by Studio, not the model: the primary and foreign keys withheld from the model
+   * because they're sensitive (`modes.omitSensitiveFromPrompt`), so the draft can't use them.
+   */
+  warnings: string[];
 };
 
 export type SuggestRequest = {

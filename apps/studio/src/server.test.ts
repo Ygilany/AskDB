@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -69,6 +69,7 @@ function installStudioRuntime(
 describe("AskDB Studio server", () => {
   const servers: ReturnType<typeof createStudioServer>[] = [];
   const embeddingServers: ReturnType<typeof createServer>[] = [];
+  const modelServers: ReturnType<typeof createServer>[] = [];
 
   afterEach(async () => {
     resetAskDbRuntimeForTests();
@@ -76,7 +77,7 @@ describe("AskDB Studio server", () => {
     setSetupInstallerForTests(undefined);
     setStudioClientDirForTests(undefined);
     await Promise.all(
-      [...servers, ...embeddingServers].map(
+      [...servers, ...embeddingServers, ...modelServers].map(
         (server) =>
           new Promise<void>((resolve) => {
             server.close(() => resolve());
@@ -85,7 +86,34 @@ describe("AskDB Studio server", () => {
     );
     servers.length = 0;
     embeddingServers.length = 0;
+    modelServers.length = 0;
   });
+
+  /**
+   * Starts Studio on the clinic schema with OpenAI pointed at a fake endpoint, asks for a
+   * tenant-policy draft, and returns the draft and the text of the prompt the model received.
+   */
+  async function suggestTenantPolicyFor(options: { omitSensitiveFromPrompt: boolean }) {
+    const model = createModelServer(JSON.stringify(CANNED_TENANT_POLICY));
+    modelServers.push(model.server);
+    const modelBaseUrl = await listen(model.server);
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "openai",
+        providerConfig: { openai: { apiKey: "test-key", baseUrl: modelBaseUrl } },
+        language: { model: "gpt-4o-mini" },
+      },
+      modes: { omitSensitiveFromPrompt: options.omitSensitiveFromPrompt },
+    });
+    const server = createStudioServer({ schema: writeClinicSchema() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const draft = await postJson(`${baseUrl}/api/suggest-tenant-policy`, {});
+    expect(model.requests).toHaveLength(1);
+    return { draft, prompt: model.requests[0] };
+  }
 
   it("loads, saves enrichment, and generates sample SQL with the mock model", async () => {
     installStudioRuntime();
@@ -191,6 +219,51 @@ describe("AskDB Studio server", () => {
     );
     expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
     expect((await getJson(`${baseUrl}/api/workspace`)).schemaId).toBe("orders-users");
+  });
+
+  // #324: the tenant-policy draft must apply the same sensitivity rules as ask().
+  it("drafts a tenant policy without sending any sensitive column when omitSensitiveFromPrompt is on", async () => {
+    const { prompt } = await suggestTenantPolicyFor({ omitSensitiveFromPrompt: true });
+
+    // Sensitive in schema.json, escalated by table front-matter, and inherited from a sensitive table.
+    for (const column of ["ssn_digits", "diagnosis_code", "salary_band", "ledger_key"]) {
+      expect(prompt).not.toContain(column);
+    }
+    expect(prompt).toContain("payroll_ledger");
+    expect(prompt).toContain("admitted_on");
+  });
+
+  it("names the withheld key columns in the draft's warnings, and still sends the visible foreign keys", async () => {
+    const { draft, prompt } = await suggestTenantPolicyFor({ omitSensitiveFromPrompt: true });
+
+    expect(prompt).toContain("table:public.patients#org_id -> table:public.orgs#id");
+    expect(draft.warnings).toHaveLength(1);
+    for (const key of [
+      "public.payroll_ledger.ledger_key (primary key)",
+      "public.payroll_ledger.org_id → public.orgs.id (foreign key)",
+      "public.claims.payroll_entry → public.payroll_ledger.ledger_key (foreign key)",
+    ]) {
+      expect(draft.warnings[0]).toContain(key);
+    }
+    // Withheld, but not a key: the policy doesn't need it, so the warning doesn't name it.
+    expect(draft.warnings[0]).not.toContain("ssn_digits");
+  });
+
+  it("drafts a tenant policy from the tracked tables' physical layer, sensitive columns tagged, when omitSensitiveFromPrompt is off", async () => {
+    const { draft, prompt } = await suggestTenantPolicyFor({ omitSensitiveFromPrompt: false });
+
+    for (const column of ["ssn_digits", "diagnosis_code", "salary_band", "ledger_key"]) {
+      expect(prompt).toMatch(new RegExp(`- ${column} .*\\(sensitive\\)$`, "m"));
+    }
+    expect(prompt).not.toMatch(/- admitted_on .*\(sensitive\)$/m);
+    expect(draft.warnings).toEqual([]);
+    // Untracked: not in the table list, the table IDs, or the foreign key that targets it.
+    expect(prompt).toContain("audit_ref");
+    expect(prompt).not.toContain("audit_trail");
+    // No describable text: description, alias, column description, common query language.
+    for (const text of ["deduplicated by", "inpatients", "matched to the registry", "readmissions"]) {
+      expect(prompt).not.toContain(text);
+    }
   });
 
   it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {
@@ -1391,6 +1464,180 @@ function createEmbeddingServer(): ReturnType<typeof createServer> {
       }),
     );
   });
+}
+
+/** A tenant policy that passes `tenantPolicyFrontmatterSchema`, as the fake model's reply. */
+const CANNED_TENANT_POLICY = {
+  frontmatter: {
+    schemaId: "clinic",
+    enforcement: "strict",
+    roots: [{ id: "table:public.orgs", tenantIdColumn: "table:public.orgs#id", label: "Org" }],
+  },
+  body: "## Hierarchy\n\nOrgs own patients.",
+};
+
+/**
+ * A fake OpenAI endpoint (Responses and Chat Completions) that replies with `replyText`
+ * and records, per request, every string in the request body joined by newlines: the
+ * instructions and prompt text the model would have read.
+ */
+function createModelServer(replyText: string): { server: ReturnType<typeof createServer>; requests: string[] } {
+  const requests: string[] = [];
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const body = JSON.parse(await readBody(req)) as { model?: string };
+    requests.push(collectStrings(body).join("\n"));
+    const model = body.model ?? "fake-model";
+    res.writeHead(200, { "content-type": "application/json" });
+    if (req.url === "/responses") {
+      res.end(
+        JSON.stringify({
+          id: "resp_fake",
+          object: "response",
+          created_at: 0,
+          model,
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              id: "msg_fake",
+              role: "assistant",
+              status: "completed",
+              content: [{ type: "output_text", text: replyText, annotations: [] }],
+            },
+          ],
+          incomplete_details: null,
+          usage: { input_tokens: 0, output_tokens: 0 },
+        }),
+      );
+      return;
+    }
+    res.end(
+      JSON.stringify({
+        id: "chatcmpl_fake",
+        object: "chat.completion",
+        created: 0,
+        model,
+        choices: [{ index: 0, message: { role: "assistant", content: replyText }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      }),
+    );
+  });
+  return { server, requests };
+}
+
+function collectStrings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(collectStrings);
+  if (value && typeof value === "object") return Object.values(value).flatMap(collectStrings);
+  return [];
+}
+
+/**
+ * A schema with one sensitive column from each source: `patients.ssn_digits` in
+ * schema.json, `patients.diagnosis_code` escalated by table front-matter, and every column
+ * of the sensitive `payroll_ledger` table. The `patients` description, alias, column
+ * description and common query language each name `ssn_digits`. `claims.payroll_entry` is a visible foreign key
+ * into the ledger's withheld primary key, and `claims.audit_ref` one into the untracked
+ * `audit_trail` table.
+ */
+function writeClinicSchema(): string {
+  const schemaDir = join(mkdtempSync(join(tmpdir(), "askdb-studio-")), "clinic.schema");
+  const column = (table: string, name: string, extra: Record<string, unknown> = {}) => ({
+    id: `table:public.${table}#${name}`,
+    name,
+    type: "text",
+    nullable: false,
+    ...extra,
+  });
+  const schema = {
+    version: 2,
+    schemaId: "clinic",
+    tables: [
+      {
+        id: "table:public.orgs",
+        name: "orgs",
+        schema: "public",
+        columns: [column("orgs", "id", { primaryKey: true }), column("orgs", "name")],
+      },
+      {
+        id: "table:public.patients",
+        name: "patients",
+        schema: "public",
+        columns: [
+          column("patients", "id", { primaryKey: true }),
+          column("patients", "org_id"),
+          column("patients", "admitted_on"),
+          column("patients", "ssn_digits", { sensitive: true }),
+          column("patients", "diagnosis_code"),
+        ],
+        relationships: [{ from: "table:public.patients#org_id", to: "table:public.orgs#id" }],
+      },
+      {
+        id: "table:public.payroll_ledger",
+        name: "payroll_ledger",
+        schema: "public",
+        sensitive: true,
+        columns: [
+          column("payroll_ledger", "ledger_key", { primaryKey: true }),
+          column("payroll_ledger", "org_id"),
+          column("payroll_ledger", "salary_band"),
+        ],
+        relationships: [{ from: "table:public.payroll_ledger#org_id", to: "table:public.orgs#id" }],
+      },
+      {
+        id: "table:public.claims",
+        name: "claims",
+        schema: "public",
+        columns: [
+          column("claims", "id", { primaryKey: true }),
+          column("claims", "payroll_entry"),
+          column("claims", "audit_ref"),
+        ],
+        relationships: [
+          { from: "table:public.claims#payroll_entry", to: "table:public.payroll_ledger#ledger_key" },
+          { from: "table:public.claims#audit_ref", to: "table:public.audit_trail#id" },
+        ],
+      },
+      {
+        id: "table:public.audit_trail",
+        name: "audit_trail",
+        schema: "public",
+        columns: [column("audit_trail", "id", { primaryKey: true })],
+      },
+    ],
+  };
+  mkdirSync(join(schemaDir, "tables"), { recursive: true });
+  writeFileSync(join(schemaDir, "schema.json"), JSON.stringify(schema, null, 2));
+  writeFileSync(
+    join(schemaDir, "tables", "patients.md"),
+    [
+      "---",
+      "id: table:public.patients",
+      "name: patients",
+      "schemaId: clinic",
+      "aliases: [inpatients]",
+      "columns:",
+      "  - id: table:public.patients#admitted_on",
+      "    description: Admission date, matched to the registry by ssn_digits.",
+      "  - id: table:public.patients#diagnosis_code",
+      "    sensitive: true",
+      "---",
+      "",
+      "# Table: patients",
+      "",
+      "Admitted patients, deduplicated by ssn_digits.",
+      "",
+      "## Common query language",
+      "",
+      '- "readmissions" means a second admission for the same ssn_digits.',
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(schemaDir, "tables", "audit_trail.md"),
+    ["---", "id: table:public.audit_trail", "name: audit_trail", "schemaId: clinic", "tracked: false", "---", ""].join("\n"),
+  );
+  return schemaDir;
 }
 
 function createFailingEmbeddingServer(): ReturnType<typeof createServer> {

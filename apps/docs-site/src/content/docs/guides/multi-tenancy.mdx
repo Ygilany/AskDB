@@ -37,7 +37,7 @@ The tenant check is heuristic and does not parse SQL. It rejects the common ways
 
 ## Authoring the policy
 
-The recommended path is Studio's **Tenancy** view, which guides you through declaring tenant roots, scoped tables, and global tables in a form. Studio can also AI-draft a policy from a plain-language description of your tenancy model, for your review.
+The recommended path is Studio's **Tenancy** view, which guides you through declaring tenant roots, scoped tables, and global tables in a form. Studio can also draft a policy with AI from your schema's tables, keys and foreign keys, for your review.
 
 You can also write `tenant-policy.md` by hand. The front-matter is YAML, validated strictly when the schema artifact loads — unknown keys are rejected, and every table or column reference uses the **stable IDs** from `schema.json` (`table:public.projects`, `table:public.projects#organization_id`), never bare names. Example for a simple SaaS schema:
 
