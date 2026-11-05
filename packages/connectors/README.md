@@ -1,48 +1,26 @@
-# `@askdb/connectors`
+# `@askdb/connectors` (deprecated)
 
-AskDB connector provider registry for app/bootstrap wiring. Maps config-driven introspection provider selections to concrete connector packages (`@askdb/postgres`, `@askdb/mysql`, etc.), following the same registry pattern as `@askdb/ai`.
+> **Deprecated.** The connector provider registry now lives in [`@askdb/introspect`](../introspect/README.md), and the connection-label helpers live in `@askdb/introspect/kit`. See [ADR 0008](../../docs/adrs/0008-engine-packages-and-connector-registry.md). This package only re-exports them so existing imports keep working. The engine packages and the first-party apps no longer depend on it.
 
-## Install
+## Migrating
 
-```bash
-# `ai` (Vercel AI SDK 6 or 7) is a required peer of @askdb/core, which these packages load
-pnpm add @askdb/connectors ai
-# Plus the connector provider packages your runtime uses:
-pnpm add @askdb/postgres @askdb/mysql @askdb/sqlite @askdb/sqlserver @askdb/prisma
+```diff
+- import { createConnectorRegistry, type ConnectorConfig } from "@askdb/connectors";
++ import { createConnectorRegistry, type ConnectorConfig } from "@askdb/introspect";
+
+- import { formatConnectionLabel } from "@askdb/connectors";
++ import { formatConnectionLabel } from "@askdb/introspect/kit";
 ```
 
-Install only the concrete connector packages your introspection config requires.
+| `@askdb/connectors` export | Replacement |
+| --- | --- |
+| `createConnectorRegistry`, `connectorProviderMissingMessage` | the same names from `@askdb/introspect` |
+| `ConnectorConfig`, `ConnectorConnection`, `ConnectorResult`, `ConnectorProviderAdapter`, `ConnectorProviderAdapters`, `ConnectorRegistry` (including `connectionLabel`; the `connectionLabelParts` hook is on `ConnectorProviderAdapter`) | the same names from `@askdb/introspect` |
+| `CONNECTOR_PROVIDERS` | `BUILT_IN_CONNECTOR_PROVIDERS` from `@askdb/introspect` |
+| `ConnectorProvider` (was a closed union) | `ConnectorProviderId` from `@askdb/introspect`: an open string type (`BuiltInConnectorProvider \| (string & {})`), so third-party engines can register their own ids |
+| `formatConnectionLabel`, `parseConnectionUrl`, `ConnectionLabelParts` | the same names from `@askdb/introspect/kit` |
 
-## Usage
-
-```ts
-import { createAskDbConnectorRegistry, type AskDbConnectorConfig } from "@askdb/connectors";
-import { postgresConnectorProvider } from "@askdb/postgres";
-import { mysqlConnectorProvider } from "@askdb/mysql";
-import { introspect } from "@askdb/introspect";
-
-const registry = createAskDbConnectorRegistry([
-  postgresConnectorProvider,
-  mysqlConnectorProvider,
-]);
-
-const { connector, input } = registry.createConnector({
-  provider: "postgres",
-  url: "postgres://localhost/mydb",
-});
-
-const result = await introspect(input, { outDir: "./askdb", schemaId: "mydb" }, { connector });
-```
-
-## Exports
-
-- `createAskDbConnectorRegistry` — registry factory
-- `ASKDB_CONNECTOR_PROVIDERS` — constant array of all provider ids
-- `AskDbConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`
-- `AskDbConnectorConfig` — unified per-call config shape
-- `AskDbConnectorResult` — `{ connector, input, mode }` pair consumed by `introspect()`
-- `AskDbConnectorProviderAdapter` — interface implemented by each concrete package
-- `askDbConnectorProviderMissingMessage` — actionable error helper
+The registry in `@askdb/introspect` also adds `registry.providers()`, `registry.resolveConnection(provider, request)` (whose `sourceLabel` the registry builds from the adapter's `connectionLabelParts`), and the optional `resolveConnection` adapter hook.
 
 ## License
 

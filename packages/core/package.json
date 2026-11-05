@@ -1,6 +1,6 @@
 {
   "name": "@askdb/core",
-  "version": "1.0.0-beta.43",
+  "version": "1.0.0-beta.44",
   "description": "AskDB core: dialect-agnostic NL→SQL pipeline. Provides ask() orchestration, schema/IR types, modes, logging, and retrieval input. Bring your own dialect (e.g. @askdb/postgres).",
   "keywords": [
     "askdb",
@@ -40,7 +40,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -50,7 +50,7 @@
   "dependencies": {
     "gray-matter": "^4.0.3",
     "pino": "^10.4.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "ai": "^6.0.0 || ^7.0.51"
@@ -58,6 +58,6 @@
   "devDependencies": {
     "ai": "^7.0.51",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }

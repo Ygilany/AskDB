@@ -69,6 +69,21 @@ const v1Schema: NormalizedSchema = {
   ],
 };
 
+describe("validateSensitiveReferences — a trailing semicolon (#477)", () => {
+  it("reads a statement the same with or without its trailing semicolon", () => {
+    for (const sql of [
+      "SELECT u.password FROM identity.users u",
+      "SELECT u.email AS password FROM identity.users u",
+      "SELECT id FROM identity.users WHERE tag = 'x'",
+    ]) {
+      const bare = validateSensitiveReferences(sql, districtSchema);
+      expect(validateSensitiveReferences(`${sql};`, districtSchema)).toEqual(bare);
+      expect(validateSensitiveReferences(`${sql} ;`, districtSchema)).toEqual(bare);
+    }
+    expect(validateSensitiveReferences("SELECT u.password FROM identity.users u;", districtSchema).passed).toBe(false);
+  });
+});
+
 describe("validateSensitiveReferences — qualified matches", () => {
   it("flags a sensitive column referenced as table.column", () => {
     const result = validateSensitiveReferences(

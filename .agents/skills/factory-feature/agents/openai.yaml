@@ -1,0 +1,4 @@
+# Codex has no equivalent of SKILL.md's disable-model-invocation. This turns off implicit
+# selection; an explicit $factory-feature still runs. Only the owner starts a feature.
+policy:
+  allow_implicit_invocation: false

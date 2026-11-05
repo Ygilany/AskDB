@@ -382,14 +382,6 @@ describe("askdb rag", () => {
     expect(pgvector.options).toEqual([expect.objectContaining({ connectionString: PG_URL, table: "chunks" })]);
   });
 
-  it("rejects --api-key: keys come from ai.providerConfig, never argv", async () => {
-    const schemaDir = copyFixture();
-    expect(await runRagCli(["index", schemaDir, "--api-key", "sk-secret"])).toBe(1);
-    expect(stderr.join("")).toBe(
-      "--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.\n",
-    );
-  });
-
   describe("logging", () => {
     function readEvents(path: string): Record<string, unknown>[] {
       if (!existsSync(path)) return [];

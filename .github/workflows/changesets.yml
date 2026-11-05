@@ -1,6 +1,6 @@
 name: Changesets
 
-# Validate that any PR touching publishable sources includes a changeset entry.
+# Validate that any PR touching publishable sources (test files aside) includes a changeset entry.
 # Publishing is automated in release.yml (see docs/release.md).
 #
 # Runs on every PR (no workflow-level `paths:` filter) so the `status` check
@@ -22,6 +22,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The filter that decides which changed paths are publishable (scripts/publishable-paths.sh)
+      # skips test files, which no build ships. This self-test fails the check if it breaks.
+      - name: Self-test the publishable-paths filter
+        run: bash scripts/publishable-paths.test.sh
+
       # The Version PR that release.yml opens applies the pending changesets, so it
       # changes every bumped package.json but adds no changeset, and
       # `changeset status --since` fails on it by design. Skip the check there (the job
@@ -30,6 +35,7 @@ jobs:
       # A package.json change counts only outside `devDependencies`, which hosts never
       # install. A dev-only bump, like a Dependabot major of a build or test tool, needs no
       # changeset; a change to a range hosts install still does (docs/adrs/0015).
+      # A change confined to test files needs none either.
       - name: Detect changes to publishable sources
         id: changes
         env:
@@ -52,13 +58,14 @@ jobs:
             [ "${before}" != "${after}" ]
           }
           publishable=false
-          for path in $(git diff --name-only "${base}" HEAD \
-            | grep -E '^packages/[^/]+/(src/|package\.json$)|^apps/(cli|http-api|studio)/(src/|package\.json$)'); do
+          changed="$(git diff --name-only "${base}" HEAD | bash scripts/publishable-paths.sh)"
+          while IFS= read -r path; do
+            [ -n "${path}" ] || continue
             case "${path}" in
               */package.json) if manifest_changed "${path}"; then publishable=true; fi ;;
               *) publishable=true ;;
             esac
-          done
+          done <<< "${changed}"
 
           if [ "${publishable}" = "true" ]; then
             echo "publishable=true" >> "$GITHUB_OUTPUT"

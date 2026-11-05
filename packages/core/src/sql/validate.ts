@@ -59,7 +59,11 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 7. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions).
  *
- * Then the dialect's `extraValidate` runs on the normalized SQL (trailing `;` removed).
+ * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
+ *
+ * Returns the SQL trimmed and otherwise as written: a single trailing `;` (and any
+ * whitespace before it) is kept. A host that wraps the statement, for example in a
+ * row-cap subquery, removes the terminator first.
  *
  * The lexer follows `dialect.id`. When the id is not a built-in engine family, the SQL
  * must pass under every built-in lexer with every built-in denylist.
@@ -87,9 +91,8 @@ export function validateSelectSql(dialect: DialectSpec, sql: string): string {
   }
 
   const last = tokens[tokens.length - 1];
-  const normalized = isPunct(last, ";") ? trimmed.slice(0, last!.start).trim() : trimmed;
-  dialect.extraValidate?.(normalized);
-  return normalized;
+  dialect.extraValidate?.(isPunct(last, ";") ? trimmed.slice(0, last!.start).trim() : trimmed);
+  return trimmed;
 }
 
 function checkWithProfile(

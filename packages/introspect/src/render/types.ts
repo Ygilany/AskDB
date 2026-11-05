@@ -1,3 +1,4 @@
+import type { V2SchemaJson } from "@askdb/core";
 import type { IntrospectionWarning } from "../types.js";
 
 export type RenderOptions = {
@@ -21,5 +22,16 @@ export type RenderOptions = {
 
 export type RenderResult = {
   schemaJsonPath: string;
+  warnings: IntrospectionWarning[];
+};
+
+/** Options for `renderSchemaV2Body` — `RenderOptions` without the output directory. */
+export type RenderBodyOptions = Omit<RenderOptions, "outDir">;
+
+export type RenderBodyResult = {
+  /** The Schema v2 document (after the optional merge with an existing artifact). */
+  json: V2SchemaJson;
+  /** Exact `schema.json` file contents: `JSON.stringify(json, null, 2) + "\n"`. */
+  body: string;
   warnings: IntrospectionWarning[];
 };

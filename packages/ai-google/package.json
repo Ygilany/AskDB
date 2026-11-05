@@ -1,6 +1,6 @@
 {
   "name": "@askdb/ai-google",
-  "version": "1.0.0-beta.7",
+  "version": "1.0.0-beta.8",
   "description": "[Deprecated] Re-exports the Google Gemini provider now built into @askdb/ai. Install @askdb/ai + @ai-sdk/google instead; removed before 1.0.",
   "keywords": [
     "askdb",
@@ -38,14 +38,14 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/google": "^4.0.87",
+    "@ai-sdk/google": "^4.0.109",
     "@askdb/ai": "workspace:^"
   },
   "peerDependencies": {

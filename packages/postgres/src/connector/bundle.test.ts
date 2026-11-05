@@ -100,21 +100,30 @@ describe("describePostgresFromExport", () => {
     ]);
   });
 
-  it("includes all non-system schemas by default (no include filter)", async () => {
+  it("with no schema filter, keeps every user schema (look-alikes included) and drops system schemas", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
     const bundleDir = join(workDir, "bundle");
+    const names = [
+      "information_schema",
+      "pg_catalog",
+      "pg_toast",
+      "pg_temp_3",
+      "pg_toast_temp_3",
+      "pgxtoast",
+      "information_schema_x",
+    ];
     writeCsvBundle(bundleDir, {
       ...snapshot,
-      schemas: [...(snapshot.schemas ?? []), { schema_name: "private" }],
+      schemas: [...(snapshot.schemas ?? []), ...names.map((schema_name) => ({ schema_name }))],
       tables: [
         ...(snapshot.tables ?? []),
-        {
-          schema_name: "private",
-          table_name: "audit_log",
+        ...names.map((schema_name) => ({
+          schema_name,
+          table_name: "t",
           relkind: "r",
           row_level_security: false,
           comment: null,
-        },
+        })),
       ],
     });
 
@@ -124,7 +133,48 @@ describe("describePostgresFromExport", () => {
     });
 
     expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "information_schema_x",
+      "pgxtoast",
+      "public",
+    ]);
+  });
+
+  it("keeps only the schemas named in filters.schemas", async () => {
+    const snapshot = withSchemaTables(loadFixture("orders-users.catalog.json"), [
+      "billing",
       "private",
+    ]);
+    const bundleDir = join(workDir, "bundle");
+    writeCsvBundle(bundleDir, snapshot);
+
+    const result = await createPostgresConnector().describe({
+      mode: "from-export",
+      bundlePath: bundleDir,
+      filters: { schemas: ["billing", "private"] },
+    });
+
+    expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "billing",
+      "private",
+    ]);
+  });
+
+  it("drops the schemas named in filters.excludeSchemas", async () => {
+    const snapshot = withSchemaTables(loadFixture("orders-users.catalog.json"), [
+      "billing",
+      "private",
+    ]);
+    const bundleDir = join(workDir, "bundle");
+    writeCsvBundle(bundleDir, snapshot);
+
+    const result = await createPostgresConnector().describe({
+      mode: "from-export",
+      bundlePath: bundleDir,
+      filters: { excludeSchemas: ["private"] },
+    });
+
+    expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "billing",
       "public",
     ]);
   });
@@ -187,6 +237,29 @@ describe("describePostgresFromExport", () => {
 
 function loadFixture(name: string): CatalogSnapshot {
   return loadCatalogSnapshot(resolve(FIXTURE_DIR, name));
+}
+
+function withSchemaTables(
+  snapshot: CatalogSnapshot,
+  schemaNames: readonly string[],
+): CatalogSnapshot {
+  return {
+    ...snapshot,
+    schemas: [
+      ...(snapshot.schemas ?? []),
+      ...schemaNames.map((schema_name) => ({ schema_name })),
+    ],
+    tables: [
+      ...(snapshot.tables ?? []),
+      ...schemaNames.map((schema_name) => ({
+        schema_name,
+        table_name: "extra_table",
+        relkind: "r",
+        row_level_security: false,
+        comment: null,
+      })),
+    ],
+  };
 }
 
 function writeCsvBundle(bundleDir: string, snapshot: CatalogSnapshot): void {

@@ -17,8 +17,17 @@ import type {
   SqlView,
   SqlCheck,
 } from "@askdb/introspect";
-import { compileTableFilters } from "./glob.js";
-import { makeColumnId, makeTableId } from "./ids.js";
+import {
+  ambiguousFilterWarnings,
+  buildOrderedGroups,
+  byName,
+  compileTableFilters,
+  groupBy,
+  makeColumnId,
+  makeTableId,
+  rowsToRecords,
+  sortedUnique,
+} from "@askdb/introspect/kit";
 import type {
   ColumnsRow,
   CheckConstraintsRow,
@@ -35,7 +44,6 @@ import type {
 } from "./row-types.js";
 import {
   PG_FK_ACTION_BY_CODE,
-  POSTGRES_TEMPLATES,
   findTemplate,
 } from "./templates.js";
 
@@ -51,27 +59,7 @@ export function coerceRows<T>(
   result: CatalogQueryResult,
   expected: readonly string[],
 ): T[] {
-  // A runner that returns zero rows is allowed even if it omits the column
-  // headers (some drivers / fake runners don't bother populating them on
-  // empty result sets). Fail loudly only when there's data to coerce.
-  if (result.rows.length === 0) return [];
-  const indexByName = new Map<string, number>();
-  for (const name of expected) {
-    const idx = result.columns.indexOf(name);
-    if (idx === -1) {
-      throw new Error(
-        `@askdb/postgres: result is missing column '${name}' (got [${result.columns.join(", ")}])`,
-      );
-    }
-    indexByName.set(name, idx);
-  }
-  return result.rows.map((row) => {
-    const record: Record<string, unknown> = {};
-    for (const [name, idx] of indexByName) {
-      record[name] = row[idx];
-    }
-    return record as T;
-  });
+  return rowsToRecords<T>(result, { expectedColumns: expected, source: "@askdb/postgres" });
 }
 
 export type DescribePostgresInput = {
@@ -159,27 +147,27 @@ export function foldIntrospectionResult(input: FoldInput): IntrospectionResult {
   ]);
 
   // Pre-index supporting tables for fast per-table assembly.
-  const columnsByTable = groupByQualifiedName(
+  const columnsByTable = groupBy(
     input.columnsRows,
     (r) => `${r.schema_name}.${r.table_name}`,
   );
-  const pksByTable = groupByQualifiedName(
+  const pksByTable = groupBy(
     input.pkRows,
     (r) => `${r.schema_name}.${r.table_name}`,
   );
-  const fksByTable = groupByQualifiedName(
+  const fksByTable = groupBy(
     input.fkRows,
     (r) => `${r.schema_name}.${r.table_name}`,
   );
-  const uniquesByTable = groupByQualifiedName(
+  const uniquesByTable = groupBy(
     input.uniqueRows,
     (r) => `${r.schema_name}.${r.table_name}`,
   );
-  const checksByTable = groupByQualifiedName(
+  const checksByTable = groupBy(
     input.checkRows,
     (r) => `${r.schema_name}.${r.table_name}`,
   );
-  const indexesByTable = groupByQualifiedName(
+  const indexesByTable = groupBy(
     input.indexRows,
     (r) => `${r.schema_name}.${r.table_name}`,
   );
@@ -233,9 +221,12 @@ export function foldIntrospectionResult(input: FoldInput): IntrospectionResult {
   for (const r of input.viewRows) {
     const qualified = `${r.schema_name}.${r.view_name}`;
     if (!input.tableFilter(qualified)) continue;
-    const viewColumns = (columnsByTable.get(qualified) ?? []).map((cr) =>
-      buildColumn(cr, /* primaryKeyNames */ new Set(), columnCommentsByQualified),
-    );
+    const viewColumns = (columnsByTable.get(qualified) ?? [])
+      .slice()
+      .sort((a, b) => a.ordinal_position - b.ordinal_position)
+      .map((cr) =>
+        buildColumn(cr, /* primaryKeyNames */ new Set(), columnCommentsByQualified),
+      );
     const view: SqlView = {
       schema: r.schema_name,
       name: r.view_name,
@@ -307,20 +298,12 @@ export function foldIntrospectionResult(input: FoldInput): IntrospectionResult {
         ns.sequences.length > 0,
     );
 
-  for (const pattern of input.declaredFilters) {
-    const qualifies = (q: string) =>
-      compileTableFilters([pattern])(q);
-    const matched =
-      schemas.some((ns) =>
-        ns.tables.some((t) => qualifies(`${ns.name}.${t.name}`)),
-      ) ||
-      schemas.some((ns) =>
-        ns.views.some((v) => qualifies(`${ns.name}.${v.name}`)),
-      );
-    if (!matched) {
-      warnings.push({ code: "ambiguous_filter", filter: pattern });
-    }
-  }
+  warnings.push(
+    ...ambiguousFilterWarnings(
+      input.declaredFilters,
+      schemas.flatMap((ns) => [...ns.tables, ...ns.views].map((t) => `${ns.name}.${t.name}`)),
+    ),
+  );
 
   const schema: SqlSchema = { schemaId: input.schemaId, schemas };
   const isEmpty =
@@ -401,19 +384,12 @@ function mapFkAction(code: string | null): SqlForeignKeyAction | undefined {
 }
 
 function buildUniques(rows: UniqueConstraintsRow[]): SqlUnique[] {
-  const byConstraint = new Map<string, UniqueConstraintsRow[]>();
-  for (const row of rows) {
-    const list = byConstraint.get(row.constraint_name) ?? [];
-    list.push(row);
-    byConstraint.set(row.constraint_name, list);
-  }
-  return Array.from(byConstraint, ([name, list]) => ({
-    name,
-    columns: list
-      .slice()
-      .sort((a, b) => a.key_position - b.key_position)
-      .map((r) => r.column_name),
-  })).sort(byName);
+  return buildOrderedGroups(
+    rows,
+    (r) => r.constraint_name,
+    (r) => r.key_position,
+    (name, ordered) => ({ name, columns: ordered.map((r) => r.column_name) }),
+  );
 }
 
 function buildChecks(rows: CheckConstraintsRow[]): SqlCheck[] {
@@ -454,17 +430,17 @@ function normalizePgTextArray(value: unknown): Array<string | null> {
   if (!value.startsWith("{") || !value.endsWith("}")) return [value];
   const inner = value.slice(1, -1);
   if (inner === "") return [];
-  return inner.split(",").map((item) => {
-    if (item === "NULL") return null;
-    if (item.startsWith('"') && item.endsWith('"')) {
-      return item.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-    }
-    return item;
-  });
-}
-
-function byName<T extends { name: string }>(a: T, b: T): number {
-  return a.name.localeCompare(b.name);
+  // Postgres array literal: items are comma-separated, and a double-quoted
+  // item may contain commas, `\"` and `\\`. An unquoted `NULL` is a null.
+  const items: Array<string | null> = [];
+  const itemPattern = /\s*(?:"((?:[^"\\]|\\.)*)"|([^,"]*))\s*(?:,|$)/y;
+  while (itemPattern.lastIndex < inner.length) {
+    const m = itemPattern.exec(inner);
+    if (!m) break;
+    if (m[1] !== undefined) items.push(m[1].replace(/\\(.)/g, "$1"));
+    else items.push(m[2] === "NULL" ? null : (m[2] ?? ""));
+  }
+  return items;
 }
 
 function enumRowOrder(a: EnumsRow, b: EnumsRow): number {
@@ -474,26 +450,3 @@ function enumRowOrder(a: EnumsRow, b: EnumsRow): number {
   if (a.enum_name !== b.enum_name) return a.enum_name.localeCompare(b.enum_name);
   return a.enum_position - b.enum_position;
 }
-
-function groupByQualifiedName<T>(
-  rows: T[],
-  key: (row: T) => string,
-): Map<string, T[]> {
-  const out = new Map<string, T[]>();
-  for (const row of rows) {
-    const k = key(row);
-    const list = out.get(k) ?? [];
-    list.push(row);
-    out.set(k, list);
-  }
-  return out;
-}
-
-function sortedUnique(values: string[]): string[] {
-  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-}
-
-// `POSTGRES_TEMPLATES` is unused at runtime here but referenced in tests; keep
-// the import live so type-checkers see the dep without needing a side-effect
-// import elsewhere.
-void POSTGRES_TEMPLATES;

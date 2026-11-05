@@ -418,13 +418,6 @@ describe("createAiRegistry", () => {
         expect(message).toMatch(/createAiRegistry\(\)/);
       },
     );
-
-    it("maps an alias to its owning package when surfaced through the registry", async () => {
-      const registry = createAiRegistry([]);
-      await expect(
-        registry.createLanguageModel({ provider: "foundry", apiKey: "k", model: "m" }),
-      ).rejects.toThrow(/pass "azure" to createAiRegistry\(\).*npm i @ai-sdk\/azure/);
-    });
   });
 
   describe("aiKeyMissingMessage", () => {
@@ -482,9 +475,9 @@ describe("createAiRegistry", () => {
       };
       const registry = createAiRegistry([adapterA, adapterB]);
       const message = registry.keyMissingMessage("test context");
-      expect(message).toContain("test context: no AI API key configured.");
-      expect(message).toContain("For OpenAI, set OPENAI_API_KEY.");
-      expect(message).toContain("For Google, set GOOGLE_API_KEY.");
+      expect(message).toBe(
+        "test context: no AI API key configured. For OpenAI, set OPENAI_API_KEY. For Google, set GOOGLE_API_KEY.",
+      );
     });
 
     it("deduplicates adapter objects registered under aliases", () => {

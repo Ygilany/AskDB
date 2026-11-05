@@ -1,6 +1,6 @@
 {
   "name": "@askdb/rag",
-  "version": "0.2.0-beta.23",
+  "version": "0.2.0-beta.24",
   "description": "AskDB RAG layer: deterministic chunker over Schema v2, BYO embedder + vector store (in-memory, file-backed, pgvector), and an optional retriever wired into @askdb/core ask().",
   "keywords": [
     "askdb",
@@ -71,7 +71,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -98,11 +98,11 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/openai": "^4.0.29",
+    "@ai-sdk/openai": "^4.0.106",
     "@types/pg": "^8.23.1",
     "ai": "^7.0.51",
-    "pg": "^8.23.0",
+    "pg": "^8.23.1",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }

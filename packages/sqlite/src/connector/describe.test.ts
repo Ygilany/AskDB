@@ -227,4 +227,23 @@ describe("describeSqlite", () => {
     expect(result.schema.schemas).toEqual([]);
     expect(result.provider).toBe("sqlite");
   });
+
+  it("filters tables with glob patterns and emits ambiguous_filter warning for misses", async () => {
+    const runner = fakeRunner({
+      objects: [
+        { name: "keep_users", type: "table", sql: "CREATE TABLE keep_users (...)" },
+        { name: "orders", type: "table", sql: "CREATE TABLE orders (...)" },
+      ],
+      columns: [
+        { table_name: "keep_users", cid: 0, column_name: "id", type: "INTEGER", notnull: 1, dflt_value: null, pk: 1 },
+        { table_name: "orders", cid: 0, column_name: "id", type: "INTEGER", notnull: 1, dflt_value: null, pk: 1 },
+      ],
+    });
+    const result = await describeSqlite({
+      runner,
+      filters: { tables: ["public.keep*", "public.missing"] },
+    });
+    expect(result.schema.schemas[0]!.tables.map((t) => t.name)).toEqual(["keep_users"]);
+    expect(result.warnings).toEqual([{ code: "ambiguous_filter", filter: "public.missing" }]);
+  });
 });

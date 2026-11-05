@@ -18,7 +18,6 @@
         "ASKDB_REQUIRE_INTEGRATION",
         "DATABASE_URL",
         "ASKDB_FIXTURE_HOST",
-        "MYSQL_DATABASE_URL",
         "MSSQL_DATABASE_URL",
         "ASKDB_PGVECTOR_URL",
         "PGVECTOR_URL",

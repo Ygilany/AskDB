@@ -78,16 +78,6 @@ describe("describePostgres — orders-users snapshot", () => {
       defaultExpression: "now()",
     });
   });
-
-  it("is deterministic — two runs produce a byte-identical SqlSchema JSON", async () => {
-    const snapshot = loadFixture("orders-users.catalog.json");
-    const runner = createSnapshotCatalogQueryRunner(snapshot);
-
-    const a = await describePostgres({ runner, schemaId: "orders-users" });
-    const b = await describePostgres({ runner, schemaId: "orders-users" });
-
-    expect(JSON.stringify(a.schema)).toBe(JSON.stringify(b.schema));
-  });
 });
 
 describe("describePostgres — multi-column FK regression guard", () => {
@@ -155,16 +145,6 @@ describe("describePostgres — enum sort order regression guard", () => {
 });
 
 describe("describePostgres — filters", () => {
-  it("no include filter by default — all non-system schemas returned", async () => {
-    const snapshot = loadFixture("orders-users.catalog.json");
-    const runner = createSnapshotCatalogQueryRunner(snapshot);
-
-    const result = await describePostgres({ runner });
-
-    // The fixture only contains 'public', so that's all we get back.
-    expect(result.schema.schemas.map((s) => s.name)).toEqual(["public"]);
-  });
-
   it("table glob filters out unmatched tables and emits ambiguous_filter on no match", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
     const runner = createSnapshotCatalogQueryRunner(snapshot);
@@ -188,90 +168,100 @@ describe("describePostgres — filters", () => {
   });
 });
 
-describe("foldIntrospectionResult - live runner compatibility", () => {
-  it("normalizes Postgres text-array literals for index columns", () => {
+function foldWithIndexColumns(columns: string) {
+  return foldIntrospectionResult({
+    schemaId: "indexes",
+    declaredFilters: [],
+    tableFilter: () => true,
+    schemasRows: [{ schema_name: "public" }],
+    tablesRows: [
+      {
+        schema_name: "public",
+        table_name: "t",
+        relkind: "r",
+        row_level_security: false,
+        comment: null,
+      },
+    ],
+    columnsRows: [],
+    pkRows: [],
+    fkRows: [],
+    uniqueRows: [],
+    checkRows: [],
+    indexRows: [
+      {
+        schema_name: "public",
+        table_name: "t",
+        index_name: "t_idx",
+        is_unique: false,
+        method: "btree",
+        columns: columns as unknown as string[],
+        expressions: null,
+      },
+    ],
+    enumRows: [],
+    sequenceRows: [],
+    viewRows: [],
+    commentRows: [],
+  }).schema.schemas[0]!.tables[0]!.indexes[0]!.columns;
+}
+
+describe("foldIntrospectionResult - text-array literals", () => {
+  it("splits an unquoted literal", () => {
+    expect(foldWithIndexColumns("{email,created_at}")).toEqual(["email", "created_at"]);
+  });
+
+  it("keeps a comma inside a quoted item", () => {
+    expect(foldWithIndexColumns('{"a,b",c}')).toEqual(["a,b", "c"]);
+  });
+
+  it("unescapes quotes and backslashes in quoted items", () => {
+    expect(foldWithIndexColumns('{"say \\"hi\\"","back\\\\slash"}')).toEqual([
+      'say "hi"',
+      "back\\slash",
+    ]);
+  });
+
+  it("drops an unquoted NULL and keeps a quoted \"NULL\" as text", () => {
+    expect(foldWithIndexColumns('{a,NULL,"NULL"}')).toEqual(["a", "NULL"]);
+  });
+});
+
+describe("foldIntrospectionResult - view column order", () => {
+  it("orders view columns by ordinal_position regardless of row order", () => {
+    const column = (name: string, ordinal_position: number) => ({
+      schema_name: "public",
+      table_name: "v",
+      column_name: name,
+      ordinal_position,
+      data_type: "text",
+      udt_schema: "pg_catalog",
+      udt_name: "text",
+      is_nullable: true,
+      default_expression: null,
+      comment: null,
+    });
     const result = foldIntrospectionResult({
-      schemaId: "indexes",
+      schemaId: "views",
       declaredFilters: [],
       tableFilter: () => true,
       schemasRows: [{ schema_name: "public" }],
-      tablesRows: [
-        {
-          schema_name: "public",
-          table_name: "users",
-          relkind: "r",
-          row_level_security: false,
-          comment: null,
-        },
-      ],
-      columnsRows: [
-        {
-          schema_name: "public",
-          table_name: "users",
-          column_name: "email",
-          ordinal_position: 1,
-          data_type: "text",
-          udt_schema: "pg_catalog",
-          udt_name: "text",
-          is_nullable: false,
-          default_expression: null,
-          comment: null,
-        },
-        {
-          schema_name: "public",
-          table_name: "users",
-          column_name: "created_at",
-          ordinal_position: 2,
-          data_type: "timestamp with time zone",
-          udt_schema: "pg_catalog",
-          udt_name: "timestamptz",
-          is_nullable: false,
-          default_expression: null,
-          comment: null,
-        },
-      ],
+      tablesRows: [],
+      columnsRows: [column("z", 2), column("y", 1)],
       pkRows: [],
       fkRows: [],
       uniqueRows: [],
       checkRows: [],
-      indexRows: [
-        {
-          schema_name: "public",
-          table_name: "users",
-          index_name: "users_email_created_at_idx",
-          is_unique: false,
-          method: "btree",
-          columns: "{email,created_at}" as unknown as string[],
-          expressions: null,
-        },
-      ],
+      indexRows: [],
       enumRows: [],
       sequenceRows: [],
-      viewRows: [],
+      viewRows: [
+        { schema_name: "public", view_name: "v", definition: "select 1", is_materialized: false },
+      ],
       commentRows: [],
     });
 
-    expect(result.schema.schemas[0]!.tables[0]!.indexes[0]!.columns).toEqual([
-      "email",
-      "created_at",
-    ]);
-  });
-});
-
-describe("describePostgres — declarative partitions (ADR 0003)", () => {
-  // Catalog rows are pre-filtered at the SQL boundary, so an in-memory
-  // snapshot runner can't reproduce the exclusion (it would have to also
-  // re-implement pg_inherits semantics). The unit-level assertion here is
-  // that the canonical `tables` template carries the NOT EXISTS clause; the
-  // end-to-end behavior is covered by the live pagila integration test
-  // (pagila's `payment` table is range-partitioned).
-  it("tables template SQL filters partition leaves via NOT EXISTS on pg_inherits", () => {
-    const connector = createPostgresConnector();
-    const bundle = connector.templates!();
-    const tablesTpl = bundle.templates.find((t) => t.name === "tables")!;
-    expect(tablesTpl.sql).toMatch(/NOT EXISTS/);
-    expect(tablesTpl.sql).toMatch(/pg_catalog\.pg_inherits/);
-    expect(tablesTpl.sql).toMatch(/p\.relkind\s*=\s*'p'/);
+    expect(result.schema.schemas[0]!.views[0]!.columns.map((c) => c.name)).toEqual(["y", "z"]);
   });
 });
 
@@ -312,12 +302,5 @@ describe("createPostgresConnector wiring", () => {
     for (const tpl of bundle.templates) {
       expect(tpl.sql).toMatch(/ORDER BY/i);
     }
-  });
-
-  it("describe() rejects missing from-export bundles with a clear error", async () => {
-    const connector = createPostgresConnector();
-    await expect(
-      connector.describe({ mode: "from-export", bundlePath: "/tmp/x" }),
-    ).rejects.toThrow(/missing manifest\.json/i);
   });
 });

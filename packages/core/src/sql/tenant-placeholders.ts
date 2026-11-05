@@ -91,7 +91,7 @@ export function extractTenantPlaceholders(sql: string, dialect?: TenantSqlDialec
 
 type ResolvedPlaceholder = { placeholder: string; rootLabel: string; rootId: string; ids: string[] };
 
-export function resolvePlaceholders(
+function resolvePlaceholders(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
@@ -360,7 +360,7 @@ function unsupportedPredicate(occ: PlaceholderOccurrence, op: string | undefined
 // Replace placeholders — SQL-only mode (inline literals)
 // ---------------------------------------------------------------------------
 
-export function replacePlaceholdersWithLiterals(
+function replacePlaceholdersWithLiterals(
   sql: string,
   resolved: ResolvedPlaceholder[],
   dialect?: TenantSqlDialect,
@@ -401,7 +401,7 @@ function tenantMarker(style: MarkerStyle, ordinal: number): string {
  * `startIndex` is the 1-based position of the first tenant value in the params
  * array the SQL will run with (`1` when tenant values are the only params).
  */
-export function replacePlaceholdersWithParams(
+function replacePlaceholdersWithParams(
   sql: string,
   resolved: ResolvedPlaceholder[],
   startIndex: number = 1,

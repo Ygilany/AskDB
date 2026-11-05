@@ -76,9 +76,9 @@ function withoutTerminator(sql: string): string {
  * Whether `sql`, as `ask()` returned it, is the statement `expected` holds: the lab's one rule for
  * comparing AskDB's SQL with a cassette's, used by the replay suites (`test/support/cassette-sql.ts`)
  * and by `lab:record`'s fence gate. The two are equal once a single trailing `;` is removed from
- * each. A model's reply usually ends with one; released AskDB removes it from the SQL it returns
- * (`concepts/safety-boundaries.mdx`, "Single statement"), and #477 keeps it, so the lab reads either
- * behavior, and still sees a `;` anywhere else or any other change to the statement.
+ * each. A model's reply usually ends with one; AskDB up to `1.0.0-beta.43` removes it from the
+ * SQL it returns, and later versions keep it (#477, `concepts/safety-boundaries.mdx`, "Single
+ * statement"), so the lab reads either behavior, and still sees a `;` anywhere else or any other change to the statement.
  */
 export function sameStatement(sql: string, expected: string): boolean {
   return withoutTerminator(sql) === withoutTerminator(expected);

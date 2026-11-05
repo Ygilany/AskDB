@@ -74,8 +74,21 @@ fixtureSuite("introspect() against the multi-engine fixture (live MySQL family)"
 
     it("without a list, reads only the connection's database under `public`", async () => {
       // The fixture's connection database is `org`.
-      const { schemaJson } = await introspectFixture(engine, join(workDir, `${engine}-default.schema`));
+      const { result, schemaJson } = await introspectFixture(engine, join(workDir, `${engine}-default.schema`));
+      expect(result.warnings).toEqual([]);
       expect(schemaJson.tables.map((t) => `${t.schema}.${t.name}`).sort()).toEqual(["public.agency", "public.program"]);
+
+      // `table:public.program#agency_id` → `program#agency_id`
+      const columnKey = (id: string) => id.replace(/^table:[^.]+\./, "");
+      const table = (name: string) => schemaJson.tables.find((t) => t.name === name)!;
+      const primaryKey = (name: string) => table(name).columns.filter((c) => c.primaryKey).map((c) => c.name);
+      const relationships = (name: string) =>
+        (table(name).relationships ?? []).map((r) => `${columnKey(r.from)}->${columnKey(r.to)}`);
+
+      expect(primaryKey("agency")).toEqual(["agency_id"]);
+      expect(primaryKey("program")).toEqual(["agency_id", "program_code"]);
+      expect(relationships("program")).toEqual(["program#agency_id->agency#agency_id"]);
+      expect(relationships("agency")).toEqual(["agency#parent_agency_id->agency#agency_id"]);
     });
 
     it("runs SQL that names the reserved-word table `order` as the prompt lists it", async () => {

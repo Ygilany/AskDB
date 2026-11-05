@@ -58,6 +58,7 @@ describe("createMemoryStore", () => {
         vector: [1, 0],
         payload: payload("other-schema", {
           schemaId: "schema-b",
+          type: "cql",
           refs: ["table:public.orders"],
         }),
       },

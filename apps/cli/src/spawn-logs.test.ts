@@ -118,7 +118,24 @@ describe("cli spawn: structured logs contract", () => {
 
     expect(exec.status).toBe(0);
     expect(exec.stderr).not.toContain("Warning: generated SQL references sensitive columns");
-    expect(exec.stdout).toContain("SELECT o.id, o.total_cents FROM orders o;");
+    expect(exec.stdout).toContain("SELECT o.id, o.total_cents FROM orders o");
+  });
+
+  it("prints the SQL as ask() returned it, with the model's trailing semicolon or without one", () => {
+    const repoRoot = join(import.meta.dirname, "../../..");
+    const schemaPath = join(repoRoot, "fixtures/schemas/orders-users-sensitive.schema");
+    const sqlLine = (mockSql: string) => {
+      const exec = run(
+        "node",
+        [join(repoRoot, "apps/cli/dist/cli.js"), "ask", "--schema", schemaPath, "--question", "order totals"],
+        { cwd: repoRoot, env: { ASKDB_MOCK_SQL: mockSql } },
+      );
+      expect(exec.status).toBe(0);
+      const lines = exec.stdout.split("\n");
+      return lines[lines.indexOf("-- sql --") + 1];
+    };
+    expect(sqlLine("SELECT o.id FROM orders o;")).toBe("SELECT o.id FROM orders o;");
+    expect(sqlLine("SELECT o.id FROM orders o")).toBe("SELECT o.id FROM orders o");
   });
 });
 

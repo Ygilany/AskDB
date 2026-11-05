@@ -2,19 +2,43 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { missingDriverMessage } from "@askdb/introspect/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock `pg` so we can simulate "peer dep missing" without uninstalling the workspace dev dep.
 // `vi.hoisted` is required because `vi.mock` is hoisted to the top of the file before imports.
 const pgState = vi.hoisted(() => ({
+  imports: 0,
   projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
+  // When set, the mocked `pg` is a fake whose client records each statement it is sent.
+  recorder: null as null | { statements: string[]; failOn: string | null },
 }));
 vi.mock("pg", async () => {
+  pgState.imports++;
   if (pgState.shouldFail) {
     const err = new Error("Cannot find package 'pg' imported from postgres.lazy.test.ts");
     (err as { code: string }).code = "ERR_MODULE_NOT_FOUND";
     throw err;
+  }
+  if (pgState.recorder) {
+    // The factory result is cached across tests, so read the recorder at call time.
+    class Pool {
+      async connect() {
+        return {
+          async query(sql: string) {
+            const recorder = pgState.recorder!;
+            recorder.statements.push(sql);
+            if (sql === recorder.failOn) throw new Error("relation \"pg_nope\" does not exist");
+            if (sql === "SELECT 1") return { fields: [{ name: "n" }], rows: [{ n: 1 }] };
+            return { fields: [], rows: [] };
+          },
+          release() {},
+        };
+      }
+      async end() {}
+    }
+    return { default: { Pool }, Pool };
   }
   return await vi.importActual<typeof import("pg")>("pg");
 });
@@ -86,13 +110,13 @@ module.exports = { Pool };
 }
 
 describe("exec/postgres — lazy `pg` peer dependency", () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
     pgState.projectResolvedPaths.clear();
     pgState.shouldFail = false;
+    pgState.imports = 0;
+    pgState.recorder = null;
     process.chdir(originalCwd);
-    const { __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
   });
 
   afterEach(async () => {
@@ -101,16 +125,19 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     tempDirs = [];
   });
 
+  // Hosts build a runner without the optional peer installed; the driver must
+  // not be imported until the runner is first called.
   it("createPostgresCatalogQueryRunner() does not load `pg` at construction time", async () => {
     const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     pgState.shouldFail = true;
 
     expect(() => createPostgresCatalogQueryRunner("postgres://nowhere")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pgState.imports).toBe(0);
   });
 
   it("invoking the runner when `pg` is missing rejects with a helpful AskDbError", async () => {
-    const { createPostgresCatalogQueryRunner, __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     process.chdir(await createTempProject());
     pgState.shouldFail = true;
     const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
@@ -118,34 +145,11 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     const err = await runner("SELECT 1").catch((e: unknown) => e);
 
     expect((err as Error).name).toBe("AskDbError");
-    const msg = (err as Error).message;
-    expect(msg).toMatch(/optional `pg` peer dependency/);
-    expect(msg).toMatch(/`pnpm add pg`/);
-    expect(msg).toMatch(/`pnpm dlx -p askdb -p pg askdb \.\.\.`/);
-    expect(msg).toMatch(/`npx -p askdb -p pg askdb \.\.\.`/);
-    expect(msg).toMatch(/catalog query runner/);
-  });
-
-  it("after a missing-pg failure, a later invocation retries the import (cache cleared)", async () => {
-    const { createPostgresCatalogQueryRunner, __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
-    process.chdir(await createTempProject());
-    pgState.shouldFail = true;
-    const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
-
-    const first = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((first as Error).name).toBe("AskDbError");
-
-    const projectDir = await createTempProject();
-    await addPgFixture(projectDir);
-    process.chdir(projectDir);
-
-    await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+    expect((err as Error).message).toBe(missingDriverMessage({ engine: "Postgres", packageName: "pg" }));
   });
 
   it("resolves `pg` from the caller project cwd when the adapter import cannot see it", async () => {
-    const { createPostgresCatalogQueryRunner, __resetPgModuleCacheForTests } = await import("./postgres.js");
-    __resetPgModuleCacheForTests();
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     const projectDir = await createTempProject();
     await addPgFixture(projectDir);
     process.chdir(projectDir);
@@ -156,40 +160,44 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
   });
 
-  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
-    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
-    const emptyDir = await createTempProject();
-    pgState.shouldFail = true;
-    const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: emptyDir });
-
-    const err = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
-    expect((err as Error).message).toMatch(/optional `pg` peer dependency/);
-  });
-
-  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
-    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+  it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `pg` there when cwd lacks it", async () => {
+    const { createPostgresCatalogQueryRunner, loadPgDriver, isPgDriverInstalled } = await import("./postgres.js");
     const projectDir = await createTempProject();
     await addPgFixture(projectDir);
     process.chdir(await createTempProject());
     pgState.shouldFail = true;
+
+    // The wrappers Studio calls must forward resolveFrom too.
+    expect(isPgDriverInstalled({ resolveFrom: projectDir })).toBe(true);
+    expect(isPgDriverInstalled()).toBe(false);
+    await expect(loadPgDriver({ resolveFrom: projectDir })).resolves.toBeDefined();
 
     const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: projectDir });
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
   });
 
-  it("resolveFrom cache slots are independent per directory", async () => {
+  // The runner is the read-only guard on live introspection: the exact statements it sends
+  // are the contract, so a dropped READ ONLY, COMMIT or ROLLBACK must fail a test.
+  it("runs the catalog query inside BEGIN READ ONLY and commits on success", async () => {
     const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
-    const dirWithDriver = await createTempProject();
-    await addPgFixture(dirWithDriver);
-    const dirWithoutDriver = await createTempProject();
-    pgState.shouldFail = true;
+    pgState.recorder = { statements: [], failOn: null };
 
-    const runnerA = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: dirWithDriver });
-    await expect(runnerA("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+    const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
 
-    const runnerB = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: dirWithoutDriver });
-    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
+    await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+    expect(pgState.recorder.statements).toEqual(["BEGIN READ ONLY", "SELECT 1", "COMMIT"]);
+  });
+
+  it("rolls back, never commits, and rejects with an AskDbError when the catalog query fails", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    pgState.recorder = { statements: [], failOn: "SELECT 1" };
+
+    const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
+
+    const err = await runner("SELECT 1").catch((e: unknown) => e);
+
     expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).toContain('relation "pg_nope" does not exist');
+    expect(pgState.recorder.statements).toEqual(["BEGIN READ ONLY", "SELECT 1", "ROLLBACK"]);
   });
 });

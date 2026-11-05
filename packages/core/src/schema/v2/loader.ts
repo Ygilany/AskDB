@@ -23,13 +23,27 @@ type LoadedTableMarkdown = {
   parsed: ReturnType<typeof parseTableMarkdown>;
 };
 
-/** Bundled JSON produced by `askdb bundle` — packs the full directory into one file. */
-type BundledSchemaJson = {
+/**
+ * Single-file form of a Schema v2 directory: what `askdb bundle` writes and what
+ * `loadSchema()` / `loadSchemaFromJson()` read back. It carries every file the
+ * directory loader reads, so loading a bundle gives the same result as loading the
+ * directory. This loader defines the format; writers such as `@askdb/enrich`'s
+ * `bundleSchemaDirectory()` produce this type so they can't drop a file it reads.
+ */
+export type BundledSchemaV2 = {
   bundled: true;
+  /** `schema.json`. */
   physical: V2SchemaJson;
-  tables: Record<string, string>; // filename → raw markdown content
-  concepts?: string; // raw concepts.md content
-  tenantPolicy?: string; // raw tenant-policy.md content
+  /** `tables/` filename → raw markdown content, for every `tables/*.md`. */
+  tables: Record<string, string>;
+  /** Raw `concepts.md` content; present when the file exists. */
+  concepts?: string;
+  /**
+   * Raw `tenant-policy.md` content; present when the file exists. Without it a
+   * multi-tenant schema loads with no tenant policy, and `ask()` neither requires a
+   * `tenantScope` nor injects tenant predicates.
+   */
+  tenantPolicy?: string;
 };
 
 /**
@@ -46,7 +60,7 @@ export function loadSchemaFromJson(raw: string): NormalizedSchemaV2 {
     throw new SchemaParseError("Failed to parse schema JSON string");
   }
   if (typeof parsed === "object" && parsed !== null && "bundled" in parsed) {
-    return loadFromBundle(parsed as BundledSchemaJson, "<inline JSON>");
+    return loadFromBundle(parsed as BundledSchemaV2, "<inline JSON>");
   }
   const physical = parsePhysicalLayer(parsed, "<inline JSON>");
   return buildNormalized(physical, {}, undefined, [], undefined);
@@ -86,7 +100,7 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
 
   // Could be a bundled JSON or a bare schema.json
   if (typeof parsed === "object" && parsed !== null && "bundled" in parsed) {
-    return loadFromBundle(parsed as BundledSchemaJson, resolved);
+    return loadFromBundle(parsed as BundledSchemaV2, resolved);
   }
 
   // A file named `schema.json` is the physical layer of a schema directory: load
@@ -213,7 +227,7 @@ function parseOrWrap<T>(path: string, fn: () => T): T {
   }
 }
 
-function loadFromBundle(bundle: BundledSchemaJson, filePath: string): NormalizedSchemaV2 {
+function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSchemaV2 {
   const physical = parsePhysicalLayer(bundle.physical, filePath);
   const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
 
@@ -273,7 +287,7 @@ function addTableMarkdown(
 
 /** Read an optional bundled markdown file: `undefined` only when the key is absent. */
 function bundledFileContent(
-  bundle: BundledSchemaJson,
+  bundle: BundledSchemaV2,
   key: "concepts" | "tenantPolicy",
   fileName: string,
   bundlePath: string,

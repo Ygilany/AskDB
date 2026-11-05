@@ -28,15 +28,30 @@ describe("createPgvectorStore", () => {
         return { rows: [] };
       }),
     };
-    return { client, ddl: () => queries.filter((sql) => sql.includes("CREATE TABLE")) };
+    return {
+      client,
+      ddl: () => queries.filter((sql) => sql.includes("CREATE TABLE")),
+      inserts: () => queries.filter((sql) => sql.includes("INSERT")),
+    };
   }
 
   it("reads and writes without a width, but needs one to create the table", async () => {
-    const store = createPgvectorStore({ client: clientWithTable(undefined).client, table: "askdb_rag_chunks" });
+    const { client, inserts } = clientWithTable(undefined);
+    const store = createPgvectorStore({ client, table: "askdb_rag_chunks" });
 
     expect(() => store.setupSql()).toThrow(/pass dimensions .*detectEmbeddingDimensions/);
     await expect(store.ensureSchema()).rejects.toThrow(/pass dimensions to create table "askdb_rag_chunks"/);
     await expect(store.count()).resolves.toBe(0);
+    await expect(
+      store.upsert([
+        {
+          id: "chunk:s:a",
+          vector: [1, 0],
+          payload: { id: "chunk:s:a", type: "table", text: "a", schemaId: "s", refs: [], sensitive: false },
+        },
+      ]),
+    ).resolves.toBeUndefined();
+    expect(inserts()).toHaveLength(1);
   });
 
   it("reports the width of an existing table, and none when there's no table", async () => {

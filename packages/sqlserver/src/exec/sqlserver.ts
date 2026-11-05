@@ -1,8 +1,12 @@
 import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
-import { createRequire } from "node:module";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import {
+  createOptionalDriverLoader,
+  rethrowDriverImportError,
+  isDriverInstalled,
+  missingDriverMessage,
+  type DriverLoadOptions,
+} from "@askdb/introspect/kit";
 
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
@@ -15,62 +19,11 @@ type MssqlModule = typeof import("mssql");
  * pattern in `@askdb/postgres` / `@askdb/mysql` so consumers with a custom
  * `CatalogQueryRunner` can import `@askdb/sqlserver` without `mssql` installed.
  */
-type DriverLoadOptions = { resolveFrom?: string };
-
-let mssqlModulePromises = new Map<string | undefined, Promise<MssqlModule>>();
-
-function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
-  if (!(cause instanceof Error)) return false;
-  const nestedCause = (cause as { cause?: unknown }).cause;
-  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
-    return true;
-  }
-  const code = (cause as { code?: unknown }).code;
-  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
-  return cause.message.includes(packageName);
-}
-
-async function importOptionalMssql(opts?: DriverLoadOptions): Promise<MssqlModule> {
-  try {
-    return await import("mssql");
-  } catch (cause) {
-    if (!isModuleResolutionFailure(cause, "mssql")) throw cause;
-
-    const fromDir = opts?.resolveFrom ?? process.cwd();
-    const projectRequire = createRequire(join(fromDir, "package.json"));
-    try {
-      const resolved = projectRequire.resolve("mssql");
-      return (await import(pathToFileURL(resolved).href)) as MssqlModule;
-    } catch (projectCause) {
-      if (!isModuleResolutionFailure(projectCause, "mssql")) throw projectCause;
-      throw new AggregateError([cause, projectCause], "Unable to resolve optional `mssql` peer dependency");
-    }
-  }
-}
-
-async function loadMssqlOrThrow(opts?: DriverLoadOptions): Promise<MssqlModule> {
-  const key = opts?.resolveFrom;
-  let promise = mssqlModulePromises.get(key);
-  if (!promise) {
-    promise = importOptionalMssql(opts).catch((cause) => {
-      mssqlModulePromises.delete(key);
-      throw new AskDbError(
-        "The built-in SQL Server catalog query runner requires the optional `mssql` peer dependency. " +
-          "Install it in your project (e.g. `pnpm add mssql`) or include it in the same one-off command " +
-          "(e.g. `pnpm dlx -p askdb -p mssql askdb ...` or `npx -p askdb -p mssql askdb ...`). " +
-          "You can also pass a custom catalog query runner to the SQL Server connector.",
-        cause,
-      );
-    });
-    mssqlModulePromises.set(key, promise);
-  }
-  return promise;
-}
-
-/** @internal exposed for tests that need to reset the lazy `mssql` cache. */
-export function __resetMssqlModuleCacheForTests(): void {
-  mssqlModulePromises.clear();
-}
+const mssqlLoader = createOptionalDriverLoader<MssqlModule>({
+  packageName: "mssql",
+  importDriver: () => import("mssql").catch(rethrowDriverImportError),
+  missingMessage: missingDriverMessage({ engine: "SQL Server", packageName: "mssql" }),
+});
 
 type MssqlDriverModule = MssqlModule;
 
@@ -79,18 +32,12 @@ type MssqlDriverModule = MssqlModule;
  * + project-root fallback behavior as the catalog runner.
  */
 export async function loadMssqlDriver(options?: DriverLoadOptions): Promise<MssqlDriverModule> {
-  const mod = await loadMssqlOrThrow(options);
+  const mod = await mssqlLoader.load(options);
   return (mod as unknown as { default?: MssqlDriverModule }).default ?? mod;
 }
 
 export function isMssqlDriverInstalled(options?: DriverLoadOptions): boolean {
-  try {
-    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
-    req.resolve("mssql");
-    return true;
-  } catch {
-    return false;
-  }
+  return isDriverInstalled("mssql", options);
 }
 
 export type MssqlConfigInput = {
@@ -182,12 +129,47 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
   };
 }
 
+/**
+ * Parse Prisma's SQL Server connection URL,
+ * `sqlserver://HOST[:PORT][;key=value…]`.
+ *
+ * Backward compatible with the parser this replaces for every string it could
+ * read: it connects with exactly the same values as before. Segments are split on `;`,
+ * a key ends at its first `=` (so `password=a=b` is `a=b`), keys are trimmed
+ * and lower-cased, values are trimmed, non-ASCII is fine, a segment without
+ * `=` or with an empty key or value is skipped, and a later key replaces an
+ * earlier one. The host part ends at its last `:`, and a port that isn't a
+ * number is ignored.
+ *
+ * On top of that it reads Prisma's `{…}` escaping (Prisma's SQL Server docs:
+ * "If your credentials contain `: \ = ; / [ ] { }`, wrap values in curly
+ * braces", e.g. `password={Pass:Word;}`), but only where the old parser never
+ * read the value as written: a value that starts with `{`, has a `;` before its
+ * first `}`, and ends at a `}` whose `;`-separated piece holds no `=`. The old
+ * parser cut such a value at its first `;` and dropped that last piece (a piece
+ * without `=` is skipped), so it never connected with the value the user wrote.
+ * The value is everything between the braces, read verbatim, so `;`, `=` and
+ * braces inside it are part of it (`{{a;b}}` is `{a;b}`); it ends at the first
+ * `}` followed only by blanks and then `;` or the end of the string.
+ *
+ * Any other `{` or `}` is a plain character, as before: `password={abc}` is
+ * `{abc}`, and an unclosed `{` is part of the value. Braces that close before
+ * any `;` never reach into a later value (`password={ab}cd;user={me}` reads
+ * `{ab}cd` and `{me}`), and neither does a `{` whose closing `}` ends a later
+ * `key=value` piece (`password={Xy7;user={me}` reads `{Xy7` and `{me}`).
+ * This is where it differs from Prisma, which reads every `{…}` as an escape
+ * (`{abc}` is `abc`) and ends it at the first `}`.
+ *
+ * Prisma's credential aliases are read (`username` and `uid` for `user`,
+ * `pwd` for `password`) only when the canonical key is absent: the old parser
+ * dropped them, so such a string had no credentials, and where the canonical
+ * key is present it still wins. `initial catalog` is not, because the old parser ignored it and
+ * the connection used the login's default database; reading it now would
+ * change where a working string connects.
+ */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
-  // Prisma format: sqlserver://HOST:PORT;database=DATABASE;user=USER;password=PASSWORD;encrypt=true
-  const withoutScheme = connectionString.slice("sqlserver://".length);
-  const firstSemiIdx = withoutScheme.indexOf(";");
-  const hostPart = firstSemiIdx === -1 ? withoutScheme : withoutScheme.slice(0, firstSemiIdx);
-  const paramsPart = firstSemiIdx === -1 ? "" : withoutScheme.slice(firstSemiIdx + 1);
+  const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));
+  const hostPart = unbrace(segments[0]!);
 
   const colonIdx = hostPart.lastIndexOf(":");
   const server = colonIdx === -1 ? hostPart : hostPart.slice(0, colonIdx);
@@ -202,20 +184,31 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   }
 
   const params: Record<string, string> = {};
-  for (const part of paramsPart.split(";")) {
-    const eqIdx = part.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = part.slice(0, eqIdx).trim().toLowerCase();
-    const value = part.slice(eqIdx + 1).trim();
+  for (const segment of segments.slice(1)) {
+    const eq = segment.findIndex((piece) => !piece.braced && piece.text.includes("="));
+    if (eq === -1) continue;
+    const split = segment[eq]!.text.indexOf("=");
+    const keyPieces = [...segment.slice(0, eq), { braced: false, text: segment[eq]!.text.slice(0, split) }];
+    const valuePieces = [{ braced: false, text: segment[eq]!.text.slice(split + 1) }, ...segment.slice(eq + 1)];
+    const key = unbrace(keyPieces).trim().toLowerCase();
+    const value = trimUnbraced(valuePieces);
     if (key && value) params[key] = value;
   }
+
+  // The canonical key wins, as it did when the aliases were ignored; an alias
+  // is used only when the canonical key is absent.
+  const pick = (...keys: string[]): string | undefined =>
+    keys.map((key) => params[key]).find((value) => value !== undefined);
+  const database = params["database"];
+  const user = pick("user", "username", "uid");
+  const password = pick("password", "pwd");
 
   return {
     server,
     ...(port !== undefined && !Number.isNaN(port) ? { port } : {}),
-    ...(params["database"] ? { database: params["database"] } : {}),
-    ...(params["user"] ? { user: params["user"] } : {}),
-    ...(params["password"] ? { password: params["password"] } : {}),
+    ...(database ? { database } : {}),
+    ...(user ? { user } : {}),
+    ...(password ? { password } : {}),
     options: {
       ...(params["encrypt"] !== undefined ? { encrypt: params["encrypt"].toLowerCase() === "true" } : {}),
       ...(params["trustservercertificate"] !== undefined
@@ -225,13 +218,120 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   };
 }
 
+/**
+ * True when a Prisma-style `sqlserver://` string can be read more than one
+ * way, so a display label must not trust its parts: it has a `{` (an escape
+ * only around a whole value holding a `;`, while Prisma reads every `{…}` as
+ * one), a quote, a segment that
+ * isn't `key=value` (an unbraced `;` inside a value), an empty segment before
+ * another one, or an unclosed `{`. The connection still uses
+ * `parsePrismaSqlServerUrl`'s reading.
+ */
+export function isPrismaSqlServerUrlAmbiguous(connectionString: string): boolean {
+  const rest = connectionString.slice("sqlserver://".length);
+  if (/[{'"]/.test(rest)) return true;
+  const segments = rest.split(";").slice(1);
+  return segments.some((segment, i) => {
+    const last = i === segments.length - 1;
+    if (segment.trim() === "") return !last;
+    return !segment.includes("=");
+  });
+}
+
+type PrismaPiece = { braced: boolean; text: string };
+
+/**
+ * Split on `;` outside an escaping `{…}`; each segment keeps its braced and
+ * plain pieces. A value is an escape (see `parsePrismaSqlServerUrl`) when it
+ * starts with `{` (after `key=` and blanks), has a `;` before its first `}`,
+ * and ends at a `}` followed only by blanks before the next `;` or the end of
+ * the string. Everything else, including the host part, splits on every `;`.
+ */
+function splitPrismaSegments(input: string): PrismaPiece[][] {
+  const hostEnd = input.indexOf(";");
+  if (hostEnd === -1) return [[{ braced: false, text: input }]];
+  const segments: PrismaPiece[][] = [[{ braced: false, text: input.slice(0, hostEnd) }]];
+  let pos = hostEnd + 1;
+  while (pos <= input.length) {
+    const next = input.indexOf(";", pos);
+    const end = next === -1 ? input.length : next;
+    const escape = escapedValue(input, pos, end);
+    if (escape) {
+      segments.push(
+        [
+          { braced: false, text: input.slice(pos, escape.open) },
+          { braced: true, text: input.slice(escape.open + 1, escape.close) },
+          { braced: false, text: input.slice(escape.close + 1, escape.end) },
+        ].filter((piece) => piece.braced || piece.text !== ""),
+      );
+      pos = escape.end + 1;
+    } else {
+      segments.push(end > pos ? [{ braced: false, text: input.slice(pos, end) }] : []);
+      pos = end + 1;
+    }
+  }
+  return segments;
+}
+
+/**
+ * The escaping `{…}` of the segment starting at `start` (whose first `;` is at
+ * `firstSemi`), or `undefined`: the value must start with `{`, a `;` must come
+ * before the first `}` after it, the first `}` followed only by blanks and then
+ * `;` or the end of the input closes it, and the `;`-separated piece that `}`
+ * ends must hold no `=` (the old parser skipped that piece).
+ */
+function escapedValue(
+  input: string,
+  start: number,
+  firstSemi: number,
+): { open: number; close: number; end: number } | undefined {
+  const eq = input.indexOf("=", start);
+  if (eq === -1 || eq >= firstSemi) return undefined;
+  let open = eq + 1;
+  while (input[open] === " " || input[open] === "\t") open++;
+  if (input[open] !== "{") return undefined;
+  // A `}` before the value's first `;` means the braces wrap no `;`: plain text.
+  const firstClose = input.indexOf("}", open + 1);
+  if (firstClose === -1 || firstClose < firstSemi) return undefined;
+  const closing = /\}[ \t]*(?:;|$)/g;
+  closing.lastIndex = open + 1;
+  const match = closing.exec(input);
+  if (!match) return undefined;
+  const close = match.index;
+  // The piece the `}` ends is a `key=value` the old parser read: plain text.
+  if (input.slice(input.lastIndexOf(";", close) + 1, close).includes("=")) return undefined;
+  const end = match[0].endsWith(";") ? close + match[0].length - 1 : input.length;
+  return { open, close, end };
+}
+
+function unbrace(pieces: readonly PrismaPiece[]): string {
+  return pieces.map((piece) => piece.text).join("");
+}
+
+/** Join the pieces, trimming whitespace only from unbraced text at either end. */
+function trimUnbraced(pieces: readonly PrismaPiece[]): string {
+  const copy = pieces.map((piece) => ({ ...piece }));
+  while (copy.length > 0 && !copy[0]!.braced) {
+    copy[0]!.text = copy[0]!.text.trimStart();
+    if (copy[0]!.text !== "") break;
+    copy.shift();
+  }
+  while (copy.length > 0 && !copy[copy.length - 1]!.braced) {
+    const last = copy[copy.length - 1]!;
+    last.text = last.text.trimEnd();
+    if (last.text !== "") break;
+    copy.pop();
+  }
+  return unbrace(copy);
+}
+
 async function runSqlServerCatalogQuery(
   connectionString: string,
   sql: string,
   params: ReadonlyArray<unknown> | undefined,
   options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await loadMssqlOrThrow(options);
+  const mod = await mssqlLoader.load(options);
   const mssql = (mod as unknown as { default?: MssqlModule }).default ?? mod;
   const pool = new mssql.ConnectionPool(resolveConnectionInput(connectionString) as never);
   await pool.connect();

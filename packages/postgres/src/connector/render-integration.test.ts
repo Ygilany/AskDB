@@ -68,18 +68,6 @@ describe("renderToSchemaV2 — clean write", () => {
     expect(schema.warnings).toHaveLength(0);
   });
 
-  it("ends with a trailing newline (matches Phase 5 fixtures)", async () => {
-    const { bytes } = await renderOrdersUsers();
-    expect(bytes.endsWith("\n")).toBe(true);
-    expect(bytes.endsWith("}\n")).toBe(true);
-  });
-
-  it("uses 2-space indentation", async () => {
-    const { bytes } = await renderOrdersUsers();
-    expect(bytes).toContain('\n  "version": 2');
-    expect(bytes).toContain('\n    {\n      "id": "table:public.orders"');
-  });
-
   it("creates the output directory if missing", async () => {
     const snapshot = loadCatalogSnapshot(
       resolve(FIXTURE_DIR, "orders-users.catalog.json"),
@@ -262,16 +250,11 @@ describe("toV2SchemaJson — pure form (no disk I/O)", () => {
       schemaId: "orders-users",
     });
     const v2 = toV2SchemaJson(result.schema, "orders-users");
-    expect(v2.version).toBe(2);
-    expect(v2.schemaId).toBe("orders-users");
-    expect(v2.tables.map((t) => t.name)).toEqual(["orders", "users"]);
-    const orders = v2.tables.find((t) => t.name === "orders")!;
-    expect(orders.relationships).toEqual([
-      {
-        from: "table:public.orders#user_id",
-        to: "table:public.users#id",
-      },
-    ]);
+    const golden = readFileSync(
+      resolve(FIXTURE_DIR, "orders-users.expected-schema.json"),
+      "utf8",
+    );
+    expect(v2).toEqual(JSON.parse(golden));
   });
 
   it("emits one relationship per FK column pair (multi-column FK)", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@askdb/mysql",
-  "version": "0.1.0-beta.18",
+  "version": "0.1.0-beta.19",
   "description": "AskDB MySQL integration: introspection connector via information_schema and a mysql2-backed catalog query runner. Pairs with @askdb/core's MYSQL_DIALECT.",
   "keywords": [
     "askdb",
@@ -41,7 +41,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -49,7 +49,6 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/introspect": "workspace:*"
   },
@@ -62,8 +61,8 @@
     }
   },
   "devDependencies": {
-    "mysql2": "^3.24.4",
+    "mysql2": "^3.24.6",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }

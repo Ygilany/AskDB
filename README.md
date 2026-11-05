@@ -22,7 +22,7 @@ NL-to-SQL isn't a new problem — academic research goes back to LUNAR in 1972, 
 
 ## Quickstart
 
-For a new project, use Node **22.14+**, a database or schema source, and an API key from your model provider.
+For a new project, use Node **22.23.4+**, a database or schema source, and an API key from your model provider.
 
 ```bash
 npx askdb@latest init
@@ -102,8 +102,8 @@ Product direction and technical baseline live in **`docs/`**:
 - [`packages/ai-anthropic`](packages/ai-anthropic) (`@askdb/ai-anthropic`) — Anthropic Claude provider adapter for `@askdb/ai`.
 - [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
 - [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.
-- [`packages/connectors`](packages/connectors) (`@askdb/connectors`) — maps config-driven introspection provider selections to connector packages.
-- [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — engine-agnostic introspection orchestrator and Schema v2 renderer.
+- [`packages/connectors`](packages/connectors) (`@askdb/connectors`) — deprecated re-export of the connector registry (now in `@askdb/introspect`).
+- [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — connector contract, connector registry, `@askdb/introspect/kit` engine helpers, Schema v2 renderer.
 - [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres dialect, introspection connector, catalog templates, and `pg`-backed runner.
 - [`packages/mysql`](packages/mysql) (`@askdb/mysql`) — MySQL introspection connector and `mysql2`-backed catalog runner.
 - [`packages/sqlite`](packages/sqlite) (`@askdb/sqlite`) — SQLite introspection connector and `better-sqlite3`-backed catalog runner.

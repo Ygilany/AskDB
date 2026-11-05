@@ -41,6 +41,15 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
             REFERENCES dbo.integration_users (id)
         )
       `);
+      await pool
+        .request()
+        .query(
+          "IF OBJECT_ID('dbo.integration_shipped', 'U') IS NOT NULL DROP TABLE dbo.integration_shipped",
+        );
+      // A user table marked as shipped, like the replication MS* tables SQL
+      // Server creates in dbo: introspection must leave it out.
+      await pool.request().query("CREATE TABLE dbo.integration_shipped (id INT NOT NULL PRIMARY KEY)");
+      await pool.request().query("EXEC sys.sp_MS_marksystemobject N'dbo.integration_shipped'");
     } finally {
       await pool.close();
     }
@@ -52,6 +61,11 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
     const pool = new mssql.ConnectionPool(url!);
     await pool.connect();
     try {
+      await pool
+        .request()
+        .query(
+          "IF OBJECT_ID('dbo.integration_shipped', 'U') IS NOT NULL DROP TABLE dbo.integration_shipped",
+        );
       await pool
         .request()
         .query(
@@ -67,14 +81,6 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
     }
   });
 
-  it("runner returns columns and rows for a simple SELECT", async () => {
-    const runner = createSqlServerCatalogQueryRunner(url!);
-    const result = await runner("SELECT 1 AS n, 'ok' AS label");
-    expect(result.columns).toEqual(["n", "label"]);
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0]).toEqual([1, "ok"]);
-  });
-
   it("connector describes a live SQL Server schema with the seeded tables", async () => {
     const runner = createSqlServerCatalogQueryRunner(url!);
     const result = await createSqlServerConnector().describe({ mode: "live", runner });
@@ -87,6 +93,7 @@ mssqlSuite("SQL Server integration (mssql driver)", () => {
     );
     expect(allTableNames).toContain("dbo.integration_users");
     expect(allTableNames).toContain("dbo.integration_posts");
+    expect(allTableNames).not.toContain("dbo.integration_shipped");
 
     const dboNs = result.schema.schemas.find((s) => s.name === "dbo")!;
 

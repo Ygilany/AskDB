@@ -17,3 +17,6 @@ output/**
 askdb/
 askdb-*/
 .gstack/
+
+# Vitest JSON reporter output
+.vitest/

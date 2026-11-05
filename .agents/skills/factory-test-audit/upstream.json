@@ -1,0 +1,13 @@
+{
+  "repo": "Ygilany/skills",
+  "path": "skills/engineering/test-audit",
+  "commit": "3ced435b74f366898f05c2ce65c6f8e2c3757941",
+  "derivedFrom": {
+    "source": "openclaw/openclaw",
+    "sourceUrl": "https://github.com/openclaw/openclaw.git",
+    "ref": "main",
+    "skillPath": ".agents/skills/test-audit",
+    "commit": "80930af448ebabc84174146b56bc106d37fab3b4",
+    "skillFolderHash": "8015421942bcd215db0e73a13ec944d50ce01ec5"
+  }
+}

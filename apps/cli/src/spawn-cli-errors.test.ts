@@ -40,7 +40,7 @@ describe("cli spawn: rich errors", () => {
     expect(exec.status).toBe(0);
     expect(exec.stderr).not.toContain("required option");
     expect(exec.stdout).toContain("-- sql --");
-    expect(exec.stdout).toContain("SELECT 1;");
+    expect(exec.stdout).toContain("-- sql --\nSELECT 1\n");
   });
 
   it("prints schema path + fixture hint when schema file is missing", () => {

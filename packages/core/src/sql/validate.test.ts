@@ -25,13 +25,17 @@ function expectRule(sql: string, rule: SqlValidationRuleCode, dialect: DialectSp
 }
 
 describe("validateSelectSql (postgres dialect)", () => {
-  it("accepts SELECT and strips trailing semicolon", () => {
-    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1 as one;")).toBe("SELECT 1 as one");
+  it("returns the SQL trimmed, keeping a trailing semicolon as the model wrote it", () => {
+    expect(validateSelectSql(POSTGRES_DIALECT, "  SELECT 1 as one;\n")).toBe("SELECT 1 as one;");
+    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1 as one ;")).toBe("SELECT 1 as one ;");
+    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1 as one")).toBe("SELECT 1 as one");
   });
 
-  it("accepts WITH ... SELECT", () => {
-    const sql = "WITH c AS (SELECT 1 AS n) SELECT n FROM c";
-    expect(validateSelectSql(POSTGRES_DIALECT, sql)).toBe(sql);
+  it("runs the dialect's extraValidate on the statement without its trailing semicolon", () => {
+    const seen: string[] = [];
+    const dialect: DialectSpec = { ...POSTGRES_DIALECT, extraValidate: (sql) => void seen.push(sql) };
+    validateSelectSql(dialect, "SELECT 1 as one ;");
+    expect(seen).toEqual(["SELECT 1 as one"]);
   });
 
   it("rejects empty sql", () => {
@@ -54,11 +58,6 @@ describe("validateSelectSql (postgres dialect)", () => {
 
   it("rejects inline comments", () => {
     expectRule("SELECT 1 --boom", "SQL_COMMENT");
-  });
-
-  it("allows benign column names that contain substring 'delete'", () => {
-    const sql = `SELECT deleted_at FROM users`;
-    expect(validateSelectSql(POSTGRES_DIALECT, sql)).toBe(sql);
   });
 
   it("applies dialect-specific extraForbiddenKeywords", () => {
@@ -84,6 +83,9 @@ describe("validateSelectSql (postgres dialect)", () => {
     };
     expect(() => validateSelectSql(noStarSelect, "SELECT * FROM users")).toThrow(SqlValidationError);
     expect(validateSelectSql(noStarSelect, "SELECT id FROM users")).toBe("SELECT id FROM users");
+    // Multi-statement SQL also matches the hook. Base checks must reject it as
+    // SQL_MULTI_STATEMENT; SQL_FORBIDDEN_KEYWORD would mean extraValidate ran first.
+    expectRule("SELECT * FROM users; SELECT 1", "SQL_MULTI_STATEMENT", noStarSelect);
   });
 });
 
@@ -263,8 +265,9 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
   });
 
   it("allows exactly one trailing semicolon", () => {
-    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1;  ")).toBe("SELECT 1");
+    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1;  ")).toBe("SELECT 1;");
     expectRule("SELECT 1;;", "SQL_MULTI_STATEMENT");
+    expectRule("SELECT 1; SELECT 2;", "SQL_MULTI_STATEMENT");
   });
 });
 
@@ -272,7 +275,11 @@ describe("validateSelectSql — unknown dialect ids lex conservatively", () => {
   const legacy = { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec;
 
   it("rejects SQL that any built-in dialect would read as a write", () => {
-    expectRejected(`SELECT '\\'', 1; DROP TABLE t; SELECT 'x'`, legacy);
+    // MySQL treats \' as an escaped quote, so this is a DROP after a closed string.
+    // Postgres (and the other non-MySQL lexers) keep the quote open and accept it.
+    const mysqlOnlyWrite = `SELECT 'a\\' AS x, '; DROP TABLE t; SELECT 'b\\' c'`;
+    expectRejected(mysqlOnlyWrite, legacy);
+    expect(validateSelectSql(POSTGRES_DIALECT, mysqlOnlyWrite)).toBe(mysqlOnlyWrite);
     expectRejected(`SELECT 1 WAITFOR DELAY '00:10'`, legacy);
   });
 

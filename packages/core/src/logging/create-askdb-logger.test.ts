@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createAskDbLogger } from "./create-askdb-logger.js";
+import { ASKDB_LOG_REQUIRED_FIELDS } from "./log-contract.js";
 import { AskDbLogEvent } from "./log-events.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,8 +25,10 @@ describe("createAskDbLogger", () => {
     rmSync(dir, { recursive: true, force: true });
     const line = text.trim().split("\n")[0];
     expect(line).toBeTruthy();
-    const obj = JSON.parse(line!) as { correlationId?: string; event?: string };
+    const obj = JSON.parse(line!) as Record<string, unknown>;
     expect(obj.correlationId).toBe(cid);
     expect(obj.event).toBe(AskDbLogEvent.RunStart);
+    for (const f of ASKDB_LOG_REQUIRED_FIELDS) expect(obj[f]).toBeTruthy();
+    expect(ASKDB_LOG_REQUIRED_FIELDS).toEqual(expect.arrayContaining(["event", "correlationId"]));
   });
 });

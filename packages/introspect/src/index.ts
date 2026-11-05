@@ -21,11 +21,39 @@ export type {
   Connector,
 } from "./types.js";
 
-export type { RenderOptions, RenderResult } from "./render/types.js";
+export type {
+  RenderOptions,
+  RenderResult,
+  RenderBodyOptions,
+  RenderBodyResult,
+} from "./render/types.js";
 
 export {
   introspect,
   type IntrospectOptions,
   type IntrospectResult,
 } from "./introspect.js";
-export { renderToSchemaV2, toV2SchemaJson, compactPostgresType } from "./render/render.js";
+export {
+  BUILT_IN_CONNECTOR_PROVIDERS,
+  connectorProviderMissingMessage,
+  createConnectorRegistry,
+  type BuiltInConnectorProvider,
+  type ConnectorConfig,
+  type ConnectorConnection,
+  type ConnectorConnectionRequest,
+  type ConnectorConnectionResolution,
+  type ConnectorConnectionResult,
+  type ConnectorProviderAdapter,
+  type ConnectorProviderAdapters,
+  type ConnectorProviderId,
+  type ConnectorRegistry,
+  type ConnectorResult,
+  type ConnectorRuntimeConfig,
+} from "./registry.js";
+export {
+  renderToSchemaV2,
+  renderSchemaV2Body,
+  isSchemaV2Json,
+  toV2SchemaJson,
+  compactPostgresType,
+} from "./render/render.js";

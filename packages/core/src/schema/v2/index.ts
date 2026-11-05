@@ -1,4 +1,5 @@
 export { loadSchema, loadSchemaFromJson } from "./loader.js";
+export type { BundledSchemaV2 } from "./loader.js";
 export { parseTableMarkdown, parseConceptsMarkdown } from "./parser.js";
 export { writeTableMarkdown, writeConceptsMarkdown, writeTenantPolicyMarkdown } from "./writer.js";
 export { formatSchemaV2ForNlToSql } from "./format.js";

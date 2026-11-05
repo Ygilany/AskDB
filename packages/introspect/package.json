@@ -1,6 +1,6 @@
 {
   "name": "@askdb/introspect",
-  "version": "0.3.0-beta.17",
+  "version": "0.3.0-beta.18",
   "description": "AskDB schema introspection: engine-agnostic Connector contract + orchestrator + Schema v2 renderer. Integration packages (e.g. @askdb/postgres) supply connectors.",
   "keywords": [
     "askdb",
@@ -28,6 +28,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./kit": {
+      "types": "./dist/kit/index.d.ts",
+      "import": "./dist/kit/index.js",
+      "default": "./dist/kit/index.js"
     }
   },
   "files": [
@@ -37,7 +42,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.14"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -49,6 +54,6 @@
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }

@@ -58,6 +58,7 @@ const tableMarkdowns: Record<string, string> = {
     "schemaId: people",
     "columns:",
     "  - id: table:public.users#email",
+    "    description: Login address.",
     "    sensitive: false",
     "  - id: table:public.users#ssn",
     "    description: Social security number.",
@@ -155,7 +156,9 @@ describe("loadSchema — front-matter sensitivity is escalate-only", () => {
   it("front-matter `sensitive: false` cannot de-escalate a column or table, and warns", () => {
     const schema = loadSchema(writeSchemaDir());
     const users = schema.tables.find((t) => t.name === "users")!;
-    expect(users.columns.find((c) => c.name === "email")!.sensitive).toBe(true);
+    const email = users.columns.find((c) => c.name === "email")!;
+    expect(email.sensitive).toBe(true);
+    expect(email.description).toBeUndefined();
 
     const secrets = schema.tables.find((t) => t.name === "secrets")!;
     expect(secrets.sensitive).toBe(true);
