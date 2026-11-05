@@ -35,7 +35,11 @@ import { readCliVersion } from "./version.js";
 const prismaPackage = createOptionalDriverLoader({
   packageName: "@askdb/prisma",
   importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
-  missingMessage: connectorPackageMissingMessage({ provider: "prisma", packageName: "@askdb/prisma" }),
+  missingMessage: connectorPackageMissingMessage({
+    provider: "prisma",
+    packageName: "@askdb/prisma",
+    allowBuilds: ["@prisma/engines"],
+  }),
 });
 
 /**
@@ -114,11 +118,15 @@ async function runTemplatesCommand(argv: readonly string[], registry: ConnectorR
   const engine = await resolveEngine(registry, opts.engine);
   const bundle = registry.getTemplates(engine);
   if (!bundle) {
-    // Engines whose package isn't installed can't be asked, so they aren't listed.
-    const loaded = await Promise.allSettled(registry.providers().map((id) => registry.load(id)));
-    const withTemplates = loaded.flatMap((result) =>
-      result.status === "fulfilled" && result.value.getTemplates?.() !== undefined ? [result.value.provider] : [],
-    );
+    // Only loaded engines are named: loading the others would import optional engine
+    // packages (`@askdb/prisma`) this command doesn't use. An unloaded lazy entry throws.
+    const withTemplates = registry.providers().filter((id) => {
+      try {
+        return registry.getTemplates(id) !== undefined;
+      } catch {
+        return false;
+      }
+    });
     throw new Error(
       `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for ` +
         (withTemplates.length > 0 ? withTemplates.map((id) => `--engine ${id}`).join(", ") : "engines that provide them") +

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { resetAskDbRuntimeForTests } from "@askdb/config";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -153,34 +153,87 @@ describe("writeSetupConfig dependency install", () => {
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** writeSetupConfig in a fresh pnpm project whose install fails: the installer calls and the fallback command. */
-  function setupInPnpmProject(input: SetupConfigInput): { dir: string; calls: unknown[][]; manualInstallCommand: string | null } {
+  /**
+   * writeSetupConfig in a fresh pnpm project that already has a `node_modules`, with a
+   * fake `pnpm` on PATH that reports `pnpmVersion`. The installer fails, or with `writes`
+   * writes those packages into `node_modules` as `pnpm add` would and succeeds. Returns the
+   * installer calls, the fallback command, and which `writes` packages the same process
+   * can then resolve from the project.
+   */
+  function setupInPnpmProject(
+    input: SetupConfigInput,
+    { pnpmVersion = "11.28.10", writes = [] }: { pnpmVersion?: string; writes?: string[] } = {},
+  ): { dir: string; calls: unknown[][]; manualInstallCommand: string | null; resolvable: boolean[] } {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "askdb-setup-install-")));
     dirs.push(dir);
     writeFileSync(join(dir, "package.json"), '{ "name": "app", "private": true }\n');
     writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    mkdirSync(join(dir, "node_modules"));
+    const bin = join(dir, ".fake-bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho ${pnpmVersion}\n`);
+    chmodSync(join(bin, "pnpm"), 0o755);
     const script = `
+      const { mkdirSync, writeFileSync } = await import("node:fs");
+      const { createRequire } = await import("node:module");
+      const { join } = await import("node:path");
       const { setSetupInstallerForTests, writeSetupConfig } = await import(${JSON.stringify(pathToFileURL(setupJs).href)});
+      const dir = ${JSON.stringify(dir)};
+      const writes = ${JSON.stringify(writes)};
       const calls = [];
-      setSetupInstallerForTests((...args) => (calls.push(args), false));
-      const { manualInstallCommand } = writeSetupConfig(${JSON.stringify(dir)}, ${JSON.stringify(input)});
-      console.log(JSON.stringify({ calls, manualInstallCommand }));
+      setSetupInstallerForTests((...args) => {
+        calls.push(args);
+        for (const name of writes) {
+          const pkg = join(dir, "node_modules", name);
+          mkdirSync(join(pkg, "dist"), { recursive: true });
+          writeFileSync(join(pkg, "package.json"), JSON.stringify({ name, type: "module", exports: { ".": "./dist/index.js" } }));
+          writeFileSync(join(pkg, "dist", "index.js"), "");
+        }
+        return writes.length > 0;
+      });
+      const { manualInstallCommand } = writeSetupConfig(dir, ${JSON.stringify(input)});
+      const resolvable = writes.map((name) => {
+        try {
+          createRequire(join(dir, "package.json")).resolve(name);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      console.log(JSON.stringify({ calls, manualInstallCommand, resolvable }));
     `;
     const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
       cwd: dir,
       encoding: "utf8",
-      env: { ...process.env, NODE_PATH: "" },
+      env: { ...process.env, NODE_PATH: "", PATH: `${bin}${delimiter}${process.env.PATH}` },
     });
     if (run.status !== 0) throw new Error(run.stderr);
     return { dir, ...JSON.parse(run.stdout) };
   }
 
-  it("installs @askdb/prisma for a Prisma source, approving @prisma/engines on pnpm", () => {
-    const { dir, calls, manualInstallCommand } = setupInPnpmProject({ database: "prisma", aiProvider: "openai" });
+  // `pnpm add --allow-build` arrived in pnpm 10.4.0; older pnpm rejects the unknown option.
+  it.each([
+    ["11.28.10", ["@prisma/engines"]],
+    ["10.4.0", ["@prisma/engines"]],
+    ["10.3.0", []],
+    ["9.15.9", []],
+  ])("installs @askdb/prisma for a Prisma source; on pnpm %s it approves %j", (pnpmVersion, allowBuilds) => {
+    const { dir, calls, manualInstallCommand } = setupInPnpmProject({ database: "prisma", aiProvider: "openai" }, { pnpmVersion });
 
     const packages = [`@askdb/config@${version("config")}`, `@askdb/prisma@${version("prisma")}`];
-    expect(calls).toEqual([["pnpm", dir, packages, ["@prisma/engines"]]]);
-    expect(manualInstallCommand).toBe(`pnpm add --allow-build=@prisma/engines ${packages.join(" ")}`);
+    expect(calls).toEqual([["pnpm", dir, packages, allowBuilds]]);
+    expect(manualInstallCommand).toBe(["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...packages].join(" "));
+  });
+
+  // Node 24 and later keep a failed package lookup for the life of the process, so a probe
+  // through Node's resolver before the install would hide the package from the load after it.
+  it("leaves the packages it installs loadable from the project in the same process", () => {
+    const { resolvable } = setupInPnpmProject(
+      { database: "prisma", aiProvider: "openai" },
+      { writes: ["@askdb/config", "@askdb/prisma"] },
+    );
+
+    expect(resolvable).toEqual([true, true]);
   });
 
   it("installs no engine package and approves no build for a live engine", () => {

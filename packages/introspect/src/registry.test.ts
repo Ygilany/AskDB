@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  connectorPackageMissingMessage,
   createConnectorRegistry,
   type ConnectorProviderAdapter,
   type ConnectorConfig,
@@ -286,6 +287,20 @@ describe("createConnectorRegistry — lazy entries", () => {
 
     expect(() => call(registry)).toThrow('Connector provider "prisma" is not loaded yet. Call `await registry.load("prisma")` first.');
     expect(entry.load).not.toHaveBeenCalled();
+  });
+});
+
+describe("connectorPackageMissingMessage", () => {
+  // The CLI and Studio show it for a missing `@askdb/prisma`. On pnpm 11 its install
+  // exits 1 unless the `@prisma/engines` build is approved (#259), so the hint approves it.
+  it("renders the first-party install hint, with the build approvals the package needs", () => {
+    expect(
+      connectorPackageMissingMessage({ provider: "prisma", packageName: "@askdb/prisma", allowBuilds: ["@prisma/engines"] }),
+    ).toBe(
+      'Engine "prisma" needs the optional peer dependency `@askdb/prisma`. ' +
+        "Install it in your project (e.g. `pnpm add --allow-build=@prisma/engines @askdb/prisma`) " +
+        "or include it in a one-off command (`npx -p askdb -p @askdb/prisma askdb ...`).",
+    );
   });
 });
 

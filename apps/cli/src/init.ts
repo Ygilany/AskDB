@@ -334,6 +334,7 @@ export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs):
   // `@askdb/prisma` is an optional peer of askdb (#259). It depends on Prisma, whose
   // `@prisma/engines` postinstall pnpm 11 refuses to run until it's approved, and then
   // exits 1. A Prisma project approves it anyway, so the install does it here.
+  // Studio's guided setup does the same (`apps/studio/src/setup.ts`).
   if (answers.database === "prisma") {
     packages.push(`@askdb/prisma@${specs.prismaSpec}`);
     labels.push("@askdb/prisma");
@@ -459,7 +460,33 @@ function formatManualInstallCommand(pm: PackageManager, packages: string[], allo
   return [pm, ...installArgs(pm, packages, allowBuilds)].join(" ");
 }
 
-/** The add command's arguments. Build approvals apply to pnpm only: npm and Yarn run install scripts, and Bun skips untrusted ones without failing. */
+/**
+ * The build approvals to pass `pm` in `packageDir`: `allowBuilds`, or none for a pnpm older
+ * than 10.4.0, whose `add` rejects `--allow-build` (pnpm 9 runs install scripts, and 10.0 to
+ * 10.3 skip unapproved ones without failing). A pnpm whose version can't be read keeps them.
+ * Studio's setup applies the same rule (`apps/studio/src/package-manager.ts`).
+ */
+function supportedBuildApprovals(pm: PackageManager, packageDir: string, allowBuilds: string[]): string[] {
+  if (pm !== "pnpm" || allowBuilds.length === 0) return allowBuilds;
+  const version = spawnSync("pnpm", ["--version"], {
+    cwd: packageDir,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    // Windows runs pnpm through its `.cmd` shim, which needs a shell; the arguments are fixed.
+    shell: process.platform === "win32",
+    timeout: 15_000,
+  });
+  const match = version.status === 0 ? /^(\d+)\.(\d+)\./.exec(version.stdout.trim()) : null;
+  if (!match) return allowBuilds;
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  return major > 10 || (major === 10 && minor >= 4) ? allowBuilds : [];
+}
+
+/**
+ * The add command's arguments. Build approvals apply to pnpm only: npm and Yarn run install
+ * scripts, and Bun skips untrusted ones without failing. Mirrors Studio's
+ * `packageManagerAddArgs` (`apps/studio/src/package-manager.ts`); change both together.
+ */
 function installArgs(pm: PackageManager, packages: string[], allowBuilds: string[]): string[] {
   switch (pm) {
     case "pnpm":
@@ -1061,13 +1088,14 @@ async function finishInit(
       );
     } else {
       const pm = detectPackageManager(pkgRoot);
+      const allowBuilds = supportedBuildApprovals(pm, pkgRoot, plan.allowBuilds);
       process.stdout.write(`\nInstalling dependencies with ${pm} in ${pkgRoot} …\n`);
-      const ok = installer(pm, pkgRoot, plan.packages, plan.allowBuilds);
+      const ok = installer(pm, pkgRoot, plan.packages, allowBuilds);
       if (!ok) {
         process.stderr.write(
           "Dependency install failed. The config file was written, but packages are not installed yet.\n" +
             `  cd ${pkgRoot}\n` +
-            `  ${formatManualInstallCommand(pm, plan.packages, plan.allowBuilds)}\n`,
+            `  ${formatManualInstallCommand(pm, plan.packages, allowBuilds)}\n`,
         );
         return 1;
       }

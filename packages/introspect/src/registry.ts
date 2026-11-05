@@ -293,15 +293,25 @@ export function connectorProviderMissingMessage(provider: string): string {
 }
 
 /**
- * The error for a registered engine whose package isn't installed: a lazy
- * entry's `load()` throws it when the package resolves from nowhere (see
- * `createOptionalDriverLoader` in `@askdb/introspect/kit`).
+ * The install hint the first-party hosts (the `askdb` CLI and Studio) give for a
+ * registered engine whose package isn't installed: a lazy entry's `load()`
+ * throws it when the package resolves from nowhere (see
+ * `createOptionalDriverLoader` in `@askdb/introspect/kit`). `allowBuilds` names
+ * the dependencies whose install scripts pnpm must approve (pnpm 11 exits 1 on
+ * an unapproved one). It suggests a one-off `askdb` command, and the `askdb`
+ * binary registers only the first-party engines, so a third-party host writes
+ * its own message.
  */
-export function connectorPackageMissingMessage(input: { provider: string; packageName: string }): string {
-  const { provider, packageName } = input;
+export function connectorPackageMissingMessage(input: {
+  provider: string;
+  packageName: string;
+  allowBuilds?: readonly string[];
+}): string {
+  const { provider, packageName, allowBuilds = [] } = input;
+  const add = ["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), packageName].join(" ");
   return (
     `Engine "${provider}" needs the optional peer dependency \`${packageName}\`. ` +
-    `Install it in your project (e.g. \`pnpm add ${packageName}\`) or include it in a one-off command ` +
+    `Install it in your project (e.g. \`${add}\`) or include it in a one-off command ` +
     `(\`npx -p askdb -p ${packageName} askdb ...\`).`
   );
 }

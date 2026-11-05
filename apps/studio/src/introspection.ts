@@ -24,7 +24,11 @@ import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 const prismaPackage = createOptionalDriverLoader({
   packageName: "@askdb/prisma",
   importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
-  missingMessage: connectorPackageMissingMessage({ provider: "prisma", packageName: "@askdb/prisma" }),
+  missingMessage: connectorPackageMissingMessage({
+    provider: "prisma",
+    packageName: "@askdb/prisma",
+    allowBuilds: ["@prisma/engines"],
+  }),
 });
 
 const connectorRegistry = createConnectorRegistry([

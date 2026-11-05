@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
+import { basename, delimiter, dirname, join, resolve, isAbsolute, relative } from "node:path";
 import { getBuiltinAiProviderSetup } from "@askdb/ai";
 import {
   ASKDB_AI_PROVIDERS,
@@ -16,6 +16,7 @@ import {
   lockfilePackageManager,
   packageManagerAddArgs,
   packageManagerSpawnSpec,
+  supportedBuildApprovals,
   type PackageManager,
 } from "./package-manager.js";
 
@@ -372,14 +373,15 @@ function ensureProjectDependencies(
   studioExecuteProvider?: SetupExecuteProvider,
 ): EnsureDepsResult {
   const missing: string[] = [];
-  if (!canResolveFrom(cwd, "@askdb/config")) {
+  if (!isInstalledFor(cwd, "@askdb/config")) {
     missing.push(`@askdb/config@${resolveConfigSpec()}`);
   }
   const allowBuilds: string[] = [];
   // `@askdb/prisma` is an optional peer of Studio (#259). It depends on Prisma, whose
   // `@prisma/engines` postinstall pnpm 11 refuses to run until it's approved, and then
   // exits 1. A Prisma project approves it anyway, so the install does it here.
-  if (database === "prisma" && !canResolveFrom(cwd, "@askdb/prisma")) {
+  // `askdb init` does the same (`apps/cli/src/init.ts`).
+  if (database === "prisma" && !isInstalledFor(cwd, "@askdb/prisma")) {
     missing.push(`@askdb/prisma@${resolvePrismaSpec()}`);
     allowBuilds.push("@prisma/engines");
   }
@@ -388,7 +390,7 @@ function ensureProjectDependencies(
   if (studioExecuteProvider && DB_DRIVER_PACKAGES[studioExecuteProvider]) driversNeeded.add(studioExecuteProvider);
   for (const db of driversNeeded) {
     const driver = DB_DRIVER_PACKAGES[db as SetupDatabase];
-    if (driver && !canResolveFrom(cwd, driver) && !missing.includes(driver)) {
+    if (driver && !isInstalledFor(cwd, driver) && !missing.includes(driver)) {
       missing.push(driver);
     }
   }
@@ -409,38 +411,43 @@ function ensureProjectDependencies(
   const pkgDir = nearestPkgDir ?? cwd;
 
   const pm = detectPackageManager(pkgDir);
+  const builds = supportedBuildApprovals(pm, pkgDir, allowBuilds);
   // Only auto-install when the project manifest sits exactly at the wizard's
   // directory. A package.json found further up might be a monorepo root or an
   // unrelated project — never mutate those implicitly.
   if (pkgDir !== resolve(cwd) || (isLikelyWorkspaceRoot(pkgDir) && !packageJsonCreated)) {
     return {
       installed: null,
-      manualInstallCommand: formatInstallCommand(pm, missing, allowBuilds),
+      manualInstallCommand: formatInstallCommand(pm, missing, builds),
       packageJsonCreated,
     };
   }
 
   const installer = setupInstallerForTests ?? runInstall;
-  const ok = installer(pm, pkgDir, missing, allowBuilds);
+  const ok = installer(pm, pkgDir, missing, builds);
   if (!ok) {
     return {
       installed: null,
-      manualInstallCommand: formatInstallCommand(pm, missing, allowBuilds),
+      manualInstallCommand: formatInstallCommand(pm, missing, builds),
       packageJsonCreated,
     };
   }
   return { installed: missing, manualInstallCommand: null, packageJsonCreated };
 }
 
-function canResolveFrom(dir: string, packageName: string): boolean {
-  try {
-    // Resolve the package entry point, not `<pkg>/package.json` — the latter
-    // fails for packages whose `exports` map doesn't expose "./package.json".
-    createRequire(join(dir, "package.json")).resolve(packageName);
-    return true;
-  } catch {
-    return false;
+/**
+ * Whether `packageName` is installed for `dir`: in a `node_modules` of `dir` or a parent,
+ * or in a `NODE_PATH` directory. Checked on disk, not with Node's resolver: Node 24 and
+ * later can keep a failed lookup until the process exits, so resolving a package this
+ * step then installs would hide it from the introspection step's load.
+ */
+function isInstalledFor(dir: string, packageName: string): boolean {
+  const roots = (process.env.NODE_PATH ?? "").split(delimiter).filter(Boolean);
+  for (let current = resolve(dir); ; current = dirname(current)) {
+    roots.push(join(current, "node_modules"));
+    if (dirname(current) === current) break;
   }
+  return roots.some((root) => existsSync(join(root, packageName, "package.json")));
 }
 
 /**
