@@ -73,6 +73,7 @@ export type {
 export {
   loadSchema,
   loadSchemaFromJson,
+  readSchemaDirectory,
   parseTableMarkdown,
   parseConceptsMarkdown,
   writeTableMarkdown,

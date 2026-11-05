@@ -56,7 +56,6 @@
     "@askdb/introspect": "workspace:*",
     "@askdb/mysql": "workspace:*",
     "@askdb/postgres": "workspace:*",
-    "@askdb/prisma": "workspace:*",
     "@askdb/rag": "workspace:*",
     "@askdb/sqlite": "workspace:*",
     "@askdb/sqlserver": "workspace:*",
@@ -65,7 +64,16 @@
     "ai": "^7.0.51",
     "commander": "^15.0.0"
   },
+  "peerDependencies": {
+    "@askdb/prisma": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@askdb/prisma": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@askdb/prisma": "workspace:*",
     "typescript": "^6.0.3",
     "vitest": "^5.0.5"
   }

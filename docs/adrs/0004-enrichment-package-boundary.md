@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted (amended 2026-11).
+
+> **Amendment (2026-11):** `@askdb/core` now owns file access to a schema directory: `readSchemaDirectory()` reads one ([ADR 0027](0027-core-reads-schema-directory-with-exact-names.md)), and `saveSchemaFile()` writes a file into one ([ADR 0028](0028-core-writes-schema-directory-files.md)). Which files a directory holds, and how a file is written there, are tenant-safety rules: copies in two packages drifted and failed open (#181, #608, #617). `@askdb/enrich` keeps the authoring workflow (`Workspace`, drafts, the `save*` helpers, `bundleSchemaDirectory()`) and calls core for the file access. Core still holds no authoring workflow.
 
 > **Amendment (2026-07):** `@askdb/tui` has since been retired in favor of Studio; `askdb enrich` opens Studio and `askdb bundle` calls `@askdb/enrich` directly. The boundary this ADR established is unchanged — `@askdb/enrich` remains the shared headless authoring layer consumed by `@askdb/studio` and custom surfaces. TUI references below are preserved as historical context.
 
@@ -54,7 +56,7 @@ The dependency direction is:
 
 - Studio no longer depends on TUI.
 - TUI and Studio share one implementation for Schema v2 enrichment workspace behavior.
-- Core avoids becoming a catch-all for filesystem authoring workflows.
+- Core avoids becoming a catch-all for filesystem authoring workflows. (Amended 2026-11: core does own reading and writing the files of a schema directory, ADRs 0027 and 0028.)
 - `@askdb/enrich` becomes a published API surface for consumers who want to build their own authoring UI without adopting the terminal UI or Studio.
 - Existing `@askdb/tui` helper exports may continue to re-export from `@askdb/enrich` for compatibility, but new consumers should import shared enrichment helpers from `@askdb/enrich`.
 

@@ -136,7 +136,7 @@ The engine comes from `introspection.provider` in your config (or the `--engine`
   </TabItem>
   <TabItem label="Prisma schema file">
 
-With your Prisma schema configured in `askdb.config.ts` under `introspection.provider` and `introspection.providerConfig`, one command is enough — no live database required:
+With your Prisma schema configured in `askdb.config.ts` under `introspection.provider` and `introspection.providerConfig`, one command is enough — no live database required. It reads the file with `@askdb/prisma`, which `askdb init` installed in your project when you chose Prisma (otherwise, see [the Prisma guide](/guides/integrations/prisma/#install)):
 
 ```bash
 npx askdb introspect
