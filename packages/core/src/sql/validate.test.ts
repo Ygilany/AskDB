@@ -319,7 +319,7 @@ describe("validateSelectSql — locking reads", () => {
     ["sqlserver", `SELECT id FROM orders WITH (UPDʟOCK) WHERE id = 1`],
     ["sqlserver", `SELECT Größe FROM orders`],
     // So must a quoted name alone in parentheses after a name, where SQL Server reads a hint.
-    ["sqlserver", `SELECT id FROM orders ([UPDLOCK﻿]) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders ([UPDLOCK\uFEFF]) WHERE id = 1`],
     ["sqlserver", `SELECT COUNT([Größe]) AS n FROM orders`],
     ["sqlserver", `SELECT COUNT([rowlock]) AS n FROM orders`],
   ] as const)("rejects on %s: %s", (id, sql) => {
@@ -343,6 +343,15 @@ describe("validateSelectSql — locking reads", () => {
   ] as const)("accepts on %s: %s", (id, sql) => {
     expect(validateSelectSql(BUILT_IN_DIALECTS[id], sql)).toBe(sql);
   });
+
+  // Stripping trailing spaces from a quoted name once took time quadratic in the run of spaces
+  // (about 10 s here). An absolute bound with a wide margin, not a ratio (#657).
+  it("checks an 80 KB quoted name alone in parentheses on SQL Server in under 1 s", () => {
+    const sql = `SELECT id FROM orders ([${" ".repeat(80_000)}x])`;
+    const start = performance.now();
+    expect(validateSelectSql(BUILT_IN_DIALECTS.sqlserver, sql)).toBe(sql);
+    expect(performance.now() - start).toBeLessThan(1000);
+  }, 30_000);
 });
 
 describe("validateSelectSql — sqlite", () => {

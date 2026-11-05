@@ -79,6 +79,23 @@ export function qualifiedNameQuotingRule(dialect: QuotedDialect): string {
   return `- When you quote a qualified name, quote each part separately: ${inlineCode(parts)}.`;
 }
 
+/**
+ * The prompt rule for names that aren't plain ASCII, on SQL Server and on an id that is no
+ * built-in engine (whose SQL the validator also reads SQL Server's way). The check rejects such a
+ * name unquoted, and a quoted column that is alone in parentheses after a name (`SUM([金額])`),
+ * where SQL Server could read a lock hint (#319). The model makes up aliases, so this applies
+ * whatever the schema's names are. Like {@link qualifiedNameQuotingRule}, it shows only the right
+ * forms. Undefined on the other engines.
+ */
+export function nonAsciiNameRule(dialect: QuotedDialect): string | undefined {
+  const family = lexerProfileFor(dialect)?.id;
+  if (family !== undefined && family !== "sqlserver") return undefined;
+  const quoting = quotingFor(dialect);
+  const alias = `AS ${quote(quoting, "注文数")}`;
+  const call = `SUM(o.${quote(quoting, "金額")})`;
+  return `- Quote every name that isn't plain ASCII, aliases included (${inlineCode(alias)}), and qualify a quoted column that is the only thing inside parentheses: ${inlineCode(call)}.`;
+}
+
 /** Markdown inline code that may itself contain backticks. */
 function inlineCode(text: string): string {
   return text.includes("`") ? `\`\` ${text} \`\`` : `\`${text}\``;

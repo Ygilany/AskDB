@@ -28,7 +28,8 @@ export type SqlValidationRuleCode =
   | "SQL_UNTERMINATED"
   /**
    * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
-   * `UPDLOCK`; on SQL Server, also an unquoted name that isn't printable ASCII, which it may read as a hint.
+   * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
+   * parentheses after a name, which SQL Server may read as a hint.
    */
   | "SQL_LOCKING_READ";
 

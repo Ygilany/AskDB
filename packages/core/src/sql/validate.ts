@@ -317,7 +317,8 @@ function tsqlLockHint(tokens: readonly SqlToken[], i: number): string | undefine
     return `the ${quoted ? "quoted name" : "unquoted name"} ${t.text}, which SQL Server may read as a lock hint`;
   }
   // SQL Server ignores trailing spaces when it compares a quoted name, so `[UPDLOCK ]` is the hint.
-  const name = quoted ? t.lower.replace(/ +$/, "") : t.lower;
+  // Past the ASCII check, a space is the only whitespace left, so `trimEnd()` strips just those.
+  const name = quoted ? t.lower.trimEnd() : t.lower;
   return TSQL_LOCK_HINTS.has(name) ? `the table hint ${name.toUpperCase()}` : undefined;
 }
 

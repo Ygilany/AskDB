@@ -247,9 +247,11 @@ const LOCKING: Partial<Record<SupportedDialect, { begin: string; rollback: strin
   sqlserver: { begin: "BEGIN TRANSACTION", rollback: "ROLLBACK TRANSACTION", shortWait: "SET LOCK_TIMEOUT 1000", lockTimeout: { number: 1222 } },
 };
 
+/** The order lines the locking statements read and lock: those of order 1. */
+const LOCKED_ROWS = ORDER_LINES.filter((l) => l.order_id === 1).length;
+
 async function holdsRowLock(p: ProofContext): Promise<void> {
-  const locked = ORDER_LINES.filter((l) => l.order_id === 1).length;
-  await waitsForHolder(p, async (waiter) => expect(await waiter.rows(p.statement)).toHaveLength(locked));
+  await waitsForHolder(p, async (waiter) => expect(await waiter.rows(p.statement)).toHaveLength(LOCKED_ROWS));
 }
 
 async function blocksWriter(p: ProofContext): Promise<void> {
@@ -260,12 +262,11 @@ async function blocksWriter(p: ProofContext): Promise<void> {
 /** `wait` times out while the holder's transaction runs the statement, and succeeds after it rolls back. */
 async function waitsForHolder(p: ProofContext, wait: (waiter: ScratchConnection) => Promise<void>): Promise<void> {
   const tx = LOCKING[p.dialect]!;
-  const locked = ORDER_LINES.filter((l) => l.order_id === 1).length;
   const holder = await p.scratch.connect();
   const waiter = await p.scratch.connect();
   try {
     await holder.run(tx.begin);
-    expect(await holder.rows(p.statement)).toHaveLength(locked);
+    expect(await holder.rows(p.statement)).toHaveLength(LOCKED_ROWS);
     await waiter.run(tx.shortWait);
     await expect(wait(waiter)).rejects.toMatchObject(tx.lockTimeout);
     await holder.run(tx.rollback);
