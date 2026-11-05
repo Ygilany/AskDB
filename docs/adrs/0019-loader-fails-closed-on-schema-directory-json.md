@@ -44,4 +44,4 @@ Rejected. Warnings are easy to miss, so tenant enforcement still turns off: the 
 
 - A host that loaded a renamed copy of `schema.json` from inside a schema directory now gets an error instead of a schema with no tenant policy. The `@askdb/core` changeset is a minor bump and names the change.
 - `loadSchemaFromJson()` remains the way to read only a physical layer, wherever the file sits.
-- The check reads the exact sibling names. A wrong-case sibling such as `Tenant-Policy.md` on a case-sensitive filesystem is ignored by the directory loader too; that is tracked separately.
+- The check reads the exact sibling names. A wrong-case sibling such as `Tenant-Policy.md` on a case-sensitive filesystem is ignored by the directory loader too; that is #608.
