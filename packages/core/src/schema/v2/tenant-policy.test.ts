@@ -184,7 +184,7 @@ unknownKey: bad
 // ---------------------------------------------------------------------------
 
 // Under `warn`, every problem is collected into `warnings`. Under `strict` most of them
-// fail the load instead; loader.test.ts covers that.
+// fail the load instead; the unknown-root cases below and loader.test.ts cover that.
 describe("normalizeTenantPolicy — cross-reference validation", () => {
   const validContent = `---
 schemaId: test
@@ -254,26 +254,67 @@ globalTables:
     expect(result.warnings.some((w) => w.kind === "orphaned_global_table_id")).toBe(true);
   });
 
-  it("warns about unknown roots in scopeThrough", () => {
-    const content = `---
+  // A root that `roots` doesn't declare is an error under `strict` wherever the policy
+  // names it (ADR 0023), and the only finding under `warn`.
+  it.each([
+    {
+      kind: "unknown_root_in_scope",
+      section: `scopedTables:
+  - id: table:public.items
+    scopeThrough:
+      - root: table:public.nonexistent
+        column: table:public.items#org_id`,
+    },
+    {
+      kind: "unknown_root_in_hierarchy",
+      section: `hierarchy:
+  - parent: table:public.nonexistent
+    child: table:public.orgs
+    foreignKey: table:public.orgs#parent_id`,
+    },
+    {
+      kind: "unknown_root_in_mapping",
+      section: `polymorphicTables:
+  - id: table:public.items
+    typeColumn: table:public.items#owner_type
+    idColumn: table:public.items#owner_id
+    mapping:
+      org: table:public.orgs
+      other: table:public.nonexistent`,
+    },
+  ])("$kind: a warning under warn, a failed load under strict", ({ kind, section }) => {
+    const policy = (enforcement: "warn" | "strict") =>
+      parseTenantPolicyMarkdown(`---
 schemaId: test
-enforcement: warn
+enforcement: ${enforcement}
 roots:
   - id: table:public.orgs
     tenantIdColumn: table:public.orgs#id
     label: Org
-scopedTables:
-  - id: table:public.items
-    scopeThrough:
-      - root: table:public.nonexistent
-        column: table:public.items#org_id
+${section}
 ---
-`;
-    const parsed = parseTenantPolicyMarkdown(content);
+`);
     const tableIds = new Set(["table:public.orgs", "table:public.items"]);
-    const colIds = new Set(["table:public.orgs#id", "table:public.items#org_id"]);
-    const result = normalizeTenantPolicy(parsed, tableIds, colIds);
-    expect(result.warnings.some((w) => w.kind === "unknown_root_in_scope")).toBe(true);
+    const colIds = new Set([
+      "table:public.orgs#id",
+      "table:public.orgs#parent_id",
+      "table:public.items#org_id",
+      "table:public.items#owner_type",
+      "table:public.items#owner_id",
+    ]);
+    expect(normalizeTenantPolicy(policy("warn"), tableIds, colIds).warnings).toEqual([
+      expect.objectContaining({ kind, id: "table:public.nonexistent" }),
+    ]);
+    let caught: unknown;
+    try {
+      normalizeTenantPolicy(policy("strict"), tableIds, colIds);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    expect((caught as SchemaParseError).message).toContain(
+      "table:public.nonexistent is not one of the policy's roots",
+    );
   });
 });
 
