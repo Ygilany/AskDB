@@ -14,9 +14,11 @@ import {
   isBuiltInDialectId,
   loadSchema,
   loadSchemaFromJson,
+  parseAskDbModeV1,
   SUPPORTED_DIALECT_IDS,
   type AnyNormalizedSchema,
   type AskDbLanguageModel,
+  type AskDbModeV1,
   type AskDialectInput,
   type AskGenerateDeps,
   type AskPipelineOptions,
@@ -41,11 +43,19 @@ export type SchemaSource =
   | { json: string }
   | { schema: AnyNormalizedSchema };
 
-/** Per-call options. Everything is optional; anything set overrides the client default. */
+/**
+ * Per-call options. Everything is optional; anything set overrides the client default,
+ * except the two config `modes` settings, which a call can only tighten.
+ */
 export type AskOverrides = Omit<
   AskPipelineOptions,
-  "question" | "schema" | "model" | "dialect"
+  "question" | "schema" | "model" | "dialect" | "mode"
 > & {
+  /**
+   * Trust boundary for this call. Config `modes.askdbMode` (unset: `"schema_only"`) is the
+   * loosest mode a call gets: `"schema_only"` tightens it, `"bounded_results"` can't loosen it.
+   */
+  mode?: AskDbModeV1;
   schema?: SchemaSource | AnyNormalizedSchema;
   model?: AskDbLanguageModel;
   dialect?: AskDialectInput;
@@ -303,6 +313,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         deps,
         reasoningEffort,
         omitSensitiveIdentifiersFromNlToSqlPrompt,
+        mode: callMode,
         ...rest
       } = overrides;
       const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
@@ -326,8 +337,16 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         omitSensitiveIdentifiersFromNlToSqlPrompt === true ||
         config.modes?.omitSensitiveFromPrompt === true;
 
+      // Config `modes.askdbMode` (unset: `schema_only`) is the loosest mode a call gets:
+      // a per-call `mode` can tighten it to `schema_only`, never loosen it (ADR 0025). Both go
+      // through the same parser, so any accepted spelling tightens and an unknown mode throws.
+      const configMode = parseAskDbModeV1(config.modes?.askdbMode);
+      const requested = callMode == null ? undefined : parseAskDbModeV1(callMode);
+      const mode = requested === "schema_only" ? requested : configMode;
+
       return ask({
         ...rest,
+        mode,
         ...(omitSensitive ? { omitSensitiveIdentifiersFromNlToSqlPrompt: true } : {}),
         question,
         schema,
