@@ -7,8 +7,8 @@
  *   --schemas org,people,billing,ref`, as the read-only role. MariaDB uses `--engine mysql`.
  *   The logical schemas are real schemas on Postgres and SQL Server, and one database each
  *   on MySQL and MariaDB.
- * - SQLite has no connection URL: `introspection.providerConfig.sqlite.file` in an
- *   `askdb.config.ts`, then a bare `askdb introspect`. Each call writes that config into a
+ * - SQLite has no connection URL: `introspection.providerConfig.sqlite.file` in the
+ *   project's config, then a bare `askdb introspect`. Each call writes that config into a
  *   fresh project directory under `.lab/`, so concurrent calls never share one, and its
  *   `@askdb/config` import resolves from the lab's node_modules like any nested project's.
  *
@@ -56,15 +56,31 @@ export function askdbAsync(
 }
 
 /**
- * An `askdb.config.ts` with this `introspection` block. `ai` and `rag` are required
- * top-level fields (reference/config.mdx, "All top-level fields"). The file is `.ts`,
- * because the CLI can't load a documented `askdb.config.mjs` (#264), and uses
- * `defineConfig`, because a plain exported object is rejected (#265).
+ * The two documented forms of a project's config (`reference/config.mdx`):
+ * - `define-config-ts`: `askdb.config.ts` exporting `defineConfig({ … })` from `@askdb/config`,
+ *   the form `askdb init` writes. Every release loads it, so it is the default.
+ * - `plain-object-mjs`: `askdb.config.mjs` exporting a plain `{ … }`, the form the guides show
+ *   (`guides/switch-engines.mdx`) with an extension the reference lists. Releases before #264
+ *   and #265 were fixed can't load it: capability `config-plain-mjs`.
  */
-function projectConfig(introspection: Record<string, unknown>): string {
-  return `import { defineConfig } from "@askdb/config";
+export type ConfigForm = "define-config-ts" | "plain-object-mjs";
 
-export default defineConfig({
+const CONFIG_FILE: Record<ConfigForm, string> = {
+  "define-config-ts": "askdb.config.ts",
+  "plain-object-mjs": "askdb.config.mjs",
+};
+
+/** The `introspection` block that reads a SQLite file, the fixture's unless `file` is given. */
+export function sqliteIntrospection(file: string = SQLITE_FILE): Record<string, unknown> {
+  return { provider: "sqlite", providerConfig: { sqlite: { file } } };
+}
+
+/**
+ * A config with this `introspection` block, in `form`. `ai` and `introspection` are required
+ * top-level fields (reference/config.mdx, "All top-level fields").
+ */
+function projectConfig(introspection: Record<string, unknown>, form: ConfigForm): string {
+  const config = `{
   ai: {
     provider: "openai",
     providerConfig: { openai: { apiKey: "" } },
@@ -76,33 +92,39 @@ export default defineConfig({
     store: "memory",
     storeConfig: { memory: {} },
   },
-});
-`;
+}`;
+  return form === "define-config-ts"
+    ? `import { defineConfig } from "@askdb/config";\n\nexport default defineConfig(${config});\n`
+    : `export default ${config};\n`;
 }
 
 export interface ProjectRun extends CliRun {
-  /** What the project directory held after the run, besides its `askdb.config.ts`. */
+  /** What the project directory held after the run, besides its config file. */
   files: string[];
 }
 
-/** A fresh project directory under `.lab/projects/` whose `askdb.config.ts` has this `introspection` block. */
-function makeProject(introspection: Record<string, unknown>): string {
+/** A fresh project directory under `.lab/projects/` whose config, in `form`, has this `introspection` block. */
+function makeProject(introspection: Record<string, unknown>, form: ConfigForm): string {
   mkdirSync(join(LAB_STATE, "projects"), { recursive: true });
   const project = mkdtempSync(join(LAB_STATE, "projects", `${String(introspection.provider)}-`));
-  writeFileSync(join(project, "askdb.config.ts"), projectConfig(introspection));
+  writeFileSync(join(project, CONFIG_FILE[form]), projectConfig(introspection, form));
   return project;
 }
 
-const projectFiles = (project: string) => readdirSync(project).filter((f) => f !== "askdb.config.ts");
+const projectFiles = (project: string, form: ConfigForm) => readdirSync(project).filter((f) => f !== CONFIG_FILE[form]);
 
 /**
- * Run the installed `askdb` in a fresh project directory under `.lab/projects/` whose
- * `askdb.config.ts` has this `introspection` block, then remove the directory.
+ * Run the installed `askdb` in a fresh project directory under `.lab/projects/` whose config,
+ * in `form`, has this `introspection` block, then remove the directory.
  */
-export function askdbInProject(introspection: Record<string, unknown>, args: string[]): ProjectRun {
-  const project = makeProject(introspection);
+export function askdbInProject(
+  introspection: Record<string, unknown>,
+  args: string[],
+  form: ConfigForm = "define-config-ts",
+): ProjectRun {
+  const project = makeProject(introspection, form);
   try {
-    return { ...askdb(args, project), files: projectFiles(project) };
+    return { ...askdb(args, project), files: projectFiles(project, form) };
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
@@ -110,9 +132,9 @@ export function askdbInProject(introspection: Record<string, unknown>, args: str
 
 /** {@link askdbInProject} without blocking the event loop. */
 export async function askdbInProjectAsync(introspection: Record<string, unknown>, args: string[], signal?: AbortSignal): Promise<ProjectRun> {
-  const project = makeProject(introspection);
+  const project = makeProject(introspection, "define-config-ts");
   try {
-    return { ...(await askdbAsync(args, { cwd: project, signal })), files: projectFiles(project) };
+    return { ...(await askdbAsync(args, { cwd: project, signal })), files: projectFiles(project, "define-config-ts") };
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
@@ -133,8 +155,7 @@ export interface FixtureConnection {
 function introspectCall(dialect: Dialect, output: string | string[], connection: FixtureConnection): { args: string[]; project?: Record<string, unknown> } {
   const out = ["--schema-id", "multi-engine", ...(typeof output === "string" ? ["--out", output] : output)];
   if (dialect === "sqlite") {
-    const sqlite = { file: connection.sqliteFile ?? SQLITE_FILE };
-    return { args: ["introspect", ...out], project: { provider: "sqlite", providerConfig: { sqlite } } };
+    return { args: ["introspect", ...out], project: sqliteIntrospection(connection.sqliteFile) };
   }
   return {
     args: [
