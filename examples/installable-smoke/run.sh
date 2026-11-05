@@ -2,7 +2,7 @@
 # Installable smoke test for AskDB packages.
 #
 # Builds and packs every publishable package (scripts/pack-tarballs.sh, shared with the consumer
-# lab), validates every tarball (LICENSE/NOTICE/README.md and all package.json entry paths, via
+# lab), validates every tarball (LICENSE/NOTICE/README.md, README links, and all package.json entry paths, via
 # check-tarballs.mjs), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace; includes @askdb/config, a peer of @askdb/client), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
@@ -19,7 +19,10 @@ echo "smoke: workdir = $WORK"
 echo "smoke: building and packing every publishable package…"
 bash "$ROOT/scripts/pack-tarballs.sh" "$WORK/tarballs"
 
-echo "smoke: validating every tarball ships LICENSE/NOTICE/README.md and its entry paths, and no src/tests…"
+echo "smoke: self-testing the README link rule…"
+node --test "$SCRIPT_DIR/readme-links.test.mjs"
+
+echo "smoke: validating every tarball ships LICENSE/NOTICE/README.md, README links and its entry paths, and no src/tests…"
 node "$SCRIPT_DIR/check-tarballs.mjs" "$WORK/tarballs"
 
 # The deprecated @askdb/ai-* and @askdb/connectors shims were removed before 1.0 (#347).
@@ -63,7 +66,7 @@ SQLITE_TARBALL="$(ls "$WORK/tarballs"/askdb-sqlite-*.tgz | head -n1)"
 SQLSERVER_TARBALL="$(ls "$WORK/tarballs"/askdb-sqlserver-*.tgz | head -n1)"
 [ -f "$SQLSERVER_TARBALL" ] || { echo "smoke: missing sqlserver tarball" >&2; exit 1; }
 
-# check-tarballs.mjs covers LICENSE/NOTICE/README, entry paths, and no src/ or *.test.* in every tarball.
+# check-tarballs.mjs covers LICENSE/NOTICE/README, README links, entry paths, and no src/ or *.test.* in every tarball.
 if grep -q '^package/dist/bin\.js$' <<<"$(tar -tzf "$INTROSPECT_TARBALL")"; then
   echo "smoke: FAILED — @askdb/introspect should no longer ship a standalone bin" >&2
   exit 1
