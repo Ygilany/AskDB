@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-05). The coordinator decided it on #279's plan, under the maintainer's 2026-09-27 decision in #279 that `@askdb/client` and the HTTP API honour the config `modes`. Recorded in [#279's comment](https://github.com/Ygilany/AskDB/issues/279#issuecomment-6665628696). The maintainer can reopen it. Implemented in `createAskDb().ask()` in `packages/client/src/client.ts`. Contract: [`modes-v1.md`](../contracts/modes-v1.md).
+Accepted (2026-11-05). The maintainer's 2026-09-27 decision in #279 says `@askdb/client` and the HTTP API honour the config `modes`; it left the floor question open. On 2026-11-05 the maintainer handed AskDB's coordination to the coordinator thread, which settled the floor on #279's plan. Recorded in [#279's comment](https://github.com/Ygilany/AskDB/issues/279#issuecomment-6665628696). The maintainer can reopen it. Implemented in PR #636: `createAskDb().ask()` in `packages/client/src/client.ts`. Contract: [`modes-v1.md`](../contracts/modes-v1.md).
 
 ## Context
 
@@ -13,7 +13,7 @@ Accepted (2026-11-05). The coordinator decided it on #279's plan, under the main
 
 ## Decision
 
-- `@askdb/client` resolves the mode. It runs the stricter of the call's `mode` and `parseAskDbModeV1(config.modes.askdbMode)`, and an unset config counts as `schema_only`. A call can tighten the mode to `schema_only`. `bounded_results` runs only when the config allows it.
+- `@askdb/client` resolves the mode. It runs the stricter of the call's `mode` and `parseAskDbModeV1(config.modes.askdbMode)`, and an unset config counts as `schema_only`. A call can tighten the mode to `schema_only`. `bounded_results` runs only when the config allows it. The call's value goes through the same parser, so any accepted spelling counts and an unknown mode throws `AskDbError`.
 - A call that asks for a looser mode runs at the config mode, with no error. The `askdb.pipeline.mode` log line records the mode that ran. This matches the omit floor, which ignores a per-call `false`.
 - The CLI and the HTTP API pass only the caller's mode and leave the config to the client. They still validate their own input first: a bad `--mode` exits 1, and a bad body `mode` or `x-askdb-mode` returns `400`. Their `askdb.run.start` lines no longer carry `mode`.
 - Core's `ask()` reads no config, so the `mode` its caller passes is final.
