@@ -227,9 +227,13 @@ describe("askdb introspect --out — tenant policy check", () => {
     for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  it.each(["strict", "warn"] as const)(
-    "%s: names the policy's column the new schema.json lacks, and still exits 0",
-    async (enforcement) => {
+  // Under strict the policy no longer loads at all; under warn it loads with warnings.
+  it.each([
+    { enforcement: "strict", says: "no longer loads" },
+    { enforcement: "warn", says: "doesn't match the new schema.json" },
+  ] as const)(
+    "$enforcement: names the policy's column the new schema.json lacks, and still exits 0",
+    async ({ enforcement, says }) => {
       installRuntime();
       const outDir = mkdtempSync(join(tmpdir(), "askdb-introspect-policy-"));
       tempDirs.push(outDir);
@@ -256,6 +260,7 @@ describe("askdb introspect --out — tenant policy check", () => {
       expect(code).toBe(0);
       expect(existsSync(join(outDir, "schema.json"))).toBe(true);
       expect(stderr).toContain("tenant-policy.md");
+      expect(stderr).toContain(says);
       expect(stderr).toContain("table:main.widgets#tenant_id");
     },
   );
