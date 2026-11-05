@@ -37,6 +37,14 @@ Releases run in `.github/workflows/release.yml`, triggered when `CI` passes on a
 4. When CI passes on the merge commit, the `publish` job waits for approval in the `npm-publish` environment. Approve it from the workflow run. It builds and runs `pnpm -r publish --access public --tag latest`, which publishes every public package whose version isn't on npm yet.
 5. The `tag` job pushes a `<name>@<version>` git tag for each published package.
 6. Check the package pages, and install one package from npm in a clean directory.
+7. Publish a GitHub Release for the new `askdb@<version>` tag, by hand. Its body lists each breaking change in one line, and links the release's section of the [upgrade notes](../apps/docs-site/src/content/docs/guides/upgrading.mdx) (askdb.tools/guides/upgrading/) and the package CHANGELOGs. Add that section before the Version PR merges, so the Release has something to link. While AskDB is in beta, mark the Release pre-release:
+
+   ```bash
+   gh release create askdb@<version> --verify-tag --prerelease \
+     --title "askdb <version>" --notes-file release-notes.md
+   ```
+
+   Other packages' tags get no Release.
 
 A push to `main` with nothing new to publish doesn't ask for approval: `scripts/release-unpublished.mjs` compares every public package's version with npm first. If a publish fails partway, use "Re-run failed jobs" on the run; versions already on npm are skipped.
 
@@ -65,7 +73,7 @@ Recorded 2026-09-29, in #354:
 - **npm auth:** trusted publishing (OIDC). No npm token is stored in the repo. pnpm 11 does the OIDC exchange itself, and adds provenance because the repo and the packages are public.
 - **Gate:** the `npm-publish` environment, with the maintainer as required reviewer and deployments limited to `main`. Only the `publish` job can request an OIDC token.
 - **changesets/action:** v2, with Changesets CLI v3 (`@changesets/cli` pinned exactly in the root `package.json`). The pipeline started on v1 with CLI v2; Dependabot moved both (#390, #393), and #424 moved the workflow and the prerelease state with them.
-- **GitHub Releases:** off. Package CHANGELOGs and git tags are the release record.
+- **GitHub Releases:** on for `askdb@<version>` tags only, published by hand (Publish Flow step 7). Each one summarizes the release's breaking changes and links its section of the upgrade notes (`/guides/upgrading/` on askdb.tools). Other packages' tags get none, and their CHANGELOGs and git tags stay the full record. Decided 2026-11-05 in #628; until then, Releases were off.
 - **Versioning:** unchanged. Packages keep their own versions, with `@askdb/core`, `askdb` and `@askdb/http-api` linked. One lockstep version line waits for the 1.0 release candidates (#354).
 
 ## One-Time Setup

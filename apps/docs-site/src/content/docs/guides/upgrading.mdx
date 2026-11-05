@@ -1,0 +1,276 @@
+---
+title: "Upgrade AskDB"
+description: "What to change in your app for each AskDB beta: breaking changes, new requirements and deprecations, release by release."
+---
+
+import InstallTabs from "../../../components/InstallTabs.astro";
+
+<p class="doc-eyebrow">Upgrade notes</p>
+
+<p class="doc-lede">This guide shows you what to change in your app when you move to a newer AskDB beta. Each release has its own section, newest first, listing only the changes that need something from you. The package CHANGELOGs list everything else.</p>
+
+## Before you upgrade
+
+1. **Check your Node version.** Every AskDB package needs Node 22.23.4 or newer, since 1.0.0-beta.44.
+2. **Find the releases you cross.** A release is named by the version of `askdb`, which `@askdb/core` and `@askdb/http-api` share. Read every section between your current version and the new one, and apply them oldest first.
+3. **Upgrade every AskDB package in one step,** so they all come from the same release. Betas publish under npm's `latest` tag. List every `@askdb/*` package your `package.json` has, not only the ones below:
+
+<InstallTabs pkgs="askdb@latest @askdb/core@latest @askdb/client@latest" />
+
+Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
+
+## 1.0.0-beta.45
+
+Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.
+
+### Replace the removed `@askdb/ai-*` and `@askdb/connectors` packages
+
+`@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` and `@askdb/connectors` are no longer published ([#347](https://github.com/Ygilany/AskDB/issues/347)). Their last versions stay on npm, so an existing install keeps working, but it gets no fixes. Install `@askdb/ai` and the AI SDK package for your provider instead:
+
+```diff
+- npm i @askdb/ai-openai
++ npm i @askdb/ai @ai-sdk/openai
+
+- import { openaiProvider } from "@askdb/ai-openai";
+- const askdb = createAskDb({ config, providers: [openaiProvider] });
++ const askdb = createAskDb({ config }); // or providers: ["openai"]
+
+- const ai = createAiRegistry([openaiProvider]);
++ const ai = createAiRegistry(["openai"]);
+```
+
+If you import from `@askdb/connectors`, import from `@askdb/introspect` and `@askdb/introspect/kit` instead. `CONNECTOR_PROVIDERS` is now `BUILT_IN_CONNECTOR_PROVIDERS`, and `ConnectorProvider` is now `ConnectorProviderId`. [Removed packages](/reference/packages/#removed-packages) lists each package's last version and its replacement.
+
+### Pass the schema and tenant scope to `bindPreparedQuery()`
+
+`bindPreparedQuery()` now re-runs the guardrails on a stored template before it binds new values ([#310](https://github.com/Ygilany/AskDB/issues/310), ADR 0010). It takes a required third argument with the schema, and it reads tenant IDs from a tenant scope instead of from `values`:
+
+```ts
+// Before
+const rebound = bindPreparedQuery(result.preparedQuery!, {
+  state_name: "Utah",
+  ":tenant_agency_ids": authorizedAgencyIds,
+});
+
+// After
+const rebound = bindPreparedQuery(
+  result.preparedQuery!,
+  { state_name: "Utah" },
+  { schema, tenantScope }, // the same schema and the caller's scope, as for ask()
+);
+```
+
+- **Without the third argument**, it throws `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`). Without a tenant policy, `{ schema }` is enough.
+- **A `:tenant_*` key in `values`** throws `QueryParameterError` (`TENANT_VALUE_SUPPLIED`). Pass the IDs in `tenantScope`. Expand a `subtree` scope with `expandTenantScope()` first.
+- **With a tenant policy whose `enforcement` is `warn`**, a template that fails the tenant check is refused with `TenantGuardrailError`. To bind it anyway, pass `acceptWarnings: ["tenant"]`.
+- **Stored `PreparedQuery` objects keep working.** The checks use the schema and scope you pass now, so a tightened policy applies at the next rebind.
+
+With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
+
+### Load a schema directory, not a renamed copy of its JSON file
+
+A JSON file inside a schema directory must be named `schema.json` ([#330](https://github.com/Ygilany/AskDB/issues/330), ADR 0019). If you pass `loadSchema()` any other JSON file that has `tenant-policy.md`, `tables/` or `concepts.md` beside it, such as `prod-schema.json`, it now throws `SchemaParseError`. Before, it loaded the file without the tenant policy and without the `sensitive: true` marks in `tables/*.md`. To fix it, do one of these:
+
+- Pass the directory to `loadSchema()`.
+- Rename the file to `schema.json`.
+- To load only the physical layer on purpose, pass the file's content to `loadSchemaFromJson()`.
+
+The `schema.json` name now matches in any case. On macOS and Windows, `loadSchema("<dir>/Schema.json")` used to drop the sibling `tenant-policy.md`, so `ask()` didn't require a `tenantScope`. It now loads the whole directory: if that schema has a tenant policy, pass a `tenantScope` to `ask()`.
+
+### SQL Server: handle SQL that the read-only check now refuses
+
+On SQL Server, `validateSelectSql` and `ask({ dialect: "sqlserver" })` now refuse a second statement written without a `;`, such as `SELECT 1 SELECT 2` ([#327](https://github.com/Ygilany/AskDB/issues/327)). T-SQL doesn't need a `;` between statements, so this used to pass. SQL that passed before and now throws `SqlValidationError`:
+
+- **`SQL_FORBIDDEN_KEYWORD`** for an unquoted name that is one of the new denied words, such as `begin`, `declare`, `if`, `while`, `print`, `throw`, `open` or `close`. Quote the name (`[open]`).
+- **`SQL_MULTI_STATEMENT`** for a second `SELECT` that no `UNION`, `EXCEPT` or `INTERSECT` joins, a parenthesized query right after a complete value, a `label:`, or code outside strings and quoted names that isn't plain, such as a non-breaking space or a bare `$`.
+- **The same checks for a dialect id that is no built-in engine**, because its SQL must pass every engine's checks.
+
+If you validate SQL you didn't get from `ask()`, check it against these rules. [Troubleshooting](/getting-started/troubleshooting/#sqlvalidationerror-sql_multi_statement) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks) describe the check.
+
+### Replace a symbolic link at `concepts.md`
+
+`@askdb/enrich` saves no longer follow symbolic links ([#372](https://github.com/Ygilany/AskDB/issues/372)):
+
+- **`saveConcepts()`** throws `Refusing to write concepts.md outside the schema directory: "concepts.md" is a symbolic link` when `concepts.md` is one. Replace the link with a regular file in the schema directory. Studio's tenant-policy save refuses a link at `tenant-policy.md` the same way.
+- **Saving `concepts.md` or `tenant-policy.md` needs write access to the schema directory,** because the save writes a temporary file there and renames it over the target. A writable file in a read-only directory now fails with `EACCES`.
+
+### Other changes you may notice in beta.45
+
+- **`ask()` under a `global` scope** throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) when the SQL still holds a `:tenant_*` placeholder, instead of returning it unfilled. Admin SQL without a placeholder is unaffected.
+- **A placeholder that isn't a lowercase name**, such as `:Status`, no longer resolves. `bindPreparedQuery()` throws `QueryParameterError` (`UNRESOLVED_PLACEHOLDER`), and `ask()` returns no `unboundSql` or `preparedQuery` for that SQL.
+- **An unknown `sensitiveGuardrailMode`**, such as `"Strict"` read from your own config, now refuses a sensitive reference, as `"strict"` does. Pass exactly `"off"`, `"warn"` or `"strict"`.
+- **`ask()` logs `askdb.pipeline.failed`** before it throws a tenant or sensitive guardrail error, as it already did for a read-only failure. If you alert on that event, expect more of them.
+- **Omitting sensitive identifiers withholds more text** ([#374](https://github.com/Ygilany/AskDB/issues/374)). With `omitSensitiveIdentifiersFromNlToSqlPrompt: true`, a description, alias, enum value, common query language block or retrieved chunk that names a sensitive column no longer reaches the model. If you build an `NlToSqlSchemaFormatStats` object by hand, such as a test double, set its new `mentionDroppedCount` field (`0` keeps the old meaning).
+- **Results gain `verdict`**, which lists every guardrail finding. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/#guardrail-verdict).
+
+## 1.0.0-beta.44
+
+Released with `@askdb/client` 1.0.0-beta.7, `@askdb/ai` 0.1.0-beta.8, `@askdb/config` 1.0.0-beta.13, `@askdb/rag` 0.2.0-beta.24, `@askdb/enrich` 0.2.0-beta.15, `@askdb/introspect` 0.3.0-beta.18 and `@askdb/studio` 0.2.0-beta.37. Every other package got a new version too; its CHANGELOG lists what changed.
+
+### Run Node 22.23.4 or newer
+
+Every package's `engines.node` is now `>=22.23.4`, up from `>=22.12`. `better-sqlite3` 13, which the `@askdb/sqlite` and `@askdb/studio` peer ranges allow, crashes on Node 22.12 and 22.13.
+
+### Add `ai` to your app's dependencies
+
+`ai` (the Vercel AI SDK) is now a peer dependency of `@askdb/core`, with the range `^6.0.0 || ^7.0.51`, so your app owns its version. Add it to your own `package.json`:
+
+<InstallTabs pkgs="ai" />
+
+npm and pnpm install a missing peer for you, but Yarn doesn't. That includes installs that only introspect (`@askdb/introspect`, `@askdb/prisma` and the engine packages), because `@askdb/core` loads `ai` when it's imported. `@askdb/core` accepts AI SDK 6 or 7. The config-driven path, `@askdb/ai` and `@askdb/client`, needs AI SDK 7.
+
+### Install the AI SDK package for your provider
+
+The OpenAI, Azure OpenAI and Foundry, Google, and Anthropic providers are now built into `@askdb/ai`, with a new `gateway` provider for the Vercel AI Gateway. Each provider's SDK is an optional peer dependency (`^4.0.0`), so install the one you configure:
+
+<InstallTabs pkgs="@askdb/ai @ai-sdk/openai" />
+
+Without it, building the model fails with `Provider 'openai' requires the optional peer dependency @ai-sdk/openai. Install it: npm i @ai-sdk/openai`. The `gateway` provider needs no extra package. `createAskDb({ config })` and `createAiRegistry()` with no arguments now register every built-in provider, so you can drop `providers: [openaiProvider]`.
+
+If you bundle your app with webpack 5, the build fails with `Module not found` for every `@ai-sdk/*` package you didn't install. Install them, or list the ones you don't use in `externals`, as [Provider SDKs](/reference/packages/#provider-sdks) shows. esbuild needs no change.
+
+### Move model settings to `ai.language` and `ai.embedding`
+
+The `ai` config now separates provider connections from model choice (ADR 0016). `ai.providerConfig` holds only connections: keys, endpoints and Azure resources. The language model moves to `ai.language`, and the embedding model behind `rag.embedder: "ai"` moves to `ai.embedding`:
+
+```ts
+// Before
+ai: {
+  provider: "openai",
+  providerConfig: { openai: { apiKey: env("OPENAI_API_KEY"), model: "gpt-4o-mini" } },
+  reasoning: { effort: "low" },
+},
+rag: {
+  embedder: "openai",
+  embedderConfig: { openai: { model: "text-embedding-3-small" } },
+  store: "pgvector",
+  storeConfig: { pgvector: { databaseUrl: env("PGVECTOR_URL"), dimensions: 1536 } },
+},
+
+// After
+ai: {
+  provider: "openai",
+  providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
+  language: { model: "gpt-4o-mini", reasoning: { effort: "low" } },
+  embedding: { model: "text-embedding-3-small", dimensions: 1536 },
+},
+rag: {
+  embedder: "ai",
+  store: "pgvector",
+  storeConfig: { pgvector: { databaseUrl: env("PGVECTOR_URL") } },
+},
+```
+
+A config in the old shape still loads. Each old key is translated at load and reported once as a Node `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED`, naming its new location. The old keys are removed at 1.0. These old-shape configs now fail to load, with an error that says what to change:
+
+- **A `rag.embedderConfig.openai.apiKey` or `.baseUrl`** whose embedding model comes from a provider other than `openai`, `azure`, `foundry` or `gateway`. Before, Studio sent that key to the language model's provider.
+- **`rag.embedder: "ai-sdk"` with no embedding model**, on a provider other than `openai`, `azure` or `foundry`. Set `ai.embedding.model`.
+- **`rag.embedder: "ai-sdk"` with Anthropic** as the language model's provider. Anthropic has no embeddings API: set `ai.embedding.provider` to another provider.
+- **Two different widths** in `rag.embedderConfig.openai.dimension` and `rag.storeConfig.pgvector.dimensions`.
+- **An old key next to its replacement**: `ai.reasoning` with `ai.language.reasoning`, `ai.providerConfig.custom` with `ai.providerConfig.<provider id>`, or `rag.embedderConfig` with `ai.embedding`.
+
+With `rag.embedder: "ai"`, `ai.embedding.model` is required: AskDB no longer picks an embedding model for you. [Deprecated keys](/reference/config/#deprecated-keys) maps every old key to its replacement.
+
+### Handle a config without a `rag` block
+
+The `rag` block is now optional: without it, AskDB uses the mock embedder and the in-memory store. In TypeScript, `AskDbConfig["rag"]` is now optional, so code that reads `config.rag` or `getAskDbRuntimeConfig().structured.rag` needs a check. Read `getAskDbRuntimeConfig().rag` instead: its `store` and `storeConfig` are always set. A config that sets `ai.embedding` with no `rag` block fails to load.
+
+### Run `askdb rag` instead of `askdb-rag`
+
+The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`'s `askdb-rag` binary now prints the `askdb rag` command to run and exits `1`, until it's removed at 1.0.
+
+| Before | After |
+| --- | --- |
+| `askdb-rag index …` | `askdb rag index …` (also `query` and `setup-store`) |
+| `--api-key <key>` | Removed. Put the key on a connection in `ai.providerConfig`. |
+| `--embedder openai` | `--embedder ai`, with `rag.embedder: "ai"` and an `ai.embedding` section in your config |
+| `setup-store` with no `--dimensions` | `setup-store --dimensions <n>`, your model's vector width. It used to assume one. |
+
+`askdb rag` reads `askdb.config.*`, and its flags still win. The schema directory falls back to `introspection.outputDir`, and the store flags fall back to `rag.store` and `rag.storeConfig`. See [`askdb rag`](/reference/cli/#askdb-rag) for every flag.
+
+### Re-index your RAG store
+
+The first index run after you upgrade re-embeds every chunk. Chunk ids are now scoped by schema (`chunk:<schemaId>:<local-id>`), the lock file is at version 2, and AI embedder ids are now `ai-sdk:<provider>:<model>:<dimensions>`, ending in `default` when no width is set.
+
+1. **If you create the pgvector table from your own migrations** and never call `ensureSchema()`, add the new column first. Use your table name if it isn't the default:
+
+   ```sql
+   ALTER TABLE askdb_rag_chunks ADD COLUMN IF NOT EXISTS content_hash text;
+   ```
+
+2. **Run `askdb rag index`**, or `buildSchemaIndex()` in your own code. It deletes that schema's old-format chunk ids. Until you re-index, `askdb rag query` refuses an index that `askdb-rag --embedder openai` built.
+3. **In Studio**, rebuild an index that shows as stale. An index built without `ai.embedding.dimensions` shows as stale once.
+
+Sensitive-column mentions are now matched across the whole schema (ADR 0017): a note in `orders` that says "match via users.ssn" is left out of the index by default. Some schemas exclude different chunks after upgrading, and the re-index picks that up. If you wrote your own vector store, implement `hashesByPrefix` and `idsBySchema`, as [the `@askdb/rag` API](/reference/rag-api/) describes, or every run re-embeds every chunk.
+
+### Rebuild schema bundles that have a tenant policy
+
+`askdb bundle` now puts `tenant-policy.md` in the bundle. Bundles built with `askdb` 1.0.0-beta.43 or earlier left it out, so `ask()` loaded them as single-tenant and didn't require a `tenantScope`. Rebuild every bundle whose schema directory has a `tenant-policy.md`, then check that `loadSchema(bundlePath).tenantPolicy` is defined.
+
+### Turn off `omitSensitiveFromPrompt` in config to allow per-call `false`
+
+In `@askdb/client`, config `modes.omitSensitiveFromPrompt: true` is now a floor. A per-call `omitSensitiveIdentifiersFromNlToSqlPrompt: false` no longer turns it off. `@askdb/http-api` does the same: a request's `omitSensitiveFromPrompt: false` can't override the config. If some calls need sensitive names in the prompt, leave the config `false` and pass `true` on the calls that need omission.
+
+### Update HTTP API clients for the new status codes
+
+`POST /ask` on `@askdb/http-api` changed:
+
+- **A failed model call returns `502 sql_generation_error`** with a generic message. Before, it returned `400` with the provider's own error text.
+- **Unknown errors return `500 internal_error`.** `422 guardrail_violation` is reserved for guardrail errors.
+- **`omitSensitiveFromPrompt` and `explain` must be JSON booleans.** A string or number, such as `"false"`, returns `400 bad_request`.
+- **A request that sends `schemaJson` gets `403 schema_override_disabled`**, unless the server sets `httpApi.allowSchemaOverride: true`.
+- **A model call that runs past `httpApi.requestTimeoutMs`** (default `60000`) returns `502`.
+
+See the [HTTP API reference](/reference/http-api/) for every error code.
+
+### Remove the trailing `;` before you wrap the SQL
+
+`ask()` now keeps the model's single trailing `;` in the SQL it returns (ADR 0018). `unboundSql`, `preparedQuery.namedSql` and a rebound query keep it too. If you wrap the SQL in another statement, remove the `;` first, or the result is a syntax error on every engine:
+
+```ts
+const statement = sql.replace(/;$/, "").trimEnd();
+const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
+```
+
+[Row limits](/guides/run-safely-in-prod/#row-limits) explains why this pattern is safe.
+
+### Other changes you may notice in beta.44
+
+- **dotenv 18:** `bootstrapAskDbEnv` no longer decrypts a `.env.vault` file when `DOTENV_KEY` is set. Load those values another way.
+- **MySQL:** a connection URL with no database name now throws, instead of introspecting an empty schema. A foreign key into a database you don't introspect is now left out, with a `cross_database_fk` warning.
+- **Postgres:** foreign keys to and from partitions of a partitioned table are no longer rendered. If you introspect from an export, re-export the `foreign_keys` template (`askdb introspect templates --engine postgres`). Where foreign keys reference a partitioned table, the schema lock hash changes once.
+- **Connector types:** a connector adapter's `provider` and `ConnectorProvider` are now open string types (`ConnectorProviderId`). A `switch` over them needs a `default` branch.
+- **Built-in AI adapters:** `createLanguageModel` and `createEmbeddingModel` are now `async`. Await them if you call an adapter directly.
+
+### Deprecated in beta.44
+
+| Deprecated | Use instead | Removed in |
+| --- | --- | --- |
+| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` and `@ai-sdk/<provider>` | 1.0.0-beta.45 |
+| `@askdb/connectors` | `@askdb/introspect` and `@askdb/introspect/kit` | 1.0.0-beta.45 |
+| The old `ai` and `rag` config keys | `ai.language`, `ai.embedding` and connections, as [Deprecated keys](/reference/config/#deprecated-keys) maps | 1.0 |
+| `OpenaiConfig`, `AzureConfig` and the other `<Provider>Config` types | `OpenaiConnection`, `AzureConnection`, … | 1.0 |
+| `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0 |
+| `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0 |
+| `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | `DEFAULT_*_LANGUAGE_MODEL` | 1.0 |
+| `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warns with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model` | 1.0 |
+| `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0 |
+| The `askdb-rag` binary | `askdb rag` | 1.0 |
+| `BundledSchemaV2` from `@askdb/enrich` | `BundledSchemaV2` from `@askdb/core` | not yet set |
+
+## Check the upgrade
+
+1. **Look for deprecation warnings.** Run your app or an `askdb` command once. Each `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED` or `ASKDB_AI_DEFAULT_EMBEDDING_MODEL` names the setting to move. `getAskDbRuntimeConfig().deprecations` lists the same messages.
+2. **Ask one question on each path** that calls `ask()` or `bind()`, with the tenant scopes you use in production.
+3. **If you use RAG**, run `askdb rag query` against the new index, or check that Studio no longer marks the index as stale.
+
+If something fails, [Troubleshooting](/getting-started/troubleshooting/) lists the common errors and their fixes.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/config/"><strong>Configuration reference</strong><span>The <code>ai</code> and <code>rag</code> blocks, and every deprecated key.</span></a>
+  <a href="/reference/packages/"><strong>Packages</strong><span>What each package does, its peers, and the removed packages.</span></a>
+  <a href="/reference/core-api/"><strong>@askdb/core API</strong><span><code>ask()</code>, <code>bindPreparedQuery()</code> and the guardrail verdict.</span></a>
+  <a href="/getting-started/troubleshooting/"><strong>Troubleshooting</strong><span>Common errors and how to fix them.</span></a>
+</div>
