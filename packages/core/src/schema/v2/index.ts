@@ -1,4 +1,4 @@
-export { loadSchema, loadSchemaFromJson } from "./loader.js";
+export { loadSchema, loadSchemaFromJson, readSchemaDirectory } from "./loader.js";
 export type { BundledSchemaV2 } from "./loader.js";
 export { parseTableMarkdown, parseConceptsMarkdown } from "./parser.js";
 export { writeTableMarkdown, writeConceptsMarkdown, writeTenantPolicyMarkdown } from "./writer.js";
