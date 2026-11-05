@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createNodeServer } from "node:http";
-import { getAskDbRuntimeConfig } from "@askdb/config";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig, isAskDbRuntimeInitialized } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
@@ -17,7 +17,6 @@ import {
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
-  DEFAULT_ASKDB_MODE,
   SensitiveReferenceError,
   SqlGenerationError,
   SqlValidationError,
@@ -33,9 +32,9 @@ import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } fro
 const ai = createAiRegistry();
 
 export type AskDbHttpServerOptions = {
-  /** Default: 3000 */
+  /** Port to listen on. Precedence: this option → `httpApi.listen.port` config → 3000. */
   port?: number;
-  /** Default: 127.0.0.1 */
+  /** Bind address. Precedence: this option → `httpApi.listen.host` config → 127.0.0.1. */
   host?: string;
   /** Server-default schema artifact path. Precedence: this option → `host.schemaPath` config → `ASKDB_SCHEMA_PATH` env. */
   schemaPath?: string;
@@ -119,8 +118,9 @@ function badRequest(message: string): AskHttpErrorResponse["error"] {
 
 /**
  * Resolve the caller-requested mode. Precedence: body `mode` → `x-askdb-mode` header.
- * Returns `undefined` when the caller did not ask for one (the server then uses config
- * `modes.askdbMode`, else {@link DEFAULT_ASKDB_MODE}). Throws on an invalid value (→ `400`).
+ * Returns `undefined` when the caller did not ask for one. The facade applies config
+ * `modes.askdbMode` (ADR 0025): a request mode can tighten it, never loosen it.
+ * Throws on an invalid value (→ `400`).
  */
 function resolveRequestMode(bodyMode: unknown, headerMode: string | undefined): AskDbModeV1 | undefined {
   if (bodyMode !== undefined && bodyMode !== null) {
@@ -221,8 +221,16 @@ export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: num
 }
 
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
-  const host = options.host ?? "127.0.0.1";
-  const port = options.port ?? 3000;
+  // A host that bootstrapped keeps its runtime. Otherwise load `.env` and askdb.config.* from
+  // the working directory, as the askdb-http binary does. A broken `.env` throws here rather
+  // than setting the host's `process.exitCode`.
+  if (!isAskDbRuntimeInitialized()) {
+    bootstrapAskDbEnv({ cwd: process.cwd(), dotenvNonFatal: false });
+  }
+
+  const { listen } = getAskDbRuntimeConfig().httpApi;
+  const host = options.host ?? listen.host;
+  const port = options.port ?? listen.port;
   const optionSchemaPath = options.schemaPath;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
 
@@ -321,9 +329,6 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       return;
     }
 
-    // Config mode was validated when askdb.config.* was flattened.
-    const mode: AskDbModeV1 = requestedMode ?? parseAskDbModeV1(rt.modes.askdbMode);
-
     // Strictly boolean (`null` counts as absent): `Boolean(...)` used to read a string or
     // number as `true`, and ignoring one would silently send sensitive identifiers to the model.
     for (const field of ["omitSensitiveFromPrompt", "explain"] as const) {
@@ -366,7 +371,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       });
     }
 
-    logger.info({ event: AskDbLogEvent.RunStart, mode }, "askdb http run start");
+    logger.info({ event: AskDbLogEvent.RunStart }, "askdb http run start");
 
     const timeoutMs = rt.httpApi.requestTimeoutMs;
     const abortSignal = AbortSignal.timeout(timeoutMs);
@@ -375,7 +380,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       const out = await askdb.ask(body.question, {
         schema: requestOverride ? { json: requestOverride } : undefined,
         logger,
-        mode,
+        ...(requestedMode ? { mode: requestedMode } : {}),
         explain: body.explain === true,
         // The facade treats config `modes.omitSensitiveFromPrompt` as a floor:
         // a request can tighten it but never loosen it.
