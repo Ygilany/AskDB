@@ -21,6 +21,7 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 - `saveTable()` — round-trippable write through the Phase 5 writer. New table files get a filename-safe `<table>.md`, or `<schema>.<table>.md` when bare names collide (including names a case-insensitive file system stores as one) or `<table>.md` is already taken; existing files keep their names (matched by front-matter `id`); writes outside `tables/` are refused. See [schema-v2 contract](../contracts/schema-v2.md#describable-layer--tablestablemd).
 - Markdown body section update helpers (replace H2 sections without touching the rest)
 - `concepts.md` loading, saving, and link validation
+- `saveTenantPolicy()` — saves `tenant-policy.md` after checking it with the core loader's rules; a policy `loadSchema()` would reject throws `SchemaParseError` and nothing is written. See the [tenant policy contract](../contracts/tenant-policy.md#file-location).
 - AI suggestion source, target, and context helpers (builds the enrichment prompt; caller supplies the model)
 - `bundleSchemaDirectory(dir) → BundledSchemaV2` (the bundle type `@askdb/core` exports) — compiles a schema directory (`schema.json`, `tables/*.md`, `concepts.md`, `tenant-policy.md`) into a single packed JSON
 
@@ -82,3 +83,4 @@ askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich
 - Re-introspection ingestion: new un-described column IDs queued for description; orphan IDs offered for pruning.
 - Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`, including the tenant policy for multi-tenant schemas.
 - Table filenames: colliding bare names get schema-qualified files, including names a case-insensitive file system treats as one; over-long names are shortened with a hash suffix; identifiers with path separators or `..`, and symbolic or hard links in `tables/`, cannot redirect a write outside `tables/`; saves are atomic (temp file plus rename); existing filenames are never renamed.
+- Concepts and tenant policy saves: a symbolic link at `concepts.md` or `tenant-policy.md` is refused, not followed; a hard link is replaced, not written through; saves are atomic; `saveTenantPolicy()` refuses a policy `loadSchema()` would reject and writes nothing.
