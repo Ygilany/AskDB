@@ -1,9 +1,5 @@
 ---
 "@askdb/ai": minor
-"@askdb/ai-openai": minor
-"@askdb/ai-anthropic": minor
-"@askdb/ai-google": minor
-"@askdb/ai-azure": minor
 "@askdb/core": minor
 "@askdb/client": minor
 "@askdb/rag": minor

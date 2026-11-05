@@ -217,7 +217,7 @@ Required published exports:
 - (Optional) a re-export of the engine's `DialectSpec` from `@askdb/core`.
 - (Optional) the template bundle constants when `templates()` is implemented.
 
-Depend on `@askdb/introspect` (the contract, the registry types, and `@askdb/introspect/kit`) and on `@askdb/core` if you re-export a dialect. Do **not** depend on `@askdb/connectors` — it is a deprecated re-export shim.
+Depend on `@askdb/introspect` (the contract, the registry types, and `@askdb/introspect/kit`) and on `@askdb/core` if you re-export a dialect.
 
 For a **first-party** engine, also add the package to `pnpm-workspace.yaml`, register its adapter in the `createConnectorRegistry([...])` calls in `apps/cli/src/introspect.ts` (`defaultConnectorRegistry`) and `apps/studio/src/introspection.ts`, give it a branch in `@askdb/config`'s typed `introspection` config, and update [`docs/integration/installable-package.md`](installable-package.md) and the `Packages` section of the docs site. The apps contain no per-engine switches — the adapter's `resolveConnection` carries the engine-specific logic.
 

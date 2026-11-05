@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-06-11). Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md): the registry now lives in `@askdb/introspect` with open provider ids, adapters resolve their own connection, and `@askdb/connectors` is a deprecated re-export shim.
+Accepted (2026-06-11). Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md): the registry now lives in `@askdb/introspect` with open provider ids, adapters resolve their own connection, and `@askdb/connectors`, then a deprecated re-export shim, was removed before 1.0 (#347).
 
 ## Context
 
@@ -141,5 +141,6 @@ Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md)
 - Provider ids are open (`ConnectorProviderId = BuiltInConnectorProvider | (string & {})`) instead of the closed `CONNECTOR_PROVIDERS` union.
 - Adapters gain an optional `resolveConnection` hook (the connection, or an error); the registry builds the display label from the adapter's `connectionLabelParts` ([ADR 0011](0011-connection-labels-from-parsed-parts.md)). The CLI and Studio dispatch connection resolution through the registry, and their per-engine switches are gone.
 - `@askdb/connectors` is a deprecated re-export shim. Engine packages and first-party apps no longer depend on it.
+- 2026-11: `@askdb/connectors` was removed before 1.0 (#347). Its last version on npm is `0.1.0-beta.9`.
 
 The adapter-per-engine-package pattern described here is unchanged.

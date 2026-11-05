@@ -5,7 +5,6 @@
 "@askdb/sqlite": patch
 "@askdb/sqlserver": patch
 "@askdb/prisma": patch
-"@askdb/connectors": patch
 ---
 
 Add `@askdb/introspect/kit`, the shared toolkit the engine packages are now built on, and remove ~600 lines of copy-pasted code from the engine packages. No behavior change, except one: when a driver is installed but fails to load (for example because one of its own dependencies such as `pg-connection-string` is missing), the error now reads "The optional `pg` peer dependency failed to load: …" with the real error, instead of the "install `pg`" hint, which is kept for a driver that resolves nowhere (including Yarn PnP's "tried to access pg").

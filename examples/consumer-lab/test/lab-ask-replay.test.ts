@@ -5,13 +5,13 @@
  * Protects: with no API key, each catalog question goes from the question through packed
  * AskDB (prompt, model call, extraction, validation) to rows executed on the fixture, on
  * all five dialects. The raw-model path (a `createOpenAI({ baseURL })` model passed to
- * `ask()`) and the adapter path (`createAskDb` with `@askdb/ai-openai`, configured by
+ * `ask()`) and the adapter path (`createAskDb` with its built-in `openai` provider, configured by
  * `providerConfig.openai.baseUrl`) send the model the same prompt, and return the same
  * SQL, which is the cassette's. A question with no reply fails loudly, saying how to add
  * one.
  * Catches: a packed `@askdb/core` that rejects valid dialect syntax (backticks, brackets,
  * `TOP`, the quoted reserved-word table `order`), extraction that mangles a model reply,
- * config-driven model or baseUrl resolution in `@askdb/client`/`@askdb/ai-openai` that
+ * config-driven model or baseUrl resolution in `@askdb/client`/`@askdb/ai` that
  * drifts from the raw path, and a replay miss that passes silently. Both paths are given
  * the dialect explicitly (`ask({ dialect })`, `createAskDb({ dialect })`), so this checks
  * only that the client's documented `dialect` option wins over the artifact's recorded
@@ -27,6 +27,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { loadQuestions } from "../src/model/catalog.js";
 import { expectCassetteSql } from "./support/cassette-sql.js";
@@ -95,7 +96,8 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] la
     expect(raw.out).toMatch(/^7 rows$/m);
   });
 
-  it.each(QUESTIONS.map((q) => [q.id]))("sends the same prompt and returns the cassette's SQL for %s through both model paths", (id) => {
+  it.for(QUESTIONS.map((q) => [q.id] as const))("sends the same prompt and returns the cassette's SQL for %s through both model paths", ([id], ctx) => {
+    needsCapability(ctx, "client-built-in-providers");
     const { raw, client } = runs.get(id)!;
 
     expect(client.status).toBe(0);

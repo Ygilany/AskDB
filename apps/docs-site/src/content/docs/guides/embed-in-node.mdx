@@ -72,15 +72,16 @@ AskDB's SQL checks catch common model mistakes but aren't a security boundary. C
 
 ## What the call returns
 
-`askdb.ask()` (and the direct `ask()` below) return `AskPipelineResult`. All fields except `sql` are optional:
+`askdb.ask()` (and the direct `ask()` below) return `AskPipelineResult`. All fields except `sql` and `verdict` are optional:
 
 | Field | Type | When present |
 | --- | --- | --- |
 | `sql` | `string` | Always. The generated, checked SQL string. |
+| `verdict` | `GuardrailVerdict` | Always. The guardrail findings and the outcome (`"allow"` or `"warn"`; a `"deny"` throws). See [Guardrail verdict](/reference/core-api/#guardrail-verdict). |
 | `unboundSql` | `string \| undefined` | When `parameterize` is on (default) and the model returned consistent extras. Driver markers. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order (includes tenant IDs in `tenantSqlMode: "sql-params"`). |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes values). |
-| `preparedQuery` | `PreparedQuery \| undefined` | Definitions + template for `bindPreparedQuery()` (no values). |
+| `preparedQuery` | `PreparedQuery \| undefined` | Definitions + template for `askdb.bind()` / `bindPreparedQuery()` (no values). |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). Use it for cost tracking or quota enforcement. |
 | `explain` | `unknown \| undefined` | When `explain: true` is passed. Heuristic guardrail metadata — which read-only rules fired and why. |
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Whether the SQL references tenant-scoped tables correctly. |
@@ -88,17 +89,13 @@ AskDB's SQL checks catch common model mistakes but aren't a security boundary. C
 | `tenantBindings` | `TenantBinding[] \| undefined` | When tenant scope bindings were resolved. Structured binding metadata for audit logging. |
 
 ```ts
-import { bindPreparedQuery } from "@askdb/core";
-
 const result = await askdb.ask(question, { tenantScope });
 
 await pool.query(result.sql);
 await pool.query(result.unboundSql!, result.params);
 
-const rebound = bindPreparedQuery(result.preparedQuery!, {
-  state_name: "Utah",
-  ":tenant_agency_ids": authorizedAgencyIds,
-});
+// A new value, no model call: re-checked under the client's schema and this scope.
+const rebound = await askdb.bind(result.preparedQuery!, { state_name: "Utah" }, { tenantScope });
 await pool.query(rebound.sql);
 
 if (result.usage) {
@@ -106,7 +103,7 @@ if (result.usage) {
 }
 ```
 
-Every `ask()` is still one model call. Set `{ parameterize: false }` to skip the extra output tokens. `bindPreparedQuery` does not authorize tenant IDs.
+Every `ask()` is still one model call. Set `{ parameterize: false }` to skip the extra output tokens. `askdb.bind()` re-runs the guardrails on the stored template and renders tenant IDs from the `tenantScope` you pass, so authorizing that scope stays your job, as for `ask()`. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options).
 
 The full result and option types are in the [@askdb/core API reference](/reference/core-api/).
 

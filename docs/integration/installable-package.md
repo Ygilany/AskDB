@@ -8,7 +8,7 @@ AskDB ships focused library packages:
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by Studio and custom authoring surfaces.
 6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()`. **This is the only package that reads `process.env` directly.** All other packages use **`getAskDbRuntimeConfig()`** from here (not raw `process.env`).
-7. [`@askdb/ai`](../../packages/ai/README.md) — optional config/env-to-model registry with built-in OpenAI, Azure/Foundry, Google Gemini, Anthropic, and Vercel AI Gateway providers. Install the `@ai-sdk/*` package for the provider you configure (an optional peer), e.g. `@ai-sdk/openai`. (`@askdb/ai-openai` and the other `@askdb/ai-*` packages are deprecated shims.)
+7. [`@askdb/ai`](../../packages/ai/README.md) — optional config/env-to-model registry with built-in OpenAI, Azure/Foundry, Google Gemini, Anthropic, and Vercel AI Gateway providers. Install the `@ai-sdk/*` package for the provider you configure (an optional peer), e.g. `@ai-sdk/openai`.
 
 The supported user-facing CLI is the [`askdb`](../../apps/cli/README.md) package (`askdb` binary, `npm i -g askdb`). `@askdb/http-api`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
 

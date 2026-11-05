@@ -25,7 +25,7 @@ The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, va
 
 `ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, with the range `^6.0.0 || ^7.0.51` (AI SDK 6, or 7.0.51 and later). Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through the config-driven path (`@askdb/ai` and `@askdb/client`), which currently requires AI SDK 7.
 
-Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL. That covers `@askdb/client`, `@askdb/connectors`, the engine adapters, `@askdb/introspect`, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. Core loads `ai` when it is imported. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
+Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL. That covers `@askdb/client`, the engine adapters, `@askdb/introspect`, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. Core loads `ai` when it is imported. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
 
 **Key exports**
 
@@ -80,7 +80,7 @@ AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsof
 
 Each built-in provider loads its AI SDK package lazily. These packages are optional peer dependencies of `@askdb/ai`, so install the one for the provider your config selects. If it's missing, model creation fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. `ai` itself is a required peer of `@askdb/ai`: npm and pnpm install it automatically, but depend on `ai` directly when you want to pin the version. AskDB raises its `ai` floor only when it needs a newer version or a security fix, and that release's changelog says which.
 
-Any 4.x release of each `@ai-sdk/*` package works (the peer range is `^4.0.0`), so AskDB doesn't force a provider SDK upgrade. `@askdb/client` declares the same optional peers and passes them through to `@askdb/ai`, so with strict installs (Yarn Plug'n'Play) install the SDK in the package that depends on `@askdb/client` or `@askdb/ai`, as the install lines above do. Under Plug'n'Play the AI SDK also needs `zod` installed next to it (its own peer dependency). If you bundle your app, esbuild builds without the SDKs you didn't install, and a missing one fails only when its provider first builds a model. webpack 5 stops with `Module not found` for each missing `@ai-sdk/*` package, even when you only use a deprecated `@askdb/ai-*` package: install them, or list the ones you don't use in `externals` (with ESM output, use `externalsType: "module"` and the bare package names):
+Any 4.x release of each `@ai-sdk/*` package works (the peer range is `^4.0.0`), so AskDB doesn't force a provider SDK upgrade. `@askdb/client` declares the same optional peers and passes them through to `@askdb/ai`, so with strict installs (Yarn Plug'n'Play) install the SDK in the package that depends on `@askdb/client` or `@askdb/ai`, as the install lines above do. Under Plug'n'Play the AI SDK also needs `zod` installed next to it (its own peer dependency). If you bundle your app, esbuild builds without the SDKs you didn't install, and a missing one fails only when its provider first builds a model. webpack 5 stops with `Module not found` for each missing `@ai-sdk/*` package: install them, or list the ones you don't use in `externals` (with ESM output, use `externalsType: "module"` and the bare package names):
 
 ```js
 // webpack.config.js: list the @ai-sdk/* packages you don't install.
@@ -113,12 +113,6 @@ module.exports = {
 </Tabs>
 
 The CLI, Studio, and the HTTP API already include all four SDKs. Unknown `ai.provider` values require a registered adapter. The built-ins are `openai`, `azure` (aliases `azure-openai`, `foundry`), `google`, `anthropic`, and `gateway`. For anything else, embed AskDB and pass your own `AiProviderAdapter` to `createAiRegistry()` or `createAskDb({ providers })`, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
-
-The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are **deprecated**. They re-export the built-in adapters from `@askdb/ai` and will be removed before 1.0 ([#347](https://github.com/Ygilany/AskDB/issues/347)).
-
-### `@askdb/connectors` (deprecated)
-
-The connector provider registry moved into [`@askdb/introspect`](#askdbintrospect). `@askdb/connectors` is now a compatibility shim that re-exports `createConnectorRegistry`, the adapter types, and the connection-label helpers. New code should import from `@askdb/introspect` and `@askdb/introspect/kit`, and should not install this package.
 
 ### `@askdb/config`
 
@@ -289,9 +283,7 @@ See [the CLI reference](/reference/cli/).
 | `@askdb/introspect` | `@askdb/core` |
 | `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
 | `@askdb/prisma` | `@askdb/introspect` |
-| `@askdb/connectors` (deprecated shim) | `@askdb/introspect` |
 | `@askdb/ai` | AI SDK core package (`ai`); `@ai-sdk/*` provider packages as optional peers |
-| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` (deprecated) | `@askdb/ai` + the matching AI SDK provider package |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
 | `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
 | `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
@@ -307,6 +299,20 @@ Reusable packages stay small and layered. First-party surfaces (CLI, Studio, HTT
   <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
 </div>
+
+## Removed packages
+
+These packages were removed before 1.0 ([#347](https://github.com/Ygilany/AskDB/issues/347)). Their last versions stay on npm, so existing installs keep working, but they get no fixes. If your app still imports one, switch to its replacement.
+
+| Removed package | Last version | Use instead |
+| --- | --- | --- |
+| `@askdb/ai-openai` | `1.0.0-beta.8` | [`@askdb/ai`](#askdbai) and `@ai-sdk/openai` |
+| `@askdb/ai-azure` | `1.0.0-beta.8` | [`@askdb/ai`](#askdbai) and `@ai-sdk/azure` |
+| `@askdb/ai-google` | `1.0.0-beta.8` | [`@askdb/ai`](#askdbai) and `@ai-sdk/google` |
+| `@askdb/ai-anthropic` | `1.0.0-beta.6` | [`@askdb/ai`](#askdbai) and `@ai-sdk/anthropic` |
+| `@askdb/connectors` | `0.1.0-beta.9` | [`@askdb/introspect`](#askdbintrospect) for the connector registry and its types, and `@askdb/introspect/kit` for `formatConnectionLabel` and `parseConnectionUrl` |
+
+The `@askdb/ai-*` packages only re-exported `@askdb/ai`'s built-in providers. `createAskDb({ config })` and `createAiRegistry()` register every built-in provider, so drop `providers: [openaiProvider]`, or pass names such as `providers: ["openai"]` to restrict the set. `openaiProvider`, `azureProvider`, `googleProvider` and `anthropicProvider` are exported from `@askdb/ai`. From `@askdb/connectors`, `CONNECTOR_PROVIDERS` is now `BUILT_IN_CONNECTOR_PROVIDERS`, and `ConnectorProvider` is now `ConnectorProviderId`.
 
 ## Read next
 

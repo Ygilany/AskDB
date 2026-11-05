@@ -172,7 +172,7 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question", async ([dial
 
 /*
  * Protects: the page's path switch (#448): a column asked through the client path
- * (`createAskDb` + `@askdb/ai-openai`) holds what `pnpm lab ask --via client` prints, on every
+ * (`createAskDb` + built-in `openai` provider) holds what `pnpm lab ask --via client` prints, on every
  * engine, so the page tests both documented model paths.
  * Catches: the client path's config read once for the whole server, so every engine after the
  * first asks the first engine's replay URL and gets its SQL; or a `via` the page sends that the
@@ -182,9 +182,10 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question", async ([dial
  */
 it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question through the client path", async ([dialect], ctx) => {
   needsCapability(ctx, "cli-introspect-engine");
+  needsCapability(ctx, "client-built-in-providers");
   const [cli, run] = await Promise.all([labAsk("--db", dialect, "--via", "client", TOP_PAID), runOnce({ question: TOP_PAID, via: "client" })]);
 
-  expect(cli.stdout).toContain("via createAskDb() + @askdb/ai-openai");
+  expect(cli.stdout).toContain("via createAskDb() + built-in openai provider");
   expect(cli.status).toBe(0);
   expect(printed(run, dialect)).toEqual(maskPorts(cli));
 });
@@ -204,9 +205,10 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question through the cl
  */
 it.for([
   ["raw", "model:      live gpt-4o-mini at https://api.openai.com/v1, via createOpenAI() → ask()"],
-  ["client", "model:      live, via createAskDb() + @askdb/ai-openai (live/askdb.config.ts)"],
+  ["client", "model:      live, via createAskDb() + built-in openai provider (live/askdb.config.ts)"],
 ] as const)("[sqlite] lab-ui-live: asks the live model with the key, through the %s path", async ([via, modelLine], ctx) => {
   needsCapability(ctx, "cli-introspect-engine");
+  if (via === "client") needsCapability(ctx, "client-built-in-providers");
   const before = liveStub.requests().length;
 
   const run = await liveRun({ question: AGENCY_NAMES, model: "live", via, engines: ["sqlite"] });
@@ -220,6 +222,7 @@ it.for([
 
 it("[sqlite] lab-ui-live: a failed model call reaches the page with the key the provider echoed redacted", async (ctx) => {
   needsCapability(ctx, "cli-introspect-engine");
+  needsCapability(ctx, "client-built-in-providers");
 
   const run = await liveRun({ question: SATO, model: "live", via: "client", engines: ["sqlite"] });
   const event = column(run, "sqlite");

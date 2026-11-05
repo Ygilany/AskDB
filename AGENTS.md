@@ -7,7 +7,7 @@ Instructions for coding agents working in this repository (contributing to AskDB
 pnpm workspace + Turborepo, TypeScript. Node 22.23.4+ to develop; published packages support `>=22.23.4` (current Node 22 LTS as of 2026-11; better-sqlite3 13 still segfaults below 22.14, #419).
 
 - `packages/core` — the NL-to-SQL pipeline (`ask()`), schema artifact loader.
-- `packages/ai` — AI provider registry and the built-in providers (openai/anthropic/google/azure/gateway), one file each under `packages/ai/src/providers/`. `packages/ai-*` are deprecated re-export shims; don't add code there.
+- `packages/ai` — AI provider registry and the built-in providers (openai/anthropic/google/azure/gateway), one file each under `packages/ai/src/providers/`.
 - `packages/client` — config-driven facade (`createAskDb`) over `@askdb/core` + `@askdb/ai`.
 - `packages/introspect`, `packages/postgres`, `packages/mysql`, `packages/sqlite`, `packages/sqlserver` — introspection + dialects.
 - `packages/rag` — schema chunking/indexing/retrieval.
@@ -59,7 +59,7 @@ Every PR needs an independent review before it leaves draft, and always when an 
 
 ### Docs house style
 
-Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow the Conventions above there.
+Docs follow the house style in `apps/docs-site/STYLE.md`.
 
 ## Where product/architecture decisions live
 
@@ -75,14 +75,13 @@ Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line n
 ## Conventions
 
 - AskDB returns SQL; it never executes it. Any code path that runs generated SQL against a real database belongs in a host app or a fixture/test harness, not in `packages/core`.
-- `@askdb/ai`'s built-in providers (`createAiRegistry()`, `createAskDb({ config })`) and raw Vercel AI SDK `LanguageModel` objects are both first-party, equally supported ways to give `ask()` a model — don't privilege one over the other in new docs or examples without a reason tied to who owns provider config. Don't point new docs or examples at the deprecated `@askdb/ai-*` shims.
+- `@askdb/ai`'s built-in providers (`createAiRegistry()`, `createAskDb({ config })`) and raw Vercel AI SDK `LanguageModel` objects are both first-party, equally supported ways to give `ask()` a model — don't privilege one over the other in new docs or examples without a reason tied to who owns provider config. Don't point new docs or examples at the removed `@askdb/ai-*` packages.
 - `@askdb/ai` declares `ai` as a peer and each `@ai-sdk/*` provider SDK as an optional peer with a wide floor (the oldest version its contract tests pass against; `pnpm test:ai-floors` checks it in CI) — don't hard-pin AI SDK versions in library packages; let the host app's `package.json` pin them. Built-in providers import their SDK lazily with the `.catch()` chained on the `import()` so esbuild doesn't require every SDK; webpack still does unless the host lists the missing ones in `externals` (see `packages/ai/src/providers/optional-peer.ts`).
 - Published ranges are what hosts install against, so a bump the range already allows moves only the lockfile. A floor rises by hand, for a security fix or a version AskDB needs, with a changeset naming which; raising an `ai` or `@ai-sdk/openai` floor raises the consumer lab's host pin with it, or its `host-peers` scenario fails (ADR 0015).
 - Add tests for behavior that affects public APIs, package output, SQL safety/validation, or user-facing workflows. Integration tests that need a live database run when their env var is set. Tests that need a real schema in every engine use the multi-engine fixture (`pnpm fixture:up`, `ASKDB_FIXTURE_HOST`; see `CONTRIBUTING.md`).
 - Add a changeset (`pnpm changeset`) for any change to a publishable package. A change confined to test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`) under a package's `src` needs none, and CI doesn't require one. AskDB is pre-1.0 — breaking public API changes normally use a minor changeset unless the project is intentionally moving a package to 1.0.
 - Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names, APIs, or file paths there — verify against the actual source or existing docs content before writing a claim.
 - Markdown and MDX (docs, ADRs, skills, changesets, READMEs): one line per paragraph or list item, left for the editor to soft-wrap. Break lines only where the Markdown structure needs it — headings, list items, table rows, code blocks.
-- When opening an issue or PR, include a metadata section at the bottom with the originating thread ID and its worktree. Format: `Thread ID: <thread-uuid> (worktree <worktree-name>)`, e.g. `Thread ID: 743d36c3-aac8-423a-b74c-62e1bbc9fa00 (worktree t3code-a0ad9d56)`. The worktree directory name is not the thread ID; look the UUID up as described in `docs/agents/project-board.md` (**Thread lines**). This provides traceability back to the conversation that initiated the work and helps retrieve context later. A thread that picks up an existing issue adds `Worked on by: <thread-uuid> (worktree <worktree-name>)` below that footer.
 
 ## Reporting to the maintainer
 

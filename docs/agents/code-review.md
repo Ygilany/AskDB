@@ -31,7 +31,7 @@ Where requirements come from, read by the Spec lens.
 
 Rules a diff can break and a reviewer can check, each with its source. Read `AGENTS.md` and `CONTRIBUTING.md` for the full text. Rules owned by another lens sit in that lens's section: SQL is never executed by AskDB and changeset levels for breaking changes (*Architecture*), required tests and integration-suite gating (*Tests*), docs-site updates, docs claims and changesets (*Docs*).
 
-- Built-in `@askdb/ai` providers and a raw Vercel AI SDK `LanguageModel` are presented as equally supported; new docs and examples don't point at the deprecated `@askdb/ai-*` shims, and no code is added under `packages/ai-*` (`AGENTS.md`, "Stack" and "Conventions")
+- Built-in `@askdb/ai` providers and a raw Vercel AI SDK `LanguageModel` are presented as equally supported; new docs and examples don't point at the removed `@askdb/ai-*` packages, and no `packages/ai-<provider>` package is added back (`AGENTS.md`, "Stack" and "Conventions")
 - Library packages declare `ai` as a peer and each `@ai-sdk/*` SDK as an optional peer with a wide floor, never a hard pin (`AGENTS.md`, "Conventions")
 - An optional peer is imported lazily with the `.catch()` chained directly on the `import()`, the pattern in `packages/ai/src/providers/optional-peer.ts`; engine drivers follow it too (`AGENTS.md`, "Conventions")
 - A dependency floor rises only by hand, for a security fix or a needed version, with a changeset naming which; raising an `ai` or `@ai-sdk/openai` floor raises the consumer lab's host pin with it (`AGENTS.md`, "Conventions"; ADR 0015)
@@ -44,12 +44,12 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Domain terms are used as `CONTEXT.md` and `docs/contracts/` define them (`docs/agents/domain.md`)
 - Markdown and MDX use one line per paragraph or list item, with no hard wraps in prose (`AGENTS.md`, "Conventions")
 - **Enforced by tooling:** `pnpm lint` (each package's `tsc --noEmit`, Studio's ESLint and `tsconfig.web.json` typecheck, the docs site's `astro check`); `pnpm run audit` (moderate or higher advisories, stale allowlist entries); the Changesets workflow (a changeset exists when a non-test file under `packages/*/src` or `apps/{cli,http-api,studio}/src`, or a manifest outside `devDependencies`, changes, but not its bump level, and not for `apps/docs-site`; test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`) are exempt, per `scripts/publishable-paths.sh`); the consumer-lab job's frozen-lockfile check of the lab's manifest against its lockfile; `pnpm test:ai-floors` (AI SDK peer floors); `pnpm smoke:install` and the publish dry-run; React Doctor on PRs. There is no formatter.
-- **Smell baseline:** applies by default. Endorsed here: `@askdb/config`'s own provider list duplicating `BUILTIN_AI_PROVIDERS`, guarded by a drift test in `@askdb/client` (`docs/architecture.md`, "Dependency boundaries"); the `packages/ai-*` re-export shims (Middle Man) until #347 removes them.
+- **Smell baseline:** applies by default. Endorsed here: `@askdb/config`'s own provider list duplicating `BUILTIN_AI_PROVIDERS`, guarded by a drift test in `@askdb/client` (`docs/architecture.md`, "Dependency boundaries").
 
 ## Architecture
 
 - Sources: `docs/architecture.md` ("Package map", "Dependency boundaries", "Install profiles", "Extension points"), `docs/mission.md` (principles, non-goals), ADR 0002 (integration-package layout).
-- Layers, lowest first: `@askdb/core` (schema and NL-to-SQL contract; takes a dialect, a model, an optional retriever and a schema, returns SQL); `@askdb/introspect` (engine-agnostic connector contract, the connector registry and the `@askdb/introspect/kit` engine helpers; `@askdb/connectors` is only a deprecated re-export shim of it); the engine packages `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, plus `@askdb/enrich` and the optional `@askdb/rag`; `@askdb/ai` (provider registry and built-ins) and `@askdb/config` (config and env bootstrap); `@askdb/client` (facade over core, ai and config); the apps `askdb`, `@askdb/http-api`, `@askdb/studio`. Imports only point down: core never depends on `@askdb/ai`, a provider SDK or `@askdb/client`; `@askdb/config` doesn't depend on `@askdb/ai`.
+- Layers, lowest first: `@askdb/core` (schema and NL-to-SQL contract; takes a dialect, a model, an optional retriever and a schema, returns SQL); `@askdb/introspect` (engine-agnostic connector contract, the connector registry and the `@askdb/introspect/kit` engine helpers); the engine packages `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, plus `@askdb/enrich` and the optional `@askdb/rag`; `@askdb/ai` (provider registry and built-ins) and `@askdb/config` (config and env bootstrap); `@askdb/client` (facade over core, ai and config); the apps `askdb`, `@askdb/http-api`, `@askdb/studio`. Imports only point down: core never depends on `@askdb/ai`, a provider SDK or `@askdb/client`; `@askdb/config` doesn't depend on `@askdb/ai`.
 - AskDB returns SQL and never executes it: no code path in `packages/core` runs generated SQL against a database; execution belongs in a host app or a fixture/test harness, and Studio's opt-in Playground Execute is the one documented exception (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Safety Boundary"; `SECURITY.md`).
 - Where code belongs: engine-specific knowledge (dialect, catalog queries, input shape) in its engine package (ADR 0002); each built-in AI provider in one file under `packages/ai/src/providers/` with one row in `BUILTIN_AI_PROVIDERS` (ADR 0006); authoring logic in `@askdb/enrich`, not duplicated in Studio or the CLI (ADR 0004); `process.env` read only by `@askdb/config`, others go through `getAskDbRuntimeConfig()` (ADR 0005); apps dispatch through the connector registry in `@askdb/introspect`, never a per-engine switch (ADRs 0007, 0008); library packages don't hard-depend on optional drivers or provider SDKs, while the first-party apps may (`docs/architecture.md`, "Dependency boundaries").
 - A fix belongs in the layer that owns the defect, not in the caller that hit it (for example the empty-store width rule fixed in `MemoryStore.restore()`, #193); in a stack, in the lower PR that introduced it (#195).
@@ -70,10 +70,10 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 | Paths | Apply |
 |---|---|
 | `packages/core/src/sql/{validate,lexer,dialect-spec,extract-sql,sensitive-guardrail}.ts` | security review, SQL guardrails, latent defects block |
-| `packages/core/src/sql/tenant-*.ts`, `packages/core/src/sql/{bind,parameter-manifest}.ts`, `packages/core/src/ask.ts` | security review, Tenant scope, latent defects block |
+| `packages/core/src/sql/tenant-*.ts`, `packages/core/src/sql/{bind,rebind,guardrails,guardrail-decide,parameter-manifest}.ts`, `packages/core/src/ask.ts` | security review, Tenant scope, latent defects block |
 | `packages/core/src/sql/{sensitive-guardrail,prompt}.ts`, `packages/core/src/schema/**`, `packages/core/src/retrieval/**`, `packages/core/src/enrichment/**`, `packages/core/src/logging/**`, `packages/rag/src/chunker/**` | security review, Sensitive fields |
 | `apps/studio/src/{server,request-guard,execute-registry,introspection,setup}.ts`, `apps/studio/src/web/**`, `apps/http-api/src/**` | security review, Local servers |
-| `packages/*/src/exec/**`, `packages/*/src/connector/provider.ts`, `packages/connectors/src/**`, `packages/config/src/**`, `apps/cli/src/{init,introspect,project-config}.ts` | security review, Connection strings and secrets |
+| `packages/*/src/exec/**`, `packages/*/src/connector/provider.ts`, `packages/introspect/src/kit/label.ts`, `packages/config/src/**`, `apps/cli/src/{init,introspect,project-config}.ts` | security review, Connection strings and secrets |
 | `packages/enrich/src/workspace.ts` | security review, File writes |
 | `packages/ai/src/providers/**`, `packages/*/src/exec/**` | Optional peers |
 | `.github/workflows/**`, `scripts/release-*`, `scripts/pack-tarballs.sh`, `.changeset/config.json` | security review, CI and release gates |
@@ -161,7 +161,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Docs-site claims name only package names, APIs and file paths that exist in source (`AGENTS.md`, "Conventions"), and no doc claims AskDB executes SQL, owns credentials or trains on customer data (`apps/docs-site/STYLE.md`, "Sources of truth").
 - Every documented install of a package that loads `@askdb/core` lists `ai`, because Yarn doesn't auto-install peers (#196).
 - **Changelog or changeset rule:** every change to a publishable package has a changeset, except a change confined to test files, which needs none (`pnpm changeset`; the bump level is *Architecture*'s versioning rule) (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Before Opening a PR"); docs-site changes carry a patch changeset for `@askdb/docs-site`, which CI doesn't check (`apps/docs-site/STYLE.md`, "Process").
-- **House style:** `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow `AGENTS.md` there.
+- **House style:** `apps/docs-site/STYLE.md`.
 
 ## What code review flags
 
@@ -232,7 +232,6 @@ Commands the lenses run, and what "green" looks like (each exits 0):
 ## Posting
 
 - **Delivery:** a pending review left for a human to submit; `COMMENT` only on request; never approve or request changes.
-- **Footer:** `Thread ID: <thread-uuid> (worktree <worktree-name>)`, the line `AGENTS.md` ("Conventions") asks for on PRs and issues; the worktree directory name is not the thread ID, so look the UUID up as `docs/agents/project-board.md` (**Thread lines**) describes.
 
 ## Stacked PRs
 
