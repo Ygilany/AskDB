@@ -1,5 +1,45 @@
 # @askdb/studio
 
+## 0.2.0-beta.38
+
+### Patch Changes
+
+- 7378b80: `concepts.md` and `tenant-policy.md` saves no longer follow symbolic links (#372).
+  
+  - `saveConcepts()` now refuses to write when `concepts.md` is a symbolic link, with `Refusing to write concepts.md outside the schema directory: "concepts.md" is a symbolic link`. Before, a link planted at `concepts.md` (git stores symbolic links) made a save write to the file it pointed at, outside the schema directory.
+  - New `saveTenantPolicy(workspace, frontmatter, body)` saves `tenant-policy.md` the same way. It first checks the policy with the core loader's rules and throws `SchemaParseError`, writing nothing, when `loadSchema()` would reject it.
+  - `saveTable()`, `saveConcepts()` and `saveTenantPolicy()` share one write path: a symbolic link at the target or at `tables/` is refused, and the content goes to a temp file renamed over the target. So `concepts.md` and `tenant-policy.md` saves are now atomic too, a hard link at either file is replaced instead of written through, and the replaced file keeps its permission bits, group and, where allowed, owner. A read-only file is still refused with `EACCES`. The schema directory itself may be a symbolic link.
+  - Studio's tenant-policy save (`POST /api/tenant-policy`) calls `saveTenantPolicy()` instead of writing the file itself, so it refuses a symbolic link at `tenant-policy.md` too. A policy that wouldn't load still gets `400`.
+  
+  **Upgrade notes:**
+  
+  - A `saveConcepts()` caller whose `concepts.md` is a symbolic link now gets an error. Replace the link with a regular file in the schema directory.
+  - Saving `concepts.md` or `tenant-policy.md` now needs write access to the schema directory, as saving a table already needs it for `tables/`: the temp file is created there. A writable file in a read-only schema directory now fails with `EACCES` instead of saving in place.
+- c099a66: Studio's Playground and **Suggest** buttons now follow `modes.omitSensitiveFromPrompt`, as `@askdb/client`, the CLI and the HTTP API do (#601, #625, ADR 0026). The Playground (`POST /api/ask`) passes the setting to `ask()`, so with it on the prompt no longer lists sensitive columns or text that names one. Enrichment suggestions (`POST /api/suggest`) now read the loaded schema, so a column marked sensitive in table front-matter (what the Sensitivity tab writes) or through a sensitive table is tagged `(sensitive)` like one marked in `schema.json`, and every one of them is left out when the setting is on; a sensitive table keeps only its name. With the setting on, **Suggest** on a sensitive column answers `400` with a message that names no column, and calls no model.
+- 8f906c3: Studio's AI tenant-policy draft (**Draft with AI**, `POST /api/suggest-tenant-policy`) no longer sends sensitive column names the operator asked to withhold. It now builds its prompt from the loaded schema with the same formatter as `ask()`, so a column marked sensitive in `schema.json`, escalated by table front-matter, or inherited from a sensitive table is tagged `(sensitive)` by default and left out when `modes.omitSensitiveFromPrompt` is on. A foreign key is sent only when both of its columns are, and the draft sends no descriptions or untracked tables. When omission leaves out a primary or foreign key, the response's new `warnings` list names it and the review screen shows it, so you can add it to the policy by hand (#324).
+- Updated dependencies [d9b88f8]
+- Updated dependencies [c099a66]
+- Updated dependencies [5bd780a]
+- Updated dependencies [c099a66]
+- Updated dependencies [7378b80]
+- Updated dependencies [61f23b0]
+- Updated dependencies [798cc4f]
+- Updated dependencies [720abe7]
+- Updated dependencies [3d62eb5]
+- Updated dependencies [aa187f2]
+- Updated dependencies [e8afa01]
+  - @askdb/config@1.0.0-beta.14
+  - @askdb/core@1.0.0-beta.45
+  - @askdb/enrich@0.2.0-beta.16
+  - @askdb/rag@0.2.0-beta.25
+  - @askdb/prisma@0.2.0-beta.19
+  - @askdb/introspect@0.3.0-beta.19
+  - @askdb/postgres@0.2.0-beta.21
+  - @askdb/ai@0.1.0-beta.9
+  - @askdb/mysql@0.1.0-beta.20
+  - @askdb/sqlite@0.1.0-beta.20
+  - @askdb/sqlserver@0.1.0-beta.21
+
 ## 0.2.0-beta.37
 
 ### Minor Changes
