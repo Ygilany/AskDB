@@ -83,7 +83,7 @@ await introspect(input, { outDir: "./askdb", schemaId: "shop" }, { connector });
 
 `ConnectorProviderAdapter` is `{ provider, createConnector(config), getTemplates?(), resolveConnection?(request), connectionLabelParts?(connection) }`. `resolveConnection` returns only the connection (or an error); the registry adds `sourceLabel`, which it always builds with `formatConnectionLabel` from the adapter's `connectionLabelParts` (host, port, database, or a file path). No adapter supplies label text, so `sourceLabel` is safe to display for any adapter; one without `connectionLabelParts` gets `configured <provider> connection` ([ADR 0011](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0011-connection-labels-from-parsed-parts.md)). See [Connector authoring](https://github.com/Ygilany/AskDB/blob/main/docs/integration/connectors.md#registering-with-askdb-hosts) for writing an adapter.
 
-An engine package your users may not have installed registers as a **lazy entry**, `{ provider, load }`, where `load()` imports the package and returns its adapter. `hasProvider()` and `providers()` list it without loading. Call `await registry.load(provider)` once the engine is selected: it imports the package once, shares concurrent calls, retries after a failure, and checks the adapter's `provider`. Until then the other methods throw for that entry. The `askdb` CLI and Studio register `@askdb/prisma` this way, with `createOptionalDriverLoader` and `connectorPackageMissingMessage({ provider, packageName })` for the install hint ([ADR 0008](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0008-engine-packages-and-connector-registry.md), 2026-11 amendment):
+An engine package your users may not have installed registers as a **lazy entry**, `{ provider, load }`, where `load()` imports the package and returns its adapter. `hasProvider()` and `providers()` list it without loading. Call `await registry.load(provider)` once the engine is selected: it imports the package once, shares concurrent calls, retries after a failure, and checks the adapter's `provider`. Until then the other methods throw for that entry. The `askdb` CLI and Studio register `@askdb/prisma` this way, with `createOptionalDriverLoader` and `connectorPackageMissingMessage({ provider, packageName, allowBuilds })` for the install hint ([ADR 0008](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0008-engine-packages-and-connector-registry.md), 2026-11 amendment):
 
 ```ts
 const registry = createConnectorRegistry([
@@ -92,6 +92,8 @@ const registry = createConnectorRegistry([
 ]);
 await registry.load(engine); // a no-op for an adapter object
 ```
+
+This bare `import()` surfaces Node's own module-not-found error when the package is missing. To give an install hint instead, wrap the import in `createOptionalDriverLoader`, as [Registering an engine that may not be installed](https://github.com/Ygilany/AskDB/blob/main/docs/integration/connectors.md#registering-an-engine-that-may-not-be-installed) shows.
 
 ### Engine kit (`@askdb/introspect/kit`)
 

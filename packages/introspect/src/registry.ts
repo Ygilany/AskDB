@@ -298,7 +298,8 @@ export function connectorProviderMissingMessage(provider: string): string {
  * throws it when the package resolves from nowhere (see
  * `createOptionalDriverLoader` in `@askdb/introspect/kit`). `allowBuilds` names
  * the dependencies whose install scripts pnpm must approve (pnpm 11 exits 1 on
- * an unapproved one). It suggests a one-off `askdb` command, and the `askdb`
+ * an unapproved one); with any, the hint gives an npm command and the pnpm 10.4+
+ * `--allow-build` one. It suggests a one-off `askdb` command, and the `askdb`
  * binary registers only the first-party engines, so a third-party host writes
  * its own message.
  */
@@ -308,10 +309,14 @@ export function connectorPackageMissingMessage(input: {
   allowBuilds?: readonly string[];
 }): string {
   const { provider, packageName, allowBuilds = [] } = input;
-  const add = ["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), packageName].join(" ");
+  // pnpm 10.4 is the first pnpm whose `add` takes `--allow-build`; npm runs install scripts.
+  const example = allowBuilds.length
+    ? `\`npm install ${packageName}\`, or on pnpm 10.4 or later ` +
+      `\`pnpm add ${allowBuilds.map((name) => `--allow-build=${name} `).join("")}${packageName}\``
+    : `\`pnpm add ${packageName}\``;
   return (
     `Engine "${provider}" needs the optional peer dependency \`${packageName}\`. ` +
-    `Install it in your project (e.g. \`${add}\`) or include it in a one-off command ` +
+    `Install it in your project (e.g. ${example}) or include it in a one-off command ` +
     `(\`npx -p askdb -p ${packageName} askdb ...\`).`
   );
 }

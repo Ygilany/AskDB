@@ -22,6 +22,7 @@ import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { createCliLogger } from "./logger.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 import { requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
 
@@ -38,7 +39,7 @@ const prismaPackage = createOptionalDriverLoader({
   missingMessage: connectorPackageMissingMessage({
     provider: "prisma",
     packageName: "@askdb/prisma",
-    allowBuilds: ["@prisma/engines"],
+    allowBuilds: PRISMA_BUILD_APPROVALS,
   }),
 });
 

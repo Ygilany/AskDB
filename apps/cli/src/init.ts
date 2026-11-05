@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { getBuiltinAiProviderSetup, listBuiltinAiProviderSetups } from "@askdb/ai";
 import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "@askdb/config";
 import { renderAskDbAiConfigScaffold, type AskDbScaffoldEnvVar } from "@askdb/config/scaffold";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
@@ -338,7 +339,7 @@ export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs):
   if (answers.database === "prisma") {
     packages.push(`@askdb/prisma@${specs.prismaSpec}`);
     labels.push("@askdb/prisma");
-    allowBuilds.push("@prisma/engines");
+    allowBuilds.push(...PRISMA_BUILD_APPROVALS);
   }
 
   const driversNeeded = new Set<string>();

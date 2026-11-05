@@ -33,7 +33,7 @@ Without it, `askdb introspect --engine prisma` exits 1 and names the package to 
 pnpm add --allow-build=@prisma/engines @askdb/prisma
 ```
 
-This writes `allowBuilds` with `'@prisma/engines': true` to your `pnpm-workspace.yaml`. You can also run `pnpm approve-builds` after the install. A project that already uses Prisma has usually approved it. `askdb init` and Studio's guided setup approve it when they install `@askdb/prisma` with pnpm.
+This writes `allowBuilds` with `'@prisma/engines': true` to your `pnpm-workspace.yaml`. You can also run `pnpm approve-builds` after the install. A project that already uses Prisma has usually approved it. `askdb init` and Studio's guided setup approve it when they install `@askdb/prisma` with pnpm 10.4 or later, the first pnpm with `--allow-build`.
 </Aside>
 
 To call the connector from your own code instead of the CLI:

@@ -19,6 +19,7 @@ import {
   supportedBuildApprovals,
   type PackageManager,
 } from "./package-manager.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
 /** Any provider id with an `askdb.config.*` branch (`ASKDB_AI_PROVIDERS` in `@askdb/config`). */
@@ -383,7 +384,7 @@ function ensureProjectDependencies(
   // `askdb init` does the same (`apps/cli/src/init.ts`).
   if (database === "prisma" && !isInstalledFor(cwd, "@askdb/prisma")) {
     missing.push(`@askdb/prisma@${resolvePrismaSpec()}`);
-    allowBuilds.push("@prisma/engines");
+    allowBuilds.push(...PRISMA_BUILD_APPROVALS);
   }
   const driversNeeded = new Set<string>();
   if (DB_DRIVER_PACKAGES[database]) driversNeeded.add(database);

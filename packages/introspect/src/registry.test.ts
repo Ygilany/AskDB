@@ -292,13 +292,15 @@ describe("createConnectorRegistry — lazy entries", () => {
 
 describe("connectorPackageMissingMessage", () => {
   // The CLI and Studio show it for a missing `@askdb/prisma`. On pnpm 11 its install
-  // exits 1 unless the `@prisma/engines` build is approved (#259), so the hint approves it.
+  // exits 1 unless the `@prisma/engines` build is approved (#259), so the hint approves it,
+  // naming the first pnpm with `--allow-build` (10.4) and an npm form that needs no flag.
   it("renders the first-party install hint, with the build approvals the package needs", () => {
     expect(
       connectorPackageMissingMessage({ provider: "prisma", packageName: "@askdb/prisma", allowBuilds: ["@prisma/engines"] }),
     ).toBe(
       'Engine "prisma" needs the optional peer dependency `@askdb/prisma`. ' +
-        "Install it in your project (e.g. `pnpm add --allow-build=@prisma/engines @askdb/prisma`) " +
+        "Install it in your project (e.g. `npm install @askdb/prisma`, or on pnpm 10.4 or later " +
+        "`pnpm add --allow-build=@prisma/engines @askdb/prisma`) " +
         "or include it in a one-off command (`npx -p askdb -p @askdb/prisma askdb ...`).",
     );
   });

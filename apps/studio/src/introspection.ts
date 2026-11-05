@@ -15,6 +15,7 @@ import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 /**
  * `@askdb/prisma` is an optional peer of Studio, as of `askdb` (#259). It is imported
@@ -27,7 +28,7 @@ const prismaPackage = createOptionalDriverLoader({
   missingMessage: connectorPackageMissingMessage({
     provider: "prisma",
     packageName: "@askdb/prisma",
-    allowBuilds: ["@prisma/engines"],
+    allowBuilds: PRISMA_BUILD_APPROVALS,
   }),
 });
 
