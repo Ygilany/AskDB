@@ -7,6 +7,6 @@
 
 `@askdb/core` exports `sensitiveMentionNames(schema)`, the list of names the rule checks (a column marked sensitive itself by its bare name, a column sensitive only through its table as `{ table, column }`), which `@askdb/rag`'s chunker now imports instead of keeping its own copy; its chunks don't change. `NlToSqlSchemaFormatStats` gains a required `mentionDroppedCount` (always `0` with omission off and for a v1 schema), `synthesizeRetrievedDdl` returns one too, and the `askdb.prompt.sensitive_redacted` and `askdb.pipeline.retrieval_used` log events carry it.
 
-`createMentionMatcher` now groups qualified names by table, so checking a text against every column of many sensitive tables costs one alternative per table instead of one per column (about 50 ms instead of 1.8 s for 90,000 texts against 900 names); its matches don't change.
+`createMentionMatcher` now groups qualified names by table and checks each text first against a small pattern of the bare names and each table followed by its separator, running the full pattern only on a hit. Checking texts against every column of many sensitive tables then costs about as much as checking against one column per table (about 50 ms instead of 1.8 s for 90,000 texts against 900 names, on Node 22 as well as 26); its matches don't change.
 
 **Upgrade notes:** code that builds an `NlToSqlSchemaFormatStats` object by hand (a test double, say) must now set `mentionDroppedCount`; `0` keeps the old meaning.

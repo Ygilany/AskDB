@@ -33,29 +33,38 @@ export function createMentionMatcher(names: readonly MentionName[]): MentionMatc
   );
   // One alternative per bare name, and one per table for its qualified names
   // (`table` + separator + any of its columns): the same matches as one
-  // alternative per name, without trying every column of every sensitive
-  // table at each position of the text.
-  const alternatives: string[] = [];
+  // alternative per name.
+  const bare: string[] = [];
   const columnsByTable = new Map<string, string[]>();
   for (const name of entries) {
-    if (typeof name === "string") alternatives.push(partPattern(name));
+    if (typeof name === "string") bare.push(partPattern(name));
     else {
       const columns = columnsByTable.get(name.table) ?? [];
       columns.push(partPattern(name.column));
       columnsByTable.set(name.table, columns);
     }
   }
-  for (const [table, columns] of columnsByTable) {
-    alternatives.push(`${partPattern(table)}${QUALIFIER}(?:${columns.join("|")})`);
-  }
-  const any =
-    alternatives.length === 0 ? undefined : new RegExp(`${BEFORE}(?:${alternatives.join("|")})${AFTER}`, "iu");
+  const tables = [...columnsByTable.keys()].map(partPattern);
+  const alternatives = [
+    ...bare,
+    ...[...columnsByTable.values()].map((columns, i) => `${tables[i]}${QUALIFIER}(?:${columns.join("|")})`),
+  ];
+  if (alternatives.length === 0) return { mentionsAny: () => false, find: () => [] };
+  const any = new RegExp(`${BEFORE}(?:${alternatives.join("|")})${AFTER}`, "iu");
+  // A first pass whose size follows the number of tables, not of their columns: a
+  // qualified mention needs one of its tables followed by the separator. Every
+  // text passes through it, and only a hit runs the full pattern, whose size
+  // slows some engines (Node 22's) on every text otherwise.
+  const firstPass = new RegExp(
+    `${BEFORE}(?:${[...bare.map((b) => `${b}${AFTER}`), ...tables.map((t) => `${t}${QUALIFIER}`)].join("|")})`,
+    "iu",
+  );
   // Compiled on the first `find`: the prompt builders only ask `mentionsAny`.
   let each: { name: MentionName; pattern: RegExp }[] | undefined;
   const patterns = () =>
     (each ??= entries.map((name) => ({ name, pattern: new RegExp(`${BEFORE}${namePattern(name)}${AFTER}`, "iu") })));
   return {
-    mentionsAny: (text) => Boolean(text) && any !== undefined && any.test(text),
+    mentionsAny: (text) => Boolean(text) && firstPass.test(text) && any.test(text),
     find: (text) => (text ? patterns().filter(({ pattern }) => pattern.test(text)).map(({ name }) => name) : []),
   };
 }

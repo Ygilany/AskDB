@@ -36,5 +36,5 @@ A chunk that names a sensitive column reaches `synthesizeRetrievedDdl` whenever 
 - With omission on, the model sees less describable text for schemas whose prose names sensitive columns. ADR 0017's over-exclusion applies: a column marked sensitive itself with a generic name (a PII `name`) withholds every text that uses the word.
 - A column whose description names a sensitive column also loses its enum values and aliases in the prompt, since the annotation is one unit.
 - Hosts that read `NlToSqlSchemaFormatStats` get a new required field; a host that builds one by hand must set it.
-- The check runs on every `ask()` with omission on, over the whole schema even when a retriever supplies the DDL (for the redaction event's count). `createMentionMatcher` groups qualified names by table so that this stays cheap on large schemas with whole sensitive tables.
+- The check runs on every `ask()` with omission on, over the whole schema even when a retriever supplies the DDL (for the redaction event's count). `createMentionMatcher` groups qualified names by table and runs a first pass of bare names and table names only, so that this stays cheap on large schemas with whole sensitive tables, on every supported Node version.
 - The tenant policy block (structured front-matter, always in the prompt) still names tenant columns under omission. Whether it should is #624.
