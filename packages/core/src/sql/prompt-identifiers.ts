@@ -1,6 +1,6 @@
 import type { DialectSpec } from "./dialect-spec.js";
 import { lexerProfileFor, type SqlLexerProfileId } from "./lexer.js";
-import { keywordsRejectedUnquoted } from "./validate.js";
+import { checkedAsTsql, keywordsRejectedUnquoted } from "./validate.js";
 
 /** A name the engine tokenizes as one identifier, unless it is a reserved word. */
 const PLAIN_IDENTIFIER = /^[\p{L}_][\p{L}\p{Nd}_$]*$/u;
@@ -27,12 +27,15 @@ const QUOTING: Record<Exclude<SqlLexerProfileId, "generic">, Quoting> = {
 
 type QuotedDialect = Pick<DialectSpec, "id" | "identifierQuote" | "reservedWords" | "extraForbiddenKeywords" | "backslashEscapes">;
 
-/** An id that is no built-in engine family quotes with `identifierQuote`. */
+/**
+ * An id that is no built-in engine family quotes with `identifierQuote`. The validator reads its
+ * SQL every engine's way, SQL Server's included, so only an ASCII name stays bare (#319).
+ */
 function quotingFor(dialect: QuotedDialect): Quoting {
   const family = lexerProfileFor(dialect)?.id;
   return family && family !== "generic"
     ? QUOTING[family]
-    : { open: dialect.identifierQuote, close: dialect.identifierQuote, foldsToLowercase: false, plain: PLAIN_IDENTIFIER };
+    : { open: dialect.identifierQuote, close: dialect.identifierQuote, foldsToLowercase: false, plain: ASCII_IDENTIFIER };
 }
 
 function quote(quoting: Quoting, name: string): string {
@@ -74,6 +77,22 @@ export function qualifiedNameQuotingRule(dialect: QuotedDialect): string {
   const quoting = quotingFor(dialect);
   const parts = `${quote(quoting, "schema")}.${quote(quoting, "table")}`;
   return `- When you quote a qualified name, quote each part separately: ${inlineCode(parts)}.`;
+}
+
+/**
+ * The prompt rule for names that aren't plain ASCII, wherever the validator runs the T-SQL checks
+ * ({@link checkedAsTsql}: SQL Server, and an id that is no built-in engine). The check rejects such a
+ * name unquoted, and a quoted column that is alone in parentheses after a name (`SUM([金額])`),
+ * where SQL Server could read a lock hint (#319). The model makes up aliases, so this applies
+ * whatever the schema's names are. Like {@link qualifiedNameQuotingRule}, it shows only the right
+ * forms. Undefined on the other engines.
+ */
+export function nonAsciiNameRule(dialect: QuotedDialect): string | undefined {
+  if (!checkedAsTsql(dialect)) return undefined;
+  const quoting = quotingFor(dialect);
+  const alias = `AS ${quote(quoting, "注文数")}`;
+  const call = `SUM(o.${quote(quoting, "金額")})`;
+  return `- Quote every name that isn't plain ASCII, aliases included (${inlineCode(alias)}), and qualify a quoted column that is the only thing inside parentheses: ${inlineCode(call)}.`;
 }
 
 /** Markdown inline code that may itself contain backticks. */

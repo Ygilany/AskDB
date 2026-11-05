@@ -25,7 +25,13 @@ export type SqlValidationRuleCode =
   /** A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`). */
   | "SQL_FORBIDDEN_FUNCTION"
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
-  | "SQL_UNTERMINATED";
+  | "SQL_UNTERMINATED"
+  /**
+   * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
+   * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
+   * parentheses after a name, which SQL Server may read as a hint.
+   */
+  | "SQL_LOCKING_READ";
 
 export class SqlValidationError extends AskDbError {
   /**
