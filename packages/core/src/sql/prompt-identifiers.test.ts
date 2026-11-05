@@ -96,5 +96,8 @@ describe("promptIdentifierQuoter", () => {
     expect(() => validateSelectSql(spec, "SELECT set FROM t")).toThrow(/SET/i);
     expect(validateSelectSql(spec, `SELECT ${quote("updlock")} FROM t`)).toBe('SELECT "updlock" FROM t');
     expect(() => validateSelectSql(spec, "SELECT updlock FROM t")).toThrow(/UPDLOCK/);
+    // And a name that isn't plain ASCII, which SQL Server may read as a lock hint (#319).
+    expect(validateSelectSql(spec, `SELECT ${quote("café")} FROM t`)).toBe('SELECT "café" FROM t');
+    expect(() => validateSelectSql(spec, "SELECT café FROM t")).toThrow(/café/);
   });
 });

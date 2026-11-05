@@ -156,7 +156,7 @@ Studio is a local developer tool, not a hosted service. Its API can run SQL agai
 
 Execute is off until you set `studio.execute.enabled: true` (see [Playground](#playground)). When it's on, every query gets these guards:
 
-- **Validated first.** Studio runs the same read-only SELECT check `ask()` uses (`validateSelectSql`, for the execute engine's dialect) before anything reaches the driver. Multiple statements, comments, and write or DDL keywords are rejected with `400`. If the query reads a column marked `sensitive`, the result shows a warning but still runs.
+- **Validated first.** Studio runs the same read-only SELECT check `ask()` uses (`validateSelectSql`, for the execute engine's dialect) before anything reaches the driver. Multiple statements, comments, write or DDL keywords, and locking reads are rejected with `400`. If the query reads a column marked `sensitive`, the result shows a warning but still runs.
 - **One read-only statement.**
   - Postgres runs the query as a single statement (extended query protocol) inside `BEGIN READ ONLY`, with `default_transaction_read_only` on.
   - MySQL and MariaDB use a prepared statement inside `START TRANSACTION READ ONLY`.

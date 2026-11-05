@@ -61,7 +61,8 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 7. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
  *    `FOR SHARE`, `FOR KEY SHARE` or `LOCK IN SHARE MODE` on every lexer, and on the SQL Server
  *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
- *    parentheses right after a name, at any depth and with trailing spaces (#319).
+ *    parentheses right after a name, at any depth and with trailing spaces, and any such name
+ *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
  * 8. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
  * 9. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
@@ -188,7 +189,7 @@ function checkWithProfile(
     throw validationError(
       "SQL_LOCKING_READ",
       `Locking reads are not allowed: generated SQL uses ${locking}.`,
-      "A locking read can hold locks that other sessions wait on until the host's transaction ends. Regenerate as a plain SELECT, without FOR UPDATE, FOR SHARE, LOCK IN SHARE MODE or a SQL Server lock hint such as UPDLOCK or HOLDLOCK.",
+      "A locking read can hold locks that other sessions wait on until the host's transaction ends. Regenerate as a plain SELECT, without FOR UPDATE, FOR SHARE, LOCK IN SHARE MODE or a SQL Server lock hint such as UPDLOCK or HOLDLOCK. On SQL Server, quote a name that isn't plain ASCII ([Größe]), and qualify it when it's the only thing inside parentheses (COUNT(t.[Größe])).",
     );
   }
 
@@ -275,8 +276,8 @@ const LOCKING_CLAUSES: readonly (readonly string[])[] = [
  * Server lexer, because SQL Server also takes them without `WITH` (`FROM t (UPDLOCK)`), and
  * quoted when one stands alone in parentheses right after a name, at any depth and with trailing
  * spaces, which SQL Server also reads as the hint (`FROM t ([UPDLOCK])`, `t (("UPDLOCK "))`).
- * SQL Server 2022 refused the other quoted spellings tried for #319: inside `WITH`, in a list,
- * after an alias or a function call, and with a leading or non-ASCII space.
+ * SQL Server 2022 refused quoted hints in other positions: inside `WITH`, in a list, and after an
+ * alias or a function call.
  * `NOLOCK`, `READUNCOMMITTED`, `READPAST`, `READCOMMITTEDLOCK` and `NOWAIT` stay allowed.
  */
 const TSQL_LOCK_HINTS: ReadonlySet<string> = new Set([
@@ -288,7 +289,7 @@ function findLockingRead(tokens: readonly SqlToken[], profile: SqlLexerProfile):
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     const hint = profile.id === "sqlserver" ? tsqlLockHint(tokens, i) : undefined;
-    if (hint) return `the table hint ${hint.toUpperCase()}`;
+    if (hint) return hint;
     if (t.kind !== "word") continue;
     for (const clause of LOCKING_CLAUSES) {
       if (clause.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word)) {
@@ -299,14 +300,25 @@ function findLockingRead(tokens: readonly SqlToken[], profile: SqlLexerProfile):
   return undefined;
 }
 
-/** The lock hint token `i` spells, lowercase, or undefined. */
+/** Printable ASCII: the only spellings the hint check can match by name. */
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+
+/**
+ * What makes token `i` a lock hint, or undefined: an unquoted word, or a quoted name alone in
+ * parentheses after a name, that spells a hint or isn't printable ASCII. SQL Server compares
+ * hint names loosely: it ignores some characters (U+FEFF, U+200D, `Ș`) and reads others as
+ * ASCII letters (`ʟ` as L), so only a printable-ASCII name can be checked by its spelling.
+ */
 function tsqlLockHint(tokens: readonly SqlToken[], i: number): string | undefined {
   const t = tokens[i]!;
-  if (t.kind === "word") return TSQL_LOCK_HINTS.has(t.lower) ? t.lower : undefined;
-  if (t.kind !== "quoted_identifier") return undefined;
+  const quoted = t.kind === "quoted_identifier";
+  if (!(t.kind === "word" || (quoted && isLoneQuotedHint(tokens, i)))) return undefined;
+  if (!PRINTABLE_ASCII.test(t.value)) {
+    return `the ${quoted ? "quoted name" : "unquoted name"} ${t.text}, which SQL Server may read as a lock hint`;
+  }
   // SQL Server ignores trailing spaces when it compares a quoted name, so `[UPDLOCK ]` is the hint.
-  const name = t.lower.replace(/ +$/, "");
-  return TSQL_LOCK_HINTS.has(name) && isLoneQuotedHint(tokens, i) ? name : undefined;
+  const name = quoted ? t.lower.replace(/ +$/, "") : t.lower;
+  return TSQL_LOCK_HINTS.has(name) ? `the table hint ${name.toUpperCase()}` : undefined;
 }
 
 /** `name ( [hint] )` or `name (( [hint] ))`: a quoted identifier alone in parentheses right after a name. */

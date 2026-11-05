@@ -26,7 +26,10 @@ export type SqlValidationRuleCode =
   | "SQL_FORBIDDEN_FUNCTION"
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
-  /** A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as `UPDLOCK`. */
+  /**
+   * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
+   * `UPDLOCK`; on SQL Server, also an unquoted name that isn't printable ASCII, which it may read as a hint.
+   */
   | "SQL_LOCKING_READ";
 
 export class SqlValidationError extends AskDbError {

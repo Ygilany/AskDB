@@ -27,12 +27,15 @@ const QUOTING: Record<Exclude<SqlLexerProfileId, "generic">, Quoting> = {
 
 type QuotedDialect = Pick<DialectSpec, "id" | "identifierQuote" | "reservedWords" | "extraForbiddenKeywords" | "backslashEscapes">;
 
-/** An id that is no built-in engine family quotes with `identifierQuote`. */
+/**
+ * An id that is no built-in engine family quotes with `identifierQuote`. The validator reads its
+ * SQL every engine's way, SQL Server's included, so only an ASCII name stays bare (#319).
+ */
 function quotingFor(dialect: QuotedDialect): Quoting {
   const family = lexerProfileFor(dialect)?.id;
   return family && family !== "generic"
     ? QUOTING[family]
-    : { open: dialect.identifierQuote, close: dialect.identifierQuote, foldsToLowercase: false, plain: PLAIN_IDENTIFIER };
+    : { open: dialect.identifierQuote, close: dialect.identifierQuote, foldsToLowercase: false, plain: ASCII_IDENTIFIER };
 }
 
 function quote(quoting: Quoting, name: string): string {

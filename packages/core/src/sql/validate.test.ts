@@ -315,6 +315,13 @@ describe("validateSelectSql — locking reads", () => {
     // And at any depth of parentheses.
     ["sqlserver", `SELECT id FROM orders (([UPDLOCK])) WHERE id = 1`],
     ["sqlserver", `SELECT id FROM [dbo].[orders] ( ( ( "xlock " ) ) ) WHERE id = 1`],
+    // SQL Server compares hint names loosely (`ʟ` reads as L), so an unquoted name must be printable ASCII.
+    ["sqlserver", `SELECT id FROM orders WITH (UPDʟOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT Größe FROM orders`],
+    // So must a quoted name alone in parentheses after a name, where SQL Server reads a hint.
+    ["sqlserver", `SELECT id FROM orders ([UPDLOCK﻿]) WHERE id = 1`],
+    ["sqlserver", `SELECT COUNT([Größe]) AS n FROM orders`],
+    ["sqlserver", `SELECT COUNT([rowlock]) AS n FROM orders`],
   ] as const)("rejects on %s: %s", (id, sql) => {
     expectRule(sql, "SQL_LOCKING_READ", BUILT_IN_DIALECTS[id]);
   });
@@ -332,6 +339,7 @@ describe("validateSelectSql — locking reads", () => {
     ["sqlserver", `SELECT id FROM orders FOR SYSTEM_TIME AS OF '2026-01-01' WHERE id = 1`],
     ["sqlserver", `SELECT 1 AS [updlock], 2 AS "holdlock", N'FOR SHARE WITH (UPDLOCK)' AS s`],
     ["sqlserver", `SELECT COUNT(o.[rowlock]) AS n, MAX([updlock] + 1) AS m, MAX(([xlock]) + 1) AS x FROM orders o ([NOLOCK])`],
+    ["sqlserver", `SELECT o.[Größe], N'佐藤 花子' AS name, COUNT(o.[Größe]) AS n FROM orders o GROUP BY o.[Größe]`],
   ] as const)("accepts on %s: %s", (id, sql) => {
     expect(validateSelectSql(BUILT_IN_DIALECTS[id], sql)).toBe(sql);
   });
@@ -464,8 +472,8 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     [`SELECT name FROM sys.objects ORDER BY name OFFSET 0 ROWS FETCH FIRST (SELECT 1) ROWS ONLY`],
     [`SELECT 1 AS offset ORDER BY offset OFFSET (SELECT 0) ROWS`],
     [`SELECT SYSDATETIMEOFFSET() AT TIME ZONE (SELECT 'UTC') AS z`],
-    // Unicode letters in names, any text in strings and quoted names, and money with digits.
-    [`SELECT N'caf\u00e9 \u20ac\u00a0' AS [n\u00e9e \u2028], 1 AS \u00e9t\u00e9, $5.00 AS m`],
+    // Any text in strings and quoted names, and money with digits. An unquoted name must be ASCII (#319).
+    [`SELECT N'caf\u00e9 \u20ac\u00a0' AS [n\u00e9e \u2028], 1 AS [\u00e9t\u00e9], $5.00 AS m`],
     [`SELECT 1 AS a, ((SELECT 1)) AS b`],
     [`SELECT 1 AS a WHERE 1 IN ((SELECT 1))`],
     [`SELECT COALESCE((SELECT 1), 0) AS v`],
