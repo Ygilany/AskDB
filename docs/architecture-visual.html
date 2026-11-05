@@ -347,7 +347,7 @@
     <div class="pkg-card" style="border-left-color:#6c8cff">
       <div class="pkg-name" style="color:#6c8cff">@askdb/core</div>
       <div class="pkg-version">v0.5.0-beta · packages/core</div>
-      <div class="pkg-desc">The dialect-agnostic NL→SQL pipeline engine. Provides <code>ask()</code> orchestration, Schema v2 loading/parsing, enrichment suggestions, operating modes, Pino structured logging, and retrieval input. Central contract for all other packages.</div>
+      <div class="pkg-desc">The NL→SQL pipeline engine and the built-in dialect specs (ADR 0029). Provides <code>ask()</code> orchestration, Schema v2 loading/parsing, enrichment suggestions, operating modes, Pino structured logging, and retrieval input. Central contract for all other packages.</div>
       <div class="pkg-tags">
         <span class="tag tag-lib">library</span>
         <span class="tag tag-lib">contract</span>
@@ -396,7 +396,7 @@
     <div class="pkg-card" style="border-left-color:#34d399">
       <div class="pkg-name" style="color:#34d399">@askdb/postgres</div>
       <div class="pkg-version">packages/postgres</div>
-      <div class="pkg-desc">Postgres dialect (<code>postgresDialect</code>), <code>createPostgresConnector()</code> with live and from-export modes, catalog SQL templates (<code>POSTGRES_TEMPLATE_BUNDLE</code>), and optional <code>pg</code>-backed catalog runner.</div>
+      <div class="pkg-desc">Re-export of core's Postgres dialect spec (<code>postgresDialect</code>), <code>createPostgresConnector()</code> with live and from-export modes, catalog SQL templates (<code>POSTGRES_TEMPLATE_BUNDLE</code>), and optional <code>pg</code>-backed catalog runner.</div>
       <div class="pkg-tags">
         <span class="tag tag-int">connector</span>
         <span class="tag tag-int">dialect</span>

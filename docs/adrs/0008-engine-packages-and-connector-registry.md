@@ -74,7 +74,7 @@ ADR 0002 organized AskDB around one package per integration. Each integration ow
 
 ## Out of scope
 
-- Moving dialect specs back out of `@askdb/core`.
+- Moving dialect specs back out of `@askdb/core`. Decided 2026-11-05 by [ADR 0029](0029-core-owns-built-in-dialect-specs.md): core owns the built-in dialect specs.
 - Auto-registration or dynamic discovery of third-party adapters by the shipped `askdb` binary.
 - Removing `@askdb/connectors` (a future major can drop the shim).
 

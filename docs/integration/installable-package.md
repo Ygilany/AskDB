@@ -2,9 +2,9 @@
 
 AskDB ships focused library packages:
 
-1. [`@askdb/core`](../../packages/core/README.md) — dialect-agnostic NL→SQL pipeline (`ask()`, schema/IR types, modes, logging, retrieval input).
+1. [`@askdb/core`](../../packages/core/README.md) — NL→SQL pipeline (`ask()`, schema/IR types, modes, logging, retrieval input) and the built-in dialect specs, so `ask({ dialect: "postgres" })` needs no engine package ([ADR 0029](../adrs/0029-core-owns-built-in-dialect-specs.md)).
 2. [`@askdb/introspect`](../../packages/introspect/README.md) — engine-agnostic introspection orchestrator, `CatalogQueryRunner` type, and Schema v2 renderer.
-3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
+3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: connector (live + from-export), catalog templates, a `pg`-backed catalog query runner for live introspection, and a re-export of core's Postgres dialect spec (`postgresDialect`).
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by Studio and custom authoring surfaces.
 6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()`. **This is the only package that reads `process.env` directly.** All other packages use **`getAskDbRuntimeConfig()`** from here (not raw `process.env`).

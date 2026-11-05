@@ -19,7 +19,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 ### `@askdb/core`
 
-The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, validation, and tenant-scope handling all live here.
+The NL-to-SQL pipeline. Schema loading, prompt construction, validation, tenant-scope handling, and the built-in dialects all live here, so `ask({ dialect: "postgres" })` needs no engine package.
 
 <InstallTabs pkgs="@askdb/core ai" />
 

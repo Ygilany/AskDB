@@ -6,10 +6,10 @@ Instructions for coding agents working in this repository (contributing to AskDB
 
 pnpm workspace + Turborepo, TypeScript. Node 22.23.4+ to develop; published packages support `>=22.23.4` (current Node 22 LTS as of 2026-11; better-sqlite3 13 still segfaults below 22.14, #419).
 
-- `packages/core` — the NL-to-SQL pipeline (`ask()`), schema artifact loader.
+- `packages/core` — the NL-to-SQL pipeline (`ask()`), the built-in dialect specs (ADR 0029), schema artifact loader.
 - `packages/ai` — AI provider registry and the built-in providers (openai/anthropic/google/azure/gateway), one file each under `packages/ai/src/providers/`.
 - `packages/client` — config-driven facade (`createAskDb`) over `@askdb/core` + `@askdb/ai`.
-- `packages/introspect`, `packages/postgres`, `packages/mysql`, `packages/sqlite`, `packages/sqlserver` — introspection + dialects.
+- `packages/introspect`, `packages/postgres`, `packages/mysql`, `packages/sqlite`, `packages/sqlserver` — introspection; the engine packages re-export core's dialect specs.
 - `packages/rag` — schema chunking/indexing/retrieval.
 - `packages/enrich` — schema-authoring helpers used by Studio.
 - `apps/cli` — the `askdb` binary.

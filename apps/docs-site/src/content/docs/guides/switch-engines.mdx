@@ -8,7 +8,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Engine migration</p>
 
-<p class="doc-lede">Most of AskDB is engine-agnostic. The dialect adapter is the part that knows your SQL flavor — swap it, and the same schema-author workflow and the same <code>ask()</code> call work against a different engine.</p>
+<p class="doc-lede">Most of AskDB is engine-agnostic. The dialect is the part that knows your SQL flavor — change the <code>dialect</code> id, and the same schema-author workflow and the same <code>ask()</code> call work against a different engine.</p>
 
 ## What stays the same
 
@@ -332,7 +332,7 @@ const fromAnalytics = await askdb.ask(question, {
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/concepts/modes-and-dialects/"><strong>Modes and dialects</strong><span>The conceptual model behind dialect adapters.</span></a>
+  <a href="/concepts/modes-and-dialects/"><strong>Modes and dialects</strong><span>The conceptual model behind dialects.</span></a>
   <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>The base integration that the engine swap modifies.</span></a>
   <a href="/reference/packages/"><strong>Package reference</strong><span>The full per-engine package surface.</span></a>
 </div>

@@ -94,7 +94,7 @@ Product direction and technical baseline live in **`docs/`**:
 
 **Stack:** pnpm workspace + **Turborepo**, TypeScript, and focused packages/apps:
 
-- [`packages/core`](packages/core) (`@askdb/core`) — dialect-agnostic NL→SQL pipeline (`ask()`) and schema artifact loader.
+- [`packages/core`](packages/core) (`@askdb/core`) — NL→SQL pipeline (`ask()`), the built-in dialect specs, and the schema artifact loader.
 - [`packages/ai`](packages/ai) (`@askdb/ai`) — AI provider registry and shared config helpers for AI SDK language and embedding models.
 - [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
 - [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.

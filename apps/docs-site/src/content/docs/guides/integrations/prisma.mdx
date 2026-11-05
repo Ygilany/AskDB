@@ -19,11 +19,11 @@ import InstallTabs from "../../../../components/InstallTabs.astro";
 
 <InstallTabs pkgs="@askdb/prisma @askdb/introspect ai" />
 
-Plus the engine you want at runtime — for example, Postgres:
+Plus `@askdb/core` and a model provider to generate SQL — for example, OpenAI:
 
-<InstallTabs pkgs="@askdb/core @askdb/postgres ai @ai-sdk/openai" />
+<InstallTabs pkgs="@askdb/core ai @ai-sdk/openai" />
 
-`@askdb/prisma` doesn't bundle a SQL dialect — pair it with whichever engine package matches your runtime database.
+`@askdb/prisma` doesn't bundle a SQL dialect. The built-in dialects live in `@askdb/core`: pass `ask()` the dialect id that matches your runtime database (see the table below). The artifact records your `datasource.provider`, so the CLI picks the dialect from it when `askdb.config.ts` sets no `dialect`.
 
 ## CLI workflow
 
@@ -59,20 +59,21 @@ await introspect(
 
 ## Supported providers
 
-`@askdb/prisma` supports any Prisma relational provider — at generation time, pair it with the matching AskDB engine adapter:
+`@askdb/prisma` supports any Prisma relational provider. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
 
-| Prisma provider | Runtime engine adapter |
-| --- | --- |
-| `postgresql` / `cockroachdb` | `@askdb/postgres` |
-| `mysql` | `@askdb/mysql` |
-| `sqlite` | `@askdb/sqlite` |
-| `sqlserver` | `@askdb/sqlserver` |
+| Prisma provider | `dialect` id | Engine package (live introspection) |
+| --- | --- | --- |
+| `postgresql` | `"postgres"` | `@askdb/postgres` |
+| `cockroachdb` | `"cockroachdb"` | `@askdb/postgres` |
+| `mysql` | `"mysql"` | `@askdb/mysql` |
+| `sqlite` | `"sqlite"` | `@askdb/sqlite` |
+| `sqlserver` | `"sqlserver"` | `@askdb/sqlserver` |
 
 MongoDB is not supported — AskDB targets relational engines.
 
 ## What it doesn't do
 
-`@askdb/prisma` is a file-only connector. It does not connect to a database, it does not execute generated SQL, and it does not include a SQL dialect. For SQL generation, supply a dialect from one of the engine packages above.
+`@askdb/prisma` is a file-only connector. It does not connect to a database, it does not execute generated SQL, and it does not include a SQL dialect. For SQL generation, pass `ask()` the dialect id from the table above.
 
 ## Read next
 
