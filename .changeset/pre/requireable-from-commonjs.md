@@ -1,12 +1,7 @@
 ---
 "@askdb/ai": minor
-"@askdb/ai-anthropic": minor
-"@askdb/ai-azure": minor
-"@askdb/ai-google": minor
-"@askdb/ai-openai": minor
 "@askdb/client": minor
 "@askdb/config": minor
-"@askdb/connectors": minor
 "@askdb/core": minor
 "@askdb/enrich": minor
 "@askdb/introspect": minor

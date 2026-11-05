@@ -51,7 +51,7 @@ Before judging a candidate, read the complete test and production owner, its ent
 Keep discovery read-only and report evidence before editing. For broad scope, run parallel discovery lanes when available:
 
 - core (`packages/core`);
-- database layer (`packages/introspect`, `packages/connectors`, `packages/postgres`, `packages/mysql`, `packages/sqlite`, `packages/sqlserver`, `packages/prisma`);
+- database layer (`packages/introspect`, `packages/postgres`, `packages/mysql`, `packages/sqlite`, `packages/sqlserver`, `packages/prisma`);
 - AI, config, and authoring libraries (`packages/ai*`, `packages/config`, `packages/client`, `packages/rag`, `packages/enrich`);
 - apps, examples, scripts, and tooling (`apps/`, `examples/`, `scripts/`);
 - a cross-cutting pattern sweep.

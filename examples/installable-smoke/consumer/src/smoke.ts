@@ -16,12 +16,7 @@ import {
   type AskDbSchemaFile,
   type AskDialect,
 } from "@askdb/core";
-import {
-  createAiRegistry,
-  openaiProvider,
-  type AiRegistry,
-} from "@askdb/ai";
-import { openaiProvider as deprecatedShimOpenaiProvider } from "@askdb/ai-openai";
+import { createAiRegistry, type AiRegistry } from "@askdb/ai";
 import { buildSchemaIndex, createMemoryStore, type Embedder } from "@askdb/rag";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { buildDefaultTableBody, replaceH2Section } from "@askdb/enrich";
@@ -221,11 +216,6 @@ async function main(): Promise<void> {
     throw new Error(
       `smoke: expected "${expectedMissingPeer}" for a missing optional peer, got: ${String(missingPeerError)}`,
     );
-  }
-
-  // The deprecated @askdb/ai-openai shim must keep re-exporting the adapter.
-  if (deprecatedShimOpenaiProvider !== openaiProvider) {
-    throw new Error("smoke: @askdb/ai-openai shim does not re-export @askdb/ai's openaiProvider");
   }
 
   console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, and ai package surfaces loaded");

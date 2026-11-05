@@ -4,6 +4,8 @@
 
 Accepted (2026-09-25). Decisions 1 and 2 (the engine kit) landed with #195; decisions 3 to 5 (the registry move, connection resolution, the `@askdb/connectors` shim) with #199 (2026-10-09).
 
+2026-11: the `@askdb/connectors` shim from decision 5 was removed before 1.0 (#347). Its last version on npm is `0.1.0-beta.9`. Code imports the registry from `@askdb/introspect` and the connection-label helpers from `@askdb/introspect/kit`.
+
 Supersedes in part:
 - [ADR 0002](0002-integration-package-layout.md): the rule that integration packages own their SQL dialect, and the rule that `@askdb/introspect` declares no source kinds (its registry's connection now names three: `url`, `fromExport`, `schemaPath`; connector inputs stay engine-owned).
 - [ADR 0007](0007-connector-registry.md): where the connector registry lives, and its closed provider union.

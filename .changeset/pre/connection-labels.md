@@ -1,5 +1,4 @@
 ---
-"@askdb/connectors": patch
 "@askdb/postgres": patch
 "@askdb/mysql": patch
 "@askdb/sqlserver": patch

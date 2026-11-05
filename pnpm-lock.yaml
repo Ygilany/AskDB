@@ -438,70 +438,6 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  packages/ai-anthropic:
-    dependencies:
-      '@ai-sdk/anthropic':
-        specifier: ^4.0.94
-        version: 4.0.94(zod@4.6.7)
-      '@askdb/ai':
-        specifier: workspace:^
-        version: link:../ai
-    devDependencies:
-      ai:
-        specifier: ^7.0.127
-        version: 7.0.159(zod@4.6.7)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/ai-azure:
-    dependencies:
-      '@ai-sdk/azure':
-        specifier: ^4.0.114
-        version: 4.0.114(zod@4.6.7)
-      '@askdb/ai':
-        specifier: workspace:^
-        version: link:../ai
-    devDependencies:
-      ai:
-        specifier: ^7.0.127
-        version: 7.0.159(zod@4.6.7)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/ai-google:
-    dependencies:
-      '@ai-sdk/google':
-        specifier: ^4.0.109
-        version: 4.0.109(zod@4.6.7)
-      '@askdb/ai':
-        specifier: workspace:^
-        version: link:../ai
-    devDependencies:
-      ai:
-        specifier: ^7.0.127
-        version: 7.0.159(zod@4.6.7)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/ai-openai:
-    dependencies:
-      '@ai-sdk/openai':
-        specifier: ^4.0.106
-        version: 4.0.106(zod@4.6.7)
-      '@askdb/ai':
-        specifier: workspace:^
-        version: link:../ai
-    devDependencies:
-      ai:
-        specifier: ^7.0.127
-        version: 7.0.159(zod@4.6.7)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
   packages/client:
     dependencies:
       '@ai-sdk/anthropic':
@@ -544,19 +480,6 @@ importers:
       jiti:
         specifier: ^2.7.0
         version: 2.7.0
-    devDependencies:
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-
-  packages/connectors:
-    dependencies:
-      '@askdb/introspect':
-        specifier: workspace:*
-        version: link:../introspect
     devDependencies:
       typescript:
         specifier: ^6.0.3

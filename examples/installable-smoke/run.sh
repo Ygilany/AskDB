@@ -22,26 +22,26 @@ bash "$ROOT/scripts/pack-tarballs.sh" "$WORK/tarballs"
 echo "smoke: validating every tarball ships LICENSE/NOTICE/README.md and its entry paths, and no src/tests…"
 node "$SCRIPT_DIR/check-tarballs.mjs" "$WORK/tarballs"
 
+# The deprecated @askdb/ai-* and @askdb/connectors shims were removed before 1.0 (#347).
+# pack-tarballs.sh packs every non-private package it finds, so a restored package directory
+# would be published again.
+echo "smoke: checking that no removed package is packed…"
+if removed="$(ls "$WORK/tarballs" | grep -E '^askdb-(ai-(openai|azure|google|anthropic)|connectors)-[0-9]')"; then
+  echo "smoke: packed a removed package (#347):" >&2
+  echo "$removed" >&2
+  exit 1
+fi
+
 CONFIG_TARBALL="$(ls "$WORK/tarballs"/askdb-config-*.tgz | head -n1)"
 [ -f "$CONFIG_TARBALL" ] || { echo "smoke: missing config tarball" >&2; exit 1; }
 CORE_TARBALL="$(ls "$WORK/tarballs"/askdb-core-*.tgz | head -n1)"
 [ -f "$CORE_TARBALL" ] || { echo "smoke: missing core tarball" >&2; exit 1; }
-AI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-*.tgz | grep -Ev 'askdb-ai-(openai|azure|google|anthropic)-' | head -n1)"
+AI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-[0-9]*.tgz | head -n1)"
 [ -f "$AI_TARBALL" ] || { echo "smoke: missing ai tarball" >&2; exit 1; }
-AI_OPENAI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-openai-*.tgz | head -n1)"
-[ -f "$AI_OPENAI_TARBALL" ] || { echo "smoke: missing ai-openai tarball" >&2; exit 1; }
-AI_AZURE_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-azure-*.tgz | head -n1)"
-[ -f "$AI_AZURE_TARBALL" ] || { echo "smoke: missing ai-azure tarball" >&2; exit 1; }
-AI_GOOGLE_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-google-*.tgz | head -n1)"
-[ -f "$AI_GOOGLE_TARBALL" ] || { echo "smoke: missing ai-google tarball" >&2; exit 1; }
-AI_ANTHROPIC_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-anthropic-*.tgz | head -n1)"
-[ -f "$AI_ANTHROPIC_TARBALL" ] || { echo "smoke: missing ai-anthropic tarball" >&2; exit 1; }
 CLIENT_TARBALL="$(ls "$WORK/tarballs"/askdb-client-*.tgz | head -n1)"
 [ -f "$CLIENT_TARBALL" ] || { echo "smoke: missing client tarball" >&2; exit 1; }
 INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
-CONNECTORS_TARBALL="$(ls "$WORK/tarballs"/askdb-connectors-*.tgz | head -n1)"
-[ -f "$CONNECTORS_TARBALL" ] || { echo "smoke: missing connectors tarball" >&2; exit 1; }
 POSTGRES_TARBALL="$(ls "$WORK/tarballs"/askdb-postgres-*.tgz | head -n1)"
 [ -f "$POSTGRES_TARBALL" ] || { echo "smoke: missing postgres tarball" >&2; exit 1; }
 PRISMA_TARBALL="$(ls "$WORK/tarballs"/askdb-prisma-*.tgz | head -n1)"
@@ -79,10 +79,8 @@ node -e "
   j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/ai'] = 'file:$AI_TARBALL';
-  j.dependencies['@askdb/ai-openai'] = 'file:$AI_OPENAI_TARBALL';
   j.dependencies['@askdb/client'] = 'file:$CLIENT_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
-  j.dependencies['@askdb/connectors'] = 'file:$CONNECTORS_TARBALL';
   j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
   j.dependencies['@askdb/prisma'] = 'file:$PRISMA_TARBALL';
   j.dependencies['@askdb/enrich'] = 'file:$ENRICH_TARBALL';
@@ -201,7 +199,6 @@ node -e "
       '@askdb/ai': 'file:$AI_TARBALL',
       '@askdb/client': 'file:$CLIENT_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
-      '@askdb/connectors': 'file:$CONNECTORS_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
       '@askdb/prisma': 'file:$PRISMA_TARBALL',
       '@askdb/enrich': 'file:$ENRICH_TARBALL',
@@ -266,8 +263,8 @@ export default defineConfig({
 SMOKEASKDB
 
 echo "smoke: batteries-included surfaces resolve every built-in provider SDK…"
-# The apps depend on @askdb/ai plus all four @ai-sdk/* packages (no @askdb/ai-*
-# adapters), so every built-in provider must lazily load its SDK here.
+# The apps depend on @askdb/ai plus all four @ai-sdk/* packages, so every built-in
+# provider must lazily load its SDK here.
 (cd "$WORK/apps" && node --input-type=module -e "
   const { BUILTIN_AI_PROVIDERS, createAiRegistry } = await import('@askdb/ai');
   const ai = createAiRegistry();

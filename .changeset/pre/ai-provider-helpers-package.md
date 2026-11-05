@@ -1,8 +1,5 @@
 ---
 "@askdb/ai": minor
-"@askdb/ai-openai": minor
-"@askdb/ai-azure": minor
-"@askdb/ai-google": minor
 "@askdb/core": minor
 "askdb": patch
 "@askdb/http-api": patch

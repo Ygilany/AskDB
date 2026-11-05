@@ -5,7 +5,7 @@ description: Add a new built-in AI provider to @askdb/ai from any Vercel AI SDK 
 
 # New AskDB built-in AI provider
 
-You are adding a built-in provider to `@askdb/ai` in the AskDB pnpm monorepo. Since the ADR 0006 amendment (Option E), providers are **not** separate packages: each is one file in `packages/ai/src/providers/`, one row in the built-in table, and one **optional peer dependency** that is loaded lazily. Do **not** create a `packages/ai-<provider>` package — the four `@askdb/ai-*` packages that still exist are deprecated re-export shims scheduled for removal.
+You are adding a built-in provider to `@askdb/ai` in the AskDB pnpm monorepo. Since the ADR 0006 amendment (Option E), providers are **not** separate packages: each is one file in `packages/ai/src/providers/`, one row in the built-in table, and one **optional peer dependency** that is loaded lazily. Do **not** create a `packages/ai-<provider>` package — the former `@askdb/ai-*` packages were removed before 1.0 (#347).
 
 This skill is self-contained: follow it top to bottom, run every verification command, and stop at any STOP condition instead of improvising.
 

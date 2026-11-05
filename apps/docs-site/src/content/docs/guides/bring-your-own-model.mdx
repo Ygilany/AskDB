@@ -263,7 +263,7 @@ const { sql } = await askdb.ask("Which customers signed up last week?");
 
 Every built-in provider is registered, and each loads its `@ai-sdk/*` package only when it first builds a model. If that package isn't installed, the call fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. To restrict the set, pass `providers: ["openai"]`. To add a provider that isn't built in, pass an `AiProviderAdapter` object in `providers`.
 
-The `@askdb/ai-openai`, `@askdb/ai-anthropic`, `@askdb/ai-google`, and `@askdb/ai-azure` packages are deprecated. They re-export the built-in adapters, so `providers: [openaiProvider]` still works, but new code needs only `@askdb/client` (or `@askdb/ai`) plus the `@ai-sdk/*` package.
+The former `@askdb/ai-openai`, `@askdb/ai-anthropic`, `@askdb/ai-google`, and `@askdb/ai-azure` packages were removed before 1.0. Use `@askdb/client` (or `@askdb/ai`) and the `@ai-sdk/*` package instead ([removed packages](/reference/packages/#removed-packages)).
 
 Need the model object yourself (to pass to `ask()` directly, or to share with other code)? Build it from the same config with `@askdb/ai`'s registry — the one advanced case where you import `@askdb/ai` directly:
 

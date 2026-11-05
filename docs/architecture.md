@@ -47,7 +47,6 @@ flowchart TB
   subgraph Integrations["Integration packages"]
     postgres["@askdb/postgres<br/>Postgres dialect, connector, templates, runner"]
     prisma["@askdb/prisma<br/>Prisma schema-file connector"]
-    connectors["@askdb/connectors<br/>Deprecated re-export shim"]
     mysql["@askdb/mysql<br/>MySQL / MariaDB dialect, connector, runner"]
     sqlite["@askdb/sqlite<br/>SQLite dialect, connector, runner"]
     sqlserver["@askdb/sqlserver<br/>SQL Server dialect, connector, runner"]
@@ -64,7 +63,6 @@ flowchart TB
     docsSite["@askdb/docs-site<br/>static documentation site"]
   end
 
-  connectors --> introspect
   introspect --> core
   postgres --> core
   postgres --> introspect
@@ -104,8 +102,6 @@ flowchart TB
 | Package | Purpose and scope | Boundary |
 | --- | --- | --- |
 | `@askdb/ai` | AI provider registry: universal env-resolution contract (`resolveBaseConfig`, `ProviderEnvSpec`), the `createAiRegistry` factory, the `AiProviderAdapter` extension point, and built-in providers (OpenAI, Azure OpenAI / Foundry, Google Gemini, Anthropic, Vercel AI Gateway) described by one `BUILTIN_AI_PROVIDERS` table. | Provider SDKs (`@ai-sdk/openai`, `@ai-sdk/azure`, `@ai-sdk/google`, `@ai-sdk/anthropic`) are optional peers, imported lazily when a provider first builds a model; no NL-to-SQL logic. |
-| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | **Deprecated** re-export shims of the matching `@askdb/ai` built-in (ADR 0006 amendment). Removed before 1.0 (#347). | Depend on `@askdb/ai` plus their `@ai-sdk/*` package so existing installs keep working. |
-| `@askdb/connectors` | **Deprecated** ([ADR 0008](adrs/0008-engine-packages-and-connector-registry.md)). Re-exports the connector registry from `@askdb/introspect` and the connection-label helpers from `@askdb/introspect/kit` for existing imports. | No logic of its own; nothing first-party depends on it. |
 | `@askdb/mysql` | MySQL / MariaDB engine package: live connector, `createMysqlCatalogQueryRunner`, and the `mysqlConnectorProvider` registry adapter; re-exports `MYSQL_DIALECT` / `MARIADB_DIALECT` from core. | Wraps `mysql2` (optional peer). |
 | `@askdb/sqlite` | SQLite engine package: live connector, `createSqliteCatalogQueryRunner`, and the `sqliteConnectorProvider` registry adapter; re-exports `SQLITE_DIALECT` from core. | Wraps `better-sqlite3` (optional peer). |
 | `@askdb/sqlserver` | SQL Server engine package: live connector, `createSqlServerCatalogQueryRunner`, and the `sqlServerConnectorProvider` registry adapter; re-exports `SQLSERVER_DIALECT` from core. | Wraps `mssql` (optional peer). |
@@ -133,7 +129,6 @@ flowchart BT
   rag["@askdb/rag"]
   postgres["@askdb/postgres"]
   prisma["@askdb/prisma"]
-  connectors["@askdb/connectors"]
   mysql["@askdb/mysql"]
   sqlite["@askdb/sqlite"]
   sqlserver["@askdb/sqlserver"]
@@ -142,7 +137,6 @@ flowchart BT
   cli["askdb"]
   http["@askdb/http-api"]
 
-  connectors --> introspect
   introspect --> core
   enrich --> core
   rag --> core
