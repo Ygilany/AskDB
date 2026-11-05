@@ -11,6 +11,7 @@ import {
   env,
   flattenAskDbConfig,
   getAskDbRuntimeConfig,
+  loadAskDbConfigProjection,
   loadAskDbConfigProjectionSync,
   requiredEnv,
   resetAskDbRuntimeForTests,
@@ -1188,26 +1189,65 @@ ${scaffold.source}
     expect(projection?.entries.ASKDB_AI_REASONING_EFFORT).toBe("low");
   });
 
-  // #626: a config that can't load fails with an error that names the file, whether the error is
-  // thrown inside the file (defineConfig) or by the loader (a plain object, a non-object export).
+  // #626: a config that can't load fails with an error that names the file and what is wrong,
+  // whether the error is thrown inside the file (defineConfig), while loading it, or by the loader.
+  const BLOCKS = `ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } } }, introspection: { provider: "postgres" }`;
   it.each([
     [
       "defineConfig without an ai block",
+      "askdb.config.ts",
       `import { defineConfig } from "@askdb/config";\nexport default defineConfig({ dialect: "postgres" });\n`,
       "the config has no ai block;",
     ],
     [
       "a plain object without an introspection block",
+      "askdb.config.ts",
       `export default { ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } };\n`,
       "the config has no introspection block;",
     ],
-    ["a default export that isn't an object", `export default "openai";\n`, "the default export isn't a config object;"],
-  ])("names the file when %s fails to load", (_case, source, message) => {
+    ["a default export that isn't an object", "askdb.config.ts", `export default "openai";\n`, "the default export isn't a config object;"],
+    ["a null default export", "askdb.config.ts", `export default null;\n`, "the default export isn't a config object;"],
+    ["a file with no default export", "askdb.config.ts", `export const config = { ${BLOCKS} };\n`, "the file has no default export;"],
+    ["a Promise default export", "askdb.config.ts", `export default Promise.resolve({ ${BLOCKS} });\n`, "the default export is a Promise;"],
+    [
+      "top-level await",
+      "askdb.config.mjs",
+      `await Promise.resolve();\nexport default { ${BLOCKS} };\n`,
+      "AskDB loads the config file synchronously, so it can't use top-level await",
+    ],
+    [
+      "an unknown pgvector indexStrategy",
+      "askdb.config.ts",
+      `export default { ${BLOCKS}, rag: { embedder: "mock", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://x/y", indexStrategy: "bogus" } } } };\n`,
+      'invalid rag.storeConfig.pgvector.indexStrategy "bogus"',
+    ],
+  ])("names the file when %s fails to load", (_case, file, source, message) => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
     linkWorkspacePackage(dir);
-    writeFileSync(join(dir, "askdb.config.ts"), source, "utf8");
-    expect(() => loadAskDbConfigProjectionSync(dir)).toThrow(
-      `AskDB config at ${join(dir, "askdb.config.ts")}: ${message}`,
+    writeFileSync(join(dir, file), source, "utf8");
+    expect(() => loadAskDbConfigProjectionSync(dir)).toThrow(`AskDB config at ${join(dir, file)}: ${message}`);
+  });
+
+  // The async loader imports .mjs with native import(), not jiti, so its own path gets its own cases.
+  it("loadAskDbConfigProjection, the async loader, loads a plain-object askdb.config.mjs", async () => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    writeFileSync(
+      join(dir, "askdb.config.mjs"),
+      `export default { ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } } }, introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/async" } } } };\n`,
+      "utf8",
+    );
+    const { projection } = await loadAskDbConfigProjection(dir);
+    expect(projection?.entries.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/async");
+  });
+
+  it.each([
+    ["no ai block", `export default { introspection: { provider: "postgres" } };\n`, "the config has no ai block;"],
+    ["no default export", `export const config = { ${BLOCKS} };\n`, "the file has no default export;"],
+  ])("loadAskDbConfigProjection names the file when an askdb.config.mjs has %s", async (_case, source, message) => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    writeFileSync(join(dir, "askdb.config.mjs"), source, "utf8");
+    await expect(loadAskDbConfigProjection(dir)).rejects.toThrow(
+      `AskDB config at ${join(dir, "askdb.config.mjs")}: ${message}`,
     );
   });
 
@@ -1638,6 +1678,7 @@ describe("bootstrapAskDbEnv", () => {
       expect(rt.flat.ASKDB_INTROSPECT_OUT).toBe("./askdb/");
     },
   );
+
   it("reports each deprecated key once per process as a DeprecationWarning", () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
     linkWorkspacePackage(dir);

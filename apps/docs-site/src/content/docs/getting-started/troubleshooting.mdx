@@ -31,7 +31,7 @@ When embedding the libraries, the equivalent knob is the `cwd` option: `bootstra
 
 The config file loaded, but it has no `ai` block. Every config needs one, even when you only run `askdb introspect`: add the provider and its connection, as [The `ai` block](/reference/config/#the-ai-block) shows. A config without an `introspection` block fails the same way, and the message names that block.
 
-Other `AskDB config at <path>: …` errors name the key that can't load, such as an unknown `rag.store`. Fix that key in the file the message names.
+Other `AskDB config at <path>: …` errors say what can't load, such as an unknown `rag.store`, a file with no default export, or top-level `await`, which the synchronous load can't run. Fix it in the file the message names.
 
 ### `Set ASKDB_DEBUG=1 to print the stack trace.`
 
