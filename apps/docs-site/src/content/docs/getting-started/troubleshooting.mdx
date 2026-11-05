@@ -67,6 +67,12 @@ A file in the schema directory has the right name in the wrong case, such as `Te
 
 Rename each file the error names, for example `git mv Tenant-Policy.md tenant-policy.md`. If the error says `keep one of Tenant-Policy.md, tenant-policy.md`, the directory holds both spellings, which only a case-sensitive filesystem allows. Merge them into the correctly named file and delete the other; a rename would overwrite it. `askdb bundle` refuses the directory the same way.
 
+### `Refusing to write … outside the schema directory: "…" is a symbolic link`
+
+A file AskDB writes in the schema directory is a symbolic link: `schema.json` (from `askdb introspect --out` or Studio's **Resync schema**), a `tables/*.md` file or `tables/` itself, `concepts.md`, `tenant-policy.md`, or Studio's `playground-history.json`. Writing through it would change the file it points at, which can be outside the schema directory, so AskDB refuses. A repository can carry symbolic links, so this can come from a checkout.
+
+Replace the link with a regular file that holds the content you want, then run the command or save again. The schema directory itself can be a symbolic link. A linked `.gitignore` doesn't stop Studio: it skips adding `playground-history.json` there and still saves the history, so add that line yourself.
+
 ### `SchemaParseError: Missing required field …`
 
 The schema artifact is from an older format. Re-run introspection to regenerate it:
