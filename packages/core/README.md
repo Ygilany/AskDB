@@ -111,6 +111,7 @@ Key rules:
 - `AskDialect` — the dialect adapter contract. `@askdb/postgres` exports a ready-made one.
 - `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.
 - `loadSchemaFromJson(raw)` — parse a Schema v2 bundled JSON string (e.g. from an env var).
+- `readSchemaDirectory(dir)` — read a Schema v2 directory into its bundle form (what `askdb bundle` writes).
 - `saveSchemaFile(schemaDir, relativePath, content)` — write one file inside a schema directory; refuses a symbolic link and replaces the target through a temp file.
 - `parseTableMarkdown` / `writeTableMarkdown` — round-trippable describable-layer parser/writer.
 - `extractSqlFromModelText` — generic fenced-code extractor (dialect-agnostic).

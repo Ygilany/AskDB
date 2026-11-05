@@ -6,6 +6,7 @@ import {
   parseTableMarkdown,
   loadSchema,
   normalizeTenantPolicy,
+  readSchemaDirectory,
   parseTenantPolicyMarkdown,
   saveSchemaFile,
   writeConceptsMarkdown,
@@ -277,60 +278,14 @@ function parsePhysical(raw: string, filePath: string): V2SchemaJson {
   return result.data;
 }
 
-export function bundleSchemaDirectory(schemaDir: string): CoreBundledSchemaV2 {
-  const schemaJsonPath = join(schemaDir, "schema.json");
-  if (!existsSync(schemaJsonPath)) {
-    throw new Error(`No schema.json found in ${schemaDir}`);
-  }
-  const physical = parsePhysical(readFileSync(schemaJsonPath, "utf8"), schemaJsonPath);
-  const tables: Record<string, string> = {};
-  for (const entry of (readOptionalDir(join(schemaDir, "tables")) ?? []).sort()) {
-    if (!entry.endsWith(".md")) continue;
-    tables[entry] = readFileSync(join(schemaDir, "tables", entry), "utf8");
-  }
-  const bundle: CoreBundledSchemaV2 = { bundled: true, physical, tables };
-  for (const [key, file] of Object.entries(OPTIONAL_BUNDLE_FILES) as [OptionalBundleKey, string][]) {
-    const content = readOptionalFile(join(schemaDir, file));
-    if (content !== undefined) bundle[key] = content;
-  }
-  return bundle;
-}
-
-type OptionalBundleKey = Exclude<keyof CoreBundledSchemaV2, "bundled" | "physical" | "tables">;
-
 /**
- * Each optional bundle field and the schema-directory file it carries. Typed
- * against core's `BundledSchemaV2`, so a field the loader starts reading fails
- * this build until the bundler writes it too.
+ * Bundle a schema directory into the single-file form `askdb bundle` writes. Core's
+ * `readSchemaDirectory()` does the read, so the bundle carries exactly the files
+ * `loadSchema()` reads, and a directory the loader refuses (a wrong-case
+ * `Tenant-Policy.md`, an unreadable optional file) is refused here too.
  */
-const OPTIONAL_BUNDLE_FILES: Record<OptionalBundleKey, string> = {
-  concepts: "concepts.md",
-  tenantPolicy: "tenant-policy.md",
-};
-
-// Like core's directory loader, only a missing path (ENOENT) counts as absent. Any
-// other failure (EACCES, ELOOP, ENOTDIR, ...) throws, because skipping an unreadable
-// tenant-policy.md would write a bundle that loads with tenant enforcement off.
-function readOptionalFile(filePath: string): string | undefined {
-  try {
-    return readFileSync(filePath, "utf8");
-  } catch (e) {
-    if (isMissingPathError(e)) return undefined;
-    throw e;
-  }
-}
-
-function readOptionalDir(dirPath: string): string[] | undefined {
-  try {
-    return readdirSync(dirPath);
-  } catch (e) {
-    if (isMissingPathError(e)) return undefined;
-    throw e;
-  }
-}
-
-function isMissingPathError(e: unknown): boolean {
-  return (e as NodeJS.ErrnoException | null)?.code === "ENOENT";
+export function bundleSchemaDirectory(schemaDir: string): CoreBundledSchemaV2 {
+  return readSchemaDirectory(schemaDir);
 }
 
 /**

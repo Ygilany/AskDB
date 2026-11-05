@@ -6,6 +6,8 @@ Accepted (2026-09-25). Decisions 1 and 2 (the engine kit) landed with #195; deci
 
 2026-11: the `@askdb/connectors` shim from decision 5 was removed before 1.0 (#347). Its last version on npm is `0.1.0-beta.9`. Code imports the registry from `@askdb/introspect` and the connection-label helpers from `@askdb/introspect/kit`.
 
+Amended 2026-11-05: a registered adapter can load on first use (lazy entries and `registry.load()`; #339, #259). See [Amendment (2026-11-05)](#amendment-2026-11-05-registered-adapters-can-load-on-first-use).
+
 Supersedes in part:
 - [ADR 0002](0002-integration-package-layout.md): the rule that integration packages own their SQL dialect, and the rule that `@askdb/introspect` declares no source kinds (its registry's connection now names three: `url`, `fromExport`, `schemaPath`; connector inputs stay engine-owned).
 - [ADR 0007](0007-connector-registry.md): where the connector registry lives, and its closed provider union.
@@ -72,10 +74,40 @@ ADR 0002 organized AskDB around one package per integration. Each integration ow
 - `@askdb/config`'s `introspection.provider` is still a closed union in the typed config. Opening the typed config to third-party engines is separate work. A third-party adapter can already read its own block from `runtime.structured` (`introspection.providerConfig.<id>`, which `@askdb/config` passes through untyped). Adapters don't read `process.env` (ADR 0005).
 - `@askdb/connectors` consumers keep working. The widening from a closed union to an open string is the one type-level change: it reaches `ConnectorProvider` and the `provider` type of each engine package's exported adapter, so `@askdb/connectors` and the five engine packages are released as minors.
 
+## Amendment (2026-11-05): registered adapters can load on first use
+
+### Context
+
+`@askdb/prisma` depends on `@prisma/internals`, and through it on `@prisma/engines`, whose install script pnpm 11 refuses to run until it is approved. Because `askdb` and `@askdb/studio` depended on `@askdb/prisma`, `pnpm add askdb` exited 1 for every pnpm 11 user, Prisma or not (#259). The maintainer chose to make `@askdb/prisma` an optional peer of both. A host can't import an optional peer at startup, so the registry has to hold an engine it hasn't loaded. Loading it at startup also made every `askdb` command, `--help` included, pay for Prisma (#339).
+
+### Decision
+
+1. A registry entry is an adapter or a **lazy entry**, `{ provider, load(): Promise<ConnectorProviderAdapter> }` (`LazyConnectorProviderAdapter`), in both the array and the object-map forms.
+2. `hasProvider()` and `providers()` answer from the entry's id without loading it.
+3. `registry.load(provider)` returns the adapter. For a lazy entry it calls `load()` once, shares the call between concurrent callers, retries after a failure, and rejects when the loaded adapter's `provider` differs from the entry's. An adapter object resolves as it is.
+4. The other methods stay synchronous. For a lazy entry that isn't loaded yet they throw `Connector provider "<id>" is not loaded yet`, naming `registry.load()`. They fail closed: `connectionLabel` doesn't fall back to `configured <id> connection`, and `getTemplates` doesn't report "no templates".
+5. `load()`'s errors reach the caller unchanged, so the install hint for a missing package belongs to the entry's `load`. The first-party hosts build it with the kit's `createOptionalDriverLoader` (the host's own install first, then the project in the working directory, as for drivers) and `connectorPackageMissingMessage({ provider, packageName, allowBuilds })`, whose `pnpm add` command approves the builds the package needs.
+6. The CLI and Studio register `@askdb/prisma` as a lazy entry and call `registry.load()` once the engine is selected. The four live engines stay adapter objects: they are hard dependencies, so loading them lazily would change no install.
+
+### Alternatives considered
+
+- **Make every adapter method async (rejected).** A forgotten `await` would be a type error, not a runtime one. But it breaks every host and every docs example for a laziness only one entry needs, on top of the install change Prisma users already get.
+- **An `engine === "prisma"` branch in the CLI (rejected in #183).** It bypasses the registry (ADR 0007: apps don't re-implement per-engine switches), and Studio would still diverge.
+- **Keep `@askdb/prisma` a dependency and document the approval (#259 option 1, rejected).** Every pnpm 11 user would approve a build that only Prisma users need.
+- **Keep `@askdb/prisma` a dependency and drop the build from its dependencies (#259 option 2, rejected).** `@askdb/prisma` reads the schema with `@prisma/internals` (`getConfig`, `getDMMF`), which depends on `@prisma/engines`. Dropping the build means parsing the schema without `@prisma/internals`, a separate change to `@askdb/prisma`, and every `askdb` user would still install Prisma for an engine most of them don't use.
+
+### Consequences
+
+- A host that registers only adapter objects changes nothing.
+- A host that registers a lazy entry must call `registry.load()` before the synchronous methods. Forgetting it fails at runtime, with an error that names the call.
+- `askdb --help` and every command other than Prisma introspection resolve no `@askdb/prisma` or `@prisma/*` module (`apps/cli/src/load-cost.test.ts`). `askdb introspect templates` names only the engines already loaded when it lists the ones with templates.
+- Node 24 and later can keep a failed package lookup until the process exits, so a long-running host can't always load an optional package installed after its first attempt. The kit's loader then says to restart the process rather than to install the package, and Studio's guided setup checks for packages on disk, not through Node's resolver, before it installs them.
+- Prisma users install `@askdb/prisma` themselves, and on pnpm 11 approve the `@prisma/engines` build. `askdb init --database prisma` and Studio's guided setup do both.
+
 ## Out of scope
 
 - Moving dialect specs back out of `@askdb/core`.
-- Auto-registration or dynamic discovery of third-party adapters by the shipped `askdb` binary.
+- Auto-registration or dynamic discovery of third-party adapters by the shipped `askdb` binary. Loading an adapter the host registered, on first use, is in scope since the 2026-11-05 amendment.
 - Removing `@askdb/connectors` (a future major can drop the shim).
 
 ## Related

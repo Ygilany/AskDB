@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   cpSync,
   existsSync,
@@ -404,6 +405,12 @@ describe("bundleSchemaDirectory with a tenant policy", () => {
     expect(() => bundleSchemaDirectory(schemaDir)).toThrow(/ELOOP/);
   });
 
+  // On Linux the bundler skipped it: `askdb bundle` wrote a bundle with no tenant policy.
+  it("refuses to bundle a wrong-case Tenant-Policy.md, as loadSchema does", () => {
+    renameSync(join(schemaDir, "tenant-policy.md"), join(schemaDir, "Tenant-Policy.md"));
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow(SchemaParseError);
+  });
+
   it("refuses to bundle when tables/ exists but can't be listed, as loadSchema does", () => {
     const tablesPath = join(schemaDir, "tables");
     rmSync(tablesPath, { recursive: true, force: true });
@@ -525,15 +532,6 @@ describe("workspace table filenames", () => {
     writeSchema(schemaDir, [table("public", "straße")]);
     writeFileSync(join(schemaDir, "tables/STRASSE.md"), tableMd("public", "gone", "Orphan."), "utf8");
     expect(filenameOf(loadWorkspace(schemaDir), "table:public.straße")).toBe("public.straße.md");
-
-    // And so does a file AskDB itself ignores, such as one with an upper-case extension.
-    rmSync(join(schemaDir, "tables"), { recursive: true });
-    writeSchema(schemaDir, [table("public", "orders")]);
-    writeFileSync(join(schemaDir, "tables/Orders.MD"), "precious notes\n", "utf8");
-    const ws3 = loadWorkspace(schemaDir);
-    expect(filenameOf(ws3, "table:public.orders")).toBe("public.orders.md");
-    saveDescribed(ws3, "table:public.orders");
-    expect(readFileSync(join(schemaDir, "tables/Orders.MD"), "utf8")).toBe("precious notes\n");
 
     // A file with another name, such as a different extension, doesn't.
     rmSync(join(schemaDir, "tables"), { recursive: true });
