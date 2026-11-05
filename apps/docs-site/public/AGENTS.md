@@ -54,3 +54,4 @@ AskDB is a workspace of small, layered packages — install only what your use c
 - `/llms.txt` — page index with descriptions, useful for scoping which doc to fetch next.
 - `/llms-full.txt` — the entire docs site as one file, for deep machine-readable context.
 - The docs site nav (`/`) for human-readable depth: Guides, Concepts, and Reference sections.
+- `/guides/upgrading/` — what to change in the host app for each AskDB release. Read it before you bump the AskDB packages in an existing integration.
