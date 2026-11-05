@@ -1,4 +1,10 @@
-import { listAsStored, promptTableName } from "../schema/v2/format.js";
+import {
+  columnAnnotation,
+  listAsStored,
+  promptTableName,
+  promptTextGate,
+  tableAliasNote,
+} from "../schema/v2/format.js";
 import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { RetrievedResult } from "./types.js";
 
@@ -16,7 +22,11 @@ import type { RetrievedResult } from "./types.js";
  *      the bottom (before the question).
  *
  * Sensitive identifiers retain their `(sensitive)` tagging exactly as
- * `formatSchemaV2ForNlToSql` does.
+ * `formatSchemaV2ForNlToSql` does. With `omitSensitiveIdentifiersFromPrompt`,
+ * schema text is withheld by the same rule, and so is the text of every
+ * retrieved chunk that names a sensitive column or is flagged `sensitive`
+ * (ADR 0022): core can't vouch for the retriever. A withheld chunk still
+ * picks its tables.
  */
 export function synthesizeRetrievedDdl(args: {
   schema: NormalizedSchemaV2;
@@ -27,17 +37,32 @@ export function synthesizeRetrievedDdl(args: {
   unqualifiedNamespace?: string;
   /** Mirrors `formatSchemaV2ForNlToSql`'s `quoteIdentifier`. */
   quoteIdentifier?: (name: string) => string;
-}): { ddl: string; tablesEmitted: number; chunksUsed: number } {
+}): {
+  ddl: string;
+  tablesEmitted: number;
+  chunksUsed: number;
+  /** With omission on: schema texts and chunks withheld because they name a sensitive column or are flagged `sensitive`. */
+  mentionDroppedCount: number;
+} {
   const { schema, results } = args;
   const omit = args.omitSensitiveIdentifiersFromPrompt === true;
   const quoteIdentifier = args.quoteIdentifier ?? listAsStored;
+  const gate = promptTextGate(schema, omit);
+  /** Renders a retrieved chunk's text as the prompt shows it, then lets the gate check exactly that. */
+  const shown = (p: RetrievedResult["payload"], render: (body: string) => string, into: string[]): void => {
+    const text = render(stripHeaderLine(p.text));
+    if (gate.allows(text, p.sensitive)) into.push(text);
+  };
+  const asIs = (body: string) => body;
+  const oneLine = (body: string) => body.replace(/\n+/g, " ");
+  const joinedLines = (body: string) => body.replace(/\n+/g, "; ");
 
   const tableIds = new Set<string>();
-  const cqlPerTable = new Map<string, RetrievedResult["payload"][]>();
-  const concepts: RetrievedResult["payload"][] = [];
-  const questions: RetrievedResult["payload"][] = [];
-  const relationships: RetrievedResult["payload"][] = [];
-  const tenantPolicyChunks: RetrievedResult["payload"][] = [];
+  const cqlPerTable = new Map<string, string[]>();
+  const concepts: string[] = [];
+  const questions: string[] = [];
+  const relationships: string[] = [];
+  const tenantPolicyChunks: string[] = [];
 
   for (const r of results) {
     const p = r.payload;
@@ -57,18 +82,18 @@ export function synthesizeRetrievedDdl(args: {
         if (tid) {
           tableIds.add(tid);
           const list = cqlPerTable.get(tid) ?? [];
-          list.push(p);
+          shown(p, asIs, list);
           cqlPerTable.set(tid, list);
         }
         break;
       }
       case "question": {
-        questions.push(p);
+        shown(p, oneLine, questions);
         if (p.refs[0]) tableIds.add(p.refs[0]);
         break;
       }
       case "concept": {
-        concepts.push(p);
+        shown(p, joinedLines, concepts);
         for (const ref of p.refs) {
           if (ref.startsWith("table:")) {
             const hash = ref.indexOf("#");
@@ -78,14 +103,14 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "relationship": {
-        relationships.push(p);
+        shown(p, oneLine, relationships);
         for (const ref of p.refs) {
           if (ref.startsWith("table:") && !ref.includes("#")) tableIds.add(ref);
         }
         break;
       }
       case "tenant-policy": {
-        tenantPolicyChunks.push(p);
+        shown(p, joinedLines, tenantPolicyChunks);
         break;
       }
     }
@@ -98,10 +123,8 @@ export function synthesizeRetrievedDdl(args: {
     if (!tableIds.has(t.id)) continue;
     tablesEmitted++;
     const listedName = promptTableName(t, args.unqualifiedNamespace, quoteIdentifier);
-    const aliasNote =
-      !t.sensitive && t.aliases?.length ? ` -- aliases: ${t.aliases.join(", ")}` : "";
-    lines.push(`TABLE ${listedName}${aliasNote}`);
-    if (!t.sensitive && t.description) lines.push(`-- ${t.description}`);
+    lines.push(`TABLE ${listedName}${tableAliasNote(t, gate)}`);
+    if (!t.sensitive && t.description && gate.allows(t.description)) lines.push(`-- ${t.description}`);
 
     if (omit && t.sensitive) {
       lines.push(`  (sensitive table — column definitions withheld from model context)`);
@@ -117,11 +140,8 @@ export function synthesizeRetrievedDdl(args: {
       const sensitiveTag = c.sensitive || t.sensitive ? " (sensitive)" : "";
       let line = `  - ${quoteIdentifier(c.name)} ${c.type} (${flags.join(" ")})${sensitiveTag}`;
       if (!c.sensitive && !t.sensitive) {
-        const extras: string[] = [];
-        if (c.aliases?.length) extras.push(`aliases: ${c.aliases.join(", ")}`);
-        if (c.enum?.length) extras.push(`values: ${c.enum.join("|")}`);
-        if (c.description) extras.push(c.description);
-        if (extras.length) line += ` -- ${extras.join("; ")}`;
+        const annotation = columnAnnotation(c, gate);
+        if (annotation) line += ` -- ${annotation}`;
       }
       lines.push(line);
     }
@@ -129,8 +149,7 @@ export function synthesizeRetrievedDdl(args: {
     const cqlList = cqlPerTable.get(t.id);
     if (cqlList && cqlList.length > 0 && !t.sensitive) {
       lines.push(`-- common query language --`);
-      for (const cql of cqlList) {
-        const body = stripHeaderLine(cql.text);
+      for (const body of cqlList) {
         for (const cqlLine of body.split("\n")) {
           lines.push(`-- ${cqlLine}`);
         }
@@ -141,33 +160,25 @@ export function synthesizeRetrievedDdl(args: {
 
   if (relationships.length > 0) {
     lines.push("-- relationships --");
-    for (const r of relationships) {
-      lines.push(`-- ${stripHeaderLine(r.text).replace(/\n+/g, " ")}`);
-    }
+    for (const r of relationships) lines.push(`-- ${r}`);
     lines.push("");
   }
 
   if (concepts.length > 0) {
     lines.push("-- concepts --");
-    for (const c of concepts) {
-      lines.push(`-- ${stripHeaderLine(c.text).replace(/\n+/g, "; ")}`);
-    }
+    for (const c of concepts) lines.push(`-- ${c}`);
     lines.push("");
   }
 
   if (questions.length > 0) {
     lines.push("-- example questions for context --");
-    for (const q of questions) {
-      lines.push(`-- ${stripHeaderLine(q.text).replace(/\n+/g, " ")}`);
-    }
+    for (const q of questions) lines.push(`-- ${q}`);
     lines.push("");
   }
 
   if (tenantPolicyChunks.length > 0) {
     lines.push("-- tenant policy context --");
-    for (const tp of tenantPolicyChunks) {
-      lines.push(`-- ${stripHeaderLine(tp.text).replace(/\n+/g, "; ")}`);
-    }
+    for (const tp of tenantPolicyChunks) lines.push(`-- ${tp}`);
     lines.push("");
   }
 
@@ -175,6 +186,7 @@ export function synthesizeRetrievedDdl(args: {
     ddl: lines.join("\n").trimEnd(),
     tablesEmitted,
     chunksUsed: results.length,
+    mentionDroppedCount: gate.withheld,
   };
 }
 
