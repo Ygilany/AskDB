@@ -11,7 +11,7 @@ import {
 } from "../schema/v2/index.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
-import { promptIdentifierQuoter, qualifiedNameQuotingRule } from "./prompt-identifiers.js";
+import { nonAsciiNameRule, promptIdentifierQuoter, qualifiedNameQuotingRule } from "./prompt-identifiers.js";
 import { buildTenantPromptBlock } from "./tenant-prompt.js";
 
 function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
@@ -96,6 +96,7 @@ export function buildNlToSqlUserPrompt(
       "nl-to-sql prompt lists sensitive schema identifiers for SQL grounding (names only)",
     );
   }
+  const nonAsciiRule = nonAsciiNameRule(dialect);
   const lines = [
     `You translate natural language questions into a single ${dialect.displayName} SELECT (or WITH ... SELECT).`,
     "Rules:",
@@ -106,6 +107,7 @@ export function buildNlToSqlUserPrompt(
       : `- Use identifiers from the schema below and write each table name exactly as it is listed. \`${unqualifiedNamespace}\` is not a schema in ${dialect.displayName}: never write \`${unqualifiedNamespace}.<table>\`, even where ids or notes below mention \`${unqualifiedNamespace}\`.`,
     // Only a prompt that lists qualified names gets the rule; a v1 schema lists no schemas.
     ...(isV2(schema) && unqualifiedNamespace === undefined ? [qualifiedNameQuotingRule(dialect)] : []),
+    ...(nonAsciiRule ? [nonAsciiRule] : []),
     "- Do NOT use DDL or write statements (INSERT, UPDATE, DELETE, etc.). SELECT-only.",
     `- Dialect notes: ${dialect.promptBrief}`,
     "",
