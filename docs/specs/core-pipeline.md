@@ -33,7 +33,7 @@ The `@askdb/client` package provides `createAskDb()`, a config-aware facade that
 - Schema enrichment authoring — see [`schema-authoring-and-enrichment.md`](./schema-authoring-and-enrichment.md)
 - RAG retrieval — see [`rag.md`](./rag.md)
 - Multi-tenancy enforcement — see [`multi-tenancy.md`](./multi-tenancy.md)
-- Additional database engine introspection connectors — see Phase 11 in roadmap; dialect specs for NL→SQL are already built in
+- Engine introspection connectors — they ship in `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` and `@askdb/prisma`; see [`introspection.md`](./introspection.md). The built-in dialect specs for NL→SQL are core's ([ADR 0029](../adrs/0029-core-owns-built-in-dialect-specs.md))
 
 ## Design decisions
 
@@ -117,7 +117,7 @@ interface AskPipelineResult {
 bindPreparedQuery(
   prepared: PreparedQuery,
   values: Record<string, QueryParameterValue | QueryParameterValue[]>, // business values only
-  guardrails: { schema; tenantScope?; sensitiveGuardrailMode?; acceptWarnings?: ReadonlyArray<'tenant'>; dialect?: DialectSpec | BuiltInDialectId }, // dialect: required for dialectRules 'host' or none (ADR 0031)
+  guardrails: { schema; tenantScope?; sensitiveGuardrailMode?; acceptWarnings?: ReadonlyArray<'tenant'>; dialect?: DialectSpec | BuiltInDialectId }, // dialect: required for dialectRules 'host' or none (ADR 0032)
 ): BoundQuery // { sql, unboundSql, params, bindings, verdict }
 
 // The subtree expansion ask() runs, for a host that rebinds (ADR 0014).

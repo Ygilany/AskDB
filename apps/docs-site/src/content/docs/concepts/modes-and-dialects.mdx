@@ -9,7 +9,7 @@ description: "How AskDB adapts to your SQL engine and the trust model you choose
 
 ## Dialects
 
-A dialect is a `DialectSpec` built into `@askdb/core` — all four ship with the core package. It tells the pipeline how to:
+A dialect is a `DialectSpec` built into `@askdb/core`. Six ship with the core package: `postgres`, `cockroachdb`, `mysql`, `mariadb`, `sqlite` and `sqlserver`. Core owns them so that generating SQL needs no engine package and no database driver. A dialect tells the pipeline how to:
 
 - Construct identifiers and quoting for this engine.
 - Format dialect-specific clauses (LIMIT vs TOP, dollar parameters vs question marks, JSON path syntax).

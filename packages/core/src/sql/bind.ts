@@ -42,7 +42,7 @@ export type PreparedQuery = {
    * Which rules `ask()` checked and rendered under: `"builtin"` for the built-in spec of
    * `dialect` (a built-in id, or its exported constant such as `POSTGRES_DIALECT`), `"host"`
    * for any other `DialectSpec` object. `bindPreparedQuery()` needs the host's spec for a
-   * `"host"` template, and for one stored without this field (ADR 0031).
+   * `"host"` template, and for one stored without this field (ADR 0032).
    */
   dialectRules?: "builtin" | "host";
   /** SQL with unquoted `:name` / `:tenant_*` placeholders intact. */
@@ -418,7 +418,7 @@ type Edit = { start: number; end: number; literal: string; marker: string };
  * With `skipTenantPlaceholders`, every `:tenant_<root>_ids` placeholder is left in place,
  * by name from the lexer scan, and its declaration is ignored: the caller renders tenant
  * IDs from a tenant scope afterwards. `dialect` is the spec to escape and lex under, which
- * the caller resolves (ADR 0031): there is no built-in fallback.
+ * the caller resolves (ADR 0032): there is no built-in fallback.
  */
 export function renderPreparedQuery(
   prepared: PreparedQuery,

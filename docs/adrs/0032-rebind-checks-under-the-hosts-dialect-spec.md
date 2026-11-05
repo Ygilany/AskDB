@@ -1,12 +1,12 @@
-# ADR 0031 — A rebind checks and renders under the host's dialect spec, or refuses
+# ADR 0032 — A rebind checks and renders under the host's dialect spec, or refuses
 
 ## Status
 
-Accepted (2026-11-05). Settled on [#660](https://github.com/Ygilany/AskDB/issues/660) under the release's rule that safety wins over convenience. Implemented by the `dialectRules` field of `PreparedQuery` (`packages/core/src/sql/bind.ts`), set in `ask()`, and the `dialect` option of `BindGuardrails` with its resolution in `rebindSpec()` (`packages/core/src/sql/rebind.ts`). It extends [ADR 0010](0010-sql-guardrail-decision-point.md)'s re-check at rebind: the bind-time schema, scope and modes now come with the bind-time dialect rules.
+Accepted (2026-11-05). Settled on [#660](https://github.com/Ygilany/AskDB/issues/660) under the release's rule that safety wins over convenience. Implemented by the `dialectRules` field of `PreparedQuery` (`packages/core/src/sql/bind.ts`), set in `ask()`, and the `dialect` option of `BindGuardrails` with its resolution in `rebindSpec()` (`packages/core/src/sql/rebind.ts`). It extends [ADR 0010](0010-sql-guardrail-decision-point.md)'s re-check at rebind: the bind-time schema, scope and modes now come with the bind-time dialect rules. It amends [ADR 0029](0029-core-owns-built-in-dialect-specs.md), whose spread spec held in `ask()` only.
 
 ## Context
 
-A host adjusts a built-in engine's rules by spreading its spec, such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }` for Postgres with `standard_conforming_strings = off`, or `{ ...MYSQL_DIALECT, blockedFunctions: [...MYSQL_DIALECT.blockedFunctions, "my_udf"] }`. The docs recommend this. `ask()` checks and renders under that spec.
+A host adjusts a built-in engine's rules by spreading its spec ([ADR 0029](0029-core-owns-built-in-dialect-specs.md)), such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }` for Postgres with `standard_conforming_strings = off`, or `{ ...MYSQL_DIALECT, blockedFunctions: [...MYSQL_DIALECT.blockedFunctions, "my_udf"] }`. The docs recommend this. `ask()` checks and renders under that spec.
 
 The stored `PreparedQuery` recorded only the spec's `id`, so `bindPreparedQuery()` checked and rendered under the built-in spec for that id. The host's rules were dropped at rebind:
 

@@ -13,7 +13,7 @@ Studio serves a local web app at `http://127.0.0.1:5556` by default. The publish
 - browse all physical tables and columns in `schema.json`
 - edit table descriptions, aliases, primary entities, tags, common query language, example questions, and column metadata
 - write the describable layer back to `tables/*.md`
-- request AI enrichment suggestions when `OPENAI_API_KEY` is configured
+- request AI enrichment suggestions when the `ai` block in `askdb.config.*` has an API key
 - build and query the configured RAG index (`memory`, file-backed, or `pgvector`)
 - generate sample Postgres SQL for natural-language questions against the currently saved enrichment
 - define and manage multi-tenancy policy (tenant roots, hierarchy, scoped/polymorphic/global tables) via the Tenancy view
@@ -51,16 +51,16 @@ The React client is styled with Tailwind CSS and shadcn-style primitives. The re
 pnpm dlx shadcn@latest init --preset b1D0eCA4
 ```
 
-Environment variables:
+Configuration, in `askdb.config.*` (bind any value to an environment variable of your choosing with `env("NAME")`; Studio loads `.env` first):
 
-| Variable | Purpose |
+| Config key | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` | Enables AI suggestions and sample NL-to-SQL generation. |
-| `OPENAI_BASE_URL` | Optional OpenAI-compatible base URL. |
-| `ASKDB_STUDIO_HOST` | Bind host. Defaults to `127.0.0.1`. |
-| `ASKDB_STUDIO_PORT` | Bind port. Defaults to `5556`. |
-| `ASKDB_MOCK_SQL` | Deterministic generated SQL for tests or offline demos. |
+| `ai.provider`, `ai.providerConfig.<provider>.apiKey` | Enables AI suggestions and sample NL-to-SQL generation. |
+| `ai.providerConfig.<provider>.baseUrl` | Optional base URL, e.g. an OpenAI-compatible endpoint. |
+| `studio.listen.host` | Bind host. Defaults to `127.0.0.1`. `--host` overrides it. |
+| `studio.listen.port` | Bind port. Defaults to `5556`. `--port` overrides it. |
+| `dev.mockSql` | Deterministic generated SQL for tests or offline demos. |
 
 Security: every `/api/*` request must carry the per-launch session token that Studio injects into the page it serves (`x-askdb-studio-token` header), come with an allowed `Host` (`localhost`, `127.0.0.1`, `[::1]`, or the bound host), and, for writes, be same-origin JSON. Programmatic callers of `createStudioServer()` can read the token from `server.sessionToken`. Binding to a non-loopback host exposes query execution and schema writes to anyone on that network who can load the page. Only do that on a trusted network. See [Studio → Security model](https://askdb.tools/studio/#security-model).
 
-Studio uses the active `rag.store` branch from `askdb.config.*`, and embeds with `rag.embedder`: `mock`, a local lexical embedder that needs no key, or `ai`, the `ai.embedding` model, built from that section's connection only (see the [configuration reference](https://askdb.tools/reference/config/#aiembedding)). For `pgvector`, make sure `ASKDB_PGVECTOR_URL` resolves; there's no need to create the table. The first index build creates it, and the `vector` extension, at the width the embedding model returns (or `ai.embedding.dimensions`). A table that already exists at another width is refused, with a message saying how to resolve it. If Studio's database role can't create extensions, create `vector` first.
+Studio uses the active `rag.store` branch from `askdb.config.*`, and embeds with `rag.embedder`: `mock`, a local lexical embedder that needs no key, or `ai`, the `ai.embedding` model, built from that section's connection only (see the [configuration reference](https://askdb.tools/reference/config/#aiembedding)). For `pgvector`, make sure `rag.storeConfig.pgvector.databaseUrl` resolves; there's no need to create the table. The first index build creates it, and the `vector` extension, at the width the embedding model returns (or `ai.embedding.dimensions`). A table that already exists at another width is refused, with a message saying how to resolve it. If Studio's database role can't create extensions, create `vector` first.

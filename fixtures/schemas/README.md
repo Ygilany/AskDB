@@ -27,6 +27,6 @@ Some JSON files in this directory are legacy fixtures retained for regression co
 
 - Top level: `{ "version": 1, "tables": [ ... ] }`
 - Each table: `name`, `columns[]` with `name`, `type`, optional `nullable`, optional `primaryKey`
-- **Phase 2 (additive):** optional `sensitive` on a **table** or **column**. By default, NL→SQL DDL **lists** those identifiers with an `(sensitive)` tag; use CLI **`--omit-sensitive-from-prompt`** or env **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names (see [`docs/contracts/sensitive-fields-and-modes.md`](../../docs/contracts/sensitive-fields-and-modes.md)). Example: `fixtures/schemas/orders-users-sensitive.schema.json`.
+- **Phase 2 (additive):** optional `sensitive` on a **table** or **column**. By default, NL→SQL DDL **lists** those identifiers with an `(sensitive)` tag; use CLI **`--omit-sensitive-from-prompt`** or config **`modes.omitSensitiveFromPrompt: true`** to withhold names (see [`docs/contracts/sensitive-fields-and-modes.md`](../../docs/contracts/sensitive-fields-and-modes.md)). Example: `fixtures/schemas/orders-users-sensitive.schema.json`.
 
 Historical phase specs may still reference v1 because they document prior implementation milestones, not the current first-run path.

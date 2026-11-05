@@ -12,7 +12,7 @@ flowchart LR
   host["Host app, CLI, HTTP API, or Studio"]
   schema["AskDB Schema v2<br/>directory, schema.json, or bundle"]
   core["@askdb/core<br/>load schema, assemble prompt, call model"]
-  dialect["AskDialect<br/>engine-specific generation and validation"]
+  dialect["Dialect rules<br/>built-in DialectSpec or custom AskDialect"]
   model["BYO LanguageModel"]
   sql["Checked SQL artifact"]
   execution["Host-owned execution boundary"]
@@ -29,7 +29,7 @@ flowchart LR
   sql --> execution
 ```
 
-`@askdb/core` is dialect-agnostic. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Database-specific behavior is supplied through integration packages such as `@askdb/postgres`. The exception is what the pipeline itself needs to read and prompt for each built-in engine family: the built-in `DialectSpec`s (with their denylists and the reserved words the prompt quotes) live in `@askdb/core`, lexing and identifier quoting are selected by `DialectSpec.id`, and integration packages re-export the specs. See the ADR 0002 amendment; #464 evaluates whether this should change.
+`@askdb/core` owns the SQL rules of the built-in engine families: the six built-in `DialectSpec`s with their prompt briefs, forbidden keywords and functions, list binding, escaping and quoting, namespace rules and reserved-word lists. It resolves a dialect id such as `"postgres"` itself, so SQL generation needs no engine package. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Engine packages such as `@askdb/postgres` own what talks to a database: the driver, the introspection connector and the catalog SQL. They re-export core's specs. See [ADR 0029](adrs/0029-core-owns-built-in-dialect-specs.md).
 
 ## Package map
 
@@ -38,18 +38,18 @@ AskDB is a pnpm monorepo with reusable packages under `packages/*` and first-par
 ```mermaid
 flowchart TB
   subgraph Contracts["Reusable contracts and libraries"]
-    core["@askdb/core<br/>Schema v2, ask(), modes, logging, retrieval input"]
+    core["@askdb/core<br/>Schema v2, ask(), built-in dialect specs,<br/>modes, logging, retrieval input"]
     introspect["@askdb/introspect<br/>Connector contract, connector registry,<br/>engine kit, Schema v2 renderer"]
     enrich["@askdb/enrich<br/>Headless enrichment workspace helpers"]
     rag["@askdb/rag<br/>Chunking, indexing, retriever wiring"]
   end
 
   subgraph Integrations["Integration packages"]
-    postgres["@askdb/postgres<br/>Postgres dialect, connector, templates, runner"]
+    postgres["@askdb/postgres<br/>Postgres connector, templates, runner"]
     prisma["@askdb/prisma<br/>Prisma schema-file connector"]
-    mysql["@askdb/mysql<br/>MySQL / MariaDB dialect, connector, runner"]
-    sqlite["@askdb/sqlite<br/>SQLite dialect, connector, runner"]
-    sqlserver["@askdb/sqlserver<br/>SQL Server dialect, connector, runner"]
+    mysql["@askdb/mysql<br/>MySQL / MariaDB connector, runner"]
+    sqlite["@askdb/sqlite<br/>SQLite connector, runner"]
+    sqlserver["@askdb/sqlserver<br/>SQL Server connector, runner"]
   end
 
   subgraph AI["AI providers"]
@@ -106,10 +106,10 @@ flowchart TB
 | `@askdb/sqlite` | SQLite engine package: live connector, `createSqliteCatalogQueryRunner`, and the `sqliteConnectorProvider` registry adapter; re-exports `SQLITE_DIALECT` from core. | Wraps `better-sqlite3` (optional peer). |
 | `@askdb/sqlserver` | SQL Server engine package: live connector, `createSqlServerCatalogQueryRunner`, and the `sqlServerConnectorProvider` registry adapter; re-exports `SQLSERVER_DIALECT` from core. | Wraps `mssql` (optional peer). |
 | `@askdb/client` | Config-aware facade over `@askdb/core`: `createAskDb()` resolves schema, model, and dialect from config + a provider registry so callers pass only a question. | No provider SDKs bundled: the registry defaults to `@askdb/ai`'s built-ins, and the host installs the `@ai-sdk/*` package it configures. `@askdb/core` never depends on it. |
-| `@askdb/core` | Dialect-agnostic NL-to-SQL pipeline, Schema v2 loading/parsing, modes, logging, enrichment suggestions, and retriever input. | No database drivers, no generated-SQL execution, no engine-specific connector. |
+| `@askdb/core` | NL-to-SQL pipeline, the built-in dialect specs and their rules (ADR 0029), Schema v2 loading/parsing, modes, logging, enrichment suggestions, and retriever input. | No database drivers, no generated-SQL execution, no engine-specific connector; never imports an engine package. |
 | `@askdb/introspect` | Engine-agnostic `Connector<TInput>` contract, introspection orchestrator, Schema v2 renderer, the connector registry (`createConnectorRegistry`, `ConnectorProviderAdapter`, open provider ids), and the `@askdb/introspect/kit` helpers every engine package is built on (driver loading, filters, ids, row folding, connection labels; ADR 0008). | No default connector, no engine-specific input union (the registry's connection is one of three source kinds, `url`, `fromExport` or `schemaPath`; each engine builds its own connector input), no driver dependency, no standalone binary. |
 | `@askdb/postgres` | Postgres engine package: live/from-export connector, catalog templates, optional `pg` catalog runner, and the `postgresConnectorProvider` registry adapter; re-exports `POSTGRES_DIALECT` (as `postgresDialect`) from core. | `pg` is optional and only needed for live catalog reads; generated SQL still executes outside AskDB. |
-| `@askdb/prisma` | Offline Prisma schema-file connector that renders Schema v2 physical metadata. | No live database connection and no SQL dialect. Pair output with a dialect such as `postgresDialect` when generating SQL. |
+| `@askdb/prisma` | Offline Prisma schema-file connector that renders Schema v2 physical metadata. | No live database connection and no SQL dialect. Pair output with a built-in dialect id such as `"postgres"` when generating SQL. |
 | `@askdb/enrich` | Headless Schema v2 authoring helpers: load/save workspace, table drafts, concepts, markdown preservation, suggestions, and bundling. | No terminal or browser UI. |
 | `@askdb/studio` | Maintained local browser UI for enrichment, sample NL-to-SQL checks, and local RAG exploration. | Authoring surface over Schema v2, not a connector package. |
 | `@askdb/rag` | Deterministic Schema v2 chunking, BYO embedder/store interfaces, in-memory/file/pgvector adapters, and retriever wiring. | Optional layer; prompt generation still flows through `@askdb/core` and a dialect. |
@@ -175,14 +175,16 @@ flowchart BT
 
 Boundary rules:
 
-- `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect, a model, an optional retriever, and a schema; it returns SQL.
-- Integration packages own engine-specific knowledge, apart from the built-in dialect facts above. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
+- `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect (a built-in id, a `DialectSpec` or a custom `AskDialect`), a model, an optional retriever, and a schema; it returns SQL.
+- `@askdb/core` owns the SQL rules of the built-in engine families and resolves their ids itself. It never imports an engine package: every engine package depends on core, so that import would be a cycle ([ADR 0029](adrs/0029-core-owns-built-in-dialect-specs.md)).
+- Engine packages own what talks to a database: the driver, the introspection connector, the catalog SQL and connection resolution. They re-export core's specs. `@askdb/postgres` owns Postgres catalog introspection; `@askdb/prisma` owns Prisma schema-file introspection.
 - `@askdb/introspect` does not know whether an engine reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the engine package; the registry's connection only names the three source kinds a host can supply (`url`, `fromExport`, `schemaPath`), and each engine decides what they mean (ADR 0008).
 - Engine packages own connection resolution. Each exports a `ConnectorProviderAdapter` whose `resolveConnection` hook merges explicit values (CLI flags) with AskDB runtime config and whose `connectionLabelParts` hook parses the connection into display-safe parts; the registry builds every label from those parts ([ADR 0011](adrs/0011-connection-labels-from-parsed-parts.md)). First-party surfaces dispatch through `createConnectorRegistry(...)` and do not switch on engine names ([ADR 0008](adrs/0008-engine-packages-and-connector-registry.md)).
-- `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic.
+- `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic. Writing a file into a schema directory is `@askdb/core`'s `saveSchemaFile()` ([ADR 0028](adrs/0028-core-writes-schema-directory-files.md)), which enrich, Studio and `@askdb/introspect` all call.
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.
 - First-party apps can be batteries-included. Reusable packages should stay small and should not pull optional drivers into unrelated workflows.
 - `@askdb/ai` owns provider dispatch, the universal env precedence, and the built-in providers (one file each under `packages/ai/src/providers/`, one row each in `BUILTIN_AI_PROVIDERS`). Each built-in owns its native env vars, defaults, and reasoning mapping, and imports its `@ai-sdk/*` SDK (an optional peer) lazily. Custom providers plug in through `AiProviderAdapter` objects. Core stays BYO-model: `ask()` takes any AI SDK `LanguageModel` and never depends on `@askdb/ai`. See the ADR 0006 amendment (Option E).
+- `@askdb/config` does not depend on `@askdb/core`; it keeps `ASKDB_DIALECTS`, a copy of core's built-in dialect ids that types `askdb.config`'s `dialect`, and no test checks that copy yet (#661).
 - `@askdb/config` does not depend on `@askdb/ai`; it keeps its own provider list (`ASKDB_AI_PROVIDERS`) and default models, and a test in `@askdb/client` (which depends on both) fails if they or the env var names drift from `BUILTIN_AI_PROVIDERS`.
 - `@askdb/client` is a convenience layer **above** `@askdb/core`: it depends on `@askdb/core`, `@askdb/ai`, and `@askdb/config` to resolve a schema/model/dialect, then calls `ask()`. The dependency arrow points one way — `@askdb/core` does not know `@askdb/client` exists, preserving the BYO-model boundary.
 - First-party surfaces (`askdb`, `@askdb/http-api`, `@askdb/studio`) are deliberately batteries-included: they call `createAiRegistry()` and hard-depend on `@askdb/ai` plus all four `@ai-sdk/*` provider SDKs so env config alone selects a provider. Library packages must not.
@@ -195,26 +197,23 @@ sequenceDiagram
   participant Host as Host surface
   participant Core as @askdb/core
   participant Rag as Optional @askdb/rag retriever
-  participant Dialect as AskDialect
   participant Model as BYO LanguageModel
 
   Host->>Core: ask({ question, schema, model, dialect, retriever? })
+  Core->>Core: resolve the dialect id to its DialectSpec
   Core->>Core: normalize Schema v2 context
   opt Retriever supplied
     Core->>Rag: retrieve focused schema chunks
     Rag-->>Core: relevant chunks and scores
     Core->>Core: synthesize focused DDL
   end
-  Core->>Dialect: generate(question, schema context, model)
-  Dialect->>Model: prompt for target SQL dialect
-  Model-->>Dialect: model text
-  Dialect-->>Core: generated SQL candidate
-  Core->>Dialect: validate SQL candidate
-  Dialect-->>Core: accepted SQL or validation error
+  Core->>Model: prompt with the spec's brief and quoted identifiers
+  Model-->>Core: model text
+  Core->>Core: check the SQL with the spec's rules
   Core-->>Host: { sql, explain? }
 ```
 
-The generated SQL is an output artifact. Running it is outside the AskDB package API by design.
+A custom `AskDialect` replaces the prompt, model and read-only check steps with its own `generate()`; `ask()` still runs the tenant and sensitive checks on the SQL it returns. The generated SQL is an output artifact. Running it is outside the AskDB package API by design.
 
 ## Introspection connector architecture
 
@@ -264,9 +263,9 @@ flowchart TB
 
 Connector capability matrix:
 
-| Connector package | Input source | Live database | Export or offline mode | Dialect included | Optional peers |
+| Connector package | Input source | Live database | Export or offline mode | Dialect spec re-export | Optional peers |
 | --- | --- | --- | --- | --- | --- |
-| `@askdb/postgres` | PostgreSQL catalog metadata. | Yes, through a caller-supplied `CatalogQueryRunner` or `createPostgresCatalogQueryRunner()`. | Yes, through from-export bundles produced from the catalog templates. | Yes, `postgresDialect`. | `pg` for live introspection. |
+| `@askdb/postgres` | PostgreSQL catalog metadata. | Yes, through a caller-supplied `CatalogQueryRunner` or `createPostgresCatalogQueryRunner()`. | Yes, through from-export bundles produced from the catalog templates. | Yes, `postgresDialect` (core's `POSTGRES_DIALECT`). | `pg` for live introspection. |
 | `@askdb/prisma` | One `schema.prisma` file or a directory of `.prisma` files. | No. | Yes, file-only introspection. | No. | None declared. |
 
 ## Enrichment flow
@@ -311,7 +310,7 @@ flowchart TB
   lock["schema.lock.json<br/>content hashes"]
   retriever["Retriever"]
   core["@askdb/core ask()"]
-  dialect["AskDialect validation"]
+  dialect["Dialect rules<br/>checks in core"]
   sql["Checked SQL"]
 
   schema --> chunker
@@ -333,7 +332,7 @@ In the table below, "selected packages" are packages the consumer chooses for a 
 
 | Workflow | Selected packages | Automatically installed by those packages | Optional peers or provider packages | Notes |
 | --- | --- | --- | --- | --- |
-| Minimal Postgres SQL generation | `@askdb/core`, `@askdb/postgres`, `ai` | `@askdb/postgres` pulls `@askdb/core` and `@askdb/introspect`. `ai` is a required peer of `@askdb/core` (AI SDK 6 or 7) that the host installs and pins. | Add a model provider such as `@ai-sdk/openai` when your runtime creates the model directly. Add `@askdb/ai` (plus the same `@ai-sdk/*` package, an optional peer) only if you want AskDB config/env model factories. `pg` is not needed. | Uses `ask()` plus `postgresDialect`; SQL execution remains host-owned. |
+| Minimal Postgres SQL generation | `@askdb/core`, `ai` | Nothing else: `ai` is a required peer of `@askdb/core` (AI SDK 6 or 7) that the host installs and pins. | Add a model provider such as `@ai-sdk/openai` when your runtime creates the model directly. Add `@askdb/ai` (plus the same `@ai-sdk/*` package, an optional peer) only if you want AskDB config/env model factories. Neither `@askdb/postgres` nor `pg` is needed. | Uses `ask({ dialect: "postgres" })`; the spec is core's (ADR 0029). SQL execution remains host-owned. |
 | Live Postgres introspection | `@askdb/introspect`, `@askdb/postgres`, `ai` | `@askdb/postgres` pulls `@askdb/core` and `@askdb/introspect`. `ai` is a required peer of `@askdb/core`, which loads it at import time even when no SQL is generated (ADR 0006, 2026-09 amendment). | `pg` for `createPostgresCatalogQueryRunner()`. | Callers can also supply their own `CatalogQueryRunner`. |
 | Air-gapped Postgres introspection | `@askdb/introspect`, `@askdb/postgres`, `ai` | Same as live Postgres introspection. | No `pg` required if using from-export bundles only. | Templates come from `POSTGRES_TEMPLATE_BUNDLE`. |
 | Prisma schema-file introspection | `@askdb/introspect`, `@askdb/prisma`, `ai` | `@askdb/prisma` pulls `@askdb/introspect` (and through it `@askdb/core`) and `@prisma/internals`. `ai` is the required peer of `@askdb/core`. | No database driver peer declared. | Produces Schema v2 physical metadata from Prisma files; no dialect included. |
@@ -348,14 +347,14 @@ Connectors and peer packages solve different problems:
 
 - A connector is an AskDB integration package that knows how to describe a schema source. Examples: `@askdb/postgres` and `@askdb/prisma`.
 - A peer package is a runtime dependency the consumer installs only when the chosen feature needs it. Examples: `pg` for live Postgres catalog reads, `pg` for pgvector, and AI SDK provider packages for model or embedding helpers.
-- Installing `@askdb/core` does not select a database. The caller chooses a dialect package for SQL generation and a connector package for schema introspection.
+- Installing `@askdb/core` does not select a database. The caller chooses a dialect id (or a `DialectSpec`) for SQL generation and an engine or connector package for schema introspection.
 - Installing an authoring surface such as `@askdb/studio` does not make it a connector. Authoring surfaces edit Schema v2 artifacts.
 
 ## Extension points
 
 | Extension point | Package | Shape | When to implement |
 | --- | --- | --- | --- |
-| SQL dialect | `@askdb/core` consumer API, implemented by integrations | `AskDialect` | Add a database dialect or a different SQL-generation/validation policy. |
+| SQL dialect | `@askdb/core`: the six built-in `DialectSpec`s, or one the host passes to `ask()` | `DialectSpec` (spread a built-in) or a custom `AskDialect` | Adjust a built-in engine's rules, or bring your own generator. A rebind (`bindPreparedQuery()`) runs under the spec the host passes as `dialect`, and refuses a template made under a spread spec without it ([ADR 0032](adrs/0032-rebind-checks-under-the-hosts-dialect-spec.md)). A new built-in engine is a change to core ([ADR 0029](adrs/0029-core-owns-built-in-dialect-specs.md)). |
 | Introspection connector | `@askdb/introspect` contract, implemented by integrations | `Connector<TInput>` | Add a new schema metadata source such as another database engine, export format, or schema file type. |
 | Connector provider adapter | `@askdb/introspect` registry, implemented by engine packages | `ConnectorProviderAdapter` (`createConnector`, optional `resolveConnection`, `connectionLabelParts`, `getTemplates`); any string provider id; registered as the adapter or as a lazy entry (`{ provider, load }`) that `registry.load()` imports on first use | Make an engine selectable by id from a config-driven host you write (`createConnectorRegistry`). The shipped `askdb` CLI and Studio register only the built-in engines, `@askdb/prisma` as a lazy entry (it is their optional peer). |
 | Engine kit | `@askdb/introspect/kit` | `createOptionalDriverLoader`, `compileTableFilters`, `makeTableId`, `rowsToRecords`, `defineLiveConnectorProvider`, `formatConnectionLabel`, `parseConnectionUrl` | Build a new engine package without re-implementing driver loading, filters, ids, row folding, or the live-catalog adapter. |
@@ -374,3 +373,4 @@ Connectors and peer packages solve different problems:
 - [ADR 0002: Integration-package layout](adrs/0002-integration-package-layout.md)
 - [ADR 0004: Enrichment-package boundary](adrs/0004-enrichment-package-boundary.md)
 - [ADR 0008: Engine packages, engine kit, and the connector registry](adrs/0008-engine-packages-and-connector-registry.md)
+- [ADR 0029: `@askdb/core` owns the built-in dialect specs](adrs/0029-core-owns-built-in-dialect-specs.md)

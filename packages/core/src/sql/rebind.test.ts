@@ -525,7 +525,7 @@ describe("bindPreparedQuery — the host's DialectSpec (#660)", () => {
   });
 
   // A template stored before AskDB recorded dialectRules may have been made under a host's
-  // spec; the rebind can't tell, so it asks rather than guess (ADR 0031).
+  // spec; the rebind can't tell, so it asks rather than guess (ADR 0032).
   it("refuses a template stored without dialectRules until the host names its rules; a built-in id is enough", () => {
     const { dialectRules: _rules, ...stored } = template(scopedOrders);
     expect(() => bindPreparedQuery(stored, { status_name: "open" }, guardrails)).toThrow(

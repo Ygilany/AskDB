@@ -392,7 +392,7 @@ These came up while reading the docs. They are not findings yet: each one is eit
 4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings. *Confirmed by the tenant suite (#249):* on every engine, and the warnings aren't in the `tenantWarnings` field the docs name but in `result.tenantGuardrail`: **#316**.
 5. `concepts/safety-boundaries.mdx` says invalid SQL is "rejected, not returned with a warning", while the default sensitive-field mode is `warn`.
 6. The schema artifact has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
-7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids.
+7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids. *#641 (ADR 0029) replaced the "all four" wording with the six ids; the other constants are still unnamed.*
 8. The docs site documents programmatic introspection only for Prisma, so the lab has no documented way to introspect Postgres, MySQL, SQLite or SQL Server from code. It uses the CLI.
 9. There was no MariaDB fixture or test anywhere in the repo, although `mariadb` is a built-in dialect. The multi-engine fixture adds one (Phase 1).
 10. `docs/specs/multi-tenancy.md` uses different front-matter keys from `docs/contracts/tenant-policy.md` (`tableId` and `tenantColumn` versus `id` and `tenantIdColumn`, among others). The lab follows the contract.
@@ -416,7 +416,7 @@ Found while building the tenant suite (#249):
 Found while building the sensitive-column suite (#250):
 
 18. **`askdb-http` ignores config `modes.omitSensitiveFromPrompt`** (**#376**). `reference/http-api.mdx` gives the `POST /ask` field `omitSensitiveFromPrompt` the default "env-driven", and `reference/config.mdx` and `guides/run-safely-in-prod.mdx` make the config key the deployment switch. The CLI honors it; the HTTP server sends the sensitive columns, tagged, to a request that leaves the field out. *Product bug*, fixed by #187: the `@askdb/client` facade treats config `true` as a floor, and the suite's HTTP `sensitive-omit-config` case now passes.
-19. **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from the environment** (**#377**). `docs/contracts/sensitive-fields-and-modes.md` lists it beside the library option and the CLI flag, but it is an internal flat key built from `askdb.config.ts`, the same class of doc error as #282.
+19. **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from the environment** (**#377**). `docs/contracts/sensitive-fields-and-modes.md` lists it beside the library option and the CLI flag, but it is an internal flat key built from `askdb.config.ts`, the same class of doc error as #282. Resolved by fixing the docs: the contract names `modes.omitSensitiveFromPrompt` instead, and the lab's `sensitive-omit-env` case is retired.
 
 ## Decisions (2026-09-26)
 

@@ -59,7 +59,9 @@ export default defineConfig({
     const run = runBin([], scratch);
 
     expect(run.status).toBe(1);
-    expect(run.stderr).toMatch(/^askdb-http: askdb\.config: invalid httpApi\.requestTimeoutMs .*at most 2147483647.*\n$/);
+    expect(run.stderr).toMatch(
+      /^askdb-http: AskDB config at .*askdb\.config\.ts: invalid httpApi\.requestTimeoutMs .*at most 2147483647.*\n$/,
+    );
     expect(run.stderr.trimEnd()).not.toContain("\n");
   });
 

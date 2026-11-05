@@ -38,6 +38,8 @@ Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI,
 
 ```ts
 // askdb.config.ts
+import { env } from "@askdb/config";
+
 export default {
   ai: {
     provider: "openai",
@@ -58,6 +60,8 @@ Default model: `gpt-4o-mini`. To use a different one, set `ai.language.model` (t
 
 ```ts
 // askdb.config.ts
+import { env } from "@askdb/config";
+
 export default {
   ai: {
     provider: "anthropic",
@@ -78,6 +82,8 @@ Default model: `claude-sonnet-4-6`. To use a different one, set `ai.language.mod
 
 ```ts
 // askdb.config.ts
+import { env } from "@askdb/config";
+
 export default {
   ai: {
     provider: "google",
@@ -96,6 +102,8 @@ export default {
 
 ```ts
 // askdb.config.ts
+import { env } from "@askdb/config";
+
 export default {
   ai: {
     provider: "azure",
@@ -117,6 +125,8 @@ Set `ai.language.model` to your deployment name (the scaffolded config reads it 
 
 ```ts
 // askdb.config.ts
+import { env } from "@askdb/config";
+
 export default {
   ai: {
     provider: "gateway",

@@ -12,7 +12,9 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 
 > **Ask your data. Keep control of the query.**
 >
-> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client` and `@askdb/http-api` are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
+> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client` and `@askdb/http-api` are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0.
+>
+> **At 1.0:** `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. Studio, `@askdb/enrich` and `@askdb/rag` stay `0.x`, and their APIs may still move. 1.0 promises checked SQL for PostgreSQL, MySQL, MariaDB, SQLite and SQL Server; reports, result summaries and an MCP server come after 1.0 (see the [roadmap](docs/roadmap.md)).
 >
 > AskDB returns SQL for review; the library, CLI, and HTTP API never execute it (Studio's optional Playground **Execute** is a local development tool). AskDB's SQL checks are heuristic defense in depth, not a security boundary. Run generated SQL under a read-only, least-privilege database role. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely).
 
@@ -47,16 +49,14 @@ The detailed first-run paths live in the [docs-site quickstart](https://askdb.to
 ```bash
 # `ai` (Vercel AI SDK 6 or 7) is a required peer dependency — your app owns its version
 pnpm add @askdb/core ai
-pnpm add @askdb/postgres
 # Example provider for the code below
 pnpm add @ai-sdk/openai
 ```
 
-`pg` is optional and only needed for live Postgres introspection through `@askdb/postgres`.
+The built-in dialects ship in `@askdb/core`, so SQL generation needs no engine package. Add `@askdb/postgres` only to introspect Postgres, live or offline from an export; its optional `pg` peer is needed only for live introspection.
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
 import { createOpenAI } from "@ai-sdk/openai";
 
 const schema = loadSchema("./my-app.schema");
@@ -66,7 +66,7 @@ const { sql } = await ask({
   question: "How many users signed up last week?",
   schema,
   model: openai("gpt-4o-mini"),
-  dialect: postgresDialect,
+  dialect: "postgres",
 });
 ```
 
@@ -78,7 +78,7 @@ Product direction and technical baseline live in **`docs/`**:
 
 - [`docs/mission.md`](docs/mission.md) — north star, principles, non-goals  
 - [`docs/architecture.md`](docs/architecture.md) — package boundaries, diagrams, install profiles, connectors vs. optional peers
-- [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
+- [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, published packages, supported engines  
 - [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
 - [`docs/specs/`](docs/specs) — per-feature specs with status (core pipeline, schema format, modes and observability, introspection, RAG, Studio, HTTP API, multi-tenancy, distribution)  
 - [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md) — operating modes (`schema_only`, `bounded_results`)  
@@ -94,12 +94,12 @@ Product direction and technical baseline live in **`docs/`**:
 
 **Stack:** pnpm workspace + **Turborepo**, TypeScript, and focused packages/apps:
 
-- [`packages/core`](packages/core) (`@askdb/core`) — dialect-agnostic NL→SQL pipeline (`ask()`) and schema artifact loader.
+- [`packages/core`](packages/core) (`@askdb/core`) — NL→SQL pipeline (`ask()`), the built-in dialect specs, and the schema artifact loader.
 - [`packages/ai`](packages/ai) (`@askdb/ai`) — AI provider registry and shared config helpers for AI SDK language and embedding models.
 - [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
 - [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.
 - [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — connector contract, connector registry, `@askdb/introspect/kit` engine helpers, Schema v2 renderer.
-- [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres dialect, introspection connector, catalog templates, and `pg`-backed runner.
+- [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres introspection connector, catalog templates, `pg`-backed runner, and a re-export of core's Postgres dialect.
 - [`packages/mysql`](packages/mysql) (`@askdb/mysql`) — MySQL introspection connector and `mysql2`-backed catalog runner.
 - [`packages/sqlite`](packages/sqlite) (`@askdb/sqlite`) — SQLite introspection connector and `better-sqlite3`-backed catalog runner.
 - [`packages/sqlserver`](packages/sqlserver) (`@askdb/sqlserver`) — SQL Server introspection connector and `mssql`-backed catalog runner.
@@ -146,7 +146,7 @@ npx askdb introspect --engine postgres --schemas org,people,billing,ref \
   --url "postgres://fixture_reader:fixture_reader@127.0.0.1:15432/askdb_fixture"
 ```
 
-**Schema artifacts** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). A schema artifact can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
+**Schema artifacts** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). A schema artifact can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or config **`modes.omitSensitiveFromPrompt: true`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
 
 **Environment variables**
 
@@ -161,7 +161,6 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
 | `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
-| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | When `true`/`1`/`yes`, omit sensitive column/table names from NL→SQL DDL (default is to **include** names, tagged `(sensitive)`). See [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md). |
 
 **Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL. Flags:
 
@@ -173,7 +172,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--log-stdout` | Mirror structured logs to stdout. Implies `info` if level was `silent`. |
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
 | `--explain` | After `-- sql --`, print `-- explain --` plus JSON describing heuristic guardrails satisfied (`statementKind`, `checksVerified`, `remediationNote`). |
-| `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). Overrides default when combined with `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. |
+| `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). To omit on every run, set `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` instead. See [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md). |
 | `--mode <id>` | Operating mode: `schema_only` or `bounded_results`. It can only tighten config `modes.askdbMode` (default `schema_only`), never loosen it. Current AskDB surfaces return SQL only. |
 
 **Modes + structured logs (Phase 2)** — same `ask` subcommand; set `modes.askdbMode` in `askdb.config.ts`, and pass `--mode schema_only` to tighten it for one run. Use `-v` / `--log-file` so JSON events, including `askdb.pipeline.mode`, appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
@@ -200,7 +199,7 @@ pnpm exec askdb ask \
 
 AskDB returns SQL for review; it does not execute generated SQL. Treat generated SQL as untrusted: approve it and run it under your own least-privilege, read-only database roles, database-enforced tenant isolation (for example Postgres row-level security), statement timeouts, and audit logging. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely) and [SECURITY.md](SECURITY.md#security-model).
 
-**Engines:** PostgreSQL, MySQL, SQLite, and SQL Server are all first-class — install the matching `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, or `@askdb/sqlserver` adapter and pass the dialect to `ask()`. Postgres is the reference dialect; the others ship dialect and introspection with parity tracked on the roadmap.
+**Engines:** the 1.0 support claim covers five engine families: PostgreSQL, MySQL, MariaDB, SQLite and SQL Server. Pass the dialect id to `ask()` (the dialects ship in `@askdb/core`), and install the matching `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlite` or `@askdb/sqlserver` package to introspect that engine. Postgres is the reference dialect. `cockroachdb` is also a built-in dialect id that reuses the Postgres spec, but it sits outside the 1.0 support claim because the consumer lab doesn't cover it ([ADR 0029](docs/adrs/0029-core-owns-built-in-dialect-specs.md)).
 
 **Current limitations (pre-1.0 / dev):** AskDB returns SQL only (execution stays in your app); SQL guardrails are heuristic (not a full SQL parser); a first-party MCP server, richer report generation, and a hosted dashboard are roadmap work. Per-feature scope and status: [`docs/specs/`](docs/specs).
 
@@ -235,7 +234,7 @@ How much of the **schema context** the model sees depends on the chosen mode:
 
 ## Status
 
-Phases 1–10 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, schema enrichment, RAG indexing and retrieval, Studio (React browser UI), and multi-tenancy proof. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+Phases 1–11 are implemented: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, schema enrichment, RAG indexing and retrieval, Studio (React browser UI), multi-tenancy proof, and the MySQL, MariaDB, SQLite and SQL Server engines. The 1.0 release candidate, stable 1.0 and later phases are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## License
 

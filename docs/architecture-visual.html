@@ -347,7 +347,7 @@
     <div class="pkg-card" style="border-left-color:#6c8cff">
       <div class="pkg-name" style="color:#6c8cff">@askdb/core</div>
       <div class="pkg-version">v0.5.0-beta · packages/core</div>
-      <div class="pkg-desc">The dialect-agnostic NL→SQL pipeline engine. Provides <code>ask()</code> orchestration, Schema v2 loading/parsing, enrichment suggestions, operating modes, Pino structured logging, and retrieval input. Central contract for all other packages.</div>
+      <div class="pkg-desc">The NL→SQL pipeline engine and the built-in dialect specs (ADR 0029). Provides <code>ask()</code> orchestration, Schema v2 loading/parsing, enrichment suggestions, operating modes, Pino structured logging, and retrieval input. Central contract for all other packages.</div>
       <div class="pkg-tags">
         <span class="tag tag-lib">library</span>
         <span class="tag tag-lib">contract</span>
@@ -396,7 +396,7 @@
     <div class="pkg-card" style="border-left-color:#34d399">
       <div class="pkg-name" style="color:#34d399">@askdb/postgres</div>
       <div class="pkg-version">packages/postgres</div>
-      <div class="pkg-desc">Postgres dialect (<code>postgresDialect</code>), <code>createPostgresConnector()</code> with live and from-export modes, catalog SQL templates (<code>POSTGRES_TEMPLATE_BUNDLE</code>), and optional <code>pg</code>-backed catalog runner.</div>
+      <div class="pkg-desc">Re-export of core's Postgres dialect spec (<code>postgresDialect</code>), <code>createPostgresConnector()</code> with live and from-export modes, catalog SQL templates (<code>POSTGRES_TEMPLATE_BUNDLE</code>), and optional <code>pg</code>-backed catalog runner.</div>
       <div class="pkg-tags">
         <span class="tag tag-int">connector</span>
         <span class="tag tag-int">dialect</span>
@@ -467,7 +467,7 @@
     <div class="pkg-card" style="border-left-color:#60a5fa">
       <div class="pkg-name" style="color:#60a5fa">@askdb/http-api</div>
       <div class="pkg-version">apps/http-api · bin: askdb-http</div>
-      <div class="pkg-desc">Minimal HTTP wrapper around <code>@askdb/core</code>. Exposes <code>POST /ask</code> → SQL, <code>GET /health</code>. Accepts inline <code>schemaJson</code> or resolves from <code>ASKDB_SCHEMA_PATH</code>. Supports <code>x-correlation-id</code> header, request-body <code>mode</code>, and <code>explain</code>.</div>
+      <div class="pkg-desc">Minimal HTTP wrapper around <code>@askdb/core</code>. Exposes <code>POST /ask</code> → SQL, <code>GET /health</code>. Accepts inline <code>schemaJson</code> or resolves from <code>host.schemaPath</code> in <code>askdb.config.ts</code>. Supports <code>x-correlation-id</code> header, request-body <code>mode</code>, and <code>explain</code>.</div>
       <div class="pkg-tags">
         <span class="tag tag-app">HTTP</span>
         <span class="tag tag-app">REST</span>
@@ -1229,35 +1229,34 @@
 <!-- SECTION: ENVIRONMENT & CONFIG                               -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section id="environment">
-  <h2>Environment &amp; Configuration <span class="sub">Runtime variables and <code>askdb.config.ts</code> bootstrap</span></h2>
+  <h2>Environment &amp; Configuration <span class="sub"><code>askdb.config.ts</code> keys and bootstrap</span></h2>
 
   <div class="grid-2" style="margin-bottom:1.5rem">
     <div class="card">
-      <h3 style="margin-bottom:0.75rem">Key Environment Variables</h3>
+      <h3 style="margin-bottom:0.75rem">Key Configuration</h3>
+      <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem">Keys in <code>askdb.config.ts</code>. Bind any value to an environment variable of your choosing with <code>env("NAME")</code>; the CLI loads <code>.env</code> first. AskDB reads one variable of its own from the environment, <code>ASKDB_DEBUG</code>.</p>
       <table class="env-table">
-        <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+        <thead><tr><th>Config key</th><th>Purpose</th></tr></thead>
         <tbody>
-          <tr><td>OPENAI_API_KEY</td><td>Required for NL→SQL and enrichment suggestions</td></tr>
-          <tr><td>ASKDB_AI_API_KEY</td><td>Provider-agnostic API key override</td></tr>
-          <tr><td>ASKDB_AI_PROVIDER</td><td><code>openai</code> | <code>azure</code> | <code>foundry</code></td></tr>
-          <tr><td>ASKDB_MODEL / OPENAI_MODEL</td><td>Model ID (default: gpt-4o-mini)</td></tr>
-          <tr><td>ASKDB_MODE</td><td><code>schema_only</code> | <code>bounded_results</code></td></tr>
-          <tr><td>ASKDB_OMIT_SENSITIVE_FROM_PROMPT</td><td>Omit sensitive column/table names from DDL</td></tr>
-          <tr><td>ASKDB_LOG_LEVEL</td><td>Pino log level: trace|debug|info|warn|error|fatal|silent</td></tr>
-          <tr><td>DATABASE_URL</td><td>Postgres URL for live introspection</td></tr>
-          <tr><td>ASKDB_SCHEMA_PATH</td><td>Schema path for HTTP API server</td></tr>
-          <tr><td>ASKDB_SCHEMA_JSON</td><td>Inline schema JSON for HTTP API</td></tr>
-          <tr><td>ASKDB_RAG_EMBEDDER</td><td><code>ai-sdk</code> | <code>openai</code> | <code>mock</code> — selects RAG embedder backend</td></tr>
-          <tr><td>ASKDB_RAG_EMBEDDER_API_KEY</td><td>API key override for RAG embedder (falls back to ASKDB_AI_API_KEY)</td></tr>
-          <tr><td>ASKDB_RAG_EMBEDDER_MODEL</td><td>Embedding model override (default: text-embedding-3-small)</td></tr>
-          <tr><td>ASKDB_RAG_EMBEDDER_DIMENSIONS</td><td>Embedding vector dimensions override</td></tr>
-          <tr><td>ASKDB_PGVECTOR_URL</td><td>Postgres connection string for pgvector RAG store</td></tr>
-          <tr><td>ASKDB_PGVECTOR_INDEX_STRATEGY</td><td><code>ivfflat</code> | <code>hnsw</code> | <code>none</code> — pgvector index type</td></tr>
-          <tr><td>ASKDB_INTROSPECT_MYSQL_URL</td><td>MySQL connection URL for introspection (via config)</td></tr>
-          <tr><td>ASKDB_INTROSPECT_SQLSERVER_URL</td><td>SQL Server connection URL for introspection (via config)</td></tr>
-          <tr><td>ASKDB_INTROSPECT_SQLITE_FILE</td><td>SQLite file path for introspection (via config)</td></tr>
-          <tr><td>ASKDB_MOCK_SQL</td><td>Bypass live model in tests</td></tr>
-          <tr><td>ASKDB_CORRELATION_ID</td><td>Override correlation ID for log lines</td></tr>
+          <tr><td>ai.provider</td><td><code>openai</code> | <code>azure</code> | <code>foundry</code> | <code>google</code> | <code>anthropic</code> | <code>gateway</code></td></tr>
+          <tr><td>ai.providerConfig.&lt;provider&gt;.apiKey</td><td>API key for NL→SQL and enrichment suggestions (e.g. <code>env("OPENAI_API_KEY")</code>)</td></tr>
+          <tr><td>ai.language.model</td><td>Model ID (OpenAI default: gpt-4o-mini)</td></tr>
+          <tr><td>modes.askdbMode</td><td><code>schema_only</code> | <code>bounded_results</code></td></tr>
+          <tr><td>modes.omitSensitiveFromPrompt</td><td>Omit sensitive column/table names from DDL</td></tr>
+          <tr><td>logging.level</td><td>Pino log level: trace|debug|info|warn|error|fatal|silent</td></tr>
+          <tr><td>logging.correlationId</td><td>Override correlation ID for log lines</td></tr>
+          <tr><td>introspection.providerConfig.postgres.databaseUrl</td><td>Postgres URL for live introspection (e.g. <code>env("DATABASE_URL")</code>)</td></tr>
+          <tr><td>introspection.providerConfig.mysql.databaseUrl</td><td>MySQL connection URL for introspection</td></tr>
+          <tr><td>introspection.providerConfig.sqlserver.databaseUrl</td><td>SQL Server connection URL for introspection</td></tr>
+          <tr><td>introspection.providerConfig.sqlite.file</td><td>SQLite file path for introspection</td></tr>
+          <tr><td>host.schemaPath</td><td>Schema path for HTTP API server</td></tr>
+          <tr><td>host.schemaJson</td><td>Inline schema JSON for HTTP API</td></tr>
+          <tr><td>rag.embedder</td><td><code>mock</code> | <code>ai</code> — selects RAG embedder backend</td></tr>
+          <tr><td>ai.embedding.model</td><td>Embedding model for <code>rag.embedder: "ai"</code></td></tr>
+          <tr><td>ai.embedding.dimensions</td><td>Embedding vector size to request</td></tr>
+          <tr><td>rag.storeConfig.pgvector.databaseUrl</td><td>Postgres connection string for pgvector RAG store</td></tr>
+          <tr><td>rag.storeConfig.pgvector.indexStrategy</td><td><code>ivfflat</code> | <code>hnsw</code> | <code>none</code> — pgvector index type</td></tr>
+          <tr><td>dev.mockSql</td><td>Bypass live model in tests</td></tr>
         </tbody>
       </table>
     </div>
@@ -1349,9 +1348,9 @@
       <tbody>
         <tr>
           <td><strong>Minimal Postgres SQL generation</strong></td>
-          <td><code>@askdb/core @askdb/postgres</code></td>
+          <td><code>@askdb/core ai</code></td>
           <td>AI SDK provider package (e.g. <code>@ai-sdk/openai</code>), optionally with <code>@askdb/ai</code> for config-driven model selection</td>
-          <td>No <code>pg</code> needed. Uses <code>ask()</code> + <code>postgresDialect</code>.</td>
+          <td>Neither <code>@askdb/postgres</code> nor <code>pg</code> needed. Uses <code>ask({ dialect: "postgres" })</code>; the spec is core's (ADR 0029).</td>
         </tr>
         <tr>
           <td><strong>Live Postgres introspection</strong></td>
@@ -1405,7 +1404,7 @@
           <td><strong>HTTP API server</strong></td>
           <td><code>@askdb/http-api</code></td>
           <td>Model provider key (env)</td>
-          <td>Set <code>ASKDB_SCHEMA_PATH</code> or accept inline <code>schemaJson</code>.</td>
+          <td>Set <code>host.schemaPath</code> in <code>askdb.config.ts</code> or accept inline <code>schemaJson</code>.</td>
         </tr>
       </tbody>
     </table>

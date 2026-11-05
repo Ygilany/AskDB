@@ -5,7 +5,7 @@ description: "Full API reference for @askdb/core: ask(), schema loading, dialect
 
 <p class="doc-eyebrow">Reference · @askdb/core</p>
 
-<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
+<p class="doc-lede"><code>@askdb/core</code> is the NL-to-SQL pipeline. It owns schema loading, prompt construction, the built-in dialects, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
 
 ## `ask(options)`
 
@@ -146,7 +146,7 @@ The third argument, `BindGuardrails`, is required:
 | `acceptWarnings` | `ReadonlyArray<"tenant">` | no | — | With a policy whose `enforcement` is `warn`, a template that fails the tenant check is refused unless this includes `"tenant"`. |
 | `dialect` | `DialectSpec \| BuiltInDialectId` | for a `"host"` template, or one stored without `dialectRules` | the built-in spec | The dialect rules to check and render under: the `DialectSpec` you passed to `ask()`, or a built-in id. Its `id` must be the template's `dialect`. |
 
-**Which dialect rules a rebind uses.** `ask()` records them in `preparedQuery.dialectRules`: `"builtin"` when it ran with a built-in id or the exported constant (`POSTGRES_DIALECT` and the others), `"host"` for any other `DialectSpec` object, such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }`. A `"builtin"` template rebinds under the built-in spec unless you pass `dialect`. A `"host"` template needs the same spec as `dialect`, so your `backslashEscapes`, `blockedFunctions`, `extraForbiddenKeywords` and `extraValidate` apply at rebind too. A template stored without `dialectRules`, before 1.0.0-beta.46, needs `dialect` as well: pass the spec `ask()` ran with, or the built-in id, such as `"postgres"`, if it ran with the built-in rules. If your app loads two copies of `@askdb/core`, such as ESM beside CJS, a constant from the other copy is a different object, so its templates are `"host"`: pass `dialect` ([ADR 0031](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0031-rebind-checks-under-the-hosts-dialect-spec.md)).
+**Which dialect rules a rebind uses.** `ask()` records them in `preparedQuery.dialectRules`: `"builtin"` when it ran with a built-in id or the exported constant (`POSTGRES_DIALECT` and the others), `"host"` for any other `DialectSpec` object, such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }`. A `"builtin"` template rebinds under the built-in spec unless you pass `dialect`. A `"host"` template needs the same spec as `dialect`, so your `backslashEscapes`, `blockedFunctions`, `extraForbiddenKeywords` and `extraValidate` apply at rebind too. A template stored without `dialectRules`, before 1.0.0-beta.46, needs `dialect` as well: pass the spec `ask()` ran with, or the built-in id, such as `"postgres"`, if it ran with the built-in rules. If your app loads two copies of `@askdb/core`, such as ESM beside CJS, a constant from the other copy is a different object, so its templates are `"host"`: pass `dialect` ([ADR 0032](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0032-rebind-checks-under-the-hosts-dialect-spec.md)).
 
 Tenant IDs come from `tenantScope`, never from `values`. Each `:tenant_<root>_ids` placeholder is filled in both forms: escaped literals in `sql`, as `ask()` fills it in `"sql-only"` mode (`col = :tenant_agency_ids` becomes `col IN ('7', '8')` with several IDs), and driver markers after the business markers in `unboundSql`, with the IDs in `params` (appended for `$N` / `@pN`, interleaved in source order for `?`, and `bindings[].indices` remapped).
 
@@ -342,6 +342,22 @@ createMentionMatcher(names).mentionsAny("Dedupe on email"); // → true
 
 The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker, `@askdb/enrich`'s authoring warning and `ask()`'s prompt (with `omitSensitiveIdentifiersFromNlToSqlPrompt`) all use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`. `sensitiveMentionNames(schema)` returns the names that rule checks for a normalized schema, schema-wide: a column marked sensitive itself by its bare name, and a column that is sensitive only because its table is (`sensitiveFromTable`) only as `{ table, column }`. Columns of untracked tables count too.
 
+### `saveSchemaFile(schemaDir, relativePath, content)`
+
+```ts
+import { saveSchemaFile, writeConceptsMarkdown } from "@askdb/core";
+saveSchemaFile("./my-app.schema", "concepts.md", writeConceptsMarkdown({ concepts }, body));
+```
+
+Writes `content` (a string, written as UTF-8, or a `Uint8Array`, written as given) to one file inside a schema directory, so that no link redirects the write out of it. `@askdb/enrich`'s saves, Studio and `@askdb/introspect` all write the directory through it; use it when your own authoring tool writes there. `relativePath` names the file from `schemaDir` with `/` between parts (`schema.json`, `tables/orders.md`).
+
+- It throws, and writes nothing, when the file or a directory between it and `schemaDir` (such as `tables/`) is a symbolic link. `schemaDir` itself can be a symbolic link.
+- It throws when `relativePath` has an empty, `.` or `..` part or a NUL byte (on Windows, also a `\`), so an absolute path is refused too. It doesn't create missing directories.
+- It writes a temporary file next to the target and renames it over the target. A hard link at the target is replaced, not written through, and a reader sees the old file or the new one, never part of one. The new file keeps the target's permission bits, group and, where the process may set it, owner. It doesn't keep an access control list (ACL) or other extended attributes, so on a file with an ACL a save can widen access.
+- A target you can't write throws `EACCES`, as a plain write would. The temporary file needs write access to the target's directory.
+
+A refusal's message reads `Refusing to write <relativePath> outside the schema directory: <why>`. On Windows, the rename fails with `EPERM` while another process holds the target open; writing again usually works.
+
 ---
 
 ## Enrichment suggestions
@@ -391,13 +407,13 @@ dialect: "postgres"  // or "mysql" | "sqlite" | "sqlserver" | "cockroachdb" | "m
 | Id | Engine |
 | --- | --- |
 | `"postgres"` | PostgreSQL — `"` quotes, `ILIKE`, `::type` cast, `NOW()`, `\|\|` concat |
-| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres prompt |
+| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres spec and prompt. Outside the 1.0 support claim: AskDB's end-to-end tests don't cover it. |
 | `"mysql"` | MySQL — `` ` `` quotes, `CONCAT()`, `LIKE`, `CAST()`, `NOW()` |
 | `"mariadb"` | MariaDB — MySQL-protocol-compatible; reuses the MySQL prompt |
 | `"sqlite"` | SQLite — dynamic typing, `LIKE`, `date('now')`, `\|\|` concat, `LIMIT` |
 | `"sqlserver"` | SQL Server (T-SQL) — `[bracket]` or `"` quotes, `GETDATE()`, `+`/`CONCAT()`, `CAST()`/`CONVERT()` |
 
-The engine adapter packages (`@askdb/postgres`, `@askdb/mysql`, etc.) export convenience dialect constants (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …), but passing the string id to `ask()` is sufficient — you don't need to install the engine adapter just for SQL generation.
+The engine packages (`@askdb/postgres`, `@askdb/mysql`, etc.) re-export core's dialect constants (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …) for convenience, but passing the string id to `ask()` is sufficient — you don't need to install an engine package just for SQL generation.
 
 ### `DialectSpec`
 
@@ -483,7 +499,10 @@ Passing an unknown string dialect id throws `UnknownDialectError`, which extends
 ```ts
 import { DEFAULT_ASKDB_MODE, parseAskDbModeV1 } from "@askdb/core";
 
-const mode = parseAskDbModeV1(process.env.ASKDB_MODE); // throws on invalid values
+// `input.mode` is a value from your own host, such as a request field.
+function modeFor(input: { mode?: string }) {
+  return parseAskDbModeV1(input.mode); // DEFAULT_ASKDB_MODE when undefined; throws on invalid values
+}
 ```
 
 ---

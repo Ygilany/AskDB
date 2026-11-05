@@ -47,7 +47,7 @@ export type BindGuardrails = {
    * The dialect rules to check and render under: the `DialectSpec` `ask()` ran with, or a
    * built-in id. Its `id` must be the template's `dialect`. Required for a template with
    * `dialectRules: "host"`, or one stored without `dialectRules`; a `"builtin"` template
-   * defaults to the built-in spec (ADR 0031).
+   * defaults to the built-in spec (ADR 0032).
    */
   dialect?: DialectSpec | BuiltInDialectId;
 };
@@ -304,7 +304,7 @@ function inlineTenantIdsForRebind(
 /**
  * The spec a rebind checks and renders under. A `"builtin"` template uses its built-in spec
  * unless the host passes one. A `"host"` template, or one stored without `dialectRules`, has
- * rules AskDB can't recover, so it needs the host's spec rather than a guess (ADR 0031).
+ * rules AskDB can't recover, so it needs the host's spec rather than a guess (ADR 0032).
  */
 function rebindSpec(prepared: PreparedQuery, dialect: BindGuardrails["dialect"]): DialectSpec {
   if (dialect === undefined) {

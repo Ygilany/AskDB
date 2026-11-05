@@ -2,9 +2,9 @@
 
 AskDB ships focused library packages:
 
-1. [`@askdb/core`](../../packages/core/README.md) — dialect-agnostic NL→SQL pipeline (`ask()`, schema/IR types, modes, logging, retrieval input).
+1. [`@askdb/core`](../../packages/core/README.md) — NL→SQL pipeline (`ask()`, schema/IR types, modes, logging, retrieval input) and the built-in dialect specs, so `ask({ dialect: "postgres" })` needs no engine package ([ADR 0029](../adrs/0029-core-owns-built-in-dialect-specs.md)).
 2. [`@askdb/introspect`](../../packages/introspect/README.md) — engine-agnostic introspection orchestrator, `CatalogQueryRunner` type, and Schema v2 renderer.
-3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
+3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: connector (live + from-export), catalog templates, a `pg`-backed catalog query runner for live introspection, and a re-export of core's Postgres dialect spec (`postgresDialect`).
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by Studio and custom authoring surfaces.
 6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()`. **This is the only package that reads `process.env` directly.** All other packages use **`getAskDbRuntimeConfig()`** from here (not raw `process.env`).
@@ -165,50 +165,59 @@ AskDB's first-party surfaces (CLI, HTTP API, Studio) support OpenAI, Azure/Found
 2. **Custom provider string + a host-registered adapter** (~40 lines): use any other string and pass an `AiProviderAdapter` registered under that name to `createAiRegistry(...)` (or `createAskDb({ providers })`).
 3. **BYO `LanguageModel` via `ask({ model })** (no config involvement): pass a model instance directly; `askdb.config` and `@askdb/ai` are not involved.
 
+Each recipe is a `.env` entry plus the `askdb.config.ts` lines that read it. The CLI, HTTP API and Studio take their settings from the config, so the variable names are your choice: `env("…")` binds each one. Setting `ASKDB_AI_PROVIDER`, `ASKDB_AI_MODEL` or another `ASKDB_*` name in the shell does nothing there; those are internal keys AskDB builds from the config. The one AskDB variable read from the environment is `ASKDB_DEBUG`, which prints stack traces. In your own code, `@askdb/ai`'s registry reads the `ASKDB_AI_*` keys from whatever env map you pass it (`resolveAiConfig(env)`, `createLanguageModelFromEnv(env)`): pass `getAskDbRuntimeConfig().ai.aiEnv` to use the config.
+
 ### OpenAI
 
 ```bash
-# env only
-ASKDB_AI_PROVIDER=openai   # optional; openai is the default
+# .env
 OPENAI_API_KEY=sk-...
-ASKDB_AI_MODEL=gpt-4o       # optional; default: gpt-4o-mini
 ```
 
 ```ts
 // askdb.config.ts
-ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } }, language: { model: "gpt-4o" } }
+ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } }, language: { model: "gpt-4o" } } // model optional; default: gpt-4o-mini
 ```
 
 ### Azure / Microsoft Foundry
 
 ```bash
-ASKDB_AI_PROVIDER=azure
+# .env
 AZURE_OPENAI_API_KEY=...
-ASKDB_AI_AZURE_RESOURCE_NAME=my-resource  # or ASKDB_AI_BASE_URL
-ASKDB_AI_MODEL=gpt-4o-mini               # deployment name
+AZURE_RESOURCE_NAME=my-resource      # the subdomain of https://my-resource.openai.azure.com
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini  # your deployment name
+```
+
+```ts
+// askdb.config.ts — for Microsoft Foundry, use provider "foundry" and providerConfig.foundry
+ai: {
+  provider: "azure",
+  providerConfig: { azure: { apiKey: env("AZURE_OPENAI_API_KEY"), resourceName: env("AZURE_RESOURCE_NAME") } }, // or baseUrl: a full endpoint URL
+  language: { model: env("AZURE_OPENAI_DEPLOYMENT") },
+}
 ```
 
 ### Google Gemini
 
 ```bash
-ASKDB_AI_PROVIDER=google
+# .env
 GOOGLE_GENERATIVE_AI_API_KEY=...
-ASKDB_AI_MODEL=gemini-2.0-flash  # optional; default: gemini-2.0-flash
 ```
 
 ```ts
+// askdb.config.ts — default model: gemini-2.0-flash; set language.model to change it
 ai: { provider: "google", providerConfig: { google: { apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY") } } }
 ```
 
 ### Anthropic Claude
 
 ```bash
-ASKDB_AI_PROVIDER=anthropic
+# .env
 ANTHROPIC_API_KEY=sk-ant-...
-ASKDB_AI_MODEL=claude-sonnet-4-6  # optional; default: claude-sonnet-4-6
 ```
 
 ```ts
+// askdb.config.ts — default model: claude-sonnet-4-6; set language.model to change it
 ai: { provider: "anthropic", providerConfig: { anthropic: { apiKey: env("ANTHROPIC_API_KEY") } } }
 ```
 
@@ -217,12 +226,12 @@ ai: { provider: "anthropic", providerConfig: { anthropic: { apiKey: env("ANTHROP
 ### Vercel AI Gateway
 
 ```bash
-ASKDB_AI_PROVIDER=gateway
+# .env
 AI_GATEWAY_API_KEY=...
-ASKDB_AI_MODEL=anthropic/claude-sonnet-4-6  # optional; default: openai/gpt-4o-mini
 ```
 
 ```ts
+// askdb.config.ts — model optional; default: openai/gpt-4o-mini
 ai: { provider: "gateway", providerConfig: { gateway: { apiKey: env("AI_GATEWAY_API_KEY") } }, language: { model: "anthropic/claude-sonnet-4-6" } }
 ```
 
@@ -241,4 +250,4 @@ ai: {
 }
 ```
 
-A connection keyed by a custom provider id flattens to the universal `ASKDB_AI_*` env keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name, e.g. `createAiRegistry(["openai", mistralAdapter])` — the first-party apps do not include third-party adapters.
+A connection keyed by a custom provider id flattens to the universal internal `ASKDB_AI_*` keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name, e.g. `createAiRegistry(["openai", mistralAdapter])` — the first-party apps do not include third-party adapters.

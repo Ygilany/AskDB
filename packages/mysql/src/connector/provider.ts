@@ -9,7 +9,7 @@ export const mysqlConnectorProvider = defineLiveConnectorProvider({
   runtimeKey: "mysqlDatabaseUrl",
   connectionNoun: "a connection URL",
   missingConnection: {
-    cli: "Provide --url <mysql-url> (or set introspection.providerConfig.mysql.databaseUrl / ASKDB_INTROSPECT_MYSQL_URL / DATABASE_URL).",
+    cli: "Provide --url <mysql-url> (or set introspection.provider: \"mysql\" and introspection.providerConfig.mysql.databaseUrl in askdb.config).",
     config:
       "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
   },

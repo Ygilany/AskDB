@@ -20,7 +20,7 @@ describe("sqliteConnectorProvider", () => {
     expect(resolve({ runtime: runtime(), surface: "cli" })).toEqual({
       ok: false,
       error:
-        "Provide --url <path-to-sqlite-file> (or set introspection.providerConfig.sqlite.file / ASKDB_INTROSPECT_SQLITE_FILE).",
+        "Provide --url <path-to-sqlite-file> (or set introspection.provider: \"sqlite\" and introspection.providerConfig.sqlite.file in askdb.config).",
     });
     expect(resolve({ runtime: runtime() })).toEqual({
       ok: false,

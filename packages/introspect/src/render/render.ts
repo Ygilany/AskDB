@@ -1,13 +1,8 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   parseTableMarkdown,
+  saveSchemaFile,
   type V2SchemaJson,
   type V2Table,
   type V2Column,
@@ -31,8 +26,10 @@ import type {
  * Render a `SqlSchema` to a Schema v2 directory.
  *
  * Clean writes and ID-anchored re-introspection merges write `schema.json`
- * only. The describable layer (`tables/*.md`, `concepts.md`) is read only for
- * orphan detection when `existingArtifactDir` is supplied.
+ * only, through `saveSchemaFile()` from `@askdb/core`: a symbolic link at
+ * `schema.json` is refused, and the file is replaced by a temp file renamed
+ * over it (ADR 0028). The describable layer (`tables/*.md`, `concepts.md`) is
+ * read only for orphan detection when `existingArtifactDir` is supplied.
  *
  * Determinism contract (requirements.md §5):
  *   - Schemas alphabetical at the source (the connector already produces
@@ -52,7 +49,7 @@ export function renderToSchemaV2(
 
   mkdirSync(options.outDir, { recursive: true });
   const schemaJsonPath = resolve(options.outDir, "schema.json");
-  writeFileSync(schemaJsonPath, body, "utf8");
+  saveSchemaFile(options.outDir, "schema.json", body);
 
   return { schemaJsonPath, warnings };
 }
