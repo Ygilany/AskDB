@@ -24,5 +24,5 @@ export function createSqlServerConnector(): Connector<SqlServerIntrospectionInpu
   };
 }
 
-export { describeSqlServer, SQLSERVER_CATALOG_SQL } from "./describe.js";
+export { describeSqlServer } from "./describe.js";
 export type { DescribeSqlServerInput } from "./describe.js";

@@ -11,7 +11,6 @@ import {
   type TenantPolicyWarning,
   type TableCoverageEntry,
   type TableTenantClassification,
-  type ScopeThrough,
 } from "./tenant-policy.js";
 
 // ---------------------------------------------------------------------------
@@ -283,18 +282,6 @@ function buildCoverage(
   entries.sort((a, b) => a.tableId.localeCompare(b.tableId));
 
   return entries;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers — scope-through classification for mixed tables
-// ---------------------------------------------------------------------------
-
-export function isScopeThroughColumn(s: ScopeThrough): s is ScopeThrough & { column: string } {
-  return "column" in s;
-}
-
-export function isScopeThroughJoin(s: ScopeThrough): s is ScopeThrough & { join: Array<{ from: string; to: string }> } {
-  return "join" in s;
 }
 
 // ---------------------------------------------------------------------------

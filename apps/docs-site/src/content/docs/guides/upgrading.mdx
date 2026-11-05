@@ -19,6 +19,27 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.46
+
+Released with `@askdb/config` 1.0.0-beta.15, `@askdb/enrich` 0.2.0-beta.17, `@askdb/mysql` 0.1.0-beta.21, `@askdb/sqlite` 0.1.0-beta.21 and `@askdb/sqlserver` 0.1.0-beta.22. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Replace imports of removed exports
+
+These exports are gone, because nothing outside their own package used them and no page documented them ([#356](https://github.com/Ygilany/AskDB/issues/356), [#275](https://github.com/Ygilany/AskDB/issues/275), ADR 0031). If your app imports one, it no longer typechecks or loads. Replace each one:
+
+| Package | Removed export | Use instead |
+| --- | --- | --- |
+| `@askdb/core` | `formatSchemaForPrompt(schema, options)` | `formatSchemaForNlToSql(schema, options).ddl`, which returns the same string |
+| `@askdb/config` | `DEFAULT_LOCAL_POSTGRES_URL` | Your own local connection string |
+| `@askdb/enrich` | `parseListInput(value)` | `value.split(",").map((s) => s.trim()).filter(Boolean)` |
+| `@askdb/enrich` | `formatList(list)` | `list?.join(", ") ?? ""` |
+| `@askdb/enrich` | `hasAnyColumnDescribable`, `isEnumCandidate` | Nothing |
+| `@askdb/mysql` | `MYSQL_CATALOG_SQL` | Nothing: `createMysqlConnector()` runs the catalog queries |
+| `@askdb/sqlite` | `SQLITE_CATALOG_SQL` | Nothing: `createSqliteConnector()` runs the catalog queries |
+| `@askdb/sqlserver` | `SQLSERVER_CATALOG_SQL` | Nothing: `createSqlServerConnector()` runs the catalog queries |
+
+`@askdb/postgres` keeps `POSTGRES_TEMPLATE_BUNDLE`, because [`askdb introspect --from-export`](/reference/cli/#askdb-introspect) has you run its templates against the database by hand first. `askdb introspect templates --engine postgres` prints them.
+
 ## 1.0.0-beta.45
 
 Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/config` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.

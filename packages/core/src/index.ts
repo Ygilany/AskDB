@@ -157,7 +157,6 @@ export type {
 } from "./enrichment/index.js";
 export {
   formatSchemaForNlToSql,
-  formatSchemaForPrompt,
   normalizeAskDbSchema,
   type FormatNlToSqlOptions,
   type NlToSqlSchemaFormatStats,

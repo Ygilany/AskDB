@@ -15,7 +15,6 @@ export {
 export {
   createMysqlConnector,
   describeMysql,
-  MYSQL_CATALOG_SQL,
   type DescribeMysqlInput,
   type MysqlIntrospectionInput,
 } from "./connector/index.js";

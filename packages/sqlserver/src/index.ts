@@ -14,7 +14,6 @@ export {
 export {
   createSqlServerConnector,
   describeSqlServer,
-  SQLSERVER_CATALOG_SQL,
   type DescribeSqlServerInput,
   type SqlServerIntrospectionInput,
 } from "./connector/index.js";

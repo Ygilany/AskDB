@@ -4,8 +4,6 @@ import {
   buildFrontmatter,
   buildTableDraft,
   findSensitiveColumnReferences,
-  parseListInput,
-  isEnumCandidate,
 } from "./draft.js";
 
 const physical = {
@@ -22,18 +20,6 @@ const physical = {
 } as const;
 
 describe("draft", () => {
-  it("parseListInput trims and drops empties", () => {
-    expect(parseListInput("a, b ,, c,")).toEqual(["a", "b", "c"]);
-    expect(parseListInput("")).toEqual([]);
-  });
-
-  it("isEnumCandidate identifies text-y types", () => {
-    expect(isEnumCandidate({ ...physical.columns[2], type: "text" })).toBe(true);
-    expect(isEnumCandidate({ ...physical.columns[2], type: "varchar(50)" })).toBe(true);
-    expect(isEnumCandidate({ ...physical.columns[0], type: "uuid" })).toBe(false);
-    expect(isEnumCandidate({ ...physical.columns[3], type: "integer" })).toBe(false);
-  });
-
   it("buildTableDraft round-trips through buildFrontmatter via the writer", () => {
     const md = `---
 id: table:public.orders

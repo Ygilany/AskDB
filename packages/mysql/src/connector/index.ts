@@ -25,5 +25,5 @@ export function createMysqlConnector(): Connector<MysqlIntrospectionInput> {
   };
 }
 
-export { describeMysql, MYSQL_CATALOG_SQL } from "./describe.js";
+export { describeMysql } from "./describe.js";
 export type { DescribeMysqlInput } from "./describe.js";
