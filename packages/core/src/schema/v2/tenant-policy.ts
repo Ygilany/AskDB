@@ -303,6 +303,33 @@ export type TenantPolicyWarning =
   | { kind: "unknown_root_in_hierarchy"; id: string; context: string }
   | { kind: "unknown_root_in_mapping"; id: string; context: string };
 
+/**
+ * One line describing a tenant policy problem, naming the IDs involved. The strict
+ * load error, the `askdb.tenant.policy_warnings` log message and the CLI all use it.
+ */
+export function formatTenantPolicyWarning(warning: TenantPolicyWarning): string {
+  switch (warning.kind) {
+    case "orphaned_root_id":
+      return `root table ${warning.id} is not in schema.json`;
+    case "orphaned_scoped_table_id":
+      return `scoped table ${warning.id} is not in schema.json`;
+    case "orphaned_polymorphic_table_id":
+      return `polymorphic table ${warning.id} is not in schema.json`;
+    case "orphaned_global_table_id":
+      return `global table ${warning.id} is not in schema.json`;
+    case "orphaned_column_id":
+      return `${warning.context}: column ${warning.id} is not in schema.json`;
+    case "orphaned_fk_id":
+      return `${warning.context}: foreign key column ${warning.id} is not in schema.json`;
+    case "hierarchy_cycle":
+      return `hierarchy cycle through ${warning.ids.join(", ")}`;
+    case "unknown_root_in_scope":
+    case "unknown_root_in_hierarchy":
+    case "unknown_root_in_mapping":
+      return `${warning.context}: ${warning.id} is not one of the policy's roots`;
+  }
+}
+
 export type NormalizedTenantPolicy = {
   schemaId: string;
   enforcement: EnforcementMode;

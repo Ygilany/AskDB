@@ -32,6 +32,12 @@ export const AskDbLogEvent = {
   /** Tenant scope validation failed. Includes `reason`. */
   TenantScopeRejected: "askdb.tenant.scope_rejected",
   /**
+   * The loaded tenant policy doesn't fully match `schema.json` (ADR 0023). Logged at
+   * `warn` level, once per loaded schema, by the first `ask()` that receives it.
+   * Includes `enforcement`, `warningCount` and `warnings` (schema IDs only, never values).
+   */
+  TenantPolicyWarnings: "askdb.tenant.policy_warnings",
+  /**
    * Generated (or replayed) SQL was found to reference identifiers marked
    * `sensitive` in the schema artifact. Emitted by `ask()` in both `warn` and
    * `strict` guardrail modes. Includes `sensitiveColumnCount` and the matched

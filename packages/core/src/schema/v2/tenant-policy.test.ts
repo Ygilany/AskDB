@@ -183,10 +183,12 @@ unknownKey: bad
 // Cross-reference validation
 // ---------------------------------------------------------------------------
 
+// Under `warn`, every problem is collected into `warnings`. Under `strict` most of them
+// fail the load instead; loader.test.ts covers that.
 describe("normalizeTenantPolicy — cross-reference validation", () => {
   const validContent = `---
 schemaId: test
-enforcement: strict
+enforcement: warn
 roots:
   - id: table:public.orgs
     tenantIdColumn: table:public.orgs#id
@@ -255,7 +257,7 @@ globalTables:
   it("warns about unknown roots in scopeThrough", () => {
     const content = `---
 schemaId: test
-enforcement: strict
+enforcement: warn
 roots:
   - id: table:public.orgs
     tenantIdColumn: table:public.orgs#id
@@ -283,7 +285,7 @@ describe("normalizeTenantPolicy — hierarchy cycle detection", () => {
   it("detects cycles in roots with parent references", () => {
     const content = `---
 schemaId: test
-enforcement: strict
+enforcement: warn
 roots:
   - id: table:public.a
     tenantIdColumn: table:public.a#id

@@ -1,4 +1,5 @@
 import type { LanguageModel } from "ai";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -1095,6 +1096,45 @@ function inlineMarkers(sql: string, params: readonly unknown[]): string {
     return lit(params[q++]);
   });
 }
+
+// Under `enforcement: warn` a policy that doesn't match schema.json still loads; the
+// host learns of it from one log event per loaded schema (#332, ADR 0023).
+describe("ask — tenant policy warnings", () => {
+  /** The fixture as a bundle, under `warn`, with its orders scope column renamed to one schema.json lacks. */
+  function loadWarnPolicyWithMissingColumn() {
+    const policy = readFileSync(join(multiTenantDir, "tenant-policy.md"), "utf8")
+      .replace("enforcement: strict", "enforcement: warn")
+      .replace("column: table:public.orders#agency_id", "column: table:public.orders#agency_ref");
+    const physical = JSON.parse(readFileSync(join(multiTenantDir, "schema.json"), "utf8")) as unknown;
+    return loadSchemaFromJson(JSON.stringify({ bundled: true, physical, tables: {}, tenantPolicy: policy }));
+  }
+
+  it("logs the policy's warnings once per loaded schema, at warn level", async () => {
+    const schema = loadWarnPolicyWithMissingColumn();
+    const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
+    for (let i = 0; i < 2; i++) {
+      await ask({
+        question: "count orders",
+        schema,
+        model: fakeModel,
+        dialect: cannedDialect,
+        tenantScope: agencyScope,
+        logger,
+      });
+    }
+
+    const events = logger.warn.mock.calls.filter(
+      ([context]) => (context as { event?: string }).event === AskDbLogEvent.TenantPolicyWarnings,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]![0]).toMatchObject({
+      enforcement: "warn",
+      warningCount: 1,
+      warnings: [{ kind: "orphaned_column_id", id: "table:public.orders#agency_ref" }],
+    });
+    expect(events[0]![1]).toContain("table:public.orders#agency_ref");
+  });
+});
 
 describe("ask — tenant guardrail runs on the SQL actually returned", () => {
   // The model's bound ```sql block is unscoped while its ```sql-unbound block is

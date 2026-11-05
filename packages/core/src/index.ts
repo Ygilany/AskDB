@@ -88,6 +88,7 @@ export {
   RECOGNIZED_H2_SECTIONS,
   parseTenantPolicyMarkdown,
   normalizeTenantPolicy,
+  formatTenantPolicyWarning,
   tenantPolicyFrontmatterSchema,
   tenantRootSchema,
   hierarchyEdgeSchema,

@@ -2,6 +2,7 @@ import type { generateText as defaultGenerateText } from "ai";
 import type { AskDbLanguageModel } from "./ai/types.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
+import { logTenantPolicyWarningsOnce } from "./logging/tenant-policy-warnings.js";
 import type { AnyNormalizedSchema } from "./schema/types.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
@@ -330,6 +331,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // Tenant scope validation (fail closed when policy exists but no scope provided)
   const tenantPolicy = isV2Schema(options.schema) ? options.schema.tenantPolicy : undefined;
   if (tenantPolicy) {
+    logTenantPolicyWarningsOnce(logger, tenantPolicy);
     validateTenantScope(tenantPolicy, options.tenantScope);
     logger?.info(
       {

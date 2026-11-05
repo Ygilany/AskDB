@@ -35,6 +35,7 @@ export {
   scopedTableSchema,
   polymorphicTableSchema,
   enforcementModeSchema,
+  formatTenantPolicyWarning,
   tenantScopeSchema,
   tenantAccessSchema,
   TENANT_POLICY_H2_SECTIONS,

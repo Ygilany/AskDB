@@ -7,6 +7,8 @@
 export type AskDbLogger = {
   info(context: Record<string, unknown>, message: string): void;
   error(context: Record<string, unknown>, message: string): void;
+  /** Optional — a problem the host should fix that doesn't stop the run. Without it, `info` is used. */
+  warn?(context: Record<string, unknown>, message: string): void;
   /** Optional — used for prompt redaction notices without leaking sensitive identifiers. */
   debug?(context: Record<string, unknown>, message: string): void;
 };
