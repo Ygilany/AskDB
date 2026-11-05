@@ -20,7 +20,7 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { StatusBanner } from "../../components/common/StatusBanner";
 import type { StatusMessage } from "../../contexts/workspace-context";
-import type { StudioTableDto } from "@/shared/api";
+import type { StudioTableDto, SuggestTenantPolicyResponse } from "@/shared/api";
 
 export function TenancyPage() {
   const {
@@ -310,6 +310,8 @@ type CreateFormState = {
   draftStatus: StatusMessage | null;
   draftFrontmatter: TenantPolicyFrontmatter | null;
   draftBody: string;
+  /** Studio's warnings for an AI draft: the keys withheld from the model as sensitive. */
+  draftWarnings: string[];
   enforcement: "strict" | "warn";
   rootTableId: string;
   rootTenantIdColumn: string;
@@ -327,7 +329,7 @@ type CreateFormAction =
   | { type: "set_rootLabel"; payload: string }
   | { type: "select_root_table"; tableId: string; label: string }
   | { type: "toggle_global_table"; tableId: string; checked: boolean }
-  | { type: "ai_draft_complete"; frontmatter: TenantPolicyFrontmatter; body: string }
+  | { type: "ai_draft_complete"; frontmatter: TenantPolicyFrontmatter; body: string; warnings: string[] }
   | { type: "manual_to_review"; frontmatter: TenantPolicyFrontmatter; body: string };
 
 function createFormReducer(state: CreateFormState, action: CreateFormAction): CreateFormState {
@@ -355,6 +357,7 @@ function createFormReducer(state: CreateFormState, action: CreateFormAction): Cr
       ...state,
       draftFrontmatter: action.frontmatter,
       draftBody: action.body,
+      draftWarnings: action.warnings,
       mode: "review",
       draftStatus: { kind: "success", text: "AI draft ready for review." },
     };
@@ -362,6 +365,7 @@ function createFormReducer(state: CreateFormState, action: CreateFormAction): Cr
       ...state,
       draftFrontmatter: action.frontmatter,
       draftBody: action.body,
+      draftWarnings: [],
       mode: "review",
     };
   }
@@ -372,6 +376,7 @@ const initialCreateFormState: CreateFormState = {
   draftStatus: null,
   draftFrontmatter: null,
   draftBody: "",
+  draftWarnings: [],
   enforcement: "strict",
   rootTableId: "",
   rootTenantIdColumn: "",
@@ -393,11 +398,11 @@ function TenancyCreateForm({
   aiConfigured: boolean;
   busy: Set<string>;
   onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<boolean>;
-  onSuggest: () => Promise<{ frontmatter: TenantPolicyFrontmatter; body: string }>;
+  onSuggest: () => Promise<SuggestTenantPolicyResponse>;
   saveStatus: StatusMessage | null;
 }) {
   const [state, dispatch] = useReducer(createFormReducer, initialCreateFormState);
-  const { mode, draftStatus, draftFrontmatter, draftBody, enforcement, rootTableId, rootTenantIdColumn, rootLabel, globalTableIds } = state;
+  const { mode, draftStatus, draftFrontmatter, draftBody, draftWarnings, enforcement, rootTableId, rootTenantIdColumn, rootLabel, globalTableIds } = state;
 
   const selectedRootTable = tables.find((t) => t.physical.id === rootTableId);
   const rootColumns = selectedRootTable?.physical.columns ?? [];
@@ -406,7 +411,7 @@ function TenancyCreateForm({
     dispatch({ type: "set_draftStatus", payload: { kind: "loading", text: "Analyzing schema and drafting tenant policy..." } });
     try {
       const result = await onSuggest();
-      dispatch({ type: "ai_draft_complete", frontmatter: result.frontmatter, body: result.body });
+      dispatch({ type: "ai_draft_complete", frontmatter: result.frontmatter, body: result.body, warnings: result.warnings });
     } catch (error) {
       dispatch({ type: "set_draftStatus", payload: { kind: "error", text: error instanceof Error ? error.message : String(error) } });
     }
@@ -603,6 +608,7 @@ function TenancyCreateForm({
       tables={tables}
       frontmatter={draftFrontmatter!}
       body={draftBody}
+      warnings={draftWarnings}
       busy={busy}
       saveStatus={saveStatus}
       onFrontmatterChange={(fm) => dispatch({ type: "set_draftFrontmatter", payload: fm })}
@@ -617,6 +623,7 @@ function TenancyReviewDraft({
   tables,
   frontmatter,
   body,
+  warnings = [],
   busy,
   saveStatus,
   onFrontmatterChange,
@@ -631,6 +638,7 @@ function TenancyReviewDraft({
   tables: StudioTableDto[];
   frontmatter: TenantPolicyFrontmatter;
   body: string;
+  warnings?: string[];
   busy: Set<string>;
   saveStatus: StatusMessage | null;
   onFrontmatterChange: (fm: TenantPolicyFrontmatter) => void;
@@ -703,6 +711,17 @@ function TenancyReviewDraft({
 
       <div className="main-body">
         <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
+          {warnings.length > 0 && (
+            <section className="card">
+              <div className="card-hd"><h3>Withheld from the model</h3></div>
+              <div className="card-bd" style={{ display: "grid", gap: 8 }}>
+                {warnings.map((warning) => (
+                  <pre className="warning-block" key={warning}>{warning}</pre>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="card">
             <div className="card-hd"><h3>Enforcement Mode</h3></div>
             <div className="card-bd">

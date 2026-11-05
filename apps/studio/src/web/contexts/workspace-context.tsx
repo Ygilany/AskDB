@@ -2,7 +2,7 @@ import { createContext, use, useCallback, useEffect, useEffectEvent, useMemo, us
 import type { ReactNode } from "react";
 import type { TenantPolicyFrontmatter, V2Concept } from "@askdb/core";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
-import type { SetupStatusDto, StudioTableDto, StudioWorkspaceDto } from "@/shared/api";
+import type { SetupStatusDto, StudioTableDto, StudioWorkspaceDto, SuggestTenantPolicyResponse } from "@/shared/api";
 import {
   getSetupStatus,
   getWorkspace,
@@ -53,7 +53,7 @@ interface WorkspaceContextValue {
   applySuggestion: (text: string) => void;
   handleSaveConcepts: (concepts: V2Concept[]) => Promise<void>;
   handleSaveTenantPolicy: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<boolean>;
-  handleSuggestTenantPolicy: () => Promise<{ frontmatter: TenantPolicyFrontmatter; body: string }>;
+  handleSuggestTenantPolicy: () => Promise<SuggestTenantPolicyResponse>;
   withBusy: (key: string, task: () => Promise<void>) => Promise<void>;
 }
 

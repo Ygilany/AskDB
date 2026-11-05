@@ -27,6 +27,7 @@ export {
   replaceTableDescription,
   saveConcepts,
   saveTable,
+  saveTenantPolicy,
   validateConceptLinks,
 } from "./workspace.js";
 export type { BundledSchemaV2, Workspace, WorkspaceTable } from "./workspace.js";
