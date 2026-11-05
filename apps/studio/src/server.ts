@@ -910,7 +910,7 @@ async function askSampleQuestion(
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
-      `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
+      `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set dev.mockSql in askdb.config to bypass the live model.`,
     );
   }
   const reasoningEffort = mockSql ? undefined : resolveReasoningEffort(rt.ai.aiEnv, "nlToSql");

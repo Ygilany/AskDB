@@ -728,6 +728,22 @@ describe("AskDB Studio server", () => {
     expect(body.error.message).toContain("embedding endpoint unavailable");
   });
 
+  it("answers sample SQL with no AI key with a 400 that names dev.mockSql, not an environment variable (#281)", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      ai: { provider: "openai", providerConfig: { openai: {} }, language: { model: "gpt-4o-mini" } },
+    });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const response = await postRaw(`${baseUrl}/api/ask`, { question: "How many users are there?" });
+    expect(response.status).toBe(400);
+    const { message } = ((await response.json()) as { error: { message: string } }).error;
+    expect(message).toContain("Set dev.mockSql in askdb.config to bypass the live model.");
+    expect(message).not.toContain("ASKDB_MOCK_SQL");
+  });
+
   it("names the configured provider, not the adapter's canonical one, in RAG errors", async () => {
     const embeddingServer = createFailingEmbeddingServer();
     embeddingServers.push(embeddingServer);

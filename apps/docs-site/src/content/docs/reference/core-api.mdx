@@ -496,7 +496,10 @@ Passing an unknown string dialect id throws `UnknownDialectError`, which extends
 ```ts
 import { DEFAULT_ASKDB_MODE, parseAskDbModeV1 } from "@askdb/core";
 
-const mode = parseAskDbModeV1(process.env.ASKDB_MODE); // throws on invalid values
+// `input.mode` is a value from your own host, such as a request field.
+function modeFor(input: { mode?: string }) {
+  return parseAskDbModeV1(input.mode); // DEFAULT_ASKDB_MODE when undefined; throws on invalid values
+}
 ```
 
 ---

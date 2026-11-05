@@ -149,7 +149,7 @@ askdb introspect \
 
 | Flag | Description |
 | --- | --- |
-| `--url <connstr>` | Live database connection string. |
+| `--url <connstr>` | Live database connection string. Falls back to `introspection.providerConfig.<engine>.databaseUrl` (SQLite: `.file`) in `askdb.config.ts` when `introspection.provider` names the engine. |
 | `--engine <id>` | Engine override: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
 | `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
 | `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. |
