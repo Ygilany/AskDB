@@ -28,6 +28,7 @@ import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./sql/gu
 import { bindTenantIntoUnboundSql } from "./sql/rebind.js";
 import type { TenantGuardrailResult } from "./sql/tenant-guardrail.js";
 import {
+  DEFAULT_TENANT_SQL_MODE,
   resolveTenantSql,
   type TenantSqlOutputMode,
   type TenantBinding,
@@ -222,11 +223,14 @@ export type AskPipelineOptions = {
    */
   tenantScope?: TenantScope;
   /**
-   * SQL output mode for tenant placeholders. Default `"sql-only"` inlines
-   * escaped literal values. `"sql-params"` replaces them with the dialect's
-   * driver markers (`$N` for Postgres/CockroachDB and custom `AskDialect`s, `?`
-   * for MySQL/MariaDB/SQLite, `@pN` for SQL Server): run `sql` with
-   * `tenantParams`, or `unboundSql` with `params`.
+   * SQL output mode for tenant placeholders. Default `"sql-params"`
+   * ({@link DEFAULT_TENANT_SQL_MODE}) replaces them with the dialect's driver
+   * markers (`$N` for Postgres/CockroachDB and custom `AskDialect`s, `?` for
+   * MySQL/MariaDB/SQLite, `@pN` for SQL Server): run `sql` with `tenantParams`, or
+   * `unboundSql` with `params`, never with the two arrays concatenated.
+   * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
+   * parameters (a tool that takes one SQL string); it throws `TenantScopeError`
+   * (`UNESCAPABLE_TENANT_ID`) for a tenant ID containing a backslash.
    */
   tenantSqlMode?: TenantSqlOutputMode;
   /**
@@ -270,8 +274,8 @@ export type AskPipelineOptions = {
 export type AskPipelineResult = {
   /**
    * The model's bound SQL: business values inlined as literals. Tenant IDs are
-   * inlined literals (`tenantSqlMode: "sql-only"`) or driver markers numbered from
-   * the first slot (`"sql-params"`) — then execute it with `tenantParams`.
+   * driver markers numbered from the first slot (`tenantSqlMode: "sql-params"`, the
+   * default) — execute it with `tenantParams` — or inlined literals (`"sql-only"`).
    */
   sql: string;
   /**
@@ -502,7 +506,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   }
 
   if (tenant) {
-    const tenantMode = options.tenantSqlMode ?? "sql-only";
+    const tenantMode = options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
     // `sql` carries business values as inlined literals, so its only markers are
     // tenant markers, numbered from the first slot: `sql` runs with `tenantParams`
     // alone. `unboundSql` runs with the combined `params` (handled below).

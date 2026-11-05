@@ -85,7 +85,7 @@ describe("ask() — tenant SQL output modes", () => {
     access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
   };
 
-  it("defaults to sql-only mode with inlined literals", async () => {
+  it("inlines escaped literals in sql-only mode", async () => {
     const dialect: AskDialect = {
       generate: async () => ({
         sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
@@ -98,6 +98,7 @@ describe("ask() — tenant SQL output modes", () => {
       model: fakeModel,
       dialect,
       tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
     });
 
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = '42'");
@@ -106,7 +107,9 @@ describe("ask() — tenant SQL output modes", () => {
     expect(result.tenantParams).toBeUndefined();
   });
 
-  it("returns positional params in sql-params mode", async () => {
+  // The one owner of the default (#231): without tenantSqlMode, tenant IDs leave the
+  // SQL text, and `sql` runs with `tenantParams`.
+  it("defaults to sql-params: sql has driver markers and runs with tenantParams", async () => {
     const dialect: AskDialect = {
       generate: async () => ({
         sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
@@ -119,7 +122,6 @@ describe("ask() — tenant SQL output modes", () => {
       model: fakeModel,
       dialect,
       tenantScope: agencyScope,
-      tenantSqlMode: "sql-params",
     });
 
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
@@ -551,6 +553,7 @@ describe("resolveTenantSql — placeholders derived per root", () => {
           ],
         },
       },
+      "sql-only",
     );
     expect(result.sql).toBe(
       "SELECT id FROM orders WHERE agency_id = '1' " +

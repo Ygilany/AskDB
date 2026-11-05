@@ -1172,6 +1172,7 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
       model: fakeModel,
       dialect: "postgres",
       tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
       logger: { info, error: vi.fn() },
       deps: { generateText },
     });
@@ -1260,7 +1261,14 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
         },
       }),
     };
-    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope });
+    const result = await ask({
+      question: "q",
+      schema,
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
+    });
     expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '42'");
     expect(result.tenantGuardrail?.passed).toBe(false);
     expect(result.tenantGuardrail?.warnings).toEqual([
@@ -1738,6 +1746,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(ordersByAgency),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["2", "3"] }),
     });
 
@@ -1752,6 +1761,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(ordersByAgency),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [clients]: ["5"] }),
     });
 
@@ -1858,6 +1868,7 @@ describe("ask — subtree tenant scope expansion", () => {
         "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
       ),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => resolved,
     });
 
@@ -2026,6 +2037,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(sql),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"], [clients]: ["5"] }),
     });
 
@@ -2115,7 +2127,13 @@ describe("ask — subtree tenant scope expansion", () => {
   ] satisfies Array<{ name: string; access: TenantScope["access"] }>)(
     "leaves $name access untouched",
     async ({ access }) => {
-      const base = { question: "count orders", schema, model: fakeModel, tenantScope: { access } };
+      const base = {
+        question: "count orders",
+        schema,
+        model: fakeModel,
+        tenantScope: { access },
+        tenantSqlMode: "sql-only" as const,
+      };
       const resolveTenantDescendants = vi.fn(() => ({ [agencies]: ["should-not-appear"] }));
       const without = await ask({ ...base, dialect: sqlDialect(ordersByAgency) });
       const withResolver = await ask({ ...base, dialect: sqlDialect(ordersByAgency), resolveTenantDescendants });

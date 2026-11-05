@@ -26,6 +26,13 @@ import {
 
 export type TenantSqlOutputMode = "sql-only" | "sql-params";
 
+/**
+ * The `tenantSqlMode` used when a caller doesn't set one: tenant IDs leave the SQL text
+ * and bind through the dialect's driver markers. Hosts that report or forward the mode
+ * import this rather than hard-code it.
+ */
+export const DEFAULT_TENANT_SQL_MODE: TenantSqlOutputMode = "sql-params";
+
 export type TenantBinding = {
   placeholder: string;
   rootLabel: string;
@@ -429,9 +436,10 @@ function replacePlaceholdersWithParams(
 
 /**
  * Substitute the `:tenant_<root>_ids` placeholders in `sql` with the IDs from
- * `scope` — as escaped literals (`"sql-only"`), or as dialect driver markers plus
- * a `params` array (`"sql-params"`). Only placeholders in code regions are
- * touched; text inside string literals and quoted identifiers is left as-is.
+ * `scope` — as dialect driver markers plus a `params` array (`"sql-params"`, the
+ * default), or as escaped literals (`"sql-only"`, for a tool that takes one SQL
+ * string). Only placeholders in code regions are touched; text inside string
+ * literals and quoted identifiers is left as-is.
  *
  * A `subtree` access must already be expanded into per-root IDs (a `multi_root`
  * access, or `ids` when the subtree is one root table): `ask()` does this via its
@@ -455,7 +463,7 @@ export function resolveTenantSql(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
-  mode: TenantSqlOutputMode = "sql-only",
+  mode: TenantSqlOutputMode = DEFAULT_TENANT_SQL_MODE,
   paramStartIndex: number = 1,
   dialect?: TenantSqlDialect,
 ): TenantPlaceholderResult {
