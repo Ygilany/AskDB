@@ -35,10 +35,10 @@ const server = createAskDbHttpServer({
   maxBodyBytes: 1024 * 1024, // 1 MiB default
 });
 
-server.listen();
+await server.listen();
 ```
 
-Either way, the server reads its schema and model settings from your `askdb.config.ts` (it bootstraps the same config file the CLI and Studio use). Set `host.schemaPath` to point at your schema artifact and configure the AI provider as usual — supply the provider key (`OPENAI_API_KEY`, etc.) in your environment the same way you do for the CLI.
+Either way, the server reads its schema and model settings from your `askdb.config.ts`, the same config file the CLI and Studio use. When you create it, the server loads `.env` and the config from the current working directory, unless your process already called `bootstrapAskDbEnv()`, in which case it uses that config. Set `host.schemaPath` to point at your schema artifact and configure the AI provider as usual — supply the provider key (`OPENAI_API_KEY`, etc.) in your environment the same way you do for the CLI.
 
 ## Endpoints
 

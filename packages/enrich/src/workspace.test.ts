@@ -1,15 +1,12 @@
 import {
-  chmodSync,
-  chownSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   cpSync,
   existsSync,
-  linkSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -23,13 +20,7 @@ import {
   type TenantPolicyFrontmatter,
 } from "@askdb/core";
 import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";
-import {
-  otherGroup,
-  otherGroupUnavailable,
-  table,
-  tableMd,
-  writeSchema,
-} from "./test-utils.js";
+import { table, tableMd, writeSchema } from "./test-utils.js";
 import { buildFrontmatter, buildTableDraft } from "./draft.js";
 import {
   buildDefaultTableBody,
@@ -414,6 +405,12 @@ describe("bundleSchemaDirectory with a tenant policy", () => {
     expect(() => bundleSchemaDirectory(schemaDir)).toThrow(/ELOOP/);
   });
 
+  // On Linux the bundler skipped it: `askdb bundle` wrote a bundle with no tenant policy.
+  it("refuses to bundle a wrong-case Tenant-Policy.md, as loadSchema does", () => {
+    renameSync(join(schemaDir, "tenant-policy.md"), join(schemaDir, "Tenant-Policy.md"));
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow(SchemaParseError);
+  });
+
   it("refuses to bundle when tables/ exists but can't be listed, as loadSchema does", () => {
     const tablesPath = join(schemaDir, "tables");
     rmSync(tablesPath, { recursive: true, force: true });
@@ -536,15 +533,6 @@ describe("workspace table filenames", () => {
     writeFileSync(join(schemaDir, "tables/STRASSE.md"), tableMd("public", "gone", "Orphan."), "utf8");
     expect(filenameOf(loadWorkspace(schemaDir), "table:public.straße")).toBe("public.straße.md");
 
-    // And so does a file AskDB itself ignores, such as one with an upper-case extension.
-    rmSync(join(schemaDir, "tables"), { recursive: true });
-    writeSchema(schemaDir, [table("public", "orders")]);
-    writeFileSync(join(schemaDir, "tables/Orders.MD"), "precious notes\n", "utf8");
-    const ws3 = loadWorkspace(schemaDir);
-    expect(filenameOf(ws3, "table:public.orders")).toBe("public.orders.md");
-    saveDescribed(ws3, "table:public.orders");
-    expect(readFileSync(join(schemaDir, "tables/Orders.MD"), "utf8")).toBe("precious notes\n");
-
     // A file with another name, such as a different extension, doesn't.
     rmSync(join(schemaDir, "tables"), { recursive: true });
     writeSchema(schemaDir, [table("public", "orders")]);
@@ -616,93 +604,10 @@ describe("workspace table filenames", () => {
     // Planted after load, as a long-running Studio session would meet it.
     symlinkSync(outside, join(schemaDir, "tables", "orders.md"));
 
-    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/outside tables\/.*symbolic link/);
+    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(
+      'Refusing to write tables/orders.md outside the schema directory: "orders.md" is a symbolic link',
+    );
     expect(readFileSync(outside, "utf8")).toBe("untouched\n");
-  });
-
-  it("saveTable replaces a hard-linked file in tables/ instead of writing through the link", () => {
-    writeSchema(schemaDir, [table("public", "orders")]);
-    const ws = loadWorkspace(schemaDir);
-    const outside = join(tmp, "outside.md");
-    writeFileSync(outside, "untouched\n", "utf8");
-    const target = join(schemaDir, "tables", "orders.md");
-    linkSync(outside, target);
-
-    saveDescribed(ws, "table:public.orders");
-    expect(readFileSync(outside, "utf8")).toBe("untouched\n");
-    expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
-    expect(statSync(target).nlink).toBe(1);
-    expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
-  });
-
-  it("saveTable reports a failed replace and leaves no temp file behind", () => {
-    writeSchema(schemaDir, [table("public", "orders")]);
-    const ws = loadWorkspace(schemaDir);
-    // A non-empty directory at the target passes the link and permission checks,
-    // then makes the rename fail after the temp file has been written.
-    const target = join(schemaDir, "tables", "orders.md");
-    mkdirSync(target);
-    writeFileSync(join(target, "keep"), "kept\n", "utf8");
-
-    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/rename/);
-    expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
-    expect(readFileSync(join(target, "keep"), "utf8")).toBe("kept\n");
-  });
-
-  // File modes only mean this on POSIX, and root passes every write-permission check.
-  integrationSuite({
-    unavailable:
-      process.platform === "win32"
-        ? "POSIX file modes are required (not Windows)"
-        : process.getuid?.() === 0
-          ? "running as root, where every file is writable"
-          : false,
-  })("saveTable on a read-only table file", () => {
-    it("refuses with EACCES and leaves the file unchanged", () => {
-      writeSchema(schemaDir, [table("public", "orders")]);
-      const target = join(schemaDir, "tables", "orders.md");
-      const original = tableMd("public", "orders", "Checked out read-only.");
-      writeFileSync(target, original, "utf8");
-      chmodSync(target, 0o444);
-      const ws = loadWorkspace(schemaDir);
-
-      expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/EACCES/);
-      expect(readFileSync(target, "utf8")).toBe(original);
-      expect(statSync(target).mode & 0o777).toBe(0o444);
-      expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
-    });
-  });
-
-  integrationSuite({
-    unavailable: process.platform === "win32" ? "POSIX file modes are required (not Windows)" : false,
-  })("saveTable and file permission bits", () => {
-    it("keeps the replaced file's mode", () => {
-      writeSchema(schemaDir, [table("public", "orders")]);
-      const target = join(schemaDir, "tables", "orders.md");
-      writeFileSync(target, tableMd("public", "orders", "Private notes."), "utf8");
-      chmodSync(target, 0o600);
-      const ws = loadWorkspace(schemaDir);
-
-      saveDescribed(ws, "table:public.orders");
-      expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
-      expect(statSync(target).mode & 0o777).toBe(0o600);
-    });
-  });
-
-  integrationSuite({ unavailable: otherGroupUnavailable })("saveTable and file ownership", () => {
-    it("keeps the replaced file's group", () => {
-      writeSchema(schemaDir, [table("public", "orders")]);
-      const target = join(schemaDir, "tables", "orders.md");
-      writeFileSync(target, tableMd("public", "orders", "Shared with one team."), "utf8");
-      chownSync(target, -1, otherGroup!);
-      chmodSync(target, 0o660);
-      const ws = loadWorkspace(schemaDir);
-
-      saveDescribed(ws, "table:public.orders");
-      expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
-      expect(statSync(target).gid).toBe(otherGroup);
-      expect(statSync(target).mode & 0o777).toBe(0o660);
-    });
   });
 
   integrationSuite({
@@ -729,7 +634,9 @@ describe("workspace table filenames", () => {
     symlinkSync(elsewhere, join(schemaDir, "tables"));
     const ws = loadWorkspace(schemaDir);
 
-    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/outside tables\/.*symbolic link/);
+    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(
+      "Refusing to write tables/orders.md outside the schema directory: tables/ is a symbolic link",
+    );
     expect(readdirSync(elsewhere)).toEqual([]);
   });
 

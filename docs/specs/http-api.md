@@ -49,7 +49,7 @@ Schema is server-configured (`host.schemaPath` / `host.schemaJson`, or the `--sc
 
 Correlation ID comes from the `x-correlation-id` header, or is generated.
 
-- **Mode** is parsed up front with core's `parseAskDbModeV1`. Invalid values return `400 bad_request`. With no request mode, config `modes.askdbMode` applies, then `schema_only`.
+- **Mode** is parsed up front with core's `parseAskDbModeV1`. Invalid values return `400 bad_request`. The server passes only the request's mode to `@askdb/client`, which applies config `modes.askdbMode` (unset: `schema_only`) as the loosest mode a request gets: a request can tighten it, never loosen it ([ADR 0025](../adrs/0025-config-mode-is-the-loosest-a-call-gets.md)).
 - **`explain`** must be a JSON boolean; anything else returns `400 bad_request` (it used to go through `Boolean(...)`, so `"false"` turned it on).
 - **`null` fields:** an optional field sent as JSON `null` counts as absent, as does an empty or whitespace-only `schemaJson`; a `null` body `mode` falls back to the header.
 - **Sensitive prompt handling:** config `modes.omitSensitiveFromPrompt` is a floor. The request flag can tighten it (`true`) but not loosen it. A non-boolean flag (`"true"`, `1`) returns `400 bad_request` instead of being ignored. The floor is enforced in the `@askdb/client` facade, so every `createAskDb()` host gets the same behavior.

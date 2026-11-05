@@ -6,7 +6,6 @@ import type {
   ExecuteRequest,
   ExecuteResponse,
   ExecuteStatusResponse,
-  IntrospectionPlanDto,
   IntrospectRunResponse,
   PlaygroundHistoryDto,
   PlaygroundHistoryEntry,
@@ -144,10 +143,6 @@ export async function setupIntrospect(): Promise<IntrospectRunResponse> {
     method: "POST",
     body: JSON.stringify({}),
   });
-}
-
-export async function getIntrospectionPlan(): Promise<IntrospectionPlanDto> {
-  return api<IntrospectionPlanDto>("/api/introspect/status");
 }
 
 export async function resyncSchema(): Promise<IntrospectRunResponse> {

@@ -1,6 +1,7 @@
 import { AskDbError } from "@askdb/core";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -41,6 +42,11 @@ export type OptionalDriverLoader<T> = {
    * carrying `missingMessage` when the peer is missing everywhere, and with an
    * `AskDbError` naming the real failure (`cause` set) when the peer is
    * installed but fails to load.
+   *
+   * Node 24 and later can keep a failed package lookup until the process exits,
+   * so a retry may still miss a peer installed after the first attempt. When
+   * the peer is on disk under `resolveFrom` but Node can't resolve it, the
+   * `AskDbError` says to restart the process instead of to install it.
    */
   load(options?: DriverLoadOptions): Promise<T>;
 };
@@ -80,6 +86,27 @@ function isModuleResolutionFailure(
 /** The driver resolves from neither the engine package nor `resolveFrom`. */
 class DriverNotFoundError extends AggregateError {}
 
+/** Node can't resolve the driver, but it is on disk in `nodeModules` (see `OptionalDriverLoader.load`). */
+class DriverUnresolvableError extends AggregateError {
+  constructor(
+    errors: unknown[],
+    readonly nodeModules: string,
+  ) {
+    super(errors, "Optional peer dependency is installed but does not resolve");
+  }
+}
+
+/**
+ * The `node_modules` directory under `fromDir` or one of its parents that holds
+ * `packageName`, checked on disk rather than through Node's resolver.
+ */
+function nodeModulesHolding(fromDir: string, packageName: string): string | undefined {
+  for (let dir = fromDir; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, "node_modules", packageName, "package.json"))) return join(dir, "node_modules");
+    if (dirname(dir) === dir) return undefined;
+  }
+}
+
 /**
  * Build a lazy, cached loader for an optional database-driver peer. Engine
  * packages call this once at module scope, so each engine keeps its own cache.
@@ -102,6 +129,8 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
         resolved = projectRequire.resolve(specifier);
       } catch (projectCause) {
         if (!isModuleResolutionFailure(projectCause, packageName, specifier)) throw projectCause;
+        const nodeModules = nodeModulesHolding(fromDir, packageName);
+        if (nodeModules) throw new DriverUnresolvableError([cause, projectCause], nodeModules);
         throw new DriverNotFoundError(
           [cause, projectCause],
           `Unable to resolve optional \`${packageName}\` peer dependency`,
@@ -124,6 +153,14 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
           // that is installed but fails to load (a missing dependency of its
           // own, a native build error, …) reports that failure instead.
           if (cause instanceof DriverNotFoundError) throw new AskDbError(missingMessage, cause);
+          if (cause instanceof DriverUnresolvableError) {
+            throw new AskDbError(
+              `\`${packageName}\` is in ${cause.nodeModules}, but Node can't load it in this process. ` +
+                "If it was installed while the process was running, restart the process: " +
+                "Node 24 and later can keep a failed package lookup until the process exits.",
+              cause,
+            );
+          }
           const detail = cause instanceof Error ? cause.message : String(cause);
           throw new AskDbError(`The optional \`${packageName}\` peer dependency failed to load: ${detail}`, cause);
         });

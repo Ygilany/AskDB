@@ -12,7 +12,9 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 
 > **Ask your data. Keep control of the query.**
 >
-> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client` and `@askdb/http-api` are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
+> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client` and `@askdb/http-api` are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0.
+>
+> **At 1.0:** `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. Studio, `@askdb/enrich` and `@askdb/rag` stay `0.x`, and their APIs may still move. 1.0 promises checked SQL for PostgreSQL, MySQL, MariaDB, SQLite and SQL Server; reports, result summaries and an MCP server come after 1.0 (see the [roadmap](docs/roadmap.md)).
 >
 > AskDB returns SQL for review; the library, CLI, and HTTP API never execute it (Studio's optional Playground **Execute** is a local development tool). AskDB's SQL checks are heuristic defense in depth, not a security boundary. Run generated SQL under a read-only, least-privilege database role. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely).
 
@@ -78,7 +80,7 @@ Product direction and technical baseline live in **`docs/`**:
 
 - [`docs/mission.md`](docs/mission.md) — north star, principles, non-goals  
 - [`docs/architecture.md`](docs/architecture.md) — package boundaries, diagrams, install profiles, connectors vs. optional peers
-- [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
+- [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, published packages, supported engines  
 - [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
 - [`docs/specs/`](docs/specs) — per-feature specs with status (core pipeline, schema format, modes and observability, introspection, RAG, Studio, HTTP API, multi-tenancy, distribution)  
 - [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md) — operating modes (`schema_only`, `bounded_results`)  
@@ -174,13 +176,13 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
 | `--explain` | After `-- sql --`, print `-- explain --` plus JSON describing heuristic guardrails satisfied (`statementKind`, `checksVerified`, `remediationNote`). |
 | `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). Overrides default when combined with `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. |
-| `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. Current AskDB surfaces return SQL only. |
+| `--mode <id>` | Operating mode: `schema_only` or `bounded_results`. It can only tighten config `modes.askdbMode` (default `schema_only`), never loosen it. Current AskDB surfaces return SQL only. |
 
-**Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events, including `askdb.pipeline.mode`, appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
+**Modes + structured logs (Phase 2)** — same `ask` subcommand; set `modes.askdbMode` in `askdb.config.ts`, and pass `--mode schema_only` to tighten it for one run. Use `-v` / `--log-file` so JSON events, including `askdb.pipeline.mode`, appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
 
 ```bash
 pnpm build
-# Generate only — logs on stderr include askdb.pipeline.mode (default schema_only unless you pass --mode)
+# Generate only — logs on stderr include askdb.pipeline.mode (config modes.askdbMode, default schema_only; --mode can only tighten it)
 pnpm exec askdb ask \
   --schema fixtures/schemas/orders-users.schema \
   --question "How many orders?" \
@@ -235,7 +237,7 @@ How much of the **schema context** the model sees depends on the chosen mode:
 
 ## Status
 
-Phases 1–10 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, schema enrichment, RAG indexing and retrieval, Studio (React browser UI), and multi-tenancy proof. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+Phases 1–11 are implemented: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, schema enrichment, RAG indexing and retrieval, Studio (React browser UI), multi-tenancy proof, and the MySQL, MariaDB, SQLite and SQL Server engines. The 1.0 release candidate, stable 1.0 and later phases are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## License
 

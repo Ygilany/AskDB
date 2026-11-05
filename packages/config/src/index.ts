@@ -22,6 +22,7 @@ export type {
   AskDbRuntimeStudioConfig,
 } from "./runtime-config.js";
 export {
+  isAskDbRuntimeInitialized,
   mergeAskDbFlatIntoEnvMap,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
@@ -36,7 +37,6 @@ export {
   DEFAULT_GOOGLE_LANGUAGE_MODEL,
   DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
-  DEFAULT_LOCAL_POSTGRES_URL,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_OPENAI_CHAT_MODEL,
   DEFAULT_OPENAI_LANGUAGE_MODEL,

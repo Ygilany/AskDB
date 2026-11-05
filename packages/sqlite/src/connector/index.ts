@@ -24,5 +24,5 @@ export function createSqliteConnector(): Connector<SqliteIntrospectionInput> {
   };
 }
 
-export { describeSqlite, SQLITE_CATALOG_SQL } from "./describe.js";
+export { describeSqlite } from "./describe.js";
 export type { DescribeSqliteInput } from "./describe.js";

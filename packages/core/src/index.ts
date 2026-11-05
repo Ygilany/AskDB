@@ -72,11 +72,13 @@ export type {
 export {
   loadSchema,
   loadSchemaFromJson,
+  readSchemaDirectory,
   parseTableMarkdown,
   parseConceptsMarkdown,
   writeTableMarkdown,
   writeConceptsMarkdown,
   writeTenantPolicyMarkdown,
+  saveSchemaFile,
   formatSchemaV2ForNlToSql,
   v2SchemaJsonSchema,
   v2TableSchema,
@@ -149,12 +151,12 @@ export {
 export type {
   EnrichmentCandidate,
   EnrichmentContext,
+  EnrichmentPromptOptions,
   EnrichmentTarget,
   SuggestEnrichmentDeps,
 } from "./enrichment/index.js";
 export {
   formatSchemaForNlToSql,
-  formatSchemaForPrompt,
   normalizeAskDbSchema,
   type FormatNlToSqlOptions,
   type NlToSqlSchemaFormatStats,

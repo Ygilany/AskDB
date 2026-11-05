@@ -45,7 +45,7 @@ export default defineConfig({
 
 Use the `env()` helper (rather than `process.env`) so AskDB can capture which environment variables your config depends on and apply its defaults pass.
 
-`defineConfig` returns the object unchanged at runtime — it exists only for type inference. The full type is `AskDbConfig`.
+`defineConfig` types the object as `AskDbConfig`, so your editor checks it as you write. A plain `export default { … }` loads too: AskDB runs it through `defineConfig` when it loads the file, so both forms get the same checks and deprecation warnings.
 
 ## All top-level fields
 
@@ -55,12 +55,14 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 | `introspection` | yes | Introspection engine (`provider`: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`), its connection (`providerConfig`), `outputDir` (default `./askdb/`), and optionally `schemas`: the schemas to introspect, like `askdb introspect --schemas` (which overrides it). On MySQL/MariaDB these are databases. |
 | `rag` | no | Embedder (`mock`, or `ai` for the `ai.embedding` model) and vector store (`file`, `memory`, `pgvector`) plus the store's config branch. See [The `rag` block](#the-rag-block). Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store. |
 | `dialect` | no | Override the NL-to-SQL dialect (`postgres`, `mysql`, `sqlite`, `sqlserver`). When unset, it's inferred from the schema artifact's recorded provider. |
-| `modes` | no | `askdbMode` (`schema_only` default, `bounded_results`) and `omitSensitiveFromPrompt` (default `false`). |
+| `modes` | no | `askdbMode` (`schema_only` default, `bounded_results`) and `omitSensitiveFromPrompt` (default `false`). Both are floors: a CLI flag, a client call, or an HTTP request can tighten them, never loosen them. See [`modes` and `host`](#modes-and-host). |
 | `host` | no | `schemaPath` — the default schema artifact for embedding hosts and the HTTP API. `schemaJson` — inline artifact JSON, for environments without a file system path. |
 | `logging` | no | `level`, plus `logFile`, `logStdout`, and `correlationId` defaults for the CLI's structured logs. |
 | `studio` | no | `listen.{host,port}` (defaults `127.0.0.1:5556`) and the `execute` block below. |
 | `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. `allowSchemaOverride` (default `false`) — accept per-request `schemaJson`. `requestTimeoutMs` (default `60000`, at most `2147483647`) — model-call timeout per request. See [HTTP API → Server config](/reference/http-api/#server-config-httpapi). |
 | `dev` | no | `mockSql` — deterministic NL-to-SQL output for tests; bypasses the model call. |
+
+A config without `ai` or `introspection` fails to load, with an error that names the file and the missing block. That includes a config you only use for `askdb introspect`: it still needs an `ai` block.
 
 ### `dialect` — when inference is wrong
 
@@ -87,6 +89,10 @@ export default defineConfig({
   },
 });
 ```
+
+`modes.askdbMode` is the loosest mode a run gets, on every surface that reads config: the CLI, `@askdb/client`, and the HTTP API. A run that names no mode uses it. A run can ask for `schema_only` to tighten it. A run that asks for `bounded_results` while the config mode is `schema_only` runs `schema_only`, with no error; the `askdb.pipeline.mode` log line records the mode that ran.
+
+`modes.omitSensitiveFromPrompt: true` works the same way: a run can't turn it off. `@askdb/core`'s `ask()` reads no config, so pass `mode` to it yourself.
 
 ## The `ai` block
 
@@ -256,6 +262,8 @@ A model set in both places is fine: `ai.language.model` wins, and the warning sa
 
 The first match wins. JSON config files are not supported. If nothing is found, `bootstrapAskDbEnv()` throws — run your process from the directory that holds the config (or pass `cwd` in its options).
 
+`bootstrapAskDbEnv()`, and so the CLI, Studio and the HTTP API, loads every extension in the list, `.mjs` included. It loads the file synchronously, so the file can't use top-level `await`.
+
 ## Environment variables
 
 AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb.config.*`. **You choose the variable names** — they're whatever you pass to `env("…")` in your config. The scaffolded config uses these common names; rename any of them in your config and `.env` together:
@@ -374,13 +382,17 @@ const embeddingModel = rt.ai.embedding
 
 AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.
 
+`getAskDbRuntimeConfig()` throws until a snapshot is installed. `isAskDbRuntimeInitialized()` returns `true` once one is, so code that may run before or after its host's bootstrap can call `bootstrapAskDbEnv()` only when it's needed. The snapshot is process-wide: when two versions of `@askdb/config` are installed, both see the one your process bootstrapped. `createAskDbHttpServer()` works this way (see [HTTP API → Config loading](/reference/http-api/#config-loading)).
+
 ## Config precedence
 
 For any given setting, the precedence (highest wins) is:
 
-1. Per-call arguments — CLI flags (`--mode`, `--schema`, ...) and `ask()` options.
+1. Per-call arguments — CLI flags (`--schema`, `--log-level`, ...) and `ask()` options.
 2. The `askdb.config.*` file — the single source of truth for the runtime snapshot.
 3. Built-in defaults applied for optional fields (e.g. `outputDir` → `./askdb/`).
+
+The two `modes` settings are the exception. They are floors, not defaults: a per-call `--mode`, `mode` or omit setting can tighten the config value, never loosen it. See [`modes` and `host`](#modes-and-host).
 
 Environment variables don't override the config file from the outside — they flow *through* it: every `env("VAR")` call in the config reads the environment when the file loads. `.env` is loaded first (without overwriting variables already set in the real environment), so the per-environment override story is: system env beats `.env`, and whatever `env()` reads lands in the snapshot. This still lets you ship one config file and vary it per environment — just route each tunable through `env()`.
 

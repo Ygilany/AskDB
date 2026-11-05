@@ -20,7 +20,8 @@ AskDB is a workspace of small, layered packages — install only what your use c
 - **`@askdb/core`** — the dialect-agnostic pipeline (`ask()`, `loadSchema()`). Everything else builds on this.
 - **`@askdb/client`** — config-driven facade (`createAskDb()`); resolves schema, model, and dialect from `askdb.config.ts`.
 - **`@askdb/ai`** — config-driven AI provider registry used by `@askdb/client` and the first-party surfaces. OpenAI, Anthropic, Google, Azure/Foundry, and Vercel AI Gateway providers are built in; install the matching `@ai-sdk/*` package (an optional peer, e.g. `@ai-sdk/openai`). The former `@askdb/ai-openai` / `-anthropic` / `-google` / `-azure` packages were removed before 1.0: use `@askdb/ai` and the `@ai-sdk/*` package instead.
-- **`@askdb/postgres` / `-mysql` / `-sqlite` / `-sqlserver`** — engine adapters: introspection connector, catalog templates, and a re-export of that engine's dialect (the dialect specs themselves ship inside `@askdb/core`).
+- **`@askdb/postgres` / `-mysql` / `-sqlite` / `-sqlserver`** — engine adapters: introspection connector, catalog query runner, and a re-export of that engine's dialect (the dialect specs themselves ship inside `@askdb/core`). `@askdb/postgres` also exports its catalog SQL templates for the from-export flow.
+- **`@askdb/prisma`** — introspection connector for `.prisma` schema files, with no database connection. An optional peer of `askdb` and `@askdb/studio`: install it next to them for Prisma introspection. It brings in Prisma, whose `@prisma/engines` build pnpm 11 must approve (`pnpm add --allow-build=@prisma/engines @askdb/prisma` on pnpm 10.4 or later). See `/guides/integrations/prisma/`.
 - **`@askdb/rag`** — schema chunking, indexing, and retrieval for large schemas.
 - **`@askdb/http-api`** — minimal HTTP wrapper over `ask()` (`POST /ask`, `GET /health`).
 - **`@askdb/studio`** — browser UI for schema enrichment and sample NL-to-SQL checks.
@@ -54,3 +55,4 @@ AskDB is a workspace of small, layered packages — install only what your use c
 - `/llms.txt` — page index with descriptions, useful for scoping which doc to fetch next.
 - `/llms-full.txt` — the entire docs site as one file, for deep machine-readable context.
 - The docs site nav (`/`) for human-readable depth: Guides, Concepts, and Reference sections.
+- `/guides/upgrading/` — what to change in the host app for each AskDB release. Read it before you bump the AskDB packages in an existing integration.

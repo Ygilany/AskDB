@@ -78,7 +78,7 @@ flowchart TB
   cli --> core
   cli --> introspect
   cli --> postgres
-  cli --> prisma
+  cli -. "optional peer" .-> prisma
   cli --> mysql
   cli --> sqlite
   cli --> sqlserver
@@ -94,7 +94,7 @@ flowchart TB
   studio --> mysql
   studio --> sqlite
   studio --> sqlserver
-  studio --> prisma
+  studio -. "optional peer" .-> prisma
   studio --> rag
   studio --> aiPkg
 ```
@@ -156,13 +156,13 @@ flowchart BT
   studio --> mysql
   studio --> sqlite
   studio --> sqlserver
-  studio --> prisma
+  studio -. "optional peer" .-> prisma
   studio --> rag
   studio --> ai
   cli --> core
   cli --> introspect
   cli --> postgres
-  cli --> prisma
+  cli -. "optional peer" .-> prisma
   cli --> mysql
   cli --> sqlite
   cli --> sqlserver
@@ -179,7 +179,7 @@ Boundary rules:
 - Integration packages own engine-specific knowledge, apart from the built-in dialect facts above. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
 - `@askdb/introspect` does not know whether an engine reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the engine package; the registry's connection only names the three source kinds a host can supply (`url`, `fromExport`, `schemaPath`), and each engine decides what they mean (ADR 0008).
 - Engine packages own connection resolution. Each exports a `ConnectorProviderAdapter` whose `resolveConnection` hook merges explicit values (CLI flags) with AskDB runtime config and whose `connectionLabelParts` hook parses the connection into display-safe parts; the registry builds every label from those parts ([ADR 0011](adrs/0011-connection-labels-from-parsed-parts.md)). First-party surfaces dispatch through `createConnectorRegistry(...)` and do not switch on engine names ([ADR 0008](adrs/0008-engine-packages-and-connector-registry.md)).
-- `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic.
+- `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic. Writing a file into a schema directory is `@askdb/core`'s `saveSchemaFile()` ([ADR 0028](adrs/0028-core-writes-schema-directory-files.md)), which enrich, Studio and `@askdb/introspect` all call.
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.
 - First-party apps can be batteries-included. Reusable packages should stay small and should not pull optional drivers into unrelated workflows.
 - `@askdb/ai` owns provider dispatch, the universal env precedence, and the built-in providers (one file each under `packages/ai/src/providers/`, one row each in `BUILTIN_AI_PROVIDERS`). Each built-in owns its native env vars, defaults, and reasoning mapping, and imports its `@ai-sdk/*` SDK (an optional peer) lazily. Custom providers plug in through `AiProviderAdapter` objects. Core stays BYO-model: `ask()` takes any AI SDK `LanguageModel` and never depends on `@askdb/ai`. See the ADR 0006 amendment (Option E).
@@ -223,7 +223,13 @@ The generated SQL is an output artifact. Running it is outside the AskDB package
 Hosts that pick the engine from config (the CLI, Studio, or your own bootstrap) go through the connector registry in `@askdb/introspect`:
 
 ```ts
-const registry = createConnectorRegistry([postgresConnectorProvider, mysqlConnectorProvider /* , acmeConnectorProvider */]);
+const registry = createConnectorRegistry([
+  postgresConnectorProvider,
+  mysqlConnectorProvider,
+  // A lazy entry: imported only when selected, for an engine package the host may not have installed.
+  { provider: "prisma", load: async () => (await import("@askdb/prisma")).prismaConnectorProvider },
+]);
+await registry.load(engine); // imports a lazy entry's package; a no-op for an adapter
 const resolved = registry.resolveConnection(engine, { explicit: { url }, runtime: getAskDbRuntimeConfig(), surface: "cli" });
 if (!resolved.ok) throw new Error(resolved.error);
 const { connector, input } = registry.createConnector({ provider: engine, ...resolved.connection, filters, schemaId });
@@ -331,8 +337,8 @@ In the table below, "selected packages" are packages the consumer chooses for a 
 | Live Postgres introspection | `@askdb/introspect`, `@askdb/postgres`, `ai` | `@askdb/postgres` pulls `@askdb/core` and `@askdb/introspect`. `ai` is a required peer of `@askdb/core`, which loads it at import time even when no SQL is generated (ADR 0006, 2026-09 amendment). | `pg` for `createPostgresCatalogQueryRunner()`. | Callers can also supply their own `CatalogQueryRunner`. |
 | Air-gapped Postgres introspection | `@askdb/introspect`, `@askdb/postgres`, `ai` | Same as live Postgres introspection. | No `pg` required if using from-export bundles only. | Templates come from `POSTGRES_TEMPLATE_BUNDLE`. |
 | Prisma schema-file introspection | `@askdb/introspect`, `@askdb/prisma`, `ai` | `@askdb/prisma` pulls `@askdb/introspect` (and through it `@askdb/core`) and `@prisma/internals`. `ai` is the required peer of `@askdb/core`. | No database driver peer declared. | Produces Schema v2 physical metadata from Prisma files; no dialect included. |
-| CLI workflow | `askdb` | Pulls first-party integrations and surfaces used by the `askdb` binary, including core, ai, the four `@ai-sdk/*` provider SDKs, introspect, postgres, prisma, enrich, studio, and `pg`. | Environment variables choose which runtime paths are active. | Batteries-included product surface, not the smallest library install. |
-| Local browser Studio | `@askdb/studio` | Pulls core, ai, the four `@ai-sdk/*` provider SDKs, enrich, postgres, rag, and React UI dependencies. | `OPENAI_API_KEY` enables suggestions/sample generation; RAG provider choices are runtime config. | Local authoring UI, sample SQL checks, and local RAG exploration. |
+| CLI workflow | `askdb` | Pulls first-party integrations and surfaces used by the `askdb` binary, including core, ai, the four `@ai-sdk/*` provider SDKs, introspect, the four live engine packages, enrich, and studio. | `@askdb/prisma` for Prisma schema-file introspection (it brings in Prisma, whose `@prisma/engines` build pnpm 11 must approve); the database driver for live introspection. Environment variables choose which runtime paths are active. | Batteries-included product surface, not the smallest library install. |
+| Local browser Studio | `@askdb/studio` | Pulls core, ai, the four `@ai-sdk/*` provider SDKs, enrich, the four live engine packages, rag, and React UI dependencies. | `@askdb/prisma` to resync from a Prisma schema; the database driver for live introspection or execute. `OPENAI_API_KEY` enables suggestions/sample generation; RAG provider choices are runtime config. | Local authoring UI, sample SQL checks, and local RAG exploration. |
 | RAG with memory or file store | `@askdb/rag`, `@askdb/core`, `ai` | `@askdb/rag` pulls `@askdb/core`; `ai` is the required peer of `@askdb/core`. | Embedder packages only if using a helper such as OpenAI. | In-memory and file stores do not need `pg`. |
 | RAG with pgvector | `@askdb/rag`, `@askdb/core`, `ai` | `@askdb/rag` pulls `@askdb/core`; `ai` is the required peer of `@askdb/core`. | `pg` when using the pgvector adapter with a Postgres connection; embedding provider package as needed. | Vector storage is optional and selected by the host. |
 
@@ -351,7 +357,7 @@ Connectors and peer packages solve different problems:
 | --- | --- | --- | --- |
 | SQL dialect | `@askdb/core` consumer API, implemented by integrations | `AskDialect` | Add a database dialect or a different SQL-generation/validation policy. |
 | Introspection connector | `@askdb/introspect` contract, implemented by integrations | `Connector<TInput>` | Add a new schema metadata source such as another database engine, export format, or schema file type. |
-| Connector provider adapter | `@askdb/introspect` registry, implemented by engine packages | `ConnectorProviderAdapter` (`createConnector`, optional `resolveConnection`, `connectionLabelParts`, `getTemplates`); any string provider id | Make an engine selectable by id from a config-driven host you write (`createConnectorRegistry`). The shipped `askdb` CLI and Studio register only the built-in engines. |
+| Connector provider adapter | `@askdb/introspect` registry, implemented by engine packages | `ConnectorProviderAdapter` (`createConnector`, optional `resolveConnection`, `connectionLabelParts`, `getTemplates`); any string provider id; registered as the adapter or as a lazy entry (`{ provider, load }`) that `registry.load()` imports on first use | Make an engine selectable by id from a config-driven host you write (`createConnectorRegistry`). The shipped `askdb` CLI and Studio register only the built-in engines, `@askdb/prisma` as a lazy entry (it is their optional peer). |
 | Engine kit | `@askdb/introspect/kit` | `createOptionalDriverLoader`, `compileTableFilters`, `makeTableId`, `rowsToRecords`, `defineLiveConnectorProvider`, `formatConnectionLabel`, `parseConnectionUrl` | Build a new engine package without re-implementing driver loading, filters, ids, row folding, or the live-catalog adapter. |
 | Catalog runner | Integration-owned helper, currently `@askdb/postgres` | `CatalogQueryRunner` | Use a different live database client while keeping the connector unchanged. |
 | Enrichment authoring | `@askdb/enrich` | `Workspace`, draft builders, save helpers, bundle helpers | Build a custom UI over Schema v2 without depending on Studio. |

@@ -101,7 +101,7 @@ FROM sqlite_master m, pragma_index_list(m.name) il, pragma_index_info(il.name) i
 WHERE m.type = 'table' AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, il.name, ii.seqno`;
 
-/** Internal: the catalog SQL strings, exposed for snapshot-based tests. */
+/** The catalog SQL strings the connector issues, keyed by query name. */
 export const SQLITE_CATALOG_SQL = {
   objects: SQL_OBJECTS,
   columns: SQL_COLUMNS,

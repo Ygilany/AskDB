@@ -1,5 +1,6 @@
 import type { LanguageModel } from "ai";
 import { describe, expect, it, vi } from "vitest";
+import { SensitiveEnrichmentTargetError } from "../errors.js";
 import { buildEnrichmentUserPrompt } from "./prompt.js";
 import { parseCandidates, suggestEnrichment } from "./suggest.js";
 import type { EnrichmentTarget } from "./types.js";
@@ -27,6 +28,22 @@ const usersTable: V2Table = {
   ],
 };
 
+/** Sensitive as `schema.json` marks a table: the flag is on the table, not on its columns. */
+const payrollTable: V2Table = {
+  id: "table:public.payroll",
+  schema: "public",
+  name: "payroll",
+  sensitive: true,
+  columns: [
+    {
+      id: "table:public.payroll#salary_band",
+      name: "salary_band",
+      type: "text",
+      nullable: false,
+    },
+  ],
+};
+
 const fakeModel = {} as LanguageModel;
 
 describe("enrichment suggestions", () => {
@@ -44,9 +61,58 @@ describe("enrichment suggestions", () => {
     );
 
     expect(prompt).toContain("Schema: orders-users");
-    expect(prompt).toContain("Table: public.users");
-    expect(prompt).toContain("email text [sensitive]");
+    expect(prompt).toContain("TABLE public.users");
+    expect(prompt).toContain("- email text (NOT NULL) (sensitive)");
     expect(prompt).toContain("one-sentence description");
+  });
+
+  it("leaves sensitive columns out of the prompt when omitSensitiveIdentifiersFromPrompt is on", async () => {
+    const generateText = vi.fn(async () => ({ text: "A description." }));
+
+    for (const table of [usersTable, payrollTable]) {
+      await suggestEnrichment({ kind: "table-description", table }, { schemaId: "orders-users" }, fakeModel, {
+        generateText,
+        omitSensitiveIdentifiersFromPrompt: true,
+      });
+    }
+
+    const [users, payroll] = generateText.mock.calls.map(
+      (call) => (call as unknown as [{ prompt: string }])[0].prompt,
+    );
+    expect(users).not.toContain("email");
+    expect(users).toContain("- id uuid (PK NOT NULL)");
+    // A sensitive table keeps its name, as in ask()'s prompt, but none of its columns.
+    expect(payroll).toContain("TABLE public.payroll");
+    expect(payroll).not.toContain("salary_band");
+  });
+
+  it("refuses a sensitive column as the target only when omitSensitiveIdentifiersFromPrompt is on", async () => {
+    const generateText = vi.fn(async () => ({ text: "A description." }));
+    const targets: Array<{ target: EnrichmentTarget; name: string }> = [
+      { target: { kind: "column-description", table: usersTable, columnId: "column:public.users.email" }, name: "email" },
+      // Sensitive through its table only.
+      {
+        target: { kind: "column-aliases", table: payrollTable, columnId: "table:public.payroll#salary_band" },
+        name: "salary_band",
+      },
+    ];
+
+    for (const { target, name } of targets) {
+      const error = await suggestEnrichment(target, { schemaId: "orders-users" }, fakeModel, {
+        generateText,
+        omitSensitiveIdentifiersFromPrompt: true,
+      }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(SensitiveEnrichmentTargetError);
+      // Error messages never name a sensitive identifier.
+      expect((error as Error).message).not.toContain(name);
+    }
+    expect(generateText).not.toHaveBeenCalled();
+
+    // With omission off, the same targets reach the model.
+    for (const { target } of targets) {
+      await suggestEnrichment(target, { schemaId: "orders-users" }, fakeModel, { generateText });
+    }
+    expect(generateText).toHaveBeenCalledTimes(2);
   });
 
   it("calls the supplied generator and returns parsed candidates", async () => {
@@ -69,7 +135,7 @@ describe("enrichment suggestions", () => {
       expect.objectContaining({
         model: fakeModel,
         temperature: 0.2,
-        prompt: expect.stringContaining("Table: public.users"),
+        prompt: expect.stringContaining("TABLE public.users"),
       }),
     );
   });

@@ -67,6 +67,8 @@ askdb --help
   </TabItem>
 </Tabs>
 
+To introspect a Prisma schema file, also install `@askdb/prisma`, in the same place or in the project you run `askdb` from. `askdb` loads it only for `--engine prisma`, and on pnpm 11 it needs its `@prisma/engines` build approved (see [the Prisma guide](/guides/integrations/prisma/#install)).
+
 ## Help, version, and first run
 
 | Flag | Description |
@@ -82,7 +84,7 @@ Commands that don't read the config work in any directory, including one with no
 
 ### `askdb init`
 
-Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently.
+Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, and with pnpm 10.4 or later it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`). Older pnpm has no `--allow-build`, so it installs without it.
 
 ```bash
 npx askdb@latest init          # wizard in a terminal
@@ -151,7 +153,7 @@ askdb introspect \
 | `--engine <id>` | Engine override: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
 | `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
 | `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. |
-| `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. |
+| `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. If `schema.json` there is a symbolic link, the command fails instead of writing to the file the link points at; replace the link with a regular file. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. |
 | `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. |
 | `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
@@ -167,6 +169,8 @@ Live introspection requires the matching engine driver (`pg`, `mysql2`, `better-
 pnpm dlx -p askdb -p pg askdb introspect --engine postgres --url "$DATABASE_URL"
 npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
 ```
+
+Prisma introspection needs `@askdb/prisma` the same way: in the project running `askdb`, or in the one-off command (`npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`). Without it, `askdb introspect --engine prisma` exits 1 and names the package to install.
 
 ### `askdb enrich`
 
@@ -204,6 +208,8 @@ If `askdb.config.*` exists but fails to load (a syntax error, or its dependencie
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
+It reads the directory the way `loadSchema()` does, so it refuses a directory that `loadSchema()` would refuse: a file name in the wrong case, such as `Tenant-Policy.md`, or an optional file that exists but can't be read. It exits with status 1 and the error.
+
 ```bash
 askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
 ```
@@ -222,7 +228,7 @@ askdb ask \
 | --- | --- |
 | `-s, --schema <path>` | Path to the schema artifact. Optional — defaults to the configured `introspection.outputDir`, or `./askdb/`. |
 | `-q, --question <text>` | The natural-language question (required). |
-| `--mode <mode>` | Operating mode: `schema_only` (default) or `bounded_results`. |
+| `--mode <mode>` | Operating mode: `schema_only` or `bounded_results`. It can only tighten config `modes.askdbMode` (default `schema_only`): `--mode bounded_results` runs `schema_only` unless the config sets `bounded_results`. |
 | `--explain` | After the SQL, print a JSON block describing the heuristic guardrails satisfied. |
 | `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
 | `--mock-sql <sql>` | Deterministic output for tests — bypasses the live model call. |

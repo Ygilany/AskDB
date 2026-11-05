@@ -22,7 +22,7 @@ import { ensureArtifact, requireInstallTarget } from "../../src/artifacts.js";
 import { hasCapability, needsCapability } from "../../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../../src/dialects.js";
 import { LOGICAL_SCHEMAS, compareToLogicalSchema, connectionUrl, type SchemaJson } from "../../src/fixture.js";
-import { askdbAsync, askdbInProject, introspectFixture, type CliRun } from "../../src/introspect.js";
+import { askdbAsync, askdbInProject, introspectFixture, sqliteIntrospection, type CliRun } from "../../src/introspect.js";
 import { cassetteSql, loadQuestions } from "../../src/model/catalog.js";
 import { startReplayServer, type ReplayServer } from "../../src/model/replay-server.js";
 
@@ -266,5 +266,25 @@ describe("[postgres] cli-introspect-output", () => {
     expect(run.status, run.stderr).toBe(0);
     expect(run.files).toEqual([]);
     expect(compareToLogicalSchema(JSON.parse(run.stdout) as SchemaJson, { expectNamespaces: true })).toEqual([]);
+  });
+});
+
+/**
+ * Contract: `askdb.config.mjs` is a config file the CLI loads (`reference/config.mdx`, "File
+ * discovery": `ts → mts → cts → js → mjs → cjs`), and a plain `export default { … }` loads like
+ * `defineConfig({ … })` (`reference/config.mdx`; the plain-object snippets in
+ * `guides/switch-engines.mdx`). `askdb introspect` reads its `introspection` block from it.
+ * Catches: the CLI's synchronous loader refusing `.mjs` (#264) or a plain object (#265), or
+ * loading the file but losing its `introspection` block (an error, or the wrong schema).
+ * Not covered elsewhere: every other lab project writes `askdb.config.ts` with `defineConfig`;
+ * `@askdb/config`'s own tests load its source, not the packed CLI.
+ */
+describe("[sqlite] config-forms", () => {
+  it("askdb introspect reads a plain-object askdb.config.mjs", (ctx) => {
+    needsCapability(ctx, "config-plain-mjs");
+    const run = askdbInProject(sqliteIntrospection(), ["introspect", "--print", "--schema-id", "multi-engine"], "plain-object-mjs");
+
+    expect(run.status, run.stderr).toBe(0);
+    expect(compareToLogicalSchema(JSON.parse(run.stdout) as SchemaJson, { expectNamespaces: false })).toEqual([]);
   });
 });

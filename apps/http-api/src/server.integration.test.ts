@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAskDbHttpServer } from "./server.js";
 
 const schemaPath = new URL("../../../fixtures/schemas/orders-users.schema/", import.meta.url);
@@ -78,6 +78,16 @@ async function startApp(options: Parameters<typeof createAskDbHttpServer>[0] = {
   const addr = app.server.address();
   if (!addr || typeof addr === "string") throw new Error("expected inet address");
   return { url: `http://127.0.0.1:${addr.port}`, close: () => app.close() };
+}
+
+/** A port nothing listens on right now. */
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const addr = probe.address();
+  if (!addr || typeof addr === "string") throw new Error("expected inet address");
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return addr.port;
 }
 
 /**
@@ -253,6 +263,25 @@ describe("http-api", () => {
       expect(json.error?.code).toBe("not_found");
       expect(typeof json.correlationId).toBe("string");
       expect(json.correlationId.length).toBeGreaterThan(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("takes port and host from the options, then from httpApi.listen.*", async () => {
+    const port = await freePort();
+    // Not the default host (127.0.0.1), so the test tells config from default.
+    installTestRuntime({ logLevel: "silent", httpApi: { listen: { port, host: "localhost" } } });
+
+    const explicit = createAskDbHttpServer({ port: 0, host: "127.0.0.1" });
+    expect({ host: explicit.host, port: explicit.port }).toEqual({ host: "127.0.0.1", port: 0 });
+
+    const app = createAskDbHttpServer();
+    await app.listen();
+    try {
+      expect({ host: app.host, port: app.port }).toEqual({ host: "localhost", port });
+      const res = await fetch(`http://localhost:${port}/health`);
+      expect(res.status).toBe(200);
     } finally {
       await app.close();
     }
@@ -484,6 +513,34 @@ describe("http-api", () => {
     }
   });
 
+  it("runs config modes.askdbMode when the request names no mode, and forwards a request mode that tightens it", async () => {
+    const logDir = mkdtempSync(join(tmpdir(), "askdb-http-log-"));
+    const logFile = join(logDir, "askdb.log");
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "info",
+      logFile,
+      host: { schemaPath: schemaPath.pathname },
+      modes: { askdbMode: "bounded_results" },
+    });
+    const app = await startApp();
+    try {
+      const pipelineModes = () =>
+        readLogEntries(logFile)
+          .filter((entry) => entry.event === "askdb.pipeline.mode")
+          .map((entry) => entry.mode);
+
+      expect((await postAsk(app.url, { question: "hi" })).status).toBe(200);
+      expect(pipelineModes()).toEqual(["bounded_results"]);
+
+      expect((await postAsk(app.url, { question: "hi" }, { "x-askdb-mode": "schema_only" })).status).toBe(200);
+      expect(pipelineModes()).toEqual(["bounded_results", "schema_only"]);
+    } finally {
+      await app.close();
+      rmSync(logDir, { recursive: true, force: true });
+    }
+  });
+
   it("treats JSON null in optional body fields as absent", async () => {
     installTestRuntime({ mockSql: "select 1", logLevel: "silent", host: { schemaPath: schemaPath.pathname } });
     const app = await startApp();
@@ -537,6 +594,29 @@ describe("http-api", () => {
       expect(json.error.message).toBe("Internal server error. See server logs for this correlationId.");
       expect(typeof json.correlationId).toBe("string");
     } finally {
+      await app.close();
+    }
+  });
+
+  it("an error that escapes the handler returns a JSON 500 and goes to stderr, not a hung request", async () => {
+    installTestRuntime({ mockSql: "select 1", logLevel: "silent", host: { schemaPath: schemaPath.pathname } });
+    const app = await startApp();
+    // The handler reads the runtime before its own error handling, so a missing one escapes it.
+    resetAskDbRuntimeForTests();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi" }, { "x-correlation-id": "cid-escaped" });
+      expect(status).toBe(500);
+      expect(json).toEqual({
+        ok: false,
+        correlationId: "cid-escaped",
+        error: { code: "internal_error", message: "Internal server error. See server logs for this correlationId." },
+      });
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+        "askdb-http: unhandled error (correlationId=cid-escaped): Error: AskDB runtime is not initialized.",
+      );
+    } finally {
+      stderr.mockRestore();
       await app.close();
     }
   });

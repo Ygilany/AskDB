@@ -112,6 +112,38 @@ describe("createOptionalDriverLoader", () => {
     expect(importDriver).toHaveBeenCalledTimes(2);
   });
 
+  // Node 24 and later keep a failed package lookup for the life of the process, so the retry
+  // can't always see a package installed after it. It must then say to restart, not to install.
+  it("never reports a driver installed after a failed load as missing", async () => {
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "node_modules"));
+    const loader = createOptionalDriverLoader<{ default: { from: string } }>({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+    await expect(loader.load({ resolveFrom: dir })).rejects.toThrow("install it");
+
+    const pkgDir = join(dir, "node_modules", PKG);
+    await mkdir(join(pkgDir, "dist"), { recursive: true });
+    await writeFile(join(pkgDir, "package.json"), '{"exports":{".":"./dist/index.cjs"}}\n');
+    await writeFile(join(pkgDir, "dist", "index.cjs"), "module.exports = { from: 'project' };\n");
+    const retry = await loader.load({ resolveFrom: dir }).catch((e: Error) => e);
+
+    if (retry instanceof Error) {
+      expect(retry.name).toBe("AskDbError");
+      expect(retry.message).toBe(
+        `\`${PKG}\` is in ${join(dir, "node_modules")}, but Node can't load it in this process. ` +
+          "If it was installed while the process was running, restart the process: " +
+          "Node 24 and later can keep a failed package lookup until the process exits.",
+      );
+    } else {
+      expect(retry.default.from).toBe("project");
+    }
+  });
+
   it("keeps independent cache slots per resolveFrom", async () => {
     const withDriver = await tempProject(true);
     const without = await tempProject(false);

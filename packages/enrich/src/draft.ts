@@ -1,7 +1,6 @@
 import { findMentionedNames } from "@askdb/core";
 import type {
   ParsedTableMarkdown,
-  V2Column,
   V2ColumnFrontmatter,
   V2Table,
   V2TableFrontmatter,
@@ -118,18 +117,6 @@ export function buildFrontmatter(
   return fm;
 }
 
-/** Parse a comma-separated string into a trimmed list (empty entries dropped). */
-export function parseListInput(input: string): string[] {
-  return input
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
-export function formatList(list: string[] | undefined): string {
-  return list ? list.join(", ") : "";
-}
-
 /** Sensitive column names (per physical layer) referenced in a description. */
 export function findSensitiveColumnReferences(
   description: string,
@@ -164,27 +151,4 @@ function extractFirstParagraph(body: string): string | undefined {
     out.push(line.trim());
   }
   return out.length > 0 ? out.join(" ") : undefined;
-}
-
-/** Are any per-column describable fields populated? */
-export function hasAnyColumnDescribable(draft: TableDraft): boolean {
-  return Object.values(draft.columns).some(
-    (c) =>
-      (c.description !== undefined && c.description !== "") ||
-      (c.aliases && c.aliases.length > 0) ||
-      (c.enum && c.enum.length > 0) ||
-      c.sensitive !== undefined,
-  );
-}
-
-/** Is the column type a candidate for an enum field? (text-y types). */
-export function isEnumCandidate(col: V2Column): boolean {
-  const t = col.type.toLowerCase();
-  return (
-    t === "text" ||
-    t.startsWith("varchar") ||
-    t.startsWith("char") ||
-    t === "citext" ||
-    t.endsWith("[]") === false && t.includes("enum")
-  );
 }
