@@ -706,6 +706,7 @@ async function maybeRetrieveDdl(args: {
       k,
       resultCount: results.length,
       tablesEmitted: synth.tablesEmitted,
+      mentionDroppedCount: synth.mentionDroppedCount,
       threshold,
       totalChunks: total === Number.POSITIVE_INFINITY ? null : total,
     },
