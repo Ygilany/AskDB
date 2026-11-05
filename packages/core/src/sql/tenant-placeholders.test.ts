@@ -148,7 +148,8 @@ describe("ask() — tenant SQL output modes", () => {
   });
 
   // Before ADR 0010, ask() returned the raw placeholder with tenantGuardrail.passed: true.
-  it.each([":tenant_agency_ids", ":TENANT_AGENCY_IDS", ":tenant_agency_idsOR 1=1"])(
+  // The other placeholder forms are resolveTenantSql()'s to prove (below).
+  it.each([":tenant_agency_ids", ":TENANT_AGENCY_IDS"])(
     "throws UNRESOLVED_TENANT_PLACEHOLDER for a global-scope reply that still has %s",
     async (placeholder) => {
       const error = await ask({
