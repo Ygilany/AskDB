@@ -362,6 +362,7 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
 | A tenant ID that isn't printable ASCII (U+0020 to U+007E) or that contains a backslash, inlined as a literal: `"sql-only"` mode on any dialect (a custom `AskDialect`, with no dialect, included), and the `sql` that `bindPreparedQuery()` returns | Rejected (`UNESCAPABLE_TENANT_ID`). A printable-ASCII literal with no backslash and its quotes doubled reads the same under every server string setting and ASCII-compatible connection charset; any other doesn't, whatever the dialect's `backslashEscapes` says ([ADR 0024](../adrs/0024-tenant-ids-leave-the-sql-text.md)). `"sql-params"` mode passes it as a driver parameter. |
 | `ask()` with a custom `AskDialect`, a tenant policy and no `tenantSqlMode` | Rejected (`TENANT_SQL_MODE_REQUIRED`) before the model call. AskDB can't know a custom dialect's driver markers, and `$N` is a money constant on SQL Server. |
+| A `tenantSqlMode` other than `"sql-params"` or `"sql-only"`: `ask()` with a tenant policy, on any dialect, and `resolveTenantSql()` | Rejected (`TENANT_SQL_MODE_REQUIRED`), in `ask()` before the model call. It's never read as either mode. |
 | Advisory `context` with unknown keys in `attributes` | Accepted (freeform). |
 
 ---
@@ -387,7 +388,7 @@ The name is the label lowercased, with every run of characters other than ASCII 
 
 | Mode | Output shape | Placeholder handling |
 |---|---|---|
-| **SQL+params** (default) | `sql` + `tenantParams` | Named placeholders replaced with the dialect's driver markers — `$1, $2` (Postgres, CockroachDB, and custom `AskDialect`s), `?` (MySQL, MariaDB, SQLite), `@p0, @p1` (SQL Server). `tenantParams` holds the IDs in marker order. |
+| **SQL+params** (default for built-in dialects) | `sql` + `tenantParams` | Named placeholders replaced with the dialect's driver markers — `$1, $2` (Postgres, CockroachDB, and a custom `AskDialect` that sets this mode), `?` (MySQL, MariaDB, SQLite), `@p0, @p1` (SQL Server). `tenantParams` holds the IDs in marker order. |
 | **SQL-only** | `sql` | Named placeholders replaced with escaped literal values (quotes doubled). SQL is complete and executable. A tenant ID that isn't printable ASCII or contains a backslash is rejected (`UNESCAPABLE_TENANT_ID`). |
 
 The mode is configurable per `ask()` call (`tenantSqlMode`); the default is exported as `DEFAULT_TENANT_SQL_MODE`. A custom `AskDialect` has no default and must set it.

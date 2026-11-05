@@ -237,6 +237,8 @@ A tenant ID in the scope contains a backslash or a character outside printable A
 
 `ask()` got a custom `AskDialect`, a schema with a tenant policy, and no `tenantSqlMode`. AskDB can't tell which parameter markers a custom dialect's driver takes, so it doesn't guess: the default `$1, $2, …` would be read as money constants on SQL Server and filter to the wrong tenant. Set `tenantSqlMode: "sql-params"` if your driver binds `$1`-style markers, or `tenantSqlMode: "sql-only"` to get the tenant IDs inlined as escaped literals. Built-in dialect ids and `DialectSpec`s don't need it.
 
+The same error comes from a `tenantSqlMode` that is neither `"sql-params"` nor `"sql-only"` (a typo such as `"sql_only"`, or an empty string), on any dialect: AskDB refuses it rather than read it as either mode.
+
 ### Driver error: `there is no parameter $1` / `Too few parameter values` after upgrading
 
 `ask()` binds tenant IDs through driver markers by default (releases up to 1.0.0-beta.44 inlined them): with a `tenantScope`, `result.sql` holds `$1`, `?` or `@p0` where the IDs used to be inlined, and the IDs are in `result.tenantParams`. Running `result.sql` without them fails at the driver (on MySQL, as a syntax error); it never returns other tenants' rows. Pass `result.tenantParams` with `result.sql`, or run `result.unboundSql` with `result.params`. To keep inlined IDs, set `tenantSqlMode: "sql-only"`. See [Executing the result](/reference/core-api/#executing-the-result).
