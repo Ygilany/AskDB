@@ -11,9 +11,11 @@ Engine-agnostic introspection orchestrator for AskDB. Defines the `Connector` co
 pnpm add @askdb/introspect @askdb/core ai
 # Plus an integration package for the engine you're targeting, e.g.:
 pnpm add @askdb/postgres pg
-# Or for Prisma schema-file introspection:
-pnpm add @askdb/prisma
+# Or for Prisma schema-file introspection (pnpm 11 must approve the @prisma/engines build):
+pnpm add --allow-build=@prisma/engines @askdb/prisma
 ```
+
+See [the Prisma guide](https://askdb.tools/guides/integrations/prisma/#install) for other package managers.
 
 ## Programmatic usage
 

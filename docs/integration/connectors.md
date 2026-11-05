@@ -316,7 +316,7 @@ await introspect(input, { outDir: "./askdb", schemaId: "app" }, { connector });
 
 When the engine package is optional for your host's users, register a **lazy entry** instead of the adapter: `{ provider, load }`, where `load()` imports the package and returns its adapter. `hasProvider()` and `providers()` list it without loading it. Once the engine is selected, call `await registry.load(provider)`: it imports the package once (concurrent calls share the import; a failed one is retried on the next call) and checks that the adapter's `provider` matches. Until then, `createConnector`, `resolveConnection`, `getTemplates` and `connectionLabel` throw for that entry rather than fall back. `registry.load()` resolves an adapter object as it is, so a host can call it for every engine.
 
-`registry.load()` passes `load()`'s errors through unchanged, so give a missing package its install hint in `load`. The CLI and Studio register `@askdb/prisma` with the kit's `createOptionalDriverLoader`, which imports it from the host's own install first, then from the project in the working directory, and throws `connectorPackageMissingMessage(...)` when it resolves from neither. Write the `import()` literally, with `.catch(rethrowDriverImportError)` chained on it, as for a driver:
+`registry.load()` passes `load()`'s errors through unchanged, so give a missing package its install hint in `load`. The CLI and Studio register `@askdb/prisma` with the kit's `createOptionalDriverLoader`, which imports it from the host's own install first, then from the project in the working directory, and throws `connectorPackageMissingMessage(...)` when it resolves from neither. That message suggests a one-off `askdb` command, and the `askdb` binary registers only the first-party engines, so a third-party host passes its own `missingMessage`. When the package is on disk but Node can't resolve it, the loader says to restart the process instead: Node 24 and later can keep a failed package lookup until the process exits, so a long-running host such as Studio may not see a package installed after its first attempt. Write the `import()` literally, with `.catch(rethrowDriverImportError)` chained on it, as for a driver:
 
 ```ts
 import { connectorPackageMissingMessage, createConnectorRegistry } from "@askdb/introspect";
@@ -325,7 +325,11 @@ import { createOptionalDriverLoader, rethrowDriverImportError } from "@askdb/int
 const prismaPackage = createOptionalDriverLoader({
   packageName: "@askdb/prisma",
   importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
-  missingMessage: connectorPackageMissingMessage({ provider: "prisma", packageName: "@askdb/prisma" }),
+  missingMessage: connectorPackageMissingMessage({
+    provider: "prisma",
+    packageName: "@askdb/prisma",
+    allowBuilds: ["@prisma/engines"],
+  }),
 });
 
 const connectorRegistry = createConnectorRegistry([
