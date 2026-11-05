@@ -5,6 +5,7 @@ import type { AiConfig, AiProviderAdapter, AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import type { AnyNormalizedSchema, AskDbLogger, AskDbModeV1, AskDialect } from "@askdb/core";
 import {
+  AskDbError,
   AskDbLogEvent,
   loadSchema,
   loadSchemaFromJson,
@@ -557,7 +558,8 @@ describe("createAskDb — modes.askdbMode: a call can tighten the config mode, n
   const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
 
   /** The mode core ran with, read from its documented `askdb.pipeline.mode` log line. */
-  async function modeRun(configMode: AskDbModeV1 | undefined, callMode: AskDbModeV1 | undefined): Promise<unknown> {
+  /** `callMode` is a plain string: an untyped JavaScript caller can pass any spelling. */
+  async function modeRun(configMode: AskDbModeV1 | undefined, callMode: string | undefined): Promise<unknown> {
     const modes: unknown[] = [];
     const logger: AskDbLogger = {
       info: (context) => {
@@ -570,7 +572,7 @@ describe("createAskDb — modes.askdbMode: a call can tighten the config mode, n
       registry: makeRegistry(),
       schema: { schema: preloaded },
     });
-    await askdb.ask("q", { logger, ...(callMode ? { mode: callMode } : {}) });
+    await askdb.ask("q", { logger, ...(callMode ? { mode: callMode as AskDbModeV1 } : {}) });
     expect(modes).toHaveLength(1);
     return modes[0];
   }
@@ -579,8 +581,13 @@ describe("createAskDb — modes.askdbMode: a call can tighten the config mode, n
     { name: "config bounded_results applies when the call names no mode", config: "bounded_results", call: undefined, runs: "bounded_results" },
     { name: "a call's schema_only tightens config bounded_results", config: "bounded_results", call: "schema_only", runs: "schema_only" },
     { name: "a call can't loosen an unset config, which counts as schema_only", config: undefined, call: "bounded_results", runs: "schema_only" },
+    { name: "a call's mode is parsed like the config's, so SCHEMA-ONLY still tightens", config: "bounded_results", call: "SCHEMA-ONLY", runs: "schema_only" },
   ] as const)("$name", async ({ config, call, runs }) => {
     expect(await modeRun(config, call)).toBe(runs);
+  });
+
+  it("rejects an unknown call mode instead of running the config mode", async () => {
+    await expect(modeRun("bounded_results", "schema_onyl")).rejects.toThrow(AskDbError);
   });
 });
 

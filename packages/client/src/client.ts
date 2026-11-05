@@ -338,9 +338,11 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         config.modes?.omitSensitiveFromPrompt === true;
 
       // Config `modes.askdbMode` (unset: `schema_only`) is the loosest mode a call gets:
-      // a per-call `mode` can tighten it to `schema_only`, never loosen it (ADR 0025).
+      // a per-call `mode` can tighten it to `schema_only`, never loosen it (ADR 0025). Both go
+      // through the same parser, so any accepted spelling tightens and an unknown mode throws.
       const configMode = parseAskDbModeV1(config.modes?.askdbMode);
-      const mode = callMode === "schema_only" ? callMode : configMode;
+      const requested = callMode == null ? undefined : parseAskDbModeV1(callMode);
+      const mode = requested === "schema_only" ? requested : configMode;
 
       return ask({
         ...rest,
