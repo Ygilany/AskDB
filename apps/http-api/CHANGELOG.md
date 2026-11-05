@@ -1,5 +1,44 @@
 # @askdb/http-api
 
+## 1.0.0-beta.45
+
+### Minor Changes
+
+- 3191966: `createAskDb().ask()` now applies config `modes.askdbMode` (#279, ADR 0025). Before, the client ignored it: a call that named no `mode` ran core's default, `schema_only`, whatever the config said. Only the CLI and the HTTP API read the config mode, each on its own.
+  
+  The config mode is the loosest mode a call gets, the same rule as the `modes.omitSensitiveFromPrompt` floor. A call that names no mode runs the config mode. An unset config counts as `schema_only`. A call's `mode: "schema_only"` tightens a config of `bounded_results` for that call.
+  
+  The CLI and the HTTP API now pass only the caller's mode to the client, so all three surfaces resolve it the same way. A bad `--mode` still exits 1, and a bad body `mode` or `x-askdb-mode` header still returns `400`.
+  
+  **Upgrade notes (breaking):**
+  
+  - A per-call mode can no longer loosen the config. `askdb ask --mode bounded_results`, a client call's `mode: "bounded_results"` and an HTTP request's `mode: "bounded_results"` now run `schema_only` unless `askdb.config.*` sets `modes: { askdbMode: "bounded_results" }`. There's no error: the `askdb.pipeline.mode` log line records the mode that ran. Today's SQL output doesn't change, because `bounded_results` still produces the same SQL as `schema_only`.
+  - The `askdb.run.start` log lines from the CLI and the HTTP API no longer carry a `mode` field. Read `mode` from `askdb.pipeline.mode`, which is in the same log stream.
+  - `ask()` parses a call's `mode` the way it parses the config's, so `"SCHEMA-ONLY"` tightens like `"schema_only"`, and an unknown value throws `AskDbError` where it used to reach core unchecked. Typed TypeScript callers can't pass one.
+  - An invalid `modes.askdbMode` in a hand-built `AskDbRuntimeConfig` makes `ask()` throw `AskDbError`. Config files are validated when they load, as before.
+- d9b88f8: `createAskDbHttpServer()` now loads its config when you create it, as the docs said it did (#280). Before, it never bootstrapped, so a host that didn't call `bootstrapAskDbEnv()` first got `500 internal_error` on every `POST /ask`. When no runtime snapshot is installed, the server calls `bootstrapAskDbEnv()` from `process.cwd()`, loading `.env` and `askdb.config.*`. When your process already bootstrapped, it uses that snapshot and loads nothing, so a host that bootstraps from another directory keeps its config.
+  
+  Two behavior changes for hosts that embed the server:
+  
+  - `createAskDbHttpServer()` throws when it has to bootstrap and finds no `askdb.config.*` in the working directory, or can't read an existing `.env`. It no longer starts a server that fails every request.
+  - Omitted `port` and `host` options now fall back to `httpApi.listen.port` and `httpApi.listen.host`, then to `3000` and `127.0.0.1`, the same precedence as the `askdb-http` binary. A host that sets `httpApi.listen` in its config but relied on the defaults now listens on the configured address.
+
+### Patch Changes
+
+- Updated dependencies [5bd780a]
+- Updated dependencies [3191966]
+- Updated dependencies [d9b88f8]
+- Updated dependencies [c099a66]
+- Updated dependencies [5bd780a]
+- Updated dependencies [61f23b0]
+- Updated dependencies [798cc4f]
+- Updated dependencies [aa187f2]
+- Updated dependencies [e8afa01]
+  - @askdb/client@1.0.0-beta.8
+  - @askdb/config@1.0.0-beta.14
+  - @askdb/core@1.0.0-beta.45
+  - @askdb/ai@0.1.0-beta.9
+
 ## 1.0.0-beta.44
 
 ### Minor Changes
