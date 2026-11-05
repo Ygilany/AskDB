@@ -110,6 +110,8 @@ For MySQL and MariaDB, the URL's database is the one introspected, and its table
 
 ```ts
 // askdb.config.ts
+import { env } from "@askdb/config";
+
 export default {
   introspection: {
     provider: "mysql",

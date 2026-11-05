@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { introspect } from "./introspect.js";
-import { isSchemaV2Json, renderSchemaV2Body } from "./render/render.js";
+import { isSchemaV2Json, renderSchemaV2Body, renderToSchemaV2 } from "./render/render.js";
 import type { Connector, IntrospectionResult, SqlSchema } from "./types.js";
 
 let workDir: string;
@@ -90,6 +90,21 @@ describe("introspect() — engine-agnostic orchestrator", () => {
     const written = readFileSync(result.render!.schemaJsonPath, "utf8");
     expect(written).toContain('"schemaId": "fake"');
     expect(written).toContain('"table:public.users"');
+  });
+
+  // A checkout can carry `schema.json -> <anything>` (git stores symbolic links), and
+  // `askdb introspect --out` and Studio's Resync write into that directory.
+  it("refuses to write schema.json through a symbolic link", () => {
+    const outDir = join(workDir, "fake.schema");
+    mkdirSync(outDir);
+    const outside = join(workDir, "outside.json");
+    writeFileSync(outside, "untouched\n", "utf8");
+    symlinkSync(outside, join(outDir, "schema.json"));
+
+    expect(() => renderToSchemaV2(fakeSchema, { outDir, schemaId: "fake" })).toThrow(
+      'Refusing to write schema.json outside the schema directory: "schema.json" is a symbolic link',
+    );
+    expect(readFileSync(outside, "utf8")).toBe("untouched\n");
   });
 
   // MySQL and SQLite `describe()` return `schemas: []` for a database with no tables or

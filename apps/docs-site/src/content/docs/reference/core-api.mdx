@@ -339,6 +339,22 @@ createMentionMatcher(names).mentionsAny("Dedupe on email"); // → true
 
 The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker, `@askdb/enrich`'s authoring warning and `ask()`'s prompt (with `omitSensitiveIdentifiersFromNlToSqlPrompt`) all use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`. `sensitiveMentionNames(schema)` returns the names that rule checks for a normalized schema, schema-wide: a column marked sensitive itself by its bare name, and a column that is sensitive only because its table is (`sensitiveFromTable`) only as `{ table, column }`. Columns of untracked tables count too.
 
+### `saveSchemaFile(schemaDir, relativePath, content)`
+
+```ts
+import { saveSchemaFile, writeConceptsMarkdown } from "@askdb/core";
+saveSchemaFile("./my-app.schema", "concepts.md", writeConceptsMarkdown({ concepts }, body));
+```
+
+Writes `content` (a string, written as UTF-8, or a `Uint8Array`, written as given) to one file inside a schema directory, so that no link redirects the write out of it. `@askdb/enrich`'s saves, Studio and `@askdb/introspect` all write the directory through it; use it when your own authoring tool writes there. `relativePath` names the file from `schemaDir` with `/` between parts (`schema.json`, `tables/orders.md`).
+
+- It throws, and writes nothing, when the file or a directory between it and `schemaDir` (such as `tables/`) is a symbolic link. `schemaDir` itself can be a symbolic link.
+- It throws when `relativePath` has an empty, `.` or `..` part or a NUL byte (on Windows, also a `\`), so an absolute path is refused too. It doesn't create missing directories.
+- It writes a temporary file next to the target and renames it over the target. A hard link at the target is replaced, not written through, and a reader sees the old file or the new one, never part of one. The new file keeps the target's permission bits, group and, where the process may set it, owner. It doesn't keep an access control list (ACL) or other extended attributes, so on a file with an ACL a save can widen access.
+- A target you can't write throws `EACCES`, as a plain write would. The temporary file needs write access to the target's directory.
+
+A refusal's message reads `Refusing to write <relativePath> outside the schema directory: <why>`. On Windows, the rename fails with `EPERM` while another process holds the target open; writing again usually works.
+
 ---
 
 ## Enrichment suggestions

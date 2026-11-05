@@ -153,7 +153,7 @@ askdb introspect \
 | `--engine <id>` | Engine override: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
 | `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
 | `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. |
-| `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. |
+| `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. If `schema.json` there is a symbolic link, the command fails instead of writing to the file the link points at; replace the link with a regular file. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. |
 | `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. |
 | `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
