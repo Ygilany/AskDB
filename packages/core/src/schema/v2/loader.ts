@@ -77,13 +77,15 @@ export function loadSchemaFromJson(raw: string): NormalizedSchemaV2 {
  *    sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md`
  *
  * Any other JSON file is treated as a standalone physical layer, unless its
- * directory also holds `tenant-policy.md`, `tables/` or `concepts.md`: loading it
- * alone would ignore them, so that throws `SchemaParseError`. To load only the
- * physical layer of such a file, pass its content to `loadSchemaFromJson()`.
+ * directory also holds `tenant-policy.md`, `tables/` or `concepts.md`, in any case:
+ * loading it alone would ignore them, so that throws `SchemaParseError`. To load only
+ * the physical layer of such a file, pass its content to `loadSchemaFromJson()`.
  *
- * Optional sibling files may be absent, but a present file that cannot be read
- * or parsed (e.g. malformed YAML front-matter in `tenant-policy.md`) throws
- * `SchemaParseError` — a broken tenant policy never silently disables tenancy.
+ * A directory is read by {@link readSchemaDirectory}, so a file name the loader looks
+ * up must be spelled exactly (`Tenant-Policy.md` throws on every OS). Optional sibling
+ * files may be absent, but a present file that cannot be read or parsed (e.g.
+ * malformed YAML front-matter in `tenant-policy.md`) throws `SchemaParseError` — a
+ * broken tenant policy never silently disables tenancy.
  */
 export function loadSchema(path: string): NormalizedSchemaV2 {
   const resolved = resolve(path);
@@ -128,7 +130,7 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
  * Every optional file the directory loader reads beside `schema.json`, by the exact
  * name it reads, keyed by the `BundledSchemaV2` field that carries it. `satisfies`
  * stops a new bundle field from compiling until it is named here, so the directory
- * loader, the bundle loader and `assertNotInSchemaDirectory` share one list.
+ * read, the bundle loader and `assertNotInSchemaDirectory` share one list.
  */
 const SCHEMA_DIRECTORY_FILES = {
   tenantPolicy: "tenant-policy.md",
@@ -140,13 +142,14 @@ const SCHEMA_DIRECTORY_FILES = {
  * A standalone JSON file must not sit beside schema-directory files. Loading it
  * alone would ignore them, so `cp schema.json prod-schema.json` would silently drop
  * the tenant policy (and with it `ask()`'s tenant scope) and every `tables/*.md`
- * `sensitive: true`. Fail closed instead and say how to load it.
+ * `sensitive: true`. Fail closed instead and say how to load it. A sibling counts in
+ * any case: a wrong-case `Tenant-Policy.md` is still a schema file the load would ignore.
  */
 function assertNotInSchemaDirectory(filePath: string): void {
-  const dir = dirname(filePath);
-  const present = Object.values(SCHEMA_DIRECTORY_FILES).filter((name) =>
-    pathExists(join(dir, name)),
-  );
+  const siblingKeys = new Set(Object.values(SCHEMA_DIRECTORY_FILES).map(caseKey));
+  const present = readRequiredDir(dirname(filePath))
+    .filter((entry) => siblingKeys.has(caseKey(entry)))
+    .sort();
   if (present.length === 0) return;
   throw new SchemaParseError(
     `Refusing to load ${filePath} as a standalone physical layer: its directory also holds ` +
@@ -156,109 +159,177 @@ function assertNotInSchemaDirectory(filePath: string): void {
   );
 }
 
-function loadFromDirectory(
-  dir: string,
-  schemaJsonPath: string = join(dir, "schema.json"),
-): NormalizedSchemaV2 {
-  let raw: string;
-  try {
-    raw = readFileSync(schemaJsonPath, "utf8");
-  } catch {
-    throw new SchemaParseError(`No schema.json found in directory: ${dir}`);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new SchemaParseError(`Failed to parse schema.json in ${dir}`);
-  }
-
-  const physical = parsePhysicalLayer(parsed, schemaJsonPath);
-
-  // The describable files below are optional, but only *absence* (ENOENT) is
-  // tolerated. Any other read or parse failure is fatal: silently skipping a
-  // broken tenant-policy.md would load the schema with tenant enforcement off.
-
-  // Load optional tables/*.md
-  const tableDir = join(dir, SCHEMA_DIRECTORY_FILES.tables);
-  const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
-  // Sorted so warning order is deterministic (readdir order is filesystem-dependent)
-  // and matches the bundle loader, which sorts its `tables` keys the same way.
-  const entries = (readOptionalDir(tableDir) ?? []).sort();
-  for (const entry of entries) {
-    if (!entry.endsWith(".md")) continue;
-    const filePath = join(tableDir, entry);
-    const content = readRequiredFile(filePath);
-    const parsed = parseOrWrap(filePath, () => parseTableMarkdown(content, filePath));
-    addTableMarkdown(tableMarkdowns, { tableFile: `tables/${entry}`, parsed }, dir);
-  }
-
-  // Load optional concepts.md
-  let concepts: V2ConceptsFrontmatter | undefined;
-  const conceptsPath = join(dir, SCHEMA_DIRECTORY_FILES.concepts);
-  const conceptsContent = readOptionalFile(conceptsPath);
-  if (conceptsContent !== undefined) {
-    concepts = parseOrWrap(conceptsPath, () =>
-      parseConceptsMarkdown(conceptsContent, conceptsPath),
-    ).frontmatter;
-  }
-
-  // Load optional tenant-policy.md
-  let tenantPolicy: NormalizedTenantPolicy | undefined;
-  const policyPath = join(dir, SCHEMA_DIRECTORY_FILES.tenantPolicy);
-  const policyContent = readOptionalFile(policyPath);
-  if (policyContent !== undefined) {
-    tenantPolicy = parseOrWrap(policyPath, () => {
-      const parsed = parseTenantPolicyMarkdown(policyContent, policyPath);
-      const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-      const physicalColumnIds = new Set(
-        physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
-      );
-      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
-    });
-  }
-
-  return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
+/**
+ * Read a Schema v2 directory into its bundle form, the single file `askdb bundle`
+ * writes. Loading the result with `loadSchemaFromJson()` gives the same schema as
+ * `loadSchema(dir)`, which reads the directory through this function too.
+ *
+ * Every name it looks up must be spelled exactly: `schema.json`, `tenant-policy.md`,
+ * `concepts.md`, `tables/`, and the `.md` extension in `tables/`. A file that matches
+ * one only when case is ignored (`Tenant-Policy.md`, `tables/orders.MD`) throws
+ * `SchemaParseError` on every OS. Where file names are case-sensitive (Linux) it would
+ * otherwise be skipped, and a skipped `tenant-policy.md` turns tenant enforcement off.
+ *
+ * An optional file counts as absent only when the directory doesn't list it. A listed
+ * file that can't be read throws `SchemaParseError`, so does a `schema.json` that is
+ * missing or invalid. The file contents are returned unparsed, except `schema.json`.
+ */
+export function readSchemaDirectory(dir: string): BundledSchemaV2 {
+  return readDirectory(resolve(dir));
 }
 
-function isMissingPathError(e: unknown): boolean {
-  return (
-    typeof e === "object" && e !== null && (e as { code?: unknown }).code === "ENOENT"
+const SCHEMA_JSON = "schema.json";
+
+/**
+ * {@link readSchemaDirectory}, reading the physical layer from `schemaJsonPath` when
+ * the caller named that file (`loadSchema("<dir>/Schema.json")`). That name is the
+ * caller's, so it is read as given and only the names this function looks up itself
+ * are checked.
+ */
+function readDirectory(dir: string, schemaJsonPath?: string): BundledSchemaV2 {
+  const entries = readRequiredDir(dir);
+  const listed = new Set(entries);
+  const tables = SCHEMA_DIRECTORY_FILES.tables;
+  const tableDir = join(dir, tables);
+  // Sorted so warning order is deterministic (readdir order is filesystem-dependent)
+  // and matches the bundle loader, which sorts its `tables` keys the same way.
+  const tableEntries = listed.has(tables) ? readRequiredDir(tableDir).sort() : [];
+  assertExactNames(dir, entries, tableEntries, schemaJsonPath === undefined);
+
+  if (schemaJsonPath === undefined && !listed.has(SCHEMA_JSON)) {
+    throw new SchemaParseError(`No schema.json found in directory: ${dir}`);
+  }
+  const physicalPath = schemaJsonPath ?? join(dir, SCHEMA_JSON);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readRequiredFile(physicalPath));
+  } catch (e) {
+    if (e instanceof SchemaParseError) throw e;
+    throw new SchemaParseError(`Failed to parse schema.json in ${dir}`, e);
+  }
+  const physical = parsePhysicalLayer(parsed, physicalPath);
+
+  const tableFiles: Record<string, string> = {};
+  for (const entry of tableEntries) {
+    if (entry.endsWith(".md")) tableFiles[entry] = readRequiredFile(join(tableDir, entry));
+  }
+  const bundle: BundledSchemaV2 = { bundled: true, physical, tables: tableFiles };
+  for (const key of ["concepts", "tenantPolicy"] as const) {
+    const name = SCHEMA_DIRECTORY_FILES[key];
+    if (listed.has(name)) bundle[key] = readRequiredFile(join(dir, name));
+  }
+  return bundle;
+}
+
+/**
+ * The key two names share when a case-insensitive filesystem stores them as one file.
+ * It is ADR 0013's key, checked there against Unicode full case folding: APFS folds
+ * `tableſ` (long s) to `tables`, which `toLowerCase()` alone misses.
+ */
+function caseKey(name: string): string {
+  return name.normalize("NFC").toLowerCase().toUpperCase().toLowerCase();
+}
+
+/** A `tables/` entry's name with its extension lowercased: `users.MD` → `users.md`. */
+function tableFileKey(entry: string): string {
+  return entry.slice(0, -3) + entry.slice(-3).toLowerCase();
+}
+
+/**
+ * Throw when a directory entry matches a name the loader looks up only when case is
+ * ignored. Where file names are case-sensitive (Linux), the loader would skip that
+ * file; on macOS and Windows the same directory loads. Checking on every OS makes a
+ * directory fail on a laptop the way it would fail open in production. One error
+ * names every problem, including the files in a wrong-case `Tables/`, so the user
+ * fixes them in one pass.
+ */
+function assertExactNames(
+  dir: string,
+  entries: readonly string[],
+  tableEntries: readonly string[],
+  checkSchemaJson: boolean,
+): void {
+  const tables = SCHEMA_DIRECTORY_FILES.tables;
+  const names = [...(checkSchemaJson ? [SCHEMA_JSON] : []), ...Object.values(SCHEMA_DIRECTORY_FILES)];
+  const problems = spellingProblems(entries, names, caseKey, "");
+
+  // A lone wrong-case `Tables/` is listed too, so its files are named in this error.
+  const tablesSpellings = entries.filter((entry) => caseKey(entry) === tables);
+  const wrongCaseTables =
+    tablesSpellings.length === 1 && tablesSpellings[0] !== tables
+      ? listOrEmpty(join(dir, tablesSpellings[0]!)).sort()
+      : [];
+  const files = [...tableEntries, ...wrongCaseTables];
+  const mdNames = [
+    ...new Set(files.map(tableFileKey).filter((key) => key.endsWith(".md"))),
+  ];
+  problems.push(...spellingProblems(files, mdNames, tableFileKey, `${tables}/`));
+
+  if (problems.length === 0) return;
+  throw new SchemaParseError(
+    `Schema directory ${dir} has a file name in the wrong case: ${problems.join("; ")}. ` +
+      `The loader reads these names exactly. Where file names are case-sensitive (Linux) it ` +
+      `would skip the file, and a skipped tenant-policy.md turns tenant enforcement off, so it ` +
+      `refuses on every OS.`,
   );
+}
+
+/**
+ * For each name, the entries that spell it differently under `key`: one wrong spelling
+ * is a rename. Two or more spellings can coexist only where names are case-sensitive,
+ * and renaming one onto the other would overwrite a file or move a directory inside
+ * the other, so the problem says to keep one instead.
+ */
+function spellingProblems(
+  entries: readonly string[],
+  names: readonly string[],
+  key: (name: string) => string,
+  prefix: string,
+): string[] {
+  const problems: string[] = [];
+  for (const name of names) {
+    const spellings = entries.filter((entry) => key(entry) === key(name)).sort();
+    if (spellings.length === 0 || (spellings.length === 1 && spellings[0] === name)) continue;
+    problems.push(
+      spellings.length === 1
+        ? `rename ${prefix}${spellings[0]} to ${prefix}${name}`
+        : `keep one of ${spellings.map((s) => prefix + s).join(", ")}, named ${prefix}${name}`,
+    );
+  }
+  return problems;
+}
+
+/** List a directory whose contents only add detail to an error: `[]` if it can't be listed. */
+function listOrEmpty(path: string): string[] {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
+}
+
+function loadFromDirectory(dir: string, schemaJsonPath?: string): NormalizedSchemaV2 {
+  const files = readDirectory(dir, schemaJsonPath);
+  // Errors name the file on disk.
+  return loadFromFiles(files, files.physical, (file) => join(dir, file), dir);
+}
+
+function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSchemaV2 {
+  const physical = parsePhysicalLayer(bundle.physical, filePath);
+  // Errors name the bundled file and the bundle that holds it: the user has the
+  // bundle on disk, not a tenant-policy.md or concepts.md.
+  return loadFromFiles(bundle, physical, (file) => `${file} (in ${filePath})`, filePath);
 }
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Read an optional file: `undefined` when it does not exist, `SchemaParseError` on any other failure. */
-function readOptionalFile(path: string): string | undefined {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (e) {
-    if (isMissingPathError(e)) return undefined;
-    throw new SchemaParseError(`Failed to read ${path}: ${errorMessage(e)}`, e);
-  }
-}
-
-/** Whether a path exists: `false` only when it does not (ENOENT), `SchemaParseError` on any other failure. */
-function pathExists(path: string): boolean {
-  try {
-    statSync(path);
-    return true;
-  } catch (e) {
-    if (isMissingPathError(e)) return false;
-    throw new SchemaParseError(`Failed to read ${path}: ${errorMessage(e)}`, e);
-  }
-}
-
-/** List an optional directory: `undefined` when it does not exist, `SchemaParseError` on any other failure. */
-function readOptionalDir(path: string): string[] | undefined {
+/** List a directory the loader needs: `SchemaParseError` on any failure. */
+function readRequiredDir(path: string): string[] {
   try {
     return readdirSync(path);
   } catch (e) {
-    if (isMissingPathError(e)) return undefined;
     throw new SchemaParseError(`Failed to read directory ${path}: ${errorMessage(e)}`, e);
   }
 }
@@ -286,42 +357,45 @@ function parseOrWrap<T>(path: string, fn: () => T): T {
   }
 }
 
-function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSchemaV2 {
-  const physical = parsePhysicalLayer(bundle.physical, filePath);
+/**
+ * Parse a schema's files, read from a directory or carried in a bundle, against its
+ * validated physical layer. `fileLabel` turns a file's path in the schema directory
+ * (`tables/orders.md`, `tenant-policy.md`) into the name errors use.
+ */
+function loadFromFiles(
+  files: BundledSchemaV2,
+  physical: V2SchemaJson,
+  fileLabel: (file: string) => string,
+  schemaPath: string,
+): NormalizedSchemaV2 {
   const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
-  // Errors name the bundled file and the bundle that holds it: the user has the
-  // bundle on disk, not a tenant-policy.md or concepts.md.
-  const inBundle = (file: string) => `${file} (in ${filePath})`;
-
-  // Bundle keys are the `tables/` filenames (see `bundleSchemaDirectory` in
-  // @askdb/enrich), so warnings name the same path the directory loader would.
-  // Sorted like the directory loader's entries, so both report warnings in one order.
-  for (const [filename, content] of Object.entries(bundle.tables).sort(([a], [b]) =>
+  // `tables` keys are the `tables/` filenames, so warnings name the file as it sits in
+  // the directory. Sorted so both forms report warnings in one order.
+  for (const [filename, content] of Object.entries(files.tables).sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
-    const tableFile = `tables/${filename}`;
-    const parsed = parseOrWrap(inBundle(tableFile), () =>
-      parseTableMarkdown(content, inBundle(tableFile)),
-    );
-    addTableMarkdown(tableMarkdowns, { tableFile, parsed }, filePath);
+    const tableFile = `${SCHEMA_DIRECTORY_FILES.tables}/${filename}`;
+    const label = fileLabel(tableFile);
+    const parsed = parseOrWrap(label, () => parseTableMarkdown(content, label));
+    addTableMarkdown(tableMarkdowns, { tableFile, parsed }, schemaPath);
   }
 
-  // Mirror the directory loader: only an *absent* key means "no file". A present
-  // value — including an empty string — is parsed and must be valid, so an empty
-  // or corrupt tenantPolicy can never silently disable tenant enforcement.
+  // Only an *absent* file (or bundle key) means "no file". A present value —
+  // including an empty string — is parsed and must be valid, so an empty or corrupt
+  // tenant policy can never silently disable tenant enforcement.
   let concepts: V2ConceptsFrontmatter | undefined;
-  const conceptsContent = bundledFileContent(bundle, "concepts", filePath);
+  const conceptsContent = bundledFileContent(files, "concepts", schemaPath);
   if (conceptsContent !== undefined) {
-    const conceptsFile = inBundle(SCHEMA_DIRECTORY_FILES.concepts);
+    const conceptsFile = fileLabel(SCHEMA_DIRECTORY_FILES.concepts);
     concepts = parseOrWrap(conceptsFile, () =>
       parseConceptsMarkdown(conceptsContent, conceptsFile),
     ).frontmatter;
   }
 
   let tenantPolicy: NormalizedTenantPolicy | undefined;
-  const policyContent = bundledFileContent(bundle, "tenantPolicy", filePath);
+  const policyContent = bundledFileContent(files, "tenantPolicy", schemaPath);
   if (policyContent !== undefined) {
-    const policyFile = inBundle(SCHEMA_DIRECTORY_FILES.tenantPolicy);
+    const policyFile = fileLabel(SCHEMA_DIRECTORY_FILES.tenantPolicy);
     tenantPolicy = parseOrWrap(policyFile, () => {
       const parsed = parseTenantPolicyMarkdown(policyContent, policyFile);
       const physicalTableIds = new Set(physical.tables.map((t) => t.id));

@@ -124,7 +124,7 @@ Apps declare only the adapter packages they support. A hypothetical embedded dep
 
 - Runtime query execution — connectors are for introspection only.
 - Moving `DialectSpec` out of `@askdb/core`.
-- Auto-registration or dynamic loading of adapters.
+- Auto-registration or dynamic loading of adapters. (2026-11-05: loading an adapter the host registered, on first use, is now in scope; see the [ADR 0008 amendment](0008-engine-packages-and-connector-registry.md#amendment-2026-11-05-registered-adapters-can-load-on-first-use). Auto-registration stays out.)
 
 ## Related
 
