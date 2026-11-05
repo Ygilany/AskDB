@@ -93,4 +93,10 @@ This keeps the Decision: the checks are still defense in depth, and the database
 - **Leave locking reads to the host.** Document that the checks don't block them, and tell hosts to use a read-only transaction and a lock timeout. Rejected: SQL Server has no read-only transaction, and a read-only role still takes update locks there.
 - **Reject every locking read on every engine (chosen).** The checks throw `SQL_LOCKING_READ` for `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE` and `LOCK IN SHARE MODE` at any depth, and on SQL Server for the lock hints `UPDLOCK`, `XLOCK`, `HOLDLOCK`, `PAGLOCK`, `TABLOCK`, `TABLOCKX`, `ROWLOCK`, `SERIALIZABLE` and `REPEATABLEREAD`, as unquoted words anywhere or quoted alone in parentheses after a table name. `NOLOCK` and `READUNCOMMITTED` stay allowed.
 
+Review of PR #649 found that SQL Server also reads a quoted hint as the hint when it stands alone in parentheses right after a table name, at any depth and with trailing spaces (`FROM t ([UPDLOCK])`, `t (("UPDLOCK "))`). SQL Server 2022 refused the other quoted spellings tried: inside `WITH`, in a list, after an alias or a function call, and with a leading or non-ASCII space. Three rules for quoted names were weighed:
+
+- **Pass every quoted name.** Rejected: `FROM t ([UPDLOCK])` takes the lock.
+- **Reject every quoted name spelled like a hint.** Rejected: a column named `rowlock` could then never be used, although the prompt lists it quoted (`[rowlock]`) so the model can.
+- **Reject a quoted hint name only alone in parentheses right after a name (chosen).** The check reads tokens, so it can't tell a table from a function: `COUNT([rowlock])` is rejected too. A qualified column (`COUNT(t.[rowlock])`) isn't alone in its parentheses, so it passes, and the docs tell users to write it that way.
+
 This keeps the Decision. The check matches words, not the locks a statement takes: the connection's isolation level still decides what a plain `SELECT` locks (SQL Server `REPEATABLE READ` and `SERIALIZABLE`, MySQL and MariaDB `SERIALIZABLE`), so hosts still set a lock timeout.

@@ -309,6 +309,12 @@ describe("validateSelectSql — locking reads", () => {
     // SQL Server also reads a quoted hint alone in parentheses right after a table name as a hint.
     ["sqlserver", `SELECT id FROM orders ([UPDLOCK]) WHERE id = 1`],
     ["sqlserver", `SELECT id FROM [dbo].[orders]( "holdlock" ) WHERE id = 1`],
+    // It ignores trailing spaces when it compares a quoted name.
+    ["sqlserver", `SELECT id FROM orders ([UPDLOCK ]) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders ("HOLDLOCK   ") WHERE id = 1`],
+    // And at any depth of parentheses.
+    ["sqlserver", `SELECT id FROM orders (([UPDLOCK])) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM [dbo].[orders] ( ( ( "xlock " ) ) ) WHERE id = 1`],
   ] as const)("rejects on %s: %s", (id, sql) => {
     expectRule(sql, "SQL_LOCKING_READ", BUILT_IN_DIALECTS[id]);
   });
@@ -325,7 +331,7 @@ describe("validateSelectSql — locking reads", () => {
     ["sqlserver", `SELECT id FROM orders WHERE id = 1 FOR JSON PATH`],
     ["sqlserver", `SELECT id FROM orders FOR SYSTEM_TIME AS OF '2026-01-01' WHERE id = 1`],
     ["sqlserver", `SELECT 1 AS [updlock], 2 AS "holdlock", N'FOR SHARE WITH (UPDLOCK)' AS s`],
-    ["sqlserver", `SELECT COUNT(o.[rowlock]) AS n, MAX([updlock] + 1) AS m FROM orders o ([NOLOCK])`],
+    ["sqlserver", `SELECT COUNT(o.[rowlock]) AS n, MAX([updlock] + 1) AS m, MAX(([xlock]) + 1) AS x FROM orders o ([NOLOCK])`],
   ] as const)("accepts on %s: %s", (id, sql) => {
     expect(validateSelectSql(BUILT_IN_DIALECTS[id], sql)).toBe(sql);
   });
