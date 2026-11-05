@@ -92,6 +92,7 @@ const embeddingModel = config.ai.embedding
 - `defineConfig(config)` — returns an `AskDbEnvProjection` with `config` (structured) and `entries` (flattened canonical map).
 - `flattenAskDbConfig(config)` — nested config → flat canonical map (translates deprecated keys, applies defaults for optional values).
 - `bootstrapAskDbEnv(options?)` / `bootstrapAskDbRuntime` — load dotenv, load config, install the runtime snapshot.
+- `isAskDbRuntimeInitialized()` — `true` once the runtime snapshot is installed. Code that may run before or after its host's bootstrap uses it to call `bootstrapAskDbEnv()` only when needed, as `@askdb/http-api`'s `createAskDbHttpServer()` does. The snapshot is process-wide: every copy of `@askdb/config` in the process sees the same one.
 - `loadAskDbConfigProjection(cwd)` / `loadAskDbConfigProjectionSync(cwd)` — load projection without installing the singleton (advanced / tests).
 - `discoverAskDbConfigPath(cwd)` — returns the resolved config path, if any.
 - `mergeAskDbFlatIntoEnvMap(base, flat)` — merge AskDB flat entries into an env map for **child processes** (does not read `process.env` itself). Use `getAskDbRuntimeConfig().flat` as `flat` after bootstrap.

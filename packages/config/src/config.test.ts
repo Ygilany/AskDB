@@ -11,6 +11,7 @@ import {
   env,
   flattenAskDbConfig,
   getAskDbRuntimeConfig,
+  isAskDbRuntimeInitialized,
   loadAskDbConfigProjection,
   loadAskDbConfigProjectionSync,
   requiredEnv,
@@ -1657,7 +1658,9 @@ describe("bootstrapAskDbEnv", () => {
       "utf8",
     );
 
+    expect(isAskDbRuntimeInitialized()).toBe(false);
     bootstrapAskDbEnv({ cwd: dir });
+    expect(isAskDbRuntimeInitialized()).toBe(true);
     const rt = getAskDbRuntimeConfig();
     expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("dog");
     expect(rt.ai.aiEnv.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/db");
