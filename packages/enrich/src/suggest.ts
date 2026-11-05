@@ -2,9 +2,9 @@ import type {
   EnrichmentCandidate,
   EnrichmentContext,
   EnrichmentTarget,
-  V2Table,
+  NormalizedSchemaV2,
+  NormalizedV2Table,
 } from "@askdb/core";
-import type { Workspace } from "./workspace.js";
 
 export type SuggestEnrichment = (
   target: EnrichmentTarget,
@@ -27,11 +27,16 @@ export type SuggestSource =
       field: ColumnSuggestField;
     };
 
+/**
+ * The table or column a suggestion is for. `schema` is `loadSchema()`'s result, so the target
+ * carries effective sensitivity (front-matter escalations included), which the enrichment
+ * prompt's sensitivity rule reads.
+ */
 export function buildSuggestionTarget(
-  workspace: Workspace,
+  schema: NormalizedSchemaV2,
   source: SuggestSource,
 ): EnrichmentTarget {
-  const table = findTable(workspace, source.tableId);
+  const table = findTable(schema, source.tableId);
   if (source.scope === "table") {
     switch (source.field) {
       case "description":
@@ -53,17 +58,22 @@ export function buildSuggestionTarget(
   }
 }
 
+/**
+ * The target table's foreign-key neighbors (at most 4) and the schema id, from `loadSchema()`'s
+ * result. Untracked tables (`tracked: false`) stay out, as they do from `ask()`'s prompt.
+ */
 export function buildSuggestionContext(
-  workspace: Workspace,
+  schema: NormalizedSchemaV2,
   tableId: string,
 ): EnrichmentContext {
-  const table = findTable(workspace, tableId);
+  const table = findTable(schema, tableId);
   const relatedIds = new Set<string>();
   const columnToTable = new Map<string, string>();
 
-  for (const wt of workspace.tables) {
-    for (const column of wt.physical.columns) {
-      columnToTable.set(column.id, wt.physical.id);
+  for (const other of schema.tables) {
+    if (other.tracked === false) continue;
+    for (const column of other.columns) {
+      columnToTable.set(column.id, other.id);
     }
   }
 
@@ -75,18 +85,18 @@ export function buildSuggestionContext(
   }
 
   const neighbors = [...relatedIds]
-    .map((id) => workspace.tables.find((wt) => wt.physical.id === id)?.physical)
-    .filter((t): t is V2Table => Boolean(t))
+    .map((id) => schema.tables.find((other) => other.id === id))
+    .filter((t): t is NormalizedV2Table => Boolean(t))
     .slice(0, 4);
 
   return {
-    schemaId: workspace.physical.schemaId,
+    schemaId: schema.schemaId,
     ...(neighbors.length > 0 ? { neighbors } : {}),
   };
 }
 
-function findTable(workspace: Workspace, tableId: string): V2Table {
-  const table = workspace.tables.find((wt) => wt.physical.id === tableId)?.physical;
+function findTable(schema: NormalizedSchemaV2, tableId: string): NormalizedV2Table {
+  const table = schema.tables.find((t) => t.id === tableId);
   if (!table) throw new Error(`No such table: ${tableId}`);
   return table;
 }

@@ -50,7 +50,7 @@ The Tables view lists every physical table in your schema. Select a table to ope
 - **Schema** — view the raw column list with types and nullability.
 - **Sensitivity** — mark tables, or columns like `email`, `ssn`, or `internal_notes`, as sensitive so the prompt layer can tag or omit them and `validateSensitiveReferences` flags SQL that touches them. Overrides are escalate-only: they can make something sensitive on top of the physical metadata, never less sensitive. The **Effective** column shows what AskDB will actually use, and "Not sensitive" is disabled (here and on the Enrichment tab) wherever it could not take effect.
 
-Each field has a **Suggest** button: provide a model key and Studio drafts a proposal for your review. Suggestions are never applied automatically — a human confirms every change before it lands in the artifact.
+Each field has a **Suggest** button: provide a model key and Studio drafts a proposal for your review. Suggestions are never applied automatically — a human confirms every change before it lands in the artifact. A suggestion sends the model the table's columns (names, types and keys) and the names of up to four tables it links to by foreign key, but no descriptions. It treats sensitive columns the way `ask()` does: they're tagged `(sensitive)` by default, and left out when `modes.omitSensitiveFromPrompt` is `true`, where a sensitive table keeps only its name. With that setting on, **Suggest** on a sensitive column shows an error instead of a draft, because the prompt would have to name the column.
 
 ## Concepts
 
@@ -62,7 +62,7 @@ Concepts capture cross-table business vocabulary that doesn't map to a single ta
 
 ![The Query Playground with a natural-language input field and a Generate SQL button](../../assets/studio/playground.png)
 
-The Query Playground is where you test whether your enrichment is working. Type a question in plain language, choose between **Full schema** (send the entire enriched artifact) or **RAG** (retrieve only the relevant chunks), and click **Generate SQL**. The generated SQL appears alongside the retrieval context so you can see exactly what the model was given. If the SQL is wrong, the enrichment fields that need fixing are usually obvious from the context shown.
+The Query Playground is where you test whether your enrichment is working. Type a question in plain language, choose between **Full schema** (send the entire enriched artifact) or **RAG** (retrieve only the relevant chunks), and click **Generate SQL**. The generated SQL appears alongside the retrieval context so you can see exactly what the model was given. If the SQL is wrong, the enrichment fields that need fixing are usually obvious from the context shown. Like the CLI and `@askdb/client`, the Playground follows `modes.omitSensitiveFromPrompt`: when it's `true`, sensitive columns, and any text that names one, stay out of the prompt, except the columns your tenant policy filters on.
 
 **RAG** mode searches the index you build on the **RAG Index** page, in the store `rag` configures. With `rag.embedder: "mock"` (what `askdb init` writes), Studio embeds with a local lexical embedder that needs no key. With `rag.embedder: "ai"`, it uses the [`ai.embedding`](/reference/config/#aiembedding) model, through that section's connection only. With the pgvector store, the first build creates the table at the width the model returns (or `ai.embedding.dimensions`), and later builds refuse a table of another width, with a message naming the table and how to resolve it: drop the table and build again, point `rag.storeConfig.pgvector.table` at a new table, or set `ai.embedding.dimensions` to the table's width if the model supports it. **Settings** shows which embedder is active. Changing the `ai.embedding` provider, model or dimensions marks the index stale: build it again before searching.
 
@@ -141,7 +141,7 @@ The Tenancy view is where you declare tenant isolation for multi-tenant schemas.
 
 ## Studio and your data
 
-Studio binds to `127.0.0.1` by default — it is not reachable from outside your machine without an explicit host override. The model only ever sees schema text (table names, column names, descriptions, concepts): it never reads your actual rows. AI features — enrichment suggestions, tenant policy drafts, NL→SQL generation — are optional and only active when a model API key is configured in your environment.
+Studio binds to `127.0.0.1` by default — it is not reachable from outside your machine without an explicit host override. The model only ever sees schema text (table names, column names, descriptions, concepts): it never reads your actual rows. AI features — enrichment suggestions, tenant policy drafts, NL→SQL generation — are optional and only active when a model API key is configured in your environment. Each of them follows `modes.omitSensitiveFromPrompt`.
 
 ## Security model
 

@@ -24,6 +24,7 @@ import {
   loadSchema,
   saveSchemaFile,
   schemaHasSensitiveIdentifiers,
+  SensitiveEnrichmentTargetError,
   SqlValidationError,
   validateSensitiveReferences,
   suggestEnrichment,
@@ -331,7 +332,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       if (req.method === "POST" && url.pathname === "/api/suggest") {
         const body = await readJson(req);
         const source = parseSuggestSource(body);
-        const candidates = await suggestForSource(requireWorkspace(state), source);
+        const candidates = await suggestForSource(state, source);
         return writeJson(res, 200, { candidates });
       }
       if (req.method === "GET" && url.pathname === "/api/rag/status") {
@@ -697,7 +698,7 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
   state.workspace = loadWorkspace(state.schemaDir);
 }
 
-async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
+async function suggestForSource(state: StudioState, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const rt = getAskDbRuntimeConfig();
   const aiConfig = ai.resolveAiConfig(rt.ai.aiEnv);
   if (!aiConfig) {
@@ -708,12 +709,30 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
   const providerOptions = reasoningEffort
     ? ai.resolveProviderOptions(aiConfig, { reasoningEffort })
     : undefined;
-  const candidates = await suggestEnrichment(
-    buildSuggestionTarget(workspace, source),
-    buildSuggestionContext(workspace, source.tableId),
-    model,
-    providerOptions ? { providerOptions } : undefined,
-  );
+  // `loadSchema()` carries effective sensitivity (front-matter escalations included), and the
+  // prompt follows `modes.omitSensitiveFromPrompt` as `ask()` does (#625, ADR 0026).
+  requireWorkspace(state);
+  const schema = loadSchema(state.schemaDir);
+  let candidates: Awaited<ReturnType<typeof suggestEnrichment>>;
+  try {
+    candidates = await suggestEnrichment(
+      buildSuggestionTarget(schema, source),
+      buildSuggestionContext(schema, source.tableId),
+      model,
+      {
+        omitSensitiveIdentifiersFromPrompt: rt.modes.omitSensitiveFromPrompt,
+        ...(providerOptions ? { providerOptions } : {}),
+      },
+    );
+  } catch (error) {
+    if (error instanceof SensitiveEnrichmentTargetError) {
+      throw new StudioHttpError(
+        400,
+        "This column is sensitive, and `modes.omitSensitiveFromPrompt` keeps sensitive columns out of the model's prompt, so Studio can't suggest for it.",
+      );
+    }
+    throw error;
+  }
   return candidates.map((candidate) => ({ text: candidate.text }));
 }
 
@@ -923,6 +942,9 @@ async function askSampleQuestion(
     model,
     dialect,
     explain: true,
+    // `ask()` doesn't read config, so each host applies `modes.omitSensitiveFromPrompt`
+    // itself, as `@askdb/client` does (#601).
+    ...(rt.modes.omitSensitiveFromPrompt ? { omitSensitiveIdentifiersFromNlToSqlPrompt: true } : {}),
     ...(options.tenantScope ? { tenantScope: options.tenantScope } : {}),
     ...(options.tenantSqlMode ? { tenantSqlMode: options.tenantSqlMode } : {}),
     ...(ragIndex
