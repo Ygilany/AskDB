@@ -689,6 +689,7 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     const readsEmail = {
       version: 1 as const,
       dialect: "postgres" as const,
+      dialectRules: "builtin" as const,
       namedSql: "SELECT c.email FROM clients c WHERE c.id IN (:tenant_client_ids) AND c.name = :status_name",
       parameters: [
         { name: "status_name", placeholder: ":status_name", type: "string" as const, cardinality: "one" as const, source: "question" as const },
@@ -726,6 +727,7 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     const readsPassword = {
       version: 1 as const,
       dialect: "postgres" as const,
+      dialectRules: "builtin" as const,
       namedSql: "SELECT password FROM users WHERE id = :status_name",
       parameters: [
         { name: "status_name", placeholder: ":status_name", type: "string" as const, cardinality: "one" as const, source: "question" as const },

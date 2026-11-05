@@ -39,6 +39,13 @@ export type QueryParameterBinding = {
 export type PreparedQuery = {
   version: 1;
   dialect: BuiltInDialectId;
+  /**
+   * Which rules `ask()` checked and rendered under: `"builtin"` for the built-in spec of
+   * `dialect` (a built-in id, or its exported constant such as `POSTGRES_DIALECT`), `"host"`
+   * for any other `DialectSpec` object. `bindPreparedQuery()` needs the host's spec for a
+   * `"host"` template, and for one stored without this field (ADR 0031).
+   */
+  dialectRules?: "builtin" | "host";
   /** SQL with unquoted `:name` / `:tenant_*` placeholders intact. */
   namedSql: string;
   parameters: Array<{
@@ -416,12 +423,12 @@ type Edit = { start: number; end: number; literal: string; marker: string };
 export function renderPreparedQuery(
   prepared: PreparedQuery,
   values: Record<string, QueryParameterValue | readonly QueryParameterValue[]>,
-  options: { skipTenantPlaceholders?: boolean } = {},
+  options: { skipTenantPlaceholders?: boolean; dialect?: DialectSpec } = {},
 ): RenderedQuery {
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw paramError("DIALECT_UNSUPPORTED", `Unknown dialect '${prepared.dialect}'.`);
   }
-  const spec = BUILT_IN_DIALECTS[prepared.dialect];
+  const spec = options.dialect ?? BUILT_IN_DIALECTS[prepared.dialect];
   const listBinding = listBindingOf(spec);
   const style = markerStyleForDialect(prepared.dialect);
   const namedSql = prepared.namedSql;
