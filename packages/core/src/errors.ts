@@ -232,6 +232,20 @@ export class SensitiveReferenceError extends AskDbError {
   }
 }
 
+/**
+ * An enrichment suggestion was asked for a sensitive column while
+ * `omitSensitiveIdentifiersFromPrompt` is on: the prompt can't name the column, so no model is
+ * called (ADR 0026). The message names no identifier.
+ */
+export class SensitiveEnrichmentTargetError extends AskDbError {
+  constructor() {
+    super(
+      "The suggestion is for a sensitive column, and omitSensitiveIdentifiersFromPrompt keeps sensitive columns out of the prompt.",
+    );
+    this.name = "SensitiveEnrichmentTargetError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Guardrail verdicts (ADR 0010)
 // ---------------------------------------------------------------------------

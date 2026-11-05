@@ -3,8 +3,15 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { AiConfig, AiProviderAdapter, AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
-import type { AnyNormalizedSchema, AskDialect } from "@askdb/core";
-import { loadSchema, loadSchemaFromJson, SensitiveReferenceError, TenantGuardrailError } from "@askdb/core";
+import type { AnyNormalizedSchema, AskDbLogger, AskDbModeV1, AskDialect } from "@askdb/core";
+import {
+  AskDbError,
+  AskDbLogEvent,
+  loadSchema,
+  loadSchemaFromJson,
+  SensitiveReferenceError,
+  TenantGuardrailError,
+} from "@askdb/core";
 import type { DialectResolution } from "./client.js";
 import { createAskDb } from "./client.js";
 import {
@@ -91,6 +98,7 @@ function makeConfig(overrides?: {
   envSchemaJson?: string;
   aiEnv?: Record<string, string | undefined>;
   omitSensitiveFromPrompt?: boolean;
+  askdbMode?: string;
 }): AskDbRuntimeConfig {
   return {
     structured: {
@@ -108,7 +116,7 @@ function makeConfig(overrides?: {
     },
     dev: { mockSql: overrides?.mockSql },
     nlToSql: { dialect: overrides?.dialect },
-    modes: { askdbMode: undefined, omitSensitiveFromPrompt: overrides?.omitSensitiveFromPrompt ?? false },
+    modes: { askdbMode: overrides?.askdbMode, omitSensitiveFromPrompt: overrides?.omitSensitiveFromPrompt ?? false },
   } as unknown as AskDbRuntimeConfig;
 }
 
@@ -543,6 +551,43 @@ describe("createAskDb — omitSensitiveFromPrompt config floor", () => {
     expect(seen()).toBe(true);
     await askdb.ask("q", { dialect });
     expect(seen()).toBeUndefined();
+  });
+});
+
+describe("createAskDb — modes.askdbMode: a call can tighten the config mode, never loosen it", () => {
+  const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
+
+  /** The mode core ran with, read from its documented `askdb.pipeline.mode` log line. */
+  /** `callMode` is a plain string: an untyped JavaScript caller can pass any spelling. */
+  async function modeRun(configMode: AskDbModeV1 | undefined, callMode: string | undefined): Promise<unknown> {
+    const modes: unknown[] = [];
+    const logger: AskDbLogger = {
+      info: (context) => {
+        if (context.event === AskDbLogEvent.PipelineMode) modes.push(context.mode);
+      },
+      error: () => {},
+    };
+    const askdb = createAskDb({
+      config: makeConfig({ mockSql: "SELECT 1", askdbMode: configMode }),
+      registry: makeRegistry(),
+      schema: { schema: preloaded },
+    });
+    await askdb.ask("q", { logger, ...(callMode ? { mode: callMode as AskDbModeV1 } : {}) });
+    expect(modes).toHaveLength(1);
+    return modes[0];
+  }
+
+  it.each([
+    { name: "config bounded_results applies when the call names no mode", config: "bounded_results", call: undefined, runs: "bounded_results" },
+    { name: "a call's schema_only tightens config bounded_results", config: "bounded_results", call: "schema_only", runs: "schema_only" },
+    { name: "a call can't loosen an unset config, which counts as schema_only", config: undefined, call: "bounded_results", runs: "schema_only" },
+    { name: "a call's mode is parsed like the config's, so SCHEMA-ONLY still tightens", config: "bounded_results", call: "SCHEMA-ONLY", runs: "schema_only" },
+  ] as const)("$name", async ({ config, call, runs }) => {
+    expect(await modeRun(config, call)).toBe(runs);
+  });
+
+  it("rejects an unknown call mode instead of running the config mode", async () => {
+    await expect(modeRun("bounded_results", "schema_onyl")).rejects.toThrow(AskDbError);
   });
 });
 
