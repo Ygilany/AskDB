@@ -51,7 +51,7 @@ pnpm add @askdb/core ai
 pnpm add @ai-sdk/openai
 ```
 
-The built-in dialects ship in `@askdb/core`, so SQL generation needs no engine package. Add `@askdb/postgres` (and its optional `pg` peer) only for live Postgres introspection.
+The built-in dialects ship in `@askdb/core`, so SQL generation needs no engine package. Add `@askdb/postgres` only to introspect Postgres, live or offline from an export; its optional `pg` peer is needed only for live introspection.
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";

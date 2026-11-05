@@ -11,7 +11,7 @@ NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, mo
 ```bash
 # `ai` (Vercel AI SDK) is a required peer dependency — your app owns its version
 pnpm add @askdb/core ai
-# Only to introspect a live database, the engine package for it:
+# Only to introspect a database (live, or offline from an export), its engine package:
 pnpm add @askdb/postgres
 # Plus a model — either construct one directly with an AI SDK provider:
 pnpm add @ai-sdk/openai
