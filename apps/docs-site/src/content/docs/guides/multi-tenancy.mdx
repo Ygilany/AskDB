@@ -146,9 +146,9 @@ const tenantScope = {
   },
 } as const;
 
+// tenantSqlMode defaults to "sql-params": the tenant IDs come back as driver parameters.
 const result = await askdb.ask("How many documents did we create this month?", {
   tenantScope,
-  tenantSqlMode: "sql-params",
 });
 
 // Two executable pairs — pick one, never concatenate the arrays.
@@ -269,8 +269,10 @@ resolveTenantDescendants: (tenantRoot, seedIds) => ({
 
 | Mode | When to use |
 | --- | --- |
-| `sql-only` | Tenant values inlined as escaped literals. Useful for development inspection or ad-hoc queries you read directly. |
-| `sql-params` | Tenant values bound through your dialect's driver markers — `$1` (Postgres, CockroachDB), `?` (MySQL, MariaDB, SQLite), `@p0` (SQL Server). Use this in production with parameterized execution. |
+| `sql-params` (default) | Tenant values bound through your dialect's driver markers — `$1` (Postgres, CockroachDB, and a custom `AskDialect`), `?` (MySQL, MariaDB, SQLite), `@p0` (SQL Server). The tenant IDs never enter the SQL text. |
+| `sql-only` | Tenant values inlined as escaped literals, for a tool that takes one SQL string, or for SQL you read directly. A tenant ID containing a backslash is refused (`UNESCAPABLE_TENANT_ID`): no literal form of it reads the same under every server string setting. |
+
+A custom `AskDialect` gets `$N` markers, because AskDB doesn't know which driver it targets. If yours uses `?` or `@p0` markers, set `tenantSqlMode: "sql-only"`.
 
 In `sql-params` mode `ask()` returns two executable pairs:
 
@@ -291,7 +293,7 @@ Without policy, a question like "how many documents this month?" might generate:
 SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '1 month';
 ```
 
-With the policy above and an access scope of `{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`, the model is prompted to write the tenant predicate with a placeholder, and AskDB binds your IDs into it. In `sql-params` mode the result looks like:
+With the policy above and an access scope of `{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`, the model is prompted to write the tenant predicate with a placeholder, and AskDB binds your IDs into it. In the default `sql-params` mode the result looks like:
 
 ```sql
 SELECT COUNT(*) FROM documents
@@ -320,7 +322,7 @@ Studio's **Ask** panel includes tenant scope controls — provide a scope as JSO
 }
 ```
 
-Switch between `sql-only` and `sql-params` to compare the two output forms.
+The Playground starts in `sql-params`, the library default. Switch to `sql-only` to compare the two output forms.
 
 ## Read next
 

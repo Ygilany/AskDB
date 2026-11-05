@@ -82,9 +82,9 @@ const result = await ask({
   tenantScope,
 });
 
-// Execute either form.
-await pool.query(result.sql);                       // ready to run
-await pool.query(result.unboundSql!, result.params); // driver binding
+// Execute either form. Tenant IDs are driver parameters by default (tenantSqlMode: "sql-params").
+await pool.query(result.sql, result.tenantParams);   // business values inlined, tenant IDs bound
+await pool.query(result.unboundSql!, result.params); // every value bound
 
 // Render a form from result.parameters, then rebind locally — no model call.
 // The guardrails run again on the template under this schema and scope.
@@ -98,7 +98,7 @@ Key rules:
 - If the model's extra blocks are missing or inconsistent, the extras are omitted and `result.sql` is unaffected. No new error reaches a caller who does not call `bindPreparedQuery()`.
 - The model decides what to parameterize, so a mistake changes the *form*, not the query. Constrain form inputs using returned `type` and `description`.
 - `bindPreparedQuery(prepared, values, { schema, tenantScope?, sensitiveGuardrailMode?, acceptWarnings? })` re-runs the read-only, tenant and sensitive checks on the stored template under the schema, scope and modes you pass, then binds. Tenant IDs come from `tenantScope`, never from `values`. Under a policy with `enforcement: warn`, a template that fails the tenant check is refused unless `acceptWarnings` includes `"tenant"`. Authorizing `tenantScope` is the host's job, exactly as for `ask()`. Expand a `subtree` scope with `expandTenantScope()` first.
-- Callers using the new fields must execute with `params`, not `tenantParams`.
+- Each SQL form runs with its own array: `unboundSql` with `params` (tenant IDs included), `sql` with `tenantParams`. Never swap or concatenate them. `tenantSqlMode: "sql-only"` inlines the tenant IDs in `sql` instead, and refuses one containing a backslash.
 - List parameters are arity-stable in `unboundSql` only on PostgreSQL/CockroachDB (`= ANY($n)`); elsewhere a changed list length changes the marker count — rebind through `bindPreparedQuery()` rather than swapping the array.
 - Markers: `$N` (Postgres/CockroachDB), `?` (MySQL/MariaDB/SQLite), `@pN` (SQL Server, 0-based). Map values via `parameters[].markers` for SQL Server.
 

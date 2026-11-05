@@ -73,7 +73,7 @@ All `AskPipelineOptions` fields can be overridden per call. In addition, `schema
 | `abortSignal` | `AbortSignal` | Core's [`ask()` option](/reference/core-api/#options), passed through: cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` to enforce a timeout. With a built-in dialect, an aborted call rejects with `SqlGenerationError`; a custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
 | `mode` | `AskDbModeV1` | Trust boundary override. |
 | `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. |
-| `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-only"` or `"sql-params"`. |
+| `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-params"` (the default) binds tenant IDs through driver markers and returns them as `tenantParams`; `"sql-only"` inlines them as escaped literals. See [Executing the result](/reference/core-api/#executing-the-result). |
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` tenant scope: returns the subtree's IDs grouped by tenant root (`TenantIdsByRoot`), which `ask()` binds to each root's own placeholder. Required for `subtree` scopes. See [`ask()` options](/reference/core-api/#options). |
 | `parameterize` | `boolean` | Default `true`. Set `false` to skip unbound SQL / parameter manifest output tokens. |
 | `retriever` | `Retriever` | RAG retriever. |
