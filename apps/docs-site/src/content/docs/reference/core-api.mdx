@@ -327,6 +327,38 @@ The schema contract's "mentions a sensitive column by name" rule, which `@askdb/
 
 ---
 
+## Enrichment suggestions
+
+### `suggestEnrichment(target, context, model, deps?)`
+
+```ts
+import { loadSchema, suggestEnrichment } from "@askdb/core";
+import { buildSuggestionContext, buildSuggestionTarget } from "@askdb/enrich";
+
+const schema = loadSchema("./my-app.schema");
+const source = { scope: "table", tableId: "table:public.users", field: "description" } as const;
+const candidates = await suggestEnrichment(
+  buildSuggestionTarget(schema, source),
+  buildSuggestionContext(schema, source.tableId),
+  model,
+  { omitSensitiveIdentifiersFromPrompt: true }, // your modes.omitSensitiveFromPrompt
+);
+// → [{ text: "Registered user accounts." }, { text: "People who can place orders." }]
+```
+
+Asks the model for up to three candidate values for one describable field, which a person reviews before anything is saved: a table's description, aliases, primary entity or common query language, or a column's description or aliases. Studio's **Suggest** buttons call it. `target` names the field and carries its table; `context` carries the schema id and up to four tables linked to it by foreign key. `@askdb/enrich`'s `buildSuggestionTarget(schema, source)` and `buildSuggestionContext(schema, tableId)` build both from `loadSchema()`'s result, so the effective `sensitive` flags apply.
+
+The prompt lists the target table the way `ask()`'s prompt does (`TABLE public.users`, then one line per column), with no descriptions, and tags sensitive columns `(sensitive)`. `deps` takes:
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `omitSensitiveIdentifiersFromPrompt` | `false` | Leave sensitive columns out of the prompt; a sensitive table keeps only its name. `suggestEnrichment` reads no config, so pass your `modes.omitSensitiveFromPrompt`. A target that is itself a sensitive column throws `SensitiveEnrichmentTargetError` (an `AskDbError`, whose message names no column) before any model call, because the prompt would have to name it. |
+| `providerOptions` | — | Forwarded to the AI SDK's `generateText` unchanged. |
+| `temperature` | `0.4` | Sampling temperature. |
+| `maxCandidates` | `3` | The most candidates returned. |
+
+---
+
 ## Dialects
 
 The `dialect` option accepts three forms:

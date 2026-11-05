@@ -287,11 +287,9 @@ describe("AskDB Studio server", () => {
     expect(model.requests).toHaveLength(1);
     const prompt = model.requests[0];
     // Sensitive in schema.json, escalated by table front-matter, and inherited from a sensitive table.
-    for (const column of ["diagnosis_code", "salary_band", "ledger_key"]) {
+    for (const column of ["ssn_digits", "diagnosis_code", "salary_band", "ledger_key"]) {
       expect(prompt).not.toContain(column);
     }
-    // The schema's prose also names ssn_digits; withholding that text is #374's.
-    expect(prompt).not.toMatch(/- ssn_digits /);
     expect(prompt).toContain("payroll_ledger");
     expect(prompt).toContain("admitted_on");
   });

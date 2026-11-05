@@ -22,6 +22,22 @@ This document captures **product and engineering intent** for how **sensitive** 
 
 ---
 
+## Which model calls follow omission
+
+`modes.omitSensitiveFromPrompt` is a floor for every call AskDB makes to a model, not only `ask()`. `ask()` and `suggestEnrichment()` read no config, so each host passes the setting in.
+
+| Model call | How it follows the setting |
+| --- | --- |
+| `ask()` through `@askdb/client`, the CLI and the HTTP API | The facade passes `omitSensitiveIdentifiersFromNlToSqlPrompt` (above). |
+| Studio's Playground (`POST /api/ask`) | Studio passes `omitSensitiveIdentifiersFromNlToSqlPrompt: true` to `ask()` when the setting is on. |
+| Studio's tenant-policy draft (`POST /api/suggest-tenant-policy`) | Lists the schema with `formatSchemaV2ForNlToSql` (above; [ADR 0021](../adrs/0021-tenant-policy-draft-follows-ask-sensitivity.md)). |
+| Studio's enrichment suggestions (`POST /api/suggest`) | `suggestEnrichment()` takes `omitSensitiveIdentifiersFromPrompt` and lists the target table with `formatSchemaV2ForNlToSql`, from `loadSchema()`'s effective flags. Sensitive columns are tagged by default and withheld under omission, and a sensitive table keeps its name. A suggestion for a sensitive column is refused under omission with `SensitiveEnrichmentTargetError` (Studio answers 400), because the prompt would have to name it. The prompt carries no describable text. |
+| RAG indexing (embedding calls) | The chunker leaves sensitive tables, sensitive columns and text that names them out of the index by default, whatever the mode ([`schema-v2.md` → Sensitive propagation](./schema-v2.md#sensitive-propagation)). |
+
+**The one exception: the tenant policy block.** When a schema has a tenant policy, `ask()` always adds its block to the prompt ([`tenant-policy.md` → Always injected](./tenant-policy.md#always-injected-not-chunked)). Under omission the block still names every column the policy front-matter lists (scope columns, join-path columns, polymorphic type and id columns, root id columns), sensitive ones included, because the tenant check requires the model to filter on them. Withholding them would make the tenant check reject the SQL for every sensitive tenant-scoped table. The block names identifiers, never values. See [ADR 0026](../adrs/0026-every-model-call-follows-omission.md).
+
+---
+
 ## When users ask about sensitive columns
 
 With the **default** (names included, tagged), the model sees real identifiers and can usually produce valid SQL shapes when the question references those columns.

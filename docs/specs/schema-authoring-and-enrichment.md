@@ -60,10 +60,12 @@ saveTable(workspace: Workspace, tableId: string, frontmatter: V2TableFrontmatter
 
 bundleSchemaDirectory(schemaDir: string): BundledSchemaV2
 
-// AI suggestion helpers
-buildSuggestionTarget(workspace: Workspace, source: SuggestSource): EnrichmentTarget
-buildSuggestionContext(workspace: Workspace, tableId: string): EnrichmentContext
+// AI suggestion helpers: `schema` is loadSchema()'s result, so effective sensitivity applies
+buildSuggestionTarget(schema: NormalizedSchemaV2, source: SuggestSource): EnrichmentTarget
+buildSuggestionContext(schema: NormalizedSchemaV2, tableId: string): EnrichmentContext
 ```
+
+The suggestion prompt (`suggestEnrichment` in `@askdb/core`) follows `modes.omitSensitiveFromPrompt` like `ask()`: the host passes it as `omitSensitiveIdentifiersFromPrompt`, and a sensitive column can't be a suggestion target while it's on ([ADR 0026](../adrs/0026-every-model-call-follows-omission.md)).
 
 ```sh
 # CLI surface
