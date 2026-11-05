@@ -4,6 +4,9 @@
 //   - Every path referenced by package.json "main", "module", "types"/"typings", "bin", and
 //     "exports" (including conditional/nested entries) exists in the tarball.
 //   - No tarball ships TypeScript sources (src/) or test files (*.test.*).
+//   - Every relative link in README.md (Markdown links, images and reference definitions, and
+//     HTML href/src/srcset, outside code) resolves to a file in the tarball: no `../` links.
+//     The rule lives in readme-links.mjs.
 //
 // Which packages get packed is owned by scripts/pack-tarballs.sh (it discovers every
 // non-private packages/* and apps/* package), so this script only validates what it is given.
@@ -12,6 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import path from "node:path";
+import { deadReadmeLinks } from "./readme-links.mjs";
 
 const dir = process.argv[2];
 if (!dir) {
@@ -61,6 +65,12 @@ for (const tarball of tarballs) {
   }
   for (const entry of entries) {
     if (FORBIDDEN_ENTRY.test(entry)) problems.push(`ships source/test file "${entry}"`);
+  }
+  if (entries.has("README.md")) {
+    const readme = execFileSync("tar", ["-xzOf", file, "package/README.md"], { encoding: "utf8" });
+    for (const target of deadReadmeLinks(readme, entries)) {
+      problems.push(`README.md links to "${target}", which is not in the tarball`);
+    }
   }
 
   const targets = [];
