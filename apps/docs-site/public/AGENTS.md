@@ -46,7 +46,7 @@ AskDB is a workspace of small, layered packages — install only what your use c
 
 - AskDB returns SQL; it never executes it. Don't wire generated SQL to a database call without a review/approval step the host app controls.
 - Tenant scope comes from the host application's own auth context — never from user input or from anything an agent decides on its own. AskDB validates and binds the scope you supply; it doesn't know who's asking.
-- Sensitive columns (`sensitive: true` in the schema artifact) can be tagged in the prompt (default) or omitted entirely (`--omit-sensitive-from-prompt`) — either way, the underlying *values* never enter the prompt, only the schema metadata.
+- Sensitive columns (`sensitive: true` in the schema artifact) can be tagged in the prompt (default) or omitted entirely (`--omit-sensitive-from-prompt`), which also leaves out any description, alias, enum value or retrieved text that names them — either way, the underlying *values* never enter the prompt, only the schema metadata.
 - See `/concepts/safety-boundaries/` for what the SQL checks cover and don't (they are heuristic defense in depth, not a security boundary; run generated SQL under a read-only, least-privilege role) and `/concepts/privacy-model/` for exactly what does and doesn't cross the boundary to the model.
 
 ## Going deeper

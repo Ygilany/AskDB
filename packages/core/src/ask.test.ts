@@ -2208,3 +2208,61 @@ describe("ask — subtree tenant scope expansion", () => {
     },
   );
 });
+
+describe("ask — text that names a sensitive column, with omission on (#374)", () => {
+  // customers.email and .phone are marked sensitive; users is a sensitive table (users.ssn).
+  const schema = loadSchema(join(here, "../../../fixtures/schemas/sensitive-mentions.schema"));
+  const chunk = (type: "table" | "cql" | "concept" | "question", text: string, refs: string[], sensitive = false) => ({
+    id: `chunk:${type}:${text}`,
+    score: 1,
+    payload: { id: `chunk:${type}:${text}`, type, text, schemaId: "sensitive-mentions", refs, sensitive },
+  });
+  const retrieved = {
+    retriever: vi.fn(async () => [
+      chunk("table", "# public.customers\nAliases: clients", ["table:public.customers"]),
+      chunk("cql", "# public.customers — common query language\n- \"reachable\" means an `email` on file", ["table:public.customers"], true),
+      chunk("concept", "# Concept: Contactable\nCustomers with a phone on file.", []),
+      chunk("question", "# public.customers — example question\nWhich customers have no email?", ["table:public.customers"]),
+    ]),
+    totalSchemaChunkCount: 100,
+  };
+
+  async function run(extra: Partial<Parameters<typeof ask>[0]>) {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT COUNT(*) FROM customers\n```" }));
+    const logger = { info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+    await ask({
+      question: "How many customers are there?",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      parameterize: false,
+      omitSensitiveIdentifiersFromNlToSqlPrompt: true,
+      logger,
+      deps: { generateText: generateText as never },
+      ...extra,
+    });
+    return { prompt: (generateText.mock.calls[0]![0] as { prompt: string }).prompt, logger };
+  }
+
+  it.each([
+    ["full schema", {}],
+    ["retrieved schema", retrieved],
+  ] as const)("sends the model no sensitive column name (%s)", async (_path, extra) => {
+    const { prompt } = await run(extra);
+    expect(prompt).toContain("TABLE public.customers -- aliases: clients");
+    expect(prompt).not.toMatch(/email|phone|ssn/i);
+  });
+
+  it("counts the withheld text: schema-wide on the redaction event, retrieved on the retrieval event", async () => {
+    const { logger } = await run(retrieved);
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ event: AskDbLogEvent.PromptSensitiveRedacted, mentionDroppedCount: 6 }),
+      expect.any(String),
+    );
+    // customers' alias, description and two column annotations, plus three chunks.
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: AskDbLogEvent.PipelineRetrievalUsed, mentionDroppedCount: 7 }),
+      expect.any(String),
+    );
+  });
+});

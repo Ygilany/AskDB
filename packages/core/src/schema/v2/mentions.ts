@@ -1,3 +1,5 @@
+import type { NormalizedSchemaV2 } from "./normalized.js";
+
 /**
  * A name to look for in text: a bare name (matched literally, dots included),
  * or a column qualified by its table.
@@ -15,6 +17,9 @@ export type MentionMatcher = {
 // A match's ends may not touch a letter, digit, or `_` of any script.
 const BEFORE = "(?<![\\p{L}\\p{N}_])";
 const AFTER = "(?![\\p{L}\\p{N}_])";
+// Between a qualified name's table and column: a tight dot, or spaces or tabs
+// on both sides ("users. Org_id" ends a sentence).
+const QUALIFIER = "(?:\\.|[ \\t]+\\.[ \\t]+)";
 
 /**
  * Compiles the "mentions a sensitive column by name" rule of the schema v2
@@ -23,17 +28,44 @@ const AFTER = "(?![\\p{L}\\p{N}_])";
  * checks every describable text of a schema against the same list.
  */
 export function createMentionMatcher(names: readonly MentionName[]): MentionMatcher {
-  const entries = names
-    .filter((name) => (typeof name === "string" ? name !== "" : name.table !== "" && name.column !== ""))
-    .map((name) => ({ name, source: namePattern(name) }));
-  const each = entries.map(({ name, source }) => ({ name, pattern: new RegExp(`${BEFORE}${source}${AFTER}`, "iu") }));
-  const any =
-    entries.length === 0
-      ? undefined
-      : new RegExp(`${BEFORE}(?:${entries.map((e) => e.source).join("|")})${AFTER}`, "iu");
+  const entries = names.filter((name) =>
+    typeof name === "string" ? name !== "" : name.table !== "" && name.column !== "",
+  );
+  // One alternative per bare name, and one per table for its qualified names
+  // (`table` + separator + any of its columns): the same matches as one
+  // alternative per name.
+  const bare: string[] = [];
+  const columnsByTable = new Map<string, string[]>();
+  for (const name of entries) {
+    if (typeof name === "string") bare.push(partPattern(name));
+    else {
+      const columns = columnsByTable.get(name.table) ?? [];
+      columns.push(partPattern(name.column));
+      columnsByTable.set(name.table, columns);
+    }
+  }
+  const tables = [...columnsByTable.keys()].map(partPattern);
+  const alternatives = [
+    ...bare,
+    ...[...columnsByTable.values()].map((columns, i) => `${tables[i]}${QUALIFIER}(?:${columns.join("|")})`),
+  ];
+  if (alternatives.length === 0) return { mentionsAny: () => false, find: () => [] };
+  const any = new RegExp(`${BEFORE}(?:${alternatives.join("|")})${AFTER}`, "iu");
+  // A first pass whose size follows the number of tables, not of their columns: a
+  // qualified mention needs one of its tables followed by the separator. Every
+  // text passes through it, and only a hit runs the full pattern, whose size
+  // slows some engines (Node 22's) on every text otherwise.
+  const firstPass = new RegExp(
+    `${BEFORE}(?:${[...bare.map((b) => `${b}${AFTER}`), ...tables.map((t) => `${t}${QUALIFIER}`)].join("|")})`,
+    "iu",
+  );
+  // Compiled on the first `find`: the prompt builders only ask `mentionsAny`.
+  let each: { name: MentionName; pattern: RegExp }[] | undefined;
+  const patterns = () =>
+    (each ??= entries.map((name) => ({ name, pattern: new RegExp(`${BEFORE}${namePattern(name)}${AFTER}`, "iu") })));
   return {
-    mentionsAny: (text) => Boolean(text) && any !== undefined && any.test(text),
-    find: (text) => (text ? each.filter(({ pattern }) => pattern.test(text)).map(({ name }) => name) : []),
+    mentionsAny: (text) => Boolean(text) && firstPass.test(text) && any.test(text),
+    find: (text) => (text ? patterns().filter(({ pattern }) => pattern.test(text)).map(({ name }) => name) : []),
   };
 }
 
@@ -48,6 +80,33 @@ export function findMentionedNames<T extends MentionName>(text: string, names: r
   return createMentionMatcher(names).find(text) as T[];
 }
 
+/**
+ * The names whose mention marks text as naming a sensitive column, for the
+ * whole schema (ADR 0017; how they match is the schema v2 contract's mention
+ * rule). A column marked sensitive itself counts by its bare name; a column
+ * of a sensitive table that is sensitive only through it
+ * (`sensitiveFromTable`) counts only qualified, since its bare name is often
+ * generic (`id`, `org_id`, `name`). Untracked tables' columns count too.
+ * `@askdb/rag`'s chunker and both NL→SQL prompt builders check describable
+ * text against this list.
+ */
+export function sensitiveMentionNames(schema: NormalizedSchemaV2): MentionName[] {
+  const names: MentionName[] = [];
+  const bare = new Set<string>();
+  for (const t of schema.tables) {
+    for (const c of t.columns) {
+      if (!c.sensitive && !t.sensitive) continue;
+      if (t.sensitive && c.sensitiveFromTable === true) {
+        names.push({ table: t.name, column: c.name });
+      } else if (!bare.has(c.name)) {
+        bare.add(c.name);
+        names.push(c.name);
+      }
+    }
+  }
+  return names;
+}
+
 /** A bare name, or a qualified one's table and column parts: as written, or wrapped in one matching pair of quotes or brackets. */
 function partPattern(part: string): string {
   const p = escapeRegex(part);
@@ -56,8 +115,7 @@ function partPattern(part: string): string {
 
 function namePattern(name: MentionName): string {
   if (typeof name === "string") return partPattern(name);
-  // A tight dot, or spaces or tabs on both sides: "users. Org_id" ends a sentence.
-  return `${partPattern(name.table)}(?:\\.|[ \\t]+\\.[ \\t]+)${partPattern(name.column)}`;
+  return `${partPattern(name.table)}${QUALIFIER}${partPattern(name.column)}`;
 }
 
 function escapeRegex(s: string): string {

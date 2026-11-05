@@ -935,6 +935,30 @@ describe("AskDB Studio server", () => {
     expect(result.error).toMatch(/No execute connection configured/);
   });
 
+  it("POST /api/execute on SQL Server rejects a second statement written without ';' with 400", async () => {
+    // Nothing listens on port 1: a request that got past validation would come back
+    // as 200 with the driver's connection error.
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      studio: {
+        execute: {
+          enabled: true,
+          provider: "sqlserver",
+          databaseUrl: "Server=127.0.0.1,1;Database=app;User Id=sa;Password=x;TrustServerCertificate=true",
+        },
+      },
+    });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    for (const sql of ["SELECT 1 SELECT 2", "SELECT 1 WHILE 1=1 SELECT 2"]) {
+      const res = await postRaw(`${baseUrl}/api/execute`, { sql });
+      expect(res.status, sql).toBe(400);
+      expect((await res.json()).error.message, sql).toContain("SQL_MULTI_STATEMENT");
+    }
+  });
+
   describe("execute against a real SQLite database", () => {
     function createSqliteDb(rows: number): string {
       const dir = mkdtempSync(join(tmpdir(), "askdb-studio-exec-"));

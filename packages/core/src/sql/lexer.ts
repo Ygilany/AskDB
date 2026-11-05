@@ -19,6 +19,11 @@
  * | `#` line comment          | —        | yes                    | —          | —      |
  * | `--` line comment         | yes      | only before whitespace | yes        | yes    |
  * | nested `/* … *\/`         | yes      | no (`/*! … *\/` runs)  | yes        | no     |
+ * | `0x`, `1E`, `$`/`€` money | —        | —                      | literal    | —      |
+ * | U+00A0 etc. end a name    | —        | —                      | yes        | —      |
+ * | `@` continues a name      | —        | —                      | yes        | —      |
+ *
+ * The last three rows are `tsqlLiterals`; U+FEFF does not end a SQL Server name.
  *
  * The lexer never throws: a string, quoted identifier, or comment that runs off the end
  * of the input is returned with `unterminated: true` so callers can fail closed.
@@ -51,6 +56,14 @@ export type SqlLexerProfile = {
   atVariables: boolean;
   /** SQL Server `#temp` / `##temp` table names. */
   hashIdentifiers: boolean;
+  /**
+   * SQL Server's token ends: `0x` with no hex digits, an exponent with no digits (`1E`,
+   * `1E+`), and money literals that start with a currency symbol (`$`, `$1.5`, `€`) are
+   * complete literals; U+200B and U+0085 are whitespace; and a name or variable continues
+   * through `@` and ends at any whitespace character except U+FEFF. A keyword written right after one of these
+   * is its own token, as it is to SQL Server.
+   */
+  tsqlLiterals: boolean;
 };
 
 export const POSTGRES_LEXER: SqlLexerProfile = {
@@ -67,6 +80,7 @@ export const POSTGRES_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: false,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 export const MYSQL_LEXER: SqlLexerProfile = {
@@ -83,6 +97,7 @@ export const MYSQL_LEXER: SqlLexerProfile = {
   executableComments: true,
   atVariables: true,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 export const SQLSERVER_LEXER: SqlLexerProfile = {
@@ -99,6 +114,7 @@ export const SQLSERVER_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: true,
   hashIdentifiers: true,
+  tsqlLiterals: true,
 };
 
 export const SQLITE_LEXER: SqlLexerProfile = {
@@ -115,6 +131,7 @@ export const SQLITE_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: true,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 /**
@@ -137,6 +154,7 @@ export const GENERIC_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: true,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 /** Every engine-specific profile. Used when the dialect is unknown and each reading must be safe. */
@@ -217,6 +235,14 @@ const WORD_START = /[A-Za-z_\u0080-￿]/;
 const WORD_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
 const DIGIT = /[0-9]/;
 const HEX = /[0-9A-Fa-f]/;
+/** Currency symbols. SQL Server starts a money literal with one (its list is a subset). */
+const CURRENCY = /\p{Sc}/u;
+/**
+ * Characters SQL Server reads as whitespace that `\s` does not match. With `\s` minus
+ * U+FEFF they are the only characters at or above U+0080 that end a T-SQL name or
+ * number (every BMP character probed on SQL Server 2022, #327); U+FEFF continues a name.
+ */
+const TSQL_EXTRA_SPACE = /[\u200b\u0085]/;
 const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
 
 /**
@@ -237,6 +263,15 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   let i = 0;
   /** Index in `tokens` of the open MySQL `/*! … *\/` executable-comment opener, or -1. */
   let executableOpener = -1;
+
+  const isSpace = (c: string): boolean => /\s/.test(c) || (profile.tsqlLiterals && TSQL_EXTRA_SPACE.test(c));
+  /**
+   * `WORD_CHAR`, except that a SQL Server name also continues through `@` (`a@b` is one
+   * name, as `a$b` and `a#b` are) and ends at Unicode whitespace other than U+FEFF.
+   */
+  const isWordChar = (c: string): boolean =>
+    (WORD_CHAR.test(c) || (profile.tsqlLiterals && c === "@")) &&
+    !(profile.tsqlLiterals && c !== "\ufeff" && isSpace(c));
 
   const push = (
     kind: SqlTokenKind,
@@ -299,7 +334,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     const ch = sql[i]!;
     const next = sql[i + 1];
 
-    if (/\s/.test(ch)) {
+    if (isSpace(ch)) {
       i++;
       continue;
     }
@@ -394,6 +429,19 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       i = j;
       continue;
     }
+    // SQL Server money: a currency symbol, then optional digits (`$`, `$1.5`, `€2`). `$`
+    // before a letter is a pseudocolumn (`$action`), lexed below as a parameter.
+    if (profile.tsqlLiterals && CURRENCY.test(ch) && !(ch === "$" && next !== undefined && WORD_START.test(next))) {
+      let j = i + 1;
+      while (j < n && DIGIT.test(sql[j]!)) j++;
+      if (sql[j] === ".") {
+        j++;
+        while (j < n && DIGIT.test(sql[j]!)) j++;
+      }
+      push("number", i, j);
+      i = j;
+      continue;
+    }
     if (ch === "$") {
       if (profile.dollarQuotes) {
         const tag = DOLLAR_TAG.exec(sql.slice(i));
@@ -408,7 +456,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       }
       if (next !== undefined && (DIGIT.test(next) || (!profile.dollarQuotes && WORD_START.test(next)))) {
         let j = i + 1;
-        while (j < n && WORD_CHAR.test(sql[j]!) && sql[j] !== "$") j++;
+        while (j < n && isWordChar(sql[j]!) && sql[j] !== "$") j++;
         push("parameter", i, j);
         i = j;
         continue;
@@ -418,7 +466,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     // ---- words (and prefixed string literals) ---------------------------
     if (WORD_START.test(ch) || (ch === "#" && profile.hashIdentifiers && next !== undefined && (next === "#" || WORD_START.test(next)))) {
       let j = i + 1;
-      while (j < n && (WORD_CHAR.test(sql[j]!) || (profile.hashIdentifiers && sql[j] === "#"))) j++;
+      while (j < n && (isWordChar(sql[j]!) || (profile.hashIdentifiers && sql[j] === "#"))) j++;
       const word = sql.slice(i, j);
       if (sql[j] === "'" && j - i === 1) {
         const prefix = word.toLowerCase();
@@ -439,7 +487,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     // ---- numbers --------------------------------------------------------
     if (DIGIT.test(ch) || (ch === "." && next !== undefined && DIGIT.test(next))) {
       let j = i;
-      if (ch === "0" && (next === "x" || next === "X") && HEX.test(sql[i + 2] ?? "")) {
+      if (ch === "0" && (next === "x" || next === "X") && (profile.tsqlLiterals || HEX.test(sql[i + 2] ?? ""))) {
         j = i + 2;
         while (j < n && HEX.test(sql[j]!)) j++;
       } else {
@@ -448,7 +496,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
           j++;
           while (j < n && DIGIT.test(sql[j]!)) j++;
         }
-        if ((sql[j] === "e" || sql[j] === "E") && /^[eE][+-]?[0-9]/.test(sql.slice(j))) {
+        if ((sql[j] === "e" || sql[j] === "E") && (profile.tsqlLiterals || /^[eE][+-]?[0-9]/.test(sql.slice(j)))) {
           j += sql[j + 1] === "+" || sql[j + 1] === "-" ? 2 : 1;
           while (j < n && DIGIT.test(sql[j]!)) j++;
         }
@@ -468,7 +516,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     }
     if (ch === ":" && next !== undefined && WORD_START.test(next)) {
       let j = i + 1;
-      while (j < n && WORD_CHAR.test(sql[j]!)) j++;
+      while (j < n && isWordChar(sql[j]!)) j++;
       push("parameter", i, j);
       i = j;
       continue;
@@ -477,7 +525,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       let j = i + 1;
       if (sql[j] === "@") j++;
       if (j < n && WORD_START.test(sql[j]!)) {
-        while (j < n && WORD_CHAR.test(sql[j]!)) j++;
+        while (j < n && isWordChar(sql[j]!)) j++;
         push("parameter", i, j);
         i = j;
         continue;

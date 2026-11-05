@@ -8,6 +8,7 @@ import { formatSchemaV2ForNlToSql } from "./format.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const v2Dir = join(here, "../../../../../fixtures/schemas/orders-users.schema");
 const v2SchemaJson = join(v2Dir, "schema.json");
+const mentionsDir = join(here, "../../../../../fixtures/schemas/sensitive-mentions.schema");
 
 describe("formatSchemaV2ForNlToSql — enriched fixture", () => {
   it("includes qualified table name and aliases in the TABLE header line", () => {
@@ -106,6 +107,34 @@ describe("formatSchemaV2ForNlToSql — omitSensitiveIdentifiersFromPrompt", () =
     expect(stats.sensitiveTableStubCount).toBe(1);
     // users.email plus all four orders columns.
     expect(stats.redactedColumnCount).toBe(5);
+  });
+
+  // customers.email and .phone are marked sensitive; users is a sensitive table, so users.ssn
+  // counts only qualified. Every text below sits on a non-sensitive table or column (#374).
+  it("withholds every table and column text that names a sensitive column", () => {
+    const { ddl, stats } = formatSchemaV2ForNlToSql(loadSchema(mentionsDir), {
+      omitSensitiveIdentifiersFromPrompt: true,
+    });
+    expect(ddl).not.toMatch(/email|phone|ssn/i);
+    const lines = ddl.split("\n");
+    // Each alias on its own: "people by email" goes, "clients" stays.
+    expect(lines).toContain("TABLE public.customers -- aliases: clients");
+    // A column's whole annotation goes when any part of it names one: enum values `email`, a description naming `phone`.
+    expect(lines).toContain("  - contact_pref text (NULL)");
+    expect(lines).toContain("  - status text (NOT NULL)");
+    expect(lines).toContain("  - region text (NULL) -- aliases: territory; values: north|south; Sales region of the account.");
+    // Text naming none stays, including another table's common query language.
+    expect(lines).toContain('-- - "big orders" means `total > 10000`');
+    // An alias, two descriptions, two column annotations and one common query language block.
+    expect(stats.mentionDroppedCount).toBe(6);
+  });
+
+  it("keeps that text when sensitive names are listed tagged", () => {
+    const { ddl, stats } = formatSchemaV2ForNlToSql(loadSchema(mentionsDir));
+    expect(ddl).toContain("  - email text (NULL) (sensitive)");
+    expect(ddl).toContain("-- Stores each customer's email and phone.");
+    expect(ddl).toContain("-- Join to users.ssn to verify buyers.");
+    expect(stats.mentionDroppedCount).toBe(0);
   });
 });
 
