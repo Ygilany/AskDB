@@ -223,7 +223,7 @@ program
   )
   .option(
     "--mode <id>",
-    `Operating mode (${formatAskDbModesV1()}); default: modes.askdbMode in askdb.config, else schema_only`,
+    `Operating mode (${formatAskDbModesV1()}). Can tighten config modes.askdbMode (default schema_only), never loosen it`,
   )
   .option(
     "--omit-sensitive-from-prompt",
@@ -245,11 +245,12 @@ program
       omitSensitiveFromPrompt?: boolean;
     }) => {
       let logLevel: AskDbLogLevel;
-      let mode: AskDbModeV1;
+      // Only the flag is parsed here: the facade applies config `modes.askdbMode` (ADR 0025).
+      let mode: AskDbModeV1 | undefined;
       const runtime = getAskDbRuntimeConfig();
       try {
         logLevel = resolveCliLogLevel(opts, runtime);
-        mode = parseAskDbModeV1(opts.mode ?? runtime.modes.askdbMode);
+        mode = opts.mode === undefined ? undefined : parseAskDbModeV1(opts.mode);
       } catch (e) {
         printCliError(e);
         process.exitCode = 1;
@@ -266,13 +267,7 @@ program
         process.exitCode = 1;
         return;
       }
-      logger.info(
-        {
-          event: AskDbLogEvent.RunStart,
-          mode,
-        },
-        "askdb run start",
-      );
+      logger.info({ event: AskDbLogEvent.RunStart }, "askdb run start");
 
       try {
         const schemaPath = resolveSchemaPathForAsk(opts.schema, runtime);
@@ -298,7 +293,7 @@ program
         const out = await askdb.ask(opts.question, {
           schema: { schema },
           logger,
-          mode,
+          ...(mode ? { mode } : {}),
           explain: Boolean(opts.explain),
           // The facade adds config `modes.omitSensitiveFromPrompt` as a floor.
           omitSensitiveIdentifiersFromNlToSqlPrompt: Boolean(opts.omitSensitiveFromPrompt),

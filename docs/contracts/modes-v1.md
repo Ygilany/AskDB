@@ -36,8 +36,9 @@ Product copy in [`README.md`](../../README.md) describes additional modes (**rep
 
 Hosts pass **`AskDbModeV1`** (see `@askdb/core` exports):
 
-- CLI: `--mode <schema_only|bounded_results>`, else **`modes.askdbMode`** in `askdb.config.ts` (bind it to a variable of your choosing with `env("…")`).
-- Library: **`ask({ ..., mode })`**.
+- Config: **`modes.askdbMode`** in `askdb.config.*` (unset: `schema_only`). `@askdb/client`, the CLI and the HTTP API read it, and treat it as the **loosest** mode a run gets ([ADR 0025](../adrs/0025-config-mode-is-the-loosest-a-call-gets.md)).
+- Per run: CLI `--mode <schema_only|bounded_results>`, `createAskDb().ask(q, { mode })`, or the HTTP request's `mode` / `x-askdb-mode`. A per-run mode can tighten the config mode to `schema_only`, never loosen it; a looser request runs at the config mode, with no error.
+- Core: **`ask({ ..., mode })`** reads no config; the caller's `mode` is final (default `schema_only`).
 
 Structured logs emit **`askdb.pipeline.mode`** (with a `mode` field) at pipeline start, before the NL→SQL call. No other log event depends on the mode.
 

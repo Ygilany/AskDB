@@ -173,13 +173,13 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
 | `--explain` | After `-- sql --`, print `-- explain --` plus JSON describing heuristic guardrails satisfied (`statementKind`, `checksVerified`, `remediationNote`). |
 | `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). To omit on every run, set `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` instead. See [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md). |
-| `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. Current AskDB surfaces return SQL only. |
+| `--mode <id>` | Operating mode: `schema_only` or `bounded_results`. It can only tighten config `modes.askdbMode` (default `schema_only`), never loosen it. Current AskDB surfaces return SQL only. |
 
-**Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events, including `askdb.pipeline.mode`, appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
+**Modes + structured logs (Phase 2)** — same `ask` subcommand; set `modes.askdbMode` in `askdb.config.ts`, and pass `--mode schema_only` to tighten it for one run. Use `-v` / `--log-file` so JSON events, including `askdb.pipeline.mode`, appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
 
 ```bash
 pnpm build
-# Generate only — logs on stderr include askdb.pipeline.mode (default schema_only unless you pass --mode)
+# Generate only — logs on stderr include askdb.pipeline.mode (config modes.askdbMode, default schema_only; --mode can only tighten it)
 pnpm exec askdb ask \
   --schema fixtures/schemas/orders-users.schema \
   --question "How many orders?" \
