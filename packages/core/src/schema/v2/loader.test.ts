@@ -7,6 +7,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -342,6 +343,15 @@ describe("loadSchema — optional files fail closed when present but broken", ()
       policyPath,
       readFileSync(policyPath, "utf8").replace("enforcement: strict", "enforcement: strictt"),
     );
+    expect(() => loadSchema(dir)).toThrow(SchemaParseError);
+  });
+
+  it("a tenant-policy.md link whose target is missing throws SchemaParseError, not no policy", () => {
+    // The directory lists the file, so it is present; reading it fails with ENOENT,
+    // which must not count as "absent" here.
+    const dir = copyFixture(multiTenantDir);
+    rmSync(join(dir, "tenant-policy.md"));
+    symlinkSync("deleted-policy.md", join(dir, "tenant-policy.md"));
     expect(() => loadSchema(dir)).toThrow(SchemaParseError);
   });
 
