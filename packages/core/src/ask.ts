@@ -2,7 +2,6 @@ import type { generateText as defaultGenerateText } from "ai";
 import type { AskDbLanguageModel } from "./ai/types.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
-import { logTenantPolicyWarningsOnce } from "./logging/tenant-policy-warnings.js";
 import type { AnyNormalizedSchema } from "./schema/types.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
@@ -39,6 +38,7 @@ import {
   type TenantIdsByRoot,
 } from "./sql/tenant-scope-expand.js";
 import { validateTenantScope } from "./sql/tenant-scope-validate.js";
+import { logTenantPolicyWarningsOnce } from "./sql/tenant-policy-warnings.js";
 import {
   type SensitiveGuardrailMode,
   type SensitiveGuardrailResult,

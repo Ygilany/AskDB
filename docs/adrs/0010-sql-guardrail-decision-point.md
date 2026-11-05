@@ -108,7 +108,7 @@ Parse the candidate once, through the existing lexer and `DialectSpec`: statemen
 
 ### 2. One decision function
 
-`decide` maps findings × configured modes × enforcement point to a verdict. It is the only code that knows `strict` / `warn` / `off`, and the only code that knows what `warn` means at each enforcement point.
+`decide` maps findings × configured modes × enforcement point to a verdict. It is the only code that knows `strict` / `warn` / `off` for findings about the SQL, and the only code that knows what `warn` means at each enforcement point. (ADR 0023 reads a tenant policy's `enforcement` at load time too, for a different question: whether a policy that doesn't match `schema.json` loads, before any SQL exists.)
 
 ```ts
 type GuardrailOutcome = "allow" | "warn" | "deny";

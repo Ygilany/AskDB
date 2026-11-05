@@ -1,7 +1,7 @@
+import type { AskDbLogger } from "../logging/askdb-logger.js";
+import { AskDbLogEvent } from "../logging/log-events.js";
 import type { NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import { formatTenantPolicyWarning } from "../schema/v2/tenant-policy.js";
-import type { AskDbLogger } from "./askdb-logger.js";
-import { AskDbLogEvent } from "./log-events.js";
 
 /** Policies whose warnings were already logged. Each `loadSchema()` returns a new policy object. */
 const logged = new WeakSet<NormalizedTenantPolicy>();

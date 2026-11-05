@@ -34,7 +34,9 @@ export const AskDbLogEvent = {
   /**
    * The loaded tenant policy doesn't fully match `schema.json` (ADR 0023). Logged at
    * `warn` level, once per loaded schema, by the first `ask()` that receives it.
-   * Includes `enforcement`, `warningCount` and `warnings` (schema IDs only, never values).
+   * Includes `enforcement`, `warningCount` and `warnings`: schema artifact metadata only
+   * (table and column IDs, and a polymorphic `mapping` key from the policy), never query
+   * text or row values.
    */
   TenantPolicyWarnings: "askdb.tenant.policy_warnings",
   /**
