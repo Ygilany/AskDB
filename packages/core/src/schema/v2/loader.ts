@@ -72,11 +72,14 @@ export function loadSchemaFromJson(raw: string): NormalizedSchemaV2 {
  * Autodetects between:
  *  - A v2 directory (`<schemaId>.schema/`) containing `schema.json`
  *  - A bundled JSON file (`*.bundle.json` or any JSON with `bundled: true`)
- *  - A direct path to a `schema.json` inside a directory — loaded exactly like the
- *    enclosing directory, including sibling `tables/*.md`, `concepts.md`, and
- *    `tenant-policy.md`
+ *  - A direct path to a `schema.json` inside a directory, matched in any case
+ *    (`Schema.json` too) — loaded exactly like the enclosing directory, including
+ *    sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md`
  *
- * Any other JSON file is treated as a standalone physical layer.
+ * Any other JSON file is treated as a standalone physical layer, unless its
+ * directory also holds `tenant-policy.md`, `tables/` or `concepts.md`: loading it
+ * alone would ignore them, so that throws `SchemaParseError`. To load only the
+ * physical layer of such a file, pass its content to `loadSchemaFromJson()`.
  *
  * Optional sibling files may be absent, but a present file that cannot be read
  * or parsed (e.g. malformed YAML front-matter in `tenant-policy.md`) throws
@@ -105,18 +108,50 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
 
   // A file named `schema.json` is the physical layer of a schema directory: load
   // the enclosing directory so sibling tables/*.md, concepts.md, and — critically —
-  // tenant-policy.md apply exactly as they would for the directory path.
-  if (basename(resolved) === "schema.json") {
-    return loadFromDirectory(dirname(resolved));
+  // tenant-policy.md apply exactly as they would for the directory path. The name
+  // matches in any case: on case-insensitive filesystems (macOS, Windows defaults)
+  // `Schema.json` opens `schema.json`, and missing that would drop the tenant policy.
+  // The physical layer is read from the given path, which may not be spelled
+  // `schema.json` on a case-sensitive filesystem.
+  if (basename(resolved).toLowerCase() === "schema.json") {
+    return loadFromDirectory(dirname(resolved), resolved);
   }
 
-  // Any other bare JSON file is a standalone physical layer with no sibling files.
+  // Any other bare JSON file is a standalone physical layer with no sibling files,
+  // unless it sits in a schema directory (fails closed, see below).
+  assertNotInSchemaDirectory(resolved);
   const physical = parsePhysicalLayer(parsed, resolved);
   return buildNormalized(physical, {}, undefined, [], undefined);
 }
 
-function loadFromDirectory(dir: string): NormalizedSchemaV2 {
-  const schemaJsonPath = join(dir, "schema.json");
+/**
+ * The files the directory loader reads beside `schema.json`, by the exact names it
+ * reads them.
+ */
+const SCHEMA_DIRECTORY_SIBLINGS = ["tenant-policy.md", "tables", "concepts.md"] as const;
+
+/**
+ * A standalone JSON file must not sit beside schema-directory files. Loading it
+ * alone would ignore them, so `cp schema.json prod-schema.json` would silently drop
+ * the tenant policy (and with it `ask()`'s tenant scope) and every `tables/*.md`
+ * `sensitive: true`. Fail closed instead and say how to load it.
+ */
+function assertNotInSchemaDirectory(filePath: string): void {
+  const dir = dirname(filePath);
+  const present = SCHEMA_DIRECTORY_SIBLINGS.filter((name) => pathExists(join(dir, name)));
+  if (present.length === 0) return;
+  throw new SchemaParseError(
+    `Refusing to load ${filePath} as a standalone physical layer: its directory also holds ` +
+      `${present.join(", ")}, which loading the file alone would ignore (an ignored ` +
+      `tenant-policy.md turns tenant enforcement off). Pass the directory, rename the file ` +
+      `to schema.json, or pass its content to loadSchemaFromJson() to load only the physical layer.`,
+  );
+}
+
+function loadFromDirectory(
+  dir: string,
+  schemaJsonPath: string = join(dir, "schema.json"),
+): NormalizedSchemaV2 {
   let raw: string;
   try {
     raw = readFileSync(schemaJsonPath, "utf8");
@@ -199,6 +234,17 @@ function readOptionalFile(path: string): string | undefined {
   }
 }
 
+/** Whether a path exists: `false` only when it does not (ENOENT), `SchemaParseError` on any other failure. */
+function pathExists(path: string): boolean {
+  try {
+    statSync(path);
+    return true;
+  } catch (e) {
+    if (isMissingPathError(e)) return false;
+    throw new SchemaParseError(`Failed to read ${path}: ${errorMessage(e)}`, e);
+  }
+}
+
 /** List an optional directory: `undefined` when it does not exist, `SchemaParseError` on any other failure. */
 function readOptionalDir(path: string): string[] | undefined {
   try {
@@ -230,6 +276,9 @@ function parseOrWrap<T>(path: string, fn: () => T): T {
 function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSchemaV2 {
   const physical = parsePhysicalLayer(bundle.physical, filePath);
   const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
+  // Errors name the bundled file and the bundle that holds it: the user has the
+  // bundle on disk, not a tenant-policy.md or concepts.md.
+  const inBundle = (file: string) => `${file} (in ${filePath})`;
 
   // Bundle keys are the `tables/` filenames (see `bundleSchemaDirectory` in
   // @askdb/enrich), so warnings name the same path the directory loader would.
@@ -237,8 +286,11 @@ function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSc
   for (const [filename, content] of Object.entries(bundle.tables).sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
-    const parsed = parseTableMarkdown(content, filename);
-    addTableMarkdown(tableMarkdowns, { tableFile: `tables/${filename}`, parsed }, filePath);
+    const tableFile = `tables/${filename}`;
+    const parsed = parseOrWrap(inBundle(tableFile), () =>
+      parseTableMarkdown(content, inBundle(tableFile)),
+    );
+    addTableMarkdown(tableMarkdowns, { tableFile, parsed }, filePath);
   }
 
   // Mirror the directory loader: only an *absent* key means "no file". A present
@@ -247,18 +299,24 @@ function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSc
   let concepts: V2ConceptsFrontmatter | undefined;
   const conceptsContent = bundledFileContent(bundle, "concepts", "concepts.md", filePath);
   if (conceptsContent !== undefined) {
-    concepts = parseConceptsMarkdown(conceptsContent, "concepts.md").frontmatter;
+    const conceptsFile = inBundle("concepts.md");
+    concepts = parseOrWrap(conceptsFile, () =>
+      parseConceptsMarkdown(conceptsContent, conceptsFile),
+    ).frontmatter;
   }
 
   let tenantPolicy: NormalizedTenantPolicy | undefined;
   const policyContent = bundledFileContent(bundle, "tenantPolicy", "tenant-policy.md", filePath);
   if (policyContent !== undefined) {
-    const parsed = parseTenantPolicyMarkdown(policyContent, "tenant-policy.md");
-    const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-    const physicalColumnIds = new Set(
-      physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
-    );
-    tenantPolicy = normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+    const policyFile = inBundle("tenant-policy.md");
+    tenantPolicy = parseOrWrap(policyFile, () => {
+      const parsed = parseTenantPolicyMarkdown(policyContent, policyFile);
+      const physicalTableIds = new Set(physical.tables.map((t) => t.id));
+      const physicalColumnIds = new Set(
+        physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
+      );
+      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+    });
   }
 
   return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);

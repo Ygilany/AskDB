@@ -1,4 +1,13 @@
-import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +37,15 @@ function copyFixture(src: string): string {
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+/** The value `fn` throws, or `undefined` when it returns. */
+function thrownBy(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (e) {
+    return e;
+  }
+  return undefined;
+}
 
 const MALFORMED_TENANT_POLICY = [
   "---",
@@ -171,14 +189,49 @@ describe("loadSchema — direct schema.json path", () => {
     expect(viaFile).toEqual(loadSchema(multiTenantDir));
   });
 
-  it("still treats a JSON file not named schema.json as a standalone physical layer", () => {
+  it("matches the schema.json name in any case, so Schema.json keeps its tenant policy", () => {
+    // Physically renamed, so the case-insensitive match is exercised on every
+    // filesystem, not only where Schema.json opens schema.json (macOS, Windows).
+    const dir = copyFixture(multiTenantDir);
+    renameSync(join(dir, "schema.json"), join(dir, "Schema.json"));
+    const viaFile = loadSchema(join(dir, "Schema.json"));
+    expect(viaFile.tenantPolicy?.enforcement).toBe("strict");
+    expect(viaFile).toEqual(loadSchema(multiTenantDir));
+  });
+
+  it("loads a JSON file not named schema.json as a standalone physical layer when no schema files sit beside it", () => {
     const dir = makeTempDir();
     copyFileSync(join(multiTenantDir, "schema.json"), join(dir, "physical.json"));
-    writeFileSync(join(dir, "tenant-policy.md"), MALFORMED_TENANT_POLICY);
     const schema = loadSchema(join(dir, "physical.json"));
     expect(schema.tenantPolicy).toBeUndefined();
     expect(schema.tables.length).toBeGreaterThan(0);
   });
+});
+
+describe("loadSchema — a JSON file inside a schema directory must be schema.json", () => {
+  // Loading the copy standalone would drop the sibling: the tenant policy, the
+  // tables/*.md `sensitive: true` escalations, or the concepts.
+  const siblings: Record<string, (dir: string) => void> = {
+    "tenant-policy.md": (dir) =>
+      copyFileSync(join(multiTenantDir, "tenant-policy.md"), join(dir, "tenant-policy.md")),
+    tables: (dir) => mkdirSync(join(dir, "tables")),
+    "concepts.md": (dir) => writeFileSync(join(dir, "concepts.md"), "---\nconcepts: []\n---\n"),
+  };
+
+  it.each(Object.keys(siblings))(
+    "a copy of schema.json beside %s throws SchemaParseError naming both",
+    (sibling) => {
+      const dir = makeTempDir();
+      const copyPath = join(dir, "prod-schema.json");
+      copyFileSync(join(multiTenantDir, "schema.json"), copyPath);
+      siblings[sibling]!(dir);
+
+      const caught = thrownBy(() => loadSchema(copyPath));
+      expect(caught).toBeInstanceOf(SchemaParseError);
+      expect((caught as SchemaParseError).message).toContain(copyPath);
+      expect((caught as SchemaParseError).message).toContain(sibling);
+    },
+  );
 });
 
 describe("loadSchema — optional files fail closed when present but broken", () => {
@@ -265,14 +318,17 @@ describe("loadSchema — bundles treat optional files exactly like the directory
     expect(() => loadSchemaFromJson(bundleJson({ tenantPolicy: null }))).toThrow(SchemaParseError);
   });
 
-  it("malformed tenantPolicy YAML throws SchemaParseError", () => {
-    expect(() =>
-      loadSchemaFromJson(bundleJson({ tenantPolicy: MALFORMED_TENANT_POLICY })),
-    ).toThrow(SchemaParseError);
-  });
-
-  it("malformed concepts YAML throws SchemaParseError, like the directory loader", () => {
-    const concepts = "---\nconcepts: [unclosed\n---\n";
-    expect(() => loadSchemaFromJson(bundleJson({ concepts }))).toThrow(SchemaParseError);
+  // The bundle is the file on disk, so the error must name it, not a tenant-policy.md
+  // or concepts.md that does not exist.
+  it.each([
+    { key: "tenantPolicy", value: MALFORMED_TENANT_POLICY, file: "tenant-policy.md" },
+    { key: "concepts", value: "---\nconcepts: [unclosed\n---\n", file: "concepts.md" },
+    { key: "tables", value: { "broken.md": "---\nid: [unclosed\n---\n" }, file: "tables/broken.md" },
+  ])("malformed $key YAML throws SchemaParseError naming $file in the bundle file", ({ key, value, file }) => {
+    const bundlePath = join(makeTempDir(), "prod.bundle.json");
+    writeFileSync(bundlePath, bundleJson({ [key]: value }));
+    const caught = thrownBy(() => loadSchema(bundlePath));
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    expect((caught as SchemaParseError).message).toContain(`${file} (in ${bundlePath})`);
   });
 });

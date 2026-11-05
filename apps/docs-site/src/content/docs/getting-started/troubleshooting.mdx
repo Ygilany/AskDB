@@ -45,9 +45,15 @@ The path passed to `--schema` (CLI) or `loadSchema()` (library) doesn't exist or
 
 - A schema directory (e.g. `my-app.schema/`)
 - A bundled JSON file (e.g. `my-app.schema.json`)
-- A `schema.json` file inside a directory
+- A `schema.json` file inside a directory (the name matches in any case, so `Schema.json` works too)
 
 Run `ls my-app.schema/` to confirm the directory was created by `askdb introspect`. If it's empty, the introspection step didn't complete successfully.
+
+### `SchemaParseError: Refusing to load … as a standalone physical layer`
+
+You passed a JSON file that isn't named `schema.json`, such as `prod-schema.json`, and its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`. Loading the file alone would ignore those files, so `ask()` would run without your tenant policy and without the `sensitive: true` marks in `tables/*.md`. AskDB refuses instead.
+
+Pass the directory to `--schema` or `loadSchema()`, or rename the file to `schema.json`. To load only the physical layer, pass the file's content to `loadSchemaFromJson()`.
 
 ### `SchemaParseError: Missing required field …`
 
