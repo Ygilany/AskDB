@@ -5,7 +5,7 @@
 
 ## Overview
 
-Schema introspection turns a real database into a describable schema physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, dialect rules, and optional live database driver loading — lives in the integration packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`).
+Schema introspection turns a real database into a describable schema physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, and optional live database driver loading — lives in the integration packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`). The built-in dialect specs, which hold the SQL rules for generation, live in `@askdb/core` ([ADR 0029](../adrs/0029-core-owns-built-in-dialect-specs.md)).
 
 Postgres has two front doors that produce identical artifacts: **live** (queries run against a real database via a catalog query runner) and **air-gapped** (queries are run offline and their output is bundled; the connector ingests the bundle). MySQL, SQLite, and SQL Server currently provide live connectors. Live connectors resolve their database drivers as optional peers from the adapter package graph or the caller project running the CLI.
 

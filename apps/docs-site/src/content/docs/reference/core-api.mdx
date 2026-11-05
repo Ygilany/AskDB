@@ -5,7 +5,7 @@ description: "Full API reference for @askdb/core: ask(), schema loading, dialect
 
 <p class="doc-eyebrow">Reference · @askdb/core</p>
 
-<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
+<p class="doc-lede"><code>@askdb/core</code> is the NL-to-SQL pipeline. It owns schema loading, prompt construction, the built-in dialects, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
 
 ## `ask(options)`
 
@@ -404,13 +404,13 @@ dialect: "postgres"  // or "mysql" | "sqlite" | "sqlserver" | "cockroachdb" | "m
 | Id | Engine |
 | --- | --- |
 | `"postgres"` | PostgreSQL — `"` quotes, `ILIKE`, `::type` cast, `NOW()`, `\|\|` concat |
-| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres prompt |
+| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres spec and prompt. Outside the 1.0 support claim: AskDB's end-to-end tests don't cover it. |
 | `"mysql"` | MySQL — `` ` `` quotes, `CONCAT()`, `LIKE`, `CAST()`, `NOW()` |
 | `"mariadb"` | MariaDB — MySQL-protocol-compatible; reuses the MySQL prompt |
 | `"sqlite"` | SQLite — dynamic typing, `LIKE`, `date('now')`, `\|\|` concat, `LIMIT` |
 | `"sqlserver"` | SQL Server (T-SQL) — `[bracket]` or `"` quotes, `GETDATE()`, `+`/`CONCAT()`, `CAST()`/`CONVERT()` |
 
-The engine adapter packages (`@askdb/postgres`, `@askdb/mysql`, etc.) export convenience dialect constants (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …), but passing the string id to `ask()` is sufficient — you don't need to install the engine adapter just for SQL generation.
+The engine packages (`@askdb/postgres`, `@askdb/mysql`, etc.) re-export core's dialect constants (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …) for convenience, but passing the string id to `ask()` is sufficient — you don't need to install an engine package just for SQL generation.
 
 ### `DialectSpec`
 

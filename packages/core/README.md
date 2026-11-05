@@ -1,6 +1,6 @@
 # `@askdb/core`
 
-Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, modes, logging, and retrieval input. Bring your own dialect adapter (e.g. `@askdb/postgres`) and your own model.
+NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, modes, logging, retrieval input, and the built-in dialect specs (PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, SQL Server). Pass a dialect id such as `"postgres"` and bring your own model; the engine packages (`@askdb/postgres`, …) add introspection, not SQL generation ([ADR 0029](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0029-core-owns-built-in-dialect-specs.md)).
 
 > **Status:** pre-release beta (`1.0.0-beta.x`); public APIs may still change before 1.0. `0.3.0` moved the Postgres dialect and `@askdb/core/postgres` to `@askdb/postgres`. Runtime AI provider construction lives in `@askdb/ai`; core remains BYO-model and does not read `process.env`. See [`docs/adrs/0002-integration-package-layout.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0002-integration-package-layout.md), [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md), and [`docs/adrs/0006-ai-provider-integration-strategy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0006-ai-provider-integration-strategy.md).
 
@@ -11,7 +11,7 @@ Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, sc
 ```bash
 # `ai` (Vercel AI SDK) is a required peer dependency — your app owns its version
 pnpm add @askdb/core ai
-# Plus a dialect adapter for the engine you target:
+# Only to introspect a database (live, or offline from an export), its engine package:
 pnpm add @askdb/postgres
 # Plus a model — either construct one directly with an AI SDK provider:
 pnpm add @ai-sdk/openai
@@ -50,11 +50,10 @@ import { loadSchema } from "@askdb/core";
 const schema = loadSchema("./fixtures/schemas/orders-users.schema");
 ```
 
-## Minimal example — with the Postgres dialect adapter
+## Minimal example — with the built-in Postgres dialect
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
 import { openai } from "@ai-sdk/openai";
 
 const schema = loadSchema("./fixtures/schemas/orders-users.schema");
@@ -63,7 +62,7 @@ const { sql } = await ask({
   question: "Top 5 customers by lifetime value?",
   schema,
   model: openai("gpt-4o"),
-  dialect: postgresDialect,
+  dialect: "postgres", // or POSTGRES_DIALECT from @askdb/core
 });
 ```
 
@@ -108,7 +107,8 @@ Key rules:
 - `bindPreparedQuery(prepared, values, guardrails)` — local rebind of a `PreparedQuery` (no model call), re-checked under the given schema and tenant scope.
 - `expandTenantScope(policy, scope, resolveTenantDescendants)` — the `subtree` expansion `ask()` runs, for a rebind.
 - `AskDbLanguageModel` — AskDB's public name for the AI SDK language model contract.
-- `AskDialect` — the dialect adapter contract. `@askdb/postgres` exports a ready-made one.
+- `DialectSpec` and the built-in specs (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …, `BUILT_IN_DIALECTS`) — the SQL rules for each built-in engine. The engine packages re-export them.
+- `AskDialect` — the escape-hatch contract for a fully custom generator.
 - `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.
 - `loadSchemaFromJson(raw)` — parse a Schema v2 bundled JSON string (e.g. from an env var).
 - `readSchemaDirectory(dir)` — read a Schema v2 directory into its bundle form (what `askdb bundle` writes).
