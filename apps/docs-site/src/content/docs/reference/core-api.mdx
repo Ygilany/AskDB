@@ -508,6 +508,7 @@ Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prom
 ```ts
 import { formatTenantPolicyWarning, loadSchema } from "@askdb/core";
 
+// A policy with `enforcement: warn`: under `strict`, this problem makes loadSchema() throw.
 const schema = loadSchema("./my-app.schema");
 schema.tenantPolicy?.warnings.map(formatTenantPolicyWarning);
 // ["scopeThrough column on table:public.orders: column table:public.orders#agency_ref is not in schema.json"]
