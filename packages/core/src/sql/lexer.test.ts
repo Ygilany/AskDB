@@ -52,7 +52,7 @@ describe("lexSql", () => {
   });
 
   it("ends SQL Server literals and names where SQL Server does", () => {
-    expect(kinds("0xSELECT 0x1F 1ESELECT 1E5 $1SELECT $5.00 $action \u20acSELECT a\u00a0b a\u200bb a\ufeffb", SQLSERVER_LEXER)).toEqual([
+    expect(kinds("0xSELECT 0x1F 1ESELECT 1E5 $1SELECT $5.00 $action \u20acSELECT a\u00a0b a\u200bb a\ufeffb a@b@c", SQLSERVER_LEXER)).toEqual([
       "number:0x",
       "word:SELECT",
       "number:0x1F",
@@ -70,6 +70,7 @@ describe("lexSql", () => {
       "word:a",
       "word:b",
       "word:a\ufeffb",
+      "word:a@b@c",
     ]);
   });
 

@@ -60,6 +60,7 @@ const RESERVED_FUNCTIONS = new Set([
 const EXPRESSION_PUNCTUATION = new Set(["(", ",", "=", "<", ">", "+", "-", "*", "/", "%", "&", "|", "^", "~", ".", "::"]);
 
 const RESERVED = new Set(SQLSERVER_RESERVED_WORDS);
+const SET_OPERATORS = new Set(["union", "except", "intersect"]);
 
 /**
  * A character allowed in T-SQL code outside strings and quoted names: printable ASCII
@@ -78,7 +79,9 @@ const MONEY_SIGN = /^\p{Sc}$/u;
  *   (U+00A0, U+200B, U+FEFF), symbols, currency signs other than `$`, `\` (a money
  *   sign to SQL Server) and ASCII control characters;
  * - a money sign with no digits after it (`$ .5` is one money literal to SQL Server);
- * - a number written directly against a word or variable (`1ESELECT`, `0xSELECT`).
+ * - a number written directly against a word or variable (`1ESELECT`, `0xSELECT`);
+ * - a `?` written directly against a name or number: Studio binds it as `@p0`, which
+ *   SQL Server reads as part of that name (`x?:` becomes the label `x@p0:`).
  *
  * Model-written SQL contains none of these.
  */
@@ -99,6 +102,10 @@ export function findAmbiguousTsqlText(sql: string, tokens: readonly SqlToken[]):
       from = t.end;
       continue;
     }
+    const prev = tokens[i - 1];
+    if (isPunct(t, "?") && prev?.end === t.start && prev.kind !== "punct" && prev.kind !== "string") {
+      return `'${prev.text}?', a parameter marker written against a name`;
+    }
     if (t.kind !== "number") continue;
     if (MONEY_SIGN.test(t.text)) return `the money sign '${t.text}'`;
     const next = tokens[i + 1];
@@ -108,7 +115,6 @@ export function findAmbiguousTsqlText(sql: string, tokens: readonly SqlToken[]):
   }
   return scanTo(sql.length);
 }
-const SET_OPERATORS = new Set(["union", "except", "intersect"]);
 
 /**
  * The first place `tokens` starts a second T-SQL statement, or `undefined`.
@@ -172,9 +178,9 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
         return introducesExpression(j);
       case "punct": {
         if (t.text !== ")") return EXPRESSION_PUNCTUATION.has(t.text);
-        const at = opener.get(j);
+        const openIndex = opener.get(j);
         // `TOP (5) (SELECT …)`.
-        return at !== undefined && isWord(tokens[at - 1], "top");
+        return openIndex !== undefined && isWord(tokens[openIndex - 1], "top");
       }
       default:
         return false;
@@ -218,8 +224,8 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
       continue;
     }
     if (isPunct(t, ")")) {
-      const at = open.pop();
-      if (at !== undefined) opener.set(i, at);
+      const openIndex = open.pop();
+      if (openIndex !== undefined) opener.set(i, openIndex);
       continue;
     }
     if (!headSeen) {

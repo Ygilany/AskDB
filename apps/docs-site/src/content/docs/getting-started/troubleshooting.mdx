@@ -75,7 +75,7 @@ If you're seeing this on legitimate read questions, the model may be misreading 
 
 ### `SqlValidationError: SQL_MULTI_STATEMENT`
 
-The model returned more than one SQL statement. AskDB refuses multi-statement output. On SQL Server this includes a second statement written without a `;`, such as `SELECT 1 SELECT 2`, because T-SQL doesn't need one between statements (see [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks)). Rephrase the question to ask for a single result, or break it into two separate `ask()` calls.
+The model returned more than one SQL statement. AskDB refuses multi-statement output. On SQL Server this includes a second statement written without a `;`, such as `SELECT 1 SELECT 2`, because T-SQL doesn't need one between statements. On SQL Server it also fires on code AskDB can't split into tokens the way SQL Server does, such as a non-breaking space or a bare `$` outside a string; the message names the character. Use plain spaces, and keep other text inside string literals or `[bracketed]` names (see [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks)). Rephrase the question to ask for a single result, or break it into two separate `ask()` calls.
 
 ### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 

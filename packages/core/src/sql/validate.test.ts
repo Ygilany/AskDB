@@ -259,6 +259,12 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     // A label is a statement; the lexer reads `l:SELECT` as a `:SELECT` parameter.
     [`SELECT 1 l:SELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 l:(SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // `@`, `$` and `#` continue a SQL Server name, so `a@b:` is a label too.
+    [`SELECT 1 a@b:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a@b:DELETE FROM t`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a$b:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // Studio binds `?` as `@p0`, which would extend the name before it.
+    [`SELECT 1 x?:SELECT 2`, "SQL_MULTI_STATEMENT"],
   ] as const)("rejects %s as %s", (sql, rule) => {
     expectRule(sql, rule, SQLSERVER_DIALECT);
   });
@@ -392,6 +398,8 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     [`SELECT 1 AS a WHERE 1 IN ((SELECT 1))`],
     [`SELECT COALESCE((SELECT 1), 0) AS v`],
     [`SELECT CAST((SELECT 1) AS int) AS v`],
+    [`SELECT LEFT((SELECT 'abc'), 1) AS l, RIGHT((SELECT 'abc'), 1) AS r, NULLIF((SELECT 1), 0) AS n`],
+    [`SELECT 1 AS a@b, 2 AS c$d`],
     [`SELECT sys.fn_varbintohexstr((SELECT 0x01)) AS h`],
     [`SELECT [sys].[fn_varbintohexstr]((SELECT 0x01)) AS h`],
     [`SELECT geography::Point((SELECT 47.6), -122.3, 4326).Lat AS lat`],

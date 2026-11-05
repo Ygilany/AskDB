@@ -21,8 +21,9 @@
  * | nested `/* … *\/`         | yes      | no (`/*! … *\/` runs)  | yes        | no     |
  * | `0x`, `1E`, `$`/`€` money | —        | —                      | literal    | —      |
  * | U+00A0 etc. end a name    | —        | —                      | yes        | —      |
+ * | `@` continues a name      | —        | —                      | yes        | —      |
  *
- * The last two rows are `tsqlLiterals`; U+FEFF does not end a SQL Server name.
+ * The last three rows are `tsqlLiterals`; U+FEFF does not end a SQL Server name.
  *
  * The lexer never throws: a string, quoted identifier, or comment that runs off the end
  * of the input is returned with `unterminated: true` so callers can fail closed.
@@ -58,8 +59,8 @@ export type SqlLexerProfile = {
   /**
    * SQL Server's token ends: `0x` with no hex digits, an exponent with no digits (`1E`,
    * `1E+`), and money literals that start with a currency symbol (`$`, `$1.5`, `€`) are
-   * complete literals; U+200B and U+0085 are whitespace; and a name or variable ends at
-   * any whitespace character except U+FEFF. A keyword written right after one of these
+   * complete literals; U+200B and U+0085 are whitespace; and a name or variable continues
+   * through `@` and ends at any whitespace character except U+FEFF. A keyword written right after one of these
    * is its own token, as it is to SQL Server.
    */
   tsqlLiterals: boolean;
@@ -264,9 +265,13 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   let executableOpener = -1;
 
   const isSpace = (c: string): boolean => /\s/.test(c) || (profile.tsqlLiterals && TSQL_EXTRA_SPACE.test(c));
-  /** `WORD_CHAR`, except that SQL Server ends a name at Unicode whitespace. */
+  /**
+   * `WORD_CHAR`, except that a SQL Server name also continues through `@` (`a@b` is one
+   * name, as `a$b` and `a#b` are) and ends at Unicode whitespace other than U+FEFF.
+   */
   const isWordChar = (c: string): boolean =>
-    WORD_CHAR.test(c) && !(profile.tsqlLiterals && c !== "\ufeff" && isSpace(c));
+    (WORD_CHAR.test(c) || (profile.tsqlLiterals && c === "@")) &&
+    !(profile.tsqlLiterals && c !== "\ufeff" && isSpace(c));
 
   const push = (
     kind: SqlTokenKind,

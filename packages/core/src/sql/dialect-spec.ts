@@ -234,8 +234,8 @@ export const SQLSERVER_DIALECT: DialectSpec = {
   // is already in the base denylist; T-SQL uses EXEC / EXECUTE for procs, which also
   // covers `EXEC sp_…` / `EXEC xp_…`.) T-SQL runs a batch without semicolons —
   // `SELECT 1 SHUTDOWN` is two statements — so statement-level verbs are listed here
-  // even though they cannot appear inside a SELECT. The last line is procedural and
-  // control-flow verbs (#327); `end`, `fetch` and `with` stay allowed for CASE … END,
+  // even though they cannot appear inside a SELECT. The last two lines are procedural,
+  // cursor and control-flow verbs (#327); `end`, `fetch` and `with` stay allowed for CASE … END,
   // OFFSET … FETCH and CTEs.
   extraForbiddenKeywords: [
     "exec", "execute", "merge", "openrowset", "openquery", "opendatasource",
