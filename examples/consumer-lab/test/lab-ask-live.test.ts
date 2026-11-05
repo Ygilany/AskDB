@@ -138,9 +138,10 @@ describe("[sqlite] lab-ask-live-spawned", () => {
 
   it.for([
     ["raw", `model:      live ${MODEL_ID} at https://api.openai.com/v1, via createOpenAI() → ask()`],
-    ["client", "model:      live, via createAskDb() + @askdb/ai-openai (live/askdb.config.ts)"],
+    ["client", "model:      live, via createAskDb() + built-in openai provider (live/askdb.config.ts)"],
   ] as const)("asks the live model with the key and model it read, through the %s path", ([via, modelLine], ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
+    if (via === "client") needsCapability(ctx, "client-built-in-providers");
     const before = spawned.requests().length;
 
     const run = labAsk(["--model", "live", "--via", via, text("agency-names")], { ...spawned.env, LAB_LIVE_MODEL_ID: MODEL_ID });
@@ -154,6 +155,7 @@ describe("[sqlite] lab-ask-live-spawned", () => {
   // The in-process case covers the raw path; this is the client path's own failure report, in the CLI's own output.
   it("reports the client path's failed model call with the key the provider echoed redacted, exit 1", (ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
+    needsCapability(ctx, "client-built-in-providers");
 
     const run = labAsk(["--model", "live", "--via", "client", text("client-named-sato")], spawned.env);
 

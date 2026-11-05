@@ -131,7 +131,7 @@ examples/consumer-lab/
 | Area | What the app uses |
 |---|---|
 | Core | `ask`, `loadSchema`, error classes and predicates, `validateSensitiveReferences` and `bindPreparedQuery` from `@askdb/core` |
-| Client | `createAskDb` from `@askdb/client` with `@askdb/ai-openai` |
+| Client | `createAskDb` from `@askdb/client` with its built-in `openai` provider (`@askdb/ai`) |
 | Raw model | a `LanguageModel` built with `createOpenAI` from `@ai-sdk/openai`. This keeps the adapter path and the raw-model path equally covered, per AGENTS.md. |
 | HTTP API | `createAskDbHttpServer` and the `askdb-http` bin |
 | CLI and Studio | the `askdb` bin |
@@ -181,7 +181,7 @@ Flags:
 
 - `--model` defaults to `replay`; `--model live` asks the live OpenAI model through either path (#448). Only the flag switches it: `LAB_LIVE_MODEL=1`, which turns on the live suite, doesn't, so no exported variable spends (maintainer decision on #448). It refuses in CI and without a key, before anything runs, and never falls back to replay.
 - `--sql` bypasses the model through `deps.generateText`, which the docs name as the mock seam.
-- `--via` picks the model path: `raw` (default), a `createOpenAI({ baseURL })` model passed to `ask()`; or `client`, `createAskDb` with `@askdb/ai-openai` configured by `providerConfig.openai.baseUrl`. Both must send the same prompt and return the same SQL.
+- `--via` picks the model path: `raw` (default), a `createOpenAI({ baseURL })` model passed to `ask()`; or `client`, `createAskDb` with its built-in `openai` provider, configured by `providerConfig.openai.baseUrl`. Both must send the same prompt and return the same SQL.
 
 ### `pnpm lab ui`
 
@@ -193,7 +193,7 @@ A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw
 
 `src/model/replay-server.ts` is a small OpenAI-compatible HTTP server. It implements non-streaming `POST /v1/responses` and `/v1/chat/completions`.
 
-- **In-process tests** point `createOpenAI({ baseURL })` (the raw-model path) or `@askdb/ai-openai` via config `providerConfig.openai.baseUrl` (the adapter path) at the server. Both are documented.
+- **In-process tests** point `createOpenAI({ baseURL })` (the raw-model path) or `createAskDb`'s built-in `openai` provider via config `providerConfig.openai.baseUrl` (the adapter path) at the server. Both are documented.
 - **CLI, HTTP API and Studio tests** use the same server through `askdb.config.ts`. That makes every surface run through the real provider wiring, with no special hooks.
 
 **Routing:**

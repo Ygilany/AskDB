@@ -8,7 +8,7 @@
  *
  *   via raw     (default) a Vercel AI SDK `LanguageModel` from `createOpenAI()`, passed to
  *               `ask()` from `@askdb/core` (`askRaw`, in `ask.ts`);
- *   via client  `createAskDb` from `@askdb/client` with `@askdb/ai-openai`, configured by
+ *   via client  `createAskDb` from `@askdb/client` with its built-in `openai` provider, configured by
  *               `askdb.config.ts` (`providerConfig.openai.baseUrl`), or for the live model
  *               by `live/askdb.config.ts`.
  *
@@ -21,7 +21,6 @@
  * key with `redact`.
  */
 import { createHash } from "node:crypto";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { AskDbError } from "@askdb/core";
@@ -88,7 +87,8 @@ export interface AskRun {
 }
 
 /**
- * Path (b): `createAskDb` with the OpenAI adapter (path (a) is `askRaw`, in `ask.ts`).
+ * Path (b): `createAskDb` with the built-in `openai` provider, the default when no `providers` are
+ * passed (`reference/client-api.mdx`); path (a) is `askRaw`, in `ask.ts`.
  * The model comes from `askdb.config.ts`, whose `baseUrl` reads LAB_REPLAY_BASE_URL, or for
  * the live model from `live/askdb.config.ts`, which reads OPENAI_API_KEY and
  * LAB_LIVE_MODEL_ID and has no base URL. The dialect is passed explicitly: MariaDB is
@@ -105,7 +105,6 @@ async function askClient(dialect: SupportedDialect, question: string, schemaDir:
   }
   const askdb = createAskDb({
     config: getAskDbRuntimeConfig(),
-    providers: [openaiProvider],
     schema: { path: schemaDir },
     dialect,
     onResolve: (info) => log(`resolved:   ${JSON.stringify(info)}`),
@@ -219,12 +218,12 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
         liveReply = reply;
         result = await timed("askMs", () => askWithModel(dialect, question, schemaDir, model));
       } else if (live) {
-        out("model:      live, via createAskDb() + @askdb/ai-openai (live/askdb.config.ts)");
+        out("model:      live, via createAskDb() + built-in openai provider (live/askdb.config.ts)");
         result = await timed("askMs", () => askClient(dialect, question, schemaDir, { live }, out));
       } else {
         replay = await startReplayServer();
         const baseURL = replay.baseURL(dialect);
-        out(`model:      replay at ${baseURL}, via ${via === "raw" ? "createOpenAI() → ask()" : "createAskDb() + @askdb/ai-openai"}`);
+        out(`model:      replay at ${baseURL}, via ${via === "raw" ? "createOpenAI() → ask()" : "createAskDb() + built-in openai provider"}`);
         result = await timed("askMs", () => (via === "raw" ? askRaw(dialect, question, schemaDir, baseURL) : askClient(dialect, question, schemaDir, { replayURL: baseURL }, out)));
         showPrompt();
       }

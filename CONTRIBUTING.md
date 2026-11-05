@@ -58,7 +58,7 @@ pnpm lab:use .                                    # repack this checkout and rei
 pnpm lab:use git:origin/main                      # …or pack a branch, tag or commit
 pnpm lab:use npm:askdb@1.0.0-beta.40              # …or a published release (or npm:<dist-tag>)
 pnpm lab ask --db mysql "For each agency, show its id and how many active programs it runs."   # replay model, no API key
-pnpm lab ask --db sqlite --via client "…"          # same question through createAskDb + @askdb/ai-openai
+pnpm lab ask --db sqlite --via client "…"          # same question through createAskDb + built-in openai provider
 pnpm lab ask --db postgres --sql "SELECT 1"       # skip the model: SQL, validation outcome, rows
 pnpm lab ask --db postgres --model live "…"       # the live OpenAI model, any question (needs OPENAI_API_KEY; never in CI)
 pnpm lab ui                                       # one input on the engines you pick, side by side, replay or live, raw or client

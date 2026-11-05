@@ -71,6 +71,25 @@ function httpApiLeavesDriversOptional(): boolean {
 }
 
 /**
+ * Whether the installed `@askdb/client` builds models with `@askdb/ai`'s built-in providers when
+ * `createAskDb` gets no `providers` (`reference/client-api.mdx`, `providers`: "Default: every
+ * provider built into `@askdb/ai`"), as the lab's client path calls it. Detected from its
+ * published manifest: the client declares each built-in provider's AI SDK package, among them
+ * `@ai-sdk/openai`, as an optional peer (`reference/packages.mdx`, "Provider SDKs"). Releases
+ * before the built-ins declare none, and their `createAskDb` requires `providers` from a
+ * separate adapter package. A missing package is a broken install, and throws.
+ */
+function clientHasBuiltInProviders(): boolean {
+  const manifest = join(LAB_ROOT, "node_modules", "@askdb", "client", "package.json");
+  if (!existsSync(manifest)) throw new Error(`${manifest} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
+  const { peerDependencies = {}, peerDependenciesMeta = {} } = JSON.parse(readFileSync(manifest, "utf8")) as {
+    peerDependencies?: Record<string, string>;
+    peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  };
+  return "@ai-sdk/openai" in peerDependencies && peerDependenciesMeta["@ai-sdk/openai"]?.optional === true;
+}
+
+/**
  * `ask()` on the dialect's tenant artifact (the lab's policy overlay), with `sql` as the
  * model's reply through the documented `deps.generateText` seam, so no model is involved.
  * AskDB and the lab's tenant module are loaded here, so the suites that never ask a
@@ -235,6 +254,12 @@ const DETECTORS = {
    * on `pg`.
    */
   "http-api-optional-drivers": httpApiLeavesDriversOptional,
+  /**
+   * `createAskDb({ config })` with no `providers`, the client path every scenario that compares
+   * the two model paths takes (`reference/client-api.mdx`). Before `@askdb/ai`'s built-in
+   * providers (#198), the client needed an adapter from a separate `@askdb/ai-*` package.
+   */
+  "client-built-in-providers": clientHasBuiltInProviders,
 } satisfies Record<string, () => boolean>;
 
 /** Capabilities whose probe runs `ask()`, which is async. A scenario awaits `needsCapability` for these. */

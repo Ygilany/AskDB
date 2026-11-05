@@ -30,7 +30,6 @@
  */
 import { SensitiveReferenceError } from "@askdb/core";
 import { createOpenAI } from "@ai-sdk/openai";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -419,8 +418,9 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 describe("[postgres] sensitive-omit-client", () => {
   it("sensitive-omit-client: createAskDb().ask() with the omitSensitiveIdentifiersFromNlToSqlPrompt override sends a prompt without email and ssn", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
+    needsCapability(ctx, "client-built-in-providers");
     bootstrapAskDbEnv({ cwd: LAB_ROOT });
-    const askdb = createAskDb({ config: getAskDbRuntimeConfig(), providers: [openaiProvider], schema: { path: artifact("postgres") } });
+    const askdb = createAskDb({ config: getAskDbRuntimeConfig(), schema: { path: artifact("postgres") } });
     // The documented per-call `model` override, pointed at the replay server.
     const model = createOpenAI({ baseURL: replay.baseURL("postgres"), apiKey: API_KEY })(MODEL_ID);
     const text = question(CONTROL).text;
