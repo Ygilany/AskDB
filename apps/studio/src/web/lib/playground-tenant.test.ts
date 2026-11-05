@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TENANT_SQL_MODE } from "@askdb/core";
-import { historyTenant, PLAYGROUND_DEFAULT_TENANT_SQL_MODE } from "./playground-tenant";
+import { historyTenant, historyTenantParams, PLAYGROUND_DEFAULT_TENANT_SQL_MODE } from "./playground-tenant";
 
 describe("Playground tenant SQL mode", () => {
   // The browser bundle can't import core's constant, so the Playground keeps a copy:
@@ -13,16 +13,19 @@ describe("Playground tenant SQL mode", () => {
 describe("historyTenant", () => {
   // A replayed sql-params entry holds marker SQL; Execute needs the tenant params it was
   // saved with, in marker order, or every driver refuses the statement.
-  it("rebuilds a sql-params entry's tenant params in marker order", () => {
-    expect(historyTenant({ sqlMode: "sql-params", tenantParams: { "1": "42", "2": "7" } })).toEqual({
+  // Twelve params, so a save or replay that orders keys as text ("10" before "2") fails.
+  it("replays a sql-params result's tenant params as saved, in marker order", () => {
+    const params = Array.from({ length: 12 }, (_, i) => `agency-${i + 1}`);
+    expect(historyTenant({ sqlMode: "sql-params", tenantParams: historyTenantParams(params) })).toEqual({
       enabled: true,
       sqlMode: "sql-params",
       bindings: [],
-      params: ["42", "7"],
+      params,
     });
   });
 
-  it("has no tenant params for an entry saved without any (sql-only)", () => {
-    expect(historyTenant({ sqlMode: "sql-only" })).toBeNull();
+  it("saves and replays no tenant params for a result without any (sql-only)", () => {
+    expect(historyTenantParams([])).toBeUndefined();
+    expect(historyTenant({ sqlMode: "sql-only", tenantParams: historyTenantParams([]) })).toBeNull();
   });
 });
