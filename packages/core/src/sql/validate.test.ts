@@ -223,6 +223,10 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     // Only a keyword, an operator, a comma or a TOP count may come before a subquery.
     [`SELECT {d '2020-01-01'} (SELECT 2)`, "SQL_MULTI_STATEMENT"],
     [`SELECT $ (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // Studio binds `?` as `@p0`, a value.
+    [`SELECT ? (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // A sort column named offset is no OFFSET clause.
+    [`SELECT 1 AS offset ORDER BY offset (SELECT 2)`, "SQL_MULTI_STATEMENT"],
     // SQL Server ends these literals where a keyword starts, so the keyword is a token.
     [`SELECT 0xSELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1ESELECT 2`, "SQL_MULTI_STATEMENT"],
@@ -357,6 +361,7 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     [`SELECT name FROM sys.objects ORDER BY (SELECT NULL)`],
     [`SELECT name FROM sys.objects ORDER BY name OFFSET (SELECT 0) ROWS FETCH NEXT (SELECT 1) ROWS ONLY`],
     [`SELECT name FROM sys.objects ORDER BY name OFFSET 0 ROWS FETCH FIRST (SELECT 1) ROWS ONLY`],
+    [`SELECT 1 AS offset ORDER BY offset OFFSET (SELECT 0) ROWS`],
     [`SELECT SYSDATETIMEOFFSET() AT TIME ZONE (SELECT 'UTC') AS z`],
     [`SELECT 1 AS a, ((SELECT 1)) AS b`],
     [`SELECT 1 AS a WHERE 1 IN ((SELECT 1))`],

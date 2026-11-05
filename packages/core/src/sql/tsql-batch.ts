@@ -86,7 +86,8 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
     const prev = tokens[j - 1];
     switch (word) {
       case "offset":
-        return orderBy;
+        // After a sort item, not as one (`ORDER BY offset` sorts by a column).
+        return orderBy && !isWord(prev, "by") && !isPunct(prev, ",");
       case "next":
       case "first":
         return isWord(prev, "fetch");
