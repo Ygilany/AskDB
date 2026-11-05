@@ -229,10 +229,11 @@ export type AskPipelineOptions = {
    * ({@link DEFAULT_TENANT_SQL_MODE}) replaces them with the dialect's driver
    * markers (`$N` for Postgres/CockroachDB, `?` for MySQL/MariaDB/SQLite, `@pN` for
    * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
-   * with the two arrays concatenated. A custom `AskDialect` has no default: with a
-   * tenant scope it must set this (`"sql-params"` gives `$N` markers), or `ask()`
-   * throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it
-   * does on every dialect for a value that is neither `"sql-params"` nor `"sql-only"`.
+   * with the two arrays concatenated. A custom `AskDialect`, or a `DialectSpec` whose
+   * `id` isn't built in, has no default: with a tenant scope it must set this
+   * (`"sql-params"` gives `$N` markers), or `ask()` throws `TenantScopeError`
+   * (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it does on every dialect for
+   * a value that is neither `"sql-params"` nor `"sql-only"`.
    * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
    * parameters (a tool that takes one SQL string); it throws `TenantScopeError`
    * (`UNESCAPABLE_TENANT_ID`) for a tenant ID that isn't printable ASCII or that
@@ -357,16 +358,17 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     tenantPolicy && options.tenantScope
       ? await expandTenantScope(tenantPolicy, options.tenantScope, options.resolveTenantDescendants)
       : options.tenantScope;
-  // AskDB can't know a custom AskDialect's driver markers, and the `$N` the default would
-  // emit is a money constant on SQL Server (`agency_id = $1` runs and matches agency 1).
-  // So the host chooses the mode, before any retrieval or model call (ADR 0024). A mode
-  // that isn't one of the two is refused on every dialect, never read as either.
+  // AskDB picks driver markers only for an engine it knows. For any other dialect, the `$N`
+  // the default would emit can be a money constant (SQL Server: `agency_id = $1` runs and
+  // matches agency 1), so the host chooses the mode, before any retrieval or model call
+  // (ADR 0024). A mode that isn't one of the two is refused on every dialect.
   if (tenantPolicy && options.tenantSqlMode != null) assertTenantSqlMode(options.tenantSqlMode, "ask()");
-  if (tenantPolicy && options.tenantSqlMode == null && typeof options.dialect === "object" && isAskDialect(options.dialect)) {
+  if (tenantPolicy && options.tenantSqlMode == null && !knowsTenantMarkers(options.dialect)) {
     throw new TenantScopeError(
-      "A custom AskDialect with a tenant scope needs an explicit tenantSqlMode: AskDB can't tell which " +
-        "parameter markers its driver takes. Set tenantSqlMode: 'sql-params' if the driver binds $1, $2, … " +
-        "(not SQL Server, which reads $1 as a money constant), or 'sql-only' to inline the IDs as escaped literals.",
+      "A custom AskDialect, or a DialectSpec whose id isn't a built-in dialect, needs an explicit " +
+        "tenantSqlMode with a tenant scope: AskDB can't tell which parameter markers its driver takes. " +
+        "Set tenantSqlMode: 'sql-params' if the driver binds $1, $2, … (not SQL Server, which reads $1 as a " +
+        "money constant), or 'sql-only' to inline the IDs as escaped literals.",
       "TENANT_SQL_MODE_REQUIRED",
     );
   }
@@ -620,6 +622,15 @@ function tenantDecls(namedSql: string, dialect: DialectSpec): PreparedQuery["par
 
 function isAskDialect(value: DialectSpec | AskDialect): value is AskDialect {
   return typeof (value as AskDialect).generate === "function";
+}
+
+/**
+ * Whether AskDB knows the driver markers for `dialect`: a built-in id, or a `DialectSpec` under
+ * one. An unknown string id isn't refused here: `ask()` throws `UnknownDialectError` for it.
+ */
+function knowsTenantMarkers(dialect: AskDialectInput): boolean {
+  if (typeof dialect === "string") return true;
+  return !isAskDialect(dialect) && isBuiltInDialectId(dialect.id);
 }
 
 /** Return the DialectSpec when the input is a built-in id or spec; undefined for custom AskDialect. */

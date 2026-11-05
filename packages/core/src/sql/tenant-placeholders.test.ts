@@ -11,7 +11,7 @@ import {
 } from "./tenant-placeholders.js";
 import { ask, type AskDialect } from "../ask.js";
 import { SchemaParseError, TenantScopeError } from "../errors.js";
-import { getDialectSpec, type BuiltInDialectId } from "./dialect-spec.js";
+import { getDialectSpec, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
 import {
   placeholderForRoot as publicPlaceholderForRoot,
@@ -157,6 +157,26 @@ describe("ask() — tenant SQL output modes", () => {
       tenantSqlMode: "sql-params",
     });
     expect(chosen.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
+  });
+
+  // AskDB picks tenant markers only for an engine it knows: a built-in id, or a DialectSpec
+  // under one. Spread from SQL Server under another id, the spec's markers are unknown too,
+  // and the `$1` a default would give matches agency 1's rows there (ADR 0024).
+  it("refuses a DialectSpec whose id isn't built in, and keeps the default under a built-in id", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
+    }));
+    const sqlServer = getDialectSpec("sqlserver");
+    const run = (dialect: DialectSpec) =>
+      ask({ question: "count orders", schema, model: fakeModel, dialect, tenantScope: agencyScope, deps: { generateText: generateText as never } });
+
+    const error = await run({ ...sqlServer, id: "mssql" } as unknown as DialectSpec).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    expect(generateText).not.toHaveBeenCalled();
+    // A spread that keeps the built-in id is still that engine, with its own markers.
+    const spread = await run({ ...sqlServer, blockedFunctions: [...(sqlServer.blockedFunctions ?? []), "my_udf"] });
+    expect(spread.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = @p0");
   });
 
   // A mode ask() doesn't recognise is no choice: rendered as sql-params, it would give a

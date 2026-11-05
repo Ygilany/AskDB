@@ -802,6 +802,7 @@ describe("ask — a tenant ID containing a backslash (#360, #371)", () => {
   it.each<[string, AskDialectInput]>([
     ["a custom AskDialect (#360)", { generate: async () => ({ sql: scopedSql }) }],
     ["the built-in postgres dialect (#371)", "postgres"],
+    ["the built-in mysql dialect (#371)", "mysql"],
   ])("sql-only mode refuses it with %s instead of returning SQL", async (_label, dialect) => {
     const error = await ask({
       question: "count orders",
