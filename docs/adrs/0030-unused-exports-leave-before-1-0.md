@@ -29,7 +29,7 @@ Accepted (2026-11-05, the coordinating thread's answer to Stop 1 of #275 and #35
 
 ## Decision
 
-- Before 1.0, a public export that nothing in the repo calls and no page documents is removed in one step, with a minor changeset whose upgrade notes name it and its replacement. An export that hosts are documented or known to use is deprecated first, as the renamed config keys marked "Removed at 1.0" were.
+- Before 1.0, when AskDB drops a public export that nothing in the repo calls and no page documents, it removes the export in one step. A minor changeset's upgrade notes name the export and its replacement. Which exports to drop is decided one by one (#654). An export that hosts are documented or known to use is deprecated first, as the renamed config keys marked "Removed at 1.0" were (#651).
 - An engine package's catalog SQL is internal. It is public only when the engine has a mode that needs a person to run the queries, today `@askdb/postgres`'s from-export mode.
 - A unit test reads catalog SQL from its engine's own `connector/describe.ts`, never through the package entry.
 
@@ -37,4 +37,4 @@ Accepted (2026-11-05, the coordinating thread's answer to Stop 1 of #275 and #35
 
 - A host that imports a removed name fails to compile or import after it upgrades. The changesets list the replacements, and the upgrade notes (#628) carry them.
 - If MySQL, SQLite or SQL Server gains a from-export mode, its catalog SQL becomes public through `templates()`, as Postgres's is.
-- This ADR doesn't cover functions exported from a module but used only inside it, such as `escapeSqlLiteralList` in `@askdb/core`. They aren't public, so they can lose `export` at any time.
+- This ADR doesn't cover functions exported from a module but used only inside it, such as `escapeSqlLiteralList` in `@askdb/core`. They aren't public, so they can lose `export` at any time (#652).
