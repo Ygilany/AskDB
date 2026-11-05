@@ -98,15 +98,12 @@ function parseOptions(argv: readonly string[]): CliOptions {
     }
   })();
   const listen = rt?.structured.studio?.listen;
-  const portFromEnv = rt?.ai.aiEnv.ASKDB_STUDIO_PORT;
-  const parsedPort =
-    listen?.port ??
-    (portFromEnv !== undefined && portFromEnv.trim() !== "" ? Number(portFromEnv) : NaN);
+  const parsedPort = listen?.port ?? NaN;
   const introspectOut = rt?.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR;
   const opts: CliOptions = {
     schema: introspectOut,
     schemaFromFlag: false,
-    host: listen?.host ?? rt?.ai.aiEnv.ASKDB_STUDIO_HOST ?? "127.0.0.1",
+    host: listen?.host ?? "127.0.0.1",
     port: Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 5556,
   };
 
@@ -175,14 +172,15 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "",
       "Options:",
       "  -s, --schema <dir>   Schema v2 directory (default: introspection.outputDir from",
-      "                       askdb.config, or ASKDB_INTROSPECT_OUT env, or ./askdb/)",
-      "  --port <number>      Port to listen on (default: 5556 or ASKDB_STUDIO_PORT)",
-      "  --host <host>        Host to bind (default: 127.0.0.1 or ASKDB_STUDIO_HOST)",
+      "                       askdb.config, or ./askdb/)",
+      "  --port <number>      Port to listen on (default: studio.listen.port from askdb.config, or 5556)",
+      "  --host <host>        Host to bind (default: studio.listen.host from askdb.config, or 127.0.0.1)",
       "  -V, --version        Print package version",
       "  -h, --help           Print this help",
       "",
-      "AI enrichment and sample NL-to-SQL use OPENAI_API_KEY. Override the model",
-      "with ASKDB_AI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
+      "AI enrichment and sample NL-to-SQL use the ai block in askdb.config: ai.provider,",
+      "the key in ai.providerConfig.<provider>.apiKey, and the model in ai.language.model.",
+      "Bind any value to an environment variable with env(\"NAME\").",
       "",
     ].join("\n"),
   );

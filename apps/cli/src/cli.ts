@@ -216,14 +216,14 @@ program
   .option("--log-level <level>", "Structured log level (trace|debug|info|warn|error|fatal|silent)")
   .option("--log-file <path>", "Append structured JSON logs to this file")
   .option("--log-stdout", "Mirror structured JSON logs to stdout", false)
-  .option("--correlation-id <id>", "Correlation ID for logs (overrides ASKDB_CORRELATION_ID)")
+  .option("--correlation-id <id>", "Correlation ID for logs (overrides logging.correlationId in askdb.config)")
   .option(
     "--mock-sql <sql>",
-    "Deterministic NL→SQL for tests (bypasses live model call). Also via ASKDB_MOCK_SQL.",
+    "Deterministic NL→SQL for tests (bypasses live model call). Also via dev.mockSql in askdb.config.",
   )
   .option(
     "--mode <id>",
-    `Operating mode (${formatAskDbModesV1()}); default schema_only. Override with ASKDB_MODE`,
+    `Operating mode (${formatAskDbModesV1()}); default: modes.askdbMode in askdb.config, else schema_only`,
   )
   .option(
     "--omit-sensitive-from-prompt",
@@ -262,7 +262,7 @@ program
       const aiConfig = mockSql ? undefined : ai.resolveAiConfig(runtime.ai.aiEnv);
       if (!mockSql && !aiConfig) {
         console.error(ai.keyMissingMessage("NL→SQL generation"));
-        console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
+        console.error("Tip: in tests, pass --mock-sql or set dev.mockSql in askdb.config to bypass live model calls.");
         process.exitCode = 1;
         return;
       }

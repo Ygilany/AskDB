@@ -14,7 +14,7 @@ export const sqliteConnectorProvider = defineLiveConnectorProvider({
   runtimeKey: "sqliteFile",
   connectionNoun: "a file path",
   missingConnection: {
-    cli: "Provide --url <path-to-sqlite-file> (or set introspection.providerConfig.sqlite.file / ASKDB_INTROSPECT_SQLITE_FILE).",
+    cli: "Provide --url <path-to-sqlite-file> (or set introspection.providerConfig.sqlite.file in askdb.config).",
     config: "No SQLite file configured. Set introspection.providerConfig.sqlite.file in askdb.config.ts.",
   },
   fromExportUnsupported: "--from-export is currently supported only for --engine postgres (got sqlite).",

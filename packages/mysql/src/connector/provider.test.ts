@@ -20,7 +20,7 @@ describe("mysqlConnectorProvider", () => {
     expect(resolve({ runtime: runtime(), surface: "cli" })).toEqual({
       ok: false,
       error:
-        "Provide --url <mysql-url> (or set introspection.providerConfig.mysql.databaseUrl / ASKDB_INTROSPECT_MYSQL_URL / DATABASE_URL).",
+        "Provide --url <mysql-url> (or set introspection.providerConfig.mysql.databaseUrl in askdb.config).",
     });
     expect(resolve({ runtime: runtime(), surface: "studio" })).toEqual({
       ok: false,

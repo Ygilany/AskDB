@@ -144,7 +144,7 @@ async function runIntrospectCommand(
   }
   if (!opts.print && !opts.diff && !opts.out) {
     throw new Error(
-      "Provide one output mode: --out <dir>, --print, or --diff <existing-dir> (or set ASKDB_INTROSPECT_OUT to default --out).",
+      "Provide one output mode: --out <dir>, --print, or --diff <existing-dir> (or set introspection.outputDir in askdb.config to default --out).",
     );
   }
   if ([opts.print, Boolean(opts.diff), Boolean(opts.out)].filter(Boolean).length > 1) {
@@ -285,63 +285,122 @@ function buildFilters(opts: CliOptions): IntrospectionFilters | undefined {
   return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
+/**
+ * Every flag `askdb introspect` accepts. `parseOptions` and `printHelp` both read this table,
+ * so the help can't leave out a flag the parser takes (#281).
+ */
+const INTROSPECT_FLAGS: readonly {
+  /** Spellings, short form first: `["-v", "--verbose"]`. */
+  names: readonly string[];
+  /** Placeholder for the flag's value, e.g. `<dir>`; absent for a boolean flag. */
+  value?: string;
+  help: string;
+  apply(opts: CliOptions, value: string): void;
+}[] = [
+  {
+    names: ["--engine"],
+    value: "<id>",
+    help: "postgres, mysql, sqlite, sqlserver or prisma. Default: introspection.provider.",
+    apply: (opts, value) => (opts.engine = value),
+  },
+  {
+    names: ["--url"],
+    value: "<url>",
+    help: "Live database connection string (a file path for SQLite).",
+    apply: (opts, value) => (opts.url = value),
+  },
+  {
+    names: ["--from-export"],
+    value: "<bundle-dir>",
+    help: "Read a previously exported bundle instead of a live database. Postgres only.",
+    apply: (opts, value) => (opts.fromExport = value),
+  },
+  {
+    names: ["--prisma-schema"],
+    value: "<schema.prisma|schema-dir>",
+    help: "Prisma schema file or directory. With --engine prisma.",
+    apply: (opts, value) => (opts.prismaSchema = value),
+  },
+  {
+    names: ["--out"],
+    value: "<dir>",
+    help: "Write the schema artifact here. Default: introspection.outputDir.",
+    apply: (opts, value) => (opts.out = value),
+  },
+  {
+    names: ["--print"],
+    help: "Print the introspection result without writing files.",
+    apply: (opts) => (opts.print = true),
+  },
+  {
+    names: ["--diff"],
+    value: "<existing-dir>",
+    help: "Diff the introspection result against an existing schema artifact.",
+    apply: (opts, value) => (opts.diff = value),
+  },
+  {
+    names: ["--schema-id"],
+    value: "<id>",
+    help: "Identifier written into schema.json. Default: the output directory's name.",
+    apply: (opts, value) => (opts.schemaId = value),
+  },
+  {
+    names: ["--schemas"],
+    value: "<a,b>",
+    help: "Database schemas to include (MySQL/MariaDB: databases). Default: introspection.schemas.",
+    apply: (opts, value) => (opts.schemas = parseList(value)),
+  },
+  {
+    names: ["--exclude-schemas"],
+    value: "<a,b>",
+    help: "Database schemas to skip.",
+    apply: (opts, value) => (opts.excludeSchemas = parseList(value)),
+  },
+  {
+    names: ["--tables"],
+    value: "<glob[,glob]>",
+    help: "Tables to include. Repeatable; values accumulate.",
+    apply: (opts, value) => (opts.tables = [...(opts.tables ?? []), ...parseList(value)]),
+  },
+  {
+    names: ["-v", "--verbose"],
+    help: "Emit structured JSON logs (info) to stderr.",
+    apply: (opts) => (opts.verbose = true),
+  },
+  {
+    names: ["--log-level"],
+    value: "<level>",
+    help: "Structured log level (trace|debug|info|warn|error|fatal|silent). Default: logging.level.",
+    apply: (opts, value) => (opts.logLevel = value),
+  },
+  {
+    names: ["--log-file"],
+    value: "<path>",
+    help: "Append structured JSON logs to this file. Default: logging.logFile.",
+    apply: (opts, value) => (opts.logFile = value),
+  },
+  {
+    names: ["--log-stdout"],
+    help: "Mirror structured JSON logs to stdout. Default: logging.logStdout.",
+    apply: (opts) => (opts.logStdout = true),
+  },
+  {
+    names: ["--correlation-id"],
+    value: "<id>",
+    help: "Correlation ID for logs. Default: logging.correlationId.",
+    apply: (opts, value) => (opts.correlationId = value),
+  },
+];
+
+const FLAG_BY_NAME = new Map(INTROSPECT_FLAGS.flatMap((flag) => flag.names.map((name) => [name, flag] as const)));
+
 function parseOptions(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
-    switch (arg) {
-      case "--url":
-        opts.url = readValue(argv, ++i, arg);
-        break;
-      case "--from-export":
-        opts.fromExport = readValue(argv, ++i, arg);
-        break;
-      case "--prisma-schema":
-        opts.prismaSchema = readValue(argv, ++i, arg);
-        break;
-      case "--out":
-        opts.out = readValue(argv, ++i, arg);
-        break;
-      case "--print":
-        opts.print = true;
-        break;
-      case "--diff":
-        opts.diff = readValue(argv, ++i, arg);
-        break;
-      case "--engine":
-        opts.engine = readValue(argv, ++i, arg);
-        break;
-      case "--schema-id":
-        opts.schemaId = readValue(argv, ++i, arg);
-        break;
-      case "--schemas":
-        opts.schemas = parseList(readValue(argv, ++i, arg));
-        break;
-      case "--exclude-schemas":
-        opts.excludeSchemas = parseList(readValue(argv, ++i, arg));
-        break;
-      case "--tables":
-        opts.tables = [...(opts.tables ?? []), ...parseList(readValue(argv, ++i, arg))];
-        break;
-      case "-v":
-      case "--verbose":
-        opts.verbose = true;
-        break;
-      case "--log-level":
-        opts.logLevel = readValue(argv, ++i, arg);
-        break;
-      case "--log-file":
-        opts.logFile = readValue(argv, ++i, arg);
-        break;
-      case "--log-stdout":
-        opts.logStdout = true;
-        break;
-      case "--correlation-id":
-        opts.correlationId = readValue(argv, ++i, arg);
-        break;
-      default:
-        throw new Error(`Unknown option: ${arg}`);
-    }
+    const flag = FLAG_BY_NAME.get(arg);
+    if (!flag) throw new Error(`Unknown option: ${arg}`);
+    flag.apply(opts, flag.value ? readValue(argv, ++i, arg) : "");
   }
   return opts;
 }
@@ -374,13 +433,23 @@ function inferSchemaId(path: string | undefined): string | undefined {
 }
 
 function printHelp(): void {
+  const optionLines = [
+    ...INTROSPECT_FLAGS.map((flag) => ({
+      usage: flag.names.join(", ") + (flag.value ? ` ${flag.value}` : ""),
+      help: flag.help,
+    })),
+    // Handled before option parsing, in runIntrospectCli.
+    { usage: "-V, --version", help: "Print the askdb version." },
+    { usage: "-h, --help", help: "Print this help." },
+  ];
+  const width = Math.max(...optionLines.map((line) => line.usage.length)) + 2;
   process.stdout.write(
     [
       "askdb introspect - Schema introspection for AskDB",
       "",
       "Usage:",
-      "  askdb introspect                                    (Postgres: DATABASE_URL + ASKDB_INTROSPECT_OUT from askdb.config after bootstrap)",
-      "  askdb introspect --out <dir>                        (uses DATABASE_URL from env/.env)",
+      "  askdb introspect                                    (engine, connection and output directory from askdb.config)",
+      "  askdb introspect --out <dir>",
       "  askdb introspect --url <postgres-url> --out <dir>",
       "  askdb introspect --from-export <bundle-dir> --out <dir>",
       "  askdb introspect --engine mysql --url <mysql-url> --out <dir>",
@@ -393,21 +462,15 @@ function printHelp(): void {
       "  askdb introspect --from-export <bundle-dir> --diff <existing-dir>",
       "  askdb introspect templates --engine postgres",
       "",
-      "Defaults (after askdb.config bootstrap):",
-      "  ASKDB_INTROSPECT_POSTGRES_URL  From introspection.providerConfig.postgres.databaseUrl.",
-      "  ASKDB_INTROSPECT_OUT           From introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
-      "  --prisma-schema       From introspection.providerConfig.prisma.schemaPath when set; otherwise",
-      "                        prisma/schema.prisma or schema.prisma is auto-discovered in the project root.",
+      "Defaults from askdb.config (bind a value to an environment variable with env(\"NAME\")):",
+      "  --url            Postgres, MySQL, SQL Server: introspection.providerConfig.<engine>.databaseUrl.",
+      "                   SQLite: introspection.providerConfig.sqlite.file.",
+      "  --out            introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
+      "  --prisma-schema  introspection.providerConfig.prisma.schemaPath when set; otherwise",
+      "                   prisma/schema.prisma or schema.prisma is auto-discovered in the project root.",
       "",
       "Options:",
-      "  --schema-id <id>",
-      "  --prisma-schema <schema.prisma|schema-dir>",
-      "  --schemas <a,b>",
-      "  --exclude-schemas <a,b>",
-      "  --tables <glob[,glob]>",
-      "  --log-level <level>",
-      "  --log-file <path>",
-      "  --correlation-id <id>",
+      ...optionLines.map((line) => `  ${line.usage.padEnd(width)}${line.help}`),
       "",
     ].join("\n"),
   );

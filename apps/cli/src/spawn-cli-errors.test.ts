@@ -133,6 +133,21 @@ describe("cli spawn: rich errors", () => {
     expect(exec.status).toBe(1);
     expect(exec.stderr).toContain("unknown option '--execute'");
   });
+
+  it("names --mock-sql and dev.mockSql, not an environment variable, when no AI key is configured (#281)", () => {
+    const repoRoot = join(import.meta.dirname, "../../..");
+    // Blank values: the repo config binds both, and a blank variable also stops `.env` from filling it.
+    const exec = run(
+      "node",
+      [join(repoRoot, "apps/cli/dist/cli.js"), "ask", "--schema", "fixtures/schemas/orders-users.schema/", "--question", "anything"],
+      { cwd: repoRoot, env: { OPENAI_API_KEY: "", ASKDB_MOCK_SQL: "" } },
+    );
+
+    expect(exec.status).toBe(1);
+    expect(exec.stderr).toContain("no AI API key configured");
+    expect(exec.stderr).toContain("pass --mock-sql or set dev.mockSql in askdb.config");
+    expect(exec.stderr).not.toContain("ASKDB_MOCK_SQL");
+  });
 });
 
 describe("cli spawn: askdb rag exits with runRagCli's code", () => {
