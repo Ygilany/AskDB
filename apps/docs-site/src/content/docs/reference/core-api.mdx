@@ -32,7 +32,7 @@ const { sql } = await ask({
 | `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, `DialectSpec`, or custom `AskDialect`. See [Dialects](#dialects). |
 | `mode` | `AskDbModeV1` | no | `"schema_only"` | Trust boundary. See [Modes](#modes). |
 | `explain` | `boolean` | no | `false` | When `true`, populates `result.explain` with heuristic guardrail metadata. |
-| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, strips sensitive table/column names from the NL→SQL DDL entirely. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
+| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, withholds sensitive columns from the NL→SQL prompt, along with any describable text that names one (a description, alias, enum value, common query language, or retrieved chunk text). A sensitive table stays as a one-line placeholder with its name. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines escaped literal tenant values; `"sql-params"` replaces them with the dialect's driver markers (`$N` Postgres/CockroachDB and custom `AskDialect`s, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. See [Executing the result](#executing-the-result). |
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => TenantIdsByRoot \| Promise<TenantIdsByRoot>`, where `TenantIdsByRoot` is `Record<rootTableId, string[]>`. Returns the subtree's IDs grouped by tenant root: the seeds and same-table descendants under `tenantRoot`, each descendant root's IDs under that root, e.g. `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. `ask()` unions the seeds in and binds each root's IDs to its own placeholder (a `multi_root` scope). Without it, or when it returns a flat array or an invalid result, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
@@ -307,18 +307,23 @@ Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON
 
 The bundle's shape is exported as the `BundledSchemaV2` type: `{ bundled: true, physical, tables, concepts?, tenantPolicy? }`, where `physical` is the `schema.json` object, `tables` maps each `tables/` filename to its raw markdown, and `concepts` and `tenantPolicy` hold the raw `concepts.md` and `tenant-policy.md` when those files exist. `askdb bundle` writes it.
 
-### `findMentionedNames(text, names)` and `createMentionMatcher(names)`
+### `findMentionedNames(text, names)`, `createMentionMatcher(names)` and `sensitiveMentionNames(schema)`
 
 ```ts
-import { createMentionMatcher, findMentionedNames } from "@askdb/core";
+import { createMentionMatcher, findMentionedNames, sensitiveMentionNames } from "@askdb/core";
 findMentionedNames("Dedupe by EMAIL; see users_email", ["email", "ssn"]); // → ["email"]
 
 const sensitive = createMentionMatcher(["ssn", { table: "users", column: "org_id" }]);
 sensitive.mentionsAny('filter by "users"."org_id"'); // → true
 sensitive.find("Rows come from users. Org_id is the key"); // → []
+
+// The names the rule checks for a loaded schema: here users.email is marked sensitive,
+// and users.org_id is sensitive only because the whole users table is.
+const names = sensitiveMentionNames(schema); // → ["email", { table: "users", column: "org_id" }]
+createMentionMatcher(names).mentionsAny("Dedupe on email"); // → true
 ```
 
-The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`.
+The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker, `@askdb/enrich`'s authoring warning and `ask()`'s prompt (with `omitSensitiveIdentifiersFromNlToSqlPrompt`) all use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`. `sensitiveMentionNames(schema)` returns the names that rule checks for a normalized schema, schema-wide: a column marked sensitive itself by its bare name, and a column that is sensitive only because its table is (`sensitiveFromTable`) only as `{ table, column }`. Columns of untracked tables count too.
 
 ---
 

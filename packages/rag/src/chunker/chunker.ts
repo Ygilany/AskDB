@@ -1,4 +1,4 @@
-import { createMentionMatcher, type MentionMatcher, type MentionName } from "@askdb/core";
+import { createMentionMatcher, sensitiveMentionNames, type MentionMatcher } from "@askdb/core";
 import type {
   NormalizedSchemaV2,
   NormalizedV2Column,
@@ -80,7 +80,7 @@ export function chunkSchema(
   // Names whose mention marks describable text as sensitive, schema-wide
   // (ADR 0017): every table's text, concept, and tenant policy section is
   // checked against them.
-  const sensitiveMentions = createMentionMatcher(collectSensitiveNames(schema));
+  const sensitiveMentions = createMentionMatcher(sensitiveMentionNames(schema));
 
   for (const table of schema.tables) {
     if (table.tracked === false) {
@@ -674,30 +674,6 @@ function parseColumnId(columnId: string): { tableId: string; column: string } {
     tableId: columnId.slice(0, hashIdx),
     column: columnId.slice(hashIdx + 1),
   };
-}
-
-/**
- * Names that mark text as mentioning a sensitive column, for the whole schema
- * (ADR 0017; matching is the schema-v2 contract's mention rule). A column
- * marked sensitive itself counts by its bare name; a column of a sensitive
- * table that is sensitive only through it counts only qualified, since its
- * bare name is often generic (`id`, `org_id`, `name`).
- */
-function collectSensitiveNames(schema: NormalizedSchemaV2): MentionName[] {
-  const names: MentionName[] = [];
-  const bare = new Set<string>();
-  for (const t of schema.tables) {
-    for (const c of t.columns) {
-      if (!c.sensitive && !t.sensitive) continue;
-      if (t.sensitive && c.sensitiveFromTable === true) {
-        names.push({ table: t.name, column: c.name });
-      } else if (!bare.has(c.name)) {
-        bare.add(c.name);
-        names.push(c.name);
-      }
-    }
-  }
-  return names;
 }
 
 function isSensitiveId(id: string, schema: NormalizedSchemaV2): boolean {
