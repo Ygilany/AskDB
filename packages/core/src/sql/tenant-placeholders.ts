@@ -32,6 +32,19 @@ export type TenantSqlOutputMode = "sql-only" | "sql-params";
  */
 export const DEFAULT_TENANT_SQL_MODE: TenantSqlOutputMode = "sql-params";
 
+/**
+ * Refuse a `tenantSqlMode` that is neither `"sql-only"` nor `"sql-params"`. Rendering it as
+ * either would guess at the host's intent, and a custom `AskDialect`'s `$N` markers are money
+ * constants on SQL Server, so it fails closed (ADR 0024).
+ */
+export function assertTenantSqlMode(mode: unknown, caller: string): asserts mode is TenantSqlOutputMode {
+  if (mode === "sql-only" || mode === "sql-params") return;
+  throw new TenantScopeError(
+    `${caller} got tenantSqlMode ${JSON.stringify(mode)}; it must be 'sql-params' or 'sql-only'.`,
+    "TENANT_SQL_MODE_REQUIRED",
+  );
+}
+
 export type TenantBinding = {
   placeholder: string;
   rootLabel: string;
@@ -445,6 +458,8 @@ function replacePlaceholdersWithParams(
  * an unexpanded `subtree` throws (`SUBTREE_NOT_RESOLVABLE`) rather than bind the
  * seed IDs only.
  *
+ * Throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) for a `mode` other than
+ * `"sql-only"` or `"sql-params"`.
  * Also throws `TenantScopeError` when a placeholder cannot be resolved
  * (`UNRESOLVED_TENANT_PLACEHOLDER`) or when a multi-ID scope meets a predicate
  * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when a
@@ -466,6 +481,7 @@ export function resolveTenantSql(
   paramStartIndex: number = 1,
   dialect?: TenantSqlDialect,
 ): TenantPlaceholderResult {
+  assertTenantSqlMode(mode, "resolveTenantSql()");
   if (scope.access.kind === "subtree") {
     throw unexpandedSubtreeError(scope.access.tenantRoot, "resolveTenantSql()");
   }

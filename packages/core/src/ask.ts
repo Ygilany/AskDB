@@ -28,6 +28,7 @@ import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./sql/gu
 import { bindTenantIntoUnboundSql } from "./sql/rebind.js";
 import type { TenantGuardrailResult } from "./sql/tenant-guardrail.js";
 import {
+  assertTenantSqlMode,
   DEFAULT_TENANT_SQL_MODE,
   resolveTenantSql,
   type TenantSqlOutputMode,
@@ -230,7 +231,8 @@ export type AskPipelineOptions = {
    * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
    * with the two arrays concatenated. A custom `AskDialect` has no default: with a
    * tenant scope it must set this (`"sql-params"` gives `$N` markers), or `ask()`
-   * throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call.
+   * throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it
+   * does on every dialect for a value that is neither `"sql-params"` nor `"sql-only"`.
    * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
    * parameters (a tool that takes one SQL string); it throws `TenantScopeError`
    * (`UNESCAPABLE_TENANT_ID`) for a tenant ID that isn't printable ASCII or that
@@ -357,7 +359,9 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       : options.tenantScope;
   // AskDB can't know a custom AskDialect's driver markers, and the `$N` the default would
   // emit is a money constant on SQL Server (`agency_id = $1` runs and matches agency 1).
-  // So the host chooses the mode, before any retrieval or model call (ADR 0024).
+  // So the host chooses the mode, before any retrieval or model call (ADR 0024). A mode
+  // that isn't one of the two is refused on every dialect, never read as either.
+  if (tenantPolicy && options.tenantSqlMode != null) assertTenantSqlMode(options.tenantSqlMode, "ask()");
   if (tenantPolicy && options.tenantSqlMode == null && typeof options.dialect === "object" && isAskDialect(options.dialect)) {
     throw new TenantScopeError(
       "A custom AskDialect with a tenant scope needs an explicit tenantSqlMode: AskDB can't tell which " +

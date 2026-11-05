@@ -159,12 +159,42 @@ describe("ask() — tenant SQL output modes", () => {
     expect(chosen.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
   });
 
+  // A mode ask() doesn't recognise is no choice: rendered as sql-params, it would give a
+  // custom AskDialect `$N` (agency 1's rows on SQL Server). So it fails closed, on every dialect.
+  it.each(["sql_only", ""])("refuses the unrecognised tenantSqlMode %j before calling the model", async (mode) => {
+    const sql = "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids";
+    const generate = vi.fn(async () => ({ sql }));
+    const generateText = vi.fn(async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` }));
+
+    for (const dialect of [{ generate }, "postgres"] as const) {
+      const error = await ask({
+        question: "count orders",
+        schema,
+        model: fakeModel,
+        dialect,
+        tenantScope: agencyScope,
+        tenantSqlMode: mode as never,
+        deps: { generateText: generateText as never },
+      }).catch((e: unknown) => e);
+
+      expect(error, typeof dialect).toBeInstanceOf(TenantScopeError);
+      expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    }
+    expect(generate).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
   // resolveTenantSql() is public too, for a host that renders SQL itself; ask() always
   // passes a mode, so its own default needs its own owner.
   it("resolveTenantSql() also defaults to sql-params", () => {
     const out = resolveTenantSql("SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids", policy, agencyScope);
     expect(out.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
     expect(out.mode === "sql-params" && out.params).toEqual(["42"]);
+  });
+
+  it("resolveTenantSql() refuses a mode it doesn't recognise", () => {
+    const sql = "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(reasonOf(() => resolveTenantSql(sql, policy, agencyScope, "inline" as never))).toBe("TENANT_SQL_MODE_REQUIRED");
   });
 
   it("passes through unmodified for global scope", async () => {
@@ -476,7 +506,8 @@ describe("resolveTenantSql — only code regions are substituted", () => {
     const ids = (id: string): TenantScope => ({
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [id] },
     });
-    const refused = ["x\\' OR 1=1 -- ", "2\u00a5' OR 1=1 -- ", "東京"];
+    // The edges just outside U+0020 to U+007E are refused too: a newline, NUL, U+001F and DEL.
+    const refused = ["x\\' OR 1=1 -- ", "2\u00a5' OR 1=1 -- ", "東京", "a\nb", "a\u0000b", "a\u001fb", "a\u007fb"];
     const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
 
     it.each<[string, TenantSqlDialect | undefined]>([

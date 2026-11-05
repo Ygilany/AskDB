@@ -95,6 +95,8 @@ export type TenantScopeRejectionReason =
    * `ask()` got a custom `AskDialect`, a tenant scope and no `tenantSqlMode`. AskDB can't
    * know which driver markers a custom dialect takes, and its `$N` default is a money
    * constant on SQL Server, so the host must choose `"sql-params"` or `"sql-only"`.
+   * Also thrown, on every dialect, when `ask()` (with a tenant scope) or
+   * `resolveTenantSql()` gets a `tenantSqlMode` that is neither of the two.
    */
   | "TENANT_SQL_MODE_REQUIRED";
 
