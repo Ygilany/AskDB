@@ -144,3 +144,7 @@ Superseded in part by [ADR 0008](0008-engine-packages-and-connector-registry.md)
 - 2026-11: `@askdb/connectors` was removed before 1.0 (#347). Its last version on npm is `0.1.0-beta.9`.
 
 The adapter-per-engine-package pattern described here is unchanged.
+
+## Status note (2026-11-05)
+
+[ADR 0029](0029-core-owns-built-in-dialect-specs.md) decides the out-of-scope line "Moving `DialectSpec` out of `@askdb/core`": the built-in dialect specs stay in core. So the consequence that a new engine needs no change to `@askdb/core` holds for introspection only. A new built-in dialect adds its `DialectId` and spec to core; a third-party engine passes a `DialectSpec` that spreads a built-in, or a custom `AskDialect`, with no AskDB change.
