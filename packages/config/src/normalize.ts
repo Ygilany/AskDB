@@ -92,6 +92,10 @@ function isBuiltinProvider(provider: string): boolean {
   return isMember(provider, ASKDB_AI_PROVIDERS);
 }
 
+function isObject(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function nonBlank(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -395,6 +399,19 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
   config: NormalizedAskDbConfig;
   deprecations: string[];
 } {
+  // The type requires both blocks, but a JS config (or a TS one run without a type check) can
+  // leave one out. Name it here rather than crash on it below (#626).
+  if (!isObject(config.ai)) {
+    throw new Error(
+      'askdb.config: the config has no ai block; add ai: { provider, providerConfig: { <provider>: { apiKey } } }. ' +
+        "AskDB needs it even when you only run askdb introspect.",
+    );
+  }
+  if (!isObject(config.introspection)) {
+    throw new Error(
+      "askdb.config: the config has no introspection block; add introspection: { provider, providerConfig }.",
+    );
+  }
   const deprecations: string[] = [];
   const warn = (message: string): void => {
     if (!deprecations.includes(message)) deprecations.push(message);

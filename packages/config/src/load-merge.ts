@@ -1,29 +1,50 @@
 import { createJiti } from "jiti";
 import { pathToFileURL } from "node:url";
 import { discoverAskDbConfigPath } from "./discover.js";
-import { isAskDbEnvProjection, type AskDbEnvProjection } from "./projection.js";
+import { defineConfig, isAskDbEnvProjection, type AskDbEnvProjection } from "./projection.js";
+import type { AskDbConfig } from "./types.js";
 
-async function importConfigModule(configPath: string): Promise<unknown> {
-  const lower = configPath.toLowerCase();
-  if (lower.endsWith(".mjs")) {
-    const href = pathToFileURL(configPath).href;
-    const mod = await import(href);
-    return mod.default ?? mod;
-  }
-
+/** Loads a config file synchronously with jiti, whatever its extension (`.mjs` included). */
+function requireConfigModule(configPath: string): unknown {
   const jiti = createJiti(configPath, { interopDefault: true });
   const mod = jiti(configPath) as { default?: unknown };
   return mod.default ?? mod;
 }
 
-function assertAskDbProjection(exported: unknown, configPath: string): AskDbEnvProjection {
-  if (!isAskDbEnvProjection(exported)) {
-    throw new Error(
-      `AskDB config at ${configPath} must export default defineConfig({ ... }) from "@askdb/config". ` +
-        `Legacy flat maps are no longer supported.`,
-    );
+async function importConfigModule(configPath: string): Promise<unknown> {
+  if (configPath.toLowerCase().endsWith(".mjs")) {
+    const mod = await import(pathToFileURL(configPath).href);
+    return mod.default ?? mod;
   }
-  return exported;
+  return requireConfigModule(configPath);
+}
+
+/**
+ * A config file's default export as a projection: `defineConfig({ ... })` as it is, and a plain
+ * `export default { ... }` through `defineConfig`, so both get the same normalizing and checks.
+ */
+function toProjection(exported: unknown, configPath: string): AskDbEnvProjection {
+  if (isAskDbEnvProjection(exported)) return exported;
+  if (typeof exported === "object" && exported !== null && !Array.isArray(exported)) {
+    return defineConfig(exported as AskDbConfig);
+  }
+  throw new Error(
+    `AskDB config at ${configPath}: the default export isn't a config object; ` +
+      `export default { ... } or defineConfig({ ... }) from "@askdb/config".`,
+  );
+}
+
+const CONFIG_ERROR_PREFIX = "askdb.config: ";
+
+/**
+ * Names the file in an `askdb.config: …` error, which `defineConfig` throws without knowing it
+ * (inside the config file, or here for a plain object). Any other error passes through as it is.
+ */
+function namingFile(error: unknown, configPath: string): unknown {
+  if (!(error instanceof Error) || !error.message.startsWith(CONFIG_ERROR_PREFIX)) return error;
+  return new Error(`AskDB config at ${configPath}: ${error.message.slice(CONFIG_ERROR_PREFIX.length)}`, {
+    cause: error,
+  });
 }
 
 /**
@@ -37,28 +58,26 @@ export async function loadAskDbConfigProjection(cwd: string): Promise<{
   const configPath = discoverAskDbConfigPath(cwd);
   if (!configPath) return {};
 
-  const exported = await importConfigModule(configPath);
-  return { path: configPath, projection: assertAskDbProjection(exported, configPath) };
+  try {
+    const exported = await importConfigModule(configPath);
+    return { path: configPath, projection: toProjection(exported, configPath) };
+  } catch (error) {
+    throw namingFile(error, configPath);
+  }
 }
 
 /**
- * Synchronous variant for callers that cannot await at top-level (CLI uses this before `await program.parseAsync`).
- * Only supports config paths that jiti can load synchronously (covers `.ts` and most `.js`/`.cjs` cases).
+ * Synchronous variant for callers that cannot await at top-level (`bootstrapAskDbEnv()`, so the
+ * CLI). Loads every supported extension, `.mjs` included; the file can't use top-level `await`.
  */
 export function loadAskDbConfigProjectionSync(cwd: string): { path?: string; projection?: AskDbEnvProjection } {
   const configPath = discoverAskDbConfigPath(cwd);
   if (!configPath) return {};
 
-  const lower = configPath.toLowerCase();
-  if (lower.endsWith(".mjs")) {
-    throw new Error(
-      `Cannot load AskDB config synchronously: ${configPath} (.mjs requires async import). ` +
-        `Use loadAskDbConfigProjection() or rename to .cjs/.js/.ts.`,
-    );
+  try {
+    const exported = requireConfigModule(configPath);
+    return { path: configPath, projection: toProjection(exported, configPath) };
+  } catch (error) {
+    throw namingFile(error, configPath);
   }
-
-  const jiti = createJiti(configPath, { interopDefault: true });
-  const mod = jiti(configPath) as { default?: unknown };
-  const exported = mod.default ?? mod;
-  return { path: configPath, projection: assertAskDbProjection(exported, configPath) };
 }

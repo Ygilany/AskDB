@@ -17,6 +17,8 @@ AskDB searches the working directory (`cwd`, usually `process.cwd()`) in this or
 1. `askdb.config.<ext>` — extension precedence: `ts` → `mts` → `cts` → `js` → `mjs` → `cjs` (first existing file wins).
 2. `.config/askdb.<ext>` — same extension precedence.
 
+`bootstrapAskDbEnv()`, and so the `askdb` CLI, loads every one of these extensions synchronously, `.mjs` included. The file can't use top-level `await`.
+
 This mirrors the layout described in [Prisma's config reference](https://www.prisma.io/docs/orm/reference/prisma-config-reference), but uses **`.config/askdb.*`** so it does not collide with Prisma's own `.config/prisma.*` files.
 
 ## Example `askdb.config.ts`
@@ -44,6 +46,8 @@ export default defineConfig({
   },
 } satisfies AskDbConfig);
 ```
+
+`defineConfig` types the object as `AskDbConfig`. A plain `export default { … }` loads too: the loader runs it through `defineConfig`, so it gets the same normalizing, checks and deprecation warnings. A config without its required `ai` or `introspection` block fails to load with an error that names the file and the block.
 
 Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names used in the **runtime flat map** (and in `aiEnv` for `@askdb/ai`). **Unset optional fields get defaults inside `flattenAskDbConfig`** (language model, introspection output dir, database URL fallbacks, the mock embedder's vector width, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
 
@@ -78,7 +82,7 @@ const embeddingModel = config.ai.embedding
 
 ## Migration from legacy flat config
 
-`export default { OPENAI_API_KEY: "…" }` is **no longer supported**. Use nested `defineConfig({ ... satisfies AskDbConfig })` and `export default defineConfig({ … })`.
+`export default { OPENAI_API_KEY: "…" }` is **no longer supported**: a flat map has no `ai` block, so it fails to load. Use the nested shape, as a plain `export default { … }` or as `export default defineConfig({ … })` for type checking.
 
 ## API
 

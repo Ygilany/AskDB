@@ -394,6 +394,19 @@ describe("flattenAskDbConfig", () => {
   });
 });
 
+describe("required ai and introspection blocks (#626)", () => {
+  const { ai: _ai, ...noAi } = minimalConfig();
+  const { introspection: _introspection, ...noIntrospection } = minimalConfig();
+
+  // Before #626 both crashed in normalizing with a bare TypeError that named neither block.
+  it.each([
+    ["ai", noAi],
+    ["introspection", noIntrospection],
+  ])("defineConfig without an %s block names the missing block", (block, config) => {
+    expect(() => defineConfig(config as AskDbConfig)).toThrow(`askdb.config: the config has no ${block} block;`);
+  });
+});
+
 describe("optional rag block (#226)", () => {
   afterEach(() => resetAskDbRuntimeForTests());
 
@@ -1155,6 +1168,49 @@ ${scaffold.source}
     },
   );
 
+  // #265: a plain object goes through the same normalizing step as defineConfig. Its deprecated
+  // keys must be translated and listed on the projection, which bootstrapAskDbEnv() warns from.
+  it("normalizes a plain object like defineConfig: deprecated keys are translated and listed", () => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    writeFileSync(
+      join(dir, "askdb.config.ts"),
+      `export default {
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } }, reasoning: { effort: "low" } },
+  introspection: { provider: "postgres", providerConfig: { postgres: {} } },
+};
+`,
+      "utf8",
+    );
+    const { projection } = loadAskDbConfigProjectionSync(dir);
+    expect(projection?.deprecations).toEqual([
+      "askdb.config: ai.reasoning is deprecated; move it to ai.language.reasoning.",
+    ]);
+    expect(projection?.entries.ASKDB_AI_REASONING_EFFORT).toBe("low");
+  });
+
+  // #626: a config that can't load fails with an error that names the file, whether the error is
+  // thrown inside the file (defineConfig) or by the loader (a plain object, a non-object export).
+  it.each([
+    [
+      "defineConfig without an ai block",
+      `import { defineConfig } from "@askdb/config";\nexport default defineConfig({ dialect: "postgres" });\n`,
+      "the config has no ai block;",
+    ],
+    [
+      "a plain object without an introspection block",
+      `export default { ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } };\n`,
+      "the config has no introspection block;",
+    ],
+    ["a default export that isn't an object", `export default "openai";\n`, "the default export isn't a config object;"],
+  ])("names the file when %s fails to load", (_case, source, message) => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    linkWorkspacePackage(dir);
+    writeFileSync(join(dir, "askdb.config.ts"), source, "utf8");
+    expect(() => loadAskDbConfigProjectionSync(dir)).toThrow(
+      `AskDB config at ${join(dir, "askdb.config.ts")}: ${message}`,
+    );
+  });
+
   it("the ai scaffold rejects an unknown provider, which it would emit as an object key", () => {
     expect(() =>
       renderAskDbAiConfigScaffold({ provider: "__proto__" as "openai", keyEnv: "MY_KEY" }),
@@ -1553,6 +1609,35 @@ describe("bootstrapAskDbEnv", () => {
     delete process.env.MY_AI;
     delete process.env.MY_DB;
   });
+
+  // The docs list ts → mts → cts → js → mjs → cjs and show a plain `export default { … }`
+  // with `env` imported from @askdb/config (guides/switch-engines, guides/bring-your-own-model).
+  // Before #264 the synchronous loader threw for .mjs; before #265 it rejected any plain object.
+  it.each(["ts", "mts", "cts", "js", "mjs", "cjs"])(
+    "loads a plain-object askdb.config.%s, the form the guides show",
+    (ext) => {
+      dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+      linkWorkspacePackage(dir);
+      const body = `{
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_AI") } } },
+  introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/${ext}" } } },
+}`;
+      writeFileSync(
+        join(dir, `askdb.config.${ext}`),
+        ext === "cjs"
+          ? `const { env } = require("@askdb/config");\nmodule.exports = ${body};\n`
+          : `import { env } from "@askdb/config";\nexport default ${body};\n`,
+        "utf8",
+      );
+      process.env.MY_AI = `key-${ext}`;
+
+      bootstrapAskDbEnv({ cwd: dir });
+      const rt = getAskDbRuntimeConfig();
+      expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe(`key-${ext}`);
+      expect(rt.introspection.postgresDatabaseUrl).toBe(`postgres://localhost/${ext}`);
+      expect(rt.flat.ASKDB_INTROSPECT_OUT).toBe("./askdb/");
+    },
+  );
   it("reports each deprecated key once per process as a DeprecationWarning", () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
     linkWorkspacePackage(dir);
