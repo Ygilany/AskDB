@@ -1,0 +1,7 @@
+---
+"@askdb/core": minor
+---
+
+**Breaking: a rebind checks and renders under the dialect rules `ask()` ran with, or refuses** (#660, ADR 0031). Before, `bindPreparedQuery()` always used the built-in spec for the template's `dialect`, so a host's `backslashEscapes`, `blockedFunctions`, `extraForbiddenKeywords` and `extraValidate` were dropped at rebind: under `{ ...POSTGRES_DIALECT, backslashEscapes: true }`, the value `\' OR 1=1 --` rebound as `'\'' OR 1=1 --'` with verdict `allow`. `ask()` now records `preparedQuery.dialectRules`: `"builtin"` for a built-in id or the exported constant, `"host"` for any other `DialectSpec` object. `BindGuardrails` takes a new `dialect` (a `DialectSpec` or a built-in id, with the template's `id`), used for the checks, the rendering and the final validation.
+
+**What a host must change:** if you pass your own `DialectSpec` to `ask()`, pass the same spec as `dialect` when you rebind; without it, `bindPreparedQuery()` throws `QueryParameterError` (`DIALECT_SPEC_REQUIRED`). A template stored before this release has no `dialectRules` and throws the same error until you pass `dialect`; if `ask()` ran with a built-in id, the id is enough (`dialect: "postgres"`). A template you build by hand needs `dialectRules: "builtin"`. A `dialect` with another `id` throws `QueryParameterError` (`DIALECT_UNSUPPORTED`). An app that loads two copies of `@askdb/core` gets `"host"` templates from the other copy's constants, and passes `dialect` too.
