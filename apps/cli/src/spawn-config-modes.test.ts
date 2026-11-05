@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AskDbLogEvent } from "@askdb/core";
 
 // Runs dist/cli.js: turbo's `test` task depends on this package's `build`, so dist is current.
 const repoRoot = join(import.meta.dirname, "../../..");
@@ -56,10 +57,13 @@ async function startFakeProvider() {
   };
 }
 
-/** `askdb ask` with no omit flag, from a scratch project whose config sets `modes`; returns the request body the model got. */
-async function promptSent(modes: string): Promise<string> {
+/**
+ * `askdb ask` from a scratch project whose config sets `modes`, plus any extra flags.
+ * Returns the request body the model got and the mode core logged on `askdb.pipeline.mode`.
+ */
+async function askInProject(modes: string, flags: string[] = []): Promise<{ prompt: string; pipelineMode: unknown }> {
   const provider = await startFakeProvider();
-  const project = mkdtempSync(join(tmpdir(), "askdb-cli-omit-config-"));
+  const project = mkdtempSync(join(tmpdir(), "askdb-cli-config-modes-"));
   try {
     // So `import "@askdb/config"` in askdb.config.ts resolves when the CLI loads it.
     mkdirSync(join(project, "node_modules/@askdb"), { recursive: true });
@@ -75,13 +79,21 @@ export default defineConfig({
 });
 `,
     );
-    const child = spawn("node", [cli, "ask", "--schema", schemaPath, "--question", "list users"], { cwd: project });
+    const logFile = join(project, "run.log");
+    const args = [cli, "ask", "--schema", schemaPath, "--question", "list users", "--log-file", logFile, "--log-level", "info", ...flags];
+    const child = spawn("node", args, { cwd: project });
     let stderr = "";
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     const status = await new Promise<number | null>((resolve) => child.on("close", resolve));
     expect(status, stderr).toBe(0);
     expect(provider.bodies).toHaveLength(1);
-    return provider.bodies[0]!;
+    const modeLines = readFileSync(logFile, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.event === AskDbLogEvent.PipelineMode);
+    expect(modeLines).toHaveLength(1);
+    return { prompt: provider.bodies[0]!, pipelineMode: modeLines[0]!.mode };
   } finally {
     rmSync(project, { recursive: true, force: true });
     await provider.close();
@@ -90,8 +102,15 @@ export default defineConfig({
 
 describe("cli spawn: config modes.omitSensitiveFromPrompt", () => {
   it("leaves sensitive columns out of the prompt with no flag when the config turns omission on", async () => {
-    expect(await promptSent("{ omitSensitiveFromPrompt: true }")).not.toContain(SENSITIVE_COLUMN);
+    expect((await askInProject("{ omitSensitiveFromPrompt: true }")).prompt).not.toContain(SENSITIVE_COLUMN);
     // Control: the same schema and question name the column when neither config nor flag omits.
-    expect(await promptSent("{}")).toContain(SENSITIVE_COLUMN);
+    expect((await askInProject("{}")).prompt).toContain(SENSITIVE_COLUMN);
+  }, 30_000);
+});
+
+describe("cli spawn: config modes.askdbMode", () => {
+  it("runs the config mode with no --mode flag, and --mode can tighten it", async () => {
+    expect((await askInProject('{ askdbMode: "bounded_results" }')).pipelineMode).toBe("bounded_results");
+    expect((await askInProject('{ askdbMode: "bounded_results" }', ["--mode", "schema_only"])).pipelineMode).toBe("schema_only");
   }, 30_000);
 });
