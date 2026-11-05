@@ -27,6 +27,12 @@ cd apps/api && npx askdb ask --question "..."
 
 When embedding the libraries, the equivalent knob is the `cwd` option: `bootstrapAskDbEnv({ cwd: "/path/to/project" })`.
 
+### `AskDB config at <path>: the config has no ai block`
+
+The config file loaded, but it has no `ai` block. Every config needs one, even when you only run `askdb introspect`: add the provider and its connection, as [The `ai` block](/reference/config/#the-ai-block) shows. A config without an `introspection` block fails the same way, and the message names that block.
+
+Other `AskDB config at <path>: …` errors name the key that can't load, such as an unknown `rag.store`. Fix that key in the file the message names.
+
 ### `Set ASKDB_DEBUG=1 to print the stack trace.`
 
 The CLI hit an unexpected error, most often a config file that exists but fails to load: a syntax error, a missing import, or dependencies that aren't installed yet. The line above the hint is the error message, and it usually names the file and line.
