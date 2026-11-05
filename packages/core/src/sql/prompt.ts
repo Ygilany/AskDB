@@ -72,13 +72,14 @@ export function buildNlToSqlUserPrompt(
   const stats = formatted.stats;
   if (
     stats.omitSensitiveIdentifiersFromPrompt &&
-    (stats.redactedColumnCount > 0 || stats.sensitiveTableStubCount > 0)
+    (stats.redactedColumnCount > 0 || stats.sensitiveTableStubCount > 0 || stats.mentionDroppedCount > 0)
   ) {
     logger?.debug?.(
       {
         event: AskDbLogEvent.PromptSensitiveRedacted,
         redactedColumnCount: stats.redactedColumnCount,
         sensitiveTableStubCount: stats.sensitiveTableStubCount,
+        mentionDroppedCount: stats.mentionDroppedCount,
       },
       "nl-to-sql prompt omitted sensitive schema metadata from DDL",
     );
