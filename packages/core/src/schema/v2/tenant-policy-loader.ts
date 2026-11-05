@@ -330,45 +330,36 @@ export function isScopeThroughJoin(s: ScopeThrough): s is ScopeThrough & { join:
 // ---------------------------------------------------------------------------
 
 function detectHierarchyCycles(fm: TenantPolicyFrontmatter): string[] {
-  const parentMap = new Map<string, string>();
-
+  // Every parent of every child: the hierarchy is a DAG, so a root may have several
+  // parents, and keeping one per child would hide a cycle behind a later edge.
+  const parents = new Map<string, Set<string>>();
+  const addEdge = (child: string, parent: string) => {
+    const set = parents.get(child) ?? new Set<string>();
+    set.add(parent);
+    parents.set(child, set);
+  };
   for (const root of fm.roots) {
-    if (root.parent) {
-      parentMap.set(root.id, root.parent.root);
-    }
+    if (root.parent) addEdge(root.id, root.parent.root);
   }
+  for (const edge of fm.hierarchy ?? []) addEdge(edge.child, edge.parent);
 
-  // Also use hierarchy edges
-  for (const edge of fm.hierarchy ?? []) {
-    parentMap.set(edge.child, edge.parent);
-  }
-
-  // Walk each node up — if we revisit a node, there's a cycle
-  const visited = new Set<string>();
-  const inStack = new Set<string>();
+  // Depth-first walk up the parent edges; reaching a node still on the stack closes a cycle.
+  const state = new Map<string, "open" | "done">();
+  const stack: string[] = [];
   const cycleNodes: string[] = [];
-
-  for (const node of parentMap.keys()) {
-    if (visited.has(node)) continue;
-    const path: string[] = [];
-    let current: string | undefined = node;
-    while (current && !visited.has(current)) {
-      if (inStack.has(current)) {
-        // Found a cycle — collect the cycle nodes
-        const cycleStart = path.indexOf(current);
-        if (cycleStart !== -1) {
-          cycleNodes.push(...path.slice(cycleStart));
-        }
-        break;
-      }
-      inStack.add(current);
-      path.push(current);
-      current = parentMap.get(current);
+  const visit = (node: string): void => {
+    state.set(node, "open");
+    stack.push(node);
+    for (const parent of parents.get(node) ?? []) {
+      const seen = state.get(parent);
+      if (seen === "open") cycleNodes.push(...stack.slice(stack.indexOf(parent)));
+      else if (seen === undefined) visit(parent);
     }
-    for (const n of path) {
-      visited.add(n);
-      inStack.delete(n);
-    }
+    stack.pop();
+    state.set(node, "done");
+  };
+  for (const node of parents.keys()) {
+    if (!state.has(node)) visit(node);
   }
 
   return [...new Set(cycleNodes)];

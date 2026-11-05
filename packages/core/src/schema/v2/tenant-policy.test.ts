@@ -313,6 +313,52 @@ roots:
     expect(result.warnings.some((w) => w.kind === "hierarchy_cycle")).toBe(true);
   });
 
+  // A root may have two parents (the hierarchy is a DAG), so a cycle edge must not be
+  // lost when a later edge gives the same child another parent (#647 review).
+  it("strict: rejects a cycle through a root whose second parent edge comes after the cycle edge", () => {
+    const tables = ["a", "b", "c", "r"];
+    const parsed = parseTenantPolicyMarkdown(`---
+schemaId: test
+enforcement: strict
+roots:
+${tables.map((t) => `  - id: table:public.${t}\n    tenantIdColumn: table:public.${t}#id\n    label: ${t.toUpperCase()}`).join("\n")}
+hierarchy:
+  - parent: table:public.c
+    child: table:public.a
+    foreignKey: table:public.a#c_id
+  - parent: table:public.a
+    child: table:public.b
+    foreignKey: table:public.b#a_id
+  - parent: table:public.b
+    child: table:public.c
+    foreignKey: table:public.c#b_id
+  - parent: table:public.r
+    child: table:public.a
+    foreignKey: table:public.a#r_id
+---
+`);
+    const tableIds = new Set(tables.map((t) => `table:public.${t}`));
+    const colIds = new Set([
+      ...tables.map((t) => `table:public.${t}#id`),
+      "table:public.a#c_id",
+      "table:public.b#a_id",
+      "table:public.c#b_id",
+      "table:public.a#r_id",
+    ]);
+    const caught = (() => {
+      try {
+        normalizeTenantPolicy(parsed, tableIds, colIds);
+      } catch (e) {
+        return e;
+      }
+      return undefined;
+    })();
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    const message = (caught as SchemaParseError).message;
+    expect(message).toMatch(/hierarchy cycle through/);
+    for (const id of ["table:public.a", "table:public.b", "table:public.c"]) expect(message).toContain(id);
+    expect(message).not.toContain("table:public.r");
+  });
 });
 
 // Each root's IDs bind through the placeholder derived from its label. Two roots whose
