@@ -183,22 +183,33 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 
   /**
    * Contract: in `sql-only` mode tenant IDs are "replaced with escaped literal values"
-   * (`docs/contracts/tenant-policy.md`, "Output modes"), escaped for the dialect, with
-   * backslash escapes on for MySQL and MariaDB (`reference/core-api.mdx`, "Executing the
-   * result"). AskDB trusts the IDs, but an ID can never become SQL: a hostile ID run as the
-   * host returns no row outside the agency its digits name. An engine error from comparing
-   * the integer column with a non-numeric string is also safe. MySQL and MariaDB coerce
-   * `'2…'` to 2, so the check is "no row outside agency 2", not "no rows".
-   * Catches: a regression in the dialect's literal escaping, such as MySQL and MariaDB
-   * losing backslash escaping, so `2\' OR 1=1 -- ` closes its literal and widens the filter.
+   * (`docs/contracts/tenant-policy.md`, "Output modes"), and a tenant ID containing a
+   * backslash is refused with `TenantScopeError` (`UNESCAPABLE_TENANT_ID`) on every dialect
+   * (`reference/core-api.mdx`, "Executing the result"). Releases before the fix for #371
+   * escaped it for the dialect instead, with backslash escapes on for MySQL and MariaDB.
+   * AskDB trusts the IDs, but an ID can never become SQL: a refused ID returns no SQL, and an
+   * inlined one, run as the host, returns no row outside the agency its digits name. An
+   * engine error from comparing the integer column with a non-numeric string is also safe.
+   * MySQL and MariaDB coerce `'2…'` to 2, so the check is "no row outside agency 2", not
+   * "no rows".
+   * Catches: a regression in the literal escaping, such as quotes no longer doubled, or a
+   * backslash ID inlined so that `2\' OR 1=1 -- ` closes its literal and widens the filter.
    * Not covered elsewhere: every other tenant ID in the lab is plain digits; core's escaping
    * tests check the string, never what an engine makes of it.
    */
   describe("tenant-ids-hostile", () => {
     const hostile = ["2' OR '1'='1", ...(dialect === "mysql" || dialect === "mariadb" ? ["2\\' OR 1=1 -- "] : [])];
-    it.for(hostile)("tenant-ids-hostile: the tenant ID %j, inlined in sql-only mode, returns no row outside agency 2", async (tenantId, ctx) => {
+    it.for(hostile)("tenant-ids-hostile: the tenant ID %j, in sql-only mode, is refused or returns no row outside agency 2", async (tenantId, ctx) => {
       await needsTenantCapabilities(ctx, dialect);
-      const result = await ask(dialect, "tenant-programs", { tenantScope: idsScope(dialect, [tenantId]), tenantSqlMode: "sql-only" });
+      const outcome = await settle(ask(dialect, "tenant-programs", { tenantScope: idsScope(dialect, [tenantId]), tenantSqlMode: "sql-only" }));
+      if (!outcome.ok) {
+        // Refused before any SQL was returned: nothing to run, nothing leaked.
+        expect(tenantId, "only a backslash ID may be refused").toContain("\\");
+        expect(outcome.error).toBeInstanceOf(TenantScopeError);
+        expect((outcome.error as TenantScopeError).reason).toBe("UNESCAPABLE_TENANT_ID");
+        return;
+      }
+      const result = outcome.result;
 
       const ran = await executeReadOnly(dialect, result.sql).then(
         (r) => ({ ok: true as const, rows: r.rows }),
@@ -340,7 +351,8 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
       await needsTenantCapabilities(ctx, dialect);
       await needsCapability(ctx, "tenant-predicate-required");
 
-      const outcome = await settle(ask(dialect, id, { tenantScope: idsScope(dialect, [FLAT]) }));
+      // sql-only, so SQL strict mode wrongly returned runs as-is and shows the leak.
+      const outcome = await settle(ask(dialect, id, { tenantScope: idsScope(dialect, [FLAT]), tenantSqlMode: "sql-only" }));
 
       if (outcome.ok) {
         // The leak, first: what the host gets from the SQL strict mode returned.
