@@ -85,5 +85,7 @@ export function normalizePgvectorIndexStrategy(raw: string | undefined): Pgvecto
   if (raw === undefined || raw.trim() === "") return DEFAULT_PGVECTOR_INDEX_STRATEGY;
   const v = raw.trim().toLowerCase();
   if (v === "ivfflat" || v === "hnsw" || v === "none") return v;
-  throw new Error(`Invalid pgvector indexStrategy "${raw}" (expected ivfflat | hnsw | none).`);
+  throw new Error(
+    `askdb.config: invalid rag.storeConfig.pgvector.indexStrategy "${raw}" (expected one of: ivfflat, hnsw, none).`,
+  );
 }
