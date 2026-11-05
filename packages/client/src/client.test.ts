@@ -665,6 +665,35 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     ).rejects.toMatchObject({ name: "TenantScopeError", reason: "UNRESOLVED_TENANT_PLACEHOLDER" });
   });
 
+  it("checks under a raw v1 schema object passed as options.schema", async () => {
+    const askdb = askdbReplying("SELECT 1");
+    const v1: AnyNormalizedSchema = {
+      tables: [
+        {
+          name: "users",
+          columns: [
+            { name: "id", type: "integer", nullable: false, primaryKey: true },
+            { name: "password", type: "text", nullable: false, primaryKey: false, sensitive: true },
+          ],
+        },
+      ],
+    };
+    const readsPassword = {
+      version: 1 as const,
+      dialect: "postgres" as const,
+      namedSql: "SELECT password FROM users WHERE id = :status_name",
+      parameters: [
+        { name: "status_name", placeholder: ":status_name", type: "string" as const, cardinality: "one" as const, source: "question" as const },
+      ],
+    };
+
+    const bound = await askdb.bind(readsPassword, { status_name: "1" }, { schema: v1 });
+    expect(bound.sql).toBe("SELECT password FROM users WHERE id = '1'");
+    expect(bound.verdict.findings).toEqual([
+      expect.objectContaining({ check: "sensitive", rule: "SENSITIVE_COLUMN_REFERENCED" }),
+    ]);
+  });
+
   it("expands a subtree scope with resolveTenantDescendants before binding", async () => {
     const askdb = askdbReplying(
       reply(

@@ -153,7 +153,8 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
   }
 
   function loadFromSource(src: SchemaSource | AnyNormalizedSchema, label: string): AnyNormalizedSchema {
-    if ("schemaId" in src) return src as AnyNormalizedSchema;
+    // A normalized schema, v1 or v2, passed as is: every one has `tables`, no SchemaSource does.
+    if ("tables" in src) return src as AnyNormalizedSchema;
     if ("schema" in src) return (src as { schema: AnyNormalizedSchema }).schema;
     try {
       if ("json" in src) return loadSchemaFromJson((src as { json: string }).json);

@@ -1357,6 +1357,25 @@ describe("ask — one guardrail decision point (ADR 0010)", () => {
     },
   );
 
+  it("logs askdb.pipeline.failed before throwing a deny", async () => {
+    const error = vi.fn();
+    const thrown = await ask({
+      question: "q",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      parameterize: false,
+      logger: { info: vi.fn(), error },
+      deps: replying("```sql\nDELETE FROM users\n```"),
+    }).catch((e: unknown) => e);
+
+    expect(thrown).toBeInstanceOf(SqlValidationError);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ event: AskDbLogEvent.PipelineFailed, phase: "generate" }),
+      expect.any(String),
+    );
+  });
+
   it("refuses non-SELECT SQL from a built-in dialect whatever the modes", async () => {
     const error = await ask({
       question: "q",

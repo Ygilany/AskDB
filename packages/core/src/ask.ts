@@ -406,7 +406,17 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   if (tenant) findings.push(...generatorFindings(generated.tenantGuardrail));
   const verdict = decide(findings, modes, "return");
   logGuardrailVerdict(logger, verdict, { tenantPolicy, sensitiveChecked: runSensitive });
-  throwIfDenied(verdict, modes, "return");
+  try {
+    throwIfDenied(verdict, modes, "return");
+  } catch (e) {
+    // A denied run ends in pipeline.failed, as generateSelectSql() logs it (and as a
+    // read-only failure was logged when that check ran inside generation).
+    logger?.error(
+      { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: (e as Error).message },
+      "nl-to-sql generate failed",
+    );
+    throw e;
+  }
 
   // result.sql is always the model's bound SQL (possibly with tenant literals/
   // markers applied below). Never overwrite it with a re-bound version.
