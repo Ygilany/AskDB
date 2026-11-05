@@ -124,6 +124,10 @@ let prismaInternalsPromise: Promise<PrismaInternals> | undefined;
  * describe rather than when `@askdb/prisma` is imported. Registering
  * `prismaConnectorProvider` (as the `askdb` CLI and Studio do) costs nothing
  * until a Prisma schema is actually introspected.
+ *
+ * It is CommonJS marked `__esModule`, so its API arrives in one of two shapes:
+ * Node puts it only on `default`, while a bundler that honours `__esModule`
+ * returns the named exports with no `default`. TypeScript types the second.
  */
 function loadPrismaInternals(): Promise<PrismaInternals> {
   prismaInternalsPromise ??= import("@prisma/internals").then(
