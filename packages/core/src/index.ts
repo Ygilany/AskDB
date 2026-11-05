@@ -72,6 +72,7 @@ export type {
 export {
   loadSchema,
   loadSchemaFromJson,
+  readSchemaDirectory,
   parseTableMarkdown,
   parseConceptsMarkdown,
   writeTableMarkdown,
@@ -149,6 +150,7 @@ export {
 export type {
   EnrichmentCandidate,
   EnrichmentContext,
+  EnrichmentPromptOptions,
   EnrichmentTarget,
   SuggestEnrichmentDeps,
 } from "./enrichment/index.js";

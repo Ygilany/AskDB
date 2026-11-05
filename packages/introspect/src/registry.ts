@@ -125,14 +125,44 @@ export type ConnectorProviderAdapter = {
   connectionLabelParts?(connection: ConnectorConnection): ConnectionLabelParts | undefined;
 };
 
+/**
+ * A registered adapter that the registry imports on first use, for an engine
+ * package the host may not have installed (an optional peer):
+ *
+ *     { provider: "prisma", load: async () => (await import("@askdb/prisma")).prismaConnectorProvider }
+ *
+ * `hasProvider()` and `providers()` answer from `provider` without loading.
+ * Call `registry.load(provider)` once the engine is selected; the other
+ * methods need the adapter and throw until it is loaded. `load()` errors reach
+ * the caller unchanged, so give a missing package its install hint in `load`
+ * (for example with `createOptionalDriverLoader` from `@askdb/introspect/kit`
+ * and `connectorPackageMissingMessage`).
+ */
+export type LazyConnectorProviderAdapter = {
+  provider: ConnectorProviderId;
+  load(): Promise<ConnectorProviderAdapter>;
+};
+
+/** An adapter, or a lazy entry that loads one on first use. */
+export type ConnectorProviderEntry = ConnectorProviderAdapter | LazyConnectorProviderAdapter;
+
 export type ConnectorProviderAdapters =
-  | readonly ConnectorProviderAdapter[]
-  | Readonly<Record<string, ConnectorProviderAdapter | undefined>>;
+  | readonly ConnectorProviderEntry[]
+  | Readonly<Record<string, ConnectorProviderEntry | undefined>>;
 
 export type ConnectorRegistry = {
+  /** True for a registered provider, lazy entries included (without loading them). */
   hasProvider(provider: string): boolean;
-  /** Registered provider ids, in registration order. */
+  /** Registered provider ids, in registration order, lazy entries included (without loading them). */
   providers(): ConnectorProviderId[];
+  /**
+   * The provider's adapter, loading a lazy entry on the first call. Concurrent
+   * calls share one `load()`; a failed load is retried on the next call. Call it
+   * once the engine is selected, before the methods below. Rejects when the
+   * provider is not registered, with the entry's own `load()` error, or when the
+   * loaded adapter's `provider` differs from the entry's.
+   */
+  load(provider: string): Promise<ConnectorProviderAdapter>;
   createConnector(config: ConnectorConfig): ConnectorResult;
   /**
    * Returns the catalog SQL template bundle for the given provider, or `undefined`
@@ -158,9 +188,26 @@ export type ConnectorRegistry = {
 
 export function createConnectorRegistry(adapters: ConnectorProviderAdapters): ConnectorRegistry {
   const byProvider = normalizeAdapters(adapters);
+  const loaded = new Map<string, ConnectorProviderAdapter>();
+  for (const [provider, entry] of byProvider) {
+    if (!isLazyEntry(entry)) loaded.set(provider, entry);
+  }
+  /** In-flight lazy loads, so concurrent callers share one `load()`. A failure clears its slot. */
+  const pending = new Map<string, Promise<ConnectorProviderAdapter>>();
+
+  /** The loaded adapter; throws for a registered lazy entry that isn't loaded yet. */
+  function loadedAdapter(provider: string): ConnectorProviderAdapter | undefined {
+    const adapter = loaded.get(provider);
+    if (!adapter && byProvider.has(provider)) {
+      throw new Error(
+        `Connector provider "${provider}" is not loaded yet. Call \`await registry.load("${provider}")\` first.`,
+      );
+    }
+    return adapter;
+  }
 
   function adapterFor(provider: string): ConnectorProviderAdapter {
-    const adapter = byProvider.get(provider);
+    const adapter = loadedAdapter(provider);
     if (!adapter) throw new Error(connectorProviderMissingMessage(provider));
     return adapter;
   }
@@ -172,11 +219,36 @@ export function createConnectorRegistry(adapters: ConnectorProviderAdapters): Co
     providers() {
       return [...byProvider.keys()];
     },
+    async load(provider) {
+      const ready = loaded.get(provider);
+      if (ready) return ready;
+      const entry = byProvider.get(provider);
+      if (!entry || !isLazyEntry(entry)) throw new Error(connectorProviderMissingMessage(provider));
+      let promise = pending.get(provider);
+      if (!promise) {
+        // Deferred a tick so the slot is set before a synchronous throw from
+        // `load` settles it; `finally` frees it either way.
+        promise = Promise.resolve()
+          .then(() => entry.load())
+          .then((adapter) => {
+            if (adapter?.provider !== provider) {
+              throw new Error(
+                `Connector provider adapter mismatch: the lazy entry "${provider}" loaded adapter "${adapter?.provider}".`,
+              );
+            }
+            loaded.set(provider, adapter);
+            return adapter;
+          })
+          .finally(() => pending.delete(provider));
+        pending.set(provider, promise);
+      }
+      return promise;
+    },
     createConnector(config) {
       return adapterFor(config.provider).createConnector(config);
     },
     getTemplates(provider) {
-      return byProvider.get(provider)?.getTemplates?.();
+      return loadedAdapter(provider)?.getTemplates?.();
     },
     resolveConnection(provider, request) {
       const adapter = adapterFor(provider);
@@ -190,7 +262,7 @@ export function createConnectorRegistry(adapters: ConnectorProviderAdapters): Co
       return { ...result, sourceLabel: labelFor(adapter, provider, result.connection) };
     },
     connectionLabel(provider, connection) {
-      return labelFor(byProvider.get(provider), provider, connection);
+      return labelFor(loadedAdapter(provider), provider, connection);
     },
   };
 }
@@ -220,6 +292,35 @@ export function connectorProviderMissingMessage(provider: string): string {
   );
 }
 
+/**
+ * The install hint the first-party hosts (the `askdb` CLI and Studio) give for a
+ * registered engine whose package isn't installed: a lazy entry's `load()`
+ * throws it when the package resolves from nowhere (see
+ * `createOptionalDriverLoader` in `@askdb/introspect/kit`). `allowBuilds` names
+ * the dependencies whose install scripts pnpm must approve (pnpm 11 exits 1 on
+ * an unapproved one); with any, the hint gives an npm command and the pnpm 10.4+
+ * `--allow-build` one. It suggests a one-off `askdb` command, and the `askdb`
+ * binary registers only the first-party engines, so a third-party host writes
+ * its own message.
+ */
+export function connectorPackageMissingMessage(input: {
+  provider: string;
+  packageName: string;
+  allowBuilds?: readonly string[];
+}): string {
+  const { provider, packageName, allowBuilds = [] } = input;
+  // pnpm 10.4 is the first pnpm whose `add` takes `--allow-build`; npm runs install scripts.
+  const example = allowBuilds.length
+    ? `\`npm install ${packageName}\`, or on pnpm 10.4 or later ` +
+      `\`pnpm add ${allowBuilds.map((name) => `--allow-build=${name} `).join("")}${packageName}\``
+    : `\`pnpm add ${packageName}\``;
+  return (
+    `Engine "${provider}" needs the optional peer dependency \`${packageName}\`. ` +
+    `Install it in your project (e.g. ${example}) or include it in a one-off command ` +
+    `(\`npx -p askdb -p ${packageName} askdb ...\`).`
+  );
+}
+
 function withoutBlankValues(explicit: ConnectorConnection | undefined): ConnectorConnection | undefined {
   if (explicit === undefined) return undefined;
   return Object.fromEntries(
@@ -227,11 +328,11 @@ function withoutBlankValues(explicit: ConnectorConnection | undefined): Connecto
   ) as ConnectorConnection;
 }
 
-function normalizeAdapters(adapters: ConnectorProviderAdapters): Map<string, ConnectorProviderAdapter> {
-  const entries: Array<readonly [string, ConnectorProviderAdapter]> = Array.isArray(adapters)
-    ? (adapters as readonly ConnectorProviderAdapter[]).map((a) => [a.provider, a] as const)
+function normalizeAdapters(adapters: ConnectorProviderAdapters): Map<string, ConnectorProviderEntry> {
+  const entries: Array<readonly [string, ConnectorProviderEntry]> = Array.isArray(adapters)
+    ? (adapters as readonly ConnectorProviderEntry[]).map((a) => [a.provider, a] as const)
     : Object.entries(adapters).filter(isAdapterEntry);
-  const byProvider = new Map<string, ConnectorProviderAdapter>();
+  const byProvider = new Map<string, ConnectorProviderEntry>();
   for (const [provider, adapter] of entries) {
     if (adapter.provider !== provider) {
       throw new Error(
@@ -249,9 +350,12 @@ function normalizeAdapters(adapters: ConnectorProviderAdapters): Map<string, Con
   return byProvider;
 }
 
-function isAdapterEntry(
-  entry: [string, ConnectorProviderAdapter | undefined],
-): entry is [string, ConnectorProviderAdapter] {
-  return entry[1] !== undefined;
+function isLazyEntry(entry: ConnectorProviderEntry): entry is LazyConnectorProviderAdapter {
+  return typeof (entry as Partial<ConnectorProviderAdapter>).createConnector !== "function";
 }
 
+function isAdapterEntry(
+  entry: [string, ConnectorProviderEntry | undefined],
+): entry is [string, ConnectorProviderEntry] {
+  return entry[1] !== undefined;
+}

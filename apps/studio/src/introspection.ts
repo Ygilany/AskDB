@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
+  connectorPackageMissingMessage,
   createConnectorRegistry,
   introspect,
   type Connector,
@@ -9,18 +10,34 @@ import {
   type ConnectorProviderId,
   type IntrospectResult,
 } from "@askdb/introspect";
+import { createOptionalDriverLoader, rethrowDriverImportError } from "@askdb/introspect/kit";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
-import { prismaConnectorProvider } from "@askdb/prisma";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
+
+/**
+ * `@askdb/prisma` is an optional peer of Studio, as of `askdb` (#259). It is imported
+ * only when the config selects the prisma engine, from Studio's install first, then
+ * from the project in the working directory. The CLI registers it the same way.
+ */
+const prismaPackage = createOptionalDriverLoader({
+  packageName: "@askdb/prisma",
+  importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
+  missingMessage: connectorPackageMissingMessage({
+    provider: "prisma",
+    packageName: "@askdb/prisma",
+    allowBuilds: PRISMA_BUILD_APPROVALS,
+  }),
+});
 
 const connectorRegistry = createConnectorRegistry([
   postgresConnectorProvider,
   mysqlConnectorProvider,
   sqliteConnectorProvider,
   sqlServerConnectorProvider,
-  prismaConnectorProvider,
+  { provider: "prisma", load: async () => (await prismaPackage.load()).prismaConnectorProvider },
 ]);
 
 export type StudioIntrospectionPlan =
@@ -29,15 +46,21 @@ export type StudioIntrospectionPlan =
 
 /**
  * Resolve what a server-side introspection run would do, from the runtime
- * config alone: the config's provider, and the connection its adapter's
+ * config alone: the config's provider (its adapter loaded), and the connection its adapter's
  * `resolveConnection` hook resolves (the same registry call the CLI makes).
  * Never includes credentials in `sourceLabel` — it is shown in the UI.
  */
-export function resolveStudioIntrospectionPlan(): StudioIntrospectionPlan {
+export async function resolveStudioIntrospectionPlan(): Promise<StudioIntrospectionPlan> {
   const rt = getAskDbRuntimeConfig();
   const engine: ConnectorProviderId = rt.introspection.provider;
   if (!connectorRegistry.hasProvider(engine)) {
     return { ok: false, engine: null, error: `Unsupported introspection provider: ${engine}` };
+  }
+  try {
+    // Imports an optional engine package (`@askdb/prisma`); a missing one is the plan's error.
+    await connectorRegistry.load(engine);
+  } catch (error) {
+    return { ok: false, engine, error: error instanceof Error ? error.message : String(error) };
   }
   const connection = resolveConnection(engine);
   if (!connection.ok) return { ok: false, engine, error: connection.error };
@@ -73,7 +96,7 @@ export async function runStudioIntrospection(options: {
   schemaId?: string;
   hasExistingArtifact: boolean;
 }): Promise<StudioIntrospectionRun> {
-  const plan = resolveStudioIntrospectionPlan();
+  const plan = await resolveStudioIntrospectionPlan();
   if (!plan.ok) throw new Error(plan.error);
   const connection = resolveConnection(plan.engine);
   if (!connection.ok) throw new Error(connection.error);
