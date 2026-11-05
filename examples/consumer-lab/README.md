@@ -72,7 +72,7 @@ To run a second copy of the fixture beside the usual one (for example, to try `l
 | `--via` | Path |
 |---|---|
 | `raw` (default) | A Vercel AI SDK `LanguageModel`, `createOpenAI({ baseURL, apiKey })` from `@ai-sdk/openai`, passed to `ask()` from `@askdb/core`. |
-| `client` | `createAskDb` from `@askdb/client` with no `providers`, so it builds the model with `@askdb/ai`'s built-in `openai` provider. The model comes from the lab's `askdb.config.ts`, whose `providerConfig.openai.baseUrl` reads `LAB_REPLAY_BASE_URL`. `lab ask` sets it. |
+| `client` | `createAskDb` from `@askdb/client` with no `providers`, so it builds the model with `@askdb/ai`'s built-in `openai` provider. The model comes from the lab's `askdb.config.ts`, whose `providerConfig.openai.baseUrl` reads `LAB_REPLAY_BASE_URL`. `lab ask` sets it. On a target whose `@askdb/client` predates the built-in providers (`client-built-in-providers`), `lab ask` and `lab ui` refuse this path before anything runs. |
 
 Both paths must send the same prompt and return the same SQL; `lab:test` checks that on every dialect.
 
@@ -460,7 +460,7 @@ The protection scenarios are engine-independent and run once, as `[postgres]`. T
 
 The lab doesn't inherit the monorepo's `minimumReleaseAge` (it is its own pnpm root), but pnpm 11 defaults it to one day, so the lab's `pnpm-workspace.yaml` sets `minimumReleaseAgeExclude: [askdb, "@askdb/*"]`. Without it, a release published less than a day earlier still installs, because the lab pins it exactly, but pnpm adds each `@askdb/*` version to `minimumReleaseAgeExclude` itself and rewrites the file. The rewrite indents the `# lab:use` comments, so `lab:use --restore` no longer finds the committed target (seen refreshing the baseline to `askdb@1.0.0-beta.43` 21 minutes after it was published). Third-party packages keep the one-day delay.
 
-The baseline pins the lab's third-party dependencies exactly, so they stay the same across install targets: the drivers (`pg`, `mysql2`, `mssql`, `better-sqlite3`), `zod`, `ai` and `@ai-sdk/openai`. The AskDB adapters declare `ai` as a peer and `@askdb/rag` declares `@ai-sdk/openai` as an optional one, so the host pins both, by hand, at AskDB's published floors (ADR 0015). Dependabot updates the lab's other pins, with its lockfile, through the lab's own entry in `.github/dependabot.yml`, which ignores these two, the AskDB packages and `@types/node` majors (it tracks the Node floor, `engines.node`); an advisory against a floor pin still shows up as a Dependabot alert on the lab's lockfile. A change that raises a floor on purpose raises the pin with it, or `host-peers` (`test/host-peers.test.ts`) fails:
+The baseline pins the lab's third-party dependencies exactly, so they stay the same across install targets: the drivers (`pg`, `mysql2`, `mssql`, `better-sqlite3`), `zod`, `ai` and `@ai-sdk/openai`. `@askdb/core` and `@askdb/ai` declare `ai` as a peer, and `@askdb/ai` and `@askdb/rag` declare `@ai-sdk/openai` as an optional one, so the host pins both, by hand, at AskDB's published floors (ADR 0015). Dependabot updates the lab's other pins, with its lockfile, through the lab's own entry in `.github/dependabot.yml`, which ignores these two, the AskDB packages and `@types/node` majors (it tracks the Node floor, `engines.node`); an advisory against a floor pin still shows up as a Dependabot alert on the lab's lockfile. A change that raises a floor on purpose raises the pin with it, or `host-peers` (`test/host-peers.test.ts`) fails:
 
 | Scenario | What it checks |
 |---|---|

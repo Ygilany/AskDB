@@ -58,15 +58,25 @@ function mysqlReadsListedDatabases(): boolean {
 /** The database drivers the docs call optional peers (`reference/packages.mdx`, `guides/switch-engines.mdx`). */
 const DRIVERS = ["pg", "mysql2", "mssql", "better-sqlite3"];
 
+interface PublishedManifest {
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+}
+
+/** An installed AskDB package's published `package.json`. A missing package is a broken install, and throws. */
+function installedManifest(pkg: string): PublishedManifest {
+  const manifest = join(LAB_ROOT, "node_modules", ...pkg.split("/"), "package.json");
+  if (!existsSync(manifest)) throw new Error(`${manifest} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
+  return JSON.parse(readFileSync(manifest, "utf8")) as PublishedManifest;
+}
+
 /**
  * Whether the installed `@askdb/http-api` leaves the database drivers to the host, as the
- * docs say: its published manifest lists none of them as a dependency (#260). A missing
- * package is a broken install, and throws.
+ * docs say: its published manifest lists none of them as a dependency (#260).
  */
 function httpApiLeavesDriversOptional(): boolean {
-  const manifest = join(LAB_ROOT, "node_modules", "@askdb", "http-api", "package.json");
-  if (!existsSync(manifest)) throw new Error(`${manifest} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
-  const { dependencies = {} } = JSON.parse(readFileSync(manifest, "utf8")) as { dependencies?: Record<string, string> };
+  const { dependencies = {} } = installedManifest("@askdb/http-api");
   return DRIVERS.every((driver) => !(driver in dependencies));
 }
 
@@ -77,15 +87,10 @@ function httpApiLeavesDriversOptional(): boolean {
  * published manifest: the client declares each built-in provider's AI SDK package, among them
  * `@ai-sdk/openai`, as an optional peer (`reference/packages.mdx`, "Provider SDKs"). Releases
  * before the built-ins declare none, and their `createAskDb` requires `providers` from a
- * separate adapter package. A missing package is a broken install, and throws.
+ * separate adapter package.
  */
 function clientHasBuiltInProviders(): boolean {
-  const manifest = join(LAB_ROOT, "node_modules", "@askdb", "client", "package.json");
-  if (!existsSync(manifest)) throw new Error(`${manifest} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
-  const { peerDependencies = {}, peerDependenciesMeta = {} } = JSON.parse(readFileSync(manifest, "utf8")) as {
-    peerDependencies?: Record<string, string>;
-    peerDependenciesMeta?: Record<string, { optional?: boolean }>;
-  };
+  const { peerDependencies = {}, peerDependenciesMeta = {} } = installedManifest("@askdb/client");
   return "@ai-sdk/openai" in peerDependencies && peerDependenciesMeta["@ai-sdk/openai"]?.optional === true;
 }
 

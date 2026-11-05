@@ -33,7 +33,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { MODELS, VIAS, type AskInput, type AskRun, type AskRunStatus, type Model, type TranscriptLine, type Via } from "../ask-run.js";
+import { clientPathUnavailable, MODELS, VIAS, type AskInput, type AskRun, type AskRunStatus, type Model, type TranscriptLine, type Via } from "../ask-run.js";
 import { installRecord, requireInstallTarget } from "../artifacts.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect, type SupportedDialect } from "../dialects.js";
 import type { Verdict as GradeVerdict } from "../grade.js";
@@ -286,6 +286,8 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
       if (input.model === "live" && !live.settings) {
         return sendText(res, 409, `lab ui: the live model is unavailable: ${live.availability.available ? "" : live.availability.reason}`);
       }
+      const noClient = input.via === "client" && input.sql === undefined ? clientPathUnavailable() : undefined;
+      if (noClient) return sendText(res, 409, `lab ui: ${noClient}`);
       const ask: AskInput = { question: input.question, sql: input.sql, via: input.via, live: input.model === "live" ? live.settings : undefined };
 
       res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" });

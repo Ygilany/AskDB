@@ -26,6 +26,7 @@ import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { AskDbError } from "@askdb/core";
 import { askFixedSql, askRaw, askWithModel, liveModel, useLiveConfig, type AskResult, type Settled } from "./ask.js";
 import { ensureArtifactAsync, requireInstallTarget } from "./artifacts.js";
+import { hasCapability } from "./capabilities.js";
 import type { SupportedDialect } from "./dialects.js";
 import { gradeCatalogAnswer, type Verdict } from "./grade.js";
 import { executeReadOnly, HostUnreachableError, type ExecuteResult } from "./host/execute.js";
@@ -96,6 +97,17 @@ export interface AskRun {
  * once per process, so only a process that asks once (`lab ask`, a `lab ui` engine run) can
  * take this path.
  */
+/**
+ * Why the client path can't run on the installed target, or undefined when it can. A target
+ * whose `@askdb/client` predates the built-in providers (`client-built-in-providers`) throws
+ * from `createAskDb` without `providers`, so `lab ask` and `lab ui` refuse the path up front
+ * instead. `--sql` calls no model, so it never needs the client.
+ */
+export function clientPathUnavailable(): string | undefined {
+  if (hasCapability("client-built-in-providers")) return undefined;
+  return "the installed @askdb/client predates @askdb/ai's built-in providers (capability client-built-in-providers), so this target has no client path; use the raw path";
+}
+
 async function askClient(dialect: SupportedDialect, question: string, schemaDir: string, model: { replayURL: string } | { live: LiveSettings }, log: (text: string) => void): Promise<AskResult> {
   if ("live" in model) {
     useLiveConfig(model.live);
