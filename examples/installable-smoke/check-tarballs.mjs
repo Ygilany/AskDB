@@ -4,6 +4,7 @@
 //   - Every path referenced by package.json "main", "module", "types"/"typings", "bin", and
 //     "exports" (including conditional/nested entries) exists in the tarball.
 //   - No tarball ships TypeScript sources (src/) or test files (*.test.*).
+//   - Every relative link in README.md resolves to a file in the tarball (no `../` links).
 //
 // Which packages get packed is owned by scripts/pack-tarballs.sh (it discovers every
 // non-private packages/* and apps/* package), so this script only validates what it is given.
@@ -38,6 +39,30 @@ function normalize(target) {
   return path.posix.normalize(target.replace(/^\.\//, ""));
 }
 
+// Markdown link and image targets: inline (`[text](target "title")`) and reference-style (`[id]: target`).
+const README_LINK_TARGETS = [/\]\(\s*<?([^)\s>]+)>?/g, /^ {0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?/gm];
+// A URL with a scheme (`https:`, `mailto:`), a protocol-relative URL, or an in-page anchor.
+const NON_FILE_TARGET = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
+
+/**
+ * Relative README link targets that don't resolve to a file in the tarball. Anything that
+ * reads the README from the package (an installed copy in node_modules, a CDN's file view)
+ * resolves them against the package root, so a `../` link into the monorepo is dead there.
+ * Link to the repository with an absolute GitHub URL instead.
+ */
+function deadReadmeLinks(readme, entries) {
+  const dead = [];
+  for (const pattern of README_LINK_TARGETS) {
+    for (const [, target] of readme.matchAll(pattern)) {
+      if (NON_FILE_TARGET.test(target)) continue;
+      const rel = normalize(target.split("#")[0]);
+      const ships = entries.has(rel) || [...entries].some((entry) => entry.startsWith(`${rel}/`));
+      if (!ships) dead.push(target);
+    }
+  }
+  return dead;
+}
+
 const tarballs = readdirSync(dir).filter((f) => f.endsWith(".tgz")).sort();
 if (tarballs.length === 0) {
   console.error(`smoke: no tarballs found in ${dir}`);
@@ -61,6 +86,12 @@ for (const tarball of tarballs) {
   }
   for (const entry of entries) {
     if (FORBIDDEN_ENTRY.test(entry)) problems.push(`ships source/test file "${entry}"`);
+  }
+  if (entries.has("README.md")) {
+    const readme = execFileSync("tar", ["-xzOf", file, "package/README.md"], { encoding: "utf8" });
+    for (const target of deadReadmeLinks(readme, entries)) {
+      problems.push(`README.md links to "${target}", which is not in the tarball`);
+    }
   }
 
   const targets = [];
