@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -22,6 +22,7 @@ import {
   formatSensitiveReference,
   isBuiltInDialectId,
   loadSchema,
+  saveSchemaFile,
   schemaHasSensitiveIdentifiers,
   SqlValidationError,
   validateSensitiveReferences,
@@ -1507,7 +1508,7 @@ function appendPlaygroundHistory(
   };
   const updated = [newEntry, ...existing].slice(0, HISTORY_MAX_STORED);
   ensureSchemaDirGitignore(schemaDir);
-  writeFileSync(histPath, JSON.stringify(updated, null, 2), "utf8");
+  saveSchemaFile(schemaDir, HISTORY_FILE_NAME, JSON.stringify(updated, null, 2));
 }
 
 /**
@@ -1518,7 +1519,10 @@ function appendPlaygroundHistory(
  * - No `.gitignore` yet: write one that also ignores `.env` files — the same
  *   rules `askdb init` writes (plan 043) — unless the schema dir is the project
  *   root, where ignoring `.env` is the project's call, not Studio's.
- * - Existing `.gitignore` without the entry: append the entry; never rewrite.
+ * - Existing `.gitignore` without the entry: add the entry at the end and keep
+ *   every existing line as it was.
+ * - Both are saved with `saveSchemaFile()`, so a `.gitignore` that is a symbolic
+ *   link is refused, not written through (ADR 0028).
  * - Failure is non-fatal: history still saves.
  */
 function ensureSchemaDirGitignore(schemaDir: string): void {
@@ -1529,10 +1533,10 @@ function ensureSchemaDirGitignore(schemaDir: string): void {
       const lines = content.split(/\r?\n/).map((line) => line.trim());
       if (lines.includes(HISTORY_FILE_NAME) || lines.includes(`/${HISTORY_FILE_NAME}`)) return;
       const separator = content === "" || content.endsWith("\n") ? "" : "\n";
-      appendFileSync(
-        gitignorePath,
-        `${separator}# AskDB Studio Playground history (local only)\n${HISTORY_FILE_NAME}\n`,
-        "utf8",
+      saveSchemaFile(
+        schemaDir,
+        ".gitignore",
+        `${content}${separator}# AskDB Studio Playground history (local only)\n${HISTORY_FILE_NAME}\n`,
       );
       return;
     }
@@ -1554,7 +1558,7 @@ function ensureSchemaDirGitignore(schemaDir: string): void {
         "!.env.example",
       );
     }
-    writeFileSync(gitignorePath, `${lines.join("\n")}\n`, "utf8");
+    saveSchemaFile(schemaDir, ".gitignore", `${lines.join("\n")}\n`);
   } catch {
     // Non-fatal: the history write matters more than this defensive file.
   }
@@ -1582,7 +1586,7 @@ function deletePlaygroundHistoryEntry(
   if (filtered.length === existing.length) {
     return { ok: false, error: "not found" };
   }
-  writeFileSync(histPath, JSON.stringify(filtered, null, 2), "utf8");
+  saveSchemaFile(schemaDir, HISTORY_FILE_NAME, JSON.stringify(filtered, null, 2));
   return { ok: true };
 }
 

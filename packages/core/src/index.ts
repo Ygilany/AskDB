@@ -77,6 +77,7 @@ export {
   writeTableMarkdown,
   writeConceptsMarkdown,
   writeTenantPolicyMarkdown,
+  saveSchemaFile,
   formatSchemaV2ForNlToSql,
   v2SchemaJsonSchema,
   v2TableSchema,

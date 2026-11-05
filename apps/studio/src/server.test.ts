@@ -315,7 +315,11 @@ describe("AskDB Studio server", () => {
 
     expect(response.ok).toBe(false);
     await expect(response.json()).resolves.toMatchObject({
-      error: { message: expect.stringMatching(/outside tables\/: "orders\.md" is a symbolic link/) },
+      error: {
+        message: expect.stringMatching(
+          /tables\/orders\.md outside the schema directory: "orders\.md" is a symbolic link/,
+        ),
+      },
     });
     expect(readFileSync(outside, "utf8")).toBe(original);
   });
@@ -1127,6 +1131,53 @@ describe("AskDB Studio server", () => {
     expect(gitignore.startsWith("# mine\nsecrets.txt\n")).toBe(true);
     expect(gitignore.match(/^playground-history\.json$/gm)).toHaveLength(1);
     expect(gitignore).not.toContain(".env");
+  });
+
+  // A checkout can carry a symbolic link at either file (git stores them), and the
+  // Playground writes both on every generate.
+  it("refuses to save or delete Playground history through a symbolic link", async () => {
+    installStudioRuntime();
+    const schemaDir = copyFixture();
+    const outside = join(schemaDir, "..", "outside-history.json");
+    const original = `${JSON.stringify([{ id: "e1", question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1" }])}\n`;
+    writeFileSync(outside, original);
+    symlinkSync(outside, join(schemaDir, "playground-history.json"));
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+    const refusal = {
+      error: {
+        message: expect.stringMatching(
+          /playground-history\.json outside the schema directory: "playground-history\.json" is a symbolic link/,
+        ),
+      },
+    };
+
+    const saved = await postRaw(`${baseUrl}/api/history`, { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 2" });
+    expect(saved.ok).toBe(false);
+    await expect(saved.json()).resolves.toMatchObject(refusal);
+    const deleted = await fetch(`${baseUrl}/api/history/e1`, { method: "DELETE", headers: authHeaders(baseUrl) });
+    expect(deleted.ok).toBe(false);
+    await expect(deleted.json()).resolves.toMatchObject(refusal);
+    expect(readFileSync(outside, "utf8")).toBe(original);
+  });
+
+  it.each([
+    { link: "an existing file", original: "# theirs\n" },
+    { link: "a missing file", original: undefined },
+  ])("leaves a .gitignore linked to $link untouched and still saves history", async ({ original }) => {
+    installStudioRuntime();
+    const schemaDir = copyFixture();
+    const outside = join(schemaDir, "..", "outside-gitignore");
+    if (original !== undefined) writeFileSync(outside, original);
+    symlinkSync(outside, join(schemaDir, ".gitignore"));
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    await postJson(`${baseUrl}/api/history`, { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1" });
+    expect(existsSync(outside) ? readFileSync(outside, "utf8") : undefined).toBe(original);
+    expect(JSON.parse(readFileSync(join(schemaDir, "playground-history.json"), "utf8"))).toHaveLength(1);
   });
 
   it("GET /api/setup/status reports not needed on a ready workspace", async () => {
