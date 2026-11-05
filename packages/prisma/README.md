@@ -15,7 +15,7 @@ const result = await introspect(
 );
 ```
 
-CLI: `askdb` and `@askdb/studio` load this package only for Prisma introspection and don't install it, so add it to your project next to them. It depends on Prisma, whose `@prisma/engines` build pnpm 11 must approve (`pnpm add --allow-build=@prisma/engines @askdb/prisma`; see [the Prisma guide](https://askdb.tools/guides/integrations/prisma/#install)).
+CLI: `askdb` and `@askdb/studio` load this package only for Prisma introspection and don't install it, so add it to your project next to them. It depends on Prisma, whose `@prisma/engines` build pnpm 11 must approve (`pnpm add --allow-build=@prisma/engines @askdb/prisma` on pnpm 10.4 or later; see [the Prisma guide](https://askdb.tools/guides/integrations/prisma/#install)).
 
 ```sh
 askdb introspect --engine prisma --prisma-schema ./prisma --out my-app.schema

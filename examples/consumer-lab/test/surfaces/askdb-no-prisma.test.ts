@@ -1,8 +1,8 @@
 /**
  * `pnpm add askdb` in a clean project, then the Prisma user's extra install.
  *
- * Protects: the install page's line for trying AskDB from the CLI, `askdb` alone
- * (`install.mdx`), exits 0 on pnpm 11 with no build approved, and installs no Prisma
+ * Protects: the CLI reference's install line, `pnpm add askdb` (`reference/cli.mdx`; the
+ * install page's "askdb alone" path), exits 0 on pnpm 11 with no build approved, and installs no Prisma
  * package. `--engine prisma` then exits 1 naming `@askdb/prisma`, and works after the
  * Prisma guide's install (`guides/integrations/prisma.mdx`): `@askdb/prisma` with the
  * `@prisma/engines` build approved.

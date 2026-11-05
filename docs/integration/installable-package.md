@@ -33,8 +33,9 @@ pnpm add @ai-sdk/openai
 pnpm add @askdb/introspect
 # Optional: build a custom Schema v2 enrichment authoring surface
 pnpm add @askdb/enrich
-# Optional: Prisma schema-file introspection (the askdb CLI and Studio load it only for
-# --engine prisma). pnpm 11 exits 1 until Prisma's @prisma/engines build is approved:
+# Optional: Prisma schema-file introspection (the askdb CLI loads it only for --engine prisma,
+# and Studio only for a Prisma source). pnpm 11 exits 1 until Prisma's @prisma/engines build
+# is approved; pnpm 10.4 and later take --allow-build (older pnpm: pnpm add @askdb/prisma):
 pnpm add --allow-build=@prisma/engines @askdb/prisma
 # Optional: Prisma-style env mapping + askdb.config discovery (used by the CLI; optional for library hosts)
 pnpm add @askdb/config

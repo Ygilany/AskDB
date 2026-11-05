@@ -1089,14 +1089,14 @@ async function finishInit(
       );
     } else {
       const pm = detectPackageManager(pkgRoot);
-      const allowBuilds = supportedBuildApprovals(pm, pkgRoot, plan.allowBuilds);
+      const approvedBuilds = supportedBuildApprovals(pm, pkgRoot, plan.allowBuilds);
       process.stdout.write(`\nInstalling dependencies with ${pm} in ${pkgRoot} …\n`);
-      const ok = installer(pm, pkgRoot, plan.packages, allowBuilds);
+      const ok = installer(pm, pkgRoot, plan.packages, approvedBuilds);
       if (!ok) {
         process.stderr.write(
           "Dependency install failed. The config file was written, but packages are not installed yet.\n" +
             `  cd ${pkgRoot}\n` +
-            `  ${formatManualInstallCommand(pm, plan.packages, allowBuilds)}\n`,
+            `  ${formatManualInstallCommand(pm, plan.packages, approvedBuilds)}\n`,
         );
         return 1;
       }
