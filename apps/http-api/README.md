@@ -62,7 +62,7 @@ JSON
 Notes:
 
 - **Correlation**: if you omit `x-correlation-id`, the server generates one and returns it.
-- **Mode**: optional `x-askdb-mode` header (body `mode` wins if present).
+- **Mode**: optional `x-askdb-mode` header (body `mode` wins if present). A request mode can only tighten config `modes.askdbMode` (default `schema_only`), never loosen it.
 - **Execution**: not supported. Retired execution controls return `400`; review generated SQL and run any approved query outside AskDB under your own database roles, read-only controls, tenant policy, and audit logging.
 - **Generation config**: set `ai.provider` / `ai.providerConfig` in `askdb.config.ts` (for tests/dev, set `dev.mockSql` to bypass live model calls). The server does not read `ASKDB_MOCK_SQL` from the shell; map it in the config with `dev: { mockSql: env("ASKDB_MOCK_SQL") }` if you want that.
 - **Schema config (recommended)**: set `host.schemaPath` in `askdb.config.ts` (or pass `--schema-path`) to an AskDB Schema v2 directory, bundled JSON file, or `schema.json`. Per-request `schemaJson` overrides are rejected with `403 schema_override_disabled` unless you set `httpApi.allowSchemaOverride: true`.
