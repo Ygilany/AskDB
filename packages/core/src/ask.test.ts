@@ -786,6 +786,70 @@ describe("ask — parameterize", () => {
   });
 });
 
+// A tenant ID with a backslash can't be inlined safely: on a server that reads strings
+// differently from the dialect, `'x\'' OR 1=1 -- '` closes early and the OR runs as SQL
+// (#371's repro returned every row on Postgres with standard_conforming_strings = off).
+// ask() renders after its checks, so nothing would see the changed statement.
+describe("ask — a tenant ID containing a backslash (#360, #371)", () => {
+  const schema = loadSchema(multiTenantDir);
+  const hostileId = "x\\' OR 1=1 -- ";
+  const hostileScope: TenantScope = {
+    access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [hostileId] },
+  };
+  const scopedSql = "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids";
+  const generateText = vi.fn(async () => ({ text: "```sql\n" + scopedSql + "\n```" }));
+
+  it.each<[string, AskDialectInput]>([
+    ["a custom AskDialect (#360)", { generate: async () => ({ sql: scopedSql }) }],
+    ["the built-in postgres dialect (#371)", "postgres"],
+  ])("sql-only mode refuses it with %s instead of returning SQL", async (_label, dialect) => {
+    const error = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect,
+      tenantScope: hostileScope,
+      tenantSqlMode: "sql-only",
+      deps: { generateText },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("UNESCAPABLE_TENANT_ID");
+  });
+
+  // The remedy the error names: the default mode carries the ID as a driver parameter
+  // in both executable pairs, so neither form inlines it.
+  it("the default mode binds it as a parameter in sql and in unboundSql", async () => {
+    const result = await ask({
+      question: "how many paid orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: hostileScope,
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: [
+            "```sql",
+            "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = :tenant_agency_ids",
+            "```",
+            "```sql-unbound",
+            "SELECT count(*) FROM orders WHERE status = :status_name AND agency_id = :tenant_agency_ids",
+            "```",
+            "```json",
+            '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"}]}',
+            "```",
+          ].join("\n"),
+        })),
+      },
+    });
+
+    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = $1");
+    expect(result.tenantParams).toEqual([hostileId]);
+    expect(result.unboundSql).toBe("SELECT count(*) FROM orders WHERE status = $1 AND agency_id = $2");
+    expect(result.params).toEqual(["paid", hostileId]);
+  });
+});
+
 describe("ask — a model's trailing semicolon is kept (#477)", () => {
   it("returns sql ending in ; only when the model's reply did", async () => {
     const run = (text: string) =>

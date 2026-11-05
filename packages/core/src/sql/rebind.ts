@@ -78,9 +78,11 @@ type Values = Record<string, QueryParameterValue | readonly QueryParameterValue[
  * Throws `QueryParameterError` without `guardrails` (`MISSING_GUARDRAIL_CONTEXT`), for a
  * `:tenant_*` key in `values` (`TENANT_VALUE_SUPPLIED`), and when the tenant markers can't
  * be aligned with the business params (`TENANT_PARAM_ALIGNMENT`). Throws `TenantScopeError`
- * for a missing or invalid scope, an unexpanded `subtree` (`SUBTREE_NOT_RESOLVABLE`), and a
+ * for a missing or invalid scope, an unexpanded `subtree` (`SUBTREE_NOT_RESOLVABLE`), a
  * placeholder the scope has no IDs for, including any placeholder under a `global` scope or
- * a schema without a tenant policy (`UNRESOLVED_TENANT_PLACEHOLDER`). Synchronous.
+ * a schema without a tenant policy (`UNRESOLVED_TENANT_PLACEHOLDER`), and a tenant ID
+ * containing a backslash, which `sql` can't inline safely (`UNESCAPABLE_TENANT_ID`).
+ * Synchronous.
  */
 export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guardrails: BindGuardrails): BoundQuery {
   if (typeof guardrails !== "object" || guardrails === null || guardrails.schema === undefined) {

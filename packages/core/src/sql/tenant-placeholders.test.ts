@@ -424,49 +424,40 @@ describe("resolveTenantSql — only code regions are substituted", () => {
     expect(codeRegions(out.sql)).toMatch(/AND note =/);
   });
 
+  // Inlined, a backslash can end the literal early on a server that reads strings
+  // differently from the dialect (#371: on Postgres with standard_conforming_strings =
+  // off, `'x\'' OR 1=1 -- '` returned every row). With no dialect at all (a custom
+  // AskDialect, #360) the server's reading is unknown too. A literal with no backslash
+  // and its quotes doubled reads the same either way, so sql-only refuses the ID on
+  // every dialect, and sql-params carries it as a driver parameter instead.
   describe("a crafted tenant ID with a backslash", () => {
+    const hostileId = "x\\' OR 1=1 -- ";
     const hostile: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["x\\' OR 1=1 -- "] },
+      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [hostileId] },
+    };
+    const quoted: TenantScope = {
+      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["it's"] },
     };
     const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
 
-    // A dialect that names a built-in engine but leaves backslashEscapes unset gets
-    // that engine's escaping: MySQL reads `\'` as an escaped quote by default.
-    it.each([
+    it.each<[string, TenantSqlDialect | undefined]>([
+      ["no dialect (a custom AskDialect)", undefined],
+      ["the Postgres spec", getDialectSpec("postgres")],
+      ["Postgres with backslashEscapes: true (standard_conforming_strings = off)", { id: "postgres", backslashEscapes: true }],
       ["the MySQL spec", getDialectSpec("mysql")],
-      ["{ id: 'mysql' }", { id: "mysql" as const }],
-      ["{ id: 'mariadb' }", { id: "mariadb" as const }],
-    ])("stays inside its literal on MySQL given %s", (_label, dialect) => {
-      const out = resolveTenantSql(sql, policy, hostile, "sql-only", 1, dialect);
-      expect(out.sql).toBe("SELECT * FROM orders WHERE agency_id = 'x\\\\'' OR 1=1 -- '");
-    });
-
-    it("keeps quote-doubling-only behavior when no dialect is supplied", () => {
-      const scope: TenantScope = {
-        access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["acme\\"] },
-      };
-      expect(resolveTenantSql(sql, policy, scope, "sql-only").sql).toBe(
-        "SELECT * FROM orders WHERE agency_id = 'acme\\'",
-      );
-    });
-
-    it("an explicit backslashEscapes: false is honored (NO_BACKSLASH_ESCAPES)", () => {
-      const dialect = { id: "mysql" as const, backslashEscapes: false };
-      const out = resolveTenantSql(sql, policy, hostile, "sql-only", 1, dialect);
-      expect(out.sql).toBe("SELECT * FROM orders WHERE agency_id = 'x\\'' OR 1=1 -- '");
-    });
-
-    it("throws for a dialect whose escaping is unknown, instead of guessing", () => {
-      const unknown = { id: "oracle" } as unknown as TenantSqlDialect;
-      expect(reasonOf(() => resolveTenantSql(sql, policy, hostile, "sql-only", 1, unknown))).toBe(
+      ["{ id: 'mariadb' }", { id: "mariadb" }],
+      ["MySQL with backslashEscapes: false (NO_BACKSLASH_ESCAPES)", { id: "mysql", backslashEscapes: false }],
+      ["an id whose escaping is unknown", { id: "oracle" } as unknown as TenantSqlDialect],
+    ])("is refused in sql-only mode and bound as a parameter in sql-params mode, given %s", (_label, dialect) => {
+      expect(reasonOf(() => resolveTenantSql(sql, policy, hostile, "sql-only", 1, dialect))).toBe(
         "UNESCAPABLE_TENANT_ID",
       );
-      // IDs without a backslash escape the same either way, and markers carry no literal.
-      expect(resolveTenantSql(sql, policy, agencyOne, "sql-only", 1, unknown).sql).toBe(
-        "SELECT * FROM orders WHERE agency_id = '42'",
+      const params = resolveTenantSql(sql, policy, hostile, "sql-params", 1, dialect);
+      expect(params.mode === "sql-params" && params.params).toEqual([hostileId]);
+      // The backslash is what's refused: a quote alone is still doubled and inlined.
+      expect(resolveTenantSql(sql, policy, quoted, "sql-only", 1, dialect).sql).toBe(
+        "SELECT * FROM orders WHERE agency_id = 'it''s'",
       );
-      const params = resolveTenantSql(sql, policy, hostile, "sql-params", 1, unknown);
-      expect(params.mode === "sql-params" && params.params).toEqual(["x\\' OR 1=1 -- "]);
     });
   });
 

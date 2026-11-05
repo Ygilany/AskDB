@@ -82,9 +82,11 @@ export type TenantScopeRejectionReason =
   /** A multi-ID scope met a tenant predicate with no list form (e.g. `<=`). */
   | "UNSUPPORTED_TENANT_PREDICATE"
   /**
-   * `resolveTenantSql()` in `sql-only` mode got a tenant ID containing a backslash
-   * and a dialect with an unknown `id` and no `backslashEscapes`, so it cannot
-   * escape the ID safely.
+   * A tenant ID containing a backslash would be inlined as a literal: by `ask()` or
+   * `resolveTenantSql()` in `sql-only` mode, or in the `sql` that `bindPreparedQuery()`
+   * returns. It's refused on every dialect, because a server whose string settings
+   * differ from the dialect's can read a backslash as the end of the literal. Use
+   * `tenantSqlMode: "sql-params"` (the default) to pass such IDs as driver parameters.
    */
   | "UNESCAPABLE_TENANT_ID";
 

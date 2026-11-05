@@ -7,10 +7,9 @@ import {
   type TenantScope,
   type TenantAccess,
 } from "../schema/v2/tenant-policy.js";
-import { getDialectSpec, isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import {
   escapeSqlLiteral,
-  escapeSqlLiteralLegacy,
   formatMarker,
   isTenantPlaceholderName,
   markerStyleForDialect,
@@ -57,11 +56,10 @@ export type TenantPlaceholderResult =
 
 /**
  * The parts of a dialect the tenant substituter reads: `id` picks the driver
- * marker style (`$N` / `?` / `@pN`); `backslashEscapes` drives literal escaping.
- * When `backslashEscapes` is unset, a built-in `id` supplies it (on for MySQL and
- * MariaDB); with an unknown `id`, a tenant ID containing a backslash throws
- * rather than guess. Omit the dialect entirely for Postgres-style `$N` markers
- * and quote-doubling only.
+ * marker style (`$N` / `?` / `@pN`), and with `backslashEscapes` it says how to lex
+ * the SQL, so only placeholders in code regions are substituted. Inlined tenant IDs
+ * are escaped the same way on every dialect (quotes doubled, a backslash refused).
+ * Omit the dialect entirely for Postgres-style `$N` markers and Postgres lexing.
  */
 export type TenantSqlDialect = Partial<Pick<DialectSpec, "id" | "backslashEscapes">>;
 
@@ -181,25 +179,24 @@ export function unexpandedSubtreeError(
 // Substitution — token-aware, one edit per code-region occurrence
 // ---------------------------------------------------------------------------
 
-function escapeTenantId(value: string, dialect?: TenantSqlDialect): string {
-  if (dialect === undefined) {
-    return escapeSqlLiteralLegacy(value);
-  }
-  let backslashEscapes = dialect.backslashEscapes;
-  if (backslashEscapes === undefined && dialect.id !== undefined && isBuiltInDialectId(dialect.id)) {
-    backslashEscapes = getDialectSpec(dialect.id).backslashEscapes;
-  }
-  if (backslashEscapes === undefined && value.includes("\\")) {
-    // Doubling quotes alone leaves `\'` able to close the literal on an engine
-    // that reads backslash escapes (MySQL's default), so don't guess.
+/**
+ * Inline one tenant ID as a string literal. A literal with its quotes doubled and no
+ * backslash reads the same whether or not the server treats backslash as an escape, so
+ * it can't close early under any string setting. An ID with a backslash has no such
+ * form: escaped for the dialect, it still breaks out on a server that reads strings
+ * differently (Postgres with `standard_conforming_strings = off`), and without a
+ * dialect the reading is unknown. So it's refused on every dialect, never guessed at.
+ */
+function escapeTenantId(value: string): string {
+  if (value.includes("\\")) {
     throw new TenantScopeError(
-      `A tenant ID contains a backslash, and dialect '${dialect.id ?? "(no id)"}' does not say ` +
-        "whether backslash escapes inside string literals. Set backslashEscapes on the dialect, " +
-        "or use tenantSqlMode 'sql-params'.",
+      "A tenant ID contains a backslash, which tenantSqlMode 'sql-only' can't inline safely: " +
+        "a server whose string settings differ from the dialect's can read it as the end of " +
+        "the literal. Use tenantSqlMode 'sql-params' (the default) to pass tenant IDs as driver parameters.",
       "UNESCAPABLE_TENANT_ID",
     );
   }
-  return escapeSqlLiteral(value, { backslashEscapes });
+  return escapeSqlLiteral(value, undefined);
 }
 
 type Edit = { start: number; end: number; text: string };
@@ -372,12 +369,7 @@ function replacePlaceholdersWithLiterals(
   resolved: ResolvedPlaceholder[],
   dialect?: TenantSqlDialect,
 ): string {
-  return substituteTenantPlaceholders(
-    sql,
-    resolved,
-    (r) => r.ids.map((id) => escapeTenantId(id, dialect)),
-    dialect,
-  );
+  return substituteTenantPlaceholders(sql, resolved, (r) => r.ids.map(escapeTenantId), dialect);
 }
 
 // ---------------------------------------------------------------------------
@@ -450,8 +442,8 @@ function replacePlaceholdersWithParams(
  * Also throws `TenantScopeError` when a placeholder cannot be resolved
  * (`UNRESOLVED_TENANT_PLACEHOLDER`) or when a multi-ID scope meets a predicate
  * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when
- * a tenant ID holds a backslash but the dialect's escaping is unknown
- * (`UNESCAPABLE_TENANT_ID`). Throws `SchemaParseError` when two of the policy's roots
+ * a tenant ID contains a backslash, on every dialect (`UNESCAPABLE_TENANT_ID`).
+ * Throws `SchemaParseError` when two of the policy's roots
  * derive the same placeholder, rather than bind one root's IDs through the other's.
  *
  * A `global` scope binds no IDs: SQL without a tenant placeholder is returned unchanged,

@@ -212,6 +212,18 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     expect(bound.sql).toBe(`SELECT count(*) FROM orders WHERE agency_id = '2' AND status = '${token}'`);
     expect(bound.params).toEqual([token, "2"]);
   });
+
+  // The `sql` a rebind returns always inlines the tenant IDs, and no literal form of a
+  // backslash is safe under every server string setting (#371), so the rebind refuses
+  // the ID rather than return a `sql` that can lose its tenant predicate.
+  it("throws UNESCAPABLE_TENANT_ID for a tenant ID containing a backslash", () => {
+    expect(() =>
+      bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
+        schema: strictSchema,
+        tenantScope: agencyIds("x\\' OR 1=1 -- "),
+      }),
+    ).toThrow(expect.objectContaining({ name: "TenantScopeError", reason: "UNESCAPABLE_TENANT_ID" }));
+  });
 });
 
 // The tenant rule reads `:status_nameOR` as one token; a renderer that substituted
