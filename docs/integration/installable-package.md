@@ -163,50 +163,59 @@ AskDB's first-party surfaces (CLI, HTTP API, Studio) support OpenAI, Azure/Found
 2. **Custom provider string + a host-registered adapter** (~40 lines): use any other string and pass an `AiProviderAdapter` registered under that name to `createAiRegistry(...)` (or `createAskDb({ providers })`).
 3. **BYO `LanguageModel` via `ask({ model })** (no config involvement): pass a model instance directly; `askdb.config` and `@askdb/ai` are not involved.
 
+Each recipe is a `.env` entry plus the `askdb.config.ts` lines that read it. AskDB reads settings from the config only, so the variable names are your choice: `env("…")` binds each one. Setting `ASKDB_AI_PROVIDER`, `ASKDB_AI_MODEL` or another `ASKDB_*` name in the shell does nothing; those are internal keys AskDB builds from the config.
+
 ### OpenAI
 
 ```bash
-# env only
-ASKDB_AI_PROVIDER=openai   # optional; openai is the default
+# .env
 OPENAI_API_KEY=sk-...
-ASKDB_AI_MODEL=gpt-4o       # optional; default: gpt-4o-mini
 ```
 
 ```ts
 // askdb.config.ts
-ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } }, language: { model: "gpt-4o" } }
+ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } }, language: { model: "gpt-4o" } } // model optional; default: gpt-4o-mini
 ```
 
 ### Azure / Microsoft Foundry
 
 ```bash
-ASKDB_AI_PROVIDER=azure
+# .env
 AZURE_OPENAI_API_KEY=...
-ASKDB_AI_AZURE_RESOURCE_NAME=my-resource  # or ASKDB_AI_BASE_URL
-ASKDB_AI_MODEL=gpt-4o-mini               # deployment name
+AZURE_RESOURCE_NAME=my-resource      # the subdomain of https://my-resource.openai.azure.com
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini  # your deployment name
+```
+
+```ts
+// askdb.config.ts — for Microsoft Foundry, use provider "foundry" and providerConfig.foundry
+ai: {
+  provider: "azure",
+  providerConfig: { azure: { apiKey: env("AZURE_OPENAI_API_KEY"), resourceName: env("AZURE_RESOURCE_NAME") } }, // or baseUrl: a full endpoint URL
+  language: { model: env("AZURE_OPENAI_DEPLOYMENT") },
+}
 ```
 
 ### Google Gemini
 
 ```bash
-ASKDB_AI_PROVIDER=google
+# .env
 GOOGLE_GENERATIVE_AI_API_KEY=...
-ASKDB_AI_MODEL=gemini-2.0-flash  # optional; default: gemini-2.0-flash
 ```
 
 ```ts
+// askdb.config.ts — default model: gemini-2.0-flash; set language.model to change it
 ai: { provider: "google", providerConfig: { google: { apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY") } } }
 ```
 
 ### Anthropic Claude
 
 ```bash
-ASKDB_AI_PROVIDER=anthropic
+# .env
 ANTHROPIC_API_KEY=sk-ant-...
-ASKDB_AI_MODEL=claude-sonnet-4-6  # optional; default: claude-sonnet-4-6
 ```
 
 ```ts
+// askdb.config.ts — default model: claude-sonnet-4-6; set language.model to change it
 ai: { provider: "anthropic", providerConfig: { anthropic: { apiKey: env("ANTHROPIC_API_KEY") } } }
 ```
 
@@ -215,12 +224,12 @@ ai: { provider: "anthropic", providerConfig: { anthropic: { apiKey: env("ANTHROP
 ### Vercel AI Gateway
 
 ```bash
-ASKDB_AI_PROVIDER=gateway
+# .env
 AI_GATEWAY_API_KEY=...
-ASKDB_AI_MODEL=anthropic/claude-sonnet-4-6  # optional; default: openai/gpt-4o-mini
 ```
 
 ```ts
+// askdb.config.ts — model optional; default: openai/gpt-4o-mini
 ai: { provider: "gateway", providerConfig: { gateway: { apiKey: env("AI_GATEWAY_API_KEY") } }, language: { model: "anthropic/claude-sonnet-4-6" } }
 ```
 

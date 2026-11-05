@@ -146,7 +146,7 @@ npx askdb introspect --engine postgres --schemas org,people,billing,ref \
   --url "postgres://fixture_reader:fixture_reader@127.0.0.1:15432/askdb_fixture"
 ```
 
-**Schema artifacts** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). A schema artifact can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
+**Schema artifacts** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). A schema artifact can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or config **`modes.omitSensitiveFromPrompt: true`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
 
 **Environment variables**
 
@@ -161,7 +161,6 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
 | `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
-| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | When `true`/`1`/`yes`, omit sensitive column/table names from NL→SQL DDL (default is to **include** names, tagged `(sensitive)`). See [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md). |
 
 **Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL. Flags:
 
@@ -173,7 +172,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--log-stdout` | Mirror structured logs to stdout. Implies `info` if level was `silent`. |
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
 | `--explain` | After `-- sql --`, print `-- explain --` plus JSON describing heuristic guardrails satisfied (`statementKind`, `checksVerified`, `remediationNote`). |
-| `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). Overrides default when combined with `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. |
+| `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). To omit on every run, set `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` instead. See [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md). |
 | `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. Current AskDB surfaces return SQL only. |
 
 **Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events, including `askdb.pipeline.mode`, appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
