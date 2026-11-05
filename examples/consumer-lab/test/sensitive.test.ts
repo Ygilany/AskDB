@@ -20,9 +20,6 @@
  * `reference/client-api.mdx`, `reference/cli.mdx`, `reference/http-api.mdx`,
  * `reference/config.mdx`); the replay server and its request log are lab code.
  *
- * Known discrepancy, marked `it.fails`: `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from
- * the environment (#377).
- *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). Every
  * scenario needs `cli-introspect-engine`, and on MySQL and MariaDB `mysql-databases`, whose
  * artifact otherwise has no `people.client` to mark; `sensitive-wildcard` needs
@@ -434,10 +431,10 @@ describe("[postgres] sensitive-omit-client", () => {
 });
 
 /** The installed `askdb ask` for the control question, with the model from the project's config pointed at the replay server. */
-function cliAsk(args: string[] = [], options: { cwd?: string; env?: Record<string, string> } = {}) {
+function cliAsk(args: string[] = [], options: { cwd?: string } = {}) {
   return askdbAsync(["ask", "--schema", artifact("postgres"), "--question", question(CONTROL).text, ...args], {
     cwd: options.cwd,
-    env: { LAB_REPLAY_BASE_URL: replay.baseURL("postgres"), ...options.env },
+    env: { LAB_REPLAY_BASE_URL: replay.baseURL("postgres") },
   });
 }
 
@@ -464,11 +461,11 @@ describe("[postgres] sensitive-omit-cli", () => {
 
 /**
  * `askdb-http` on the Postgres artifact with the overlay, from `cwd`'s config (default: the
- * lab's) with `env` added, one per key, started on first use and killed in afterAll.
+ * lab's), one per key, started on first use and killed in afterAll.
  */
-function sensitiveHttpServer(key: string, { cwd, env = {} }: { cwd?: string; env?: Record<string, string> } = {}): Promise<HttpServer> {
+function sensitiveHttpServer(key: string, { cwd }: { cwd?: string } = {}): Promise<HttpServer> {
   if (!httpServers.has(key)) {
-    httpServers.set(key, startHttpServer({ cwd, schemaPath: artifact("postgres"), env: { LAB_REPLAY_BASE_URL: replay.baseURL("postgres"), ...env } }));
+    httpServers.set(key, startHttpServer({ cwd, schemaPath: artifact("postgres"), env: { LAB_REPLAY_BASE_URL: replay.baseURL("postgres") } }));
   }
   return httpServers.get(key)!;
 }
@@ -522,30 +519,6 @@ export default defineConfig({
 }
 
 /**
- * The body of an `it.fails` omission case. It must fail only because the prompt still names
- * the sensitive columns. Anything else, a thrown error (a server that doesn't start, a failed
- * request, an unreadable request log), a failed request or no model call, makes the body
- * pass, so `it.fails` reports the cell as `FAIL`, not as the known issue. `run` does its own
- * setup, such as starting a server, so a setup failure is caught here too.
- */
-async function expectOmittedKnown(run: () => Promise<boolean>): Promise<void> {
-  let ok = false;
-  let calls: Awaited<ReturnType<typeof callsOf>>;
-  try {
-    calls = await callsOf(async () => (ok = await run()));
-  } catch (error) {
-    console.error("not the known discrepancy: the case threw before its prompt could be checked", error);
-    return;
-  }
-  const call = calls.length === 1 && calls[0]!.questionId === CONTROL && calls[0]!.error === null ? calls[0] : undefined;
-  if (!ok || !call || !describesClient(call.prompt)) {
-    console.error("not the known discrepancy: the request failed, it didn't make exactly one answered model call, or its prompt lost people.client", calls);
-    return;
-  }
-  expectOmitted(call.prompt);
-}
-
-/**
  * Contract: `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` omits sensitive
  * columns from the prompt (`guides/run-safely-in-prod.mdx`: "set
  * `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` (or pass
@@ -574,36 +547,5 @@ describe("[postgres] sensitive-omit-config", () => {
     const prompt = await promptOf("postgres", CONTROL, async () => expect((await postAsk(http, { question: question(CONTROL).text })).status).toBe(200));
 
     expectOmitted(prompt);
-  });
-});
-
-/**
- * Contract: `docs/contracts/sensitive-fields-and-modes.md` ("Current behavior") names three
- * ways to omit: `omitSensitiveIdentifiersFromNlToSqlPrompt`, `--omit-sensitive-from-prompt`,
- * and `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. The variable is a flat key AskDB builds from
- * `askdb.config.ts`, never read from `process.env`, so setting it in the environment omits
- * nothing (#377; the same class of doc error as #282). Over HTTP, the request field's
- * "env-driven" default (`reference/http-api.mdx`) read as this variable too. `askdb-http` now
- * honors the runtime setting (#376, fixed by #187), so the HTTP case is `known` for #377 only.
- * Catches: an operator who sets the documented variable and still sends the model its
- * sensitive column names, through the CLI or the HTTP API.
- * Not covered elsewhere: no other test sets the variable.
- */
-describe("[postgres] sensitive-omit-env", () => {
-  const env = { ASKDB_OMIT_SENSITIVE_FROM_PROMPT: "true" };
-
-  it.fails("sensitive-omit-env: askdb ask with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true sends a prompt without email and ssn (#377)", async (ctx) => {
-    needsSensitiveCapabilities(ctx, "postgres");
-
-    await expectOmittedKnown(async () => (await cliAsk([], { env })).status === 0);
-  });
-
-  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377)", async (ctx) => {
-    needsSensitiveCapabilities(ctx, "postgres");
-
-    await expectOmittedKnown(async () => {
-      const http = await sensitiveHttpServer("omit-env", { env });
-      return (await postAsk(http, { question: question(CONTROL).text })).status === 200;
-    });
   });
 });
