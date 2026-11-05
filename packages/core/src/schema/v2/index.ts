@@ -65,6 +65,7 @@ export type {
 export {
   createMentionMatcher,
   findMentionedNames,
+  sensitiveMentionNames,
   type MentionMatcher,
   type MentionName,
 } from "./mentions.js";

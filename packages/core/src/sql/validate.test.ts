@@ -172,6 +172,116 @@ describe("validateSelectSql — verified bypasses (sql server)", () => {
   });
 });
 
+// T-SQL runs a batch without `;` between statements. Each row was accepted before #327
+// and SQL Server runs it as more than one statement (or as control flow around one).
+describe("validateSelectSql — sql server statements without ';'", () => {
+  it.each([
+    [`SELECT 1 SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 IF 1=1 SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 WHILE 1=1 SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 l: SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 DECLARE c CURSOR FOR SELECT 1 OPEN c`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 BEGIN TRY SELECT 1/0 END TRY BEGIN CATCH SELECT 2 END CATCH`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 RETURN`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 GOTO l`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 DECLARE @x int`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 PRINT 1`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 RAISERROR('x',16,1)`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 THROW 50000, 'x', 1`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 BEGIN TRAN`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 SAVE TRAN x`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 BEGIN DISTRIBUTED TRANSACTION`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 WHILE 1=1 BREAK`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 WHILE 1=1 CONTINUE`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 OPEN c`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 CLOSE c`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 DEALLOCATE c`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 ADD SIGNATURE TO p BY CERTIFICATE c`, "SQL_FORBIDDEN_KEYWORD"],
+    [`SELECT 1 READTEXT t.c @ptr 0 10`, "SQL_FORBIDDEN_KEYWORD"],
+    // A parenthesized query right after a complete expression starts a statement.
+    [`SELECT 1 (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 'a' (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT @@ROWCOUNT (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`(SELECT 1) (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 OPTION (MAXDOP 1) (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT name FROM sys.objects WHERE name IN (name) ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT name FROM sys.objects ORDER BY name OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 AS n (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 AS n ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    // An unqualified quoted name is a column, not a function.
+    [`SELECT name FROM sys.objects ORDER BY [name] ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT name FROM sys.objects ORDER BY "name" ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    // Reserved words that end a value are no function name.
+    [`SELECT NULL ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT CURRENT_TIMESTAMP ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT CASE WHEN 1=1 THEN 1 END ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    // Keywords SQL Server does not reserve are aliases outside their clause.
+    [`SELECT 1 offset (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 next (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 first (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 apply (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 zone (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 ties (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // Only a keyword, an operator, a comma or a TOP count may come before a subquery.
+    [`SELECT {d '2020-01-01'} (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $ (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // Studio binds `?` as `@p0`, a value.
+    [`SELECT ? (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // A sort column named offset is no OFFSET clause.
+    [`SELECT 1 AS offset ORDER BY offset (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // SQL Server ends these literals where a keyword starts, so the keyword is a token.
+    [`SELECT 0xSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1ESELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $1SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT \u20acSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1\u200bSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1\u0085SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // Code outside strings and quoted names must be plain, since SQL Server may split
+    // statements at anything else: U+FEFF continues a name there, `$ .5` is money.
+    [`SELECT 1 a\ufeffunion SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a\ufefffrom (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $ . (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT \\. (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $ .x((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 + \u20ac . (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 AS a\u00a0b`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1x AS a`, "SQL_MULTI_STATEMENT"],
+    // …and inside a name or a variable, where it ends the token.
+    [`SELECT 1 a\u00a0SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a\u200bSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT @@spid\u3000SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a\u2028PRINT 'x'`, "SQL_MULTI_STATEMENT"],
+    // After a leading WITH list's main query, and before a trailing `;`.
+    [`WITH x AS (SELECT 1 a) SELECT a FROM x SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`WITH x AS (SELECT 1 a) SELECT a FROM x (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 SELECT 2;`, "SQL_MULTI_STATEMENT"],
+    // A label is a statement; the lexer reads `l:SELECT` as a `:SELECT` parameter.
+    [`SELECT 1 l:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 l:(SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // `@`, `$` and `#` continue a SQL Server name, so `a@b:` is a label too.
+    [`SELECT 1 a@b:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a@b:DELETE FROM t`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a$b:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // Studio binds `?` as `@p0`, which would extend the name before it.
+    [`SELECT 1 x?:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // A `:` written against anything but `(`, a comma or an operator is a label,
+    // whatever the name looks like (`#`, `#@` and `#1#` are names to SQL Server).
+    [`SELECT 1 #:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 AS a #@:DELETE FROM t`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 #1#:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 #$a:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT (1):SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 1:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a.:SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // ASCII control characters are not plain code.
+    [`SELECT 1\x00SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1\x7fSELECT 2`, "SQL_MULTI_STATEMENT"],
+  ] as const)("rejects %s as %s", (sql, rule) => {
+    expectRule(sql, rule, SQLSERVER_DIALECT);
+  });
+});
+
 describe("validateSelectSql — sqlite", () => {
   it.each([
     [`SELECT load_extension('x')`],
@@ -264,6 +374,70 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     accept(SQLSERVER_DIALECT, `SELECT TOP (10) * FROM #recent WHERE id = @p0 AND name = N'x'`);
   });
 
+  // Each statement returned one result set on SQL Server 2022 (#327), except the last
+  // two rows, whose `:name` placeholders AskDB binds before the SQL runs.
+  it.each([
+    [`SELECT 1 AS id UNION ALL SELECT 2 EXCEPT SELECT 3 INTERSECT SELECT 4`],
+    [`WITH x AS (SELECT 1 AS a), y (b) AS (SELECT 2) SELECT a, b FROM x CROSS JOIN y`],
+    [`WITH XMLNAMESPACES ('urn:x' AS ns) SELECT 1 AS [ns:a] FOR XML PATH('r')`],
+    [`SELECT CASE WHEN 1=1 THEN 'a' ELSE 'b' END AS v`],
+    // Subqueries after a keyword, an operator, a comma, or a function's bracket.
+    [`SELECT 1 AS a, (SELECT 2) AS b`],
+    [`SELECT 1 AS v WHERE 2 > (SELECT 1)`],
+    [`SELECT 1 AS v WHERE 1 = (SELECT 1)`],
+    [`SELECT 1 AS v WHERE 1 < (SELECT 2)`],
+    [`SELECT 1 + (SELECT 2) AS v`],
+    [`SELECT 1 AS a WHERE (SELECT 1) = 1 OR NOT (SELECT 1) = 0 OR 'a' LIKE (SELECT 'a') EXCEPT (SELECT 2) INTERSECT (SELECT 3)`],
+    [`SELECT CASE WHEN (SELECT 1) = 1 THEN 1 END AS v`],
+    [`SELECT 1 AS v WHERE 5 % (SELECT 2) = 1`],
+    [`SELECT ~(SELECT 2) AS v`],
+    [`SELECT 1 - (SELECT 2) AS v`],
+    [`SELECT 2 * (SELECT 2) / (SELECT 1) AS v`],
+    [`SELECT 1 & (SELECT 1) | (SELECT 2) ^ (SELECT 3) AS v`],
+    [`SELECT 1 AS v WHERE EXISTS (SELECT 1) AND NOT EXISTS (SELECT 2 WHERE 1=0) OR 1 IN (SELECT 1)`],
+    [`SELECT 1 AS v WHERE 1 = ANY (SELECT 1) AND 1 = SOME (SELECT 1) AND 1 >= ALL (SELECT 1)`],
+    [`SELECT 1 AS v WHERE 1 BETWEEN (SELECT 0) AND (SELECT 2)`],
+    [`SELECT 1 AS v WHERE 'a' LIKE 'a' ESCAPE (SELECT '!')`],
+    [`SELECT 1 AS a WHERE 1 IS DISTINCT FROM (SELECT 2)`],
+    [`SELECT CASE (SELECT 1) WHEN 1 THEN (SELECT 2) ELSE (SELECT 3) END AS v`],
+    [`SELECT DISTINCT (SELECT 1) AS a`],
+    [`SELECT o.name FROM sys.objects o JOIN (SELECT 1 a) x ON (SELECT 1) = 1`],
+    [`SELECT o.name FROM sys.objects o CROSS APPLY (SELECT 1 AS a) x OUTER APPLY (SELECT 2 AS b) y`],
+    [`SELECT COUNT(*) AS c FROM sys.objects HAVING (SELECT 1) = 1`],
+    [`SELECT name FROM sys.objects ORDER BY (SELECT NULL)`],
+    [`SELECT name FROM sys.objects ORDER BY name OFFSET (SELECT 0) ROWS FETCH NEXT (SELECT 1) ROWS ONLY`],
+    [`SELECT name FROM sys.objects ORDER BY name OFFSET 0 ROWS FETCH FIRST (SELECT 1) ROWS ONLY`],
+    [`SELECT 1 AS offset ORDER BY offset OFFSET (SELECT 0) ROWS`],
+    [`SELECT SYSDATETIMEOFFSET() AT TIME ZONE (SELECT 'UTC') AS z`],
+    // Unicode letters in names, any text in strings and quoted names, and money with digits.
+    [`SELECT N'caf\u00e9 \u20ac\u00a0' AS [n\u00e9e \u2028], 1 AS \u00e9t\u00e9, $5.00 AS m`],
+    [`SELECT 1 AS a, ((SELECT 1)) AS b`],
+    [`SELECT 1 AS a WHERE 1 IN ((SELECT 1))`],
+    [`SELECT COALESCE((SELECT 1), 0) AS v`],
+    [`SELECT CAST((SELECT 1) AS int) AS v`],
+    [`SELECT LEFT((SELECT 'abc'), 1) AS l, RIGHT((SELECT 'abc'), 1) AS r, NULLIF((SELECT 1), 0) AS n`],
+    [`SELECT 1 AS a@b, 2 AS c$d`],
+    [`SELECT sys.fn_varbintohexstr((SELECT 0x01)) AS h`],
+    [`SELECT [sys].[fn_varbintohexstr]((SELECT 0x01)) AS h`],
+    [`SELECT geography::Point((SELECT 47.6), -122.3, 4326).Lat AS lat`],
+    [`SELECT TOP 5 ABS((SELECT 1)) AS v FROM sys.objects`],
+    [`SELECT TOP (SELECT 5) name FROM sys.objects`],
+    [`SELECT TOP 5 (SELECT 1) AS a FROM sys.objects`],
+    [`SELECT TOP (5) (SELECT 1) AS a`],
+    [`SELECT TOP 5 PERCENT (SELECT 1) AS a FROM sys.objects`],
+    [`SELECT TOP 5 WITH TIES (SELECT 1) AS a FROM sys.objects ORDER BY name`],
+    [`(SELECT 1 AS a) UNION (SELECT 2)`],
+    [`SELECT 1 AS a UNION ALL (SELECT 2)`],
+    [`WITH x AS (SELECT 1 a) (SELECT a FROM x)`],
+    [`SELECT o.name FROM sys.objects o WITH (NOLOCK)`],
+    // A colon that is no label: `::` and AskDB's `:name` placeholders.
+    [`SELECT geography::Point(47.6, -122.3, 4326).STAsText() AS p`],
+    [`SELECT id FROM t WHERE org_id IN (:tenant_org_ids) AND id = :id`],
+    [`SELECT id FROM t WHERE a=:id AND b>=:lo AND c+:d>1 AND e IN (1,:f)`],
+  ])("accepts the single SQL Server statement %s", (sql) => {
+    accept(SQLSERVER_DIALECT, sql);
+  });
+
   it("allows exactly one trailing semicolon", () => {
     expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 1;  ")).toBe("SELECT 1;");
     expectRule("SELECT 1;;", "SQL_MULTI_STATEMENT");
@@ -281,11 +455,18 @@ describe("validateSelectSql — unknown dialect ids lex conservatively", () => {
     expectRejected(mysqlOnlyWrite, legacy);
     expect(validateSelectSql(POSTGRES_DIALECT, mysqlOnlyWrite)).toBe(mysqlOnlyWrite);
     expectRejected(`SELECT 1 WAITFOR DELAY '00:10'`, legacy);
+    // SQL Server reads it as two statements.
+    expectRule(`SELECT 1 SELECT 2`, "SQL_MULTI_STATEMENT", legacy);
   });
 
   it("still accepts ordinary SQL", () => {
     expect(validateSelectSql(legacy, "SELECT id FROM t WHERE x = 'a'")).toBe(
       "SELECT id FROM t WHERE x = 'a'",
     );
+    const materialized = "WITH x AS MATERIALIZED (SELECT 1 AS a) SELECT a FROM x";
+    // AskDB binds an unknown id's parameters as $1, $2 (`markerStyleForDialect`).
+    const dollarParams = "SELECT id FROM t WHERE id = $1 AND org IN ($2, $3)";
+    expect(validateSelectSql(legacy, dollarParams)).toBe(dollarParams);
+    expect(validateSelectSql(legacy, materialized)).toBe(materialized);
   });
 });
