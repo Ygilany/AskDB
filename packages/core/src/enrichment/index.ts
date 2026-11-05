@@ -10,5 +10,6 @@ export {
 export type {
   EnrichmentCandidate,
   EnrichmentContext,
+  EnrichmentPromptOptions,
   EnrichmentTarget,
 } from "./types.js";
