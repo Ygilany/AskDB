@@ -7,10 +7,11 @@ import {
 import type {
   EnrichmentCandidate,
   EnrichmentContext,
+  EnrichmentPromptOptions,
   EnrichmentTarget,
 } from "./types.js";
 
-export type SuggestEnrichmentDeps = {
+export type SuggestEnrichmentDeps = EnrichmentPromptOptions & {
   generateText?: typeof defaultGenerateText;
   /** Optional cap on the number of candidates returned. Default 3. */
   maxCandidates?: number;
@@ -45,7 +46,9 @@ export async function suggestEnrichment(
     // `system`, not `instructions`: works on both AI SDK 6 and 7 (see the
     // matching comment in `sql/generate.ts`).
     system: ENRICHMENT_SYSTEM_PROMPT,
-    prompt: buildEnrichmentUserPrompt(target, context),
+    prompt: buildEnrichmentUserPrompt(target, context, {
+      omitSensitiveIdentifiersFromPrompt: deps.omitSensitiveIdentifiersFromPrompt,
+    }),
     temperature: deps.temperature ?? 0.4,
     // Cast: AskDB's public `providerOptions` type is a plain opaque bag
     // (`Record<string, unknown>`) so callers don't need AI SDK JSON types.
