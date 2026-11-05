@@ -268,10 +268,14 @@ describe("http-api", () => {
     }
   });
 
-  it("listens on httpApi.listen.port and .host when the options leave them out", async () => {
+  it("takes port and host from the options, then from httpApi.listen.*", async () => {
     const port = await freePort();
     // Not the default host (127.0.0.1), so the test tells config from default.
     installTestRuntime({ logLevel: "silent", httpApi: { listen: { port, host: "localhost" } } });
+
+    const explicit = createAskDbHttpServer({ port: 0, host: "127.0.0.1" });
+    expect({ host: explicit.host, port: explicit.port }).toEqual({ host: "127.0.0.1", port: 0 });
+
     const app = createAskDbHttpServer();
     await app.listen();
     try {

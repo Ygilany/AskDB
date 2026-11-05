@@ -6,14 +6,22 @@ export type AskDbRuntimeStore = {
   readonly flat: Readonly<Record<string, string>>;
 };
 
-let stored: AskDbRuntimeStore | undefined;
+/**
+ * The snapshot lives on `globalThis` under a registered symbol, not in a module variable, so every
+ * copy of `@askdb/config` in a process shares it: a host that bootstraps with its own version is
+ * seen by an app (such as `@askdb/http-api`) that depends on another. Keep `AskDbRuntimeStore`
+ * readable by older copies; a change they can't read needs a new key.
+ */
+const RUNTIME_STORE_KEY: unique symbol = Symbol.for("askdb.runtimeStore");
+
+const runtimeHolder = globalThis as typeof globalThis & { [RUNTIME_STORE_KEY]?: AskDbRuntimeStore };
 
 export function setAskDbRuntime(data: AskDbRuntimeStore): void {
-  stored = data;
+  runtimeHolder[RUNTIME_STORE_KEY] = data;
 }
 
 export function clearAskDbRuntime(): void {
-  stored = undefined;
+  delete runtimeHolder[RUNTIME_STORE_KEY];
 }
 
 /**
@@ -21,10 +29,11 @@ export function clearAskDbRuntime(): void {
  * A host-facing factory can use it to bootstrap only when its host hasn't already done so.
  */
 export function isAskDbRuntimeInitialized(): boolean {
-  return stored !== undefined;
+  return runtimeHolder[RUNTIME_STORE_KEY] !== undefined;
 }
 
 export function getAskDbRuntimeStore(): AskDbRuntimeStore {
+  const stored = runtimeHolder[RUNTIME_STORE_KEY];
   if (!stored) {
     throw new Error(
       "AskDB runtime is not initialized. Call bootstrapAskDbEnv() (or bootstrapAskDbRuntime()) from @askdb/config after startup, " +
@@ -58,10 +67,10 @@ export function mergeAskDbFlatIntoEnvMap(
 
 /** @internal Tests only — replaces the runtime store without loading from disk. */
 export function setAskDbRuntimeForTests(data: AskDbRuntimeStore): void {
-  stored = data;
+  setAskDbRuntime(data);
 }
 
 /** @internal Tests only. */
 export function resetAskDbRuntimeForTests(): void {
-  stored = undefined;
+  clearAskDbRuntime();
 }

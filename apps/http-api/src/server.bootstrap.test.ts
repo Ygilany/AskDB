@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,13 +14,26 @@ const schemaDir = join(repoRoot, "fixtures/schemas/orders-users.schema");
 
 const scratchDirs: string[] = [];
 
-/** A project directory with an `askdb.config.ts` whose mock model answers `mockSql`. */
-function makeProject(mockSql: string): string {
+/**
+ * A project directory with an `askdb.config.ts` whose mock model answers `mockSql`.
+ * `ownConfigCopy` installs a separate copy of `@askdb/config` for the host, as when the host's
+ * version differs from the one `@askdb/http-api` depends on; otherwise both share one copy.
+ */
+function makeProject(mockSql: string, { ownConfigCopy = false } = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "askdb-http-host-"));
   scratchDirs.push(dir);
   // So `import "@askdb/config"` resolves, in askdb.config.ts and in the host script.
   mkdirSync(join(dir, "node_modules/@askdb"), { recursive: true });
-  symlinkSync(join(repoRoot, "packages/config"), join(dir, "node_modules/@askdb/config"));
+  const configPackage = join(repoRoot, "packages/config");
+  const hostConfig = join(dir, "node_modules/@askdb/config");
+  if (ownConfigCopy) {
+    mkdirSync(hostConfig);
+    cpSync(join(configPackage, "package.json"), join(hostConfig, "package.json"));
+    cpSync(join(configPackage, "dist"), join(hostConfig, "dist"), { recursive: true });
+    symlinkSync(join(configPackage, "node_modules"), join(hostConfig, "node_modules"));
+  } else {
+    symlinkSync(configPackage, hostConfig);
+  }
   writeFileSync(
     join(dir, "askdb.config.ts"),
     `import { defineConfig } from "@askdb/config";
@@ -39,9 +52,13 @@ export default defineConfig({
 
 /**
  * Run `setup` as a host module in `cwd`, then build the server, start it and post one question.
- * Prints `{ status, body }` from `POST /ask`, or `{ thrown }` when building the server throws.
+ * Prints `{ status, body }` from `POST /ask`, or `{ thrown, exitCode }` when building the server
+ * throws (`exitCode` is the host's `process.exitCode` at that point).
  */
-function runHost(cwd: string, setup = ""): { status?: number; body?: any; thrown?: string } {
+function runHost(
+  cwd: string,
+  setup = "",
+): { status?: number; body?: any; thrown?: string; exitCode?: number } {
   const script = `
 import { createAskDbHttpServer } from ${JSON.stringify(entry)};
 ${setup}
@@ -49,7 +66,7 @@ let app;
 try {
   app = createAskDbHttpServer({ port: 0 });
 } catch (error) {
-  process.stdout.write(JSON.stringify({ thrown: error.message }));
+  process.stdout.write(JSON.stringify({ thrown: error.message, exitCode: process.exitCode }));
   process.exit(0);
 }
 await app.listen();
@@ -99,6 +116,20 @@ bootstrapAskDbEnv({ cwd: ${JSON.stringify(hostProject)} });`,
     expect(reply.body.sql).toBe("select 'from host'");
   });
 
+  it("keeps the host's runtime when the host loads its own copy of @askdb/config", () => {
+    const hostProject = makeProject("select 'from host'");
+    const cwdProject = makeProject("select 'from cwd'", { ownConfigCopy: true });
+
+    const reply = runHost(
+      cwdProject,
+      `import { bootstrapAskDbEnv } from "@askdb/config";
+bootstrapAskDbEnv({ cwd: ${JSON.stringify(hostProject)} });`,
+    );
+
+    expect(reply.status).toBe(200);
+    expect(reply.body.sql).toBe("select 'from host'");
+  });
+
   it("throws the config error when it is built, not on the first request, when no config is found", () => {
     const empty = mkdtempSync(join(tmpdir(), "askdb-http-host-"));
     scratchDirs.push(empty);
@@ -106,5 +137,16 @@ bootstrapAskDbEnv({ cwd: ${JSON.stringify(hostProject)} });`,
     const reply = runHost(empty);
 
     expect(reply.thrown).toMatch(/^No askdb\.config\.\* or \.config\/askdb\.\* found under /);
+  });
+
+  it("throws when an existing .env can't be read, and leaves the host's exit code alone", () => {
+    const project = makeProject("select 1");
+    // A directory where `.env` should be: reading it fails with EISDIR, not ENOENT.
+    mkdirSync(join(project, ".env"));
+
+    const reply = runHost(project);
+
+    expect(reply.thrown).toMatch(/^Failed to load \.env: /);
+    expect(reply.exitCode).toBeUndefined();
   });
 });
