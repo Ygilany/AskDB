@@ -17,7 +17,7 @@ One pipeline, several surfaces: the `askdb` CLI, the `@askdb/client` / `@askdb/c
 
 AskDB is a workspace of small, layered packages — install only what your use case needs. Full table (purpose, install command, key exports) lives at `/reference/packages/`. At a glance:
 
-- **`@askdb/core`** — the dialect-agnostic pipeline (`ask()`, `loadSchema()`). Everything else builds on this.
+- **`@askdb/core`** — the pipeline (`ask()`, `loadSchema()`) and the built-in dialects; `ask({ dialect: "postgres" })` needs no engine package. Everything else builds on this.
 - **`@askdb/client`** — config-driven facade (`createAskDb()`); resolves schema, model, and dialect from `askdb.config.ts`.
 - **`@askdb/ai`** — config-driven AI provider registry used by `@askdb/client` and the first-party surfaces. OpenAI, Anthropic, Google, Azure/Foundry, and Vercel AI Gateway providers are built in; install the matching `@ai-sdk/*` package (an optional peer, e.g. `@ai-sdk/openai`). The former `@askdb/ai-openai` / `-anthropic` / `-google` / `-azure` packages were removed before 1.0: use `@askdb/ai` and the `@ai-sdk/*` package instead.
 - **`@askdb/postgres` / `-mysql` / `-sqlite` / `-sqlserver`** — engine adapters: introspection connector, catalog templates, and a re-export of that engine's dialect (the dialect specs themselves ship inside `@askdb/core`).

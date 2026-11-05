@@ -196,7 +196,7 @@ const { sql } = await askdb.ask(question, {
 });
 ```
 
-All four dialect specs ship inside `@askdb/core`. The engine packages (`@askdb/mysql`, `@askdb/postgres`, ...) supply the *introspection* connector for that engine (and re-export its dialect constant for convenience); you need them to introspect, not to generate.
+All six dialect specs (`postgres`, `cockroachdb`, `mysql`, `mariadb`, `sqlite`, `sqlserver`) ship inside `@askdb/core`. The engine packages (`@askdb/mysql`, `@askdb/postgres`, ...) supply the *introspection* connector for that engine (and re-export its dialect constant for convenience); you need them to introspect, not to generate.
 
 ### 4. Update your driver
 
