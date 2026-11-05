@@ -161,7 +161,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Docs-site claims name only package names, APIs and file paths that exist in source (`AGENTS.md`, "Conventions"), and no doc claims AskDB executes SQL, owns credentials or trains on customer data (`apps/docs-site/STYLE.md`, "Sources of truth").
 - Every documented install of a package that loads `@askdb/core` lists `ai`, because Yarn doesn't auto-install peers (#196).
 - **Changelog or changeset rule:** every change to a publishable package has a changeset, except a change confined to test files, which needs none (`pnpm changeset`; the bump level is *Architecture*'s versioning rule) (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Before Opening a PR"); docs-site changes carry a patch changeset for `@askdb/docs-site`, which CI doesn't check (`apps/docs-site/STYLE.md`, "Process").
-- **House style:** `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow `AGENTS.md` there.
+- **House style:** `apps/docs-site/STYLE.md`.
 
 ## What code review flags
 
