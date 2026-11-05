@@ -55,6 +55,12 @@ You passed a JSON file that isn't named `schema.json`, such as `prod-schema.json
 
 Pass the directory to `--schema` or `loadSchema()`, or rename the file to `schema.json`. To load only the physical layer, pass the file's content to `loadSchemaFromJson()`.
 
+### `SchemaParseError: Schema directory … has a file name in the wrong case`
+
+A file in the schema directory has the right name in the wrong case, such as `Tenant-Policy.md`, `Concepts.md`, `Tables/` or `tables/orders.MD`. AskDB reads these names exactly. On Linux, where file names are case-sensitive, it would skip the file: a skipped `tenant-policy.md` means `ask()` runs with no tenant policy, and a skipped table file drops its `sensitive: true` marks. macOS and Windows would load the same directory, so AskDB refuses it on every OS, and you find out before you deploy.
+
+Rename each file the error names, for example `git mv Tenant-Policy.md tenant-policy.md`. `askdb bundle` refuses the directory the same way.
+
 ### `SchemaParseError: Missing required field …`
 
 The schema artifact is from an older format. Re-run introspection to regenerate it:

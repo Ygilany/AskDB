@@ -216,6 +216,10 @@ describe("loadSchema — a JSON file inside a schema directory must be schema.js
       copyFileSync(join(multiTenantDir, "tenant-policy.md"), join(dir, "tenant-policy.md")),
     tables: (dir) => mkdirSync(join(dir, "tables")),
     "concepts.md": (dir) => writeFileSync(join(dir, "concepts.md"), "---\nconcepts: []\n---\n"),
+    // In any case: on Linux a wrong-case name escaped the check, and the copy loaded
+    // with no tenant policy.
+    "Tenant-Policy.md": (dir) =>
+      copyFileSync(join(multiTenantDir, "tenant-policy.md"), join(dir, "Tenant-Policy.md")),
   };
 
   it.each(Object.keys(siblings))(
@@ -232,6 +236,40 @@ describe("loadSchema — a JSON file inside a schema directory must be schema.js
       expect((caught as SchemaParseError).message).toContain(sibling);
     },
   );
+});
+
+describe("loadSchema — a schema directory's file names must be spelled exactly", () => {
+  // Renamed on disk, so readdir reports the wrong case on every filesystem. Where names
+  // are case-sensitive (Linux), the loader would otherwise skip the file: no tenant
+  // policy (and no tenantScope requirement), or no `sensitive: true` from tables/*.md.
+  // The directory path still needs `schema.json` exactly (ADR 0019).
+  it.each([
+    { fixture: multiTenantDir, renames: [["tenant-policy.md", "Tenant-Policy.md"]] },
+    { fixture: v2Dir, renames: [["tables", "Tables"]] },
+    { fixture: v2Dir, renames: [["schema.json", "Schema.json"]] },
+    {
+      fixture: v2Dir,
+      renames: [
+        ["concepts.md", "Concepts.md"],
+        ["tables/users.md", "tables/users.MD"],
+      ],
+    },
+  ])("a directory holding $renames.0.1 throws SchemaParseError naming each rename", ({ fixture, renames }) => {
+    const dir = copyFixture(fixture);
+    for (const [from, to] of renames) renameSync(join(dir, from!), join(dir, to!));
+
+    const caught = thrownBy(() => loadSchema(dir));
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    for (const [from, to] of renames) {
+      expect((caught as SchemaParseError).message).toContain(`${to} to ${from}`);
+    }
+  });
+
+  it("checks the same names when given the directory's schema.json path", () => {
+    const dir = copyFixture(multiTenantDir);
+    renameSync(join(dir, "tenant-policy.md"), join(dir, "Tenant-Policy.md"));
+    expect(() => loadSchema(join(dir, "schema.json"))).toThrow(SchemaParseError);
+  });
 });
 
 describe("loadSchema — optional files fail closed when present but broken", () => {
