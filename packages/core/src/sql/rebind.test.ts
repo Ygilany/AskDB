@@ -16,7 +16,11 @@ import {
   SqlValidationError,
   TenantGuardrailError,
   TenantScopeError,
+  MYSQL_DIALECT,
+  POSTGRES_DIALECT,
+  validateSelectSql,
   type BuiltInDialectId,
+  type DialectSpec,
   type NormalizedSchema,
   type NormalizedSchemaV2,
   type PreparedQuery,
@@ -51,7 +55,7 @@ function template(namedSql: string, dialect: BuiltInDialectId = "postgres"): Pre
   const parameters: PreparedQuery["parameters"] = [];
   if (namedSql.includes(":status_name")) parameters.push(status);
   for (const m of new Set(namedSql.match(/:tenant_[a-z_]+_ids/g) ?? [])) parameters.push(tenantDecl(m.slice(1)));
-  return { version: 1, dialect, namedSql, parameters };
+  return { version: 1, dialect, dialectRules: "builtin", namedSql, parameters };
 }
 
 /** A three-block model reply: the bound SQL, its `sql-unbound` template, and the manifest. */
@@ -74,7 +78,7 @@ async function askForTemplate(options: {
   unbound: string;
   schema: NormalizedSchemaV2 | NormalizedSchema;
   tenantScope?: TenantScope;
-  dialect?: BuiltInDialectId;
+  dialect?: BuiltInDialectId | DialectSpec;
 }): Promise<PreparedQuery> {
   const result = await ask({
     question: "orders by status",
@@ -457,3 +461,110 @@ function catchError(fn: () => unknown): unknown {
   }
   throw new Error("expected a throw");
 }
+
+// ask() checks and renders under the host's spec; a rebind that fell back to the built-in
+// spec would drop the host's rules (#660). So it takes the host's spec, or refuses.
+describe("bindPreparedQuery — the host's DialectSpec (#660)", () => {
+  const hostPostgres: DialectSpec = { ...POSTGRES_DIALECT, backslashEscapes: true };
+  const shippedSql = "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'shipped'";
+  const guardrails = { schema: strictSchema, tenantScope: agencyIds("4") };
+
+  // Any spec object other than the exported constant carries the host's rules: an unchanged
+  // spread too, and a second copy of @askdb/core (ESM beside CJS), whose constants are other objects.
+  it.each<[string, DialectSpec]>([
+    ["a spread that sets backslashEscapes", hostPostgres],
+    ["an unchanged spread, as a second copy of @askdb/core gives", { ...POSTGRES_DIALECT }],
+  ])("refuses to rebind a template ask() made under %s without that spec", async (_label, dialect) => {
+    const prepared = await askForTemplate({ sql: shippedSql, unbound: scopedOrders, ...guardrails, dialect });
+    expect(prepared.dialectRules).toBe("host");
+    expect(() => bindPreparedQuery(prepared, { status_name: "\\' OR 1=1 --" }, guardrails)).toThrow(
+      expect.objectContaining({ name: "QueryParameterError", reason: "DIALECT_SPEC_REQUIRED" }),
+    );
+  });
+
+  // The exported constant is the built-in spec itself, so its templates rebind without `dialect`.
+  it("rebinds a template ask() made under the exported constant without the spec", async () => {
+    const prepared = await askForTemplate({ sql: shippedSql, unbound: scopedOrders, ...guardrails, dialect: POSTGRES_DIALECT });
+    expect(prepared.dialectRules).toBe("builtin");
+    expect(bindPreparedQuery(prepared, { status_name: "open" }, guardrails).sql).toBe(
+      "SELECT count(*) FROM orders WHERE agency_id = '4' AND status = 'open'",
+    );
+  });
+
+  // #660's repro: under the built-in Postgres rules `\' OR 1=1 --` rendered as
+  // `'\'' OR 1=1 --'`, which a backslash-escaping server ends early and runs the OR.
+  it("renders a business value under the spec the host passes, so its own check accepts the SQL", async () => {
+    const prepared = await askForTemplate({ sql: shippedSql, unbound: scopedOrders, ...guardrails, dialect: hostPostgres });
+    const bound = bindPreparedQuery(prepared, { status_name: "\\' OR 1=1 --" }, { ...guardrails, dialect: hostPostgres });
+
+    expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '4' AND status = '\\\\'' OR 1=1 --'");
+    expect(() => validateSelectSql(hostPostgres, bound.sql)).not.toThrow();
+  });
+
+  // #660's second repro: the host blocks my_udf, but a template stored under the built-in
+  // MySQL rules called it and rebound with verdict allow.
+  it("refuses a function the host's spec blocks, in a template made under the built-in rules", async () => {
+    const prepared = await askForTemplate({
+      sql: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND my_udf(status) = 'shipped'",
+      unbound: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND my_udf(status) = :status_name",
+      ...guardrails,
+      dialect: "mysql",
+    });
+    expect(prepared.dialectRules).toBe("builtin");
+    const hostMysql: DialectSpec = { ...MYSQL_DIALECT, blockedFunctions: [...(MYSQL_DIALECT.blockedFunctions ?? []), "my_udf"] };
+
+    expect(() => bindPreparedQuery(prepared, { status_name: "open" }, { ...guardrails, dialect: hostMysql })).toThrow(
+      expect.objectContaining({ name: "SqlValidationError", message: expect.stringContaining("my_udf") }),
+    );
+  });
+
+  it("refuses a spec whose id isn't the template's dialect", () => {
+    expect(() =>
+      bindPreparedQuery(template(scopedOrders), { status_name: "open" }, { ...guardrails, dialect: MYSQL_DIALECT }),
+    ).toThrow(expect.objectContaining({ name: "QueryParameterError", reason: "DIALECT_UNSUPPORTED" }));
+  });
+
+  // A template stored before AskDB recorded dialectRules may have been made under a host's
+  // spec; the rebind can't tell, so it asks rather than guess (ADR 0032).
+  it("refuses a template stored without dialectRules until the host names its rules; a built-in id is enough", () => {
+    const { dialectRules: _rules, ...stored } = template(scopedOrders);
+    expect(() => bindPreparedQuery(stored, { status_name: "open" }, guardrails)).toThrow(
+      expect.objectContaining({
+        name: "QueryParameterError",
+        reason: "DIALECT_SPEC_REQUIRED",
+        message: expect.stringContaining("'postgres'"),
+      }),
+    );
+    expect(bindPreparedQuery(stored, { status_name: "open" }, { ...guardrails, dialect: "postgres" }).sql).toBe(
+      "SELECT count(*) FROM orders WHERE agency_id = '4' AND status = 'open'",
+    );
+  });
+
+  // A value that is neither label, such as a typo in a template loaded from JSON, is refused
+  // too, and the message names it rather than say the field is missing.
+  it("names an unrecognised dialectRules value when it refuses the template", () => {
+    const typo = { ...template(scopedOrders), dialectRules: "built-in" } as unknown as PreparedQuery;
+    expect(() => bindPreparedQuery(typo, { status_name: "open" }, guardrails)).toThrow(
+      expect.objectContaining({ reason: "DIALECT_SPEC_REQUIRED", message: expect.stringContaining("'built-in'") }),
+    );
+  });
+
+  // ask() checks its own render against the model's SQL. Under the built-in rules, a value
+  // with a backslash renders differently from the host's escaping, and ask() would drop the
+  // reuse artifacts.
+  it("keeps the reuse artifacts when a value renders differently under the host's spec", async () => {
+    const result = await ask({
+      question: "orders by status",
+      schema: strictSchema,
+      model: fakeModel,
+      dialect: hostPostgres,
+      tenantScope: agencyIds("4"),
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: reply("SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'a\\\\b'", scopedOrders, "a\\b"),
+        })) as never,
+      },
+    });
+    expect(result.preparedQuery?.dialectRules).toBe("host");
+  });
+});

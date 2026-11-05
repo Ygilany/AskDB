@@ -71,6 +71,26 @@ Wherever AskDB inlines a tenant ID, the ID must now be printable ASCII without a
 - **`bindPreparedQuery()` and `askdb.bind()`** always inline the tenant IDs in their `sql`, so they can't rebind such an ID yet ([#664](https://github.com/Ygilany/AskDB/issues/664)).
 - **A control character in a tenant ID** now throws this `TenantScopeError` instead of `QueryParameterError`.
 
+### Pass your dialect rules to `bindPreparedQuery()`
+
+A rebind now checks and renders under the dialect rules `ask()` ran with, or refuses ([#660](https://github.com/Ygilany/AskDB/issues/660), ADR 0032). Before, it always used the built-in spec, so a host's `backslashEscapes`, `blockedFunctions`, `extraForbiddenKeywords` and `extraValidate` were dropped at rebind. `ask()` now records the rules in `preparedQuery.dialectRules`, and `bindPreparedQuery()` and `askdb.bind()` take a new `dialect` option:
+
+```ts
+const hostSpec = { ...POSTGRES_DIALECT, backslashEscapes: true }; // the spec you pass to ask()
+
+// Before
+const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, { schema, tenantScope });
+
+// After
+const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, { schema, tenantScope, dialect: hostSpec });
+```
+
+- **A template `ask()` made under your own `DialectSpec`** (`dialectRules: "host"`), even an unchanged spread, throws `QueryParameterError` (`DIALECT_SPEC_REQUIRED`) without `dialect`. Pass the same spec.
+- **A template stored before this release** has no `dialectRules`, so it throws the same error until you pass `dialect`. If `ask()` ran with a built-in id, the id is enough, such as `dialect: "postgres"`.
+- **A `dialect` with another `id`** than the template's throws `QueryParameterError` (`DIALECT_UNSUPPORTED`).
+- **A template you build by hand** has no `dialectRules`, so pass `dialect` when you rebind it.
+- **An app that loads two copies of `@askdb/core`**, such as ESM beside CJS, gets `"host"` templates, because the other copy's constants are different objects. Pass `dialect`.
+
 ## 1.0.0-beta.45
 
 Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/config` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.

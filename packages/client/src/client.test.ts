@@ -689,6 +689,7 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     const readsEmail = {
       version: 1 as const,
       dialect: "postgres" as const,
+      dialectRules: "builtin" as const,
       namedSql: "SELECT c.email FROM clients c WHERE c.id IN (:tenant_client_ids) AND c.name = :status_name",
       parameters: [
         { name: "status_name", placeholder: ":status_name", type: "string" as const, cardinality: "one" as const, source: "question" as const },
@@ -726,6 +727,7 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     const readsPassword = {
       version: 1 as const,
       dialect: "postgres" as const,
+      dialectRules: "builtin" as const,
       namedSql: "SELECT password FROM users WHERE id = :status_name",
       parameters: [
         { name: "status_name", placeholder: ":status_name", type: "string" as const, cardinality: "one" as const, source: "question" as const },
@@ -737,6 +739,25 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     expect(bound.verdict.findings).toEqual([
       expect.objectContaining({ check: "sensitive", rule: "SENSITIVE_COLUMN_REFERENCED" }),
     ]);
+  });
+
+  // A template stored before AskDB recorded dialectRules needs the rules named at rebind;
+  // askdb.bind() must pass `dialect` on to core, or a host can't rebind it at all (#660).
+  it("passes dialect to the rebind, which a template stored without dialectRules needs", async () => {
+    const askdb = askdbReplying(
+      reply(
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'shipped'",
+        "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status_name",
+      ),
+    );
+    const { preparedQuery } = await askdb.ask("orders by status", { tenantScope: agencyIds("42") });
+    const { dialectRules: _rules, ...stored } = preparedQuery!;
+
+    await expect(askdb.bind(stored, { status_name: "open" }, { tenantScope: agencyIds("7") })).rejects.toMatchObject({
+      reason: "DIALECT_SPEC_REQUIRED",
+    });
+    const bound = await askdb.bind(stored, { status_name: "open" }, { tenantScope: agencyIds("7"), dialect: "postgres" });
+    expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '7' AND status = 'open'");
   });
 
   it("expands a subtree scope with resolveTenantDescendants before binding", async () => {

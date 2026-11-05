@@ -84,7 +84,7 @@ flowchart LR
 **A third-party engine** needs no AskDB change, but it gets no string id.
 
 - An engine that speaks a built-in family's SQL can spread that spec and pass the object to `ask()`: `{ ...POSTGRES_DIALECT, displayName: "…", promptBrief: "…" }`. It keeps the family's `id`, so it keeps that family's lexing, quoting and markers. Any list it sets replaces the family's list.
-- The spread spec's own rules hold in `ask()` only. `PreparedQuery` records just the `id`, so `bindPreparedQuery()` and `askdb.bind()` check and render under the built-in family's spec, without the host's lists, `extraValidate` or `backslashEscapes` (#660).
+- The spread spec's own rules hold in `ask()` only. `PreparedQuery` records just the `id`, so `bindPreparedQuery()` and `askdb.bind()` check and render under the built-in family's spec, without the host's lists, `extraValidate` or `backslashEscapes` (#660). Amended 2026-11 by [ADR 0032](0032-rebind-checks-under-the-hosts-dialect-spec.md): `ask()` records `dialectRules`, and a rebind runs under the spec the host passes as `dialect`, refusing a template made under a spread spec without it.
 - Any other engine implements `AskDialect`, the escape hatch. `ask()` doesn't run the read-only validator on an `AskDialect`'s SQL, so the engine calls `validateSelectSql` itself.
 - A `DialectSpec` with a new `id` needs a change to core, because `DialectId` is closed.
 - It introspects through its own `ConnectorProviderAdapter`, registered in a host's connector registry (ADR 0008).

@@ -130,7 +130,12 @@ export type QueryParameterRejectionReason =
   /** `values` has a `:tenant_*` key. Tenant IDs come from `tenantScope` only. */
   | "TENANT_VALUE_SUPPLIED"
   /** The tenant markers in `unboundSql` can't be lined up with the business parameters. */
-  | "TENANT_PARAM_ALIGNMENT";
+  | "TENANT_PARAM_ALIGNMENT"
+  /**
+   * `bindPreparedQuery()` needs `guardrails.dialect`: the template was made under a host's
+   * `DialectSpec` (`dialectRules: "host"`), or stored without `dialectRules`.
+   */
+  | "DIALECT_SPEC_REQUIRED";
 
 export class QueryParameterError extends AskDbError {
   constructor(

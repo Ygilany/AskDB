@@ -11,6 +11,7 @@ import { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
 import type { TenantScope } from "./schema/v2/tenant-policy.js";
 import {
+  BUILT_IN_DIALECTS,
   type BuiltInDialectId,
   type DialectSpec,
   getDialectSpec,
@@ -470,6 +471,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     const prepared: PreparedQuery = {
       version: 1,
       dialect: dialectSpec.id as BuiltInDialectId,
+      dialectRules: dialectSpec === BUILT_IN_DIALECTS[dialectSpec.id as BuiltInDialectId] ? "builtin" : "host",
       namedSql: generated.unboundNamedSql,
       parameters: [
         ...generated.parameterManifest.parameters.map((p) => ({
@@ -488,7 +490,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       values[p.name] = p.value;
     }
     try {
-      const bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true });
+      const bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true, dialect: dialectSpec });
       if (!sqlStructurallyEqual(bound.sql, generated.sql)) {
         logger?.debug?.(
           {

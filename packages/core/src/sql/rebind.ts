@@ -12,7 +12,7 @@ import {
   type QueryParamSlot,
   type RenderedQuery,
 } from "./bind.js";
-import { BUILT_IN_DIALECTS, isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { BUILT_IN_DIALECTS, isBuiltInDialectId, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { decide, throwIfDenied } from "./guardrail-decide.js";
 import { evaluateGuardrails, guardrailPlan } from "./guardrails.js";
 import type { SensitiveGuardrailMode } from "./sensitive-guardrail.js";
@@ -43,6 +43,13 @@ export type BindGuardrails = {
    * `enforcement: warn`) is refused unless this includes `"tenant"`.
    */
   acceptWarnings?: ReadonlyArray<"tenant">;
+  /**
+   * The dialect rules to check and render under: the `DialectSpec` `ask()` ran with, or a
+   * built-in id. Its `id` must be the template's `dialect`. Required for a template with
+   * `dialectRules: "host"`, or one stored without `dialectRules`; a `"builtin"` template
+   * defaults to the built-in spec (ADR 0032).
+   */
+  dialect?: DialectSpec | BuiltInDialectId;
 };
 
 export type BoundQuery = {
@@ -95,7 +102,7 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw new QueryParameterError(`Unknown dialect '${prepared.dialect}'.`, "DIALECT_UNSUPPORTED");
   }
-  const spec = BUILT_IN_DIALECTS[prepared.dialect];
+  const spec = rebindSpec(prepared, guardrails.dialect);
   rejectTenantValues(values);
 
   const { schema } = guardrails;
@@ -143,7 +150,7 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
     );
   }
 
-  let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true });
+  let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true, dialect: spec });
   if (policy && scope) {
     const sql = inlineTenantIdsForRebind(bound.sql, policy, scope, spec);
     const unbound = bindTenantIntoUnboundSql(bound, {
@@ -292,4 +299,39 @@ function inlineTenantIdsForRebind(
     }
     throw error;
   }
+}
+
+/**
+ * The spec a rebind checks and renders under. A `"builtin"` template uses its built-in spec
+ * unless the host passes one. A `"host"` template, or one stored without `dialectRules`, has
+ * rules AskDB can't recover, so it needs the host's spec rather than a guess (ADR 0032).
+ */
+function rebindSpec(prepared: PreparedQuery, dialect: BindGuardrails["dialect"]): DialectSpec {
+  if (dialect === undefined) {
+    if (prepared.dialectRules === "builtin") return BUILT_IN_DIALECTS[prepared.dialect];
+    const fix =
+      `Pass guardrails.dialect: the DialectSpec ask() ran with, or the built-in id '${prepared.dialect}' ` +
+      "if it ran with the built-in rules.";
+    const rules = prepared.dialectRules as unknown;
+    throw new QueryParameterError(
+      rules === "host"
+        ? "This template was made by ask() under a host's DialectSpec (dialectRules: 'host'), so " +
+            `bindPreparedQuery() checks and renders it only under that spec. ${fix} A constant from another ` +
+            "copy of @askdb/core counts as a host's spec."
+        : rules === undefined || rules === null
+          ? "This template has no dialectRules: it was stored before AskDB recorded which dialect rules ask() " +
+              `used, so bindPreparedQuery() won't guess. ${fix}`
+          : `This template has dialectRules ${JSON.stringify(rules).replace(/"/g, "'")}, which is neither 'builtin' ` +
+              `nor 'host', so bindPreparedQuery() won't guess. ${fix}`,
+      "DIALECT_SPEC_REQUIRED",
+    );
+  }
+  const spec = typeof dialect === "string" ? (isBuiltInDialectId(dialect) ? BUILT_IN_DIALECTS[dialect] : undefined) : dialect;
+  if (spec?.id !== prepared.dialect) {
+    throw new QueryParameterError(
+      `guardrails.dialect must have the template's dialect id '${prepared.dialect}'.`,
+      "DIALECT_UNSUPPORTED",
+    );
+  }
+  return spec;
 }
