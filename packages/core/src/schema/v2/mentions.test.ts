@@ -70,16 +70,24 @@ describe("createMentionMatcher", () => {
     }
   });
 
-  it("checks many texts against every column of many sensitive tables quickly", () => {
-    // 30 sensitive tables of 30 columns each, as `{ table, column }` names; 90,000 texts that name none.
-    const names = Array.from({ length: 900 }, (_, i) => ({ table: `t${Math.floor(i / 30)}`, column: `col_${i % 30}` }));
-    const matcher = createMentionMatcher(names);
-    const started = performance.now();
-    let hits = 0;
-    for (let i = 0; i < 90_000; i++) if (matcher.mentionsAny(`the t${i % 30} order total for region ${i}`)) hits++;
-    expect(hits).toBe(0);
-    // One alternative per name took about 1.8 s here; grouping them by table takes about 50 ms.
-    expect(performance.now() - started).toBeLessThan(750);
+  it("costs about the same for 30 sensitive tables whether each has 1 column or 30", () => {
+    // 30 tables of `{ table, column }` names; texts that name none. The cost must follow the number
+    // of tables, not of columns: one alternative per name made 900 names about 30 times slower than 30.
+    const names = (columns: number) =>
+      Array.from({ length: 30 * columns }, (_, i) => ({ table: `t${i % 30}`, column: `col_${Math.floor(i / 30)}` }));
+    const texts = Array.from({ length: 20_000 }, (_, i) => `the t${i % 30} order total for region ${i}`);
+    const fastest = (matcher: ReturnType<typeof createMentionMatcher>) => {
+      let best = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        for (const text of texts) if (matcher.mentionsAny(text)) throw new Error(`unexpected mention in ${text}`);
+        best = Math.min(best, performance.now() - started);
+      }
+      return best;
+    };
+    const oneColumnEach = fastest(createMentionMatcher(names(1)));
+    const thirtyColumnsEach = fastest(createMentionMatcher(names(30)));
+    expect(thirtyColumnsEach / oneColumnEach).toBeLessThan(5);
   });
 
   it("mentions nothing for an empty list or empty names", () => {
