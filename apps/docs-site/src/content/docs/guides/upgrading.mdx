@@ -65,31 +65,38 @@ if (result.unboundSql && result.params) {
 
 ### Use `sql-params` for tenant IDs outside printable ASCII
 
-Wherever AskDB inlines a tenant ID, the ID must now be printable ASCII without a backslash, on every dialect ([#360](https://github.com/Ygilany/AskDB/issues/360), [#371](https://github.com/Ygilany/AskDB/issues/371), ADR 0024). That covers `tenantSqlMode: "sql-only"` and the `sql` that `bindPreparedQuery()` returns. Any other ID throws `TenantScopeError` (`UNESCAPABLE_TENANT_ID`). Before, such an ID could end its literal early on a server whose string settings or connection charset differ from the dialect's, and the query lost its tenant filter.
+Wherever AskDB inlines a tenant ID, the ID must now be printable ASCII without a backslash, on every dialect ([#360](https://github.com/Ygilany/AskDB/issues/360), [#371](https://github.com/Ygilany/AskDB/issues/371), ADR 0024). That covers `tenantSqlMode: "sql-only"`, in `ask()` and in a rebind. Any other ID throws `TenantScopeError` (`UNESCAPABLE_TENANT_ID`). Before, such an ID could end its literal early on a server whose string settings or connection charset differ from the dialect's, and the query lost its tenant filter.
 
-- **With `ask()`,** use `tenantSqlMode: "sql-params"`, the default, which passes any ID as a driver parameter.
-- **`bindPreparedQuery()` and `askdb.bind()`** always inline the tenant IDs in their `sql`, so they can't rebind such an ID yet ([#664](https://github.com/Ygilany/AskDB/issues/664)).
+- **Use `tenantSqlMode: "sql-params"`,** the default in `ask()` and in a rebind, which passes any ID as a driver parameter.
 - **A control character in a tenant ID** now throws this `TenantScopeError` instead of `QueryParameterError`.
 
-### Pass your dialect rules to `bindPreparedQuery()`
+### Update your `bindPreparedQuery()` and `askdb.bind()` calls
 
-A rebind now checks and renders under the dialect rules `ask()` ran with, or refuses ([#660](https://github.com/Ygilany/AskDB/issues/660), ADR 0032). Before, it always used the built-in spec, so a host's `backslashEscapes`, `blockedFunctions`, `extraForbiddenKeywords` and `extraValidate` were dropped at rebind. `ask()` now records the rules in `preparedQuery.dialectRules`, and `bindPreparedQuery()` and `askdb.bind()` take a new `dialect` option:
+A rebind changes three ways in this release. Update each call site once:
 
 ```ts
-const hostSpec = { ...POSTGRES_DIALECT, backslashEscapes: true }; // the spec you pass to ask()
+const hostSpec = { ...POSTGRES_DIALECT, backslashEscapes: true }; // only if you pass your own spec to ask()
 
 // Before
 const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, { schema, tenantScope });
+await pool.query(rebound.sql);
 
 // After
-const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, { schema, tenantScope, dialect: hostSpec });
+const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, {
+  schema,
+  tenantScope,
+  dialect: hostSpec, // the spec you gave ask(), or a built-in id such as "postgres" for a template stored before beta.46
+});
+await pool.query(rebound.sql, rebound.tenantParams ?? []); // or: pool.query(rebound.unboundSql, rebound.params)
 ```
 
-- **A template `ask()` made under your own `DialectSpec`** (`dialectRules: "host"`), even an unchanged spread, throws `QueryParameterError` (`DIALECT_SPEC_REQUIRED`) without `dialect`. Pass the same spec.
-- **A template stored before this release** has no `dialectRules`, so it throws the same error until you pass `dialect`. If `ask()` ran with a built-in id, the id is enough, such as `dialect: "postgres"`.
+- **Run the rebound `sql` with `tenantParams`** ([#664](https://github.com/Ygilany/AskDB/issues/664), ADR 0024). A rebind now takes `tenantSqlMode`, with the same default as `ask()`. With a tenant scope, its `sql` keeps the business values inlined and holds the tenant IDs as driver markers, and the IDs are in the new `tenantParams`. Running `sql` without them fails at the driver; it never returns other tenants' rows. To keep inlined IDs, pass `tenantSqlMode: "sql-only"`. Without a tenant policy, `sql` doesn't change.
+- **Tenant IDs outside printable ASCII**, such as `agência`, now rebind in the default mode. In `"sql-only"`, they throw `UNESCAPABLE_TENANT_ID`, as an ID with a backslash does.
+- **Pass `dialect` when `ask()` ran with your own `DialectSpec`** ([#660](https://github.com/Ygilany/AskDB/issues/660), ADR 0032). A rebind now checks and renders under the dialect rules `ask()` ran with, which `ask()` records in `preparedQuery.dialectRules`. Before, it always used the built-in spec, so your `backslashEscapes`, `blockedFunctions`, `extraForbiddenKeywords` and `extraValidate` were dropped at rebind. A `"host"` template, even from an unchanged spread, throws `QueryParameterError` (`DIALECT_SPEC_REQUIRED`) without `dialect`.
+- **A template stored before this release, or built by hand,** has no `dialectRules`, so it throws the same error until you pass `dialect`. If `ask()` ran with a built-in id, the id is enough, such as `dialect: "postgres"`.
 - **A `dialect` with another `id`** than the template's throws `QueryParameterError` (`DIALECT_UNSUPPORTED`).
-- **A template you build by hand** has no `dialectRules`, so pass `dialect` when you rebind it.
 - **An app that loads two copies of `@askdb/core`**, such as ESM beside CJS, gets `"host"` templates, because the other copy's constants are different objects. Pass `dialect`.
+- **`askdb.bind()`** takes the same `tenantSqlMode` and `dialect` options.
 
 ## 1.0.0-beta.45
 

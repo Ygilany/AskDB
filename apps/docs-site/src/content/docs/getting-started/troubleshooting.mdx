@@ -253,7 +253,7 @@ The SQL uses a `:tenant_<root>_ids` placeholder that the scope has no IDs for, s
 
 ### `TenantScopeError: UNESCAPABLE_TENANT_ID`
 
-A tenant ID in the scope contains a backslash or a character outside printable ASCII (an accented letter, `¥`, CJK), and AskDB was asked to inline it as a literal: `ask()` with `tenantSqlMode: "sql-only"`, or `bindPreparedQuery()` / `askdb.bind()`, whose `sql` always inlines the IDs. Such a literal can read differently on the server: a backslash depends on its string settings, and a non-ASCII character's bytes depend on the connection charset (`¥` is a backslash under `sjis`). So AskDB refuses it on every dialect instead of returning SQL whose tenant filter a server could read differently. Use the default `tenantSqlMode: "sql-params"`, which passes tenant IDs as driver parameters, and run `sql` with `tenantParams` (or `unboundSql` with `params`). A rebind can't do that yet ([#664](https://github.com/Ygilany/AskDB/issues/664)).
+A tenant ID in the scope contains a backslash or a character outside printable ASCII (an accented letter, `¥`, CJK), and AskDB was asked to inline it as a literal: `ask()`, `bindPreparedQuery()` or `askdb.bind()` with `tenantSqlMode: "sql-only"`. Such a literal can read differently on the server: a backslash depends on its string settings, and a non-ASCII character's bytes depend on the connection charset (`¥` is a backslash under `sjis`). So AskDB refuses it on every dialect instead of returning SQL whose tenant filter a server could read differently. Use the default `tenantSqlMode: "sql-params"`, which passes tenant IDs as driver parameters, and run `sql` with `tenantParams` (or `unboundSql` with `params`). A rebind takes the same option.
 
 ### `TenantScopeError: TENANT_SQL_MODE_REQUIRED`
 
@@ -263,7 +263,7 @@ The same error comes from a `tenantSqlMode` that is neither `"sql-params"` nor `
 
 ### Driver error: `there is no parameter $1` / `Too few parameter values` after upgrading
 
-`ask()` binds tenant IDs through driver markers by default (releases up to 1.0.0-beta.45 inlined them): with a `tenantScope`, `result.sql` holds `$1`, `?` or `@p0` where the IDs used to be inlined, and the IDs are in `result.tenantParams`. Running `result.sql` without them fails at the driver (on MySQL, as a syntax error); it never returns other tenants' rows. Pass `result.tenantParams` with `result.sql`, or run `result.unboundSql` with `result.params`. To keep inlined IDs, set `tenantSqlMode: "sql-only"`. See [Executing the result](/reference/core-api/#executing-the-result).
+`ask()` binds tenant IDs through driver markers by default (releases up to 1.0.0-beta.45 inlined them): with a `tenantScope`, `result.sql` holds `$1`, `?` or `@p0` where the IDs used to be inlined, and the IDs are in `result.tenantParams`. Running `result.sql` without them fails at the driver (on MySQL, as a syntax error); it never returns other tenants' rows. Pass `result.tenantParams` with `result.sql`, or run `result.unboundSql` with `result.params`. To keep inlined IDs, set `tenantSqlMode: "sql-only"`. See [Executing the result](/reference/core-api/#executing-the-result). A rebind does the same since 1.0.0-beta.46: run `bindPreparedQuery()`'s or `askdb.bind()`'s `sql` with its `tenantParams`, or its `unboundSql` with its `params`, or pass `tenantSqlMode: "sql-only"`.
 
 ### `SchemaParseError: Invalid tenant policy: roots … both map to the placeholder …`
 
