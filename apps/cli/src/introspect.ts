@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
+  connectorPackageMissingMessage,
   createConnectorRegistry,
   introspect,
   isSchemaV2Json,
@@ -15,14 +16,32 @@ import {
   type IntrospectResult,
   type IntrospectionFilters,
 } from "@askdb/introspect";
+import { createOptionalDriverLoader, rethrowDriverImportError } from "@askdb/introspect/kit";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
-import { prismaConnectorProvider } from "@askdb/prisma";
 import { createCliLogger } from "./logger.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 import { requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
+
+/**
+ * `@askdb/prisma` is an optional peer of `askdb`: it pulls in Prisma, whose
+ * `@prisma/engines` build pnpm 11 refuses to run unapproved (#259). It is
+ * imported only when `--engine prisma` is selected, from this install first,
+ * then from the project in the working directory, where `askdb init` installs
+ * it (as with database drivers, so `npx askdb` finds it too).
+ */
+const prismaPackage = createOptionalDriverLoader({
+  packageName: "@askdb/prisma",
+  importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
+  missingMessage: connectorPackageMissingMessage({
+    provider: "prisma",
+    packageName: "@askdb/prisma",
+    allowBuilds: PRISMA_BUILD_APPROVALS,
+  }),
+});
 
 /**
  * The engines `askdb introspect` supports out of the box. Engine-specific
@@ -34,7 +53,7 @@ export const defaultConnectorRegistry: ConnectorRegistry = createConnectorRegist
   mysqlConnectorProvider,
   sqliteConnectorProvider,
   sqlServerConnectorProvider,
-  prismaConnectorProvider,
+  { provider: "prisma", load: async () => (await prismaPackage.load()).prismaConnectorProvider },
 ]);
 
 export type RunIntrospectCliOptions = {
@@ -87,7 +106,7 @@ export async function runIntrospectCli(
   if (!templates) requireAskDbConfig();
   try {
     return templates
-      ? runTemplatesCommand(argv.slice(1), registry)
+      ? await runTemplatesCommand(argv.slice(1), registry)
       : await runIntrospectCommand(argv, registry);
   } catch (error) {
     process.stderr.write(`${formatError(error)}\n`);
@@ -95,12 +114,20 @@ export async function runIntrospectCli(
   }
 }
 
-function runTemplatesCommand(argv: readonly string[], registry: ConnectorRegistry): number {
+async function runTemplatesCommand(argv: readonly string[], registry: ConnectorRegistry): Promise<number> {
   const opts = parseOptions(argv);
-  const engine = resolveEngine(registry, opts.engine);
+  const engine = await resolveEngine(registry, opts.engine);
   const bundle = registry.getTemplates(engine);
   if (!bundle) {
-    const withTemplates = registry.providers().filter((id) => registry.getTemplates(id) !== undefined);
+    // Only loaded engines are named: loading the others would import optional engine
+    // packages (`@askdb/prisma`) this command doesn't use. An unloaded lazy entry throws.
+    const withTemplates = registry.providers().filter((id) => {
+      try {
+        return registry.getTemplates(id) !== undefined;
+      } catch {
+        return false;
+      }
+    });
     throw new Error(
       `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for ` +
         (withTemplates.length > 0 ? withTemplates.map((id) => `--engine ${id}`).join(", ") : "engines that provide them") +
@@ -122,7 +149,7 @@ async function runIntrospectCommand(
   const rt = getAskDbRuntimeConfig();
   // When --engine isn't passed, fall back to the configured introspection.provider
   // so `askdb introspect` works flag-free for any configured engine.
-  const engine = resolveEngine(registry, opts.engine ?? rt.introspection.provider);
+  const engine = await resolveEngine(registry, opts.engine ?? rt.introspection.provider);
   // Schemas (MySQL/MariaDB: databases) to introspect: `--schemas` wins, then introspection.schemas.
   if (!opts.schemas && rt.introspection.schemas) {
     opts.schemas = rt.introspection.schemas;
@@ -361,10 +388,14 @@ function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
-function resolveEngine(registry: ConnectorRegistry, engine = "postgres"): ConnectorProviderId {
-  if (registry.hasProvider(engine)) return engine;
-  const supported = registry.providers().join(", ");
-  throw new Error(`Unsupported introspection engine '${engine}' (expected one of: ${supported}).`);
+/** The registered engine, with its adapter loaded (an optional engine package is imported here). */
+async function resolveEngine(registry: ConnectorRegistry, engine = "postgres"): Promise<ConnectorProviderId> {
+  if (!registry.hasProvider(engine)) {
+    const supported = registry.providers().join(", ");
+    throw new Error(`Unsupported introspection engine '${engine}' (expected one of: ${supported}).`);
+  }
+  await registry.load(engine);
+  return engine;
 }
 
 function inferSchemaId(path: string | undefined): string | undefined {

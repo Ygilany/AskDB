@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { select, input, confirm } from "@inquirer/prompts";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -43,7 +43,7 @@ function postgresAnswers(overrides: Partial<InitAnswers> = {}): InitAnswers {
   };
 }
 
-const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0" };
+const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0", prismaSpec: "0.2.0" };
 
 /** A prompter that always accepts the default (like pressing Enter), recording every message asked. */
 function createRecordingPrompter(): { prompter: InitPrompter; messages: string[] } {
@@ -231,6 +231,18 @@ describe("buildInitInstallPlan", () => {
     expect(plan.packages).not.toContain("mysql2");
     expect(plan.packages).not.toContain("mssql");
     expect(plan.packages).not.toContain("better-sqlite3");
+  });
+
+  // @askdb/prisma is an optional peer of askdb (#259): a Prisma project installs it, and
+  // pnpm 11 must approve its @prisma/engines build or the install exits 1.
+  it("prisma installs @askdb/prisma and approves its @prisma/engines build; other engines don't", () => {
+    const prisma = buildInitInstallPlan(postgresAnswers({ database: "prisma", studioExecute: { enabled: false } }), FAKE_SPECS);
+    expect(prisma.packages).toEqual(["@askdb/config@1.0.0", "@askdb/prisma@0.2.0"]);
+    expect(prisma.allowBuilds).toEqual(["@prisma/engines"]);
+
+    const postgres = buildInitInstallPlan(postgresAnswers(), FAKE_SPECS);
+    expect(postgres.packages.some((p) => p.startsWith("@askdb/prisma"))).toBe(false);
+    expect(postgres.allowBuilds).toEqual([]);
   });
 
   it("prisma + sqlserver execute: installs mssql", () => {
@@ -663,5 +675,52 @@ describe("init helpers", () => {
   it("resolveInitDepSpecs returns non-empty specs", () => {
     const s = resolveInitDepSpecs();
     expect(s.configSpec.length).toBeGreaterThan(0);
+  });
+
+  it("resolveInitDepSpecs pins @askdb/prisma to the version this CLI was built with", () => {
+    const prismaPkg = JSON.parse(readFileSync(join(import.meta.dirname, "../../../packages/prisma/package.json"), "utf8"));
+    expect(resolveInitDepSpecs().prismaSpec).toBe(prismaPkg.version);
+  });
+});
+
+describe("runInitCli --yes --database prisma (install)", () => {
+  // `pnpm add --allow-build` arrived in pnpm 10.4.0; older pnpm rejects the unknown option.
+  // A fake `pnpm` on PATH reports the version.
+  it.each([
+    ["11.28.10", ["@prisma/engines"]],
+    ["10.4.0", ["@prisma/engines"]],
+    ["10.3.0", []],
+    ["9.15.9", []],
+  ])("in a pnpm %s project, the install it runs and the fallback command approve %j", async (pnpmVersion, allowBuilds) => {
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "askdb-init-prisma-")));
+    const prevCwd = process.cwd();
+    const prevPath = process.env.PATH;
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      writeFileSync(join(project, "package.json"), '{ "name": "app", "private": true }\n', "utf8");
+      writeFileSync(join(project, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
+      const bin = join(project, ".fake-bin");
+      mkdirSync(bin);
+      writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho ${pnpmVersion}\n`, "utf8");
+      chmodSync(join(bin, "pnpm"), 0o755);
+      process.env.PATH = `${bin}${delimiter}${prevPath}`;
+      process.chdir(project);
+      const failingInstaller = vi.fn().mockReturnValue(false);
+
+      const code = await runInitCli(["--yes", "--database", "prisma", "--path", join(project, "askdb.config.ts")], failingInstaller);
+
+      expect(code).toBe(1);
+      const { prismaSpec, configSpec } = resolveInitDepSpecs();
+      const packages = [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`];
+      expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, packages, allowBuilds);
+      const command = ["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...packages].join(" ");
+      expect(stderr.mock.calls.join("")).toContain(`  ${command}\n`);
+    } finally {
+      process.env.PATH = prevPath;
+      process.chdir(prevCwd);
+      vi.restoreAllMocks();
+      rmSync(project, { recursive: true, force: true });
+    }
   });
 });

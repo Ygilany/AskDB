@@ -35,6 +35,7 @@ export {
 } from "./introspect.js";
 export {
   BUILT_IN_CONNECTOR_PROVIDERS,
+  connectorPackageMissingMessage,
   connectorProviderMissingMessage,
   createConnectorRegistry,
   type BuiltInConnectorProvider,
@@ -45,10 +46,12 @@ export {
   type ConnectorConnectionResult,
   type ConnectorProviderAdapter,
   type ConnectorProviderAdapters,
+  type ConnectorProviderEntry,
   type ConnectorProviderId,
   type ConnectorRegistry,
   type ConnectorResult,
   type ConnectorRuntimeConfig,
+  type LazyConnectorProviderAdapter,
 } from "./registry.js";
 export {
   renderToSchemaV2,

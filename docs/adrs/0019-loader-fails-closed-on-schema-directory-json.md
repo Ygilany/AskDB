@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-04, maintainer decision in the #330 plan round). Implemented in `packages/core/src/schema/v2/loader.ts` (`loadSchema`, `assertNotInSchemaDirectory`).
+Accepted (2026-11-04, maintainer decision in the #330 plan round; amended 2026-11 by [ADR 0027](0027-core-reads-schema-directory-with-exact-names.md): the guard counts a sibling in any case). Implemented in `packages/core/src/schema/v2/loader.ts` (`loadSchema`, `assertNotInSchemaDirectory`).
 
 ## Context
 
@@ -36,7 +36,7 @@ Rejected. Warnings are easy to miss, so tenant enforcement still turns off: the 
 ## Decision
 
 - A path whose basename is `schema.json` in any case loads its enclosing directory, and the physical layer is read from the path given (a file physically named `Schema.json` works on a case-sensitive filesystem too).
-- Any other JSON file that isn't a bundle throws `SchemaParseError` when its directory holds `tenant-policy.md`, `tables/` or `concepts.md`, by the exact names the directory loader reads. Only a missing path (`ENOENT`) counts as absent; any other error while checking throws.
+- Any other JSON file that isn't a bundle throws `SchemaParseError` when its directory holds `tenant-policy.md`, `tables/` or `concepts.md`, in any case (amended by ADR 0027: on Linux a wrong-case `Tenant-Policy.md` escaped an exact-name check). Only a missing path (`ENOENT`) counts as absent; any other error while checking throws.
 - A bundle is self-contained, so it loads wherever it sits.
 - A directory path still needs a file named exactly `schema.json`. On a case-sensitive filesystem, a directory holding only `Schema.json` throws, as before.
 
@@ -44,4 +44,4 @@ Rejected. Warnings are easy to miss, so tenant enforcement still turns off: the 
 
 - A host that loaded a renamed copy of `schema.json` from inside a schema directory now gets an error instead of a schema with no tenant policy. The `@askdb/core` changeset is a minor bump and names the change.
 - `loadSchemaFromJson()` remains the way to read only a physical layer, wherever the file sits.
-- The check reads the exact sibling names. A wrong-case sibling such as `Tenant-Policy.md` on a case-sensitive filesystem is ignored by the directory loader too; that is #608.
+- A wrong-case sibling such as `Tenant-Policy.md` was ignored by this check and by the directory loader on a case-sensitive filesystem (#608). [ADR 0027](0027-core-reads-schema-directory-with-exact-names.md) makes the check count it and makes the directory loader throw on it.

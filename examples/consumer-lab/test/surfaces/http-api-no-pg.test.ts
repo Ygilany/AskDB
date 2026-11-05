@@ -16,9 +16,10 @@
  * No production seam: a separate pnpm project that installs the target's packages the way
  * the deploy guide says, plus the documented bin, flags and route.
  *
- * The project is a fresh pnpm root in the system temp directory: inside the lab, Node's
- * resolution would walk up to the lab's own `node_modules/pg`. It pins every `@askdb/*`
- * package to the lab's install target with the lab's overrides block, as `lab:use` does.
+ * The project is a fresh pnpm root in the system temp directory (`src/fresh-project.ts`):
+ * inside the lab, Node's resolution would walk up to the lab's own `node_modules/pg`. It
+ * pins every `@askdb/*` package to the lab's install target with the lab's overrides
+ * block, as `lab:use` does.
  * `pg` is shown absent twice: no `pg` package in its lockfile, and `pg` doesn't resolve
  * from the installed `@askdb/postgres` or `@askdb/http-api`.
  *
@@ -28,15 +29,13 @@
  *
  * Needs an installed lab (`pnpm lab:use .`) and the registry, for the third-party packages.
  */
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { needsCapability } from "../../src/capabilities.js";
+import { fromTarget, installFreshProject, labPins, lockedPackages, resolvesFrom } from "../../src/fresh-project.js";
 import { startHttpServer, type HttpServer } from "../../src/http-api.js";
-import { LAB_ROOT } from "../../src/paths.js";
 
 /** The deploy guide's install line (`<InstallTabs pkgs="…" />`). */
 const DEPLOY_GUIDE_PACKAGES = ["@askdb/http-api", "@askdb/postgres", "ai", "@ai-sdk/openai"];
@@ -49,50 +48,10 @@ afterAll(async () => {
   rmSync(project, { recursive: true, force: true });
 });
 
-/** The lab's `@askdb/*` pins (its `lab:use` overrides block), with tarball paths made absolute. */
-function labPins(): Map<string, string> {
-  const ws = readFileSync(join(LAB_ROOT, "pnpm-workspace.yaml"), "utf8");
-  const pins = [...ws.matchAll(/^ {2}"([^"]+)": "([^"]+)"$/gm)].map(([, name, spec]) => {
-    const path = spec!.startsWith("file:") ? spec!.slice("file:".length) : undefined;
-    return [name!, path && !isAbsolute(path) ? `file:${resolve(LAB_ROOT, path)}` : spec!] as const;
-  });
-  if (!pins.length) throw new Error("the lab's pnpm-workspace.yaml has no lab:use overrides; run `pnpm lab:use <target>`");
-  return new Map(pins);
-}
-
-/** Every package in a pnpm lockfile's `packages:` section, as `{ name, spec }`: a version, or `file:<tarball>`. */
-function lockedPackages(lockfile: string): { name: string; spec: string }[] {
-  const start = lockfile.indexOf("\npackages:\n");
-  if (start < 0) throw new Error("the project's pnpm-lock.yaml has no packages section");
-  const end = lockfile.indexOf("\nsnapshots:\n", start);
-  const section = lockfile.slice(start, end < 0 ? undefined : end);
-  return [...section.matchAll(/^ {2}'?((?:@[\w.-]+\/)?[\w.-]+)@([^'\n]+?)'?:$/gm)].map((m) => ({ name: m[1]!, spec: m[2]! }));
-}
-
-/** Whether a locked `@askdb/*` spec is the lab target's pin: the same tarball, or the same version. */
-function fromTarget(locked: string, pin: string | undefined): boolean {
-  if (!pin) return false;
-  if (pin.startsWith("file:")) return locked.startsWith("file:") && basename(locked) === basename(pin);
-  return locked === pin;
-}
-
-function resolvesFrom(packageDir: string, request: string): boolean {
-  try {
-    createRequire(join(realpathSync(packageDir), "package.json")).resolve(request);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 describe("[postgres] http-no-pg", () => {
   it("askdb-http starts and serves /health in an install with no pg", async (ctx) => {
     needsCapability(ctx, "http-api-optional-drivers");
     const pins = labPins();
-    const lab = JSON.parse(readFileSync(join(LAB_ROOT, "package.json"), "utf8")) as { dependencies: Record<string, string> };
-    const dependencies = Object.fromEntries(DEPLOY_GUIDE_PACKAGES.map((name) => [name, pins.get(name) ?? lab.dependencies[name]!]));
-    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "lab-http-no-pg", private: true, type: "module", dependencies }, null, 2));
-    writeFileSync(join(project, "pnpm-workspace.yaml"), `overrides:\n${[...pins].map(([name, spec]) => `  "${name}": "${spec}"`).join("\n")}\n`);
     writeFileSync(
       join(project, "askdb.config.ts"),
       `import { defineConfig } from "@askdb/config";
@@ -104,7 +63,8 @@ export default defineConfig({
 });
 `,
     );
-    execFileSync("pnpm", ["install", "--no-frozen-lockfile"], { cwd: project, stdio: "pipe" });
+    const install = installFreshProject(project, "lab-http-no-pg", DEPLOY_GUIDE_PACKAGES);
+    expect(install.status, install.stderr).toBe(0);
 
     const locked = lockedPackages(readFileSync(join(project, "pnpm-lock.yaml"), "utf8"));
     const askdb = locked.filter((p) => p.name === "askdb" || p.name.startsWith("@askdb/"));
