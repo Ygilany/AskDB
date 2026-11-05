@@ -643,8 +643,9 @@
       <path d="M 95 80 L 400 328" fill="none" stroke="#4a5568" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#dep-arrow-b)"/>
       <!-- cli → postgres -->
       <path d="M 115 80 L 250 143" fill="none" stroke="#4a5568" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#dep-arrow-b)"/>
-      <!-- cli → prisma -->
-      <path d="M 125 80 L 405 143" fill="none" stroke="#4a5568" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#dep-arrow-b)"/>
+      <!-- cli → prisma (optional peer, #259: loaded only for Prisma introspection) -->
+      <path d="M 125 80 L 405 143" fill="none" stroke="#4a5568" stroke-width="1" stroke-dasharray="1,4" marker-end="url(#dep-arrow-b)"/>
+      <text x="275" y="104" text-anchor="middle" fill="#8892b0" font-size="9">optional peer</text>
       <!-- cli → introspect -->
       <path d="M 100 80 L 110 143" fill="none" stroke="#4a5568" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#dep-arrow-b)"/>
       <!-- cli → tui (dynamic) -->
@@ -742,7 +743,7 @@
           </tr>
           <tr>
             <td><code>askdb</code> CLI</td>
-            <td><code>@askdb/core</code>, <code>@askdb/introspect</code>, <code>@askdb/postgres</code>, <code>@askdb/prisma</code>, <code>@askdb/tui</code> (dynamic), <code>@askdb/studio</code> (dynamic), <code>commander</code></td>
+            <td><code>@askdb/core</code>, <code>@askdb/introspect</code>, <code>@askdb/postgres</code>, <code>@askdb/prisma</code> (optional peer), <code>@askdb/tui</code> (dynamic), <code>@askdb/studio</code> (dynamic), <code>commander</code></td>
             <td><code>pg</code>, model provider packages</td>
           </tr>
           <tr>

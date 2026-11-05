@@ -3,6 +3,7 @@ title: "Prisma"
 description: "Use @askdb/prisma to read your schema directly from a .prisma file — no live database required."
 ---
 
+import { Aside } from "@astrojs/starlight/components";
 import InstallTabs from "../../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Integration · Prisma</p>
@@ -16,6 +17,26 @@ import InstallTabs from "../../../../components/InstallTabs.astro";
 - You pass `ask()` the matching `dialect` id at generation time (see [Supported providers](#supported-providers)); no engine package is needed for that.
 
 ## Install
+
+For the CLI and Studio, install `@askdb/prisma` in your project next to `askdb`. `askdb` and `@askdb/studio` list it as an optional peer: they load it only to read a Prisma schema, and don't install it, because it brings in Prisma.
+
+<InstallTabs pkgs="askdb @askdb/prisma" />
+
+`npx askdb@latest init --database prisma` installs it for you. `askdb` also finds the copy in your project when it runs from elsewhere, as `npx askdb` does. To run the CLI without installing anything, name both packages in the one-off command: `npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`.
+
+Without it, `askdb introspect --engine prisma` exits 1 and names the package to install, and Studio shows the same message instead of resyncing.
+
+<Aside type="caution" title="pnpm 11: approve the Prisma build">
+`@askdb/prisma` depends on Prisma, whose `@prisma/engines` package has an install script. pnpm 11 doesn't run it until you approve it, and `pnpm add` exits 1 with `ERR_PNPM_IGNORED_BUILDS`. Approve it in the same command:
+
+```bash
+pnpm add --allow-build=@prisma/engines @askdb/prisma
+```
+
+This writes `allowBuilds` with `'@prisma/engines': true` to your `pnpm-workspace.yaml`. You can also run `pnpm approve-builds` after the install. A project that already uses Prisma has usually approved it. `askdb init` and Studio's guided setup approve it when they install `@askdb/prisma` with pnpm 10.4 or later, the first pnpm with `--allow-build`.
+</Aside>
+
+To call the connector from your own code instead of the CLI:
 
 <InstallTabs pkgs="@askdb/prisma @askdb/introspect ai" />
 

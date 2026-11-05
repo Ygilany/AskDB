@@ -111,6 +111,7 @@ Key rules:
 - `AskDialect` — the escape-hatch contract for a fully custom generator.
 - `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.
 - `loadSchemaFromJson(raw)` — parse a Schema v2 bundled JSON string (e.g. from an env var).
+- `readSchemaDirectory(dir)` — read a Schema v2 directory into its bundle form (what `askdb bundle` writes).
 - `parseTableMarkdown` / `writeTableMarkdown` — round-trippable describable-layer parser/writer.
 - `extractSqlFromModelText` — generic fenced-code extractor (dialect-agnostic).
 - Structured logging hooks (`createAskDbLogger`, log-event contract).
