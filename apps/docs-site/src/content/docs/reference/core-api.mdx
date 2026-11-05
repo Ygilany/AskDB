@@ -475,6 +475,20 @@ These types are needed when your schema has a tenant policy. See the [multi-tena
 - `"sql-params"` (the default, exported as `DEFAULT_TENANT_SQL_MODE`) — replaces the tenant placeholders with the dialect's driver markers and returns the IDs as `tenantParams`. See [Executing the result](#executing-the-result).
 - `"sql-only"` — inlines the tenant IDs as escaped literals, for a tool that takes one SQL string. A tenant ID containing a backslash throws `TenantScopeError` (`UNESCAPABLE_TENANT_ID`).
 
+### `DEFAULT_TENANT_SQL_MODE`
+
+```ts
+const DEFAULT_TENANT_SQL_MODE: TenantSqlOutputMode; // "sql-params"
+```
+
+The mode `ask()` and `resolveTenantSql()` use when you don't pass one. A host that reports or forwards the mode, such as a UI that shows which mode a query ran in, imports it rather than hard-coding the string:
+
+```ts
+import { DEFAULT_TENANT_SQL_MODE } from "@askdb/core";
+
+const mode = options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
+```
+
 ### `TenantBinding`
 
 ```ts

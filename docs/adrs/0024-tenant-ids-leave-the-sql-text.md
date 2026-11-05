@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-05). The maintainer chose the default (#231, "Decision (2026-11-05)" in its body, option A). The coordinator of the 1.0.0-rc.1 plan settled the rest on 2026-11-05, at the plan's first stop for #231, #360 and #371. Implemented with `DEFAULT_TENANT_SQL_MODE` and `escapeTenantId` in `packages/core/src/sql/tenant-placeholders.ts`. Contract: [`tenant-policy.md`](../contracts/tenant-policy.md), "Output modes" and "Enforcement rules". It amends [ADR 0012](0012-sql-checks-are-defense-in-depth.md) (Decision 3) and [ADR 0010](0010-sql-guardrail-decision-point.md) (Decision 0's rendering contract).
+Accepted (2026-11-05). The maintainer chose the default (#231, "Decision (2026-11-05)" in its body, option A). The rest was settled on 2026-11-05 when #231, #360 and #371 were planned together; [#371's Step 3 comment](https://github.com/Ygilany/AskDB/issues/371#issuecomment-6666455938) records the business-value decision. Implemented with `DEFAULT_TENANT_SQL_MODE` and `escapeTenantId` in `packages/core/src/sql/tenant-placeholders.ts`. Contract: [`tenant-policy.md`](../contracts/tenant-policy.md), "Output modes" and "Enforcement rules". It amends [ADR 0012](0012-sql-checks-are-defense-in-depth.md) (Decision 3) and [ADR 0010](0010-sql-guardrail-decision-point.md) (Decision 0's rendering contract).
 
 ## Context
 
