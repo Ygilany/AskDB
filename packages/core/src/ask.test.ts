@@ -557,6 +557,23 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     expect(prompt).not.toContain("quote each part separately");
   });
 
+  // The SQL Server check rejects a name that isn't plain ASCII unquoted, and a quoted column alone
+  // in parentheses after a name, where SQL Server could read a lock hint (#319).
+  it.each([
+    ["sqlserver", "sqlserver", "`AS [注文数]`", "`SUM(o.[金額])`"],
+    ["an id that is no built-in engine", { ...POSTGRES_DIALECT, id: "redshift" as DialectSpec["id"] }, '`AS "注文数"`', '`SUM(o."金額")`'],
+  ] as const)("on %s, says to quote non-ASCII names and qualify a quoted column alone in parentheses", async (_name, dialect, alias, call) => {
+    const prompt = await promptFor(dialect, schemaOf("billing"));
+    expect(prompt).toContain(
+      `- Quote every name that isn't plain ASCII, aliases included (${alias}), and qualify a quoted column that is the only thing inside parentheses: ${call}.`,
+    );
+  });
+
+  // One engine per other lexer family.
+  it.each(["postgres", "mysql", "sqlite"] as const)("on %s, leaves out the non-ASCII name rule", async (dialect) => {
+    expect(await promptFor(dialect, schemaOf("billing"))).not.toContain("isn't plain ASCII");
+  });
+
   it("leaves the qualified-name rule out of a v1 schema's prompt, which lists no schemas", async () => {
     const prompt = await promptFor("postgres", minimalSchema as never);
     expect(prompt).not.toContain("quote each part separately");

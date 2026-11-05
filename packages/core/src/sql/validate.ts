@@ -58,9 +58,14 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 6. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
  *    built-in engine) — a second statement written without `;`, which T-SQL doesn't
  *    need, or code SQL Server may split differently from the lexer (see `tsql-batch.ts`).
- * 7. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 7. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
+ *    `FOR SHARE`, `FOR KEY SHARE` or `LOCK IN SHARE MODE` on every lexer, and on the SQL Server
+ *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
+ *    parentheses right after a name, at any depth and with trailing spaces, and any such name
+ *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
+ * 8. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 8. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 9. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
@@ -84,7 +89,7 @@ export function validateSelectSql(dialect: DialectSpec, sql: string): string {
 
   const profile = lexerProfileFor(dialect);
   let tokens: SqlToken[];
-  const keywords = keywordsRejectedUnquoted(dialect);
+  const keywords = denylistFor(dialect);
   if (profile) {
     tokens = checkWithProfile(trimmed, profile, keywords, blockedFunctionsFor(dialect));
   } else {
@@ -179,6 +184,15 @@ function checkWithProfile(
     }
   }
 
+  const locking = findLockingRead(tokens, profile);
+  if (locking) {
+    throw validationError(
+      "SQL_LOCKING_READ",
+      `Locking reads are not allowed: generated SQL uses ${locking}.`,
+      "A locking read can hold locks that other sessions wait on until the host's transaction ends. Regenerate as a plain SELECT, without FOR UPDATE, FOR SHARE, LOCK IN SHARE MODE or a SQL Server lock hint such as UPDLOCK or HOLDLOCK. On SQL Server, quote a name that isn't plain ASCII ([Größe]), and qualify it when it's the only thing inside parentheses (COUNT(t.[Größe])).",
+    );
+  }
+
   for (const t of tokens) {
     if (t.kind === "word" && keywords.has(t.lower)) {
       throw validationError(
@@ -209,18 +223,35 @@ function checkWithProfile(
 /**
  * The words `validateSelectSql` rejects unquoted for a dialect, lowercase: the shared denylist
  * and the spec's `extraForbiddenKeywords`, plus every built-in spec's for an id that is no
- * built-in engine family. The NL→SQL prompt quotes names in this set.
+ * built-in engine family, and T-SQL's lock hints wherever the SQL Server lexer runs. The
+ * NL→SQL prompt quotes names in this set.
  */
 export function keywordsRejectedUnquoted(
   dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">,
 ): Set<string> {
-  const keywords = forbiddenKeywordsFor(dialect);
-  if (!lexerProfileFor(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
-  return keywords;
+  const words = denylistFor(dialect);
+  if (checkedAsTsql(dialect)) for (const hint of TSQL_LOCK_HINTS) words.add(hint);
+  return words;
 }
 
-function forbiddenKeywordsFor(dialect: Pick<DialectSpec, "extraForbiddenKeywords">): Set<string> {
-  return new Set([...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])].map((w) => w.toLowerCase()));
+/**
+ * Whether `validateSelectSql` runs the SQL Server lexer, and so the T-SQL hint checks, for a
+ * dialect: `sqlserver`, and an id that is no built-in engine family, which is checked every
+ * engine's way. The NL→SQL prompt follows it (#319).
+ */
+export function checkedAsTsql(dialect: Pick<DialectSpec, "id" | "backslashEscapes">): boolean {
+  const profile = lexerProfileFor(dialect);
+  return !profile || profile.id === "sqlserver";
+}
+
+/**
+ * The `SQL_FORBIDDEN_KEYWORD` denylist: the shared list and the spec's `extraForbiddenKeywords`,
+ * plus every built-in spec's for an id that is no built-in engine family.
+ */
+function denylistFor(dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">): Set<string> {
+  const keywords = new Set([...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])].map((w) => w.toLowerCase()));
+  if (!lexerProfileFor(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
+  return keywords;
 }
 
 function blockedFunctionsFor(dialect: DialectSpec): Set<string> {
@@ -233,6 +264,79 @@ function allBuiltInKeywords(): string[] {
 
 function allBuiltInFunctions(): string[] {
   return Object.values(BUILT_IN_DIALECTS).flatMap((d) => [...(d.blockedFunctions ?? [])]);
+}
+
+/**
+ * Locking clauses, as the unquoted words they are written with: Postgres and CockroachDB
+ * `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE`; MySQL and MariaDB
+ * `FOR UPDATE`, `FOR SHARE` (MySQL), `LOCK IN SHARE MODE`. Matched on every lexer, at any
+ * depth, because the engines allow them in subqueries and CTEs (#319).
+ */
+const LOCKING_CLAUSES: readonly (readonly string[])[] = [
+  ["for", "update"],
+  ["for", "no", "key", "update"],
+  ["for", "share"],
+  ["for", "key", "share"],
+  ["lock", "in", "share", "mode"],
+];
+
+/**
+ * T-SQL table hints that take or hold locks. Matched as unquoted words anywhere on the SQL
+ * Server lexer, because SQL Server also takes them without `WITH` (`FROM t (UPDLOCK)`), and
+ * quoted when one stands alone in parentheses right after a name, at any depth and with trailing
+ * spaces, which SQL Server also reads as the hint (`FROM t ([UPDLOCK])`, `t (("UPDLOCK "))`).
+ * SQL Server 2022 refused quoted hints in other positions: inside `WITH`, in a list, and after an
+ * alias or a function call.
+ * `NOLOCK`, `READUNCOMMITTED`, `READPAST`, `READCOMMITTEDLOCK` and `NOWAIT` stay allowed.
+ */
+const TSQL_LOCK_HINTS: ReadonlySet<string> = new Set([
+  "updlock", "xlock", "holdlock", "paglock", "tablock", "tablockx", "rowlock", "serializable", "repeatableread",
+]);
+
+/** The first locking clause or T-SQL lock hint in the SQL, uppercase (`FOR SHARE`), or undefined. */
+function findLockingRead(tokens: readonly SqlToken[], profile: SqlLexerProfile): string | undefined {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    const hint = profile.id === "sqlserver" ? tsqlLockHint(tokens, i) : undefined;
+    if (hint) return hint;
+    if (t.kind !== "word") continue;
+    for (const clause of LOCKING_CLAUSES) {
+      if (clause.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word)) {
+        return clause.join(" ").toUpperCase();
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Printable ASCII: the only spellings the hint check can match by name. */
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+
+/**
+ * What makes token `i` a lock hint, or undefined: an unquoted word, or a quoted name alone in
+ * parentheses after a name, that spells a hint or isn't printable ASCII. SQL Server compares
+ * hint names loosely: it ignores some characters (U+FEFF, U+200D, `Ș`) and reads others as
+ * ASCII letters (`ʟ` as L), so only a printable-ASCII name can be checked by its spelling.
+ */
+function tsqlLockHint(tokens: readonly SqlToken[], i: number): string | undefined {
+  const t = tokens[i]!;
+  const quoted = t.kind === "quoted_identifier";
+  if (!(t.kind === "word" || (quoted && isLoneQuotedHint(tokens, i)))) return undefined;
+  if (!PRINTABLE_ASCII.test(t.value)) {
+    return `the ${quoted ? "quoted name" : "unquoted name"} ${t.text}, which SQL Server may read as a lock hint`;
+  }
+  // SQL Server ignores trailing spaces when it compares a quoted name, so `[UPDLOCK ]` is the hint.
+  // Past the ASCII check, a space is the only whitespace left, so `trimEnd()` strips just those.
+  const name = quoted ? t.lower.trimEnd() : t.lower;
+  return TSQL_LOCK_HINTS.has(name) ? `the table hint ${name.toUpperCase()}` : undefined;
+}
+
+/** `name ( [hint] )` or `name (( [hint] ))`: a quoted identifier alone in parentheses right after a name. */
+function isLoneQuotedHint(tokens: readonly SqlToken[], i: number): boolean {
+  let depth = 1;
+  while (isPunct(tokens[i - depth], "(") && isPunct(tokens[i + depth], ")")) depth++;
+  const before = tokens[i - depth];
+  return depth > 1 && (before?.kind === "word" || before?.kind === "quoted_identifier");
 }
 
 function isPunct(t: SqlToken | undefined, text: string): boolean {
@@ -274,6 +378,7 @@ export function buildSelectGuardrailExplanation(validatedSql: string): SelectGua
       "single_statement",
       "no_line_or_block_comments",
       "leading_select_or_with",
+      "no_locking_reads",
       "no_blocked_write_or_ddl_keywords",
       "no_blocked_side_effect_functions",
     ],

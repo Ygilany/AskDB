@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import {
+  BUILT_IN_DIALECTS,
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
   SQLITE_DIALECT,
@@ -95,6 +96,7 @@ describe("buildSelectGuardrailExplanation", () => {
     const ex = buildSelectGuardrailExplanation(sql);
     expect(ex.statementKind).toBe("select");
     expect(ex.checksVerified).toContain("single_statement");
+    expect(ex.checksVerified).toContain("no_locking_reads");
     expect(ex.remediationNote.length).toBeGreaterThan(10);
   });
 });
@@ -282,6 +284,78 @@ describe("validateSelectSql — sql server statements without ';'", () => {
   });
 });
 
+// A locking read holds row or table locks until the host's transaction ends, so other
+// writers and lockers wait (#319). Every engine rejects every form under one rule.
+describe("validateSelectSql — locking reads", () => {
+  it.each([
+    ["postgres", `SELECT id FROM orders WHERE id = 1 FOR SHARE`],
+    ["postgres", `SELECT id FROM orders WHERE id = 1 FOR UPDATE`],
+    ["postgres", `SELECT id FROM orders WHERE id = 1 FOR NO KEY UPDATE`],
+    ["postgres", `SELECT o.id FROM orders o WHERE o.id = 1 FOR KEY SHARE OF o SKIP LOCKED`],
+    ["postgres", `SELECT * FROM (SELECT id FROM orders WHERE id = 1 FOR UPDATE) s`],
+    ["postgres", `WITH s AS (SELECT id FROM orders WHERE id = 1 for Share) SELECT * FROM s`],
+    ["mysql", `SELECT id FROM orders WHERE id = 1 FOR UPDATE SKIP LOCKED`],
+    ["mysql", `SELECT id FROM orders WHERE id = 1 FOR SHARE NOWAIT`],
+    ["mysql", `SELECT id FROM orders WHERE id = 1 LOCK IN SHARE MODE`],
+    ["mariadb", `SELECT * FROM (SELECT id FROM orders WHERE id = 1 lock in share mode) s`],
+    ["sqlite", `SELECT id FROM orders WHERE id = 1 FOR UPDATE`],
+    // T-SQL lock hints, inside WITH (…), beside a hint that takes no lock, and without WITH.
+    ...["UPDLOCK", "XLOCK", "HOLDLOCK", "PAGLOCK", "TABLOCK", "TABLOCKX", "ROWLOCK", "SERIALIZABLE", "REPEATABLEREAD"].map(
+      (hint) => ["sqlserver", `SELECT id FROM orders WITH (${hint}) WHERE id = 1`] as const,
+    ),
+    ["sqlserver", `SELECT id FROM orders WITH (READPAST, UPDLOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders (UPDLOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT o.id FROM orders AS o (holdlock) WHERE o.id = 1`],
+    // SQL Server also reads a quoted hint alone in parentheses right after a table name as a hint.
+    ["sqlserver", `SELECT id FROM orders ([UPDLOCK]) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM [dbo].[orders]( "holdlock" ) WHERE id = 1`],
+    // It ignores trailing spaces when it compares a quoted name.
+    ["sqlserver", `SELECT id FROM orders ([UPDLOCK ]) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders ("HOLDLOCK   ") WHERE id = 1`],
+    // And at any depth of parentheses.
+    ["sqlserver", `SELECT id FROM orders (([UPDLOCK])) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM [dbo].[orders] ( ( ( "xlock " ) ) ) WHERE id = 1`],
+    // SQL Server compares hint names loosely (`ʟ` reads as L), so an unquoted name must be printable ASCII.
+    ["sqlserver", `SELECT id FROM orders WITH (UPDʟOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT Größe FROM orders`],
+    // So must a quoted name alone in parentheses after a name, where SQL Server reads a hint.
+    ["sqlserver", `SELECT id FROM orders ([UPDLOCK\uFEFF]) WHERE id = 1`],
+    ["sqlserver", `SELECT COUNT([Größe]) AS n FROM orders`],
+    ["sqlserver", `SELECT COUNT([rowlock]) AS n FROM orders`],
+    // Including a one-name column list, which can't be qualified: name the column inside the query.
+    ["sqlserver", `WITH [集計] ([合計]) AS (SELECT 1) SELECT [合計] FROM [集計]`],
+  ] as const)("rejects on %s: %s", (id, sql) => {
+    expectRule(sql, "SQL_LOCKING_READ", BUILT_IN_DIALECTS[id]);
+  });
+
+  // Reads that take no lock past the statement, other FOR clauses, and the words as names.
+  it.each([
+    ["postgres", `SELECT SUBSTRING('abcdef' FROM 1 FOR 3) AS s`],
+    ["postgres", `SELECT x.share, x.updlock, x.holdlock FROM (SELECT 1 AS share, 2 AS updlock, 3 AS holdlock) x`],
+    ["mysql", `SELECT jt.n, SUBSTRING('abcdef' FROM 1 FOR 3) AS s FROM JSON_TABLE('[1,2]', '$[*]' COLUMNS (n FOR ORDINALITY)) AS jt`],
+    ["sqlserver", `SELECT id FROM orders WITH (READUNCOMMITTED) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WITH (READPAST) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WITH (READCOMMITTEDLOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WITH (NOWAIT) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WHERE id = 1 FOR JSON PATH`],
+    ["sqlserver", `SELECT id FROM orders FOR SYSTEM_TIME AS OF '2026-01-01' WHERE id = 1`],
+    ["sqlserver", `SELECT 1 AS [updlock], 2 AS "holdlock", N'FOR SHARE WITH (UPDLOCK)' AS s`],
+    ["sqlserver", `SELECT COUNT(o.[rowlock]) AS n, MAX([updlock] + 1) AS m, MAX(([xlock]) + 1) AS x FROM orders o ([NOLOCK])`],
+    ["sqlserver", `SELECT o.[Größe], N'佐藤 花子' AS name, COUNT(o.[Größe]) AS n FROM orders o GROUP BY o.[Größe]`],
+  ] as const)("accepts on %s: %s", (id, sql) => {
+    expect(validateSelectSql(BUILT_IN_DIALECTS[id], sql)).toBe(sql);
+  });
+
+  // Stripping trailing spaces from a quoted name once took time quadratic in the run of spaces
+  // (about 10 s here). An absolute bound with a wide margin, not a ratio (#657).
+  it("checks an 80 KB quoted name alone in parentheses on SQL Server in under 1 s", () => {
+    const sql = `SELECT id FROM orders ([${" ".repeat(80_000)}x])`;
+    const start = performance.now();
+    expect(validateSelectSql(BUILT_IN_DIALECTS.sqlserver, sql)).toBe(sql);
+    expect(performance.now() - start).toBeLessThan(1000);
+  }, 30_000);
+});
+
 describe("validateSelectSql — sqlite", () => {
   it.each([
     [`SELECT load_extension('x')`],
@@ -409,8 +483,8 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     [`SELECT name FROM sys.objects ORDER BY name OFFSET 0 ROWS FETCH FIRST (SELECT 1) ROWS ONLY`],
     [`SELECT 1 AS offset ORDER BY offset OFFSET (SELECT 0) ROWS`],
     [`SELECT SYSDATETIMEOFFSET() AT TIME ZONE (SELECT 'UTC') AS z`],
-    // Unicode letters in names, any text in strings and quoted names, and money with digits.
-    [`SELECT N'caf\u00e9 \u20ac\u00a0' AS [n\u00e9e \u2028], 1 AS \u00e9t\u00e9, $5.00 AS m`],
+    // Any text in strings and quoted names, and money with digits. An unquoted name must be ASCII (#319).
+    [`SELECT N'caf\u00e9 \u20ac\u00a0' AS [n\u00e9e \u2028], 1 AS [\u00e9t\u00e9], $5.00 AS m`],
     [`SELECT 1 AS a, ((SELECT 1)) AS b`],
     [`SELECT 1 AS a WHERE 1 IN ((SELECT 1))`],
     [`SELECT COALESCE((SELECT 1), 0) AS v`],
@@ -457,6 +531,8 @@ describe("validateSelectSql — unknown dialect ids lex conservatively", () => {
     expectRejected(`SELECT 1 WAITFOR DELAY '00:10'`, legacy);
     // SQL Server reads it as two statements.
     expectRule(`SELECT 1 SELECT 2`, "SQL_MULTI_STATEMENT", legacy);
+    // SQL Server reads it as a locking read.
+    expectRule(`SELECT id FROM orders WITH (UPDLOCK)`, "SQL_LOCKING_READ", legacy);
   });
 
   it("still accepts ordinary SQL", () => {
