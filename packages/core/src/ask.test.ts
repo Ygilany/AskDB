@@ -1330,6 +1330,33 @@ describe("ask — one guardrail decision point (ADR 0010)", () => {
     );
   });
 
+  // The same order as at rebind: the tenant check doesn't count a placeholder nothing can
+  // render, so a strict policy denies with its verdict; under warn, tenant substitution
+  // refuses it rather than return it raw.
+  it.each([":TENANT_AGENCY_IDS", ":tenant_agency_idsOR"])(
+    "refuses %s: TenantGuardrailError under strict, UNRESOLVED_TENANT_PLACEHOLDER under warn",
+    async (placeholder) => {
+      const run = (schema: typeof strict) =>
+        ask({
+          question: "q",
+          schema,
+          model: fakeModel,
+          dialect: "postgres",
+          tenantScope: agencyScope,
+          parameterize: false,
+          deps: replying("```sql\nSELECT id FROM orders WHERE agency_id = " + placeholder + "\n```"),
+        }).catch((e: unknown) => e);
+
+      const denied = await run(strict);
+      expect(denied).toBeInstanceOf(TenantGuardrailError);
+      expect((denied as TenantGuardrailError).verdict?.outcome).toBe("deny");
+
+      const refused = await run(warn);
+      expect(refused).toBeInstanceOf(TenantScopeError);
+      expect((refused as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+    },
+  );
+
   it("refuses non-SELECT SQL from a built-in dialect whatever the modes", async () => {
     const error = await ask({
       question: "q",
