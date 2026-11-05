@@ -100,6 +100,7 @@ export {
   TENANT_POLICY_H2_SECTIONS,
   createMentionMatcher,
   findMentionedNames,
+  sensitiveMentionNames,
   type MentionMatcher,
   type MentionName,
 } from "./schema/v2/index.js";
