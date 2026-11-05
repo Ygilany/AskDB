@@ -163,7 +163,7 @@ AskDB's first-party surfaces (CLI, HTTP API, Studio) support OpenAI, Azure/Found
 2. **Custom provider string + a host-registered adapter** (~40 lines): use any other string and pass an `AiProviderAdapter` registered under that name to `createAiRegistry(...)` (or `createAskDb({ providers })`).
 3. **BYO `LanguageModel` via `ask({ model })** (no config involvement): pass a model instance directly; `askdb.config` and `@askdb/ai` are not involved.
 
-Each recipe is a `.env` entry plus the `askdb.config.ts` lines that read it. AskDB reads settings from the config only, so the variable names are your choice: `env("…")` binds each one. Setting `ASKDB_AI_PROVIDER`, `ASKDB_AI_MODEL` or another `ASKDB_*` name in the shell does nothing; those are internal keys AskDB builds from the config.
+Each recipe is a `.env` entry plus the `askdb.config.ts` lines that read it. The CLI, HTTP API and Studio take their settings from the config, so the variable names are your choice: `env("…")` binds each one. Setting `ASKDB_AI_PROVIDER`, `ASKDB_AI_MODEL` or another `ASKDB_*` name in the shell does nothing there; those are internal keys AskDB builds from the config. The one AskDB variable read from the environment is `ASKDB_DEBUG`, which prints stack traces. In your own code, `@askdb/ai`'s registry reads the `ASKDB_AI_*` keys from whatever env map you pass it (`resolveAiConfig(env)`, `createLanguageModelFromEnv(env)`): pass `getAskDbRuntimeConfig().ai.aiEnv` to use the config.
 
 ### OpenAI
 
@@ -248,4 +248,4 @@ ai: {
 }
 ```
 
-A connection keyed by a custom provider id flattens to the universal `ASKDB_AI_*` env keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name, e.g. `createAiRegistry(["openai", mistralAdapter])` — the first-party apps do not include third-party adapters.
+A connection keyed by a custom provider id flattens to the universal internal `ASKDB_AI_*` keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name, e.g. `createAiRegistry(["openai", mistralAdapter])` — the first-party apps do not include third-party adapters.

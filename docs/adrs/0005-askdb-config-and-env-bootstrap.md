@@ -10,6 +10,8 @@ Accepted.
 
 > **Amendment (2026-10, #346):** `@askdb/rag` no longer depends on `@askdb/config`. Only its bundled `askdb-rag` CLI read config, and that CLI moved into the `askdb` app as `askdb rag`, which reads config and passes plain values to the library. No library package calls `getAskDbRuntimeConfig()` now: a library that needs AskDB settings takes them from its host, as `@askdb/client` takes a runtime snapshot. Rule 6 and the consequence below still hold for any library that does read config: it goes through `getAskDbRuntimeConfig()`, never `process.env`.
 
+> **Amendment (2026-11, #281, #282, #377):** The shell-variable allowlist in Decision 1 is gone: #50 (2026-05) removed it, and this ADR wasn't updated then. `bootstrapAskDbEnv` builds the snapshot from `askdb.config.*` alone, so `ASKDB_MOCK_SQL`, `ASKDB_CORRELATION_ID`, `ASKDB_INTROSPECT_OUT` and the other flat keys are internal and never read from the environment; a config reads a variable with `env("…")`. `@askdb/config` reads one AskDB variable from `process.env` itself, `ASKDB_DEBUG` (`isAskDbDebugEnabled`), because it must work when the config fails to load. Decision 7's defaults are the config keys themselves: `askdb introspect` takes `introspection.outputDir` as `--out` and `introspection.providerConfig.prisma.schemaPath` as `--prisma-schema`. Help text, error messages and docs name these config keys, never a flat key.
+
 ## Context
 
 First-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) load secrets and defaults from `.env` via `dotenv`, then read canonical names such as `OPENAI_API_KEY`, `ASKDB_*`, and `DATABASE_URL` directly from `process.env`. Library packages like `@askdb/core`, `@askdb/rag`, and `@askdb/tui` were also reading `process.env` directly, which means:

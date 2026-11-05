@@ -36,7 +36,7 @@ Product copy in [`README.md`](../../README.md) describes additional modes (**rep
 
 Hosts pass **`AskDbModeV1`** (see `@askdb/core` exports):
 
-- CLI: `--mode <schema_only|bounded_results>` or env **`ASKDB_MODE`** (see [`README.md`](../../README.md)).
+- CLI: `--mode <schema_only|bounded_results>`, else **`modes.askdbMode`** in `askdb.config.ts` (bind it to a variable of your choosing with `env("…")`).
 - Library: **`ask({ ..., mode })`**.
 
 Structured logs emit **`askdb.pipeline.mode`** (with a `mode` field) at pipeline start, before the NL→SQL call. No other log event depends on the mode.

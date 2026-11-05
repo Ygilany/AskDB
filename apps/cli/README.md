@@ -114,12 +114,14 @@ The CLI loads `.env` from the current working directory (via dotenv), then evalu
 
 `askdb init` **skips** loading config so a broken template never blocks scaffolding. In a normal app directory (not a workspace root), it also runs your package manager to add **`@askdb/config`** and **`dotenv`** so `askdb.config.ts` imports resolve immediately.
 
-| Variable | Purpose |
+Settings come from `askdb.config.ts`; bind any of them to an environment variable of your choosing with `env("NAME")`. The one AskDB variable the CLI reads from the environment is `ASKDB_DEBUG`, which prints the stack trace of an unexpected error.
+
+| Config key | Purpose |
 |---|---|
-| `OPENAI_API_KEY` | Default LanguageModel provider key (often set via `askdb.config.ts`). |
-| `ASKDB_SCHEMA_PATH` | Default schema file. |
-| `DATABASE_URL` | Postgres connection string for `askdb introspect --url`. |
-| `ASKDB_MOCK_SQL` | Bypass live model calls in tests/dev. |
+| `ai.providerConfig.<provider>.apiKey` | The language model provider's key, e.g. `env("OPENAI_API_KEY")`. |
+| `introspection.outputDir` | Where `askdb introspect` writes the schema artifact, and the default `askdb ask --schema`. Default `./askdb/`. |
+| `introspection.providerConfig.<engine>.databaseUrl` | Connection string `askdb introspect` uses when you omit `--url`, e.g. `env("DATABASE_URL")`. |
+| `dev.mockSql` | Bypass live model calls in tests/dev (or pass `--mock-sql`). |
 
 ## License
 
