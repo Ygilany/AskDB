@@ -5,7 +5,15 @@ import { test } from "node:test";
 import { deadReadmeLinks } from "./readme-links.mjs";
 
 // What a packed package ships, relative to its root.
-const ENTRIES = new Set(["package.json", "README.md", "LICENSE", "NOTICE", "dist/index.js", "dist/index.d.ts"]);
+const ENTRIES = new Set([
+  "package.json",
+  "README.md",
+  "LICENSE",
+  "NOTICE",
+  "dist/index.js",
+  "dist/index.d.ts",
+  "docs/guide (v2).md",
+]);
 
 const fence = "```";
 
@@ -26,6 +34,8 @@ const CASES = [
   ["shipped files", "[LICENSE](./LICENSE) and [NOTICE](NOTICE)", []],
   ["shipped directory, with and without a trailing slash", "[dist](./dist) [dist](dist/)", []],
   ["package root", "[root](./)", []],
+  ["balanced parentheses and an angle-bracket destination", "[a](docs/guide%20(v2).md) [b](<./docs/guide (v2).md>)", []],
+  ["dead link with parentheses, reported whole", "[old](../docs/guide(v1).md)", ["../docs/guide(v1).md"]],
   ["anchor and query on a shipped file", "[a](./LICENSE#grant) [b](./LICENSE?plain=1)", []],
   [
     "absolute URLs and in-page anchors",

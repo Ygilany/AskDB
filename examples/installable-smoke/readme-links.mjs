@@ -9,11 +9,13 @@ import path from "node:path";
 const FENCED_CODE = /^ {0,3}(`{3,}|~{3,}).*$[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm;
 const INLINE_CODE = /(`+)(?!`)(?:(?!\1)[^\n]|\n(?![ \t]*\n))*?\1(?!`)/g;
 
-// Where a README names a file: Markdown inline links and images (`[text](target "title")`),
+// Where a README names a file: Markdown inline links and images (`[text](target "title")`,
+// the target either `<in angle brackets>` or a run that may hold balanced parentheses),
 // reference definitions (`[id]: target`, also inside a blockquote; not `[^1]:` footnotes),
-// and HTML `href`/`src` attributes.
+// and HTML `href`/`src` attributes. Each pattern captures the target in its first group
+// that matched.
 const SINGLE_TARGETS = [
-  /\]\(\s*<?([^)\s>]+)>?/g,
+  /\]\(\s*(?:<([^<>\n]*)>|((?:[^()\s]|\([^()\s]*\))+))/g,
   /^ {0,3}(?:>[ \t]?)*[ \t]{0,3}\[(?!\^)[^\]]+\]:[ \t]*<?([^\s>]+)>?/gm,
   /\b(?:href|src)\s*=\s*["']([^"']*)["']/gi,
 ];
@@ -26,7 +28,7 @@ function linkTargets(readme) {
   const prose = readme.replace(FENCED_CODE, " ").replace(INLINE_CODE, " ");
   const targets = [];
   for (const pattern of SINGLE_TARGETS) {
-    for (const [, target] of prose.matchAll(pattern)) targets.push(target);
+    for (const [, first, second] of prose.matchAll(pattern)) targets.push(first ?? second);
   }
   for (const [, srcset] of prose.matchAll(SRCSET)) {
     for (const candidate of srcset.split(",")) {
@@ -37,9 +39,14 @@ function linkTargets(readme) {
   return targets;
 }
 
-/** The tarball path a relative target names: no `./`, `?query`, `#anchor` or trailing `/`. */
+/** The tarball path a relative target names: decoded, no `./`, `?query`, `#anchor` or trailing `/`. */
 function packagePath(target) {
-  const file = target.split(/[?#]/)[0].replace(/^\.\//, "");
+  let file = target.split(/[?#]/)[0].replace(/^\.\//, "");
+  try {
+    file = decodeURI(file);
+  } catch {
+    // A malformed escape: match the target as written.
+  }
   return path.posix.normalize(file || ".").replace(/\/+$/, "");
 }
 
