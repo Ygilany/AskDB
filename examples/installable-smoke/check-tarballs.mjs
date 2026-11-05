@@ -4,7 +4,9 @@
 //   - Every path referenced by package.json "main", "module", "types"/"typings", "bin", and
 //     "exports" (including conditional/nested entries) exists in the tarball.
 //   - No tarball ships TypeScript sources (src/) or test files (*.test.*).
-//   - Every relative link in README.md resolves to a file in the tarball (no `../` links).
+//   - Every relative link in README.md (Markdown links, images and reference definitions, and
+//     HTML href/src/srcset, outside code) resolves to a file in the tarball: no `../` links.
+//     The rule lives in readme-links.mjs.
 //
 // Which packages get packed is owned by scripts/pack-tarballs.sh (it discovers every
 // non-private packages/* and apps/* package), so this script only validates what it is given.
@@ -13,6 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import path from "node:path";
+import { deadReadmeLinks } from "./readme-links.mjs";
 
 const dir = process.argv[2];
 if (!dir) {
@@ -37,30 +40,6 @@ function collectExportTargets(value, out) {
 
 function normalize(target) {
   return path.posix.normalize(target.replace(/^\.\//, ""));
-}
-
-// Markdown link and image targets: inline (`[text](target "title")`) and reference-style (`[id]: target`).
-const README_LINK_TARGETS = [/\]\(\s*<?([^)\s>]+)>?/g, /^ {0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?/gm];
-// A URL with a scheme (`https:`, `mailto:`), a protocol-relative URL, or an in-page anchor.
-const NON_FILE_TARGET = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
-
-/**
- * Relative README link targets that don't resolve to a file in the tarball. Anything that
- * reads the README from the package (an installed copy in node_modules, a CDN's file view)
- * resolves them against the package root, so a `../` link into the monorepo is dead there.
- * Link to the repository with an absolute GitHub URL instead.
- */
-function deadReadmeLinks(readme, entries) {
-  const dead = [];
-  for (const pattern of README_LINK_TARGETS) {
-    for (const [, target] of readme.matchAll(pattern)) {
-      if (NON_FILE_TARGET.test(target)) continue;
-      const rel = normalize(target.split("#")[0]);
-      const ships = entries.has(rel) || [...entries].some((entry) => entry.startsWith(`${rel}/`));
-      if (!ships) dead.push(target);
-    }
-  }
-  return dead;
 }
 
 const tarballs = readdirSync(dir).filter((f) => f.endsWith(".tgz")).sort();

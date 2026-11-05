@@ -19,7 +19,10 @@ echo "smoke: workdir = $WORK"
 echo "smoke: building and packing every publishable package…"
 bash "$ROOT/scripts/pack-tarballs.sh" "$WORK/tarballs"
 
-echo "smoke: validating every tarball ships LICENSE/NOTICE/README.md and its entry paths, and no src/tests…"
+echo "smoke: self-testing the README link rule…"
+node --test "$SCRIPT_DIR/readme-links.test.mjs"
+
+echo "smoke: validating every tarball ships LICENSE/NOTICE/README.md, README links and its entry paths, and no src/tests…"
 node "$SCRIPT_DIR/check-tarballs.mjs" "$WORK/tarballs"
 
 # The deprecated @askdb/ai-* and @askdb/connectors shims were removed before 1.0 (#347).
