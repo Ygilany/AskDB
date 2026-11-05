@@ -117,7 +117,7 @@ interface AskPipelineResult {
 bindPreparedQuery(
   prepared: PreparedQuery,
   values: Record<string, QueryParameterValue | QueryParameterValue[]>, // business values only
-  guardrails: { schema; tenantScope?; sensitiveGuardrailMode?; acceptWarnings?: ReadonlyArray<'tenant'> },
+  guardrails: { schema; tenantScope?; sensitiveGuardrailMode?; acceptWarnings?: ReadonlyArray<'tenant'>; dialect?: DialectSpec | BuiltInDialectId }, // dialect: required for dialectRules 'host' or none (ADR 0031)
 ): BoundQuery // { sql, unboundSql, params, bindings, verdict }
 
 // The subtree expansion ask() runs, for a host that rebinds (ADR 0014).

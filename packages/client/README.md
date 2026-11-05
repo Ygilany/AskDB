@@ -61,7 +61,7 @@ await pool.query(rebound.sql);
 
 Every `ask()` is still one model call. Set `{ parameterize: false }` to opt out of the extra output tokens. Each SQL form runs with its own array: `sql` with `tenantParams`, `unboundSql` with `params` (which already holds the tenant IDs); never concatenate them. Set `tenantSqlMode: "sql-only"` to get the tenant IDs inlined in `sql` instead.
 
-`askdb.bind(prepared, values, options?)` wraps `@askdb/core`'s `bindPreparedQuery()`: it checks the stored template under the client's schema (or `options.schema`), the `tenantScope` you pass and the modes (`sensitiveGuardrailMode`, `acceptWarnings`), expands a `subtree` scope with `options.resolveTenantDescendants`, and renders the tenant IDs from the scope. Authorizing that scope remains the host's job, as for `ask()`.
+`askdb.bind(prepared, values, options?)` wraps `@askdb/core`'s `bindPreparedQuery()`: it checks the stored template under the client's schema (or `options.schema`), the `tenantScope` you pass and the modes (`sensitiveGuardrailMode`, `acceptWarnings`), under the `dialect` you pass when `ask()` ran with your own `DialectSpec`, expands a `subtree` scope with `options.resolveTenantDescendants`, and renders the tenant IDs from the scope. Authorizing that scope remains the host's job, as for `ask()`.
 
 ## Multi-tenant usage
 
