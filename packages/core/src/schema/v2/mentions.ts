@@ -17,6 +17,9 @@ export type MentionMatcher = {
 // A match's ends may not touch a letter, digit, or `_` of any script.
 const BEFORE = "(?<![\\p{L}\\p{N}_])";
 const AFTER = "(?![\\p{L}\\p{N}_])";
+// Between a qualified name's table and column: a tight dot, or spaces or tabs
+// on both sides ("users. Org_id" ends a sentence).
+const QUALIFIER = "(?:\\.|[ \\t]+\\.[ \\t]+)";
 
 /**
  * Compiles the "mentions a sensitive column by name" rule of the schema v2
@@ -25,17 +28,35 @@ const AFTER = "(?![\\p{L}\\p{N}_])";
  * checks every describable text of a schema against the same list.
  */
 export function createMentionMatcher(names: readonly MentionName[]): MentionMatcher {
-  const entries = names
-    .filter((name) => (typeof name === "string" ? name !== "" : name.table !== "" && name.column !== ""))
-    .map((name) => ({ name, source: namePattern(name) }));
-  const each = entries.map(({ name, source }) => ({ name, pattern: new RegExp(`${BEFORE}${source}${AFTER}`, "iu") }));
+  const entries = names.filter((name) =>
+    typeof name === "string" ? name !== "" : name.table !== "" && name.column !== "",
+  );
+  // One alternative per bare name, and one per table for its qualified names
+  // (`table` + separator + any of its columns): the same matches as one
+  // alternative per name, without trying every column of every sensitive
+  // table at each position of the text.
+  const alternatives: string[] = [];
+  const columnsByTable = new Map<string, string[]>();
+  for (const name of entries) {
+    if (typeof name === "string") alternatives.push(partPattern(name));
+    else {
+      const columns = columnsByTable.get(name.table) ?? [];
+      columns.push(partPattern(name.column));
+      columnsByTable.set(name.table, columns);
+    }
+  }
+  for (const [table, columns] of columnsByTable) {
+    alternatives.push(`${partPattern(table)}${QUALIFIER}(?:${columns.join("|")})`);
+  }
   const any =
-    entries.length === 0
-      ? undefined
-      : new RegExp(`${BEFORE}(?:${entries.map((e) => e.source).join("|")})${AFTER}`, "iu");
+    alternatives.length === 0 ? undefined : new RegExp(`${BEFORE}(?:${alternatives.join("|")})${AFTER}`, "iu");
+  // Compiled on the first `find`: the prompt builders only ask `mentionsAny`.
+  let each: { name: MentionName; pattern: RegExp }[] | undefined;
+  const patterns = () =>
+    (each ??= entries.map((name) => ({ name, pattern: new RegExp(`${BEFORE}${namePattern(name)}${AFTER}`, "iu") })));
   return {
     mentionsAny: (text) => Boolean(text) && any !== undefined && any.test(text),
-    find: (text) => (text ? each.filter(({ pattern }) => pattern.test(text)).map(({ name }) => name) : []),
+    find: (text) => (text ? patterns().filter(({ pattern }) => pattern.test(text)).map(({ name }) => name) : []),
   };
 }
 
@@ -85,8 +106,7 @@ function partPattern(part: string): string {
 
 function namePattern(name: MentionName): string {
   if (typeof name === "string") return partPattern(name);
-  // A tight dot, or spaces or tabs on both sides: "users. Org_id" ends a sentence.
-  return `${partPattern(name.table)}(?:\\.|[ \\t]+\\.[ \\t]+)${partPattern(name.column)}`;
+  return `${partPattern(name.table)}${QUALIFIER}${partPattern(name.column)}`;
 }
 
 function escapeRegex(s: string): string {

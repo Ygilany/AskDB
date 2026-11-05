@@ -99,11 +99,13 @@ export function formatSchemaV2ForNlToSql(
  * mention rule) is withheld and counted; otherwise every text is shown.
  */
 export type PromptTextGate = {
-  /** Whether `text` may go in the prompt. A withheld text counts once. */
-  allows(text: string): boolean;
-  /** Whether `texts` may go in as one unit: withheld together, counted once, when any names a sensitive column. */
-  allowsAll(texts: readonly string[]): boolean;
-  /** How many texts or units were withheld so far. */
+  /**
+   * Whether `text`, as the prompt renders it, may go in. With omission on, a text that names a
+   * sensitive column is withheld, and so is one whose source is `flagged` sensitive (a retrieved
+   * chunk's `sensitive`). Each withheld text counts once.
+   */
+  allows(text: string, flagged?: boolean): boolean;
+  /** How many texts were withheld so far. */
   readonly withheld: number;
 };
 
@@ -111,14 +113,12 @@ export type PromptTextGate = {
 export function promptTextGate(schema: NormalizedSchemaV2, omit: boolean): PromptTextGate {
   const matcher = omit ? createMentionMatcher(sensitiveMentionNames(schema)) : undefined;
   let withheld = 0;
-  const allowsAll = (texts: readonly string[]): boolean => {
-    if (!matcher || !texts.some((text) => matcher.mentionsAny(text))) return true;
-    withheld++;
-    return false;
-  };
   return {
-    allows: (text) => allowsAll([text]),
-    allowsAll,
+    allows(text, flagged = false) {
+      if (!matcher || (!flagged && !matcher.mentionsAny(text))) return true;
+      withheld++;
+      return false;
+    },
     get withheld() {
       return withheld;
     },
@@ -134,17 +134,17 @@ export function tableAliasNote(t: NormalizedSchemaV2["tables"][0], gate: PromptT
 
 /**
  * A non-sensitive column's annotation (`aliases: …; values: …; description`), or `""`.
- * The three are one unit: when any of them names a sensitive column, the gate withholds all.
+ * The three are one unit, checked as rendered: when they name a sensitive column, the gate
+ * withholds all of them.
  */
 export function columnAnnotation(c: NormalizedSchemaV2["tables"][0]["columns"][0], gate: PromptTextGate): string {
-  const values = (c.enum ?? []).map(String);
-  const texts = [...(c.aliases ?? []), ...values, ...(c.description ? [c.description] : [])];
-  if (texts.length === 0 || !gate.allowsAll(texts)) return "";
-  const extras: string[] = [];
-  if (c.aliases?.length) extras.push(`aliases: ${c.aliases.join(", ")}`);
-  if (values.length) extras.push(`values: ${values.join("|")}`);
-  if (c.description) extras.push(c.description);
-  return extras.join("; ");
+  const aliases = c.aliases?.length ? c.aliases.join(", ") : "";
+  const values = c.enum?.length ? c.enum.join("|") : "";
+  const description = c.description ?? "";
+  const shown = [aliases, values, description].filter(Boolean);
+  // The fixed labels stay out of the check: a sensitive column named `values` names no annotation.
+  if (shown.length === 0 || !gate.allows(shown.join("; "))) return "";
+  return [aliases && `aliases: ${aliases}`, values && `values: ${values}`, description].filter(Boolean).join("; ");
 }
 
 /**

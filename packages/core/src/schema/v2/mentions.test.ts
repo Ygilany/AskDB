@@ -52,10 +52,34 @@ describe("findMentionedNames", () => {
 
 describe("createMentionMatcher", () => {
   it("answers mentionsAny the same way find does", () => {
-    const matcher = createMentionMatcher(["email", orgId]);
-    for (const text of ["filter by email", "read users.org_id", "read org_id", "users. Org_id", ""]) {
+    // Two columns of one table, one a prefix of the other, and the same column under another table.
+    const org = { table: "users", column: "org" };
+    const matcher = createMentionMatcher(["email", orgId, org, { table: "accounts", column: "org_id" }]);
+    for (const text of [
+      "filter by email",
+      "read users.org_id",
+      "read users.org",
+      "read users.orgx",
+      'read "users" . [org]',
+      "read accounts.org_id",
+      "read org_id",
+      "users. Org_id",
+      "",
+    ]) {
       expect(matcher.mentionsAny(text)).toBe(matcher.find(text).length > 0);
     }
+  });
+
+  it("checks many texts against every column of many sensitive tables quickly", () => {
+    // 30 sensitive tables of 30 columns each, as `{ table, column }` names; 90,000 texts that name none.
+    const names = Array.from({ length: 900 }, (_, i) => ({ table: `t${Math.floor(i / 30)}`, column: `col_${i % 30}` }));
+    const matcher = createMentionMatcher(names);
+    const started = performance.now();
+    let hits = 0;
+    for (let i = 0; i < 90_000; i++) if (matcher.mentionsAny(`the t${i % 30} order total for region ${i}`)) hits++;
+    expect(hits).toBe(0);
+    // One alternative per name took about 1.8 s here; grouping them by table takes about 50 ms.
+    expect(performance.now() - started).toBeLessThan(750);
   });
 
   it("mentions nothing for an empty list or empty names", () => {

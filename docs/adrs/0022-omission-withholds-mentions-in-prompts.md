@@ -19,7 +19,7 @@ A chunk that names a sensitive column reaches `synthesizeRetrievedDdl` whenever 
 
 - With omission on, both prompt builders check every piece of describable text they render against `sensitiveMentionNames(schema)`, with the contract's mention rule, and withhold the text that names a sensitive column. With omission off, the prompt lists sensitive names tagged `(sensitive)` on purpose, so nothing changes.
 - The units match `@askdb/rag`'s chunker: a table's description and each of its aliases on their own; a column's aliases, enum values and description as one annotation, withheld together; the whole common query language block. Text is never cut out of the middle of a sentence.
-- On the retrieval path, core trusts nothing the retriever did. With omission on, it withholds a chunk's text when the text names a sensitive column **or** the chunk is flagged `sensitive: true`. The flag catches what the text can't show: a concept flagged for linking to `table:public.users#org_id`, a link id the mention rule doesn't read as `users.org_id`.
+- On the retrieval path, core trusts nothing the retriever did. With omission on, it withholds a chunk's text when the text, checked exactly as the prompt renders it (lines joined), names a sensitive column **or** the chunk is flagged `sensitive: true`. The flag catches what the text can't show: a concept flagged for linking to `table:public.users#org_id`, a link id the mention rule doesn't read as `users.org_id`.
 - A withheld chunk still picks its tables, so the model sees the same table definitions with or without omission, and only the text changes.
 - `NlToSqlSchemaFormatStats.mentionDroppedCount` and `synthesizeRetrievedDdl`'s `mentionDroppedCount` count what was withheld. `askdb.prompt.sensitive_redacted` carries the whole schema's count, as its column counts already do on the retrieval path; `askdb.pipeline.retrieval_used` carries the retrieval prompt's own.
 
@@ -36,4 +36,5 @@ A chunk that names a sensitive column reaches `synthesizeRetrievedDdl` whenever 
 - With omission on, the model sees less describable text for schemas whose prose names sensitive columns. ADR 0017's over-exclusion applies: a column marked sensitive itself with a generic name (a PII `name`) withholds every text that uses the word.
 - A column whose description names a sensitive column also loses its enum values and aliases in the prompt, since the annotation is one unit.
 - Hosts that read `NlToSqlSchemaFormatStats` get a new required field; a host that builds one by hand must set it.
+- The check runs on every `ask()` with omission on, over the whole schema even when a retriever supplies the DDL (for the redaction event's count). `createMentionMatcher` groups qualified names by table so that this stays cheap on large schemas with whole sensitive tables.
 - The tenant policy block (structured front-matter, always in the prompt) still names tenant columns under omission. Whether it should is #624.

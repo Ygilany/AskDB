@@ -103,6 +103,9 @@ describe("synthesizeRetrievedDdl — text that names a sensitive column (#374)",
     chunk("concept", "# Concept: Big order\nAn order over 100 dollars.", []),
     chunk("question", "# public.customers — example question\nWhich customers have no email?", ["table:public.customers"]),
     chunk("tenant-policy", "# Tenant policy — Rules\nNever expose users.ssn.", []),
+    chunk("relationship", "Relationship: public.orders.customer_id references public.customers.email", ["table:public.orders"]),
+    // The mention appears only once the prompt joins the lines: "users . ssn".
+    chunk("question", "# public.orders — example question\nWhich buyers match users\n.\nssn?", ["table:public.orders"]),
   ];
 
   it("with omission on, withholds every chunk and schema text that names one, and every chunk flagged sensitive", () => {
@@ -117,8 +120,8 @@ describe("synthesizeRetrievedDdl — text that names a sensitive column (#374)",
     expect(lines).toContain("  - region text (NULL) -- aliases: territory; values: north|south; Sales region of the account.");
     expect(lines).toContain('-- - "big orders" means `total > 10000`');
     expect(lines).toContain("-- An order over 100 dollars.");
-    // From the schema: an alias, two descriptions, two column annotations. From the retriever: five chunks.
-    expect(mentionDroppedCount).toBe(10);
+    // From the schema: an alias, two descriptions, two column annotations. From the retriever: seven chunks.
+    expect(mentionDroppedCount).toBe(12);
   });
 
   it("keeps them when sensitive names are listed tagged", () => {
