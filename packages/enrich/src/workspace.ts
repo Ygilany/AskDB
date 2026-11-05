@@ -487,12 +487,17 @@ function resolveTableFilePath(tablesDir: string, filename: string): string {
 /**
  * Write a file inside the schema directory so that no link can redirect the write
  * out of it. `relativePath` uses `/` between its parts (`tables/orders.md`,
- * `concepts.md`); `refusal` completes the error message, as in
- * `Refusing to write <refusal>: "concepts.md" is a symbolic link`. Every save of a
- * schema-directory file goes through here: `saveTable()`, `saveConcepts()` and
- * `saveTenantPolicy()`. A schema directory can come from an untrusted checkout (git
- * stores symbolic links, tar archives also store hard links), and Studio saves into
- * it for as long as it runs.
+ * `concepts.md`); `refusalSubject` completes the error message, as in
+ * `Refusing to write <refusalSubject>: "concepts.md" is a symbolic link`. Every
+ * `@askdb/enrich` save into the schema directory goes through here: `saveTable()`,
+ * `saveConcepts()` and `saveTenantPolicy()`. Studio's own `playground-history.json`
+ * and `.gitignore` writes don't yet (#617). A schema directory can come from an
+ * untrusted checkout (git stores symbolic links, tar archives also store hard
+ * links), and Studio saves into it for as long as it runs.
+ *
+ * The caller passes a path it has already checked: this helper refuses links, not
+ * `..` or separators in a part. `saveTable()` checks its filename with
+ * `resolveTableFilePath()` first; the other callers pass fixed names.
  *
  * - No directory between the schema directory and the target (`tables/`), and not
  *   the target itself, may be a symbolic link; either one is refused. The schema
@@ -506,7 +511,9 @@ function resolveTableFilePath(tablesDir: string, filename: string): string {
  * - A target the caller can't write is refused with `EACCES`, as a plain write
  *   would be. `rename` needs only write access to the directory, so without this
  *   check a read-only file (how Perforce and ClearCase mark files not checked out)
- *   would be replaced on macOS and Linux.
+ *   would be replaced on macOS and Linux. The temp file needs write access to the
+ *   directory too, so a save into a directory the caller can't write fails with
+ *   `EACCES` even when the file itself is writable.
  * - The temp file gets the target's owner, group, and permission bits before any
  *   content is written, so a `0600` file's new content is never readable by others
  *   and a `0660` file stays shared with its own group, not the group a new file in
@@ -525,9 +532,9 @@ function writeWorkspaceFile(
   schemaDir: string,
   relativePath: string,
   content: string,
-  refusal: string,
+  refusalSubject: string,
 ): void {
-  const refuse = (why: string) => new Error(`Refusing to write ${refusal}: ${why}`);
+  const refuse = (why: string) => new Error(`Refusing to write ${refusalSubject}: ${why}`);
   const dirs = relativePath.split("/");
   const filename = dirs.pop()!;
   let dir = schemaDir;

@@ -4,7 +4,7 @@
 
 Accepted (2026-09-29). Implemented by PR #181 (`assignDefaultTableFilenames()` in `packages/enrich/src/workspace.ts`).
 
-> **Amendment (2026-11, #372):** The write rule under *Decision* ("Writes are also contained") now covers every file `@askdb/enrich` saves in a schema directory, through one internal helper. `saveConcepts()` writes `concepts.md` and the new `saveTenantPolicy()` writes `tenant-policy.md` the same way: a symbolic link at the file is refused, and the save goes through a temp file renamed over the target. Studio's tenant-policy route calls `saveTenantPolicy()` instead of writing the file itself. The schema directory itself may be a symbolic link. The Windows `EPERM` consequence below applies to those saves too.
+> **Amendment (2026-11, #372):** The write rule under *Decision* ("Writes are also contained") now covers every file `@askdb/enrich` saves in a schema directory, through one internal helper. `saveConcepts()` writes `concepts.md` and the new `saveTenantPolicy()` writes `tenant-policy.md` the same way: a symbolic link at the file is refused, and the save goes through a temp file renamed over the target. Studio's tenant-policy route calls `saveTenantPolicy()` instead of writing the file itself. The schema directory itself may be a symbolic link. The Windows `EPERM` consequence below applies to those saves too, and they now need write access to the schema directory for the temp file, where an in-place write needed only the file.
 
 ## Context
 
