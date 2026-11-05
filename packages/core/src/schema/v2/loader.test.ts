@@ -335,18 +335,35 @@ describe("loadSchema — a tenant policy that doesn't match schema.json", () => 
     for (const id of ids) expect(message).toContain(id);
   });
 
-  it("strict: a scoped table removed from schema.json stays one warning, and the schema loads", () => {
+  // An entry whose own table is gone scopes nothing: its columns went with the table, so
+  // the entry is one warning and the strict load succeeds. Removing `clients` also drops
+  // the parent foreign key on that root and the hierarchy edge's key on the child.
+  it.each([
+    {
+      removed: ["table:public.orders"],
+      warnings: [{ kind: "orphaned_scoped_table_id", id: "table:public.orders" }],
+    },
+    {
+      removed: ["table:public.notes"],
+      warnings: [{ kind: "orphaned_polymorphic_table_id", id: "table:public.notes" }],
+    },
+    {
+      removed: ["table:public.clients", "table:public.appointments"],
+      warnings: [
+        { kind: "orphaned_root_id", id: "table:public.clients" },
+        { kind: "orphaned_scoped_table_id", id: "table:public.appointments" },
+      ],
+    },
+  ])("strict: removing $removed from schema.json leaves only table warnings, and the schema loads", ({ removed, warnings }) => {
     const dir = copyFixture(multiTenantDir);
     const schemaJsonPath = join(dir, "schema.json");
     const physical = JSON.parse(readFileSync(schemaJsonPath, "utf8")) as {
       tables: { id: string }[];
     };
-    physical.tables = physical.tables.filter((t) => t.id !== "table:public.orders");
+    physical.tables = physical.tables.filter((t) => !removed.includes(t.id));
     writeFileSync(schemaJsonPath, JSON.stringify(physical));
 
-    expect(loadSchema(dir).tenantPolicy!.warnings).toEqual([
-      { kind: "orphaned_scoped_table_id", id: "table:public.orders" },
-    ]);
+    expect(loadSchema(dir).tenantPolicy!.warnings).toEqual(warnings);
   });
 });
 
