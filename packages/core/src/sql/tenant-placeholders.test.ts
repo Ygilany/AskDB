@@ -170,9 +170,12 @@ describe("ask() — tenant SQL output modes", () => {
     const run = (dialect: DialectSpec) =>
       ask({ question: "count orders", schema, model: fakeModel, dialect, tenantScope: agencyScope, deps: { generateText: generateText as never } });
 
-    const error = await run({ ...sqlServer, id: "mssql" } as unknown as DialectSpec).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(TenantScopeError);
-    expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    // "constructor" is an Object.prototype key, not a built-in id.
+    for (const id of ["mssql", "constructor"]) {
+      const error = await run({ ...sqlServer, id } as unknown as DialectSpec).catch((e: unknown) => e);
+      expect(error, id).toBeInstanceOf(TenantScopeError);
+      expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    }
     expect(generateText).not.toHaveBeenCalled();
     // A spread that keeps the built-in id is still that engine, with its own markers.
     const spread = await run({ ...sqlServer, blockedFunctions: [...(sqlServer.blockedFunctions ?? []), "my_udf"] });
