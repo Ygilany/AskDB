@@ -7,6 +7,7 @@ import {
   readdirSync,
   rmSync,
   cpSync,
+  existsSync,
   linkSync,
   statSync,
   symlinkSync,
@@ -15,7 +16,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadSchema, loadSchemaFromJson } from "@askdb/core";
+import {
+  loadSchema,
+  loadSchemaFromJson,
+  SchemaParseError,
+  type TenantPolicyFrontmatter,
+} from "@askdb/core";
 import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";
 import {
   otherGroup,
@@ -33,8 +39,10 @@ import {
   replaceTableDescription,
   saveTable,
   saveConcepts,
+  saveTenantPolicy,
   pruneOrphanedColumns,
   validateConceptLinks,
+  type Workspace,
 } from "./workspace.js";
 
 const FIXTURE = new URL(
@@ -46,6 +54,13 @@ const MULTI_TENANT_FIXTURE = new URL(
   "../../../fixtures/schemas/agency-multi-tenant.schema",
   import.meta.url,
 ).pathname;
+
+/** A tenant policy the core loader accepts for the orders-users fixture. */
+const ACCOUNT_POLICY: TenantPolicyFrontmatter = {
+  schemaId: "orders-users",
+  enforcement: "strict",
+  roots: [{ id: "table:public.users", tenantIdColumn: "table:public.users#id", label: "Account" }],
+};
 
 describe("workspace", () => {
   let tmp: string;
@@ -192,6 +207,49 @@ describe("workspace", () => {
     const saved = readFileSync(join(schemaDir, "concepts.md"), "utf8");
     expect(saved).toContain("concept:vip_customer");
     expect(saved).toContain("table:public.users");
+  });
+
+  // A checkout can carry a symbolic link at either file (git stores them), and Studio
+  // saves into the schema directory for as long as it runs.
+  it.each([
+    { file: "concepts.md", save: (ws: Workspace) => saveConcepts(ws, { concepts: [] }) },
+    { file: "tenant-policy.md", save: (ws: Workspace) => saveTenantPolicy(ws, ACCOUNT_POLICY, "") },
+  ])("refuses to write $file through a symbolic link", ({ file, save }) => {
+    const ws = loadWorkspace(schemaDir);
+    const outside = join(tmp, "outside.md");
+    writeFileSync(outside, "untouched\n", "utf8");
+    rmSync(join(schemaDir, file), { force: true });
+    symlinkSync(outside, join(schemaDir, file));
+
+    expect(() => save(ws)).toThrow(
+      `Refusing to write ${file} outside the schema directory: "${file}" is a symbolic link`,
+    );
+    expect(readFileSync(outside, "utf8")).toBe("untouched\n");
+  });
+
+  it("saveTenantPolicy writes a policy the core loader then enforces", () => {
+    const ws = loadWorkspace(schemaDir);
+    saveTenantPolicy(ws, ACCOUNT_POLICY, "Each account sees only its own orders.\n");
+
+    const { tenantPolicy } = loadSchema(schemaDir);
+    expect(tenantPolicy).toMatchObject({
+      enforcement: "strict",
+      roots: [{ id: "table:public.users", tenantIdColumn: "table:public.users#id", label: "Account" }],
+    });
+    expect(tenantPolicy?.body).toContain("Each account sees only its own orders.");
+  });
+
+  // Any authoring surface gets the loader's rules, not only Studio: a policy that
+  // `loadSchema` rejects (#375: two labels deriving one placeholder) must not reach
+  // disk, or every later load of the schema directory fails until it's fixed by hand.
+  it("saveTenantPolicy refuses a policy the loader would reject, and writes nothing", () => {
+    const ws = loadWorkspace(schemaDir);
+    const clash = { id: "table:public.orders", tenantIdColumn: "table:public.orders#id", label: "account" };
+
+    expect(() =>
+      saveTenantPolicy(ws, { ...ACCOUNT_POLICY, roots: [...ACCOUNT_POLICY.roots, clash] }, ""),
+    ).toThrow(SchemaParseError);
+    expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
   });
 
   it("surfaces new column ids and prunes orphaned column frontmatter", () => {

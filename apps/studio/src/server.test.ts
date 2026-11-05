@@ -247,6 +247,40 @@ describe("AskDB Studio server", () => {
     expect(readFileSync(outside, "utf8")).toBe(original);
   });
 
+  it("refuses to save the tenant policy through a symbolic link that points outside the schema directory", async () => {
+    installStudioRuntime();
+    const schemaDir = copyFixture();
+    // Studio reads through the link at startup; only the save is refused.
+    const outside = join(schemaDir, "..", "outside-policy.md");
+    const original =
+      "---\nschemaId: orders-users\nenforcement: strict\nroots:\n" +
+      "  - id: table:public.users\n    tenantIdColumn: table:public.users#id\n    label: Account\n---\n";
+    writeFileSync(outside, original);
+    symlinkSync(outside, join(schemaDir, "tenant-policy.md"));
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const response = await postRaw(`${baseUrl}/api/tenant-policy`, {
+      frontmatter: {
+        schemaId: "orders-users",
+        enforcement: "strict",
+        roots: [{ id: "table:public.users", tenantIdColumn: "table:public.users#id", label: "Customer" }],
+      },
+      body: "",
+    });
+
+    expect(response.ok).toBe(false);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        message: expect.stringMatching(
+          /tenant-policy\.md outside the schema directory: "tenant-policy\.md" is a symbolic link/,
+        ),
+      },
+    });
+    expect(readFileSync(outside, "utf8")).toBe(original);
+  });
+
   describe("request guard", () => {
     async function startGuardedServer() {
       installStudioRuntime();

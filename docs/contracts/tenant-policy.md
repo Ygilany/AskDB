@@ -33,6 +33,8 @@ When present, the file enables tenant handling: `ask()` requires a valid `tenant
 
 Only a **missing** file means "no tenant policy". In a bundle, that means only an absent `tenantPolicy` key. A `tenant-policy.md` that exists but is empty or cannot be read or parsed (for example, malformed YAML front-matter) makes `loadSchema()` throw `SchemaParseError` naming the file. The same applies to an empty or non-string bundle `tenantPolicy`. A broken policy never silently turns tenant enforcement off. `loadSchema("<dir>/schema.json")` loads the sibling `tenant-policy.md` the same way `loadSchema("<dir>")` does.
 
+Authoring surfaces write the file with `@askdb/enrich`'s `saveTenantPolicy()`, as Studio's Tenancy view does. It checks the policy with the loader's own rules first and throws `SchemaParseError` without writing when `loadSchema()` would reject it, so a save can't leave a policy that breaks every later load. It refuses to write through a symbolic link at `tenant-policy.md` and saves atomically (see the [schema-v2 contract](./schema-v2.md#describable-layer--tablestablemd) for the write rules).
+
 ---
 
 ## Front-matter schema

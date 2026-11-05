@@ -23,13 +23,17 @@ import {
   parseConceptsMarkdown,
   parseTableMarkdown,
   loadSchema,
+  normalizeTenantPolicy,
+  parseTenantPolicyMarkdown,
   writeConceptsMarkdown,
   writeTableMarkdown,
+  writeTenantPolicyMarkdown,
   v2SchemaJsonSchema,
   type BundledSchemaV2 as CoreBundledSchemaV2,
   type ParsedConceptsMarkdown,
   type ParsedTableMarkdown,
   type SchemaV2Warning,
+  type TenantPolicyFrontmatter,
   type V2Concept,
   type V2ConceptsFrontmatter,
   type V2SchemaJson,
@@ -173,7 +177,12 @@ export function saveTable(
   const filePath = resolveTableFilePath(tablesDir, wt.filename);
   mkdirSync(tablesDir, { recursive: true });
   const md = writeTableMarkdown(frontmatter, body);
-  replaceTableFile(tablesDir, filePath, wt.filename, md);
+  writeWorkspaceFile(
+    workspace.schemaDir,
+    `tables/${wt.filename}`,
+    md,
+    "table markdown outside tables/",
+  );
   // Update in-memory parse so subsequent edits see the saved state.
   const reparsed = parseTableMarkdown(md, filePath);
   wt.parsed = reparsed;
@@ -191,8 +200,35 @@ export function saveConcepts(
   }
   const filePath = join(workspace.schemaDir, "concepts.md");
   const md = writeConceptsMarkdown(frontmatter, body);
-  writeFileSync(filePath, md, "utf8");
+  writeWorkspaceFile(workspace.schemaDir, "concepts.md", md, "concepts.md outside the schema directory");
   workspace.concepts = parseConceptsMarkdown(md, filePath);
+}
+
+/**
+ * Save `tenant-policy.md` to the schema directory. The policy is checked first with
+ * the core loader's own rules, against the workspace's tables and columns: a policy
+ * that `loadSchema` would reject throws `SchemaParseError` and nothing is written,
+ * since every later load of the directory would fail until the file is fixed by hand.
+ */
+export function saveTenantPolicy(
+  workspace: Workspace,
+  frontmatter: TenantPolicyFrontmatter,
+  body: string,
+): void {
+  const filePath = join(workspace.schemaDir, "tenant-policy.md");
+  const md = writeTenantPolicyMarkdown(frontmatter, body);
+  const { tables } = workspace.physical;
+  normalizeTenantPolicy(
+    parseTenantPolicyMarkdown(md, filePath),
+    new Set(tables.map((table) => table.id)),
+    new Set(tables.flatMap((table) => table.columns.map((column) => column.id))),
+  );
+  writeWorkspaceFile(
+    workspace.schemaDir,
+    "tenant-policy.md",
+    md,
+    "tenant-policy.md outside the schema directory",
+  );
 }
 
 export function validateConceptLinks(workspace: Workspace, concepts: V2Concept[]): string[] {
@@ -449,50 +485,64 @@ function resolveTableFilePath(tablesDir: string, filename: string): string {
 }
 
 /**
- * Write a table markdown file so that no link can redirect the write out of
- * `tables/`. A schema directory can come from an untrusted checkout (git stores
- * symbolic links, tar archives also store hard links), and Studio saves into it
- * for as long as it runs.
+ * Write a file inside the schema directory so that no link can redirect the write
+ * out of it. `relativePath` uses `/` between its parts (`tables/orders.md`,
+ * `concepts.md`); `refusal` completes the error message, as in
+ * `Refusing to write <refusal>: "concepts.md" is a symbolic link`. Every save of a
+ * schema-directory file goes through here: `saveTable()`, `saveConcepts()` and
+ * `saveTenantPolicy()`. A schema directory can come from an untrusted checkout (git
+ * stores symbolic links, tar archives also store hard links), and Studio saves into
+ * it for as long as it runs.
  *
- * - `tables/` itself and the target file must not be symbolic links; either one
- *   is refused.
- * - The content goes to a new temp file in `tables/` (`O_EXCL`, so it never opens
- *   an existing path), which is then renamed over the target. `rename` replaces
- *   the directory entry instead of writing into the existing file, so a hard link
- *   to a file elsewhere is detached, not written through, and a symbolic link
- *   planted at the target after the check is replaced, not followed. This holds on
- *   Windows too, which has no `O_NOFOLLOW`.
+ * - No directory between the schema directory and the target (`tables/`), and not
+ *   the target itself, may be a symbolic link; either one is refused. The schema
+ *   directory itself may be one: it is the path the user chose.
+ * - The content goes to a new temp file next to the target (`O_EXCL`, so it never
+ *   opens an existing path), which is then renamed over the target. `rename`
+ *   replaces the directory entry instead of writing into the existing file, so a
+ *   hard link to a file elsewhere is detached, not written through, and a symbolic
+ *   link planted at the target after the check is replaced, not followed. This
+ *   holds on Windows too, which has no `O_NOFOLLOW`.
  * - A target the caller can't write is refused with `EACCES`, as a plain write
- *   would be. `rename` needs only write access to `tables/`, so without this check
- *   a read-only file (how Perforce and ClearCase mark files not checked out) would
- *   be replaced on macOS and Linux.
+ *   would be. `rename` needs only write access to the directory, so without this
+ *   check a read-only file (how Perforce and ClearCase mark files not checked out)
+ *   would be replaced on macOS and Linux.
  * - The temp file gets the target's owner, group, and permission bits before any
  *   content is written, so a `0600` file's new content is never readable by others
  *   and a `0660` file stays shared with its own group, not the group a new file in
- *   `tables/` would get (`keepOwnerAndGroup`). It is `fsync`ed before the rename.
- *   Readers, and a crash or power loss, see either the old file or the new one,
- *   never a partial write.
+ *   the directory would get (`keepOwnerAndGroup`). It is `fsync`ed before the
+ *   rename. Readers, and a crash or power loss, see either the old file or the new
+ *   one, never a partial write.
  *
- * Not covered: `tables/` being swapped for a link after the check and before the
- * rename, since the temp path and the rename still resolve through it. That needs
- * a concurrent local writer racing a save. And only root can give a file to another
- * user, so on macOS and Linux a save by someone other than the file's owner (a
- * member of a group that may write it) makes the saver its owner.
+ * Not covered: a directory between the schema directory and the target (`tables/`)
+ * being swapped for a link after the check and before the rename, since the temp
+ * path and the rename still resolve through it. That needs a concurrent local
+ * writer racing a save. And only root can give a file to another user, so on macOS
+ * and Linux a save by someone other than the file's owner (a member of a group that
+ * may write it) makes the saver its owner.
  */
-function replaceTableFile(
-  tablesDir: string,
-  filePath: string,
-  filename: string,
+function writeWorkspaceFile(
+  schemaDir: string,
+  relativePath: string,
   content: string,
+  refusal: string,
 ): void {
-  const refuse = (why: string) =>
-    new Error(`Refusing to write table markdown outside tables/: ${why}`);
-  if (lstatSync(tablesDir).isSymbolicLink()) throw refuse("tables/ is a symbolic link");
+  const refuse = (why: string) => new Error(`Refusing to write ${refusal}: ${why}`);
+  const dirs = relativePath.split("/");
+  const filename = dirs.pop()!;
+  let dir = schemaDir;
+  for (const [i, part] of dirs.entries()) {
+    dir = join(dir, part);
+    if (lstatSync(dir).isSymbolicLink()) {
+      throw refuse(`${dirs.slice(0, i + 1).join("/")}/ is a symbolic link`);
+    }
+  }
+  const filePath = join(dir, filename);
   const existing = lstatSync(filePath, { throwIfNoEntry: false });
   if (existing?.isSymbolicLink()) throw refuse(`${JSON.stringify(filename)} is a symbolic link`);
   if (existing) accessSync(filePath, fsConstants.W_OK);
 
-  const tempPath = join(tablesDir, `.askdb-save-${randomBytes(8).toString("hex")}.tmp`);
+  const tempPath = join(dir, `.askdb-save-${randomBytes(8).toString("hex")}.tmp`);
   const fd = openSync(
     tempPath,
     fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,

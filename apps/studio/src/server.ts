@@ -33,10 +33,7 @@ import {
   type TenantScope,
   type TenantSqlOutputMode,
   type V2Concept,
-  normalizeTenantPolicy,
-  parseTenantPolicyMarkdown,
   SchemaParseError,
-  writeTenantPolicyMarkdown,
   tenantPolicyFrontmatterSchema,
 } from "@askdb/core";
 import {
@@ -69,6 +66,7 @@ import {
   replaceTableDescription,
   saveConcepts,
   saveTable,
+  saveTenantPolicy,
   type SuggestSource,
   type TableDraft,
   type Workspace,
@@ -320,7 +318,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       if (req.method === "POST" && url.pathname === "/api/tenant-policy") {
         const body = await readJson(req);
         const { frontmatter, bodyText } = parseTenantPolicyBody(body);
-        saveTenantPolicy(state, frontmatter, bodyText);
+        saveTenantPolicyDraft(state, frontmatter, bodyText);
         return writeJson(res, 200, serializeWorkspace(requireWorkspace(state)));
       }
       if (req.method === "POST" && url.pathname === "/api/suggest-tenant-policy") {
@@ -638,29 +636,19 @@ function saveConceptsDraft(state: StudioState, concepts: V2Concept[]): void {
   state.workspace = loadWorkspace(state.schemaDir);
 }
 
-function saveTenantPolicy(
+function saveTenantPolicyDraft(
   state: StudioState,
   frontmatter: TenantPolicyFrontmatter,
   body: string,
 ): void {
-  const workspace = requireWorkspace(state);
-  const filePath = join(state.schemaDir, "tenant-policy.md");
-  const md = writeTenantPolicyMarkdown(frontmatter, body);
-  // Run core's own load-time validation before writing: a policy that `loadSchema` would
-  // reject (e.g. two root labels deriving one placeholder) must not reach disk, or every
-  // later request fails until the file is fixed by hand.
+  // `saveTenantPolicy` refuses a policy `loadSchema` would reject (e.g. two root labels
+  // deriving one placeholder) before writing; that's the caller's mistake, so 400.
   try {
-    const physical = workspace.physical;
-    normalizeTenantPolicy(
-      parseTenantPolicyMarkdown(md, filePath),
-      new Set(physical.tables.map((table) => table.id)),
-      new Set(physical.tables.flatMap((table) => table.columns.map((column) => column.id))),
-    );
+    saveTenantPolicy(requireWorkspace(state), frontmatter, body);
   } catch (error) {
     if (error instanceof SchemaParseError) throw new StudioHttpError(400, error.message);
     throw error;
   }
-  writeFileSync(filePath, md, "utf8");
   state.workspace = loadWorkspace(state.schemaDir);
 }
 
