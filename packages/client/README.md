@@ -1,6 +1,6 @@
 # @askdb/client
 
-Config-aware AskDB facade. Resolves schema, model, and dialect from your runtime config so callers only pass a question.
+Config-aware AskDB facade. Resolves schema, model, dialect, and mode from your runtime config so callers only pass a question.
 
 ## Quick start
 
@@ -27,13 +27,14 @@ To bypass config-driven model selection entirely, pass an AI SDK `LanguageModel`
 
 ## Per-call overrides
 
-All three resolution axes accept optional per-call overrides:
+Each resolution axis accepts an optional per-call override:
 
 | Override | Type | Default |
 |---|---|---|
 | `schema` | `{ path }` \| `{ json }` \| `{ schema }` \| `NormalizedSchema` | From `createAskDb({ schema })` → config `host.schemaPath`/`host.schemaJson` → env |
 | `model` | `AskDbLanguageModel` | From registry via config `ai.aiEnv` |
 | `dialect` | `AskDialectInput` | Config `dialect` → schema `provider` → `"postgres"` |
+| `mode` | `AskDbModeV1` | Config `modes.askdbMode` → `"schema_only"`. A per-call mode can only tighten it: `"bounded_results"` runs the config mode (ADR 0025). |
 
 ```ts
 const { sql } = await askdb.ask("count active users", {

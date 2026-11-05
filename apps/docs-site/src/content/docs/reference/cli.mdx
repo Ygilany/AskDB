@@ -222,7 +222,7 @@ askdb ask \
 | --- | --- |
 | `-s, --schema <path>` | Path to the schema artifact. Optional — defaults to the configured `introspection.outputDir`, or `./askdb/`. |
 | `-q, --question <text>` | The natural-language question (required). |
-| `--mode <mode>` | Operating mode: `schema_only` (default) or `bounded_results`. |
+| `--mode <mode>` | Operating mode: `schema_only` or `bounded_results`. It can only tighten config `modes.askdbMode` (default `schema_only`): `--mode bounded_results` runs `schema_only` unless the config sets `bounded_results`. |
 | `--explain` | After the SQL, print a JSON block describing the heuristic guardrails satisfied. |
 | `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
 | `--mock-sql <sql>` | Deterministic output for tests — bypasses the live model call. |

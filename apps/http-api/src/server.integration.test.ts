@@ -484,6 +484,34 @@ describe("http-api", () => {
     }
   });
 
+  it("runs config modes.askdbMode when the request names no mode, and forwards a request mode that tightens it", async () => {
+    const logDir = mkdtempSync(join(tmpdir(), "askdb-http-log-"));
+    const logFile = join(logDir, "askdb.log");
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "info",
+      logFile,
+      host: { schemaPath: schemaPath.pathname },
+      modes: { askdbMode: "bounded_results" },
+    });
+    const app = await startApp();
+    try {
+      const pipelineModes = () =>
+        readLogEntries(logFile)
+          .filter((entry) => entry.event === "askdb.pipeline.mode")
+          .map((entry) => entry.mode);
+
+      expect((await postAsk(app.url, { question: "hi" })).status).toBe(200);
+      expect(pipelineModes()).toEqual(["bounded_results"]);
+
+      expect((await postAsk(app.url, { question: "hi" }, { "x-askdb-mode": "schema_only" })).status).toBe(200);
+      expect(pipelineModes()).toEqual(["bounded_results", "schema_only"]);
+    } finally {
+      await app.close();
+      rmSync(logDir, { recursive: true, force: true });
+    }
+  });
+
   it("treats JSON null in optional body fields as absent", async () => {
     installTestRuntime({ mockSql: "select 1", logLevel: "silent", host: { schemaPath: schemaPath.pathname } });
     const app = await startApp();

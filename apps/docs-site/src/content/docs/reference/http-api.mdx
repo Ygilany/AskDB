@@ -40,7 +40,7 @@ These keys in `askdb.config.ts` control request handling. They apply to both `cr
 | `httpApi.allowSchemaOverride` | `false` | Accept a per-request `schemaJson` override. Must be a boolean; any other value (such as `"false"`) fails config loading. When `false`, a request that sends `schemaJson` gets `403 schema_override_disabled`. An override lets any caller put arbitrary schema text into the prompt through your model key, so enable it only for tests or trusted callers. |
 | `httpApi.requestTimeoutMs` | `60000` | Abort the model call after this many milliseconds. A timed-out request returns `502 sql_generation_error`. Must be a positive integer no larger than `2147483647` (the Node timer maximum, about 24.8 days); any other value is a config error when the server loads its config. |
 | `modes.omitSensitiveFromPrompt` | `false` | When `true`, sensitive identifiers are left out of every prompt. A request's `omitSensitiveFromPrompt: false` can't turn this off. |
-| `modes.askdbMode` | `schema_only` | Mode used when the request sends neither `mode` nor `x-askdb-mode`. |
+| `modes.askdbMode` | `schema_only` | The loosest mode a request gets. A request that sends neither `mode` nor `x-askdb-mode` runs this mode. A request can tighten it to `schema_only`; one that asks for `bounded_results` while this is `schema_only` runs `schema_only`, with no error. |
 
 ```ts
 // askdb.config.ts
@@ -105,7 +105,7 @@ Generate SQL from a question.
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `question` | yes | — | The natural-language question. |
-| `mode` | no | `modes.askdbMode`, else `schema_only` | One of `schema_only`, `bounded_results`. Also accepted as the `x-askdb-mode` header (the body wins). An unrecognized value returns `400 bad_request`. |
+| `mode` | no | `modes.askdbMode`, else `schema_only` | One of `schema_only`, `bounded_results`. Also accepted as the `x-askdb-mode` header (the body wins). It can only tighten the server's `modes.askdbMode`: `bounded_results` runs `schema_only` unless the server sets `modes.askdbMode: "bounded_results"`. An unrecognized value returns `400 bad_request`. |
 | `explain` | no | `false` | Return heuristic guardrail metadata. Must be a JSON boolean: any other value, such as `"false"`, returns `400 bad_request`. |
 | `omitSensitiveFromPrompt` | no | `modes.omitSensitiveFromPrompt` | `true` omits sensitive columns from the prompt for this request. It can only tighten the server setting. When the server sets `modes.omitSensitiveFromPrompt: true`, sending `false` has no effect. Must be a JSON boolean: any other value, such as `"true"` or `1`, returns `400 bad_request`. |
 | `schemaJson` | no | — | Inline schema artifact that replaces the server schema for this request. Rejected with `403 schema_override_disabled` unless the server sets `httpApi.allowSchemaOverride: true`. Preferred: set `host.schemaPath` in `askdb.config.ts` server-side. |
