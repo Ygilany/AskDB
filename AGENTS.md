@@ -59,7 +59,7 @@ Every PR needs an independent review before it leaves draft, and always when an 
 
 ### Docs house style
 
-Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow the Conventions above there.
+Docs follow the house style in `apps/docs-site/STYLE.md`.
 
 ## Where product/architecture decisions live
 
