@@ -58,7 +58,7 @@ export type TenantPlaceholderResult =
  * The parts of a dialect the tenant substituter reads: `id` picks the driver
  * marker style (`$N` / `?` / `@pN`), and with `backslashEscapes` it says how to lex
  * the SQL, so only placeholders in code regions are substituted. Inlined tenant IDs
- * are escaped the same way on every dialect (quotes doubled, a backslash refused).
+ * are escaped the same way on every dialect (printable ASCII only, quotes doubled, no backslash).
  * Omit the dialect entirely for Postgres-style `$N` markers and Postgres lexing.
  */
 export type TenantSqlDialect = Partial<Pick<DialectSpec, "id" | "backslashEscapes">>;
@@ -179,20 +179,26 @@ export function unexpandedSubtreeError(
 // Substitution — token-aware, one edit per code-region occurrence
 // ---------------------------------------------------------------------------
 
+/** Printable ASCII without the backslash: the only characters a tenant-ID literal may hold. */
+const INLINABLE_TENANT_ID = /^[\x20-\x5b\x5d-\x7e]*$/;
+
 /**
- * Inline one tenant ID as a string literal. A literal with its quotes doubled and no
- * backslash reads the same whether or not the server treats backslash as an escape, so
- * it can't close early under any string setting. An ID with a backslash has no such
- * form: escaped for the dialect, it still breaks out on a server that reads strings
- * differently (Postgres with `standard_conforming_strings = off`), and without a
- * dialect the reading is unknown. So it's refused on every dialect, never guessed at.
+ * Inline one tenant ID as a string literal. A literal of printable ASCII, with no
+ * backslash and its quotes doubled, reads the same whether or not the server treats
+ * backslash as an escape, and goes out as the same bytes in every ASCII-compatible
+ * connection charset. Any other ID has no such form: a backslash breaks out on a server
+ * that reads strings differently from the dialect (Postgres with
+ * `standard_conforming_strings = off`), and a non-ASCII character's bytes depend on the
+ * connection charset (`¥` is sent as 0x5C, a backslash, under `sjis`, `cp932` or `ujis`).
+ * So it's refused on every dialect, never guessed at (ADR 0024).
  */
 function escapeTenantId(value: string): string {
-  if (value.includes("\\")) {
+  if (!INLINABLE_TENANT_ID.test(value)) {
     throw new TenantScopeError(
-      "A tenant ID contains a backslash, which tenantSqlMode 'sql-only' can't inline safely: " +
-        "a server whose string settings differ from the dialect's can read it as the end of " +
-        "the literal. Use tenantSqlMode 'sql-params' (the default) to pass tenant IDs as driver parameters.",
+      "A tenant ID contains a backslash or a character outside printable ASCII, which tenantSqlMode " +
+        "'sql-only' can't inline safely: a server whose string settings or connection charset differ from " +
+        "the dialect's can read it as the end of the literal. Use tenantSqlMode 'sql-params' (the default) " +
+        "to pass tenant IDs as driver parameters.",
       "UNESCAPABLE_TENANT_ID",
     );
   }
@@ -441,8 +447,9 @@ function replacePlaceholdersWithParams(
  *
  * Also throws `TenantScopeError` when a placeholder cannot be resolved
  * (`UNRESOLVED_TENANT_PLACEHOLDER`) or when a multi-ID scope meets a predicate
- * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when
- * a tenant ID contains a backslash, on every dialect (`UNESCAPABLE_TENANT_ID`).
+ * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when a
+ * tenant ID contains a backslash or a character outside printable ASCII, on every dialect
+ * (`UNESCAPABLE_TENANT_ID`).
  * Throws `SchemaParseError` when two of the policy's roots
  * derive the same placeholder, rather than bind one root's IDs through the other's.
  *

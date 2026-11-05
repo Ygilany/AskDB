@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LanguageModel } from "ai";
@@ -110,23 +110,53 @@ describe("ask() — tenant SQL output modes", () => {
   // The one owner of the default (#231): without tenantSqlMode, tenant IDs leave the
   // SQL text, and `sql` runs with `tenantParams`.
   it("defaults to sql-params: sql has driver markers and runs with tenantParams", async () => {
-    const dialect: AskDialect = {
-      generate: async () => ({
-        sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
-      }),
-    };
-
     const result = await ask({
       question: "count orders",
       schema,
       model: fakeModel,
-      dialect,
+      dialect: "postgres",
       tenantScope: agencyScope,
+      deps: {
+        generateText: (async () => ({
+          text: "```sql\nSELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
+        })) as never,
+      },
     });
 
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
     expect(result.tenantParams).toEqual(["42"]);
     expect(result.tenantBindings).toHaveLength(1);
+  });
+
+  // AskDB can't know which markers a custom AskDialect's driver takes, and the `$N` it
+  // would default to is a money constant on SQL Server: `agency_id = $1` runs and returns
+  // agency 1's rows. So the host must choose the mode, and ask() refuses before the model call.
+  it("refuses a custom AskDialect with a tenant scope and no tenantSqlMode, before calling it", async () => {
+    const generate = vi.fn(async () => ({
+      sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
+    }));
+
+    const error = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: { generate },
+      tenantScope: agencyScope,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    expect(generate).not.toHaveBeenCalled();
+    // Choosing a mode is all it takes: an explicit sql-params keeps `$N`.
+    const chosen = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: { generate },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    });
+    expect(chosen.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
   });
 
   // resolveTenantSql() is public too, for a host that renders SQL itself; ask() always
@@ -151,6 +181,7 @@ describe("ask() — tenant SQL output modes", () => {
       model: fakeModel,
       dialect,
       tenantScope: globalScope,
+      tenantSqlMode: "sql-only",
     });
 
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders");
@@ -168,6 +199,7 @@ describe("ask() — tenant SQL output modes", () => {
         model: fakeModel,
         dialect: { generate: async () => ({ sql: `SELECT COUNT(*) FROM orders WHERE agency_id = ${placeholder}` }) },
         tenantScope: { access: { kind: "global", reason: "admin" } },
+        tenantSqlMode: "sql-only",
       }).catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(TenantScopeError);
@@ -432,20 +464,19 @@ describe("resolveTenantSql — only code regions are substituted", () => {
     expect(codeRegions(out.sql)).toMatch(/AND note =/);
   });
 
-  // Inlined, a backslash can end the literal early on a server that reads strings
-  // differently from the dialect (#371: on Postgres with standard_conforming_strings =
-  // off, `'x\'' OR 1=1 -- '` returned every row). With no dialect at all (a custom
-  // AskDialect, #360) the server's reading is unknown too. A literal with no backslash
-  // and its quotes doubled reads the same either way, so sql-only refuses the ID on
-  // every dialect, and sql-params carries it as a driver parameter instead.
-  describe("a crafted tenant ID with a backslash", () => {
-    const hostileId = "x\\' OR 1=1 -- ";
-    const hostile: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [hostileId] },
-    };
-    const quoted: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["it's"] },
-    };
+  // Inlined, a tenant ID must read the same whatever the server's string settings and
+  // connection charset (ADR 0024). A backslash ends the literal early on a server that reads
+  // strings differently from the dialect (#371: on Postgres with standard_conforming_strings
+  // = off, `'x\'' OR 1=1 -- '` returned every row), and with no dialect (a custom
+  // AskDialect, #360) the reading is unknown. A non-ASCII character's bytes depend on the
+  // connection charset: `¥` goes out as 0x5C, a backslash, under sjis, cp932 or ujis. So
+  // sql-only inlines only printable ASCII without a backslash, on every dialect, and
+  // sql-params carries any other ID as a driver parameter.
+  describe("a tenant ID that can't be inlined safely", () => {
+    const ids = (id: string): TenantScope => ({
+      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [id] },
+    });
+    const refused = ["x\\' OR 1=1 -- ", "2\u00a5' OR 1=1 -- ", "東京"];
     const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
 
     it.each<[string, TenantSqlDialect | undefined]>([
@@ -457,14 +488,16 @@ describe("resolveTenantSql — only code regions are substituted", () => {
       ["MySQL with backslashEscapes: false (NO_BACKSLASH_ESCAPES)", { id: "mysql", backslashEscapes: false }],
       ["an id whose escaping is unknown", { id: "oracle" } as unknown as TenantSqlDialect],
     ])("is refused in sql-only mode and bound as a parameter in sql-params mode, given %s", (_label, dialect) => {
-      expect(reasonOf(() => resolveTenantSql(sql, policy, hostile, "sql-only", 1, dialect))).toBe(
-        "UNESCAPABLE_TENANT_ID",
-      );
-      const params = resolveTenantSql(sql, policy, hostile, "sql-params", 1, dialect);
-      expect(params.mode === "sql-params" && params.params).toEqual([hostileId]);
-      // The backslash is what's refused: a quote alone is still doubled and inlined.
-      expect(resolveTenantSql(sql, policy, quoted, "sql-only", 1, dialect).sql).toBe(
-        "SELECT * FROM orders WHERE agency_id = 'it''s'",
+      for (const id of refused) {
+        expect(reasonOf(() => resolveTenantSql(sql, policy, ids(id), "sql-only", 1, dialect)), id).toBe(
+          "UNESCAPABLE_TENANT_ID",
+        );
+        const params = resolveTenantSql(sql, policy, ids(id), "sql-params", 1, dialect);
+        expect(params.mode === "sql-params" && params.params, id).toEqual([id]);
+      }
+      // Printable ASCII is still inlined, from the space to the tilde, with quotes doubled.
+      expect(resolveTenantSql(sql, policy, ids("it's ~ok"), "sql-only", 1, dialect).sql).toBe(
+        "SELECT * FROM orders WHERE agency_id = 'it''s ~ok'",
       );
     });
   });

@@ -213,14 +213,15 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     expect(bound.params).toEqual([token, "2"]);
   });
 
-  // The `sql` a rebind returns always inlines the tenant IDs, and no literal form of a
-  // backslash is safe under every server string setting (#371), so the rebind refuses
-  // the ID rather than return a `sql` that can lose its tenant predicate.
-  it("throws UNESCAPABLE_TENANT_ID for a tenant ID containing a backslash", () => {
+  // The `sql` a rebind returns always inlines the tenant IDs, and only printable ASCII
+  // without a backslash reads the same under every server string setting and connection
+  // charset (#371; `¥` goes out as 0x5C under sjis), so the rebind refuses any other ID
+  // rather than return a `sql` that can lose its tenant predicate (ADR 0024).
+  it.each(["x\\' OR 1=1 -- ", "2\u00a5' OR 1=1 -- "])("throws UNESCAPABLE_TENANT_ID for the tenant ID %j", (id) => {
     expect(() =>
       bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
         schema: strictSchema,
-        tenantScope: agencyIds("x\\' OR 1=1 -- "),
+        tenantScope: agencyIds(id),
       }),
     ).toThrow(expect.objectContaining({ name: "TenantScopeError", reason: "UNESCAPABLE_TENANT_ID" }));
   });
