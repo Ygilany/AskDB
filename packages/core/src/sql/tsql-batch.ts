@@ -49,6 +49,12 @@ const RESERVED_FUNCTIONS = new Set([
   "contains", "containstable", "freetext", "freetexttable", "openxml", "tsequal",
 ]);
 
+/**
+ * Punctuation an expression may follow: `(`, a comma, an operator, and `.` or `::`
+ * before a qualified function name.
+ */
+const EXPRESSION_PUNCTUATION = new Set(["(", ",", "=", "<", ">", "+", "-", "*", "/", "%", "&", "|", "^", "~", ".", "::"]);
+
 const RESERVED = new Set(SQLSERVER_RESERVED_WORDS);
 const SET_OPERATORS = new Set(["union", "except", "intersect"]);
 
@@ -95,25 +101,27 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
     }
   };
 
-  /** `tokens[j]` completes an expression, so a `(` after it cannot continue the statement. */
-  const endsExpression = (j: number): boolean => {
+  /**
+   * An expression may start right after `tokens[j]`, so a `(SELECT …` there is a
+   * subquery. Fails closed: anything not listed (a value, a name, `}`, an unknown
+   * keyword) ends the statement, and a `(SELECT …` after it starts a second one.
+   */
+  const continuesExpression = (j: number): boolean => {
     const t = tokens[j];
-    if (!t) return false;
+    if (!t) return true;
     switch (t.kind) {
       case "number":
       case "string":
       case "parameter":
         // `TOP 5 (SELECT …)`: the count, then the first select-list item.
-        return !isWord(tokens[j - 1], "top");
-      case "quoted_identifier":
-        return true;
+        return isWord(tokens[j - 1], "top");
       case "word":
-        return !introducesExpression(j);
+        return introducesExpression(j);
       case "punct": {
-        if (t.text !== ")") return false;
+        if (t.text !== ")") return EXPRESSION_PUNCTUATION.has(t.text);
         const at = opener.get(j);
         // `TOP (5) (SELECT …)`.
-        return at === undefined || !isWord(tokens[at - 1], "top");
+        return at !== undefined && isWord(tokens[at - 1], "top");
       }
       default:
         return false;
@@ -122,7 +130,7 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
 
   /**
    * `name((SELECT …))` where `name` is a function: SQL Server reads `name(` as a call
-   * whenever `name` is not an alias, that is, when nothing complete comes before it.
+   * whenever `name` is not an alias, that is, when an expression may start before it.
    */
   const opensCallArgument = (i: number): boolean => {
     if (!isPunct(tokens[i + 1], "(")) return false;
@@ -130,7 +138,7 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
     const callable =
       name?.kind === "quoted_identifier" ||
       (name?.kind === "word" && (!RESERVED.has(name.lower) || RESERVED_FUNCTIONS.has(name.lower)));
-    return callable && !endsExpression(i - 2);
+    return callable && continuesExpression(i - 2);
   };
 
   const open: number[] = [];
@@ -147,7 +155,7 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
           // A CTE body.
         } else if (mainPending && isPunct(prev, ")")) {
           mainPending = false;
-        } else if (endsExpression(i - 1) && !opensCallArgument(i)) {
+        } else if (!continuesExpression(i - 1) && !opensCallArgument(i)) {
           return { token: t, kind: "query" };
         }
       }

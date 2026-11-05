@@ -19,6 +19,7 @@
  * | `#` line comment          | —        | yes                    | —          | —      |
  * | `--` line comment         | yes      | only before whitespace | yes        | yes    |
  * | nested `/* … *\/`         | yes      | no (`/*! … *\/` runs)  | yes        | no     |
+ * | `0x`, `1E`, `$`/`€` money  | —        | —                      | literal (`tsqlLiterals`) | — |
  *
  * The lexer never throws: a string, quoted identifier, or comment that runs off the end
  * of the input is returned with `unterminated: true` so callers can fail closed.
@@ -51,6 +52,13 @@ export type SqlLexerProfile = {
   atVariables: boolean;
   /** SQL Server `#temp` / `##temp` table names. */
   hashIdentifiers: boolean;
+  /**
+   * SQL Server literal and whitespace forms: `0x` with no hex digits, an exponent with no
+   * digits (`1E`, `1E+`), money literals that start with a currency symbol (`$`, `$1.5`,
+   * `€`), and U+200B and U+0085 as whitespace. SQL Server ends the literal there, so a
+   * keyword written right after one must be its own token.
+   */
+  tsqlLiterals: boolean;
 };
 
 export const POSTGRES_LEXER: SqlLexerProfile = {
@@ -67,6 +75,7 @@ export const POSTGRES_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: false,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 export const MYSQL_LEXER: SqlLexerProfile = {
@@ -83,6 +92,7 @@ export const MYSQL_LEXER: SqlLexerProfile = {
   executableComments: true,
   atVariables: true,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 export const SQLSERVER_LEXER: SqlLexerProfile = {
@@ -99,6 +109,7 @@ export const SQLSERVER_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: true,
   hashIdentifiers: true,
+  tsqlLiterals: true,
 };
 
 export const SQLITE_LEXER: SqlLexerProfile = {
@@ -115,6 +126,7 @@ export const SQLITE_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: true,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 /**
@@ -137,6 +149,7 @@ export const GENERIC_LEXER: SqlLexerProfile = {
   executableComments: false,
   atVariables: true,
   hashIdentifiers: false,
+  tsqlLiterals: false,
 };
 
 /** Every engine-specific profile. Used when the dialect is unknown and each reading must be safe. */
@@ -217,6 +230,10 @@ const WORD_START = /[A-Za-z_\u0080-￿]/;
 const WORD_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
 const DIGIT = /[0-9]/;
 const HEX = /[0-9A-Fa-f]/;
+/** Currency symbols. SQL Server starts a money literal with one (its list is a subset). */
+const CURRENCY = /\p{Sc}/u;
+/** Characters SQL Server reads as whitespace that `\s` does not match. */
+const TSQL_EXTRA_SPACE = /[\u200b\u0085]/;
 const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
 
 /**
@@ -299,7 +316,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     const ch = sql[i]!;
     const next = sql[i + 1];
 
-    if (/\s/.test(ch)) {
+    if (/\s/.test(ch) || (profile.tsqlLiterals && TSQL_EXTRA_SPACE.test(ch))) {
       i++;
       continue;
     }
@@ -394,6 +411,19 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       i = j;
       continue;
     }
+    // SQL Server money: a currency symbol, then optional digits (`$`, `$1.5`, `€2`). `$`
+    // before a letter is a pseudocolumn (`$action`), lexed below as a parameter.
+    if (profile.tsqlLiterals && CURRENCY.test(ch) && !(ch === "$" && next !== undefined && WORD_START.test(next))) {
+      let j = i + 1;
+      while (j < n && DIGIT.test(sql[j]!)) j++;
+      if (sql[j] === ".") {
+        j++;
+        while (j < n && DIGIT.test(sql[j]!)) j++;
+      }
+      push("number", i, j);
+      i = j;
+      continue;
+    }
     if (ch === "$") {
       if (profile.dollarQuotes) {
         const tag = DOLLAR_TAG.exec(sql.slice(i));
@@ -439,7 +469,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     // ---- numbers --------------------------------------------------------
     if (DIGIT.test(ch) || (ch === "." && next !== undefined && DIGIT.test(next))) {
       let j = i;
-      if (ch === "0" && (next === "x" || next === "X") && HEX.test(sql[i + 2] ?? "")) {
+      if (ch === "0" && (next === "x" || next === "X") && (profile.tsqlLiterals || HEX.test(sql[i + 2] ?? ""))) {
         j = i + 2;
         while (j < n && HEX.test(sql[j]!)) j++;
       } else {
@@ -448,7 +478,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
           j++;
           while (j < n && DIGIT.test(sql[j]!)) j++;
         }
-        if ((sql[j] === "e" || sql[j] === "E") && /^[eE][+-]?[0-9]/.test(sql.slice(j))) {
+        if ((sql[j] === "e" || sql[j] === "E") && (profile.tsqlLiterals || /^[eE][+-]?[0-9]/.test(sql.slice(j)))) {
           j += sql[j + 1] === "+" || sql[j + 1] === "-" ? 2 : 1;
           while (j < n && DIGIT.test(sql[j]!)) j++;
         }

@@ -220,6 +220,20 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     [`SELECT 1 apply (SELECT 2)`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 zone (SELECT 2)`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 ties (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // Only a keyword, an operator, a comma or a TOP count may come before a subquery.
+    [`SELECT {d '2020-01-01'} (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $ (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    // SQL Server ends these literals where a keyword starts, so the keyword is a token.
+    [`SELECT 0xSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1ESELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT $1SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT \u20acSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1\u200bSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1\u0085SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // After a leading WITH list's main query, and before a trailing `;`.
+    [`WITH x AS (SELECT 1 a) SELECT a FROM x SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`WITH x AS (SELECT 1 a) SELECT a FROM x (SELECT 2)`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 SELECT 2;`, "SQL_MULTI_STATEMENT"],
     // A label is a statement; the lexer reads `l:SELECT` as a `:SELECT` parameter.
     [`SELECT 1 l:SELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 l:(SELECT 2)`, "SQL_MULTI_STATEMENT"],
