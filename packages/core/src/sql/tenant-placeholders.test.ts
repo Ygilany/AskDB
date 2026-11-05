@@ -129,6 +129,14 @@ describe("ask() — tenant SQL output modes", () => {
     expect(result.tenantBindings).toHaveLength(1);
   });
 
+  // resolveTenantSql() is public too, for a host that renders SQL itself; ask() always
+  // passes a mode, so its own default needs its own owner.
+  it("resolveTenantSql() also defaults to sql-params", () => {
+    const out = resolveTenantSql("SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids", policy, agencyScope);
+    expect(out.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
+    expect(out.mode === "sql-params" && out.params).toEqual(["42"]);
+  });
+
   it("passes through unmodified for global scope", async () => {
     const globalScope: TenantScope = { access: { kind: "global", reason: "admin" } };
     const dialect: AskDialect = {
