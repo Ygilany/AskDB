@@ -113,6 +113,23 @@ If you validate SQL you didn't get from `ask()`, check it against these rules. [
 - **`saveConcepts()`** throws `Refusing to write concepts.md outside the schema directory: "concepts.md" is a symbolic link` when `concepts.md` is one. Replace the link with a regular file in the schema directory. Studio's tenant-policy save refuses a link at `tenant-policy.md` the same way.
 - **Saving `concepts.md` or `tenant-policy.md` needs write access to the schema directory,** because the save writes a temporary file there and renames it over the target. A writable file in a read-only directory now fails with `EACCES`.
 
+### Pass a loaded schema to `buildSuggestionTarget()` and `buildSuggestionContext()`
+
+`@askdb/enrich`'s `buildSuggestionTarget()` and `buildSuggestionContext()` now take `loadSchema()`'s result instead of a `Workspace` ([#625](https://github.com/Ygilany/AskDB/issues/625), ADR 0026). Before, they read the tables straight from `schema.json`, so a column marked sensitive in `tables/*.md`, or through a sensitive table, wasn't tagged sensitive in the suggestion prompt. Load the schema and pass it where you passed the workspace:
+
+```ts
+// Before
+const target = buildSuggestionTarget(workspace, source);
+const context = buildSuggestionContext(workspace, source.tableId);
+
+// After
+const schema = loadSchema(workspace.schemaDir); // from @askdb/core
+const target = buildSuggestionTarget(schema, source);
+const context = buildSuggestionContext(schema, source.tableId);
+```
+
+The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
+
 ### Other changes you may notice in beta.45
 
 - **`ask()` under a `global` scope** throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) when the SQL still holds a `:tenant_*` placeholder, instead of returning it unfilled. Admin SQL without a placeholder is unaffected.
@@ -120,6 +137,8 @@ If you validate SQL you didn't get from `ask()`, check it against these rules. [
 - **An unknown `sensitiveGuardrailMode`**, such as `"Strict"` read from your own config, now refuses a sensitive reference, as `"strict"` does. Pass exactly `"off"`, `"warn"` or `"strict"`.
 - **`ask()` logs `askdb.pipeline.failed`** before it throws a tenant or sensitive guardrail error, as it already did for a read-only failure. If you alert on that event, expect more of them.
 - **Omitting sensitive identifiers withholds more text** ([#374](https://github.com/Ygilany/AskDB/issues/374)). With `omitSensitiveIdentifiersFromNlToSqlPrompt: true`, a description, alias, enum value, common query language block or retrieved chunk that names a sensitive column no longer reaches the model. If you build an `NlToSqlSchemaFormatStats` object by hand, such as a test double, set its new `mentionDroppedCount` field (`0` keeps the old meaning).
+- **Studio follows `modes.omitSensitiveFromPrompt`** in the Playground and in **Suggest** ([#601](https://github.com/Ygilany/AskDB/issues/601)). With it on, the Playground's prompt leaves out sensitive columns and text that names one, and **Suggest** on a sensitive column shows an error (`400` from `POST /api/suggest`) instead of a draft. See [Tables and enrichment](/studio/#tables-and-enrichment).
+- **The enrichment suggestion prompt has a new format.** `buildEnrichmentUserPrompt()` lists the target table the way `ask()`'s prompt does (`TABLE public.users`, then lines such as `- email text (NOT NULL) (sensitive)`), so a test that compares the prompt text needs updating. `suggestEnrichment()` takes a new `omitSensitiveIdentifiersFromPrompt` option; pass your `modes.omitSensitiveFromPrompt`. With it on, a sensitive target column throws `SensitiveEnrichmentTargetError`.
 - **Results gain `verdict`**, which lists every guardrail finding. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/#guardrail-verdict).
 
 ## 1.0.0-beta.44
