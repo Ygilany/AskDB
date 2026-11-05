@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { TenantSqlOutputMode, TenantScope } from "@askdb/core";
 import type { AskResponse, ExecuteResponse, ExecuteStatusResponse, PlaygroundHistoryEntry } from "@/shared/api";
 import { ask, deleteFromHistory, executeQuery, getExecuteStatus, getHistory, installExecuteDriver, saveToHistory } from "../api";
+import { historyTenant, PLAYGROUND_DEFAULT_TENANT_SQL_MODE } from "../lib/playground-tenant";
 import type { StatusMessage } from "./workspace-context";
 import { useWorkspace } from "./workspace-context";
 
@@ -68,8 +69,7 @@ const initialPlaygroundState: PlaygroundState = {
   askMode: "full",
   askMessage: null,
   askResult: null,
-  // The library default (DEFAULT_TENANT_SQL_MODE), written out: the web bundle imports only types from core.
-  askTenantSqlMode: "sql-params",
+  askTenantSqlMode: PLAYGROUND_DEFAULT_TENANT_SQL_MODE,
   executeResult: null,
   executeMessage: null,
   executeStatus: null,
@@ -437,7 +437,7 @@ function playgroundReducer(state: PlaygroundState, action: PlaygroundAction): Pl
           explain: action.entry.explain ?? null,
           warnings: [],
           rag: { enabled: false, chunks: [] },
-          tenant: null,
+          tenant: historyTenant(action.entry),
           usage: null,
         } as AskResponse,
         askTenantSqlMode: action.sqlMode,
