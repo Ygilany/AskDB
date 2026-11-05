@@ -15,4 +15,4 @@ Stop exporting the internal catalog SQL from the MySQL, SQLite and SQL Server pa
 
 These constants were undocumented and existed for the packages' own unit tests. To introspect, use the package's connector (`createMysqlConnector()`, `createSqliteConnector()`, `createSqlServerConnector()`) with its catalog query runner.
 
-Internal cleanup with no API change: `@askdb/sqlserver`'s `foldSqlServerResult` is now private to its module, as the MySQL and SQLite fold functions already are (#597). The packages reference page no longer says these three packages ship catalog SQL templates, and the beta.45 upgrade notes list every export this release removes, with its replacement.
+Internal cleanup with no API change: `@askdb/sqlserver`'s `foldSqlServerResult` is now private to its module, as the MySQL and SQLite fold functions already are (#597). The packages reference page no longer says these three packages ship catalog SQL templates, and the upgrade notes list every export this release removes, with its replacement.
