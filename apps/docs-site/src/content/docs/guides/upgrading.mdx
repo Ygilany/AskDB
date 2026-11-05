@@ -71,7 +71,7 @@ With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/re
 
 ### Load a schema directory, not a renamed copy of its JSON file
 
-A JSON file inside a schema directory must be named `schema.json` ([#330](https://github.com/Ygilany/AskDB/issues/330), ADR 0019). If you pass `loadSchema()` any other JSON file that has `tenant-policy.md`, `tables/` or `concepts.md` beside it, such as `prod-schema.json`, it now throws `SchemaParseError`. Before, it loaded the file without the tenant policy and without the `sensitive: true` marks in `tables/*.md`. To fix it, do one of these:
+A JSON file inside a schema directory must be named `schema.json` ([#330](https://github.com/Ygilany/AskDB/issues/330), ADR 0019). If you pass `loadSchema()` any other JSON file that has `tenant-policy.md`, `tables/` or `concepts.md` beside it, such as `prod-schema.json`, it now throws `SchemaParseError`. Before, it loaded the file without the tenant policy and without the `sensitive: true` marks in `tables/*.md`. A bundle, a JSON file with `bundled: true` such as `prod.bundle.json`, still loads as before. To fix it, do one of these:
 
 - Pass the directory to `loadSchema()`.
 - Rename the file to `schema.json`.
@@ -187,6 +187,7 @@ The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`
 | `--api-key <key>` | Removed. Put the key on a connection in `ai.providerConfig`. |
 | `--embedder openai` | `--embedder ai`, with `rag.embedder: "ai"` and an `ai.embedding` section in your config |
 | `setup-store` with no `--dimensions` | `setup-store --dimensions <n>`, your model's vector width. It used to assume one. |
+| No `--store`, which meant the file store | `--store file` on every command, or `rag.store: "file"` in your config. `askdb rag` uses `rag.store`, which is `"memory"` when the config has no `rag` block, so `index` would build an index that ends with the process, and `query` would refuse it. |
 
 `askdb rag` reads `askdb.config.*`, and its flags still win. The schema directory falls back to `introspection.outputDir`, and the store flags fall back to `rag.store` and `rag.storeConfig`. See [`askdb rag`](/reference/cli/#askdb-rag) for every flag.
 
@@ -203,7 +204,7 @@ The first index run after you upgrade re-embeds every chunk. Chunk ids are now s
 2. **Run `askdb rag index`**, or `buildSchemaIndex()` in your own code. It deletes that schema's old-format chunk ids. Until you re-index, `askdb rag query` refuses an index that `askdb-rag --embedder openai` built.
 3. **In Studio**, rebuild an index that shows as stale. An index built without `ai.embedding.dimensions` shows as stale once.
 
-Sensitive-column mentions are now matched across the whole schema (ADR 0017): a note in `orders` that says "match via users.ssn" is left out of the index by default. Some schemas exclude different chunks after upgrading, and the re-index picks that up. If you wrote your own vector store, implement `hashesByPrefix` and `idsBySchema`, as [the `@askdb/rag` API](/reference/rag-api/) describes, or every run re-embeds every chunk.
+Sensitive-column mentions are now matched across the whole schema (ADR 0017): a note in `orders` that says "match via users.ssn" is left out of the index by default. Some schemas exclude different chunks after upgrading, and the re-index picks that up. If you wrote your own vector store, implement `hashesByPrefix`, or `describe()` so the indexer can trust the lock file's hashes: a store with neither re-embeds every chunk on each run. Implement `idsBySchema` too, so a re-index prunes chunks removed from the schema without touching other schemas. [The `@askdb/rag` API](/reference/rag-api/) describes both.
 
 ### Rebuild schema bundles that have a tenant policy
 
@@ -243,6 +244,8 @@ const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
 - **Postgres:** foreign keys to and from partitions of a partitioned table are no longer rendered. If you introspect from an export, re-export the `foreign_keys` template (`askdb introspect templates --engine postgres`). Where foreign keys reference a partitioned table, the schema lock hash changes once.
 - **Connector types:** a connector adapter's `provider` and `ConnectorProvider` are now open string types (`ConnectorProviderId`). A `switch` over them needs a `default` branch.
 - **Built-in AI adapters:** `createLanguageModel` and `createEmbeddingModel` are now `async`. Await them if you call an adapter directly.
+- **`@askdb/enrich` table saves:** `saveTable()` refuses to write when `tables/` or the table's markdown file is a symbolic link, or when the file name would land outside `tables/`. It also needs write access to `tables/`, because it saves through a temporary file there. Replace such links with regular files.
+- **Bundles:** `bundleSchemaDirectory()`, and so `askdb bundle`, fails when `tenant-policy.md`, `concepts.md` or `tables/` exists but can't be read, instead of leaving it out.
 
 ### Deprecated in beta.44
 
