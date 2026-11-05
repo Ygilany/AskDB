@@ -273,7 +273,8 @@ Each file proof observes known bytes in a container-local file or a new scratch 
 |---|---|
 | Multiple statements | `SELECT 1; DELETE FROM …`, and a trailing statement after a string literal that contains `;` |
 | Writes and DDL | `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `CREATE`, `ALTER`, `MERGE`, and a CTE-wrapped DML (`WITH x AS (DELETE … RETURNING *) SELECT …`) |
-| Writes that start with SELECT | `SELECT … INTO new_table` (Postgres, SQL Server), `SELECT … INTO OUTFILE` (MySQL/MariaDB), `SELECT … FOR UPDATE` (lock) |
+| Writes that start with SELECT | `SELECT … INTO new_table` (Postgres, SQL Server), `SELECT … INTO OUTFILE` (MySQL/MariaDB) |
+| Locking reads | `SELECT … FOR UPDATE` and `FOR SHARE` (Postgres), `FOR UPDATE` and `LOCK IN SHARE MODE` (MySQL/MariaDB), `WITH (UPDLOCK)` and `WITH (HOLDLOCK)` (SQL Server) (#319) |
 | Side-effecting functions | `nextval()`, `setval()`, `pg_advisory_lock()`, `pg_sleep()`, `set_config()`, `pg_terminate_backend()`, `GET_LOCK()`, `SLEEP()`, `BENCHMARK()`, `xp_cmdshell`, `EXEC`, `OPENROWSET` |
 | Comment and quoting tricks | `/* */` and `--` hiding a second statement; keywords split by comments; `DELETE` inside `"…"`, `` `…` `` and `[…]` identifiers; `E'…'` and `N'…'` strings with embedded quotes; MySQL `/*! … */` executable comments; backslash-escaped quotes in MySQL |
 | System catalogs | `pg_catalog`, `information_schema`, `mysql.user`, `sys.*`, `sqlite_master` (documented as rejected in `concepts/safety-boundaries.mdx`) |

@@ -81,6 +81,10 @@ The model returned more than one SQL statement. AskDB refuses multi-statement ou
 
 The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, etc.). Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword (say, `update`) also trips them. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
 
+### `SqlValidationError: SQL_LOCKING_READ`
+
+The generated SQL is a locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a SQL Server table hint that takes or holds locks, such as `WITH (UPDLOCK)` or `WITH (HOLDLOCK)`. AskDB returns plain reads only, because a locking read can hold locks that other sessions wait on until your transaction ends. If the question asks to lock or reserve rows, rephrase it as a plain read, and write any locking statement your application needs in your own code. `NOLOCK` and `READUNCOMMITTED` hints pass. See [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks) for every form.
+
 ### `SqlValidationError: SQL_UNTERMINATED`
 
 A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL or MariaDB, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`). A mismatch matters beyond false rejections: it also lets SQL through that the server reads differently. See [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings).
@@ -101,7 +105,7 @@ If the column exists in the database but the model keeps getting it wrong, check
 
 ### The SQL is syntactically valid but logically wrong
 
-SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords and side-effecting functions, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
+SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords, locking reads and side-effecting functions, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
 
 Checklist:
 1. Does the relevant table have a description? (`description:` field in the table's `.md` file)

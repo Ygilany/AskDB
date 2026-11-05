@@ -36,9 +36,7 @@
  * `SELECT … INTO` outside Postgres and SQL Server, no `FOR UPDATE` on SQLite or SQL Server).
  *
  * Known discrepancies, marked `it.fails`: queries on system schemas pass validation on
- * every engine although `safety-boundaries.mdx` says they are rejected (#318); SQL
- * Server's `WITH (UPDLOCK)` locking read passes while `FOR UPDATE` is rejected elsewhere
- * (#319). Its scratch proof still runs: the lock is real.
+ * every engine although `safety-boundaries.mdx` says they are rejected (#318).
  *
  * Needs the `cli-introspect-engine` capability to build the schema artifacts, the fixture
  * and an installed lab (`pnpm lab:use .`). The isolated runner starts and seeds its own copy.
@@ -236,9 +234,11 @@ async function failsNaming(c: ScratchConnection, sql: string, missing: string): 
 }
 
 /**
- * Lock proof: a holder runs the statement inside a transaction; a second owner connection
- * that asks for the same row lock with a short lock timeout fails with the engine's
- * lock-timeout error, and gets it once the holder rolls back.
+ * Lock proofs: a holder runs the statement inside a transaction; a second owner connection
+ * with a short lock timeout fails with the engine's lock-timeout error, and succeeds once the
+ * holder rolls back. For an update lock the second connection asks for the same lock
+ * ({@link holdsRowLock}); shared locks don't block each other, so for a shared lock it
+ * updates the same rows ({@link blocksWriter}).
  */
 const LOCKING: Partial<Record<SupportedDialect, { begin: string; rollback: string; shortWait: string; lockTimeout: object }>> = {
   postgres: { begin: "BEGIN", rollback: "ROLLBACK", shortWait: "SET lock_timeout = '1s'", lockTimeout: { code: "55P03" } },
@@ -248,6 +248,17 @@ const LOCKING: Partial<Record<SupportedDialect, { begin: string; rollback: strin
 };
 
 async function holdsRowLock(p: ProofContext): Promise<void> {
+  const locked = ORDER_LINES.filter((l) => l.order_id === 1).length;
+  await waitsForHolder(p, async (waiter) => expect(await waiter.rows(p.statement)).toHaveLength(locked));
+}
+
+async function blocksWriter(p: ProofContext): Promise<void> {
+  const write = `UPDATE ${p.t("billing", "order_line")} SET quantity = quantity WHERE order_id = 1`;
+  await waitsForHolder(p, (waiter) => waiter.run(write));
+}
+
+/** `wait` times out while the holder's transaction runs the statement, and succeeds after it rolls back. */
+async function waitsForHolder(p: ProofContext, wait: (waiter: ScratchConnection) => Promise<void>): Promise<void> {
   const tx = LOCKING[p.dialect]!;
   const locked = ORDER_LINES.filter((l) => l.order_id === 1).length;
   const holder = await p.scratch.connect();
@@ -256,9 +267,9 @@ async function holdsRowLock(p: ProofContext): Promise<void> {
     await holder.run(tx.begin);
     expect(await holder.rows(p.statement)).toHaveLength(locked);
     await waiter.run(tx.shortWait);
-    await expect(waiter.rows(p.statement)).rejects.toMatchObject(tx.lockTimeout);
+    await expect(wait(waiter)).rejects.toMatchObject(tx.lockTimeout);
     await holder.run(tx.rollback);
-    expect(await waiter.rows(p.statement)).toHaveLength(locked);
+    await wait(waiter);
   } finally {
     await holder.close();
     await waiter.close();
@@ -384,7 +395,7 @@ const CASES: Case[] = [
     what: "SELECT … FOR UPDATE",
     dialects: ["postgres", ...MYSQL_FAMILY],
     sql: (t) => `SELECT order_id, line_no FROM ${t("billing", "order_line")} WHERE order_id = 1 FOR UPDATE`,
-    rule: "SQL_FORBIDDEN_KEYWORD",
+    rule: "SQL_LOCKING_READ",
     proof: holdsRowLock,
   },
   {
@@ -392,9 +403,32 @@ const CASES: Case[] = [
     what: "SELECT … WITH (UPDLOCK)",
     dialects: ["sqlserver"],
     sql: (t) => `SELECT order_id, line_no FROM ${t("billing", "order_line")} WITH (UPDLOCK) WHERE order_id = 1`,
-    rule: "SQL_FORBIDDEN_KEYWORD",
-    known: 319,
+    rule: "SQL_LOCKING_READ",
     proof: holdsRowLock,
+  },
+  {
+    scenario: "safety-shared-lock",
+    what: "SELECT … FOR SHARE",
+    dialects: ["postgres"],
+    sql: (t) => `SELECT order_id, line_no FROM ${t("billing", "order_line")} WHERE order_id = 1 FOR SHARE`,
+    rule: "SQL_LOCKING_READ",
+    proof: blocksWriter,
+  },
+  {
+    scenario: "safety-shared-lock",
+    what: "SELECT … LOCK IN SHARE MODE",
+    dialects: MYSQL_FAMILY,
+    sql: (t) => `SELECT order_id, line_no FROM ${t("billing", "order_line")} WHERE order_id = 1 LOCK IN SHARE MODE`,
+    rule: "SQL_LOCKING_READ",
+    proof: blocksWriter,
+  },
+  {
+    scenario: "safety-shared-lock",
+    what: "SELECT … WITH (HOLDLOCK)",
+    dialects: ["sqlserver"],
+    sql: (t) => `SELECT order_id, line_no FROM ${t("billing", "order_line")} WITH (HOLDLOCK) WHERE order_id = 1`,
+    rule: "SQL_LOCKING_READ",
+    proof: blocksWriter,
   },
 
   // A forbidden keyword hidden in a comment: the comment itself is rejected.

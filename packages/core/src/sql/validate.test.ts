@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import {
+  BUILT_IN_DIALECTS,
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
   SQLITE_DIALECT,
@@ -282,6 +283,49 @@ describe("validateSelectSql — sql server statements without ';'", () => {
   });
 });
 
+// A locking read holds row or table locks until the host's transaction ends, so other
+// writers and lockers wait (#319). Every engine rejects every form under one rule.
+describe("validateSelectSql — locking reads", () => {
+  it.each([
+    ["postgres", `SELECT id FROM orders WHERE id = 1 FOR SHARE`],
+    ["postgres", `SELECT id FROM orders WHERE id = 1 FOR UPDATE`],
+    ["postgres", `SELECT id FROM orders WHERE id = 1 FOR NO KEY UPDATE`],
+    ["postgres", `SELECT o.id FROM orders o WHERE o.id = 1 FOR KEY SHARE OF o SKIP LOCKED`],
+    ["postgres", `SELECT * FROM (SELECT id FROM orders WHERE id = 1 FOR UPDATE) s`],
+    ["postgres", `WITH s AS (SELECT id FROM orders WHERE id = 1 for Share) SELECT * FROM s`],
+    ["mysql", `SELECT id FROM orders WHERE id = 1 FOR UPDATE SKIP LOCKED`],
+    ["mysql", `SELECT id FROM orders WHERE id = 1 FOR SHARE NOWAIT`],
+    ["mysql", `SELECT id FROM orders WHERE id = 1 LOCK IN SHARE MODE`],
+    ["mariadb", `SELECT * FROM (SELECT id FROM orders WHERE id = 1 lock in share mode) s`],
+    ["sqlite", `SELECT id FROM orders WHERE id = 1 FOR UPDATE`],
+    // T-SQL lock hints, inside WITH (…), beside a hint that takes no lock, and without WITH.
+    ...["UPDLOCK", "XLOCK", "HOLDLOCK", "PAGLOCK", "TABLOCK", "TABLOCKX", "ROWLOCK", "SERIALIZABLE", "REPEATABLEREAD"].map(
+      (hint) => ["sqlserver", `SELECT id FROM orders WITH (${hint}) WHERE id = 1`] as const,
+    ),
+    ["sqlserver", `SELECT id FROM orders WITH (READPAST, UPDLOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders (UPDLOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT o.id FROM orders AS o (holdlock) WHERE o.id = 1`],
+  ] as const)("rejects on %s: %s", (id, sql) => {
+    expectRule(sql, "SQL_LOCKING_READ", BUILT_IN_DIALECTS[id]);
+  });
+
+  // Reads that take no lock past the statement, other FOR clauses, and the words as names.
+  it.each([
+    ["postgres", `SELECT SUBSTRING('abcdef' FROM 1 FOR 3) AS s`],
+    ["postgres", `SELECT x.share, x.updlock, x.holdlock FROM (SELECT 1 AS share, 2 AS updlock, 3 AS holdlock) x`],
+    ["mysql", `SELECT jt.n, SUBSTRING('abcdef' FROM 1 FOR 3) AS s FROM JSON_TABLE('[1,2]', '$[*]' COLUMNS (n FOR ORDINALITY)) AS jt`],
+    ["sqlserver", `SELECT id FROM orders WITH (READUNCOMMITTED) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WITH (READPAST) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WITH (READCOMMITTEDLOCK) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WITH (NOWAIT) WHERE id = 1`],
+    ["sqlserver", `SELECT id FROM orders WHERE id = 1 FOR JSON PATH`],
+    ["sqlserver", `SELECT id FROM orders FOR SYSTEM_TIME AS OF '2026-01-01' WHERE id = 1`],
+    ["sqlserver", `SELECT 1 AS [updlock], 2 AS "holdlock", N'FOR SHARE WITH (UPDLOCK)' AS s`],
+  ] as const)("accepts on %s: %s", (id, sql) => {
+    expect(validateSelectSql(BUILT_IN_DIALECTS[id], sql)).toBe(sql);
+  });
+});
+
 describe("validateSelectSql — sqlite", () => {
   it.each([
     [`SELECT load_extension('x')`],
@@ -457,6 +501,8 @@ describe("validateSelectSql — unknown dialect ids lex conservatively", () => {
     expectRejected(`SELECT 1 WAITFOR DELAY '00:10'`, legacy);
     // SQL Server reads it as two statements.
     expectRule(`SELECT 1 SELECT 2`, "SQL_MULTI_STATEMENT", legacy);
+    // SQL Server reads it as a locking read.
+    expectRule(`SELECT id FROM orders WITH (UPDLOCK)`, "SQL_LOCKING_READ", legacy);
   });
 
   it("still accepts ordinary SQL", () => {
