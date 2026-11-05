@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { integrationSuite } from "../../../../../scripts/test-utils/integration.mjs";
 import { SchemaParseError } from "../../errors.js";
-import { loadSchema, loadSchemaFromJson } from "./loader.js";
+import { loadSchema, loadSchemaFromJson, readSchemaDirectory } from "./loader.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../../fixtures/schemas");
@@ -438,5 +438,36 @@ describe("loadSchema — bundles treat optional files exactly like the directory
     );
     expect(caught).toBeInstanceOf(SchemaParseError);
     expect((caught as SchemaParseError).message).toContain("tenant-policy.md (in <inline JSON>)");
+  });
+});
+
+describe("readSchemaDirectory", () => {
+  const ORDERS_USERS_TENANT_POLICY = [
+    "---",
+    "schemaId: orders-users",
+    "enforcement: strict",
+    "roots:",
+    "  - id: table:public.users",
+    "    tenantIdColumn: table:public.users#id",
+    "    label: User",
+    "scopedTables:",
+    "  - id: table:public.orders",
+    "    scopeThrough:",
+    "      - root: table:public.users",
+    "        column: table:public.orders#user_id",
+    "---",
+    "",
+  ].join("\n");
+
+  it("returns a bundle that loadSchemaFromJson loads to the same schema as loadSchema(dir)", () => {
+    // orders-users has tables/ and concepts.md; the written policy makes all three optional parts present.
+    const dir = copyFixture(v2Dir);
+    writeFileSync(join(dir, "tenant-policy.md"), ORDERS_USERS_TENANT_POLICY);
+    const viaDir = loadSchema(dir);
+    expect(viaDir.tenantPolicy).toBeDefined();
+    expect(viaDir.concepts).not.toHaveLength(0);
+    expect(viaDir.tables.find((t) => t.name === "users")?.aliases).toEqual(["accounts", "members"]);
+
+    expect(loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir)))).toEqual(viaDir);
   });
 });
