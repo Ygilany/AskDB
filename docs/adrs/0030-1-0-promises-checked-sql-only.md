@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-05, maintainer decision in the 1.0 planning round, recorded on #354 and in the `1.0.0-rc.1 — public launch` milestone; the experimental surfaces were settled on #631). Implemented in `docs/mission.md`, `docs/roadmap.md`, `docs/platform.md` and the README status note (#631).
+Accepted (2026-11-05, maintainer decision in the 1.0 planning round, recorded on #354 and in the `1.0.0-rc.1 — public launch` milestone; the experimental surfaces were settled while #631 was planned, and the decision is recorded on #631). Implemented in `docs/mission.md`, `docs/roadmap.md`, `docs/platform.md` and the README status note (#631).
 
 ## Context
 
@@ -40,13 +40,18 @@ Rejected. Studio, `@askdb/enrich` and `@askdb/rag` are still moving: Studio's au
 - **After 1.0:** reports, result summaries and a non-stub `bounded_results` (roadmap Phase 12), production-grade multi-tenancy (Phase 13), and a first-party MCP server (Phase 14). At 1.0, agents use the CLI and the HTTP API.
 - **The 1.0 set** goes to 1.0.0: `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`).
 - **The 0.x set** stays 0.x: `@askdb/studio`, `@askdb/enrich` and `@askdb/rag`. Their APIs may still move.
-- **Experimental surfaces inside the 1.0 set.** The `studio` and `rag` blocks of `defineConfig` in `@askdb/config`, and the `askdb studio`, `enrich`, `bundle` and `rag` commands, follow their 0.x packages. They are marked experimental, and a minor release of `@askdb/config` or `askdb` may change them.
+- **Experimental surfaces inside the 1.0 set.** These Studio and RAG surfaces follow their 0.x packages. They are experimental, and a minor release of `@askdb/config` or `askdb` may change them:
+  - the `studio` and `rag` blocks of `defineConfig` in `@askdb/config`, with the types and environment variables that feed them;
+  - the `askdb studio`, `enrich`, `bundle` and `rag` commands;
+  - `askdb init`'s `--rag-store`, `--pgvector-env` and `--studio-execute` flags, and the `rag` and `studio` sections it writes.
 - **Engines:** all five engine families are supported at 1.0, and the consumer lab covers each one.
 - **No fixed date.** rc.1 ships when the `1.0.0-rc.1 — public launch` milestone's gates close.
 
 ## Consequences
 
 - After 1.0.0, a breaking change to a package in the 1.0 set needs a major version, unless it is confined to the experimental surfaces above.
+- A change to an experimental surface releases `askdb` or `@askdb/config` as at least a minor: its changeset names that package `minor`. Without that, Changesets bumps `askdb` only as a patch when a `workspace:*` dependency on Studio, enrich or rag changes (`updateInternalDependencies: "patch"` in `.changeset/config.json`).
+- The CLI help, the `@askdb/config` JSDoc and the docs-site reference don't mark these surfaces experimental yet. #662 tracks that.
 - Adding reports, a non-stub `bounded_results` or an MCP server after 1.0 is additive: it ships in a 1.x minor and amends this ADR. Moving a 0.x package to 1.0 also amends it.
 - `bounded_results` stays in the published modes (`ASKDB_MODES_V1`) as a reserved value, so a host that sets it today keeps working when Phase 12 lands.
 - Docs, the README and the docs site must not present reports, result summaries or MCP as 1.0 features.
