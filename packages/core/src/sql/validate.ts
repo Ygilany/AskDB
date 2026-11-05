@@ -230,9 +230,18 @@ export function keywordsRejectedUnquoted(
   dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">,
 ): Set<string> {
   const words = denylistFor(dialect);
-  const profile = lexerProfileFor(dialect);
-  if (!profile || profile.id === "sqlserver") for (const hint of TSQL_LOCK_HINTS) words.add(hint);
+  if (checkedAsTsql(dialect)) for (const hint of TSQL_LOCK_HINTS) words.add(hint);
   return words;
+}
+
+/**
+ * Whether `validateSelectSql` runs the SQL Server lexer, and so the T-SQL hint checks, for a
+ * dialect: `sqlserver`, and an id that is no built-in engine family, which is checked every
+ * engine's way. The NL→SQL prompt follows it (#319).
+ */
+export function checkedAsTsql(dialect: Pick<DialectSpec, "id" | "backslashEscapes">): boolean {
+  const profile = lexerProfileFor(dialect);
+  return !profile || profile.id === "sqlserver";
 }
 
 /**

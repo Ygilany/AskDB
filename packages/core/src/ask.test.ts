@@ -569,8 +569,9 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     );
   });
 
-  it("on the other engines, leaves out the non-ASCII name rule", async () => {
-    expect(await promptFor("postgres", schemaOf("billing"))).not.toContain("isn't plain ASCII");
+  // One engine per other lexer family.
+  it.each(["postgres", "mysql", "sqlite"] as const)("on %s, leaves out the non-ASCII name rule", async (dialect) => {
+    expect(await promptFor(dialect, schemaOf("billing"))).not.toContain("isn't plain ASCII");
   });
 
   it("leaves the qualified-name rule out of a v1 schema's prompt, which lists no schemas", async () => {

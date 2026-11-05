@@ -322,6 +322,8 @@ describe("validateSelectSql — locking reads", () => {
     ["sqlserver", `SELECT id FROM orders ([UPDLOCK\uFEFF]) WHERE id = 1`],
     ["sqlserver", `SELECT COUNT([Größe]) AS n FROM orders`],
     ["sqlserver", `SELECT COUNT([rowlock]) AS n FROM orders`],
+    // Including a one-name column list, which can't be qualified: name the column inside the query.
+    ["sqlserver", `WITH [集計] ([合計]) AS (SELECT 1) SELECT [合計] FROM [集計]`],
   ] as const)("rejects on %s: %s", (id, sql) => {
     expectRule(sql, "SQL_LOCKING_READ", BUILT_IN_DIALECTS[id]);
   });
