@@ -130,14 +130,16 @@ export function findTsqlStatementBoundary(tokens: readonly SqlToken[]): TsqlStat
   };
 
   /**
-   * `name((SELECT …))` where `name` is a function: SQL Server reads `name(` as a call
-   * whenever `name` is not an alias, that is, when an expression may start before it.
+   * `name((SELECT …))` where `name` is a function: SQL Server reads an unquoted `name(`
+   * as a call whenever `name` is not an alias, that is, when an expression may start
+   * before it. A quoted name is a call only when qualified (`[dbo].[fn](`); alone,
+   * `[name]` is a column.
    */
   const opensCallArgument = (i: number): boolean => {
     if (!isPunct(tokens[i + 1], "(")) return false;
     const name = tokens[i - 1];
     const callable =
-      name?.kind === "quoted_identifier" ||
+      (name?.kind === "quoted_identifier" && isPunct(tokens[i - 2], ".")) ||
       (name?.kind === "word" && (!RESERVED.has(name.lower) || RESERVED_FUNCTIONS.has(name.lower)));
     return callable && continuesExpression(i - 2);
   };

@@ -51,6 +51,39 @@ describe("lexSql", () => {
     expect(tokens[2]!.value).toBe("a]b");
   });
 
+  it("ends SQL Server literals and names where SQL Server does", () => {
+    expect(kinds("0xSELECT 0x1F 1ESELECT 1E5 $1SELECT $5.00 $action €SELECT a b a​b", SQLSERVER_LEXER)).toEqual([
+      "number:0x",
+      "word:SELECT",
+      "number:0x1F",
+      "number:1E",
+      "word:SELECT",
+      "number:1E5",
+      "number:$1",
+      "word:SELECT",
+      "number:$5.00",
+      "parameter:$action",
+      "number:€",
+      "word:SELECT",
+      "word:a",
+      "word:b",
+      "word:a",
+      "word:b",
+    ]);
+  });
+
+  it.each([POSTGRES_LEXER, MYSQL_LEXER, SQLITE_LEXER, GENERIC_LEXER])("keeps $id's reading of the SQL Server forms", (profile) => {
+    expect(kinds("0xSELECT 1ESELECT $1SELECT €SELECT a b", profile)).toEqual([
+      "number:0",
+      "word:xSELECT",
+      "number:1",
+      "word:ESELECT",
+      "parameter:$1SELECT",
+      "word:€SELECT",
+      "word:a b",
+    ]);
+  });
+
   it("reads Postgres @ as an operator", () => {
     expect(kinds("@x", POSTGRES_LEXER)).toEqual(["punct:@", "word:x"]);
   });

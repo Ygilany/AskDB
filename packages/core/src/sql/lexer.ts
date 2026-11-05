@@ -232,7 +232,11 @@ const DIGIT = /[0-9]/;
 const HEX = /[0-9A-Fa-f]/;
 /** Currency symbols. SQL Server starts a money literal with one (its list is a subset). */
 const CURRENCY = /\p{Sc}/u;
-/** Characters SQL Server reads as whitespace that `\s` does not match. */
+/**
+ * Characters SQL Server reads as whitespace that `\s` does not match. With `\s` they are
+ * the only characters at or above U+0080 that end a T-SQL name or number (every BMP
+ * character probed on SQL Server 2022, #327).
+ */
 const TSQL_EXTRA_SPACE = /[\u200b\u0085]/;
 const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
 
@@ -254,6 +258,10 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   let i = 0;
   /** Index in `tokens` of the open MySQL `/*! … *\/` executable-comment opener, or -1. */
   let executableOpener = -1;
+
+  const isSpace = (c: string): boolean => /\s/.test(c) || (profile.tsqlLiterals && TSQL_EXTRA_SPACE.test(c));
+  /** `WORD_CHAR`, except that SQL Server ends a name at Unicode whitespace. */
+  const isWordChar = (c: string): boolean => WORD_CHAR.test(c) && !(profile.tsqlLiterals && isSpace(c));
 
   const push = (
     kind: SqlTokenKind,
@@ -316,7 +324,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     const ch = sql[i]!;
     const next = sql[i + 1];
 
-    if (/\s/.test(ch) || (profile.tsqlLiterals && TSQL_EXTRA_SPACE.test(ch))) {
+    if (isSpace(ch)) {
       i++;
       continue;
     }
@@ -438,7 +446,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       }
       if (next !== undefined && (DIGIT.test(next) || (!profile.dollarQuotes && WORD_START.test(next)))) {
         let j = i + 1;
-        while (j < n && WORD_CHAR.test(sql[j]!) && sql[j] !== "$") j++;
+        while (j < n && isWordChar(sql[j]!) && sql[j] !== "$") j++;
         push("parameter", i, j);
         i = j;
         continue;
@@ -448,7 +456,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     // ---- words (and prefixed string literals) ---------------------------
     if (WORD_START.test(ch) || (ch === "#" && profile.hashIdentifiers && next !== undefined && (next === "#" || WORD_START.test(next)))) {
       let j = i + 1;
-      while (j < n && (WORD_CHAR.test(sql[j]!) || (profile.hashIdentifiers && sql[j] === "#"))) j++;
+      while (j < n && (isWordChar(sql[j]!) || (profile.hashIdentifiers && sql[j] === "#"))) j++;
       const word = sql.slice(i, j);
       if (sql[j] === "'" && j - i === 1) {
         const prefix = word.toLowerCase();
@@ -498,7 +506,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     }
     if (ch === ":" && next !== undefined && WORD_START.test(next)) {
       let j = i + 1;
-      while (j < n && WORD_CHAR.test(sql[j]!)) j++;
+      while (j < n && isWordChar(sql[j]!)) j++;
       push("parameter", i, j);
       i = j;
       continue;
@@ -507,7 +515,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       let j = i + 1;
       if (sql[j] === "@") j++;
       if (j < n && WORD_START.test(sql[j]!)) {
-        while (j < n && WORD_CHAR.test(sql[j]!)) j++;
+        while (j < n && isWordChar(sql[j]!)) j++;
         push("parameter", i, j);
         i = j;
         continue;

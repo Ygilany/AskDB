@@ -209,6 +209,9 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     [`SELECT name FROM sys.objects ORDER BY name OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY (SELECT 2)`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 AS n (SELECT 2)`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1 AS n ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    // An unqualified quoted name is a column, not a function.
+    [`SELECT name FROM sys.objects ORDER BY [name] ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
+    [`SELECT name FROM sys.objects ORDER BY "name" ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
     // Reserved words that end a value are no function name.
     [`SELECT NULL ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
     [`SELECT CURRENT_TIMESTAMP ((SELECT 2))`, "SQL_MULTI_STATEMENT"],
@@ -234,6 +237,11 @@ describe("validateSelectSql — sql server statements without ';'", () => {
     [`SELECT \u20acSELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1\u200bSELECT 2`, "SQL_MULTI_STATEMENT"],
     [`SELECT 1\u0085SELECT 2`, "SQL_MULTI_STATEMENT"],
+    // …and inside a name or a variable, where it ends the token.
+    [`SELECT 1 a\u00a0SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a\u200bSELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT @@spid\u3000SELECT 2`, "SQL_MULTI_STATEMENT"],
+    [`SELECT 1 a\u2028PRINT 'x'`, "SQL_FORBIDDEN_KEYWORD"],
     // After a leading WITH list's main query, and before a trailing `;`.
     [`WITH x AS (SELECT 1 a) SELECT a FROM x SELECT 2`, "SQL_MULTI_STATEMENT"],
     [`WITH x AS (SELECT 1 a) SELECT a FROM x (SELECT 2)`, "SQL_MULTI_STATEMENT"],
@@ -348,6 +356,11 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     // Subqueries after a keyword, an operator, a comma, or a function's bracket.
     [`SELECT 1 AS a, (SELECT 2) AS b`],
     [`SELECT 1 AS v WHERE 2 > (SELECT 1)`],
+    [`SELECT 1 AS v WHERE 5 % (SELECT 2) = 1`],
+    [`SELECT ~(SELECT 2) AS v`],
+    [`SELECT 1 - (SELECT 2) AS v`],
+    [`SELECT 2 * (SELECT 2) / (SELECT 1) AS v`],
+    [`SELECT 1 & (SELECT 1) | (SELECT 2) ^ (SELECT 3) AS v`],
     [`SELECT 1 AS v WHERE EXISTS (SELECT 1) AND NOT EXISTS (SELECT 2 WHERE 1=0) OR 1 IN (SELECT 1)`],
     [`SELECT 1 AS v WHERE 1 = ANY (SELECT 1) AND 1 = SOME (SELECT 1) AND 1 >= ALL (SELECT 1)`],
     [`SELECT 1 AS v WHERE 1 BETWEEN (SELECT 0) AND (SELECT 2)`],
@@ -367,6 +380,9 @@ describe("validateSelectSql — legitimate SQL still accepted", () => {
     [`SELECT 1 AS a WHERE 1 IN ((SELECT 1))`],
     [`SELECT COALESCE((SELECT 1), 0) AS v`],
     [`SELECT CAST((SELECT 1) AS int) AS v`],
+    [`SELECT sys.fn_varbintohexstr((SELECT 0x01)) AS h`],
+    [`SELECT [sys].[fn_varbintohexstr]((SELECT 0x01)) AS h`],
+    [`SELECT geography::Point((SELECT 47.6), -122.3, 4326).Lat AS lat`],
     [`SELECT TOP 5 ABS((SELECT 1)) AS v FROM sys.objects`],
     [`SELECT TOP (SELECT 5) name FROM sys.objects`],
     [`SELECT TOP 5 (SELECT 1) AS a FROM sys.objects`],
