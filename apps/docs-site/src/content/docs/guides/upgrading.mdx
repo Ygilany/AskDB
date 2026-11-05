@@ -87,7 +87,7 @@ if (result.unboundSql && result.params) {
 
 - **Never concatenate `params` and `tenantParams`.** Running the new `sql` without its params fails at the driver (Postgres: `there is no parameter $1`; better-sqlite3: `Too few parameter values`; MySQL: a syntax error). It never returns other tenants' rows.
 - **To keep the IDs inlined,** set `tenantSqlMode: "sql-only"`.
-- **A custom `AskDialect` has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call. Set `"sql-params"` if your driver binds `$1`-style markers, or `"sql-only"`: on SQL Server, `$1` is a money constant. A value other than these two throws the same error on every dialect.
+- **A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call. Set `"sql-params"` if your driver binds `$1`-style markers, or `"sql-only"`: on SQL Server, `$1` is a money constant. A value other than these two throws the same error on every dialect.
 - **`@askdb/client`'s `askdb.ask()`** forwards to `ask()`, so it changes the same way. Studio's Playground now starts in `sql-params`.
 
 [Executing the result](/reference/core-api/#executing-the-result) describes both SQL forms.

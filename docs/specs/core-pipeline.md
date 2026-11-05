@@ -84,7 +84,7 @@ interface AskPipelineOptions {
   mode?: AskDbModeV1                 // 'schema_only' | 'bounded_results'
   retriever?: Retriever              // optional RAG retriever from @askdb/rag
   tenantScope?: TenantScope          // optional tenant scope from multi-tenancy
-  tenantSqlMode?: TenantSqlOutputMode // 'sql-params' (default for built-in dialects; a custom AskDialect with a tenant scope must set it) | 'sql-only'
+  tenantSqlMode?: TenantSqlOutputMode // 'sql-params' (default for built-in dialects; a custom AskDialect, or a DialectSpec with another id, must set it with a tenant scope) | 'sql-only'
   resolveTenantDescendants?: ResolveTenantDescendants // expands a 'subtree' scope into IDs per tenant root; required for subtree
   /**
    * Ask the model for unbound SQL + a parameter manifest (default true).

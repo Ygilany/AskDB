@@ -272,7 +272,7 @@ resolveTenantDescendants: (tenantRoot, seedIds) => ({
 | `sql-params` (default for built-in dialects) | Tenant values bound through your dialect's driver markers — `$1` (Postgres, CockroachDB), `?` (MySQL, MariaDB, SQLite), `@p0` (SQL Server). The tenant IDs never enter the SQL text. |
 | `sql-only` | Tenant values inlined as escaped literals, for a tool that takes one SQL string, or for SQL you read directly. A tenant ID must be printable ASCII without a backslash, or it's refused (`UNESCAPABLE_TENANT_ID`): any other literal can read differently under the server's string settings or connection charset. |
 
-A custom `AskDialect` has no default mode, because AskDB doesn't know which driver it targets: with a tenant scope, `ask()` throws `TENANT_SQL_MODE_REQUIRED` until you set `tenantSqlMode`. `"sql-params"` gives `$N` markers; if your driver uses `?` or `@p0` markers (on SQL Server, `$1` is a money constant), set `"sql-only"`. A value other than these two throws the same error, on every dialect.
+A custom `AskDialect`, or a `DialectSpec` whose `id` isn't a built-in dialect, has no default mode, because AskDB doesn't know which driver it targets: with a tenant scope, `ask()` throws `TENANT_SQL_MODE_REQUIRED` until you set `tenantSqlMode`. `"sql-params"` gives `$N` markers; if your driver uses `?` or `@p0` markers (on SQL Server, `$1` is a money constant), set `"sql-only"`. A value other than these two throws the same error, on every dialect.
 
 In `sql-params` mode `ask()` returns two executable pairs:
 
