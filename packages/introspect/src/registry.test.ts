@@ -45,9 +45,10 @@ describe("createConnectorRegistry", () => {
 
   it.each(["mysql", "sqlserver", "prisma"])(
     "throws an actionable error naming @askdb/%s when that provider is not registered",
-    (provider) => {
+    async (provider) => {
       const registry = createConnectorRegistry([]);
       expect(() => registry.createConnector({ provider })).toThrow(`Install @askdb/${provider}`);
+      await expect(registry.load(provider)).rejects.toThrow(`Install @askdb/${provider}`);
     },
   );
 
@@ -213,6 +214,78 @@ describe("createConnectorRegistry — open provider ids (third-party engines)", 
 
   it("resolveConnection throws for unregistered providers", () => {
     expect(() => createConnectorRegistry([]).resolveConnection("acme", { runtime })).toThrow(/not registered/);
+  });
+});
+
+// A lazy entry stands for an engine package the host may not have installed
+// (`@askdb/prisma` is an optional peer of the CLI and Studio): the registry
+// knows its id up front and imports the adapter only when it is selected.
+describe("createConnectorRegistry — lazy entries", () => {
+  const lazy = (adapter: ConnectorProviderAdapter) => ({
+    provider: adapter.provider,
+    load: vi.fn(async () => adapter),
+  });
+
+  it("lists a lazy entry without loading it, and dispatches to its adapter once loaded", async () => {
+    const prisma = makeAdapter("prisma");
+    const entry = lazy(prisma);
+    const registry = createConnectorRegistry([makeAdapter("postgres"), entry]);
+
+    expect(registry.providers()).toEqual(["postgres", "prisma"]);
+    expect(registry.hasProvider("prisma")).toBe(true);
+    expect(entry.load).not.toHaveBeenCalled();
+
+    expect(await registry.load("prisma")).toBe(prisma);
+    registry.createConnector({ provider: "prisma", schemaPath: "./prisma" });
+    expect(prisma.createConnector).toHaveBeenCalledWith({ provider: "prisma", schemaPath: "./prisma" });
+  });
+
+  it("calls the entry's load once across repeated and concurrent loads", async () => {
+    const entry = lazy(makeAdapter("prisma"));
+    const registry = createConnectorRegistry([entry]);
+
+    const [first, second] = await Promise.all([registry.load("prisma"), registry.load("prisma")]);
+    const third = await registry.load("prisma");
+
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+    expect(entry.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes a failed load's error through unchanged and retries on the next call", async () => {
+    const prisma = makeAdapter("prisma");
+    const missing = Object.assign(new Error("Cannot find package '@askdb/prisma'"), { code: "ERR_MODULE_NOT_FOUND" });
+    const load = vi.fn<() => Promise<ConnectorProviderAdapter>>().mockRejectedValueOnce(missing).mockResolvedValueOnce(prisma);
+    const registry = createConnectorRegistry([{ provider: "prisma", load }]);
+
+    await expect(registry.load("prisma")).rejects.toBe(missing);
+    // e.g. the user installed the package while a long-running host (Studio) kept going.
+    await expect(registry.load("prisma")).resolves.toBe(prisma);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a loaded adapter whose provider differs from the entry's, and does not use it", async () => {
+    const registry = createConnectorRegistry([{ provider: "prisma", load: async () => makeAdapter("postgres") }]);
+
+    await expect(registry.load("prisma")).rejects.toThrow(
+      'Connector provider adapter mismatch: the lazy entry "prisma" loaded adapter "postgres".',
+    );
+    expect(() => registry.createConnector({ provider: "prisma" })).toThrow(/is not loaded yet/);
+  });
+
+  // Fail closed: a host that forgot load() must not get a generic label, "no
+  // templates", or "not registered" for an engine it did register.
+  it.each<[string, (registry: ReturnType<typeof createConnectorRegistry>) => unknown]>([
+    ["createConnector", (r) => r.createConnector({ provider: "prisma" })],
+    ["resolveConnection", (r) => r.resolveConnection("prisma", { runtime: { introspection: {} } })],
+    ["getTemplates", (r) => r.getTemplates("prisma")],
+    ["connectionLabel", (r) => r.connectionLabel("prisma", { schemaPath: "./prisma" })],
+  ])("%s on a lazy entry that is not loaded yet throws naming registry.load()", (_name, call) => {
+    const entry = lazy({ ...makeAdapter("prisma"), getTemplates: () => undefined, connectionLabelParts: () => ({ file: "x" }) });
+    const registry = createConnectorRegistry([entry]);
+
+    expect(() => call(registry)).toThrow('Connector provider "prisma" is not loaded yet. Call `await registry.load("prisma")` first.');
+    expect(entry.load).not.toHaveBeenCalled();
   });
 });
 
