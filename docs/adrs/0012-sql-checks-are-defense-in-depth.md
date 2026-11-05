@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-29). Adopted by PR #184. Corrected 2026-10-07 (#483): Decision 3 described #371's fix as landed; it is still open. It replaces the "Strict mode fails closed" design decision in `docs/specs/multi-tenancy.md` and the parser-based design in `docs/contracts/tenant-policy.md` ("Guardrail validation"). Amended 2026-11-05 (#327): the SQL Server check for a second statement written without `;`, and how it fails closed (see Amendments). Context records the gap as it stood; Consequences lists what is left.
+Accepted (2026-09-29). Adopted by PR #184. Corrected 2026-10-07 (#483): Decision 3 described #371's fix as landed; it is still open. It replaces the "Strict mode fails closed" design decision in `docs/specs/multi-tenancy.md` and the parser-based design in `docs/contracts/tenant-policy.md` ("Guardrail validation"). Amended 2026-11-05 (#327): the SQL Server check for a second statement written without `;`, and how it fails closed. Amended 2026-11-05 (#319): locking reads are rejected (see Amendments). Context records the gap as it stood; Consequences lists what is left.
 
 ## Context
 
@@ -87,3 +87,10 @@ Option B.
 - **Accept only plain code on SQL Server (chosen).** Outside strings and quoted names, SQL Server code must be printable ASCII (no `\`) or Unicode letters, marks and digits, with no bare money sign, no number written against a word and no `?` written against a name or number. A `:` written directly against anything but `(`, a comma or an operator counts as a label, whatever the name looks like. Names continue through `@`, `$` and `#`, as SQL Server's identifier rules say. Anything else throws `SQL_MULTI_STATEMENT`. Model-written SQL has none of these (all 160 recorded consumer-lab replies pass), and the rule turns an open-ended list of tokenizer cases into a short list of allowed text.
 
 This keeps the Decision: the checks are still defense in depth, and the database role is still the boundary. A second statement that starts with `FETCH`, or with `END`, `GET` or `MOVE CONVERSATION`, still passes; those words also appear in ordinary queries or as column names.
+
+**2026-11-05 — Locking reads (#319, PR #649):** the read-only checks passed SQL Server's `WITH (UPDLOCK)`, Postgres `FOR SHARE` and MySQL `LOCK IN SHARE MODE`, and rejected `FOR UPDATE` only because `update` is on the keyword denylist. Run inside a host's transaction, each held locks that other writers waited on. The maintainer chose between two options:
+
+- **Leave locking reads to the host.** Document that the checks don't block them, and tell hosts to use a read-only transaction and a lock timeout. Rejected: SQL Server has no read-only transaction, and a read-only role still takes update locks there.
+- **Reject every locking read on every engine (chosen).** The checks throw `SQL_LOCKING_READ` for `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE` and `LOCK IN SHARE MODE` at any depth, and on SQL Server for the lock hints `UPDLOCK`, `XLOCK`, `HOLDLOCK`, `PAGLOCK`, `TABLOCK`, `TABLOCKX`, `ROWLOCK`, `SERIALIZABLE` and `REPEATABLEREAD`, as unquoted words anywhere or quoted alone in parentheses after a table name. `NOLOCK` and `READUNCOMMITTED` stay allowed.
+
+This keeps the Decision. The check matches words, not the locks a statement takes: the connection's isolation level still decides what a plain `SELECT` locks (SQL Server `REPEATABLE READ` and `SERIALIZABLE`, MySQL and MariaDB `SERIALIZABLE`), so hosts still set a lock timeout.

@@ -60,7 +60,8 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  *    need, or code SQL Server may split differently from the lexer (see `tsql-batch.ts`).
  * 7. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
  *    `FOR SHARE`, `FOR KEY SHARE` or `LOCK IN SHARE MODE` on every lexer, and on the SQL Server
- *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` anywhere (#319).
+ *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
+ *    parentheses right after a name (#319).
  * 8. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
  * 9. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
@@ -271,7 +272,9 @@ const LOCKING_CLAUSES: readonly (readonly string[])[] = [
 
 /**
  * T-SQL table hints that take or hold locks. Matched as unquoted words anywhere on the SQL
- * Server lexer, because SQL Server also takes them without `WITH` (`FROM t (UPDLOCK)`).
+ * Server lexer, because SQL Server also takes them without `WITH` (`FROM t (UPDLOCK)`), and
+ * quoted when one stands alone in parentheses right after a name, which SQL Server also reads
+ * as the hint (`FROM t ([UPDLOCK])`, `t ("UPDLOCK")`). It refuses every other quoted spelling.
  * `NOLOCK`, `READUNCOMMITTED`, `READPAST`, `READCOMMITTEDLOCK` and `NOWAIT` stay allowed.
  */
 const TSQL_LOCK_HINTS: ReadonlySet<string> = new Set([
@@ -282,8 +285,10 @@ const TSQL_LOCK_HINTS: ReadonlySet<string> = new Set([
 function findLockingRead(tokens: readonly SqlToken[], profile: SqlLexerProfile): string | undefined {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
+    if (profile.id === "sqlserver" && TSQL_LOCK_HINTS.has(t.lower) && (t.kind === "word" || isLoneQuotedHint(tokens, i))) {
+      return `the table hint ${t.lower.toUpperCase()}`;
+    }
     if (t.kind !== "word") continue;
-    if (profile.id === "sqlserver" && TSQL_LOCK_HINTS.has(t.lower)) return `the table hint ${t.lower.toUpperCase()}`;
     for (const clause of LOCKING_CLAUSES) {
       if (clause.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word)) {
         return clause.join(" ").toUpperCase();
@@ -291,6 +296,17 @@ function findLockingRead(tokens: readonly SqlToken[], profile: SqlLexerProfile):
     }
   }
   return undefined;
+}
+
+/** `name ( [hint] )`: a quoted identifier alone in parentheses right after a name. */
+function isLoneQuotedHint(tokens: readonly SqlToken[], i: number): boolean {
+  const before = tokens[i - 2];
+  return (
+    tokens[i]!.kind === "quoted_identifier" &&
+    isPunct(tokens[i - 1], "(") &&
+    isPunct(tokens[i + 1], ")") &&
+    (before?.kind === "word" || before?.kind === "quoted_identifier")
+  );
 }
 
 function isPunct(t: SqlToken | undefined, text: string): boolean {
