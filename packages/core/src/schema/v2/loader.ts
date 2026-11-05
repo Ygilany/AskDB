@@ -125,10 +125,16 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
 }
 
 /**
- * The files the directory loader reads beside `schema.json`, by the exact names it
- * reads them.
+ * Every optional file the directory loader reads beside `schema.json`, by the exact
+ * name it reads, keyed by the `BundledSchemaV2` field that carries it. `satisfies`
+ * stops a new bundle field from compiling until it is named here, so the directory
+ * loader, the bundle loader and `assertNotInSchemaDirectory` share one list.
  */
-const SCHEMA_DIRECTORY_SIBLINGS = ["tenant-policy.md", "tables", "concepts.md"] as const;
+const SCHEMA_DIRECTORY_FILES = {
+  tenantPolicy: "tenant-policy.md",
+  tables: "tables",
+  concepts: "concepts.md",
+} as const satisfies Record<Exclude<keyof BundledSchemaV2, "bundled" | "physical">, string>;
 
 /**
  * A standalone JSON file must not sit beside schema-directory files. Loading it
@@ -138,7 +144,9 @@ const SCHEMA_DIRECTORY_SIBLINGS = ["tenant-policy.md", "tables", "concepts.md"] 
  */
 function assertNotInSchemaDirectory(filePath: string): void {
   const dir = dirname(filePath);
-  const present = SCHEMA_DIRECTORY_SIBLINGS.filter((name) => pathExists(join(dir, name)));
+  const present = Object.values(SCHEMA_DIRECTORY_FILES).filter((name) =>
+    pathExists(join(dir, name)),
+  );
   if (present.length === 0) return;
   throw new SchemaParseError(
     `Refusing to load ${filePath} as a standalone physical layer: its directory also holds ` +
@@ -173,7 +181,7 @@ function loadFromDirectory(
   // broken tenant-policy.md would load the schema with tenant enforcement off.
 
   // Load optional tables/*.md
-  const tableDir = join(dir, "tables");
+  const tableDir = join(dir, SCHEMA_DIRECTORY_FILES.tables);
   const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
   // Sorted so warning order is deterministic (readdir order is filesystem-dependent)
   // and matches the bundle loader, which sorts its `tables` keys the same way.
@@ -188,7 +196,7 @@ function loadFromDirectory(
 
   // Load optional concepts.md
   let concepts: V2ConceptsFrontmatter | undefined;
-  const conceptsPath = join(dir, "concepts.md");
+  const conceptsPath = join(dir, SCHEMA_DIRECTORY_FILES.concepts);
   const conceptsContent = readOptionalFile(conceptsPath);
   if (conceptsContent !== undefined) {
     concepts = parseOrWrap(conceptsPath, () =>
@@ -198,7 +206,7 @@ function loadFromDirectory(
 
   // Load optional tenant-policy.md
   let tenantPolicy: NormalizedTenantPolicy | undefined;
-  const policyPath = join(dir, "tenant-policy.md");
+  const policyPath = join(dir, SCHEMA_DIRECTORY_FILES.tenantPolicy);
   const policyContent = readOptionalFile(policyPath);
   if (policyContent !== undefined) {
     tenantPolicy = parseOrWrap(policyPath, () => {
@@ -263,12 +271,17 @@ function readRequiredFile(path: string): string {
   }
 }
 
-/** Run a parse step; rethrow `SchemaParseError` as-is and wrap anything else with the file path. */
+/**
+ * Run a parse step so its error names the file: a `SchemaParseError` that already
+ * names `path` is rethrown as-is; any other error (including a `SchemaParseError`
+ * from a check that doesn't know the file, such as a tenant-root placeholder
+ * collision) is wrapped with the path.
+ */
 function parseOrWrap<T>(path: string, fn: () => T): T {
   try {
     return fn();
   } catch (e) {
-    if (e instanceof SchemaParseError) throw e;
+    if (e instanceof SchemaParseError && e.message.includes(path)) throw e;
     throw new SchemaParseError(`Failed to parse ${path}: ${errorMessage(e)}`, e);
   }
 }
@@ -297,18 +310,18 @@ function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSc
   // value — including an empty string — is parsed and must be valid, so an empty
   // or corrupt tenantPolicy can never silently disable tenant enforcement.
   let concepts: V2ConceptsFrontmatter | undefined;
-  const conceptsContent = bundledFileContent(bundle, "concepts", "concepts.md", filePath);
+  const conceptsContent = bundledFileContent(bundle, "concepts", filePath);
   if (conceptsContent !== undefined) {
-    const conceptsFile = inBundle("concepts.md");
+    const conceptsFile = inBundle(SCHEMA_DIRECTORY_FILES.concepts);
     concepts = parseOrWrap(conceptsFile, () =>
       parseConceptsMarkdown(conceptsContent, conceptsFile),
     ).frontmatter;
   }
 
   let tenantPolicy: NormalizedTenantPolicy | undefined;
-  const policyContent = bundledFileContent(bundle, "tenantPolicy", "tenant-policy.md", filePath);
+  const policyContent = bundledFileContent(bundle, "tenantPolicy", filePath);
   if (policyContent !== undefined) {
-    const policyFile = inBundle("tenant-policy.md");
+    const policyFile = inBundle(SCHEMA_DIRECTORY_FILES.tenantPolicy);
     tenantPolicy = parseOrWrap(policyFile, () => {
       const parsed = parseTenantPolicyMarkdown(policyContent, policyFile);
       const physicalTableIds = new Set(physical.tables.map((t) => t.id));
@@ -347,14 +360,13 @@ function addTableMarkdown(
 function bundledFileContent(
   bundle: BundledSchemaV2,
   key: "concepts" | "tenantPolicy",
-  fileName: string,
   bundlePath: string,
 ): string | undefined {
   const value: unknown = bundle[key];
   if (value === undefined) return undefined;
   if (typeof value !== "string") {
     throw new SchemaParseError(
-      `Invalid bundle at ${bundlePath}: \`${key}\` must be the raw ${fileName} content (a string).`,
+      `Invalid bundle at ${bundlePath}: \`${key}\` must be the raw ${SCHEMA_DIRECTORY_FILES[key]} content (a string).`,
     );
   }
   return value;

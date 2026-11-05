@@ -320,15 +320,35 @@ describe("loadSchema — bundles treat optional files exactly like the directory
 
   // The bundle is the file on disk, so the error must name it, not a tenant-policy.md
   // or concepts.md that does not exist.
+  const fixturePolicy = () => readFileSync(join(multiTenantDir, "tenant-policy.md"), "utf8");
   it.each([
-    { key: "tenantPolicy", value: MALFORMED_TENANT_POLICY, file: "tenant-policy.md" },
-    { key: "concepts", value: "---\nconcepts: [unclosed\n---\n", file: "concepts.md" },
-    { key: "tables", value: { "broken.md": "---\nid: [unclosed\n---\n" }, file: "tables/broken.md" },
-  ])("malformed $key YAML throws SchemaParseError naming $file in the bundle file", ({ key, value, file }) => {
+    { key: "tenantPolicy", problem: "malformed YAML", value: MALFORMED_TENANT_POLICY, file: "tenant-policy.md" },
+    {
+      key: "tenantPolicy",
+      problem: "colliding root placeholders",
+      value: () => fixturePolicy().replace("label: Sub-Agency", "label: Agency"),
+      file: "tenant-policy.md",
+    },
+    { key: "concepts", problem: "malformed YAML", value: "---\nconcepts: [unclosed\n---\n", file: "concepts.md" },
+    {
+      key: "tables",
+      problem: "malformed YAML",
+      value: { "broken.md": "---\nid: [unclosed\n---\n" },
+      file: "tables/broken.md",
+    },
+  ])("a $key with $problem throws SchemaParseError naming $file in the bundle file", ({ key, value, file }) => {
     const bundlePath = join(makeTempDir(), "prod.bundle.json");
-    writeFileSync(bundlePath, bundleJson({ [key]: value }));
+    writeFileSync(bundlePath, bundleJson({ [key]: typeof value === "function" ? value() : value }));
     const caught = thrownBy(() => loadSchema(bundlePath));
     expect(caught).toBeInstanceOf(SchemaParseError);
     expect((caught as SchemaParseError).message).toContain(`${file} (in ${bundlePath})`);
+  });
+
+  it("an inline bundle's error names the file in <inline JSON>", () => {
+    const caught = thrownBy(() =>
+      loadSchemaFromJson(bundleJson({ tenantPolicy: MALFORMED_TENANT_POLICY })),
+    );
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    expect((caught as SchemaParseError).message).toContain("tenant-policy.md (in <inline JSON>)");
   });
 });
