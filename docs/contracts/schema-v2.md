@@ -63,6 +63,23 @@ The bundle carries every file the directory loader reads, so `loadSchema(bundle)
 
 `tenantPolicy` is load-bearing: `ask()` only enforces tenant scope when the loaded schema has a policy, so a bundle without it would silently turn off tenant isolation. See [`tenant-policy.md`](./tenant-policy.md).
 
+An error in a bundled file names the file and the bundle, for example `tenant-policy.md (in /srv/prod.bundle.json)` or `tables/orders.md (in /srv/prod.bundle.json)`.
+
+### Loading a schema
+
+`loadSchema(path)` picks the form from the path:
+
+| Path | Loads |
+|---|---|
+| A schema directory | its `schema.json` and every optional file beside it |
+| A bundle (JSON with `bundled: true`) | the files the bundle carries (see [Bundled distribution](#bundled-distribution)) |
+| A file named `schema.json`, in any case (`Schema.json`, `SCHEMA.JSON`) | its directory, exactly as the directory path does; the physical layer is read from the path given |
+| Any other JSON file | its physical layer only, with no describable layer and no tenant policy |
+
+Any other JSON file in a directory that also holds `tenant-policy.md`, `tables/` or `concepts.md` makes `loadSchema()` throw `SchemaParseError` instead. Loading the file alone would ignore those files, so a copy such as `prod-schema.json` would load without its tenant policy (and `ask()` would not require a `tenantScope`) and without its `tables/*.md` `sensitive: true` escalations. To load only the physical layer of such a file, pass its content to `loadSchemaFromJson()`. See [ADR 0019](../adrs/0019-loader-fails-closed-on-schema-directory-json.md).
+
+The `schema.json` name matches in any case because macOS and Windows filesystems are case-insensitive by default: there, `Schema.json` opens `schema.json`. A directory path still needs a file named exactly `schema.json`; on a case-sensitive filesystem a directory holding only `Schema.json` throws `SchemaParseError`.
+
 ---
 
 ## Physical layer — `schema.json`
