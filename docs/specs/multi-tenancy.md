@@ -11,7 +11,7 @@ Prompt assembly includes the full policy and scope in every generation request. 
 
 **The guardrail is defense in depth, not a security boundary.** Production deployments should enforce tenant isolation in the database (row-level security, per-tenant views or roles) and treat AskDB's check as an early warning for model mistakes.
 
-This is a Postgres-first proof. The tenant enforcement model is designed to generalize to other engines when they are added.
+Phase 10 built this as a Postgres-first proof, with the tenant enforcement model designed to generalize to other engines. The consumer lab's tenant suite now runs it on all five engine families in the 1.0 support claim: PostgreSQL, MySQL, MariaDB, SQLite and SQL Server (`examples/consumer-lab/cassettes/<dialect>/tenant-*.json`).
 
 **Policy contract:** [`docs/contracts/tenant-policy.md`](../contracts/tenant-policy.md)
 

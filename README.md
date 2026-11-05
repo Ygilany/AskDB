@@ -198,7 +198,7 @@ pnpm exec askdb ask \
 
 AskDB returns SQL for review; it does not execute generated SQL. Treat generated SQL as untrusted: approve it and run it under your own least-privilege, read-only database roles, database-enforced tenant isolation (for example Postgres row-level security), statement timeouts, and audit logging. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely) and [SECURITY.md](SECURITY.md#security-model).
 
-**Engines:** PostgreSQL, MySQL, SQLite, and SQL Server are all first-class — pass the dialect id to `ask()` (the dialects ship in `@askdb/core`), and install the matching `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, or `@askdb/sqlserver` package to introspect that engine. Postgres is the reference dialect; the others ship dialect and introspection with parity tracked on the roadmap.
+**Engines:** the 1.0 support claim covers five engine families: PostgreSQL, MySQL, MariaDB, SQLite and SQL Server. Pass the dialect id to `ask()` (the dialects ship in `@askdb/core`), and install the matching `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlite` or `@askdb/sqlserver` package to introspect that engine. Postgres is the reference dialect. `cockroachdb` is also a built-in dialect id that reuses the Postgres spec, but it sits outside the 1.0 support claim because the consumer lab doesn't cover it ([ADR 0029](docs/adrs/0029-core-owns-built-in-dialect-specs.md)).
 
 **Current limitations (pre-1.0 / dev):** AskDB returns SQL only (execution stays in your app); SQL guardrails are heuristic (not a full SQL parser); a first-party MCP server, richer report generation, and a hosted dashboard are roadmap work. Per-feature scope and status: [`docs/specs/`](docs/specs).
 
