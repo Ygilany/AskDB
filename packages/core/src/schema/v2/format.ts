@@ -1,5 +1,6 @@
 import type { NormalizedSchemaV2 } from "./normalized.js";
 import type { FormatNlToSqlOptions, NlToSqlSchemaFormatStats } from "../normalize.js";
+import { createMentionMatcher, sensitiveMentionNames } from "./mentions.js";
 
 /**
  * Format a NormalizedSchemaV2 for NL→SQL prompts.
@@ -7,7 +8,9 @@ import type { FormatNlToSqlOptions, NlToSqlSchemaFormatStats } from "../normaliz
  * Interleaves table descriptions, aliases, column descriptions, and
  * `Common query language` blocks when present in the describable layer.
  * Sensitive describable-layer fields (descriptions/aliases/enum) are
- * excluded per the schema-v2 contract.
+ * excluded per the schema-v2 contract. With `omitSensitiveIdentifiersFromPrompt`,
+ * describable text that names a sensitive column is withheld too
+ * ({@link promptTextGate}).
  */
 export function formatSchemaV2ForNlToSql(
   schema: NormalizedSchemaV2,
@@ -15,6 +18,7 @@ export function formatSchemaV2ForNlToSql(
 ): { ddl: string; stats: NlToSqlSchemaFormatStats } {
   const omit = options.omitSensitiveIdentifiersFromPrompt === true;
   const quoteIdentifier = options.quoteIdentifier ?? listAsStored;
+  const gate = promptTextGate(schema, omit);
   let redactedColumnCount = 0;
   let sensitiveTableStubCount = 0;
   let listedSensitiveColumnCount = 0;
@@ -29,14 +33,10 @@ export function formatSchemaV2ForNlToSql(
 
     // Table header — qualified with its schema unless that namespace isn't one; alias annotation when present
     const listedName = promptTableName(t, options.unqualifiedNamespace, quoteIdentifier);
-    const aliasNote =
-      !t.sensitive && t.aliases?.length
-        ? ` -- aliases: ${t.aliases.join(", ")}`
-        : "";
-    lines.push(`TABLE ${listedName}${aliasNote}`);
+    lines.push(`TABLE ${listedName}${tableAliasNote(t, gate)}`);
 
     // Table description as a comment line
-    if (!t.sensitive && t.description) {
+    if (!t.sensitive && t.description && gate.allows(t.description)) {
       lines.push(`-- ${t.description}`);
     }
 
@@ -56,7 +56,7 @@ export function formatSchemaV2ForNlToSql(
           continue;
         }
         visibleColumns++;
-        lines.push(buildColumnLine(c, false, false, quoteIdentifier));
+        lines.push(buildColumnLine(c, false, false, quoteIdentifier, gate));
       }
       if (visibleColumns === 0 && t.columns.length > 0) {
         lines.push(`  (all columns marked sensitive — definitions withheld from model context)`);
@@ -64,12 +64,12 @@ export function formatSchemaV2ForNlToSql(
     } else {
       for (const c of t.columns) {
         if (c.sensitive) listedSensitiveColumnCount++;
-        lines.push(buildColumnLine(c, c.sensitive, t.sensitive, quoteIdentifier));
+        lines.push(buildColumnLine(c, c.sensitive, t.sensitive, quoteIdentifier, gate));
       }
     }
 
     // Common query language block
-    if (!t.sensitive && t.commonQueryLanguage) {
+    if (!t.sensitive && t.commonQueryLanguage && gate.allows(t.commonQueryLanguage)) {
       lines.push(`-- common query language --`);
       for (const cqlLine of t.commonQueryLanguage.split("\n")) {
         lines.push(`-- ${cqlLine}`);
@@ -88,8 +88,63 @@ export function formatSchemaV2ForNlToSql(
       sensitiveTableStubCount,
       listedSensitiveColumnCount,
       untrackedTableCount,
+      mentionDroppedCount: gate.withheld,
     },
   };
+}
+
+/**
+ * Decides which describable text an NL→SQL prompt may show. With sensitive identifiers
+ * omitted, text that names a sensitive column (ADR 0017's names, the schema v2 contract's
+ * mention rule) is withheld and counted; otherwise every text is shown.
+ */
+export type PromptTextGate = {
+  /** Whether `text` may go in the prompt. A withheld text counts once. */
+  allows(text: string): boolean;
+  /** Whether `texts` may go in as one unit: withheld together, counted once, when any names a sensitive column. */
+  allowsAll(texts: readonly string[]): boolean;
+  /** How many texts or units were withheld so far. */
+  readonly withheld: number;
+};
+
+/** The {@link PromptTextGate} both NL→SQL prompt builders use for `schema`. */
+export function promptTextGate(schema: NormalizedSchemaV2, omit: boolean): PromptTextGate {
+  const matcher = omit ? createMentionMatcher(sensitiveMentionNames(schema)) : undefined;
+  let withheld = 0;
+  const allowsAll = (texts: readonly string[]): boolean => {
+    if (!matcher || !texts.some((text) => matcher.mentionsAny(text))) return true;
+    withheld++;
+    return false;
+  };
+  return {
+    allows: (text) => allowsAll([text]),
+    allowsAll,
+    get withheld() {
+      return withheld;
+    },
+  };
+}
+
+/** A non-sensitive table's ` -- aliases: …` header note, each alias shown only when the gate allows it. */
+export function tableAliasNote(t: NormalizedSchemaV2["tables"][0], gate: PromptTextGate): string {
+  if (t.sensitive || !t.aliases?.length) return "";
+  const aliases = t.aliases.filter((alias) => gate.allows(alias));
+  return aliases.length ? ` -- aliases: ${aliases.join(", ")}` : "";
+}
+
+/**
+ * A non-sensitive column's annotation (`aliases: …; values: …; description`), or `""`.
+ * The three are one unit: when any of them names a sensitive column, the gate withholds all.
+ */
+export function columnAnnotation(c: NormalizedSchemaV2["tables"][0]["columns"][0], gate: PromptTextGate): string {
+  const values = (c.enum ?? []).map(String);
+  const texts = [...(c.aliases ?? []), ...values, ...(c.description ? [c.description] : [])];
+  if (texts.length === 0 || !gate.allowsAll(texts)) return "";
+  const extras: string[] = [];
+  if (c.aliases?.length) extras.push(`aliases: ${c.aliases.join(", ")}`);
+  if (values.length) extras.push(`values: ${values.join("|")}`);
+  if (c.description) extras.push(c.description);
+  return extras.join("; ");
 }
 
 /**
@@ -115,6 +170,7 @@ function buildColumnLine(
   colSensitive: boolean,
   tableSensitive: boolean,
   quoteIdentifier: (name: string) => string,
+  gate: PromptTextGate,
 ): string {
   const effective = colSensitive || tableSensitive;
   const flags = [c.primaryKey ? "PK" : "", c.nullable ? "NULL" : "NOT NULL"]
@@ -126,11 +182,8 @@ function buildColumnLine(
     line += " (sensitive)";
   } else {
     // Append column description when present (describable-layer enrichment)
-    const extras: string[] = [];
-    if (c.aliases?.length) extras.push(`aliases: ${c.aliases.join(", ")}`);
-    if (c.enum?.length) extras.push(`values: ${c.enum.join("|")}`);
-    if (c.description) extras.push(c.description);
-    if (extras.length) line += ` -- ${extras.join("; ")}`;
+    const annotation = columnAnnotation(c, gate);
+    if (annotation) line += ` -- ${annotation}`;
   }
 
   return line;

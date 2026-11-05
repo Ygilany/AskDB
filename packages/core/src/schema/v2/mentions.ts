@@ -1,3 +1,5 @@
+import type { NormalizedSchemaV2 } from "./normalized.js";
+
 /**
  * A name to look for in text: a bare name (matched literally, dots included),
  * or a column qualified by its table.
@@ -46,6 +48,33 @@ export function createMentionMatcher(names: readonly MentionName[]): MentionMatc
  */
 export function findMentionedNames<T extends MentionName>(text: string, names: readonly T[]): T[] {
   return createMentionMatcher(names).find(text) as T[];
+}
+
+/**
+ * The names whose mention marks text as naming a sensitive column, for the
+ * whole schema (ADR 0017; how they match is the schema v2 contract's mention
+ * rule). A column marked sensitive itself counts by its bare name; a column
+ * of a sensitive table that is sensitive only through it
+ * (`sensitiveFromTable`) counts only qualified, since its bare name is often
+ * generic (`id`, `org_id`, `name`). Untracked tables' columns count too.
+ * `@askdb/rag`'s chunker and both NL→SQL prompt builders check describable
+ * text against this list.
+ */
+export function sensitiveMentionNames(schema: NormalizedSchemaV2): MentionName[] {
+  const names: MentionName[] = [];
+  const bare = new Set<string>();
+  for (const t of schema.tables) {
+    for (const c of t.columns) {
+      if (!c.sensitive && !t.sensitive) continue;
+      if (t.sensitive && c.sensitiveFromTable === true) {
+        names.push({ table: t.name, column: c.name });
+      } else if (!bare.has(c.name)) {
+        bare.add(c.name);
+        names.push(c.name);
+      }
+    }
+  }
+  return names;
 }
 
 /** A bare name, or a qualified one's table and column parts: as written, or wrapped in one matching pair of quotes or brackets. */

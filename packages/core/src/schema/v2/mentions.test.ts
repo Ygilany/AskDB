@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createMentionMatcher, findMentionedNames, type MentionName } from "./mentions.js";
+import { createMentionMatcher, findMentionedNames, sensitiveMentionNames, type MentionName } from "./mentions.js";
+import type { NormalizedSchemaV2, NormalizedV2Column } from "./normalized.js";
 
 const orgId = { table: "users", column: "org_id" };
 
@@ -61,5 +62,42 @@ describe("createMentionMatcher", () => {
     expect(createMentionMatcher([]).mentionsAny("anything, at all")).toBe(false);
     expect(createMentionMatcher([""]).mentionsAny("anything, at all")).toBe(false);
     expect(createMentionMatcher([{ table: "", column: "x" }]).mentionsAny("read .x, at all")).toBe(false);
+  });
+});
+
+describe("sensitiveMentionNames", () => {
+  const col = (name: string, sensitive: boolean, extra: Partial<NormalizedV2Column> = {}): NormalizedV2Column => ({
+    id: `col:${name}`,
+    name,
+    type: "text",
+    nullable: true,
+    primaryKey: false,
+    sensitive,
+    ...extra,
+  });
+
+  it("lists marked columns bare and table-inherited columns qualified, across the whole schema (ADR 0017)", () => {
+    const schema: NormalizedSchemaV2 = {
+      schemaId: "s",
+      warnings: [],
+      tables: [
+        { id: "t:customers", name: "customers", schema: "public", sensitive: false, columns: [col("id", false), col("email", true)] },
+        {
+          id: "t:users",
+          name: "users",
+          schema: "public",
+          sensitive: true,
+          columns: [
+            col("org_id", true, { sensitiveFromTable: true }),
+            // Marked itself as well as through its table: bare.
+            col("email", true),
+            // Normalized without the provenance field: the conservative, bare reading.
+            col("ssn", true),
+          ],
+        },
+        { id: "t:audit", name: "audit", schema: "public", sensitive: false, tracked: false, columns: [col("api_key", true)] },
+      ],
+    };
+    expect(sensitiveMentionNames(schema)).toEqual(["email", { table: "users", column: "org_id" }, "ssn", "api_key"]);
   });
 });

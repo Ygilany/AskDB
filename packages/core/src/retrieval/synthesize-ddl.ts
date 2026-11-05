@@ -1,4 +1,10 @@
-import { listAsStored, promptTableName } from "../schema/v2/format.js";
+import {
+  columnAnnotation,
+  listAsStored,
+  promptTableName,
+  promptTextGate,
+  tableAliasNote,
+} from "../schema/v2/format.js";
 import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { RetrievedResult } from "./types.js";
 
@@ -16,7 +22,11 @@ import type { RetrievedResult } from "./types.js";
  *      the bottom (before the question).
  *
  * Sensitive identifiers retain their `(sensitive)` tagging exactly as
- * `formatSchemaV2ForNlToSql` does.
+ * `formatSchemaV2ForNlToSql` does. With `omitSensitiveIdentifiersFromPrompt`,
+ * schema text is withheld by the same rule, and so is the text of every
+ * retrieved chunk that names a sensitive column or is flagged `sensitive`
+ * (ADR 0022): core can't vouch for the retriever. A withheld chunk still
+ * picks its tables.
  */
 export function synthesizeRetrievedDdl(args: {
   schema: NormalizedSchemaV2;
@@ -27,10 +37,26 @@ export function synthesizeRetrievedDdl(args: {
   unqualifiedNamespace?: string;
   /** Mirrors `formatSchemaV2ForNlToSql`'s `quoteIdentifier`. */
   quoteIdentifier?: (name: string) => string;
-}): { ddl: string; tablesEmitted: number; chunksUsed: number } {
+}): {
+  ddl: string;
+  tablesEmitted: number;
+  chunksUsed: number;
+  /** With omission on: schema texts and chunks withheld because they name a sensitive column or are flagged `sensitive`. */
+  mentionDroppedCount: number;
+} {
   const { schema, results } = args;
   const omit = args.omitSensitiveIdentifiersFromPrompt === true;
   const quoteIdentifier = args.quoteIdentifier ?? listAsStored;
+  const gate = promptTextGate(schema, omit);
+  let flaggedChunksDropped = 0;
+  /** Whether a retrieved chunk's own text may go in the prompt. */
+  const keepText = (p: RetrievedResult["payload"]): boolean => {
+    if (omit && p.sensitive) {
+      flaggedChunksDropped++;
+      return false;
+    }
+    return gate.allows(stripHeaderLine(p.text));
+  };
 
   const tableIds = new Set<string>();
   const cqlPerTable = new Map<string, RetrievedResult["payload"][]>();
@@ -56,19 +82,21 @@ export function synthesizeRetrievedDdl(args: {
         const tid = p.refs[0];
         if (tid) {
           tableIds.add(tid);
-          const list = cqlPerTable.get(tid) ?? [];
-          list.push(p);
-          cqlPerTable.set(tid, list);
+          if (keepText(p)) {
+            const list = cqlPerTable.get(tid) ?? [];
+            list.push(p);
+            cqlPerTable.set(tid, list);
+          }
         }
         break;
       }
       case "question": {
-        questions.push(p);
+        if (keepText(p)) questions.push(p);
         if (p.refs[0]) tableIds.add(p.refs[0]);
         break;
       }
       case "concept": {
-        concepts.push(p);
+        if (keepText(p)) concepts.push(p);
         for (const ref of p.refs) {
           if (ref.startsWith("table:")) {
             const hash = ref.indexOf("#");
@@ -78,14 +106,14 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "relationship": {
-        relationships.push(p);
+        if (keepText(p)) relationships.push(p);
         for (const ref of p.refs) {
           if (ref.startsWith("table:") && !ref.includes("#")) tableIds.add(ref);
         }
         break;
       }
       case "tenant-policy": {
-        tenantPolicyChunks.push(p);
+        if (keepText(p)) tenantPolicyChunks.push(p);
         break;
       }
     }
@@ -98,10 +126,8 @@ export function synthesizeRetrievedDdl(args: {
     if (!tableIds.has(t.id)) continue;
     tablesEmitted++;
     const listedName = promptTableName(t, args.unqualifiedNamespace, quoteIdentifier);
-    const aliasNote =
-      !t.sensitive && t.aliases?.length ? ` -- aliases: ${t.aliases.join(", ")}` : "";
-    lines.push(`TABLE ${listedName}${aliasNote}`);
-    if (!t.sensitive && t.description) lines.push(`-- ${t.description}`);
+    lines.push(`TABLE ${listedName}${tableAliasNote(t, gate)}`);
+    if (!t.sensitive && t.description && gate.allows(t.description)) lines.push(`-- ${t.description}`);
 
     if (omit && t.sensitive) {
       lines.push(`  (sensitive table — column definitions withheld from model context)`);
@@ -117,11 +143,8 @@ export function synthesizeRetrievedDdl(args: {
       const sensitiveTag = c.sensitive || t.sensitive ? " (sensitive)" : "";
       let line = `  - ${quoteIdentifier(c.name)} ${c.type} (${flags.join(" ")})${sensitiveTag}`;
       if (!c.sensitive && !t.sensitive) {
-        const extras: string[] = [];
-        if (c.aliases?.length) extras.push(`aliases: ${c.aliases.join(", ")}`);
-        if (c.enum?.length) extras.push(`values: ${c.enum.join("|")}`);
-        if (c.description) extras.push(c.description);
-        if (extras.length) line += ` -- ${extras.join("; ")}`;
+        const annotation = columnAnnotation(c, gate);
+        if (annotation) line += ` -- ${annotation}`;
       }
       lines.push(line);
     }
@@ -175,6 +198,7 @@ export function synthesizeRetrievedDdl(args: {
     ddl: lines.join("\n").trimEnd(),
     tablesEmitted,
     chunksUsed: results.length,
+    mentionDroppedCount: gate.withheld + flaggedChunksDropped,
   };
 }
 

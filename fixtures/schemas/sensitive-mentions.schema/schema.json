@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "schemaId": "sensitive-mentions",
+  "tables": [
+    {
+      "id": "table:public.customers",
+      "name": "customers",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        { "id": "table:public.customers#id", "name": "id", "type": "integer", "nullable": false, "primaryKey": true, "sensitive": false },
+        { "id": "table:public.customers#email", "name": "email", "type": "text", "nullable": true, "sensitive": true },
+        { "id": "table:public.customers#phone", "name": "phone", "type": "text", "nullable": true, "sensitive": true },
+        { "id": "table:public.customers#contact_pref", "name": "contact_pref", "type": "text", "nullable": true, "sensitive": false },
+        { "id": "table:public.customers#status", "name": "status", "type": "text", "nullable": false, "sensitive": false },
+        { "id": "table:public.customers#region", "name": "region", "type": "text", "nullable": true, "sensitive": false }
+      ]
+    },
+    {
+      "id": "table:public.orders",
+      "name": "orders",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        { "id": "table:public.orders#id", "name": "id", "type": "integer", "nullable": false, "primaryKey": true, "sensitive": false },
+        { "id": "table:public.orders#customer_id", "name": "customer_id", "type": "integer", "nullable": false, "sensitive": false },
+        { "id": "table:public.orders#total", "name": "total", "type": "integer", "nullable": false, "sensitive": false }
+      ]
+    },
+    {
+      "id": "table:public.users",
+      "name": "users",
+      "schema": "public",
+      "sensitive": true,
+      "columns": [
+        { "id": "table:public.users#id", "name": "id", "type": "integer", "nullable": false, "primaryKey": true, "sensitive": false },
+        { "id": "table:public.users#ssn", "name": "ssn", "type": "text", "nullable": true, "sensitive": false }
+      ]
+    }
+  ]
+}
