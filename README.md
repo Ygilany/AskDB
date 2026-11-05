@@ -12,7 +12,7 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 
 > **Ask your data. Keep control of the query.**
 >
-> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client`, `@askdb/http-api`, and the `@askdb/ai-*` adapters are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
+> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client` and `@askdb/http-api` are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
 >
 > AskDB returns SQL for review; the library, CLI, and HTTP API never execute it (Studio's optional Playground **Execute** is a local development tool). AskDB's SQL checks are heuristic defense in depth, not a security boundary. Run generated SQL under a read-only, least-privilege database role. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely).
 
@@ -96,13 +96,8 @@ Product direction and technical baseline live in **`docs/`**:
 
 - [`packages/core`](packages/core) (`@askdb/core`) — dialect-agnostic NL→SQL pipeline (`ask()`) and schema artifact loader.
 - [`packages/ai`](packages/ai) (`@askdb/ai`) — AI provider registry and shared config helpers for AI SDK language and embedding models.
-- [`packages/ai-openai`](packages/ai-openai) (`@askdb/ai-openai`) — OpenAI provider adapter for `@askdb/ai`.
-- [`packages/ai-azure`](packages/ai-azure) (`@askdb/ai-azure`) — Azure OpenAI / Foundry provider adapter for `@askdb/ai`.
-- [`packages/ai-google`](packages/ai-google) (`@askdb/ai-google`) — Google Gemini provider adapter for `@askdb/ai`.
-- [`packages/ai-anthropic`](packages/ai-anthropic) (`@askdb/ai-anthropic`) — Anthropic Claude provider adapter for `@askdb/ai`.
 - [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
 - [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.
-- [`packages/connectors`](packages/connectors) (`@askdb/connectors`) — deprecated re-export of the connector registry (now in `@askdb/introspect`).
 - [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — connector contract, connector registry, `@askdb/introspect/kit` engine helpers, Schema v2 renderer.
 - [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres dialect, introspection connector, catalog templates, and `pg`-backed runner.
 - [`packages/mysql`](packages/mysql) (`@askdb/mysql`) — MySQL introspection connector and `mysql2`-backed catalog runner.
