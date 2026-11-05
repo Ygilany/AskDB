@@ -1228,6 +1228,21 @@ ${scaffold.source}
     expect(() => loadAskDbConfigProjectionSync(dir)).toThrow(`AskDB config at ${join(dir, file)}: ${message}`);
   });
 
+  // A config may default-import a CommonJS package (`import dotenv from "dotenv"`, as the installable
+  // smoke's config does), which needs jiti's default interop on. Reading the file's own default export
+  // must not turn it off.
+  it("loads a config that default-imports a CommonJS module", () => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    writeFileSync(join(dir, "key.cjs"), `module.exports = { apiKey: "from-cjs" };\n`, "utf8");
+    writeFileSync(
+      join(dir, "askdb.config.ts"),
+      `import key from "./key.cjs";\nexport default { ai: { provider: "openai", providerConfig: { openai: { apiKey: key.apiKey } } }, introspection: { provider: "postgres" } };\n`,
+      "utf8",
+    );
+    const { projection } = loadAskDbConfigProjectionSync(dir);
+    expect(projection?.entries.OPENAI_API_KEY).toBe("from-cjs");
+  });
+
   // The async loader imports .mjs with native import(), not jiti, so its own path gets its own cases.
   it("loadAskDbConfigProjection, the async loader, loads a plain-object askdb.config.mjs", async () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));

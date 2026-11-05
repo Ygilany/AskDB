@@ -24,10 +24,19 @@ function defaultExport(mod: unknown, configPath: string): unknown {
   return (mod as { default: unknown }).default;
 }
 
-/** Loads a config file synchronously with jiti, whatever its extension (`.mjs` included). */
+/**
+ * Loads a config file synchronously with jiti, whatever its extension (`.mjs` included).
+ * `interopDefault` stays on: it is what lets the file default-import a CommonJS package
+ * (`import dotenv from "dotenv"`). jiti then returns the exports behind a proxy that merges in
+ * the default export, so the default export is read from the module cache, which holds the
+ * exports as the file wrote them. With jiti's module cache off, the proxy's default is used.
+ */
 function requireConfigModule(configPath: string): unknown {
-  const jiti = createJiti(configPath, { interopDefault: false });
-  return defaultExport(jiti(configPath), configPath);
+  const jiti = createJiti(configPath, { interopDefault: true });
+  const loaded = jiti(configPath) as { default?: unknown } | null | undefined;
+  const cached = jiti.cache[jiti.resolve(configPath)];
+  if (cached) return defaultExport(cached.exports, configPath);
+  return loaded?.default ?? loaded;
 }
 
 async function importConfigModule(configPath: string): Promise<unknown> {
