@@ -20,6 +20,7 @@ import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
+import { labelled } from "./error-values.js";
 import { createCliLogger } from "./logger.js";
 import { requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
@@ -76,11 +77,11 @@ export async function runIntrospectCli(
     process.stdout.write(`${readCliVersion()}\n`);
     return 0;
   }
+  const registry = options.connectorRegistry ?? defaultConnectorRegistry;
   if (argv.includes("--help") || argv.includes("-h")) {
-    printHelp();
+    printHelp(registry);
     return 0;
   }
-  const registry = options.connectorRegistry ?? defaultConnectorRegistry;
   const templates = argv[0] === "templates";
   // Only an introspection run reads askdb.config. A missing or broken config propagates to
   // the CLI's top-level error handler, the same as for `askdb ask`.
@@ -294,13 +295,14 @@ const INTROSPECT_FLAGS: readonly {
   names: readonly string[];
   /** Placeholder for the flag's value, e.g. `<dir>`; absent for a boolean flag. */
   value?: string;
-  help: string;
+  /** The help line; a function when it depends on the engines the registry holds. */
+  help: string | ((registry: ConnectorRegistry) => string);
   apply(opts: CliOptions, value: string): void;
 }[] = [
   {
     names: ["--engine"],
     value: "<id>",
-    help: "postgres, mysql, sqlite, sqlserver or prisma. Default: introspection.provider.",
+    help: (registry) => `${registry.providers().join(", ")}. Default: introspection.provider.`,
     apply: (opts, value) => (opts.engine = value),
   },
   {
@@ -398,9 +400,27 @@ function parseOptions(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
-    const flag = FLAG_BY_NAME.get(arg);
-    if (!flag) throw new Error(`Unknown option: ${arg}`);
-    flag.apply(opts, flag.value ? readValue(argv, ++i, arg) : "");
+    // Errors never repeat an argument's value: it can be a connection string, password included.
+    if (!arg.startsWith("-")) {
+      throw new Error(
+        "Unexpected argument: askdb introspect takes no positional arguments. Pass values with their flag, such as --url <url>.",
+      );
+    }
+    // `--flag=value` works like `--flag value`, as in `askdb rag`.
+    const eq = arg.indexOf("=");
+    const name = eq === -1 ? arg : arg.slice(0, eq);
+    const inline = eq === -1 ? undefined : arg.slice(eq + 1);
+    const flag = FLAG_BY_NAME.get(name);
+    if (!flag) throw new Error(labelled("Unknown option", name));
+    if (!flag.value) {
+      if (inline !== undefined) throw new Error(`${name} takes no value.`);
+      flag.apply(opts, "");
+    } else if (inline === undefined) {
+      flag.apply(opts, readValue(argv, ++i, name));
+    } else {
+      if (!inline) throw new Error(`${name} requires a value.`);
+      flag.apply(opts, inline);
+    }
   }
   return opts;
 }
@@ -432,11 +452,11 @@ function inferSchemaId(path: string | undefined): string | undefined {
   return name.endsWith(".schema") ? name.slice(0, -".schema".length) : name;
 }
 
-function printHelp(): void {
+function printHelp(registry: ConnectorRegistry): void {
   const optionLines = [
     ...INTROSPECT_FLAGS.map((flag) => ({
       usage: flag.names.join(", ") + (flag.value ? ` ${flag.value}` : ""),
-      help: flag.help,
+      help: typeof flag.help === "function" ? flag.help(registry) : flag.help,
     })),
     // Handled before option parsing, in runIntrospectCli.
     { usage: "-V, --version", help: "Print the askdb version." },
@@ -463,8 +483,8 @@ function printHelp(): void {
       "  askdb introspect templates --engine postgres",
       "",
       "Defaults from askdb.config (bind a value to an environment variable with env(\"NAME\")):",
-      "  --url            Postgres, MySQL, SQL Server: introspection.providerConfig.<engine>.databaseUrl.",
-      "                   SQLite: introspection.providerConfig.sqlite.file.",
+      "  --url            For the engine introspection.provider names: introspection.providerConfig.<engine>.databaseUrl",
+      "                   (SQLite: introspection.providerConfig.sqlite.file). With another --engine, pass --url.",
       "  --out            introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
       "  --prisma-schema  introspection.providerConfig.prisma.schemaPath when set; otherwise",
       "                   prisma/schema.prisma or schema.prisma is auto-discovered in the project root.",

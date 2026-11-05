@@ -98,14 +98,14 @@ function parseOptions(argv: readonly string[]): CliOptions {
     }
   })();
   const listen = rt?.structured.studio?.listen;
-  const parsedPort = listen?.port ?? NaN;
   const introspectOut = rt?.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR;
   const opts: CliOptions = {
     schema: introspectOut,
     schemaFromFlag: false,
     host: listen?.host ?? "127.0.0.1",
-    port: Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 5556,
+    port: 5556,
   };
+  let portFromFlag = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
@@ -125,6 +125,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
           throw new Error(`Invalid --port: ${raw}`);
         }
         opts.port = port;
+        portFromFlag = true;
         break;
       }
       case "--help":
@@ -138,6 +139,19 @@ function parseOptions(argv: readonly string[]): CliOptions {
       default:
         throw new Error(`Unknown option: ${arg}`);
     }
+  }
+
+  // A bad configured port must fail, not quietly bind 5556. `NaN` (`Number(env("X"))` with X
+  // unset) counts as unset, as it does in @askdb/config; a numeric string works like a number.
+  const configPort = listen?.port;
+  if (!portFromFlag && !opts.help && !opts.version && configPort !== undefined && !Number.isNaN(configPort)) {
+    const port = Number(configPort);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error(
+        `Invalid studio.listen.port in askdb.config: ${String(configPort)} (expected an integer from 1 to 65535).`,
+      );
+    }
+    opts.port = port;
   }
 
   return opts;

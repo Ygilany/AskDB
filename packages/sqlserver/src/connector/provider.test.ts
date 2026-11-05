@@ -20,7 +20,7 @@ describe("sqlServerConnectorProvider", () => {
     expect(resolve({ runtime: runtime(), surface: "cli" })).toEqual({
       ok: false,
       error:
-        "Provide --url <sqlserver-url> (or set introspection.providerConfig.sqlserver.databaseUrl in askdb.config).",
+        "Provide --url <sqlserver-url> (or set introspection.provider: \"sqlserver\" and introspection.providerConfig.sqlserver.databaseUrl in askdb.config).",
     });
     expect(resolve({ runtime: runtime(), surface: "studio" })).toEqual({
       ok: false,
