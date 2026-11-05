@@ -11,7 +11,7 @@ This spec retires `@askdb/mysql`'s live `mysql.integration.test.ts` after moving
 | 3. Optional `provider.test.ts:17-18` trim | Skip it | @Ygilany's `ok` to triage's D2, grilling | Two-way |
 | 4. CI/fixture/docs cleanup after the retirement | Not in this PR; a separate follow-up issue | @Ygilany's `ok` to triage's D3, grilling | Two-way |
 
-**Superseded (2026-11-05):** decision 2 no longer holds. `@askdb/mysql` stopped exporting `MYSQL_CATALOG_SQL` before the 1.0 freeze (#275, ADR 0030); the constant stays in `connector/describe.ts` for the connector and its unit test.
+**Superseded (2026-11-05):** decision 2 no longer holds. `@askdb/mysql` stopped exporting `MYSQL_CATALOG_SQL` before the 1.0 freeze (#275, ADR 0031); the constant stays in `connector/describe.ts` for the connector and its unit test.
 
 ```text
 packages/mysql/src

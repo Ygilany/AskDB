@@ -1,4 +1,4 @@
-# ADR 0030 — Unused public exports leave before 1.0, and engine catalog SQL stays internal
+# ADR 0031 — Unused public exports leave before 1.0, and engine catalog SQL stays internal
 
 ## Status
 
