@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
+import { basename, delimiter, dirname, join, resolve, isAbsolute, relative } from "node:path";
 import { getBuiltinAiProviderSetup } from "@askdb/ai";
 import {
   ASKDB_AI_PROVIDERS,
@@ -16,8 +16,10 @@ import {
   lockfilePackageManager,
   packageManagerAddArgs,
   packageManagerSpawnSpec,
+  supportedBuildApprovals,
   type PackageManager,
 } from "./package-manager.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
 /** Any provider id with an `askdb.config.*` branch (`ASKDB_AI_PROVIDERS` in `@askdb/config`). */
@@ -372,15 +374,24 @@ function ensureProjectDependencies(
   studioExecuteProvider?: SetupExecuteProvider,
 ): EnsureDepsResult {
   const missing: string[] = [];
-  if (!canResolveFrom(cwd, "@askdb/config")) {
+  if (!isInstalledFor(cwd, "@askdb/config")) {
     missing.push(`@askdb/config@${resolveConfigSpec()}`);
+  }
+  const allowBuilds: string[] = [];
+  // `@askdb/prisma` is an optional peer of Studio (#259). It depends on Prisma, whose
+  // `@prisma/engines` postinstall pnpm 11 refuses to run until it's approved, and then
+  // exits 1. A Prisma project approves it anyway, so the install does it here.
+  // `askdb init` does the same (`apps/cli/src/init.ts`).
+  if (database === "prisma" && !isInstalledFor(cwd, "@askdb/prisma")) {
+    missing.push(`@askdb/prisma@${resolvePrismaSpec()}`);
+    allowBuilds.push(...PRISMA_BUILD_APPROVALS);
   }
   const driversNeeded = new Set<string>();
   if (DB_DRIVER_PACKAGES[database]) driversNeeded.add(database);
   if (studioExecuteProvider && DB_DRIVER_PACKAGES[studioExecuteProvider]) driversNeeded.add(studioExecuteProvider);
   for (const db of driversNeeded) {
     const driver = DB_DRIVER_PACKAGES[db as SetupDatabase];
-    if (driver && !canResolveFrom(cwd, driver) && !missing.includes(driver)) {
+    if (driver && !isInstalledFor(cwd, driver) && !missing.includes(driver)) {
       missing.push(driver);
     }
   }
@@ -401,38 +412,52 @@ function ensureProjectDependencies(
   const pkgDir = nearestPkgDir ?? cwd;
 
   const pm = detectPackageManager(pkgDir);
+  const approvedBuilds = supportedBuildApprovals(pm, pkgDir, allowBuilds);
   // Only auto-install when the project manifest sits exactly at the wizard's
   // directory. A package.json found further up might be a monorepo root or an
   // unrelated project — never mutate those implicitly.
   if (pkgDir !== resolve(cwd) || (isLikelyWorkspaceRoot(pkgDir) && !packageJsonCreated)) {
     return {
       installed: null,
-      manualInstallCommand: formatInstallCommand(pm, missing),
+      manualInstallCommand: formatInstallCommand(pm, missing, approvedBuilds),
       packageJsonCreated,
     };
   }
 
   const installer = setupInstallerForTests ?? runInstall;
-  const ok = installer(pm, pkgDir, missing);
+  const ok = installer(pm, pkgDir, missing, approvedBuilds);
   if (!ok) {
     return {
       installed: null,
-      manualInstallCommand: formatInstallCommand(pm, missing),
+      manualInstallCommand: formatInstallCommand(pm, missing, approvedBuilds),
       packageJsonCreated,
     };
   }
   return { installed: missing, manualInstallCommand: null, packageJsonCreated };
 }
 
-function canResolveFrom(dir: string, packageName: string): boolean {
-  try {
-    // Resolve the package entry point, not `<pkg>/package.json` — the latter
-    // fails for packages whose `exports` map doesn't expose "./package.json".
-    createRequire(join(dir, "package.json")).resolve(packageName);
-    return true;
-  } catch {
-    return false;
+/**
+ * Whether `packageName` is installed for `dir`: in a `node_modules` of `dir` or a parent,
+ * or in a `NODE_PATH` directory. Checked on disk, not with Node's resolver: Node 24 and
+ * later can keep a failed lookup until the process exits, so resolving a package this
+ * step then installs would hide it from the introspection step's load. Under Yarn
+ * Plug'n'Play there is no `node_modules`, and its resolver is the only record, so it asks that.
+ */
+function isInstalledFor(dir: string, packageName: string): boolean {
+  if (process.versions.pnp) {
+    try {
+      createRequire(join(dir, "package.json")).resolve(packageName);
+      return true;
+    } catch {
+      return false;
+    }
   }
+  const roots = (process.env.NODE_PATH ?? "").split(delimiter).filter(Boolean);
+  for (let current = resolve(dir); ; current = dirname(current)) {
+    roots.push(join(current, "node_modules"));
+    if (dirname(current) === current) break;
+  }
+  return roots.some((root) => existsSync(join(root, packageName, "package.json")));
 }
 
 /**
@@ -456,6 +481,27 @@ function readStudioConfigPackageJson(): { version?: string } | undefined {
 /** Pin `@askdb/config` to the version Studio itself was built against. */
 function resolveConfigSpec(): string {
   return readStudioConfigPackageJson()?.version ?? "latest";
+}
+
+/**
+ * The `@askdb/prisma` spec to install: Studio's published peer range (`^x`), or the
+ * workspace package's version in the monorepo. A range, not the floor: `askdb` hosts
+ * Studio and may be released later with a higher floor, which an exact pin to Studio's
+ * would break (npm exits with ERESOLVE). `askdb init` pins its own floor.
+ */
+function resolvePrismaSpec(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    const studioPkg = require("../package.json") as { peerDependencies?: Record<string, string> };
+    const declared = studioPkg.peerDependencies?.["@askdb/prisma"];
+    if (!declared) return "latest";
+    if (!declared.startsWith("workspace:")) return declared;
+    const pkgDir = findNearestPackageJsonDir(dirname(require.resolve("@askdb/prisma")));
+    if (!pkgDir) return "latest";
+    return (JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")) as { version?: string }).version ?? "latest";
+  } catch {
+    return "latest";
+  }
 }
 
 function findNearestPackageJsonDir(startDir: string): string | undefined {
@@ -486,7 +532,8 @@ function isLikelyWorkspaceRoot(packageDir: string): boolean {
   }
 }
 
-type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[]) => boolean;
+/** Runs the package manager's add command; `allowBuilds` are the pnpm build approvals it passes. */
+type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]) => boolean;
 
 let setupInstallerForTests: SetupInstaller | undefined;
 
@@ -507,10 +554,10 @@ function detectPackageManager(packageDir: string): PackageManager {
   return "npm";
 }
 
-function runInstall(pm: PackageManager, packageDir: string, packages: string[]): boolean {
+function runInstall(pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]): boolean {
   const env = { ...process.env, CI: process.env.CI ?? "true" };
   try {
-    const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages));
+    const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages, allowBuilds));
     const result = spawnSync(command, args, { cwd: packageDir, stdio: "ignore", env, shell });
     return result.status === 0;
   } catch {

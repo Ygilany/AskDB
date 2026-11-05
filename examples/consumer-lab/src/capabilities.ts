@@ -81,6 +81,16 @@ function httpApiLeavesDriversOptional(): boolean {
 }
 
 /**
+ * Whether the installed `askdb` leaves `@askdb/prisma` to the host, as the docs say
+ * (`install.mdx`, `guides/integrations/prisma.mdx`): its published manifest declares it an
+ * optional peer, not a dependency (#259).
+ */
+function askdbLeavesPrismaOptional(): boolean {
+  const { dependencies = {}, peerDependenciesMeta = {} } = installedManifest("askdb");
+  return !("@askdb/prisma" in dependencies) && peerDependenciesMeta["@askdb/prisma"]?.optional === true;
+}
+
+/**
  * Whether the installed `@askdb/client` builds models with `@askdb/ai`'s built-in providers when
  * `createAskDb` gets no `providers` (`reference/client-api.mdx`, `providers`: "Default: every
  * provider built into `@askdb/ai`"), as the lab's client path calls it. Detected from its
@@ -259,6 +269,11 @@ const DETECTORS = {
    * on `pg`.
    */
   "http-api-optional-drivers": httpApiLeavesDriversOptional,
+  /**
+   * `pnpm add askdb` alone exiting 0 on pnpm 11. Before #259 was fixed, `askdb` depended on
+   * `@askdb/prisma`, whose `@prisma/engines` install script pnpm 11 refuses to run unapproved.
+   */
+  "askdb-optional-prisma": askdbLeavesPrismaOptional,
   /**
    * `createAskDb({ config })` with no `providers`, the client path every scenario that compares
    * the two model paths takes (`reference/client-api.mdx`). Before `@askdb/ai`'s built-in

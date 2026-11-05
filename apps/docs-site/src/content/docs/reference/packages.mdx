@@ -178,15 +178,18 @@ It also exports the **connector provider registry**, which config-driven hosts u
 | Symbol | Purpose |
 | --- | --- |
 | `introspect(input, renderOptions, { connector })` | Run a connector and write the schema directory. |
-| `createConnectorRegistry(adapters)` | Build a registry from provider adapters. Returns `{ hasProvider, providers, createConnector, getTemplates, resolveConnection, connectionLabel }`. |
+| `createConnectorRegistry(adapters)` | Build a registry from provider adapters and lazy entries. Returns `{ hasProvider, providers, load, createConnector, getTemplates, resolveConnection, connectionLabel }`. `hasProvider` and `providers` list lazy entries without loading them. |
+| `registry.load(provider)` | Resolve the provider's adapter, importing a lazy entry on the first call. Concurrent calls share one import, and a failed one is retried on the next call. Call it once the engine is selected: until then, the methods below throw `Connector provider "<id>" is not loaded yet` for a lazy entry instead of falling back. Rejects for an unregistered provider, with the entry's own `load()` error, or when the loaded adapter's `provider` differs from the entry's. An adapter object is loaded already. |
 | `registry.resolveConnection(provider, { explicit?, runtime, surface? })` | Let the engine's adapter merge explicit values (for example `--url`) with AskDB runtime config (`getAskDbRuntimeConfig()`). Returns `{ ok, connection, sourceLabel }` or `{ ok: false, error }`. `sourceLabel` is `registry.connectionLabel(provider, connection)`, so it is safe to display for every adapter. |
 | `registry.connectionLabel(provider, { url?, fromExport?, schemaPath? })` | A label that is safe to display or log, for any adapter: the registry builds it with `formatConnectionLabel` from the parts the adapter's `connectionLabelParts` hook parses (host, port, database, or a file path). A connection that doesn't parse cleanly, or an adapter without the hook, gets `configured <engine> connection`. |
 | `ConnectorConnection` | The connection `connectionLabel` and an adapter's `connectionLabelParts` read: `{ url?, fromExport?, schemaPath? }`. |
 | `ConnectionLabelParts`, `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | From `@askdb/introspect/kit`: what `connectionLabelParts` returns (`{ host?, port?, database? }`, or `{ file }`), the allowlisted label builder, and a strict standard-URL parser for engines whose driver has no parser to reuse. The built-in engines don't use the parser: Postgres takes its parts from `pg-connection-string` and SQL Server's ADO.NET strings from `@tediousjs/connection-string`, the parsers their drivers use; MySQL reads a `mysql://` URL with the mapping `mysql2` applies; SQL Server's `mssql://` and Prisma-style `sqlserver://` URLs go through `@askdb/sqlserver`'s own connection parser; SQLite labels the file path. |
 | `ConnectorProviderAdapter` | The adapter shape: `createConnector`, plus optional `resolveConnection`, `connectionLabelParts`, `getTemplates`. |
-| `ConnectorProviderAdapters` | What `createConnectorRegistry` takes: an array of adapters, or an object keyed by provider id. |
+| `ConnectorProviderAdapters`, `ConnectorProviderEntry` | What `createConnectorRegistry` takes: an array of entries, or an object keyed by provider id. An entry is an adapter or a lazy entry. |
+| `LazyConnectorProviderAdapter` | A lazy entry, `{ provider, load(): Promise<ConnectorProviderAdapter> }`, for an engine package the host may not have installed. The CLI and Studio register `@askdb/prisma` this way, so only Prisma introspection imports it. |
 | `ConnectorProviderId`, `BuiltInConnectorProvider`, `BUILT_IN_CONNECTOR_PROVIDERS` | A provider id is any string; `BuiltInConnectorProvider` is the union of the first-party ids, which `BUILT_IN_CONNECTOR_PROVIDERS` lists (`postgres`, `prisma`, `mysql`, `sqlite`, `sqlserver`). |
 | `connectorProviderMissingMessage(provider)` | The error text for an unregistered provider: `Install @askdb/<id>` for a built-in id, otherwise the package that provides it. |
+| `connectorPackageMissingMessage({ provider, packageName, allowBuilds? })` | The CLI's and Studio's error text for a registered engine whose package isn't installed: an install command and the one-off `npx -p askdb -p <package>` form. With `allowBuilds` (dependencies whose install scripts pnpm must approve), the command is `npm install <package>`, or on pnpm 10.4 or later `pnpm add --allow-build=<dependency> <package>`. They pass it as the `missingMessage` of the `createOptionalDriverLoader` a lazy entry's `load` uses. The `askdb` binary registers only the first-party engines, so a third-party host writes its own message. |
 | `ConnectorConfig`, `ConnectorResult` | What `createConnector` takes (`provider`, the connection fields, `filters`, `schemaId`) and returns (`{ connector, input, mode }`). |
 | `ConnectorConnectionRequest`, `ConnectorRuntimeConfig` | What `resolveConnection` takes: `{ explicit?, runtime, surface? }`, where `runtime` is `getAskDbRuntimeConfig()` (typed structurally: `introspection` and optional `structured`). |
 | `ConnectorConnectionResult`, `ConnectorConnectionResolution` | What an adapter's `resolveConnection` hook returns (`{ ok, connection }` or `{ ok: false, error }`), and what `registry.resolveConnection` returns (the same, plus `sourceLabel`). |
@@ -199,13 +202,13 @@ File-only connector that reads `.prisma` schema files and produces AskDB physica
 
 <InstallTabs pkgs="@askdb/prisma @askdb/introspect ai" />
 
-See [the Prisma integration guide](/guides/integrations/prisma/).
+`askdb` and `@askdb/studio` list it as an optional peer and load it only for Prisma introspection, so install it next to them to introspect a Prisma schema from the CLI or Studio. It depends on Prisma, whose `@prisma/engines` build pnpm 11 must approve. See [the Prisma integration guide](/guides/integrations/prisma/#install).
 
 ## Authoring
 
 ### `@askdb/studio`
 
-Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package. Schema browsing, enrichment, and SQL generation do not require a database driver. The Query Playground's live execute feature supports Postgres, MySQL, SQLite, and SQL Server — each requires its own optional peer driver package.
+Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package. Schema browsing, enrichment, and SQL generation do not require a database driver. Resyncing from a Prisma schema needs `@askdb/prisma`, an optional peer. The Query Playground's live execute feature supports Postgres, MySQL, SQLite, and SQL Server — each requires its own optional peer driver package.
 
 <InstallTabs pkgs="@askdb/studio" />
 
@@ -296,19 +299,19 @@ See [the CLI reference](/reference/cli/).
 | `@askdb/core` | AI SDK core package (`ai`, AI SDK 6 or 7) as a required peer |
 | `@askdb/introspect` | `@askdb/core` |
 | `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
-| `@askdb/prisma` | `@askdb/introspect` |
+| `@askdb/prisma` | `@askdb/introspect`, Prisma (`@prisma/internals`) |
 | `@askdb/ai` | AI SDK core package (`ai`); `@ai-sdk/*` provider packages as optional peers |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
-| `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
+| `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used); `@askdb/prisma` as an optional peer |
 | `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
-| `askdb` (CLI) | All of the above (lazy-imported per command) |
+| `askdb` (CLI) | All of the above (lazy-imported per command), except `@askdb/prisma`, an optional peer |
 
 Reusable packages stay small and layered. First-party surfaces (CLI, Studio, HTTP API) compose them.
 
 ## What to install — by use case
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect, enrich, and ask from the CLI.</span></a>
+  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect a database, enrich, and ask from the CLI. Add <code>@askdb/prisma</code> to read a Prisma schema file.</span></a>
   <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/client</code> + <code>@askdb/core</code> + <code>@askdb/config</code> + <code>ai</code> + an AI SDK provider package such as <code>@ai-sdk/openai</code>.</span></a>
   <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
