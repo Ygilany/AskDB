@@ -59,7 +59,7 @@ Every PR needs an independent review before it leaves draft, and always when an 
 
 ### Docs house style
 
-Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow the Conventions above there.
+Docs follow the house style in `apps/docs-site/STYLE.md`.
 
 ## Where product/architecture decisions live
 
@@ -82,7 +82,6 @@ Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line n
 - Add a changeset (`pnpm changeset`) for any change to a publishable package. A change confined to test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`) under a package's `src` needs none, and CI doesn't require one. AskDB is pre-1.0 — breaking public API changes normally use a minor changeset unless the project is intentionally moving a package to 1.0.
 - Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names, APIs, or file paths there — verify against the actual source or existing docs content before writing a claim.
 - Markdown and MDX (docs, ADRs, skills, changesets, READMEs): one line per paragraph or list item, left for the editor to soft-wrap. Break lines only where the Markdown structure needs it — headings, list items, table rows, code blocks.
-- When opening an issue or PR, include a metadata section at the bottom with the originating thread ID and its worktree. Format: `Thread ID: <thread-uuid> (worktree <worktree-name>)`, e.g. `Thread ID: 743d36c3-aac8-423a-b74c-62e1bbc9fa00 (worktree t3code-a0ad9d56)`. The worktree directory name is not the thread ID; look the UUID up as described in `docs/agents/project-board.md` (**Thread lines**). This provides traceability back to the conversation that initiated the work and helps retrieve context later. A thread that picks up an existing issue adds `Worked on by: <thread-uuid> (worktree <worktree-name>)` below that footer.
 
 ## Reporting to the maintainer
 

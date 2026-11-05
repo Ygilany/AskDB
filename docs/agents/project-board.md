@@ -1,6 +1,6 @@
 # Project board
 
-AskDB's priorities and release scope live on GitHub Project **#27** (`https://github.com/users/Ygilany/projects/27`), owner `Ygilany`, project id `PVT_kwHOAKvYN84BZPEL`. Issues stay the record of *what* the work is (see `issue-tracker.md`); the board records *how much it matters and when it ships*. Who filed and who is working on an item is recorded in its body (see **Thread lines**).
+AskDB's priorities and release scope live on GitHub Project **#27** (`https://github.com/users/Ygilany/projects/27`), owner `Ygilany`, project id `PVT_kwHOAKvYN84BZPEL`. Issues stay the record of *what* the work is (see `issue-tracker.md`); the board records *how much it matters and when it ships*.
 
 ## Ownership
 
@@ -13,31 +13,9 @@ AskDB's priorities and release scope live on GitHub Project **#27** (`https://gi
 
 A thread's **lane** is the Workstream named in its charter (the thread's first message or the maintainer's latest restatement). A thread works items in its lane, plus items the maintainer hands it directly.
 
-## Thread lines
-
-A thread is identified by two values, and the lines below carry both:
-
-- **Thread ID**: the T3 thread UUID (e.g. `743d36c3-aac8-423a-b74c-62e1bbc9fa00`). This is what T3's ⌘K search matches, so it's the value that leads back to the conversation.
-- **Worktree**: the T3 worktree directory name (e.g. `t3code-a0ad9d56`), the basename of `git rev-parse --show-toplevel`. It isn't the thread ID, and T3 search doesn't match it.
-
-Look up your thread UUID from T3's local database, read-only, from inside your worktree:
-
-```bash
-sqlite3 -readonly ~/.t3/userdata/state.sqlite "select thread_id from projection_threads where worktree_path = '$(git rev-parse --show-toplevel)' and deleted_at is null order by coalesce(latest_user_message_at, created_at) desc limit 1;"
-```
-
-A worktree can host more than one thread; the query picks the one with the most recent user message, which is the thread you're running in. If the query returns nothing, write `Thread ID: unknown (worktree <worktree-name>)` rather than putting the worktree name in the ID slot.
-
-Two lines at the bottom of an issue body, below a `---` rule, record the threads involved:
-
-- `Thread ID: <thread-uuid> (worktree <worktree-name>)`: the thread that filed it (the footer `AGENTS.md` requires). Written once.
-- `Worked on by: <thread-uuid> (worktree <worktree-name>)`: the thread that picked it up. Added when work starts; a PR's own `Thread ID` footer covers the rest.
-
-Older items carry only the worktree name (`Thread ID: t3code-…`). Leave them as they are.
-
 ## Steps
 
-1. **Choosing what's next**: take the highest-Priority `Ready` item in your lane (query below). Before the first commit, set Status `In progress` and add your `Worked on by` line to the issue body.
+1. **Choosing what's next**: take the highest-Priority `Ready` item in your lane (query below). Before the first commit, set Status `In progress`.
 2. **Finding work along the way** (a bug, a doc mismatch, a gap): file an issue per `issue-tracker.md`, add it to the board with Status `Inbox`, set the Workstream you'd propose, and leave Priority empty. List it in your next summary to the maintainer. Your current item stays your focus; the new issue waits for the maintainer to route it.
 3. **Opening a PR**: put `Closes #<n>` in the body. The issue is the card: the board moves it to `In review` when the PR opens and to `Done` when it merges, and the PR shows as its linked PR. Leave the PR itself off the board. A PR with no issue behind it (a dependency bump, a small chore) goes on the board itself, with Status `In review`.
 4. **Needing a decision**: add the `needs-decision` label and a `## Decision needed` section to the issue or PR body: the options, their trade-offs, and your recommendation. Set Status `Blocked`. Remove the label once the maintainer answers, and record the answer in the body.

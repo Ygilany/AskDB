@@ -4,7 +4,7 @@
 
 Accepted (2026-10-07). Proposed 2026-09-27, revised 2026-09-29 after two independent review rounds, and brought up to date with `main` on 2026-10-07. The maintainer chose the direction first: checks are pure rules, one decision point owns the modes, and enforcement points act on its verdict. On 2026-10-07 the maintainer settled the two remaining questions: **reuse is enforced by re-checking at rebind, with no stored verdict** (see "Enforcing reuse"), and **`ask()` rejects a `global`-scope answer that still has a tenant placeholder**, the same rule as the binder (see "`global` answers with tenant placeholders"). Re-checking at rebind reverses a design-review decision recorded in plan 033 (see "What this reverses").
 
-Implementation is tracked in #310. Stage (a) of the plan below is done: #341 (fixing #315) moved the tenant check to the pre-render forms. PRs #186, #197 and #192, which this ADR originally waited for, have merged. ADR 0012 records the stance this ADR assumes: AskDB's checks are defense in depth, and the database is the security and tenant boundary.
+Implementation is tracked in #310. Stage (b) is implemented in #485. Stage (a) of the plan below is done: #341 (fixing #315) moved the tenant check to the pre-render forms. PRs #186, #197 and #192, which this ADR originally waited for, have merged. ADR 0012 records the stance this ADR assumes: AskDB's checks are defense in depth, and the database is the security and tenant boundary.
 
 ## Context
 

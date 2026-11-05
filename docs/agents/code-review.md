@@ -70,7 +70,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 | Paths | Apply |
 |---|---|
 | `packages/core/src/sql/{validate,lexer,dialect-spec,extract-sql,sensitive-guardrail}.ts` | security review, SQL guardrails, latent defects block |
-| `packages/core/src/sql/tenant-*.ts`, `packages/core/src/sql/{bind,parameter-manifest}.ts`, `packages/core/src/ask.ts` | security review, Tenant scope, latent defects block |
+| `packages/core/src/sql/tenant-*.ts`, `packages/core/src/sql/{bind,rebind,guardrails,guardrail-decide,parameter-manifest}.ts`, `packages/core/src/ask.ts` | security review, Tenant scope, latent defects block |
 | `packages/core/src/sql/{sensitive-guardrail,prompt}.ts`, `packages/core/src/schema/**`, `packages/core/src/retrieval/**`, `packages/core/src/enrichment/**`, `packages/core/src/logging/**`, `packages/rag/src/chunker/**` | security review, Sensitive fields |
 | `apps/studio/src/{server,request-guard,execute-registry,introspection,setup}.ts`, `apps/studio/src/web/**`, `apps/http-api/src/**` | security review, Local servers |
 | `packages/*/src/exec/**`, `packages/*/src/connector/provider.ts`, `packages/connectors/src/**`, `packages/config/src/**`, `apps/cli/src/{init,introspect,project-config}.ts` | security review, Connection strings and secrets |
@@ -161,7 +161,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Docs-site claims name only package names, APIs and file paths that exist in source (`AGENTS.md`, "Conventions"), and no doc claims AskDB executes SQL, owns credentials or trains on customer data (`apps/docs-site/STYLE.md`, "Sources of truth").
 - Every documented install of a package that loads `@askdb/core` lists `ai`, because Yarn doesn't auto-install peers (#196).
 - **Changelog or changeset rule:** every change to a publishable package has a changeset, except a change confined to test files, which needs none (`pnpm changeset`; the bump level is *Architecture*'s versioning rule) (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Before Opening a PR"); docs-site changes carry a patch changeset for `@askdb/docs-site`, which CI doesn't check (`apps/docs-site/STYLE.md`, "Process").
-- **House style:** `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow `AGENTS.md` there.
+- **House style:** `apps/docs-site/STYLE.md`.
 
 ## What code review flags
 
@@ -232,7 +232,6 @@ Commands the lenses run, and what "green" looks like (each exits 0):
 ## Posting
 
 - **Delivery:** a pending review left for a human to submit; `COMMENT` only on request; never approve or request changes.
-- **Footer:** `Thread ID: <thread-uuid> (worktree <worktree-name>)`, the line `AGENTS.md` ("Conventions") asks for on PRs and issues; the worktree directory name is not the thread ID, so look the UUID up as `docs/agents/project-board.md` (**Thread lines**) describes.
 
 ## Stacked PRs
 
