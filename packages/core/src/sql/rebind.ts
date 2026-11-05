@@ -78,9 +78,11 @@ type Values = Record<string, QueryParameterValue | readonly QueryParameterValue[
  * Throws `QueryParameterError` without `guardrails` (`MISSING_GUARDRAIL_CONTEXT`), for a
  * `:tenant_*` key in `values` (`TENANT_VALUE_SUPPLIED`), and when the tenant markers can't
  * be aligned with the business params (`TENANT_PARAM_ALIGNMENT`). Throws `TenantScopeError`
- * for a missing or invalid scope, an unexpanded `subtree` (`SUBTREE_NOT_RESOLVABLE`), and a
+ * for a missing or invalid scope, an unexpanded `subtree` (`SUBTREE_NOT_RESOLVABLE`), a
  * placeholder the scope has no IDs for, including any placeholder under a `global` scope or
- * a schema without a tenant policy (`UNRESOLVED_TENANT_PLACEHOLDER`). Synchronous.
+ * a schema without a tenant policy (`UNRESOLVED_TENANT_PLACEHOLDER`), and a tenant ID
+ * that isn't printable ASCII or that contains a backslash, which `sql` can't inline safely
+ * (`UNESCAPABLE_TENANT_ID`). Synchronous.
  */
 export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guardrails: BindGuardrails): BoundQuery {
   if (typeof guardrails !== "object" || guardrails === null || guardrails.schema === undefined) {
@@ -143,7 +145,7 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
 
   let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true });
   if (policy && scope) {
-    const sql = resolveTenantSql(bound.sql, policy, scope, "sql-only", 1, spec).sql;
+    const sql = inlineTenantIdsForRebind(bound.sql, policy, scope, spec);
     const unbound = bindTenantIntoUnboundSql(bound, {
       namedSql: prepared.namedSql,
       tenantPolicy: policy,
@@ -263,4 +265,31 @@ export function bindTenantIntoUnboundSql(
     indices: b.indices.map((i) => indexMap.get(i)!),
   }));
   return { unboundSql: unbound.sql, params: combined, bindings };
+}
+
+/**
+ * The rebind's `sql` always inlines the tenant IDs, so an ID that can't be inlined has no
+ * other mode to go to here: say so, instead of `resolveTenantSql()`'s advice to switch
+ * `tenantSqlMode`, which `bindPreparedQuery()` doesn't take.
+ */
+function inlineTenantIdsForRebind(
+  sql: string,
+  policy: NormalizedTenantPolicy,
+  scope: TenantScope,
+  spec: DialectSpec,
+): string {
+  try {
+    return resolveTenantSql(sql, policy, scope, "sql-only", 1, spec).sql;
+  } catch (error) {
+    if (error instanceof TenantScopeError && error.reason === "UNESCAPABLE_TENANT_ID") {
+      throw new TenantScopeError(
+        "A tenant ID contains a backslash or a character outside printable ASCII, and bindPreparedQuery() " +
+          "inlines tenant IDs into the sql it returns: a server whose string settings or connection charset " +
+          "differ from the dialect's can read such an ID as the end of the literal, so it can't be rebound. " +
+          "ask() with tenantSqlMode 'sql-params' (the default) passes it as a driver parameter instead.",
+        "UNESCAPABLE_TENANT_ID",
+      );
+    }
+    throw error;
+  }
 }

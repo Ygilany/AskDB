@@ -85,7 +85,7 @@ interface AskPipelineOptions {
   mode?: AskDbModeV1                 // 'schema_only' | 'bounded_results'
   retriever?: Retriever              // optional RAG retriever from @askdb/rag
   tenantScope?: TenantScope          // optional tenant scope from multi-tenancy
-  tenantSqlMode?: TenantSqlOutputMode // 'sql-only' | 'sql-params'
+  tenantSqlMode?: TenantSqlOutputMode // 'sql-params' (default for built-in dialects; a custom AskDialect, or a DialectSpec with another id, must set it with a tenant scope) | 'sql-only'
   resolveTenantDescendants?: ResolveTenantDescendants // expands a 'subtree' scope into IDs per tenant root; required for subtree
   /**
    * Ask the model for unbound SQL + a parameter manifest (default true).
@@ -102,14 +102,14 @@ interface AskPipelineOptions {
 interface AskPipelineResult {
   sql: string                        // model's bound SQL — never overwritten by rebind
   unboundSql?: string                // driver markers; use with params
-  params?: QueryParamSlot[]          // values for unboundSql in marker order; includes tenant IDs in 'sql-params'
+  params?: QueryParamSlot[]          // values for unboundSql in marker order; includes tenant IDs in 'sql-params' (default)
   parameters?: QueryParameterBinding[] // named — for form UIs (includes values)
   preparedQuery?: PreparedQuery      // definitions + template only (no values)
   explain?: unknown
   verdict: GuardrailVerdict          // every guardrail finding + outcome ('allow' | 'warn'); a 'deny' throws (ADR 0010)
   sensitiveGuardrail?: SensitiveGuardrailResult // derived from verdict
   tenantGuardrail?: TenantGuardrailResult // derived from verdict; checked on the model's sql (+ sql-unbound block) before rendering
-  tenantParams?: unknown[]           // 'sql-params' only: tenant IDs for the markers in `sql` (run sql with these; never concat with params)
+  tenantParams?: unknown[]           // 'sql-params' (default) only: tenant IDs for the markers in `sql` (run sql with these; never concat with params)
   tenantBindings?: TenantBinding[]
 }
 

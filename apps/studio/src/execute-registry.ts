@@ -458,7 +458,9 @@ type MssqlMod = {
 
 /**
  * Rewrite `$1`, `$2`, ... or bare `?` positional params to MSSQL `@p0`, `@p1`, ...
- * and return an object of named bindings.
+ * and return an object of named bindings. SQL that already uses `@pN` markers (from
+ * `ask()` with the sqlserver dialect) is bound as written: rewriting it would turn a `?`
+ * or `$…` inside a string literal, or a money literal, into a marker.
  */
 function rewriteSqlServerParams(sql: string, params: unknown[]): { sql: string; bindings: Record<string, unknown> } {
   if (params.length === 0) return { sql, bindings: {} };
@@ -466,6 +468,7 @@ function rewriteSqlServerParams(sql: string, params: unknown[]): { sql: string; 
   params.forEach((value, idx) => {
     bindings[`p${idx}`] = value;
   });
+  if (/@p\d/.test(sql)) return { sql, bindings };
   // Replace $N placeholders (1-indexed) first, then bare ? placeholders.
   let idx = 0;
   const rewritten = sql

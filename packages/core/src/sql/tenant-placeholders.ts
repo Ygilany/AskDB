@@ -7,10 +7,9 @@ import {
   type TenantScope,
   type TenantAccess,
 } from "../schema/v2/tenant-policy.js";
-import { getDialectSpec, isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import {
   escapeSqlLiteral,
-  escapeSqlLiteralLegacy,
   formatMarker,
   isTenantPlaceholderName,
   markerStyleForDialect,
@@ -25,6 +24,26 @@ import {
 // ---------------------------------------------------------------------------
 
 export type TenantSqlOutputMode = "sql-only" | "sql-params";
+
+/**
+ * The `tenantSqlMode` used when a caller doesn't set one: tenant IDs leave the SQL text
+ * and bind through the dialect's driver markers. Hosts that report or forward the mode
+ * import this rather than hard-code it.
+ */
+export const DEFAULT_TENANT_SQL_MODE: TenantSqlOutputMode = "sql-params";
+
+/**
+ * Refuse a `tenantSqlMode` that is neither `"sql-only"` nor `"sql-params"`. Rendering it as
+ * either would guess at the host's intent, and a custom `AskDialect`'s `$N` markers are money
+ * constants on SQL Server, so it fails closed (ADR 0024).
+ */
+export function assertTenantSqlMode(mode: unknown, caller: string): asserts mode is TenantSqlOutputMode {
+  if (mode === "sql-only" || mode === "sql-params") return;
+  throw new TenantScopeError(
+    `${caller} got tenantSqlMode ${JSON.stringify(mode)}; it must be 'sql-params' or 'sql-only'.`,
+    "TENANT_SQL_MODE_REQUIRED",
+  );
+}
 
 export type TenantBinding = {
   placeholder: string;
@@ -50,11 +69,10 @@ export type TenantPlaceholderResult =
 
 /**
  * The parts of a dialect the tenant substituter reads: `id` picks the driver
- * marker style (`$N` / `?` / `@pN`); `backslashEscapes` drives literal escaping.
- * When `backslashEscapes` is unset, a built-in `id` supplies it (on for MySQL and
- * MariaDB); with an unknown `id`, a tenant ID containing a backslash throws
- * rather than guess. Omit the dialect entirely for Postgres-style `$N` markers
- * and quote-doubling only.
+ * marker style (`$N` / `?` / `@pN`), and with `backslashEscapes` it says how to lex
+ * the SQL, so only placeholders in code regions are substituted. Inlined tenant IDs
+ * are escaped the same way on every dialect (printable ASCII only, quotes doubled, no backslash).
+ * Omit the dialect entirely for Postgres-style `$N` markers and Postgres lexing.
  */
 export type TenantSqlDialect = Partial<Pick<DialectSpec, "id" | "backslashEscapes">>;
 
@@ -174,25 +192,30 @@ export function unexpandedSubtreeError(
 // Substitution — token-aware, one edit per code-region occurrence
 // ---------------------------------------------------------------------------
 
-function escapeTenantId(value: string, dialect?: TenantSqlDialect): string {
-  if (dialect === undefined) {
-    return escapeSqlLiteralLegacy(value);
-  }
-  let backslashEscapes = dialect.backslashEscapes;
-  if (backslashEscapes === undefined && dialect.id !== undefined && isBuiltInDialectId(dialect.id)) {
-    backslashEscapes = getDialectSpec(dialect.id).backslashEscapes;
-  }
-  if (backslashEscapes === undefined && value.includes("\\")) {
-    // Doubling quotes alone leaves `\'` able to close the literal on an engine
-    // that reads backslash escapes (MySQL's default), so don't guess.
+/** Printable ASCII without the backslash: the only characters a tenant-ID literal may hold. */
+const INLINABLE_TENANT_ID = /^[\x20-\x5b\x5d-\x7e]*$/;
+
+/**
+ * Inline one tenant ID as a string literal. A literal of printable ASCII, with no
+ * backslash and its quotes doubled, reads the same whether or not the server treats
+ * backslash as an escape, and goes out as the same bytes in every ASCII-compatible
+ * connection charset. Any other ID has no such form: a backslash breaks out on a server
+ * that reads strings differently from the dialect (Postgres with
+ * `standard_conforming_strings = off`), and a non-ASCII character's bytes depend on the
+ * connection charset (`¥` is sent as 0x5C, a backslash, under `sjis`, `cp932` or `ujis`).
+ * So it's refused on every dialect, never guessed at (ADR 0024).
+ */
+function escapeTenantId(value: string): string {
+  if (!INLINABLE_TENANT_ID.test(value)) {
     throw new TenantScopeError(
-      `A tenant ID contains a backslash, and dialect '${dialect.id ?? "(no id)"}' does not say ` +
-        "whether backslash escapes inside string literals. Set backslashEscapes on the dialect, " +
-        "or use tenantSqlMode 'sql-params'.",
+      "A tenant ID contains a backslash or a character outside printable ASCII, which tenantSqlMode " +
+        "'sql-only' can't inline safely: a server whose string settings or connection charset differ from " +
+        "the dialect's can read it as the end of the literal. Use tenantSqlMode 'sql-params' (the default) " +
+        "to pass tenant IDs as driver parameters.",
       "UNESCAPABLE_TENANT_ID",
     );
   }
-  return escapeSqlLiteral(value, { backslashEscapes });
+  return escapeSqlLiteral(value, undefined);
 }
 
 type Edit = { start: number; end: number; text: string };
@@ -365,12 +388,7 @@ function replacePlaceholdersWithLiterals(
   resolved: ResolvedPlaceholder[],
   dialect?: TenantSqlDialect,
 ): string {
-  return substituteTenantPlaceholders(
-    sql,
-    resolved,
-    (r) => r.ids.map((id) => escapeTenantId(id, dialect)),
-    dialect,
-  );
+  return substituteTenantPlaceholders(sql, resolved, (r) => r.ids.map(escapeTenantId), dialect);
 }
 
 // ---------------------------------------------------------------------------
@@ -429,9 +447,10 @@ function replacePlaceholdersWithParams(
 
 /**
  * Substitute the `:tenant_<root>_ids` placeholders in `sql` with the IDs from
- * `scope` — as escaped literals (`"sql-only"`), or as dialect driver markers plus
- * a `params` array (`"sql-params"`). Only placeholders in code regions are
- * touched; text inside string literals and quoted identifiers is left as-is.
+ * `scope` — as dialect driver markers plus a `params` array (`"sql-params"`, the
+ * default), or as escaped literals (`"sql-only"`, for a tool that takes one SQL
+ * string). Only placeholders in code regions are touched; text inside string
+ * literals and quoted identifiers is left as-is.
  *
  * A `subtree` access must already be expanded into per-root IDs (a `multi_root`
  * access, or `ids` when the subtree is one root table): `ask()` does this via its
@@ -439,11 +458,14 @@ function replacePlaceholdersWithParams(
  * an unexpanded `subtree` throws (`SUBTREE_NOT_RESOLVABLE`) rather than bind the
  * seed IDs only.
  *
+ * Throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) for a `mode` other than
+ * `"sql-only"` or `"sql-params"`.
  * Also throws `TenantScopeError` when a placeholder cannot be resolved
  * (`UNRESOLVED_TENANT_PLACEHOLDER`) or when a multi-ID scope meets a predicate
- * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when
- * a tenant ID holds a backslash but the dialect's escaping is unknown
- * (`UNESCAPABLE_TENANT_ID`). Throws `SchemaParseError` when two of the policy's roots
+ * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when a
+ * tenant ID contains a backslash or a character outside printable ASCII, on every dialect
+ * (`UNESCAPABLE_TENANT_ID`).
+ * Throws `SchemaParseError` when two of the policy's roots
  * derive the same placeholder, rather than bind one root's IDs through the other's.
  *
  * A `global` scope binds no IDs: SQL without a tenant placeholder is returned unchanged,
@@ -455,10 +477,11 @@ export function resolveTenantSql(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
-  mode: TenantSqlOutputMode = "sql-only",
+  mode: TenantSqlOutputMode = DEFAULT_TENANT_SQL_MODE,
   paramStartIndex: number = 1,
   dialect?: TenantSqlDialect,
 ): TenantPlaceholderResult {
+  assertTenantSqlMode(mode, "resolveTenantSql()");
   if (scope.access.kind === "subtree") {
     throw unexpandedSubtreeError(scope.access.tenantRoot, "resolveTenantSql()");
   }

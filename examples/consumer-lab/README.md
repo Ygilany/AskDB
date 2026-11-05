@@ -303,7 +303,7 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 | Scenario | What it checks |
 |---|---|
 | `tenant-ids` | Every scoped question, in `sql-only` and `sql-params` mode, with `ids: ["2"]`: every executable pair (`sql` with `tenantParams`, and `unboundSql` with `params` when present) returns agency 2's rows, and not those of its child 7. |
-| `tenant-ids-hostile` | In `sql-only` mode, the tenant ID `2' OR '1'='1` (and on MySQL and MariaDB `2\' OR 1=1 -- `) is escaped: run as the host, the SQL returns no row outside agency 2, or the engine refuses to compare the integer column with the string. |
+| `tenant-ids-hostile` | In `sql-only` mode, the tenant ID `2' OR '1'='1` is escaped: run as the host, the SQL returns no row outside agency 2, or the engine refuses to compare the integer column with the string. On MySQL and MariaDB, `2\' OR 1=1 -- ` is refused with `UNESCAPABLE_TENANT_ID` (releases before the fix for #371 escaped it, and the same row check applies). |
 | `tenant-subtree` | The same questions with `subtree` access from agencies 1, 5, 6 and 7 and the lab's resolver: exactly the visible agencies' rows, and the resolver is called once with the root and the seed. |
 | `tenant-subtree-seeds` | A resolver that returns strict descendants only (agency 1 still sees 1, 4, 5 and 6, because `ask()` unions the seeds in), and two seeds at once (5 and 2 see 2, 5, 6 and 7). |
 | `tenant-strict-unfiltered` | A reply with no tenant filter returns every agency's rows when run raw, and strict mode rejects it with `TenantGuardrailError`. |

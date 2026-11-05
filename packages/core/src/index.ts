@@ -15,6 +15,7 @@ export {
   type ValidateSensitiveReferencesOptions,
 } from "./sql/sensitive-guardrail.js";
 export {
+  DEFAULT_TENANT_SQL_MODE,
   resolveTenantSql,
   extractTenantPlaceholders,
   placeholderForRoot,

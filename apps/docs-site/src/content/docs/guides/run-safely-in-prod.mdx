@@ -124,7 +124,7 @@ See [Privacy model](/concepts/privacy-model/) for what crosses the boundary in e
 
 ## Multi-tenancy
 
-If your app is multi-tenant, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs a heuristic check that each scoped table has a tenant predicate that filters. That check doesn't prove the query is scoped correctly, so enforce tenant isolation in the database too, for example with Postgres row-level security keyed on a per-request setting. See [Multi-tenancy](/guides/multi-tenancy/).
+If your app is multi-tenant, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs a heuristic check that each scoped table has a tenant predicate that filters. By default (`tenantSqlMode: "sql-params"`) the IDs are driver parameters, never part of the SQL text: run `result.sql` with `result.tenantParams`, or `result.unboundSql` with `result.params`. Keep that default in production. `sql-only` inlines the IDs as literals, for tools that take one SQL string. That check doesn't prove the query is scoped correctly, so enforce tenant isolation in the database too, for example with Postgres row-level security keyed on a per-request setting. See [Multi-tenancy](/guides/multi-tenancy/).
 
 ## Read next
 

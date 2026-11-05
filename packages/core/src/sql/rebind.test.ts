@@ -212,6 +212,26 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     expect(bound.sql).toBe(`SELECT count(*) FROM orders WHERE agency_id = '2' AND status = '${token}'`);
     expect(bound.params).toEqual([token, "2"]);
   });
+
+  // The `sql` a rebind returns always inlines the tenant IDs, and only printable ASCII
+  // without a backslash reads the same under every server string setting and connection
+  // charset (#371; `¥` goes out as 0x5C under sjis), so the rebind refuses any other ID
+  // rather than return a `sql` that can lose its tenant predicate (ADR 0024). A rebind has
+  // no tenantSqlMode, so the message must not send the caller to one.
+  it.each(["x\\' OR 1=1 -- ", "2\u00a5' OR 1=1 -- "])("throws UNESCAPABLE_TENANT_ID for the tenant ID %j", (id) => {
+    expect(() =>
+      bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
+        schema: strictSchema,
+        tenantScope: agencyIds(id),
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        name: "TenantScopeError",
+        reason: "UNESCAPABLE_TENANT_ID",
+        message: expect.stringContaining("bindPreparedQuery()"),
+      }),
+    );
+  });
 });
 
 // The tenant rule reads `:status_nameOR` as one token; a renderer that substituted

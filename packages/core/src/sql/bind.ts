@@ -276,11 +276,6 @@ export function escapeSqlLiteralList(
   return `(${values.map((v) => escapeSqlLiteral(v, dialect)).join(", ")})`;
 }
 
-/** Quote-doubling only — used when no dialect is supplied (legacy tenant path). */
-export function escapeSqlLiteralLegacy(value: string): string {
-  return "'" + value.replace(/'/g, "''") + "'";
-}
-
 // ---------------------------------------------------------------------------
 // Marker allocation
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LanguageModel } from "ai";
@@ -11,7 +11,7 @@ import {
 } from "./tenant-placeholders.js";
 import { ask, type AskDialect } from "../ask.js";
 import { SchemaParseError, TenantScopeError } from "../errors.js";
-import { getDialectSpec, type BuiltInDialectId } from "./dialect-spec.js";
+import { getDialectSpec, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
 import {
   placeholderForRoot as publicPlaceholderForRoot,
@@ -85,7 +85,7 @@ describe("ask() — tenant SQL output modes", () => {
     access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
   };
 
-  it("defaults to sql-only mode with inlined literals", async () => {
+  it("inlines escaped literals in sql-only mode", async () => {
     const dialect: AskDialect = {
       generate: async () => ({
         sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
@@ -98,6 +98,7 @@ describe("ask() — tenant SQL output modes", () => {
       model: fakeModel,
       dialect,
       tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
     });
 
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = '42'");
@@ -106,25 +107,117 @@ describe("ask() — tenant SQL output modes", () => {
     expect(result.tenantParams).toBeUndefined();
   });
 
-  it("returns positional params in sql-params mode", async () => {
-    const dialect: AskDialect = {
-      generate: async () => ({
-        sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
-      }),
-    };
-
+  // The one owner of the default (#231): without tenantSqlMode, tenant IDs leave the
+  // SQL text, and `sql` runs with `tenantParams`.
+  it("defaults to sql-params: sql has driver markers and runs with tenantParams", async () => {
     const result = await ask({
       question: "count orders",
       schema,
       model: fakeModel,
-      dialect,
+      dialect: "postgres",
       tenantScope: agencyScope,
-      tenantSqlMode: "sql-params",
+      deps: {
+        generateText: (async () => ({
+          text: "```sql\nSELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
+        })) as never,
+      },
     });
 
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
     expect(result.tenantParams).toEqual(["42"]);
     expect(result.tenantBindings).toHaveLength(1);
+  });
+
+  // AskDB can't know which markers a custom AskDialect's driver takes, and the `$N` it
+  // would default to is a money constant on SQL Server: `agency_id = $1` runs and returns
+  // agency 1's rows. So the host must choose the mode, and ask() refuses before the model call.
+  it("refuses a custom AskDialect with a tenant scope and no tenantSqlMode, before calling it", async () => {
+    const generate = vi.fn(async () => ({
+      sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
+    }));
+
+    const error = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: { generate },
+      tenantScope: agencyScope,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    expect(generate).not.toHaveBeenCalled();
+    // Choosing a mode is all it takes: an explicit sql-params keeps `$N`.
+    const chosen = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: { generate },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    });
+    expect(chosen.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
+  });
+
+  // AskDB picks tenant markers only for an engine it knows: a built-in id, or a DialectSpec
+  // under one. Spread from SQL Server under another id, the spec's markers are unknown too,
+  // and the `$1` a default would give matches agency 1's rows there (ADR 0024).
+  it("refuses a DialectSpec whose id isn't built in, and keeps the default under a built-in id", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
+    }));
+    const sqlServer = getDialectSpec("sqlserver");
+    const run = (dialect: DialectSpec) =>
+      ask({ question: "count orders", schema, model: fakeModel, dialect, tenantScope: agencyScope, deps: { generateText: generateText as never } });
+
+    // "constructor" is an Object.prototype key, not a built-in id.
+    for (const id of ["mssql", "constructor"]) {
+      const error = await run({ ...sqlServer, id } as unknown as DialectSpec).catch((e: unknown) => e);
+      expect(error, id).toBeInstanceOf(TenantScopeError);
+      expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    }
+    expect(generateText).not.toHaveBeenCalled();
+    // A spread that keeps the built-in id is still that engine, with its own markers.
+    const spread = await run({ ...sqlServer, blockedFunctions: [...(sqlServer.blockedFunctions ?? []), "my_udf"] });
+    expect(spread.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = @p0");
+  });
+
+  // A mode ask() doesn't recognise is no choice: rendered as sql-params, it would give a
+  // custom AskDialect `$N` (agency 1's rows on SQL Server). So it fails closed, on every dialect.
+  it.each(["sql_only", ""])("refuses the unrecognised tenantSqlMode %j before calling the model", async (mode) => {
+    const sql = "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids";
+    const generate = vi.fn(async () => ({ sql }));
+    const generateText = vi.fn(async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` }));
+
+    for (const dialect of [{ generate }, "postgres"] as const) {
+      const error = await ask({
+        question: "count orders",
+        schema,
+        model: fakeModel,
+        dialect,
+        tenantScope: agencyScope,
+        tenantSqlMode: mode as never,
+        deps: { generateText: generateText as never },
+      }).catch((e: unknown) => e);
+
+      expect(error, typeof dialect).toBeInstanceOf(TenantScopeError);
+      expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+    }
+    expect(generate).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  // resolveTenantSql() is public too, for a host that renders SQL itself; ask() always
+  // passes a mode, so its own default needs its own owner.
+  it("resolveTenantSql() also defaults to sql-params", () => {
+    const out = resolveTenantSql("SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids", policy, agencyScope);
+    expect(out.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
+    expect(out.mode === "sql-params" && out.params).toEqual(["42"]);
+  });
+
+  it("resolveTenantSql() refuses a mode it doesn't recognise", () => {
+    const sql = "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(reasonOf(() => resolveTenantSql(sql, policy, agencyScope, "inline" as never))).toBe("TENANT_SQL_MODE_REQUIRED");
   });
 
   it("passes through unmodified for global scope", async () => {
@@ -141,6 +234,7 @@ describe("ask() — tenant SQL output modes", () => {
       model: fakeModel,
       dialect,
       tenantScope: globalScope,
+      tenantSqlMode: "sql-only",
     });
 
     expect(result.sql).toBe("SELECT COUNT(*) FROM orders");
@@ -158,6 +252,7 @@ describe("ask() — tenant SQL output modes", () => {
         model: fakeModel,
         dialect: { generate: async () => ({ sql: `SELECT COUNT(*) FROM orders WHERE agency_id = ${placeholder}` }) },
         tenantScope: { access: { kind: "global", reason: "admin" } },
+        tenantSqlMode: "sql-only",
       }).catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(TenantScopeError);
@@ -422,49 +517,42 @@ describe("resolveTenantSql — only code regions are substituted", () => {
     expect(codeRegions(out.sql)).toMatch(/AND note =/);
   });
 
-  describe("a crafted tenant ID with a backslash", () => {
-    const hostile: TenantScope = {
-      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["x\\' OR 1=1 -- "] },
-    };
+  // Inlined, a tenant ID must read the same whatever the server's string settings and
+  // connection charset (ADR 0024). A backslash ends the literal early on a server that reads
+  // strings differently from the dialect (#371: on Postgres with standard_conforming_strings
+  // = off, `'x\'' OR 1=1 -- '` returned every row), and with no dialect (a custom
+  // AskDialect, #360) the reading is unknown. A non-ASCII character's bytes depend on the
+  // connection charset: `¥` goes out as 0x5C, a backslash, under sjis, cp932 or ujis. So
+  // sql-only inlines only printable ASCII without a backslash, on every dialect, and
+  // sql-params carries any other ID as a driver parameter.
+  describe("a tenant ID that can't be inlined safely", () => {
+    const ids = (id: string): TenantScope => ({
+      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [id] },
+    });
+    // The edges just outside U+0020 to U+007E are refused too: a newline, NUL, U+001F and DEL.
+    const refused = ["x\\' OR 1=1 -- ", "2\u00a5' OR 1=1 -- ", "東京", "a\nb", "a\u0000b", "a\u001fb", "a\u007fb"];
     const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
 
-    // A dialect that names a built-in engine but leaves backslashEscapes unset gets
-    // that engine's escaping: MySQL reads `\'` as an escaped quote by default.
-    it.each([
+    it.each<[string, TenantSqlDialect | undefined]>([
+      ["no dialect (a custom AskDialect)", undefined],
+      ["the Postgres spec", getDialectSpec("postgres")],
+      ["Postgres with backslashEscapes: true (standard_conforming_strings = off)", { id: "postgres", backslashEscapes: true }],
       ["the MySQL spec", getDialectSpec("mysql")],
-      ["{ id: 'mysql' }", { id: "mysql" as const }],
-      ["{ id: 'mariadb' }", { id: "mariadb" as const }],
-    ])("stays inside its literal on MySQL given %s", (_label, dialect) => {
-      const out = resolveTenantSql(sql, policy, hostile, "sql-only", 1, dialect);
-      expect(out.sql).toBe("SELECT * FROM orders WHERE agency_id = 'x\\\\'' OR 1=1 -- '");
-    });
-
-    it("keeps quote-doubling-only behavior when no dialect is supplied", () => {
-      const scope: TenantScope = {
-        access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["acme\\"] },
-      };
-      expect(resolveTenantSql(sql, policy, scope, "sql-only").sql).toBe(
-        "SELECT * FROM orders WHERE agency_id = 'acme\\'",
+      ["{ id: 'mariadb' }", { id: "mariadb" }],
+      ["MySQL with backslashEscapes: false (NO_BACKSLASH_ESCAPES)", { id: "mysql", backslashEscapes: false }],
+      ["an id whose escaping is unknown", { id: "oracle" } as unknown as TenantSqlDialect],
+    ])("is refused in sql-only mode and bound as a parameter in sql-params mode, given %s", (_label, dialect) => {
+      for (const id of refused) {
+        expect(reasonOf(() => resolveTenantSql(sql, policy, ids(id), "sql-only", 1, dialect)), id).toBe(
+          "UNESCAPABLE_TENANT_ID",
+        );
+        const params = resolveTenantSql(sql, policy, ids(id), "sql-params", 1, dialect);
+        expect(params.mode === "sql-params" && params.params, id).toEqual([id]);
+      }
+      // Printable ASCII is still inlined, from the space to the tilde, with quotes doubled.
+      expect(resolveTenantSql(sql, policy, ids("it's ~ok"), "sql-only", 1, dialect).sql).toBe(
+        "SELECT * FROM orders WHERE agency_id = 'it''s ~ok'",
       );
-    });
-
-    it("an explicit backslashEscapes: false is honored (NO_BACKSLASH_ESCAPES)", () => {
-      const dialect = { id: "mysql" as const, backslashEscapes: false };
-      const out = resolveTenantSql(sql, policy, hostile, "sql-only", 1, dialect);
-      expect(out.sql).toBe("SELECT * FROM orders WHERE agency_id = 'x\\'' OR 1=1 -- '");
-    });
-
-    it("throws for a dialect whose escaping is unknown, instead of guessing", () => {
-      const unknown = { id: "oracle" } as unknown as TenantSqlDialect;
-      expect(reasonOf(() => resolveTenantSql(sql, policy, hostile, "sql-only", 1, unknown))).toBe(
-        "UNESCAPABLE_TENANT_ID",
-      );
-      // IDs without a backslash escape the same either way, and markers carry no literal.
-      expect(resolveTenantSql(sql, policy, agencyOne, "sql-only", 1, unknown).sql).toBe(
-        "SELECT * FROM orders WHERE agency_id = '42'",
-      );
-      const params = resolveTenantSql(sql, policy, hostile, "sql-params", 1, unknown);
-      expect(params.mode === "sql-params" && params.params).toEqual(["x\\' OR 1=1 -- "]);
     });
   });
 
@@ -551,6 +639,7 @@ describe("resolveTenantSql — placeholders derived per root", () => {
           ],
         },
       },
+      "sql-only",
     );
     expect(result.sql).toBe(
       "SELECT id FROM orders WHERE agency_id = '1' " +
