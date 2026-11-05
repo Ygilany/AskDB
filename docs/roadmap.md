@@ -4,7 +4,7 @@ High-level implementation order in **small phases**. Each phase should end with 
 
 ## Phase 1 ✅ — Schema in, SQL out (CLI), tabular results
 
-> **As built:** execution later left AskDB. Since Phase 4 (and Phase 7.5, which removed the Postgres executor from core), `ask()` returns checked SQL only, and the host runs it ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
+> **As built:** execution later left the CLI and core. Since Phase 4 (and Phase 7.5, which removed the Postgres executor from core), `ask()` returns checked SQL only, and the host runs it ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
 
 Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-provider NL→SQL plus dev guardrails, optional read-only Postgres execution, tabular results, fixtures/tests, Turborepo, and CI.
 
@@ -211,7 +211,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 
 **Milestone:** [1.0.0-rc.1 — public launch](https://github.com/Ygilany/AskDB/milestone/2). There is no fixed date: rc.1 ships when the milestone's gates close.
 
-- **1.0 promises checked SQL only** — the library, the CLI and the HTTP API return checked SQL, and AskDB never executes it. Reports, result summaries and a non-stub `bounded_results` come after 1.0 (Phase 12).
+- **1.0 promises checked SQL only** — the library, the CLI and the HTTP API return checked SQL and never execute it (Studio's optional Playground **Execute** is a local development tool). Reports, result summaries and a non-stub `bounded_results` come after 1.0 (Phase 12).
 - **Surfaces at 1.0** — the library (`@askdb/core`, `@askdb/client`), the `askdb` CLI, the HTTP API (`@askdb/http-api`) and Studio. Agents use the CLI and the HTTP API; MCP comes after 1.0 (Phase 14).
 - **The 1.0 package set** — `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. Studio, `@askdb/enrich` and `@askdb/rag` stay 0.x, and their APIs may still move (#354).
 - **Engines** — all five engine families (PostgreSQL, MySQL, MariaDB, SQLite, SQL Server) are supported, and the consumer lab covers each one, including its tenant suite.
@@ -236,14 +236,14 @@ Phases 12 to 14 come after the stable 1.0.0 release.
 
 **Goal:** Full "text to SQL and into reports" promise.
 
-- Structured **report templates** and richer outputs on top of results the host supplies (AskDB still never executes SQL), still respecting mode and data-boundary rules.
+- Structured **report templates** and richer outputs on top of results the host supplies (the library, the CLI and the HTTP API still never execute SQL), still respecting mode and data-boundary rules.
 - Make **`bounded_results` non-stub** — optional second model pass with **explicit** consent; **project out sensitive columns** from row payloads before any summary LLM; budgets per [`modes-v1.md`](contracts/modes-v1.md).
 
 ## Phase 13 — Multi-tenant production depth
 
 **Goal:** Move beyond the Phase 10 proof into first-class tenant scoping for production deployments.
 
-Fixes that close gaps in the existing tenant check (such as #399) ship earlier, in the 1.0.0 stable milestone.
+Fixes that close gaps in the existing tenant check (such as #399) don't wait for this phase: they ship before it, in the 1.0.0 stable milestone.
 
 - Harden policy composition across surfaces, database engines, and report-generation modes.
 - Support richer tenant-policy authoring, audit output, and host integration hooks for production access-control systems.

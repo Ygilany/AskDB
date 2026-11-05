@@ -1,6 +1,6 @@
 # Mission
 
-AskDB turns natural language into **checked, schema-grounded SQL** so teams can ask questions about their own data without becoming SQL experts. AskDB returns the SQL and never executes it: the host application runs it under its own database controls. Reports and result summaries come after 1.0 (see [`roadmap.md`](roadmap.md), Phase 12).
+AskDB turns natural language into **checked, schema-grounded SQL** so teams can ask questions about their own data without becoming SQL experts. The library, the CLI and the HTTP API return the SQL and never execute it: the host application runs it under its own database controls. The one exception is Studio's optional Playground **Execute**, a local development tool that is off by default (see [`SECURITY.md`](../SECURITY.md#studio-execute)). Reports and result summaries come after 1.0 (see [`roadmap.md`](roadmap.md), Phase 12).
 
 ## Target audience
 
@@ -12,7 +12,7 @@ AskDB turns natural language into **checked, schema-grounded SQL** so teams can 
 
 We optimize for two things at once:
 
-1. **Trust-first analytics** — Answers are anchored in the customer’s database schema. AskDB returns checked SQL and never executes it; the host runs it under its own database controls ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)). Row-level data is treated as sensitive by default: at 1.0 the model reasons over schema only, and the NL→SQL call carries no row payloads. When data must touch the model, it should be **explicit, bounded, and user-controlled**, aligned with the product’s “modes”: a `bounded_results` mode that summarizes a bounded subset of the host’s own results comes after 1.0 (roadmap Phase 12). Until then `bounded_results` is reserved and behaves exactly like `schema_only` ([`modes-v1.md`](contracts/modes-v1.md)).
+1. **Trust-first analytics** — Answers are anchored in the customer’s database schema. AskDB returns checked SQL and, outside Studio's local Playground, never executes it; the host runs it under its own database controls ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)). Row-level data is treated as sensitive by default: at 1.0 the model reasons over schema only, and the NL→SQL call carries no row payloads. When data must touch the model, it should be **explicit, bounded, and user-controlled**, aligned with the product’s “modes”: a `bounded_results` mode that summarizes a bounded subset of the host’s own results comes after 1.0 (roadmap Phase 12). Until then `bounded_results` is reserved and behaves exactly like `schema_only` ([`modes-v1.md`](contracts/modes-v1.md)).
 
 2. **Developer-first embed** — AskDB is built to be **plugged into projects** as **installable npm packages**: bring-your-own API keys, bring-your-own database connectivity, bring-your-own embedding provider, and bring-your-own vector store. The headless core (`@askdb/core`), the config-driven facade (`@askdb/client`) and companion packages (the `askdb` CLI, `@askdb/http-api`, the engine packages, `@askdb/studio`, `@askdb/rag`), plus a future SDK + embeddable UI (similar in spirit to Clerk or OpenRouter), let teams ship “ask your data” inside their own apps without rebuilding the pipeline.
 
@@ -31,7 +31,7 @@ We optimize for two things at once:
 ## Non-goals (for now)
 
 - Owning the customer’s database or credentials centrally.
-- Executing generated SQL. AskDB returns SQL; the host decides whether and how to run it ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
+- Executing generated SQL in an application's runtime. AskDB returns SQL; the host decides whether and how to run it ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)). Studio's optional Playground **Execute** is a local development tool, not an execution path for applications.
 - Training proprietary models on customer data.
 - Guaranteeing domain-specific business correctness without human review of critical queries—users remain accountable for production queries and access control.
 

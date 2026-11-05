@@ -237,7 +237,7 @@ How much of the **schema context** the model sees depends on the chosen mode:
 
 ## Status
 
-Phases 1–10 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, schema enrichment, RAG indexing and retrieval, Studio (React browser UI), and multi-tenancy proof. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+Phases 1–11 are implemented: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, schema enrichment, RAG indexing and retrieval, Studio (React browser UI), multi-tenancy proof, and the MySQL, MariaDB, SQLite and SQL Server engines. The 1.0 release candidate, stable 1.0 and later phases are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## License
 

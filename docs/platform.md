@@ -28,7 +28,7 @@ AskDB ships as a set of focused npm packages. Each one has a single responsibili
 | `@askdb/ai` | AI provider registry: resolves AskDB config into AI SDK language and embedding models, with built-in OpenAI, Azure OpenAI, Google Gemini, Anthropic, and Vercel AI Gateway providers. | 1.0.0 |
 | `askdb` | The `askdb` binary (`init`, `introspect`, `ask`, `studio`, `enrich`, `bundle`, `rag`); a wrapper over the other packages. | 1.0.0 |
 | `@askdb/http-api` | HTTP server surface over `@askdb/core`; `POST /ask` returns checked SQL only. | 1.0.0 |
-| `@askdb/introspect` | Schema introspection: engine-agnostic `Connector` contract, orchestrator, and Schema v2 renderer. Engine packages supply the connectors. | 1.0.0 |
+| `@askdb/introspect` | Schema introspection: engine-agnostic `Connector` contract, orchestrator, connector registry (`createConnectorRegistry`), `@askdb/introspect/kit` helpers that engine packages build on, and Schema v2 renderer. Engine packages supply the connectors. | 1.0.0 |
 | `@askdb/postgres` | Postgres engine package: introspection connector (live and from-export bundle), catalog SQL templates, and a `pg`-backed catalog query runner. | 1.0.0 |
 | `@askdb/mysql` | MySQL and MariaDB engine package: introspection connector via `information_schema` and a `mysql2`-backed catalog query runner. | 1.0.0 |
 | `@askdb/sqlite` | SQLite engine package: introspection connector via `sqlite_master` and PRAGMA functions, and a `better-sqlite3`-backed catalog query runner. | 1.0.0 |
@@ -70,7 +70,7 @@ Studio's shadcn setup lives in `apps/studio/components.json`. Add components fro
 
 `@askdb/introspect` (Phase 6) is the package that turns a real database into a Schema v2 physical artifact.
 
-- **Connector pattern** — One small `Connector` interface per engine. Each engine package supplies its connector: `@askdb/postgres` (Phase 6), then `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlite`, `@askdb/sqlserver`, and `@askdb/prisma` for Prisma schema files, added one at a time in [`roadmap.md`](roadmap.md) Phase 11.
+- **Connector pattern** — One small `Connector` interface per engine. Each engine package supplies its connector: `@askdb/postgres` (Phase 6), then `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlite`, `@askdb/sqlserver`, and `@askdb/prisma` for Prisma schema files, added one at a time in [`roadmap.md`](roadmap.md) Phase 11. Each engine package also exports a connector provider adapter, which hosts register with `createConnectorRegistry` (ADR 0008).
 - **Two front doors, one connector** — For Postgres, both modes produce the **same** `IntrospectionResult` and the **same** on-disk artifact. The other engines support the live front door only.
   - **Live** — pass a `CatalogQueryRunner`; the connector runs documented catalog queries against the live database (`pg_catalog` / `information_schema` on Postgres, `information_schema` on MySQL and MariaDB, `sqlite_master` and PRAGMA functions on SQLite, `sys.*` views on SQL Server).
   - **Air-gapped** (Postgres only) — run the same SQL templates in `psql`, an IDE, or CI; export the rows as a bundle (CSV/JSON); hand the bundle path to `@askdb/introspect` and get an identical artifact without AskDB ever touching credentials.
