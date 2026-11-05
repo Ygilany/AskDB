@@ -232,7 +232,6 @@ Commands the lenses run, and what "green" looks like (each exits 0):
 ## Posting
 
 - **Delivery:** a pending review left for a human to submit; `COMMENT` only on request; never approve or request changes.
-- **Footer:** `Thread ID: <thread-uuid> (worktree <worktree-name>)`, the line `AGENTS.md` ("Conventions") asks for on PRs and issues; the worktree directory name is not the thread ID, so look the UUID up as `docs/agents/project-board.md` (**Thread lines**) describes.
 
 ## Stacked PRs
 
