@@ -3,8 +3,8 @@
 //
 // It reads the HTML in dist/, so it sees every link a reader can click: Markdown links, links in
 // MDX components, the sidebar, and pagination. External links (http:, mailto:, //host) are not
-// checked. A redirect page counts as its target, so a link to a moved page's anchor is checked
-// against the page it moved to.
+// checked. A link with a #fragment to a redirect page fails, because the redirect (a meta refresh)
+// drops the fragment and the reader lands at the top of the new page.
 import { realpathSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
@@ -22,28 +22,34 @@ function decodeEntities(text) {
   });
 }
 
-/** `html` without the contents of its script and style elements, which hold code, not markup. */
+/** `html` without comments, or the contents of script and style elements, which hold code. */
 function markupOnly(html) {
-  return html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+  return html.replace(/<!--[\s\S]*?-->/g, "").replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
 }
 
-/** The value of attribute `name` in `tag` (one start tag), with entities decoded, or undefined. */
-function attribute(tag, name) {
-  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`, "i").exec(tag);
-  if (!match) return undefined;
-  return decodeEntities(match[1] ?? match[2] ?? match[3]);
+// A start tag. A quoted attribute value is read whole, so a `>` inside one doesn't end the tag, and
+// markup inside one (a code sample in a copy button's `data-code`) is never read as a tag.
+const START_TAG = /<([a-z][^\s/>]*)((?:"[^"]*"|'[^']*'|[^"'>])*)>/gi;
+const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+
+/** Each start tag in `html`: its lower-case name and attributes, the first of a repeated one winning. */
+function* startTags(html) {
+  for (const [, name, rest] of markupOnly(html).matchAll(START_TAG)) {
+    const attributes = new Map();
+    for (const [, key, double, single, bare] of rest.matchAll(ATTRIBUTE)) {
+      const lower = key.toLowerCase();
+      if (!attributes.has(lower)) attributes.set(lower, decodeEntities(double ?? single ?? bare ?? ""));
+    }
+    yield { name: name.toLowerCase(), attributes };
+  }
 }
 
 /** Every `id` in `html`, and every `name` on an `<a>`: the anchors a fragment can land on. */
 function anchorsIn(html) {
   const anchors = new Set();
-  for (const [tag] of markupOnly(html).matchAll(/<[a-z][^>]*>/gi)) {
-    const id = attribute(tag, "id");
-    if (id !== undefined) anchors.add(id);
-    if (/^<a\s/i.test(tag)) {
-      const name = attribute(tag, "name");
-      if (name !== undefined) anchors.add(name);
-    }
+  for (const { name, attributes } of startTags(html)) {
+    if (attributes.has("id")) anchors.add(attributes.get("id"));
+    if (name === "a" && attributes.has("name")) anchors.add(attributes.get("name"));
   }
   return anchors;
 }
@@ -51,18 +57,17 @@ function anchorsIn(html) {
 /** The `href` of every `<a>` in `html`. */
 function linksIn(html) {
   const links = [];
-  for (const [tag] of markupOnly(html).matchAll(/<a\s[^>]*>/gi)) {
-    const href = attribute(tag, "href");
-    if (href !== undefined) links.push(href);
+  for (const { name, attributes } of startTags(html)) {
+    if (name === "a" && attributes.has("href")) links.push(attributes.get("href"));
   }
   return links;
 }
 
 /** The target of a `<meta http-equiv="refresh">` in `html` (an Astro redirect page), or undefined. */
 function redirectTargetIn(html) {
-  for (const [tag] of html.matchAll(/<meta\s[^>]*>/gi)) {
-    if (attribute(tag, "http-equiv")?.toLowerCase() !== "refresh") continue;
-    const url = /url\s*=\s*(.+)$/i.exec(attribute(tag, "content") ?? "");
+  for (const { name, attributes } of startTags(html)) {
+    if (name !== "meta" || attributes.get("http-equiv")?.toLowerCase() !== "refresh") continue;
+    const url = /url\s*=\s*(.+)$/i.exec(attributes.get("content") ?? "");
     if (url) return url[1].trim().replace(/^['"]|['"]$/g, "");
   }
   return undefined;
@@ -98,22 +103,17 @@ export function brokenLinks(files, base = "/") {
     for (const href of linksIn(html)) {
       if (href === "" || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) continue;
       const url = new URL(href, pageUrl);
-      let target = fileFor(decodeURIComponent(url.pathname));
+      const target = fileFor(decodeURIComponent(url.pathname));
       if (target === undefined) {
         failures.push({ page, href, reason: "no page at this path" });
         continue;
       }
-      if (url.hash.length <= 1) continue;
-      // Follow one redirect, so the fragment is checked on the page the reader lands on.
-      const redirect = files.get(target) === null ? undefined : redirectTargetIn(files.get(target));
+      if (url.hash.length <= 1 || files.get(target) === null) continue;
+      const redirect = redirectTargetIn(files.get(target));
       if (redirect !== undefined) {
-        target = fileFor(decodeURIComponent(new URL(redirect, new URL(url.pathname, pageUrl)).pathname));
-        if (target === undefined) {
-          failures.push({ page, href, reason: `redirects to ${redirect}, which has no page` });
-          continue;
-        }
+        failures.push({ page, href, reason: `redirects to ${redirect}, which drops the #fragment; link there directly` });
+        continue;
       }
-      if (files.get(target) === null) continue;
       const fragment = decodeURIComponent(url.hash.slice(1));
       if (!anchorsOf(target).has(fragment)) {
         failures.push({ page, href, reason: `no id="${fragment}" on ${target}` });
@@ -139,7 +139,8 @@ async function readSite(distDir) {
   return files;
 }
 
-if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Compare real paths, so a run through a symbolic link (macOS's /tmp) still runs the check.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const distDir = fileURLToPath(new URL("../dist", import.meta.url));
   const failures = brokenLinks(await readSite(distDir), process.argv[2] ?? "/");
   if (failures.length > 0) {
