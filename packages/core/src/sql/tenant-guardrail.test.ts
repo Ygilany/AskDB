@@ -447,6 +447,15 @@ describe("validateTenantGuardrails — MySQL comments are read the way MySQL rea
     expect(rules(sql, POSTGRES_DIALECT)).toEqual([]);
   });
 
+  // #698: the statement's first keyword is read with the same lexer, so a body MySQL runs
+  // can't hide a non-query in front of a scoped query.
+  it("a `/*! … */` executable comment can't hide a non-query in front of a query", () => {
+    const sql = "/*! DO SLEEP(1) */ SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(rules(sql, MYSQL_DIALECT)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql, POSTGRES_DIALECT)).toEqual([]);
+  });
+
   it("a predicate only inside a `/*! … */` executable comment doesn't count: an older server skips it", () => {
     const sql = "SELECT * FROM orders WHERE status = 'paid' /*!99999 AND agency_id = :tenant_agency_ids */";
     expect(rules(sql, MYSQL_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE"]);
@@ -476,6 +485,222 @@ describe("validateTenantGuardrails — parenthesized set-operation operands are 
     ["a parenthesized operand inside a scalar subquery", `SELECT (SELECT 1 UNION (${scoped})) AS x, o.* FROM orders o`],
   ])("rejects %s", (_label, sql) => {
     expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+});
+
+// #698 review: a server can start a statement without a `;` (T-SQL), and a comment or a
+// string setting can hide where one starts, so the rule reads every way a server splits them.
+describe("validateTenantGuardrails — every statement is a query, however the server splits them (#698)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
+  const scoped = "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids";
+
+  it.each([POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT])("refuses DO and CALL under $id", (dialect) => {
+    expect(rules("DO SLEEP(0)", dialect)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules("CALL refresh_orders()", dialect)).toEqual(["NOT_SELECT_OR_WITH"]);
+  });
+
+  it("doesn't run under a global scope, which reads every row by design", () => {
+    expect(validateTenantGuardrails("DO SLEEP(0)", warnPolicy, globalScope).warnings).toEqual([]);
+  });
+
+  // T-SQL needs no `;` between statements: SQL Server runs `SELECT 1 EXEC(...)` as two.
+  it.each([
+    `${scoped} EXEC('SELECT * FROM orders')`,
+    `${scoped} EXEC refresh_orders`,
+    `WITH o AS (${scoped}) SELECT id FROM o DECLARE @x int`,
+  ])("refuses a T-SQL statement that follows a query with no `;`: %s", (sql) => {
+    expect(rules(sql, SQLSERVER_DIALECT)).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // A word T-SQL denies starts a statement only after a complete expression; inside one (a
+  // MySQL `IF()`, a column or alias named `open`, `FOR UPDATE`, a subquery) it doesn't.
+  it.each([
+    "SELECT id, IF(id > 5, 'a', 'b') AS size FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT id, open FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT o.close AS open FROM orders o WHERE o.agency_id = :tenant_agency_ids",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND id IN (SELECT open FROM t)",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids FOR UPDATE",
+  ])("passes a query with a T-SQL statement word inside an expression: %s", (sql) => {
+    for (const dialect of [undefined, POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT]) {
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual([]);
+    }
+  });
+
+  // A value such as NULL is a complete expression, so a verb after it starts a statement.
+  it("refuses a T-SQL verb after a keyword that ends an expression", () => {
+    expect(rules(`${scoped} AND note IS NULL EXEC refresh_orders`, SQLSERVER_DIALECT)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // MySQL skips a `/*!NNNNN … */` body on a server older than NNNNN, so the `;` and the
+  // statement after it are code under that reading.
+  it("refuses a statement that a versioned MySQL comment hides", () => {
+    const sql = `${scoped} /*!99999 'x */ ; DO SLEEP(0) -- '*/`;
+    expect(rules(sql, MYSQL_DIALECT)).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // Under NO_BACKSLASH_ESCAPES, `'a\'` ends the literal and `--1` isn't a comment, so the
+  // `;` starts a statement. A custom dialect's server may run either string setting.
+  it("refuses, for a custom dialect, a statement only one string setting splits off", () => {
+    const sql = `${scoped} AND note = 'a\\' --1 ; PREPARE s FROM 'SELECT 1'`;
+    expect(rules(sql)).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql, { ...MYSQL_DIALECT, backslashEscapes: false })).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql, MYSQL_DIALECT)).not.toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // Standard strings end `'a\'` at the second quote, so `; DO …` is a statement; with
+  // backslash escapes (MySQL's default) the whole tail is one literal.
+  it("reads a `;` inside a literal the way each server does", () => {
+    const sql = `SELECT 'a\\'; DO SLEEP(1); --'`;
+    expect(rules(sql, POSTGRES_DIALECT)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql, MYSQL_DIALECT)).toEqual([]);
+    for (const dialect of [undefined, POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT]) {
+      expect(rules(`SELECT 'x;y' AS note, id FROM orders WHERE agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+    }
+  });
+
+  // `[a;b]` is a quoted name on SQL Server but a `;` between two tokens on Postgres or
+  // MySQL; a custom dialect's statement must be a query under every reading, so it's refused.
+  it("refuses `[a;b]` for a custom dialect, and accepts it on SQL Server", () => {
+    const sql = "SELECT [a;b] FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(rules(sql)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql, SQLSERVER_DIALECT)).toEqual([]);
+  });
+});
+
+// #702: the per-table checks blank string literals and see only the statement's own tables, so
+// a call that runs a query or reads a table named in a string, runs SQL over another
+// connection, or rewrites a setting row-level security reads is out of their sight.
+describe("validateTenantGuardrails — a call the tenant check can't read through is refused (#702)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
+  const everyDialect = [undefined, POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT];
+  const scoped = "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids";
+
+  it.each([
+    ["a query passed as a string", "SELECT query_to_xml('SELECT * FROM orders', true, false, '') AS x"],
+    ["a table named in a string", "SELECT table_to_xml('orders', true, false, '') AS x"],
+    ["SQL over another connection", "SELECT * FROM dblink('dbname=app', 'SELECT id FROM orders') AS t(id int)"],
+    ["a linked-server query", "SELECT * FROM OPENQUERY(self, 'SELECT id FROM orders')"],
+    ["a setting row-level security reads", "SELECT set_config('app.agency_ids', '1,2,3', true) AS s"],
+  ])("refuses %s under every dialect", (_label, sql) => {
+    for (const dialect of everyDialect) {
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual(["UNCHECKABLE_FUNCTION"]);
+    }
+  });
+
+  // `docs/contracts/tenant-policy.md` lists every function the rule refuses. They're typed out
+  // here, so a misspelled or dropped entry in the check's own list fails a test.
+  it.each([
+    "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema", "cursor_to_xml", "ts_stat", "ts_rewrite",
+    "crosstab", "crosstab2", "crosstab3", "crosstab4",
+    "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
+    "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
+    "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
+    "dblink_fetch", "dblink_get_result", "dblink_build_sql_insert", "dblink_build_sql_update", "xpath_table",
+    "openquery", "openrowset", "opendatasource",
+    "set_config",
+  ])("refuses a call to %s, as the contract lists", (name) => {
+    expect(rules(`SELECT ${name}('x') AS v`)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
+  // Postgres resolves each of these to `query_to_xml`. It doesn't care how the name is
+  // qualified or cased, or what comment sits before the `(`.
+  it.each([
+    ["schema-qualified", "SELECT pg_catalog.query_to_xml('SELECT * FROM orders', true, false, '')"],
+    ["quoted", `SELECT pg_catalog."query_to_xml"('SELECT * FROM orders', true, false, '')`],
+    ["upper case", "SELECT QUERY_TO_XML('SELECT * FROM orders', true, false, '')"],
+    ["with a comment before its parenthesis", "SELECT query_to_xml /* x */ ('SELECT * FROM orders', true, false, '')"],
+    // The lexer reads `:set_config` as a placeholder; Postgres reads `:` and then the call.
+    ["after a colon in an array slice (set_config)", "SELECT (ARRAY[1, 2])[1:set_config('a', 'b', true)::int] AS v"],
+    ["after a colon in an array slice (crosstab)", "SELECT (ARRAY[1, 2])[1:crosstab('x')] AS v"],
+  ])("refuses a function name written %s", (_label, sql) => {
+    expect(rules(sql, POSTGRES_DIALECT)).toEqual(["UNCHECKABLE_FUNCTION"]);
+    expect(rules(sql)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
+  // Under standard strings `'a\'` ends at the second quote, so the call is code. Under
+  // MySQL's backslash escapes, it sits inside the literal. A custom dialect's server may run
+  // either setting.
+  it("refuses a call that only one string setting shows", () => {
+    const sql = `${scoped} AND note = 'a\\' AND query_to_xml('x', true, false, '') IS NOT NULL --'`;
+    expect(rules(sql, POSTGRES_DIALECT)).toContain("UNCHECKABLE_FUNCTION");
+    expect(rules(sql)).toContain("UNCHECKABLE_FUNCTION");
+    expect(rules(sql, MYSQL_DIALECT)).not.toContain("UNCHECKABLE_FUNCTION");
+  });
+
+  // A listed name counts in any code position, not only right before `(`: Postgres reaches a
+  // function in forms with no `(` after its name (#702 review, round 3). So a column, an alias
+  // or a placeholder named like a listed function is refused too, a false positive the rule
+  // accepts so that no spelling of a call gets past it.
+  it.each([
+    ["a column", `SELECT crosstab FROM orders WHERE agency_id = :tenant_agency_ids`],
+    ["an alias", `SELECT note AS set_config FROM orders WHERE agency_id = :tenant_agency_ids`],
+    ["a qualified name", `SELECT o.ts_stat FROM orders o WHERE o.agency_id = :tenant_agency_ids`],
+    ["a placeholder", `${scoped} AND note = :set_config`],
+  ])("refuses a listed name used as %s", (_label, sql) => {
+    for (const dialect of everyDialect) {
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual(["UNCHECKABLE_FUNCTION"]);
+    }
+  });
+
+  // MySQL reads `"…"` as a string, and with ANSI_QUOTES as a name, so a listed name in one counts.
+  it("refuses a listed name in double quotes under MySQL", () => {
+    expect(rules(`SELECT "query_to_xml"('x') AS v`, MYSQL_DIALECT)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
+  // Text inside a single-quoted literal isn't code, so a listed name there doesn't count.
+  it("passes a listed name inside a string", () => {
+    for (const dialect of everyDialect) {
+      expect(rules(`${scoped} AND note = 'query_to_xml(1)'`, dialect), dialect?.id ?? "custom").toEqual([]);
+    }
+  });
+});
+
+describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+
+  // Postgres reads U&"\006Frders" as orders: on Postgres 17 it returned both tenants' rows.
+  it.each([
+    ["a scoped table", `SELECT id FROM U&"\\006Frders"`],
+    ["a scoped table with UESCAPE", `SELECT id FROM U&"!006Frders" UESCAPE '!'`],
+    ["a function call", `SELECT * FROM U&"\\0071uery_to_xml"('SELECT * FROM orders', true, false, '')`],
+    ["a name right after a slice's `:`", `SELECT (ARRAY[1,2,3])[1:U&"\\006Frders"] AS x`],
+  ])("reports %s under every reading that includes Postgres", (_label, sql) => {
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    }
+  });
+
+  it("refuses it under strict enforcement", () => {
+    expect(() => validateTenantGuardrails(`SELECT id FROM U&"\\006Frders"`, policy, agencyScope)).toThrow(TenantGuardrailError);
+  });
+
+  it("leaves engines without U& names alone", () => {
+    // MySQL reads "\006Frders" as a string, and `u & 'x'` with a space is an operator on Postgres.
+    expect(findings(`SELECT u&"x" AS a FROM agencies WHERE id = :tenant_agency_ids`, MYSQL_DIALECT)).toEqual([]);
+    for (const operator of [`u & "x"`, `u& "x"`, `u &"x"`]) {
+      expect(findings(`SELECT ${operator} AS a FROM agencies WHERE id = :tenant_agency_ids`, POSTGRES_DIALECT)).toEqual([]);
+    }
+  });
+
+  it("reads an unknown dialect with backslash escapes both ways", () => {
+    // With escapes on, 'a\'' is one string and the U& name after it is code; with them off,
+    // 'a\' ends early and the name sits inside the next string. The setting adds the escapes-on
+    // reading to the plain one, so the name is reported (postgresReadingProfiles, #703).
+    const sql = String.raw`SELECT 'a\'' AS z, U&"\006Frders" AS y FROM agencies WHERE id = :tenant_agency_ids`;
+    const custom = (backslashEscapes: boolean) =>
+      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
+    expect(findings(sql, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, custom(false))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
   });
 });
 

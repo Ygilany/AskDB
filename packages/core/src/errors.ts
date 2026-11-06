@@ -33,6 +33,11 @@ export type SqlValidationRuleCode =
    */
   | "SQL_STRING_CONTINUATION"
   /**
+   * Postgres family: a Unicode-escaped identifier (`U&"set\005fconfig"`). Its escapes can spell
+   * a name the other checks look for, such as a denylisted function, so it is refused (#692).
+   */
+  | "SQL_UNICODE_ESCAPED_IDENTIFIER"
+  /**
    * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
    * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
    * parentheses after a name, which SQL Server may read as a hint.
@@ -157,6 +162,33 @@ export type TenantGuardrailRuleCode =
   | "MISSING_TYPE_DISCRIMINATOR"
   | "UNKNOWN_TABLE_REFERENCED"
   | "UNPROVABLE_SCOPE"
+  /**
+   * A statement doesn't start with `SELECT` or `WITH` (a `DO` block, `CALL`, `EXPLAIN`,
+   * `SHOW`, …), so the tenant check can't read what it touches. A statement ends at each
+   * `;`, and on SQL Server also at a statement verb such as `EXEC` with no `;` before it.
+   * Reported for the whole SQL, with `tableId: ""`, under every dialect, a custom
+   * `AskDialect` included; not under a `global` scope, where the tenant check doesn't run
+   * (#698).
+   */
+  | "NOT_SELECT_OR_WITH"
+  /**
+   * The SQL names a function whose reads the tenant check can't see, in any code position (a
+   * column, alias or placeholder named like one counts too): one that runs a query
+   * passed as a string (`query_to_xml`, `crosstab`), reads a table named in a string
+   * (`table_to_xml`), runs SQL over another connection (`dblink`, `OPENQUERY`), or sets a
+   * value row-level security may read (`set_config`). Reported for the whole SQL, with
+   * `tableId: ""`, under every dialect, a custom `AskDialect` included; not under a `global`
+   * scope (#702).
+   */
+  | "UNCHECKABLE_FUNCTION"
+  /**
+   * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a
+   * function. Postgres decodes it, and the tenant check matches names as written, so it can't
+   * tell what the name reads. Reported for the whole SQL, with `tableId: ""`, whenever the SQL
+   * is read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not under
+   * a `global` scope (#704, #692).
+   */
+  | "UNICODE_ESCAPED_IDENTIFIER"
   /**
    * An `E'…'` string continued on a later line, which Postgres reads with backslash escapes and
    * the tenant check doesn't, so a table or call after it could be hidden. Reported for the

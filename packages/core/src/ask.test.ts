@@ -1360,6 +1360,15 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     ).rejects.toThrow(TenantGuardrailError);
   });
 
+  it("strict: rejects a scoped table written as a U& name, which the read-only check doesn't see here (#704)", async () => {
+    const schema = loadSchema(multiTenantDir);
+    // A custom AskDialect skips validateSelectSql, so only the tenant check stands in the way.
+    const dialect: AskDialect = { generate: async () => ({ sql: 'SELECT id FROM U&"\\006Frders"' }) };
+    const rejection = ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "UNICODE_ESCAPED_IDENTIFIER", tableId: "" }] });
+  });
+
   it("does not trust a custom dialect's self-reported passing guardrail", async () => {
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = {
@@ -1409,6 +1418,125 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     };
     const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
+  // #698: read-only validation is a custom dialect's own job (ADR 0010), tenant enforcement
+  // isn't. The check reads a `DO` body as a dollar-quoted string, so it saw no scoped table
+  // and passed. Under a tenant policy every statement must be a query the check can read.
+  const scopedSelect = "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids";
+  const nonQueries: Array<[string, string, string]> = [
+    ["a DO block", "DO $$ BEGIN RAISE EXCEPTION '%', (SELECT string_agg(id::text, ',') FROM orders); END $$", "DO"],
+    ["CALL", "CALL refresh_orders()", "CALL"],
+    ["EXPLAIN of a scoped query", `EXPLAIN ${scopedSelect}`, "EXPLAIN"],
+    ["SHOW", "SHOW search_path", "SHOW"],
+    ["a DO block behind a leading comment", "/* note */ DO $$ BEGIN PERFORM 1 FROM orders; END $$", "DO"],
+    ["a DO block after a scoped query", `${scopedSelect}; DO $$ BEGIN PERFORM 1 FROM orders; END $$`, "DO"],
+    ["a statement a versioned MySQL comment hides", `SELECT 1 /*!99999 , 'x */ --1 ; PREPARE s FROM "SELECT * FROM orders" ; EXECUTE s -- '*/`, "PREPARE"],
+  ];
+  const warnSchema = () => {
+    const base = loadSchema(multiTenantDir);
+    return { ...base, tenantPolicy: { ...base.tenantPolicy!, enforcement: "warn" as const } };
+  };
+
+  it.each(nonQueries)("strict: refuses %s from a custom dialect (NOT_SELECT_OR_WITH)", async (_label, sql, keyword) => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    const warnings = (error as TenantGuardrailError).warnings;
+    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(warnings[0]!.message).toContain(keyword);
+  });
+
+  // T-SQL needs no `;`: SQL Server runs a query followed by `EXEC …` as two statements. The
+  // predicate check also flags the query, so this asserts the rule is among the warnings.
+  it("strict: refuses a T-SQL EXEC after a query with no `;` from a custom dialect", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql: `${scopedSelect} EXEC refresh_orders` }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    expect((error as TenantGuardrailError).warnings.map((w) => w.rule)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  it.each(nonQueries)("warn: returns %s from a custom dialect with a NOT_SELECT_OR_WITH warning", async (_label, sql) => {
+    const result = await ask({
+      question: "q",
+      schema: warnSchema(),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    });
+
+    expect(result.tenantGuardrail?.passed).toBe(false);
+    expect(result.tenantGuardrail?.warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+  });
+
+  it.each([
+    ["a parenthesized query", `(${scopedSelect})`],
+    ["WITH … SELECT", `WITH o AS (${scopedSelect}) SELECT id FROM o`],
+    ["a query behind a leading comment", `/* note */ ${scopedSelect}`],
+    ["a query with a trailing semicolon", `${scopedSelect};`],
+  ])("passes %s from a custom dialect", async (_label, sql) => {
+    const result = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    });
+    expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
+  // #702: a SELECT can reach rows through a call the per-table checks can't read. Here the
+  // call rewrites the setting row-level security reads, then runs a query passed as a string.
+  it("strict: refuses a SELECT naming functions the tenant check can't read through, from a custom dialect (UNCHECKABLE_FUNCTION)", async () => {
+    const sql =
+      "SELECT set_config('app.agency_ids', '1,2,3', true) AS s, query_to_xml('SELECT * FROM orders', true, false, '') AS x";
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    const warnings = (error as TenantGuardrailError).warnings;
+    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["UNCHECKABLE_FUNCTION", ""]]);
+    expect(warnings[0]!.message).toContain("set_config");
+  });
+
+  // #702: the built-in Postgres read-only check allows `table_to_xml` because it only reads,
+  // but the tenant check can't see the table it names in a string.
+  it("strict: refuses table_to_xml from the built-in postgres dialect (UNCHECKABLE_FUNCTION)", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: {
+        generateText: vi.fn(async () => ({ text: "```sql\nSELECT table_to_xml('orders', true, false, '') AS x\n```" })),
+      },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    expect((error as TenantGuardrailError).warnings.map((w) => [w.rule, w.tableId])).toEqual([["UNCHECKABLE_FUNCTION", ""]]);
   });
 
   it("without a tenant policy, custom dialect output is unchanged", async () => {

@@ -6,9 +6,11 @@ import {
   type ScopedTable,
   type PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
-import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { isBuiltInDialectId, SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { findEscapeStringContinuation, lexSql, postgresReadingProfiles, startsDashComment } from "./lexer.js";
+import { ENGINE_LEXER_PROFILES, findEscapeStringContinuation, findUnicodeEscapedIdentifier, lexerProfileFor, lexSql, postgresReadingProfiles, startsDashComment, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
+import { denylistFor } from "./validate.js";
 
 export type TenantGuardrailResult = {
   passed: boolean;
@@ -98,6 +100,45 @@ export function tenantRuleWarnings(
   if (scope.access.kind === "global") return [];
 
   const warnings: TenantGuardrailWarning[] = [];
+
+  // The per-table checks below read queries. A statement that isn't one (a `DO` block, `CALL`,
+  // `EXPLAIN`, `SHOW`) can touch tables they never see, a `DO` body as a dollar-quoted string,
+  // so it is refused here, under every dialect: read-only validation may be a custom
+  // AskDialect's job (ADR 0010), tenant enforcement isn't (#698).
+  const keyword = nonQueryKeyword(sql, dialect);
+  if (keyword !== undefined) {
+    warnings.push(
+      warn("NOT_SELECT_OR_WITH", "",
+        `A statement starts with ${keyword}, not SELECT or WITH. The tenant check can only read a query's ` +
+        "tenant predicates, so under a tenant policy it refuses any other statement."),
+    );
+  }
+
+  // Nor can they see what a query reaches through a call that runs SQL or reads a table named
+  // in a string they blank, runs SQL over another connection, or sets what row-level security
+  // reads. The read-only check allows some of these as reads, and a custom AskDialect skips
+  // it, so the tenant check refuses them under every dialect (#702). A listed name counts in any
+  // code position, since an engine can reach a function without `(` right after its name.
+  const name = uncheckableName(sql, dialect);
+  if (name !== undefined) {
+    warnings.push(
+      warn("UNCHECKABLE_FUNCTION", "",
+        `The SQL names ${name}, a function that reads or scopes rows the tenant check can't see. Under a ` +
+        "tenant policy, query the tables directly (pivot with CASE or FILTER, not crosstab), and don't " +
+        "name a column, alias or parameter after one of these functions."),
+    );
+  }
+
+  // The checks below match names as written. Postgres decodes a U&"…" name, so they can't tell
+  // which table, column or function it is: refuse it rather than decode it (#704, #692).
+  const escaped = unicodeEscapedName(sql, dialect);
+  if (escaped !== undefined) {
+    warnings.push(
+      warn("UNICODE_ESCAPED_IDENTIFIER", "",
+        `The SQL uses the Unicode-escaped name ${escaped}, which the tenant check can't read. ` +
+        'Write the name in plain double quotes ("orders") or unquoted.'),
+    );
+  }
 
   // Past an E'…' string continued on a later line, Postgres and the checks below read different
   // strings, so a table or call could sit in what they take for a string: refuse it (#703).
@@ -321,6 +362,155 @@ function scopeRootIds(scope: TenantScope): string[] {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Words that start a T-SQL statement with no `;` before it (`SELECT 1 EXEC(...)` is two
+ * statements): the words the read-only check denies on SQL Server, lowercase.
+ */
+const TSQL_STATEMENT_WORDS: ReadonlySet<string> = denylistFor(SQLSERVER_DIALECT);
+
+/**
+ * Whether a word after `prev` is inside an expression rather than at a statement start: after
+ * `(`, a comma, an operator or `.`, or after a keyword an expression or a name follows (the
+ * T-SQL boundary check's list, plus `AS` before an alias and `FOR` before `UPDATE` or `XML`).
+ * Anything else, a value such as `NULL` included, may end a statement, so it fails closed.
+ */
+function continuesExpression(prev: SqlToken | undefined): boolean {
+  if (!prev) return false;
+  if (prev.kind === "punct") return prev.text !== ")" && EXPRESSION_PUNCTUATION.has(prev.text);
+  return prev.kind === "word" && (EXPRESSION_KEYWORDS.has(prev.lower) || prev.lower === "as" || prev.lower === "for");
+}
+
+/**
+ * Every way a server may lex `sql` into statements: the dialect's profile when it names a
+ * built-in engine, otherwise every engine's, and for Postgres and MySQL both string settings
+ * (a backslash ends a literal under one and escapes the quote under the other). A MySQL
+ * profile is read with its `/*!NNNNN … *\/` bodies as code and as comments, since a server
+ * older than NNNNN skips them.
+ */
+function statementReadings(dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): SqlLexerProfile[] {
+  const known = dialect?.id !== undefined ? lexerProfileFor(dialect) : undefined;
+  const profiles = known
+    ? [known]
+    : ENGINE_LEXER_PROFILES.flatMap((p) =>
+        p.id === "postgres" || p.id === "mysql" ? [p, { ...p, backslashEscapes: !p.backslashEscapes }] : [p],
+      );
+  return profiles.flatMap((p) => (p.executableComments ? [p, { ...p, executableComments: false }] : [p]));
+}
+
+/**
+ * The leading token of the first statement in `sql` that isn't a query, upper-cased (a
+ * keyword, or the token's own text when it isn't a word), or undefined when every statement
+ * starts with `SELECT` or `WITH`. A statement ends at each `;`, and under the SQL Server
+ * reading also at a top-level word from {@link TSQL_STATEMENT_WORDS} that doesn't
+ * {@link continuesExpression continue an expression}. Its first token is read
+ * past comments and `(` with the shared lexer, under every reading from
+ * {@link statementReadings}, so a statement any of them reads as a non-query counts.
+ */
+function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of statementReadings(dialect)) {
+    const tsql = profile.id === "sqlserver";
+    let statementStart = true;
+    let depth = 0;
+    let prev: SqlToken | undefined;
+    for (const token of lexSql(sql, profile)) {
+      if (token.kind === "comment") continue;
+      const before = prev;
+      prev = token;
+      if (token.kind === "punct" && token.text === ";") {
+        statementStart = true;
+        depth = 0;
+        continue;
+      }
+      if (token.kind === "punct" && token.text === "(") {
+        depth++;
+        continue;
+      }
+      if (token.kind === "punct" && token.text === ")") depth = Math.max(0, depth - 1);
+      if (statementStart) {
+        statementStart = false;
+        if (token.kind === "word" && (token.lower === "select" || token.lower === "with")) continue;
+        return token.text.slice(0, 40).toUpperCase();
+      }
+      if (tsql && depth === 0 && token.kind === "word" && TSQL_STATEMENT_WORDS.has(token.lower) && !continuesExpression(before)) {
+        return token.text.toUpperCase();
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Functions whose reads the tenant check can't see, lowercase (#702). A function belongs here when
+ * it is built into Postgres or SQL Server, or comes from an extension that ships with Postgres
+ * (`tablefunc`, `dblink`, `xml2`); any role can call it; and it runs a query passed as a string,
+ * returns row data from a table, schema or database named in a string, runs SQL over another
+ * connection, or sets a value row-level security may read. A function from any other extension
+ * (pgRouting's `pgr_*`, SQLite's loadable `eval()`) or of the host's own isn't here and passes.
+ * Fixed here, not taken from a `DialectSpec`, so a spec that overrides `blockedFunctions` can't
+ * shrink it; and the read-only check allows the plain reads among them (`table_to_xml`, `crosstab`).
+ */
+const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
+  // Run a query passed as a string. `crosstab*` come from Postgres's `tablefunc` extension.
+  "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema", "cursor_to_xml", "ts_stat",
+  "ts_rewrite", "crosstab", "crosstab2", "crosstab3", "crosstab4",
+  // Return row data from a table, a schema or the database named in a string (`connectby` from
+  // `tablefunc`, `dblink_build_sql_*` from `dblink`, `xpath_table` from `xml2`).
+  "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
+  "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
+  "dblink_build_sql_insert", "dblink_build_sql_update", "xpath_table",
+  // Run SQL over another connection: Postgres's `dblink` extension, SQL Server's rowset functions.
+  "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
+  "dblink_fetch", "dblink_get_result", "openquery", "openrowset", "opendatasource",
+  // Set a value row-level security may read.
+  "set_config",
+]);
+
+/**
+ * The first name in `sql` from {@link UNCHECKABLE_FUNCTIONS}, lowercase, or undefined. A name counts
+ * in any code position, in any case, bare, quoted or qualified, not only right before `(`: an
+ * engine can reach a function in forms with no `(` after its name, so a column, an alias or a
+ * placeholder named like a listed function counts too. Text in comments and single-quoted strings
+ * doesn't. Read under every reading from {@link statementReadings}, so a name any of them sees counts.
+ */
+function uncheckableName(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of statementReadings(dialect)) {
+    for (const token of lexSql(sql, profile)) {
+      const name = nameOf(token);
+      if (name !== undefined && UNCHECKABLE_FUNCTIONS.has(name)) return name;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A token's name, lowercase, when it can name a function: a word, a quoted identifier, a `"…"`
+ * string (which some servers read as a name), or a `:name` placeholder, which the shared lexer
+ * reads as one token but Postgres reads as `:` and then a name.
+ */
+function nameOf(token: SqlToken): string | undefined {
+  if (token.kind === "word" || token.kind === "quoted_identifier") return token.lower;
+  if (token.kind === "string" && token.quote === '"') return token.text.slice(1, -1).toLowerCase();
+  if (token.kind === "parameter" && token.text.startsWith(":") && !token.text.startsWith("::")) return token.lower.slice(1);
+  return undefined;
+}
+
+/**
+ * The first Postgres `U&"…"` name in `sql`, as written, when the SQL may be read as Postgres:
+ * a dialect on the Postgres lexer (postgres, cockroachdb), a dialect that is no built-in engine,
+ * or none. An unknown dialect's `backslashEscapes` is honored, as on the read-only check.
+ */
+function unicodeEscapedName(
+  sql: string,
+  dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+): string | undefined {
+  // The same readings the string-continuation rule uses (`postgresReadingProfiles`).
+  for (const profile of postgresReadingProfiles(dialect)) {
+    const name = findUnicodeEscapedIdentifier(lexSql(sql, profile));
+    if (name !== undefined) return name;
+  }
+  return undefined;
+}
 
 function warn(
   rule: TenantGuardrailRuleCode,
