@@ -23,21 +23,24 @@ pnpm preflight
 
 ## Version Posture
 
-AskDB is pre-1.0. Breaking public API changes should normally use minor changesets until the project intentionally moves a package to 1.0.
+Twelve packages are on the 1.0 line and share one version: `askdb`, `@askdb/ai`, `@askdb/client`, `@askdb/config`, `@askdb/core`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/mysql`, `@askdb/postgres`, `@askdb/prisma`, `@askdb/sqlite` and `@askdb/sqlserver`. They are the `fixed` group in `.changeset/config.json`, so every release publishes all 12 at the same version, even a package that didn't change. `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` stay on `0.x`, outside the group.
 
-Before publishing, confirm `pnpm changeset status` does not show an unintended major bump.
+- **A breaking change to one of the 12** is a `major` changeset. During the release candidates, any bump only raises the `rc` number. From `1.0.0` on, a major in any of the 12 moves all 12 to the next major.
+- **A breaking change to Studio, `@askdb/enrich` or `@askdb/rag`** is a `minor` changeset. Never give one of them a `major`: it would move that package to 1.0.
+
+Before merging a Version PR, confirm its versions show no unintended major. `pnpm changeset status` is not the place to check the prerelease number: right after a pre-tag change it shows the old counter (`1.0.0-rc.47`), because only `pnpm version-packages` restarts it (see [Prerelease Lines](#prerelease-lines)).
 
 ## Publish Flow
 
 Releases run in `.github/workflows/release.yml`, triggered when `CI` passes on a push to `main`.
 
 1. Merge feature PRs with changesets. `changesets.yml` requires one on any PR that changes publishable sources other than test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`; see `scripts/publishable-paths.sh`).
-2. The `version` job opens or updates the **"chore: version packages (beta)"** PR on the `changeset-release/main` branch. It applies every pending changeset: version bumps and CHANGELOG entries. In prerelease mode, Changesets 3 then moves each consumed changeset into `.changeset/pre/`; `.changeset/pre.json` keeps only the mode and the `beta` tag.
+2. The `version` job opens or updates the **"chore: version packages (rc)"** PR on the `changeset-release/main` branch; the action adds the pre tag from `.changeset/pre.json` to the title. It runs `pnpm version-packages`, which applies every pending changeset: version bumps and CHANGELOG entries. In prerelease mode, Changesets 3 then moves each consumed changeset into `.changeset/pre/`; `.changeset/pre.json` keeps only the mode and the pre tag.
 3. Review that PR's versions and changelogs, then merge it. CI runs on it like any PR; `changesets.yml` skips its changeset check there, because the PR applies changesets rather than adding one.
 4. When CI passes on the merge commit, the `publish` job waits for approval in the `npm-publish` environment. Approve it from the workflow run. It builds and runs `pnpm -r publish --access public --tag latest`, which publishes every public package whose version isn't on npm yet.
 5. The `tag` job pushes a `<name>@<version>` git tag for each published package.
 6. Check the package pages, and install one package from npm in a clean directory.
-7. Publish a GitHub Release for the new `askdb@<version>` tag, by hand. Its body lists each breaking change in one line, and links the release's section of the [upgrade notes](../apps/docs-site/src/content/docs/guides/upgrading.mdx) (askdb.tools/guides/upgrading/) and the package CHANGELOGs. Add that section before the Version PR merges, so the Release has something to link. While AskDB is in beta, mark the Release pre-release. Write the body to an untracked file, such as `release-notes.md` outside the repo, then run:
+7. Publish a GitHub Release for the new `askdb@<version>` tag, by hand. Its body lists each breaking change in one line, and links the release's section of the [upgrade notes](../apps/docs-site/src/content/docs/guides/upgrading.mdx) (askdb.tools/guides/upgrading/) and the package CHANGELOGs. Add that section before the Version PR merges, so the Release has something to link. While AskDB publishes prereleases (betas, then release candidates), mark the Release pre-release. Write the body to an untracked file, such as `release-notes.md` outside the repo, then run:
 
    ```bash
    gh release create askdb@<version> --verify-tag --prerelease \
@@ -63,7 +66,17 @@ Once you push to a Dependabot branch, Dependabot stops resolving its conflicts. 
 
 ## Dist-tags
 
-Betas publish under `latest`, so `npm install askdb` gets the newest beta. There is no `beta` dist-tag: it was stale and was removed on 2026-09-29 (#267). The pipeline doesn't use `changeset publish`, because in prerelease mode that would publish under the `beta` tag from `.changeset/pre.json`. Trusted publishing can only publish, so a second tag can't be moved afterwards without an npm token. Revisit this when the 1.0 release candidates start (#354).
+Prereleases publish under `latest`: the betas did, and the release candidates do (decided 2026-11-06 in #354). So `npm install askdb` gets the newest one, and no stable version exists yet for `latest` to protect. There is no `beta` or `rc` dist-tag: the stale `beta` tag was removed on 2026-09-29 (#267). The pipeline doesn't use `changeset publish`, because in prerelease mode that would publish under the pre tag from `.changeset/pre.json`. Trusted publishing can only publish, so a second tag can't be moved afterwards without an npm token.
+
+This changes at 1.0.0. The PR that exits pre mode also replaces the fixed `--tag latest` in `release.yml`: the pre tag while `.changeset/pre.json` is in pre mode, `latest` otherwise. Then a later prerelease, such as `1.1.0-beta.1`, can't take `latest` from a stable release.
+
+## Prerelease Lines
+
+`.changeset/pre.json` holds the prerelease mode and its tag (`rc` now). A change of line is one PR; the Version PR after it applies the change.
+
+- **Start a new prerelease line** (beta to rc): run `pnpm changeset pre exit`, then `pnpm changeset pre enter <tag>`, and commit `.changeset/pre.json`. Changesets 3 numbers a prerelease from the current one, whatever its tag (`1.0.0-beta.46` becomes `1.0.0-rc.47`). So `pnpm version-packages` first runs `scripts/prerelease-counter.mjs reset`: each public package whose prerelease id isn't the new tag gets its counter set to 0, and the line starts at `<tag>.1`. After `changeset version`, `scripts/prerelease-counter.mjs check` fails the run if a public package still has another prerelease id: its reset version isn't on npm, and merging would publish it.
+- **Leave out the old line's changesets.** At the stable release, every changeset still in `.changeset/pre/` goes into the stable CHANGELOG entry. Delete the old line's files there in the same PR, as #354 did for the betas, so `1.0.0` lists only the release candidates' changes. Each beta's entries stay under its own version.
+- **Release the stable version** (rc to `1.0.0`): run `pnpm changeset pre exit`, commit `.changeset/pre.json`, and merge the Version PR that follows.
 
 ## Pipeline Decisions
 
@@ -74,7 +87,7 @@ Recorded 2026-09-29, in #354:
 - **Gate:** the `npm-publish` environment, with the maintainer as required reviewer and deployments limited to `main`. Only the `publish` job can request an OIDC token.
 - **changesets/action:** v2, with Changesets CLI v3 (`@changesets/cli` pinned exactly in the root `package.json`). The pipeline started on v1 with CLI v2; Dependabot moved both (#390, #393), and #424 moved the workflow and the prerelease state with them.
 - **GitHub Releases:** on for `askdb@<version>` tags only, published by hand (Publish Flow step 7). Each one summarizes the release's breaking changes and links its section of the upgrade notes (`/guides/upgrading/` on askdb.tools). Other packages' tags get none, and their CHANGELOGs and git tags stay the full record. Decided 2026-11-05 in #628; until then, Releases were off.
-- **Versioning:** unchanged. Packages keep their own versions, with `@askdb/core`, `askdb` and `@askdb/http-api` linked. One lockstep version line waits for the 1.0 release candidates (#354).
+- **Versioning:** decided 2026-11-06 in #354. The 12 packages on the 1.0 line form one `fixed` group, and Studio, `@askdb/enrich` and `@askdb/rag` stay on `0.x` outside it (see [Version Posture](#version-posture)). The release candidates start at `1.0.0-rc.1` and publish under `latest`. The `1.0.0` CHANGELOG entry lists only the release candidates' changes. Until then, packages kept their own versions, with `@askdb/core`, `askdb` and `@askdb/http-api` linked.
 
 ## One-Time Setup
 
@@ -82,7 +95,7 @@ The maintainer does these once, before the first automated publish:
 
 1. **GitHub App.** Create a private App on the `Ygilany` account with repository permissions *Contents: Read and write* and *Pull requests: Read and write*, and install it on `Ygilany/AskDB` only. Store its client ID as the Actions variable `RELEASE_APP_CLIENT_ID` and a private key as the Actions secret `RELEASE_APP_PRIVATE_KEY`.
 2. **Environment.** Settings → Environments → `npm-publish`: add yourself as required reviewer, and limit deployment branches to `main`.
-3. **Trusted publisher, per package.** On npmjs.com, for each of the 20 public packages (the non-private ones in `pnpm -r ls --depth -1`): package → Settings → Trusted publishing → GitHub Actions. Fill in *Organization or user* `Ygilany`, *Repository* `AskDB`, *Workflow filename* `release.yml` (file name only, no path) and *Environment name* `npm-publish`. Under *Allowed actions*, include `npm publish`, not only `npm stage publish`: the workflow publishes directly. Every field is case-sensitive and must match exactly. A saved configuration can't be edited, only deleted and re-created. Each package's `repository.url` must match the GitHub repository; all 20 have `git+https://github.com/Ygilany/AskDB.git`.
+3. **Trusted publisher, per package.** On npmjs.com, for each public package (the non-private ones in `pnpm -r ls --depth -1`; 15 on 2026-11-06): package → Settings → Trusted publishing → GitHub Actions. Fill in *Organization or user* `Ygilany`, *Repository* `AskDB`, *Workflow filename* `release.yml` (file name only, no path) and *Environment name* `npm-publish`. Under *Allowed actions*, include `npm publish`, not only `npm stage publish`: the workflow publishes directly. Every field is case-sensitive and must match exactly. A saved configuration can't be edited, only deleted and re-created. Each package's `repository.url` must match the GitHub repository; all of them have `git+https://github.com/Ygilany/AskDB.git`.
 4. **After the first automated publish succeeds**, on each package go to Settings → Publishing access, select "Require two-factor authentication and disallow tokens", and click *Update Package Settings*. Trusted publishing keeps working, but hand publishing with a token (like the granular token used on 2026-09-29) stops working.
 
 ## Publishing by Hand
