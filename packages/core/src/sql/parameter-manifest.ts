@@ -24,22 +24,20 @@ export type ParameterManifest = {
  * Why the model's parameter manifest was dropped. Internal: `ask()` logs it at debug level
  * (lowercased) and returns the SQL without the reuse artifacts, so nothing throws these.
  */
-export type ManifestParseFailure = {
+type ManifestParseFailure = {
   ok: false;
   reason: QueryParameterRejectionReason | "INVALID_NAME" | "RESERVED_NAME" | "MALFORMED" | "EMPTY" | "MISSING";
   message: string;
 };
 
-export type ManifestParseSuccess = {
+type ManifestParseSuccess = {
   ok: true;
   manifest: ParameterManifest;
 };
 
-export type ManifestParseResult = ManifestParseSuccess | ManifestParseFailure;
+type ManifestParseResult = ManifestParseSuccess | ManifestParseFailure;
 
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
-
-const scalarValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
 
 const parameterSchema = z.object({
   name: z.string(),
@@ -160,8 +158,6 @@ export function parseParameterManifest(modelText: string): ManifestParseResult {
     }
     const valueCheck = validateValue(p.type, p.cardinality, p.value);
     if (!valueCheck.ok) return valueCheck;
-    // Reject mixed-type arrays already handled by per-item type checks.
-    void scalarValueSchema; // keep import used for documentation of accepted scalars
     parameters.push({
       name: p.name,
       type: p.type,
@@ -189,11 +185,9 @@ export function crossValidateManifestAgainstSql(
   const byName = new Map(manifest.parameters.map((p) => [p.name, p]));
 
   for (const p of manifest.parameters) {
-    if (!nonTenant.some((o) => o.name === p.name) && !occurrences.some((o) => o.name === p.name)) {
+    if (!occurrences.some((o) => o.name === p.name)) {
       return failure("UNRESOLVED_PLACEHOLDER", "Manifest parameter does not appear in unbound SQL.");
     }
-    // Tenant placeholders must not appear in the manifest (already rejected by RESERVED_NAME
-    // for tenant_ prefix). Double-check appearance of tenant_* in unbound is OK without manifest entry.
   }
 
   for (const occ of nonTenant) {

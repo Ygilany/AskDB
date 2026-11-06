@@ -63,7 +63,7 @@ export function loadSchemaFromJson(raw: string): NormalizedSchemaV2 {
     return loadFromBundle(parsed as BundledSchemaV2, "<inline JSON>");
   }
   const physical = parsePhysicalLayer(parsed, "<inline JSON>");
-  return buildNormalized(physical, {}, undefined, [], undefined);
+  return buildNormalized(physical, {}, undefined, undefined);
 }
 
 /**
@@ -123,7 +123,7 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
   // unless it sits in a schema directory (fails closed, see below).
   assertNotInSchemaDirectory(resolved);
   const physical = parsePhysicalLayer(parsed, resolved);
-  return buildNormalized(physical, {}, undefined, [], undefined);
+  return buildNormalized(physical, {}, undefined, undefined);
 }
 
 /**
@@ -406,7 +406,7 @@ function loadFromFiles(
     });
   }
 
-  return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
+  return buildNormalized(physical, tableMarkdowns, concepts, tenantPolicy);
 }
 
 /**
@@ -452,7 +452,7 @@ function parsePhysicalLayer(data: unknown, filePath: string): V2SchemaJson {
     typeof data === "object" &&
     data !== null &&
     "version" in data &&
-    (data as Record<string, unknown>).version === 1
+    data.version === 1
   ) {
     throw new SchemaParseError(
       `AskDB schema format \`version: 1\` is not supported as of \`@askdb/core@0.2.0\`. ` +
@@ -474,10 +474,9 @@ function buildNormalized(
   physical: V2SchemaJson,
   tableMarkdowns: Record<string, LoadedTableMarkdown>,
   concepts: V2ConceptsFrontmatter | undefined,
-  extraWarnings: SchemaV2Warning[],
   tenantPolicy: NormalizedTenantPolicy | undefined,
 ): NormalizedSchemaV2 {
-  const warnings: SchemaV2Warning[] = [...extraWarnings];
+  const warnings: SchemaV2Warning[] = [];
 
   // Physical table ids, and each physical column id's owning table, for ID validation
   const physicalTableIds = new Set(physical.tables.map((t) => t.id));

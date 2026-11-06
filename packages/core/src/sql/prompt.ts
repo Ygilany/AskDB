@@ -55,8 +55,7 @@ export function buildNlToSqlUserPrompt(
   tenantScope?: TenantScope,
   /**
    * When true, append the unbound-SQL + parameter-manifest output-format
-   * instructions. When false/undefined, the prompt is unchanged from the
-   * pre-parameterize path (byte-identical).
+   * instructions. When false or undefined, those instructions are left out.
    */
   parameterize?: boolean,
 ): string {
