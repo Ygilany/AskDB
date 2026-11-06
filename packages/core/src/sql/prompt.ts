@@ -12,7 +12,7 @@ import {
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
 import { nonAsciiNameRule, promptIdentifierQuoter, qualifiedNameQuotingRule } from "./prompt-identifiers.js";
-import { buildTenantPromptBlock } from "./tenant-prompt.js";
+import { buildTenantPromptBlock, type TenantPromptTables } from "./tenant-prompt.js";
 
 function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
   return "schemaId" in schema;
@@ -58,6 +58,11 @@ export function buildNlToSqlUserPrompt(
    * instructions. When false or undefined, those instructions are left out.
    */
   parameterize?: boolean,
+  /**
+   * The ids of the tables `prebuiltDdl` shows (the retrieved ones), so the tenant block names
+   * no other. Without it, the block names every tracked table in the policy (#771).
+   */
+  promptTableIds?: readonly string[],
 ): string {
   const unqualifiedNamespace = unqualifiedNamespaceFor(schema, dialect.unqualifiedNamespace);
   const formatted = isV2(schema)
@@ -118,7 +123,7 @@ export function buildNlToSqlUserPrompt(
   // Tenant policy block (always injected when present — security boundary)
   if (tenantPolicy && tenantScope) {
     lines.push("");
-    lines.push(buildTenantPromptBlock(tenantPolicy, tenantScope));
+    lines.push(buildTenantPromptBlock(tenantPolicy, tenantScope, promptTablesOf(schema, promptTableIds)));
     lines.push("");
   }
   if (ambiguityNotes.length > 0) {
@@ -173,4 +178,16 @@ export function buildNlToSqlUserPrompt(
 /** Dialect-parameterized system prompt for the NL→SQL generator. */
 export function buildNlToSqlSystemPrompt(dialect: DialectSpec): string {
   return `You are AskDB SQL generator—correct, deterministic ${dialect.displayName} for analytics. Produce one SELECT (or WITH) only.`;
+}
+
+/**
+ * The tables the prompt shows, for the tenant block (#771, ADR 0038): the schema's tracked
+ * tables, and with `promptTableIds` (retrieval) only those of them. `undefined` for a v1 schema,
+ * which has no `tracked` flag.
+ */
+function promptTablesOf(schema: AnyNormalizedSchema, promptTableIds: readonly string[] | undefined): TenantPromptTables | undefined {
+  if (!isV2(schema)) return undefined;
+  const tracked = new Set(schema.tables.filter((t) => t.tracked !== false).map((t) => t.id));
+  const shown = promptTableIds === undefined ? tracked : new Set(promptTableIds.filter((id) => tracked.has(id)));
+  return { shown, tracked };
 }

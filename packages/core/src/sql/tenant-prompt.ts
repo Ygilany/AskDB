@@ -13,6 +13,24 @@ function labelOfRoot(policy: NormalizedTenantPolicy, id: string): string {
 }
 
 /**
+ * The tables an NL→SQL prompt shows, so the tenant block names no other (#771, ADR 0038).
+ * `shown`: the tables whose DDL the prompt carries, the tracked ones, and under retrieval only
+ * the retrieved ones. `tracked`: the tables not marked `tracked: false`. A join path keeps a
+ * tracked table the prompt doesn't show, since the model may still use it, and is dropped when
+ * it goes through an untracked one.
+ */
+export type TenantPromptTables = {
+  shown: ReadonlySet<string>;
+  tracked: ReadonlySet<string>;
+};
+
+/** `table:public.orders#agency_id (where …)` → `table:public.orders`. */
+function tableOfColumn(column: string): string {
+  const hash = column.indexOf("#");
+  return hash === -1 ? column : column.slice(0, hash);
+}
+
+/**
  * Build the tenant policy + runtime scope block for NL→SQL prompts.
  * This block is always injected when a tenant policy exists (security boundary).
  *
@@ -23,8 +41,18 @@ function labelOfRoot(policy: NormalizedTenantPolicy, id: string): string {
 export function buildTenantPromptBlock(
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
+  /**
+   * The tables the prompt shows. With it, the block names only those: an untracked table, or
+   * one retrieval left out, stays out of it, and a root whose table isn't shown keeps only its
+   * label and placeholder. Without it, the block names every table in the policy. `ask()`
+   * always passes it.
+   */
+  tables?: TenantPromptTables,
 ): string {
   const lines: string[] = [];
+  const shown = (table: string) => tables === undefined || tables.shown.has(table);
+  const tracked = (table: string) => tables === undefined || tables.tracked.has(table);
+  const shownColumns = (columns: string[]) => columns.filter((c) => shown(tableOfColumn(c)));
 
   lines.push("--- TENANT POLICY (mandatory — every tenant-scoped table MUST be filtered) ---");
   lines.push("");
@@ -35,31 +63,41 @@ export function buildTenantPromptBlock(
     const parentNote = root.parent
       ? ` (child of ${labelOfRoot(policy, root.parent.root)})`
       : " (top-level)";
-    lines.push(`  - ${root.label} [${root.id}]${parentNote}`);
+    // The label and placeholder stay: a tracked table's predicate needs them. The label is text the
+    // policy's author wrote for the model; the table id goes when the prompt doesn't show the table.
+    lines.push(`  - ${root.label}${shown(root.id) ? ` [${root.id}]` : ""}${parentNote}`);
   }
   lines.push("");
 
   // Scoped tables
-  if (policy.scopedTables.length > 0) {
+  const scopedTables = policy.scopedTables.filter((st) => shown(st.id));
+  if (scopedTables.length > 0) {
     lines.push("Tenant-scoped tables (MUST include tenant predicate):");
-    for (const st of policy.scopedTables) {
+    for (const st of scopedTables) {
+      let paths = 0;
       for (const path of st.scopeThrough) {
         const rootLabel = labelOfRoot(policy, path.root);
         if ("column" in path) {
           lines.push(`  - ${st.id} → filter via ${path.column} (${rootLabel} scope)`);
-        } else {
+          paths++;
+        } else if (path.join.every((j) => tracked(tableOfColumn(j.from)) && tracked(tableOfColumn(j.to)))) {
           const joinPath = path.join.map((j) => `${j.from} → ${j.to}`).join(" → ");
           lines.push(`  - ${st.id} → join path: ${joinPath} (${rootLabel} scope)`);
+          paths++;
         }
+        // A join path through an untracked table is left out, so a query on this table can't be
+        // filtered that way and the tenant check refuses it.
       }
+      if (paths === 0) lines.push(`  - ${st.id} → no filter path this prompt can show: don't read this table`);
     }
     lines.push("");
   }
 
   // Polymorphic tables
-  if (policy.polymorphicTables.length > 0) {
+  const polymorphicTables = policy.polymorphicTables.filter((pt) => shown(pt.id));
+  if (polymorphicTables.length > 0) {
     lines.push("Polymorphic tables (MUST include type discriminator AND id filter):");
-    for (const pt of policy.polymorphicTables) {
+    for (const pt of polymorphicTables) {
       lines.push(`  - ${pt.id}: type column = ${pt.typeColumn}, id column = ${pt.idColumn}`);
       for (const [typeVal, targetRoot] of Object.entries(pt.mapping)) {
         const rootLabel = labelOfRoot(policy, targetRoot);
@@ -70,9 +108,10 @@ export function buildTenantPromptBlock(
   }
 
   // Global tables
-  if (policy.globalTables.length > 0) {
+  const globalTables = policy.globalTables.filter((gt) => shown(gt));
+  if (globalTables.length > 0) {
     lines.push("Global tables (no tenant filter needed):");
-    for (const gt of policy.globalTables) {
+    for (const gt of globalTables) {
       lines.push(`  - ${gt}`);
     }
     lines.push("");
@@ -91,7 +130,7 @@ export function buildTenantPromptBlock(
       // A single-root policy keeps its block unchanged.
       const pairColumns = policy.roots.length > 1;
       if (pairColumns) {
-        const columns = columnsHoldingRootIds(policy, access.tenantRoot);
+        const columns = shownColumns(columnsHoldingRootIds(policy, access.tenantRoot));
         if (columns.length > 0) lines.push(`    columns: ${columns.join(", ")}`);
       }
       lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
@@ -116,7 +155,7 @@ export function buildTenantPromptBlock(
         // A level an expanded subtree covers with no IDs: its placeholder binds nothing.
         const empty = s.ids.length === 0 ? " (no IDs in this scope: don't read this table)" : "";
         lines.push(`    - ${rootLabel} IDs = ${placeholderForTenantRoot({ id: s.tenantRoot, label: rootLabel })}${empty}`);
-        const columns = columnsHoldingRootIds(policy, s.tenantRoot, covered);
+        const columns = shownColumns(columnsHoldingRootIds(policy, s.tenantRoot, covered));
         if (columns.length > 0) lines.push(`      columns: ${columns.join(", ")}`);
       }
       lines.push(NEVER_CROSS_ROOTS);

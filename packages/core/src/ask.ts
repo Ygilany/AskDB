@@ -57,6 +57,12 @@ export type AskDialectGenerateOptions = {
   /** The caller's {@link AskPipelineOptions.abortSignal}. A custom dialect passes it to its model call. */
   abortSignal?: AbortSignal;
   prebuiltDdl?: string;
+  /**
+   * The ids of the tables `prebuiltDdl` shows (the retrieved ones), so the prompt's tenant block
+   * names no other (#771). Set with `prebuiltDdl`; a custom dialect that builds its own prompt
+   * can use it the same way.
+   */
+  promptTableIds?: readonly string[];
   tenantPolicy?: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
   tenantScope?: TenantScope;
   /**
@@ -374,7 +380,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
   const parameterize = options.parameterize !== false; // default true
   const dialectSpec = resolveDialectSpec(options.dialect);
-  const prebuiltDdl = await maybeRetrieveDdl({
+  const retrieved = await maybeRetrieveDdl({
     options,
     logger,
     omitSensitive,
@@ -393,7 +399,8 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       generateText: options.deps?.generateText,
       providerOptions: options.deps?.providerOptions,
       abortSignal: options.abortSignal,
-      prebuiltDdl,
+      prebuiltDdl: retrieved?.ddl,
+      promptTableIds: retrieved?.tableIds,
       tenantPolicy,
       tenantScope,
       // Custom AskDialect implementations ignore this; built-in path uses it.
@@ -565,7 +572,7 @@ async function maybeRetrieveDdl(args: {
   omitSensitive: boolean;
   unqualifiedNamespace: string | undefined;
   quoteIdentifier: ((name: string) => string) | undefined;
-}): Promise<string | undefined> {
+}): Promise<{ ddl: string; tableIds: string[] } | undefined> {
   const { options, logger, omitSensitive, unqualifiedNamespace, quoteIdentifier } = args;
   const retriever = options.retriever;
   if (!retriever) return undefined;
@@ -632,7 +639,7 @@ async function maybeRetrieveDdl(args: {
     },
     "retriever supplied focused DDL",
   );
-  return synth.ddl;
+  return { ddl: synth.ddl, tableIds: synth.tableIds };
 }
 
 function isV2Schema(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {

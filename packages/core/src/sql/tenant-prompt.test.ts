@@ -245,3 +245,40 @@ describe("buildTenantPromptBlock", () => {
     expect(block).toContain("named placeholders");
   });
 });
+
+describe("buildTenantPromptBlock — only the tables the prompt shows (#771, ADR 0038)", () => {
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
+  const allIds = schema.tables.map((t) => t.id);
+  const without = (...ids: string[]) => new Set(allIds.filter((id) => !ids.includes(id)));
+  const block = (shown: ReadonlySet<string>, tracked: ReadonlySet<string> = shown) =>
+    buildTenantPromptBlock(policy, scope, { shown, tracked });
+
+  it("keeps a root's label and placeholder when its table isn't shown, and drops its table id and columns", () => {
+    const b = block(without("table:public.agencies"));
+    expect(b).toContain("  - Agency (top-level)");
+    expect(b).toContain("Access: Agency IDs = :tenant_agency_ids");
+    // A shown table's column that holds the root's IDs stays, so its predicate can be written.
+    expect(b).toContain("table:public.orders#agency_id");
+    expect(b).not.toContain("table:public.agencies");
+  });
+
+  it("drops a join path through an untracked table, so the scoped table can't be filtered that way", () => {
+    const b = block(without("table:public.clients"));
+    expect(b).toContain("  - table:public.appointments → no filter path this prompt can show: don't read this table");
+    expect(b).not.toContain("join path");
+  });
+
+  it("keeps a join path through a tracked table that retrieval left out", () => {
+    const b = block(without("table:public.clients"), new Set(allIds));
+    expect(b).toContain(
+      "  - table:public.appointments → join path: table:public.appointments#client_id → table:public.clients#id (Client scope)",
+    );
+  });
+
+  it("names every policy table without the tables argument", () => {
+    const b = buildTenantPromptBlock(policy, scope);
+    for (const id of ["table:public.agencies", "table:public.campaigns", "table:public.notes", "table:public.lookup_states"]) {
+      expect(b, id).toContain(id);
+    }
+  });
+});

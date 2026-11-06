@@ -40,6 +40,8 @@ export function synthesizeRetrievedDdl(args: {
 }): {
   ddl: string;
   tablesEmitted: number;
+  /** The ids of the tables `ddl` shows, in schema order: the prompt's tables under retrieval (#771). */
+  tableIds: string[];
   chunksUsed: number;
   /** With omission on: schema texts and chunks withheld because they name a sensitive column or are flagged `sensitive`. */
   mentionDroppedCount: number;
@@ -114,10 +116,12 @@ export function synthesizeRetrievedDdl(args: {
 
   const lines: string[] = [];
   let tablesEmitted = 0;
+  const emittedIds: string[] = [];
 
   for (const t of schema.tables) {
     if (!tableIds.has(t.id)) continue;
     tablesEmitted++;
+    emittedIds.push(t.id);
     const listedName = promptTableName(t, args.unqualifiedNamespace, quoteIdentifier);
     lines.push(`TABLE ${listedName}${tableAliasNote(t, gate)}`);
     if (!t.sensitive && t.description && gate.allows(t.description)) lines.push(`-- ${t.description}`);
@@ -181,6 +185,7 @@ export function synthesizeRetrievedDdl(args: {
   return {
     ddl: lines.join("\n").trimEnd(),
     tablesEmitted,
+    tableIds: emittedIds,
     chunksUsed: results.length,
     mentionDroppedCount: gate.withheld,
   };
