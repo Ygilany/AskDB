@@ -279,6 +279,51 @@ describe("createAskDb", () => {
     }
   });
 
+  describe("schema from config: host.schemaJson → ASKDB_SCHEMA_JSON → host.schemaPath → ASKDB_SCHEMA_PATH", () => {
+    const badJson = "{not json";
+    const missing = "/nope/does-not-exist.schema";
+
+    // Each case breaks the source that should win, so the error's `source` names which one was read.
+    it.each([
+      {
+        name: "host.schemaJson wins over ASKDB_SCHEMA_JSON",
+        config: { schemaJson: badJson, envSchemaJson: minimalV2Json },
+        source: "host.schemaJson",
+      },
+      {
+        name: "a blank host.schemaJson falls through to ASKDB_SCHEMA_JSON",
+        config: { schemaJson: "   ", envSchemaJson: badJson },
+        source: "ASKDB_SCHEMA_JSON",
+      },
+      {
+        name: "schema JSON wins over a schema path",
+        config: { envSchemaJson: badJson, schemaPath: fixtureSchemaPath },
+        source: "ASKDB_SCHEMA_JSON",
+      },
+      {
+        name: "host.schemaPath wins over ASKDB_SCHEMA_PATH",
+        config: { schemaPath: missing, envSchemaPath: fixtureSchemaPath },
+        source: `host.schemaPath (${missing})`,
+      },
+      {
+        name: "a blank host.schemaPath falls through to ASKDB_SCHEMA_PATH",
+        config: { schemaJson: "", envSchemaJson: " ", schemaPath: "  ", envSchemaPath: missing },
+        source: `ASKDB_SCHEMA_PATH (${missing})`,
+      },
+    ])("$name", async ({ config, source }) => {
+      const askdb = createAskDb({ config: makeConfig({ ...config, mockSql: "SELECT 1" }), registry: makeRegistry() });
+      const error = await askdb.ask("q").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(SchemaLoadError);
+      expect((error as SchemaLoadError).source).toBe(source);
+    });
+
+    it("treats all-blank values as no schema configured", async () => {
+      const config = makeConfig({ schemaJson: " ", envSchemaJson: "", schemaPath: "\t", envSchemaPath: "  ", mockSql: "SELECT 1" });
+      const askdb = createAskDb({ config, registry: makeRegistry() });
+      await expect(askdb.ask("q")).rejects.toBeInstanceOf(SchemaNotConfiguredError);
+    });
+  });
+
   it("7. caching - schema loaded once; reload() forces re-resolution", async () => {
     const config = makeConfig({ mockSql: "SELECT 1" });
     const registry = makeRegistry();

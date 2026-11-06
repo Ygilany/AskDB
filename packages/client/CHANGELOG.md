@@ -1,5 +1,13 @@
 # @askdb/client
 
+## 1.0.0-beta.10
+
+### Patch Changes
+
+- f183629: `@askdb/client` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: schema loading, its error labels and dialect resolution work as before.
+- Updated dependencies [946dee4]
+  - @askdb/ai@0.1.0-beta.10
+
 ## 1.0.0-beta.9
 
 ### Patch Changes

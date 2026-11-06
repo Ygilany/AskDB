@@ -24,12 +24,12 @@ import {
   type AskPipelineOptions,
   type AskPipelineResult,
   type BindGuardrails,
+  type BuiltInDialectId,
   type BoundQuery,
   type PreparedQuery,
   type QueryParameterValue,
   type ResolveTenantDescendants,
 } from "@askdb/core";
-import type { BuiltInDialectId } from "@askdb/core";
 import {
   DialectNotSupportedError,
   ModelNotConfiguredError,
@@ -155,20 +155,19 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
   let cachedModel: AskDbLanguageModel | undefined;
   let cachedAiConfig: AiConfig | undefined;
 
-  function schemaSourceLabel(src: SchemaSource | AnyNormalizedSchema): string {
-    if ("schemaId" in src) return "schema";
+  function schemaSourceLabel(src: SchemaSource): string {
     if ("schema" in src) return "schema";
     if ("json" in src) return "json";
-    return `path (${(src as { path: string }).path})`;
+    return `path (${src.path})`;
   }
 
   function loadFromSource(src: SchemaSource | AnyNormalizedSchema, label: string): AnyNormalizedSchema {
     // A normalized schema, v1 or v2, passed as is: every one has `tables`, no SchemaSource does.
-    if ("tables" in src) return src as AnyNormalizedSchema;
-    if ("schema" in src) return (src as { schema: AnyNormalizedSchema }).schema;
+    if ("tables" in src) return src;
+    if ("schema" in src) return src.schema;
     try {
-      if ("json" in src) return loadSchemaFromJson((src as { json: string }).json);
-      return loadSchema((src as { path: string }).path);
+      if ("json" in src) return loadSchemaFromJson(src.json);
+      return loadSchema(src.path);
     } catch (e) {
       throw new SchemaLoadError(label, e);
     }
@@ -182,7 +181,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
     }
     const host = config.structured.host;
     const env = config.ai.aiEnv;
-    const json = (host?.schemaJson?.trim() || env["ASKDB_SCHEMA_JSON"]?.trim()) || undefined;
+    const json = host?.schemaJson?.trim() || env["ASKDB_SCHEMA_JSON"]?.trim();
     if (json) {
       cachedSchema = loadFromSource(
         { json },
@@ -190,7 +189,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       );
       return cachedSchema;
     }
-    const path = (host?.schemaPath?.trim() || env["ASKDB_SCHEMA_PATH"]?.trim()) || undefined;
+    const path = host?.schemaPath?.trim() || env["ASKDB_SCHEMA_PATH"]?.trim();
     if (path) {
       cachedSchema = loadFromSource(
         { path },
@@ -204,9 +203,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
   }
 
   function schemaProviderOf(schema: AnyNormalizedSchema): string | undefined {
-    return "provider" in schema && typeof (schema as Record<string, unknown>)["provider"] === "string"
-      ? (schema as Record<string, unknown>)["provider"] as string
-      : undefined;
+    return "provider" in schema && typeof schema.provider === "string" ? schema.provider : undefined;
   }
 
   function resolveDialect(schema: AnyNormalizedSchema, override?: AskDialectInput): DialectResolution {

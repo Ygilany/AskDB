@@ -5,14 +5,20 @@ const columnSchema = z.object({
   type: z.string().min(1),
   nullable: z.boolean().optional(),
   primaryKey: z.boolean().optional(),
-  /** When true, column metadata is omitted from NL→SQL prompts (Phase 2 sensitive-field plumbing). */
+  /**
+   * When true, the column is listed in NL→SQL prompt DDL tagged `(sensitive)`, and withheld
+   * when prompt omission (`omitSensitiveIdentifiersFromPrompt`) is on.
+   */
   sensitive: z.boolean().optional(),
 });
 
 const tableSchema = z.object({
   name: z.string().min(1),
   columns: z.array(columnSchema).min(1),
-  /** When true, all column definitions for this table are withheld from NL→SQL prompts. */
+  /**
+   * When true, every column of this table is tagged `(sensitive)` in NL→SQL prompt DDL. With
+   * prompt omission on, the table keeps a one-line stub and its column definitions are withheld.
+   */
   sensitive: z.boolean().optional(),
 });
 

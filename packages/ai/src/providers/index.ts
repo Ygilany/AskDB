@@ -3,6 +3,7 @@ import { azureBuiltin } from "./azure.js";
 import { gatewayBuiltin } from "./gateway.js";
 import { googleBuiltin } from "./google.js";
 import { openaiBuiltin } from "./openai.js";
+import { normalizeProvider } from "../provider.js";
 import type { BuiltinAiProvider } from "./types.js";
 
 /**
@@ -34,7 +35,7 @@ export const BUILTIN_AI_PROVIDER_NAMES: readonly string[] = BUILTIN_AI_PROVIDERS
  * trimmed). Returns `undefined` for anything that isn't built in.
  */
 export function findBuiltinAiProvider(nameOrAlias: string): BuiltinAiProvider | undefined {
-  const key = nameOrAlias.toLowerCase().trim();
+  const key = normalizeProvider(nameOrAlias);
   return BUILTIN_AI_PROVIDERS.find(
     (row) => row.provider === key || row.aliases.includes(key),
   );
@@ -61,7 +62,7 @@ export type BuiltinAiProviderSetup = {
 export function getBuiltinAiProviderSetup(id: string): BuiltinAiProviderSetup | undefined {
   const row = findBuiltinAiProvider(id);
   if (!row) return undefined;
-  const key = id.toLowerCase().trim();
+  const key = normalizeProvider(id);
   return {
     id: key,
     label: row.aliasLabels?.[key] ?? row.label,
@@ -78,7 +79,7 @@ export function getBuiltinAiProviderSetup(id: string): BuiltinAiProviderSetup | 
  * `askdb.config.*` branch.
  */
 export function listBuiltinAiProviderSetups(ids: readonly string[]): BuiltinAiProviderSetup[] {
-  const wanted = new Set(ids.map((id) => id.toLowerCase().trim()));
+  const wanted = new Set(ids.map(normalizeProvider));
   return BUILTIN_AI_PROVIDERS.flatMap((row) => [row.provider, ...row.aliases])
     .filter((id) => wanted.has(id))
     .map((id) => getBuiltinAiProviderSetup(id)!);

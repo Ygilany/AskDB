@@ -16,7 +16,7 @@ import ExampleLink from "../../components/ExampleLink.astro";
 - Node 22.23.4 or newer.
 - npm, pnpm, or yarn — tabbed examples adapt to your choice; standalone snippets use `npx` (substitute `pnpm dlx` or `yarn dlx`).
 - An API key from a model provider — OpenAI, Anthropic, Google, Azure, or any OpenAI-compatible endpoint (OpenRouter, vLLM, Ollama, ...). See [Bring your own model](/guides/bring-your-own-model/).
-- A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or even a Prisma schema file (no live database required).
+- A database AskDB can read — Postgres, MySQL, MariaDB, SQLite or SQL Server — or even a Prisma schema file (no live database required).
 
 ## The whole flow, in four commands
 
@@ -63,7 +63,7 @@ Each step is explained below. The loop that makes answers good: **introspect onc
 npx askdb@latest init
 ```
 
-`npx` (like `pnpm dlx` and `yarn dlx`) downloads and runs `askdb` on the fly — no separate install step needed. In a terminal, `askdb init` opens a short wizard that asks which database you use, which AI provider you have a key for, and whether you want the Studio query playground. It then writes only the relevant config branches and installs only the packages your setup needs.
+`npx` (like `pnpm dlx` and `yarn dlx`) downloads and runs `askdb` on the fly — no separate install step needed. In a terminal, `askdb init` opens a short wizard. It asks which database you use, where to write the schema artifact, which AI provider you have a key for, which RAG store to use, and whether Studio may run generated SQL (read-only) from its Playground. It then writes only the relevant config branches and installs only the packages your setup needs, including your database's driver.
 
 In CI or scripts, skip the wizard:
 
@@ -85,15 +85,31 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 export default defineConfig({
   ai: {
     provider: "openai",
-    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
-    language: { model: env("OPENAI_MODEL") },
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+      },
+    },
+    language: {
+      model: env("OPENAI_MODEL"),
+    },
   },
   introspection: {
     provider: "sqlserver",
-    providerConfig: { sqlserver: { databaseUrl: env("SQLSERVER_URL") } },
+    providerConfig: {
+      sqlserver: {
+        databaseUrl: env("DATABASE_URL"),
+      },
+    },
     outputDir: "./askdb",
   },
-  rag: { embedder: "mock", store: "file", storeConfig: { file: {} } },
+  rag: {
+    embedder: "mock",
+    store: "file",
+    storeConfig: {
+      file: {},
+    },
+  },
 } satisfies AskDbConfig);
 ```
 

@@ -1,11 +1,11 @@
 import { runtimeIntrospectionString } from "@askdb/introspect/kit";
 import {
-  type Connector,
   type ConnectorConfig,
   type ConnectorProviderAdapter,
   type ConnectorResult,
 } from "@askdb/introspect";
 import { createPostgresConnector } from "./index.js";
+import { POSTGRES_TEMPLATE_BUNDLE } from "./templates.js";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 import { parsePostgresConnection } from "../label.js";
 
@@ -16,7 +16,7 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
       return {
         mode: "from-export",
         input: { mode: "from-export", bundlePath: config.fromExport, filters: config.filters },
-        connector: createPostgresConnector() as Connector<unknown>,
+        connector: createPostgresConnector(),
       };
     }
     if (!config.url) {
@@ -31,11 +31,11 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
         runner: createPostgresCatalogQueryRunner(config.url),
         filters: config.filters,
       },
-      connector: createPostgresConnector() as Connector<unknown>,
+      connector: createPostgresConnector(),
     };
   },
   getTemplates() {
-    return createPostgresConnector().templates!();
+    return POSTGRES_TEMPLATE_BUNDLE;
   },
   /**
    * An explicit URL or export bundle wins; otherwise fall back to the

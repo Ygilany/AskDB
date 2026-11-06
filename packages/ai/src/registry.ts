@@ -7,6 +7,7 @@ import type {
   AiProviderSelector,
   AiRegistry,
 } from "./provider.js";
+import { normalizeProvider } from "./provider.js";
 import {
   BUILTIN_AI_PROVIDERS,
   BUILTIN_AI_PROVIDER_NAMES,
@@ -98,17 +99,10 @@ export function createAiRegistry(adapters?: AiProviderAdapters): AiRegistry {
       return adapterFor(config.provider).resolveProviderOptions?.(config, settings);
     },
     keyMissingMessage(context: string): string {
-      // Collect configHint from unique adapter objects (aliases share the same object).
-      const seen = new Set<AiProviderAdapter>();
-      const hints: string[] = [];
-      for (const adapter of byProvider.values()) {
-        if (!seen.has(adapter)) {
-          seen.add(adapter);
-          if (adapter.configHint) {
-            hints.push(adapter.configHint);
-          }
-        }
-      }
+      // Aliases map to the same adapter object, so the Set keeps one hint per adapter.
+      const hints = [...new Set(byProvider.values())].flatMap((adapter) =>
+        adapter.configHint ? [adapter.configHint] : [],
+      );
       if (hints.length === 0) {
         return aiKeyMissingMessage(context);
       }
@@ -195,10 +189,6 @@ function isSelectorList(
   adapters: AiProviderAdapters,
 ): adapters is readonly AiProviderSelector[] {
   return Array.isArray(adapters);
-}
-
-function normalizeProvider(provider: string): string {
-  return provider.toLowerCase().trim();
 }
 
 function isAdapterEntry(

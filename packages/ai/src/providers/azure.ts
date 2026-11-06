@@ -32,14 +32,10 @@ export const azureProvider: AiProviderAdapter = {
     const config = resolveBaseConfig("azure", env, ENV_SPEC, options);
     if (!config) return undefined;
 
-    const resourceName =
-      env.ASKDB_AI_AZURE_RESOURCE_NAME || env.AZURE_RESOURCE_NAME || undefined;
+    const resourceName = env.ASKDB_AI_AZURE_RESOURCE_NAME || env.AZURE_RESOURCE_NAME;
     const apiVersion =
-      env.ASKDB_AI_AZURE_API_VERSION ||
-      env.AZURE_OPENAI_API_VERSION ||
-      env.AZURE_API_VERSION ||
-      undefined;
-    const modelFamily = env.ASKDB_AI_AZURE_MODEL_FAMILY || undefined;
+      env.ASKDB_AI_AZURE_API_VERSION || env.AZURE_OPENAI_API_VERSION || env.AZURE_API_VERSION;
+    const modelFamily = env.ASKDB_AI_AZURE_MODEL_FAMILY;
 
     if (!config.baseURL && !resourceName) {
       throw new Error(
@@ -108,22 +104,14 @@ async function createProvider(config: AiConfig) {
   const { createAzure } = await import("@ai-sdk/azure").catch(
     rethrowMissingPeer("azure", PEER_PACKAGE),
   );
-  const { resourceName, apiVersion } = azureConnectionOptions(config);
+  const resourceName = readStringOption(config.providerOptions, "resourceName");
+  const apiVersion = readStringOption(config.providerOptions, "apiVersion");
   return createAzure({
     apiKey: config.apiKey,
     ...(resourceName ? { resourceName } : {}),
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     ...(apiVersion ? { apiVersion } : {}),
   });
-}
-
-function azureConnectionOptions(
-  config: AiConfig,
-): { resourceName?: string; apiVersion?: string } {
-  return {
-    resourceName: readStringOption(config.providerOptions, "resourceName"),
-    apiVersion: readStringOption(config.providerOptions, "apiVersion"),
-  };
 }
 
 function readStringOption(

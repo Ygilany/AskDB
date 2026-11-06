@@ -51,7 +51,7 @@ Rejected. Studio, `@askdb/enrich` and `@askdb/rag` are still moving: Studio's au
 
 - After 1.0.0, a breaking change to a package in the 1.0 set needs a major version, unless it is confined to the experimental surfaces above.
 - A breaking change to an experimental surface releases `askdb` or `@askdb/config` as at least a minor: its changeset names that package `minor`. Without that, Changesets bumps `askdb` only as a patch when a `workspace:*` dependency on Studio, enrich or rag changes (`updateInternalDependencies: "patch"` in `.changeset/config.json`). A fix that leaves a surface working as documented can stay a patch.
-- The CLI help, the `@askdb/config` JSDoc and the docs-site reference don't mark these surfaces experimental yet. #662 tracks that.
+- The docs-site reference marks these surfaces experimental (the CLI and configuration pages). The CLI help and the `@askdb/config` JSDoc don't mark them yet. #662 tracks that.
 - Adding reports, a non-stub `bounded_results` or an MCP server after 1.0 is additive: it ships in a 1.x minor and amends this ADR. Moving a 0.x package to 1.0 also amends it.
 - `bounded_results` stays in the published modes (`ASKDB_MODES_V1`) as a reserved value, so a host that sets it today keeps working when Phase 12 lands.
 - Docs, the README and the docs site must not present reports, result summaries or MCP as 1.0 features.

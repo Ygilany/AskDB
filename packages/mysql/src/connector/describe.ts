@@ -385,7 +385,7 @@ function foldMysqlResult(input: FoldInput): IntrospectionResult {
 
   const schema: SqlSchema = {
     schemaId: input.schemaId,
-    schemas: isEmpty ? [] : sortedNamespaces,
+    schemas: sortedNamespaces,
   };
   return { schema, warnings, isEmpty, viewDefinitions, provider: "mysql" };
 }

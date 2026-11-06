@@ -45,7 +45,6 @@ export {
   type LiveConnectorProviderSpec,
 } from "./provider.js";
 
-
 export {
   formatConnectionLabel,
   parseConnectionUrl,
