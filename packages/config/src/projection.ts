@@ -16,7 +16,8 @@ export type AskDbEnvProjection = {
 };
 
 /**
- * Wraps a nested {@link AskDbConfig} for bootstrap merge. Check the object with TypeScript’s
+ * Checks a nested {@link AskDbConfig} and wraps it with its canonical env keys, for `bootstrapAskDbEnv`
+ * to install. Check the object with TypeScript’s
  * `satisfies AskDbConfig` so excess or mistyped keys fail at compile time while literals stay narrow, e.g.:
  *
  * ```ts
@@ -44,8 +45,11 @@ export function defineConfig<const T extends AskDbConfig>(config: T): AskDbEnvPr
 
 /**
  * Flattens a nested {@link AskDbConfig} into the canonical env keys of the runtime snapshot
- * (`AskDbEnvProjection.entries`), for example to build a child process's env. An optional key is
- * written only when the config sets it. Throws the same `askdb.config: …` errors as `defineConfig`.
+ * (`AskDbEnvProjection.entries`), for example to build a child process's env. Most optional keys are
+ * written only when the config sets them, so defaults such as the HTTP port stay out of the env;
+ * `ASKDB_RAG_EMBEDDER`, `ASKDB_INTROSPECT_OUT` and, with the pgvector store,
+ * `ASKDB_PGVECTOR_INDEX_STRATEGY` and the mock embedder's `ASKDB_RAG_EMBEDDER_DIMENSIONS` are always
+ * written. Throws the same `askdb.config: …` errors as `defineConfig`.
  */
 export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> {
   return resolveAskDbConfig(config).flat;
@@ -56,11 +60,11 @@ export function isAskDbEnvProjection(value: unknown): value is AskDbEnvProjectio
     typeof value === "object" &&
     value !== null &&
     ASKDB_ENV_PROJECTION in value &&
-    (value as AskDbEnvProjection)[ASKDB_ENV_PROJECTION] === true &&
+    value[ASKDB_ENV_PROJECTION] === true &&
     typeof (value as AskDbEnvProjection).entries === "object" &&
     (value as AskDbEnvProjection).entries !== null &&
     "config" in value &&
-    typeof (value as AskDbEnvProjection).config === "object" &&
-    (value as AskDbEnvProjection).config !== null
+    typeof value.config === "object" &&
+    value.config !== null
   );
 }
