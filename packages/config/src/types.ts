@@ -289,7 +289,8 @@ export type IntrospectionProviderConfigs = {
   };
   sqlite?: {
     /**
-     * Path to a `.db` / `.sqlite` file (or `:memory:` for an empty DB). Required —
+     * Path to an existing `.db` / `.sqlite` file, which introspection opens
+     * read-only, so `:memory:` doesn't work. Required —
      * SQLite has no URL-shaped fallback because `DATABASE_URL` is typically a URL
      * for a network engine.
      */
