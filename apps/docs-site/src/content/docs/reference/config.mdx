@@ -343,7 +343,7 @@ export default defineConfig({
 - **Postgres, MySQL, SQL Server**: `studio.execute.databaseUrl` → the introspection URL for the same engine, only when `useIntrospectionConnection: true`.
 - **SQLite**: `studio.execute.file` → the introspection SQLite file, only when `useIntrospectionConnection: true`.
 
-Studio doesn't fall back to your introspection credentials on its own, because those usually belong to a more privileged role than ad-hoc queries should use. [Studio reference — Execute guards](/reference/studio/#execute-guards) describes the read-only transaction, timeout, and row cap applied to every query.
+Studio doesn't fall back to your introspection credentials on its own: give execute the connection of a role that only reads. [Studio reference — Execute guards](/reference/studio/#execute-guards) describes the read-only transaction, timeout, and row cap applied to every query.
 
 Each execute provider requires its optional peer driver package (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). See [Enable Studio execute — Install the driver](/guides/enable-studio-execute/#3-install-the-driver) for install instructions.
 

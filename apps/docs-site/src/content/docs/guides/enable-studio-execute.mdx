@@ -43,7 +43,7 @@ export default defineConfig({
 });
 ```
 
-Studio runs queries on the same engine as `introspection.provider`. If you introspect a Prisma schema, or want to run on another engine, set `provider` too: `"postgres"`, `"mysql"`, `"sqlite"` or `"sqlserver"`. Studio doesn't reuse your introspection connection unless you set `useIntrospectionConnection: true`, because that connection usually belongs to a more privileged role. [Configuration — Studio execute](/reference/config/#studio-execute-configuration) lists every field.
+Studio runs queries on the same engine as `introspection.provider`. If you introspect a Prisma schema, or want to run on another engine, set `provider` too: `"postgres"`, `"mysql"`, `"sqlite"` or `"sqlserver"`. Studio doesn't reuse your introspection connection unless you set `useIntrospectionConnection: true`. Give execute the connection of a role that only reads. [Configuration — Studio execute](/reference/config/#studio-execute-configuration) lists every field.
 
 If you chose **Studio execute** in `askdb init` or the setup wizard, `enabled: true` is already there, but `databaseUrl` reads the same variable as introspection (`DATABASE_URL` unless you named another). Point it at the read-only role's variable instead.
 

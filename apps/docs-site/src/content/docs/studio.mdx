@@ -109,8 +109,8 @@ Once the SQL looks right, the **Get the code** panel turns the session into Type
 
 Settings, at the bottom of the side rail, shows how Studio is set up. It changes nothing:
 
-- **Workspace:** the schema ID and path, the AI provider and model, and whether AI suggestions are configured.
-- **RAG Store:** the embedder, the store, and whether the lock file and the store's files exist.
+- **Workspace:** the schema ID and path, the AI provider (`ai.provider`) and model (`ai.language.model`, or the provider's default), and whether AI suggestions are configured.
+- **RAG Store:** the embedder (`rag.embedder`, with `ai.embedding` for `"ai"`), the store (`rag.store` and `rag.storeConfig`), and whether the lock file and the store's files exist.
 - **Schema Warnings:** the warnings from loading your schema artifact, such as a table with no markdown file. [Loader warnings](/reference/schema-artifact-format/#loader-warnings) explains each kind.
 
 The rail's **Dark mode** button switches Studio's theme.

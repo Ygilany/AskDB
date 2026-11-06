@@ -5,9 +5,9 @@
 
 ## Overview
 
-AskDB Studio is a local browser-based authoring surface for describable schema artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and opens the browser app. The UI reads and writes the standard `schema.json` + `tables/*.md` artifact, using `@askdb/enrich` for all workspace logic.
+AskDB Studio is a local browser-based authoring surface for describable schema artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and prints its URL (`AskDB Studio is running at http://127.0.0.1:5556`). Studio doesn't open a browser itself (ADR 0009). The UI reads and writes the standard `schema.json` + `tables/*.md` artifact, using `@askdb/enrich` for all workspace logic.
 
-Studio is built with Vite + React + shadcn/ui. The server is a small Express app that serves the compiled React assets and exposes a typed JSON API. All enrichment logic runs through `@askdb/enrich`.
+Studio is built with Vite + React + shadcn/ui. The server is a small `node:http` server that serves the compiled React assets and exposes a typed JSON API. All enrichment logic runs through `@askdb/enrich`.
 
 The product shape follows the Prisma Studio pattern: a CLI command starts a local server, the server opens/serves a browser app, and the UI talks to a small local API. Studio is not a hosted service; it is a local developer tool.
 
@@ -19,7 +19,7 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 - **Enrichment editor** — table description, aliases, primary entity, tags, common query language, example questions, per-column metadata; dirty state, save, revert
 - **AI suggestion workflow** — suggest controls for table and column contexts; candidates presented for selection, not auto-applied; clear UI errors for missing/misconfigured AI env
 - **RAG panel** — index status, stale state, dimensions/embedder mismatch, sensitive counts; build action; query debugger with scored chunk results
-- **Ask panel** — sample NL→SQL generation with optional RAG toggle; renders SQL, explain text, schema warnings, retrieved chunks; generation only, no live execution
+- **Playground** (formerly the Ask panel) — sample NL→SQL generation with optional RAG toggle; renders the SQL and its explain text (retrieved chunks are shown in the RAG Index view's Query Debugger); runs the SQL only through the opt-in execute path (see Execute)
 - **API** — `GET /api/workspace`, `POST /api/tables/:tableId`, `POST /api/suggest`, `GET /api/rag/status`, `POST /api/rag/index`, `POST /api/rag/query`, `POST /api/ask`
 - **Build artifacts** — server TypeScript to `dist/`, React client to `dist/client/`; package tarball includes both
 
@@ -56,7 +56,7 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 
 **Server startup:**
 ```bash
-askdb-studio --schema <path>   # default port 4983
+askdb-studio --schema <path>   # default port 5556
 askdb-studio --schema <path> --port 3000
 ```
 
