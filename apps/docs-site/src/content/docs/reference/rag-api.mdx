@@ -180,7 +180,7 @@ Returns `{ ddl, tablesEmitted, chunksUsed, mentionDroppedCount }`. `ddl` has a b
 | `store` | `{ kind: string; location?: string }` | The store's identity, from `VectorStore.describe()`. |
 | `hashes` | `Record<string, string>` | Chunk id → `chunkContentHash` of the chunk's text. |
 | `updatedAt` | `string` | ISO 8601 time of the last successful index. |
-| `incomplete` | `true` | Set while a run that switches the embedder writes vectors, and cleared when it finishes. A lock that still has it never matches in `checkIndexMatches`. |
+| `incomplete` | `true` | `buildSchemaIndex` sets it while a run that switches the embedder writes vectors, and clears it when the run finishes. A lock that still has it never matches in `checkIndexMatches`. |
 
 ### `readLockFile(path)`
 
@@ -377,7 +377,7 @@ Beyond the `VectorStore` interface, the returned `MemoryStore` has:
 
 ### `createFileStore(options)`
 
-The memory store, saved to two files next to each other: `<basePath>.embeddings.bin` holds the vectors, and `<basePath>.embeddings.json` holds the chunk payloads and hashes. It loads both files when it's created. Each file is written to a temporary path and renamed into place, and the JSON records the SHA-256 of the binary file it belongs to, so a crash between the two writes is detected on the next load.
+The memory store, saved to two files next to each other: `<basePath>.embeddings.bin` holds the vectors, and `<basePath>.embeddings.json` holds the chunk payloads and hashes. It loads both files when it's created. The store writes each file to a temporary path and renames it into place. The JSON records the SHA-256 of the binary file it belongs to, so the next load detects a crash between the two writes.
 
 ```ts
 import { createFileStore } from "@askdb/rag";
@@ -470,7 +470,7 @@ What `describe()` returns.
 | Field | Type | Description |
 | --- | --- | --- |
 | `kind` | `string` | Adapter kind, such as `"memory"`, `"file"` or `"pgvector"`. |
-| `location` | `string` | Where the vectors live, such as the pgvector table name. It is written to `schema.lock.json`, which you usually commit, so keep it free of absolute paths and credentials. |
+| `location` | `string` | Where the vectors live, such as the pgvector table name. The indexer writes it to `schema.lock.json`, which lives in the schema directory you commit, so keep it free of absolute paths and credentials. |
 | `dimensions` | `number` | The vector width the store holds or expects, when known. |
 | `ephemeral` | `boolean` | `true` for a store that keeps nothing past the process. The indexer then neither reads nor writes the lock. |
 | `widthHint` | `string` | How to give the store a different vector width. Appended to the indexer's width-mismatch error, and not written to the lock. |
