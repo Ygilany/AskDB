@@ -107,7 +107,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | Flag | Description |
 | --- | --- |
 | `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` (default `postgres`) |
-| `--connection-env <name>` | Env var name for the connection URL (default `DATABASE_URL`). |
+| `--connection-env <name>` | Env var name for the connection URL (default `DATABASE_URL`; not used with `sqlite`, which reads `--sqlite-file`). |
 | `--sqlite-file <path-or-env>` | SQLite file path, or an env var name (`UPPER_SNAKE_CASE`, e.g. `SQLITE_FILE`) to read the path from. Anything else, such as `data.db` or `../db/app.db`, is written as a literal path. |
 | `--prisma-schema <path>` | Path to `schema.prisma`. |
 | `--schema-out <dir>` | Schema output directory (default `./askdb`). |
