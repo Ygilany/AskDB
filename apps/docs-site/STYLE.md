@@ -13,21 +13,50 @@ In priority order (from `docs/mission.md`):
 ## Voice
 
 - Second person ("you"); "we" only inside tutorials, as the teacher alongside the learner.
-- Short, direct sentences. US spelling. Sentence-case headings.
-- No emoji. Contractions are fine.
+- US spelling. Sentence-case headings. No emoji.
+- The register follows the page type. Reference is austere and neutral. How-to guides are direct. Tutorials and explanation pages may be warmer and more discursive: a tutorial can point out what the learner should notice, and an explanation can weigh alternatives and give the project's view.
+
+## Writing rules
+
+The site follows ASD-STE100 (Simplified Technical English) about 80% of the way. Full STE reads dry, so the site keeps the STE rules that make text clear and softens the rest.
+
+**Keep:**
+
+- **One idea per sentence.** When a sentence joins two ideas with "and", "which" or a semicolon, split it or make a list.
+- **Active voice.** Name the actor: "`ask()` throws `TenantScopeError`", not "`TenantScopeError` is thrown".
+- **Present tense.** Say what the software does: "returns", not "will return".
+- **Commands for steps.** Start each step with a verb: "Run `askdb init`." Put a condition before the command: "If you use pnpm 11, approve the build."
+- **One word for one meaning.** Use the terms in the [terminology table](#terminology) every time. Don't vary a term for style.
+- **Numbers, not adjectives.** "1 MiB", "30 chunks", "60 s", not "large", "a few" or "quickly".
+- **A risk first, with its reason.** Put the hazard before the instruction it qualifies, and say why: "Run generated SQL under a read-only role. The SQL checks are heuristics, not a security boundary."
+- **No intensifiers or hedges.** Leave out "very", "just", "simply", "actually", "really" and "extremely". Instead of "usually" or "typically", state the condition under which something is true.
+
+**Soften:**
+
+- **Sentence length is a target, not a cap.** Aim for about 20 words in a step and 25 in a description. A longer sentence is fine when splitting it would separate a condition from its result. Past about 35 words, split it or use a list.
+- **Write for flow.** Contractions ("don't", "it's"), connecting words ("so", "but", "then", "because") and varied sentence openings are fine.
+- **Common phrasal verbs are fine:** "set up", "log in", "look up", "fall back".
+- **Warmth depends on the page type.** Tutorials and explanation pages may be warmer and more discursive than reference pages (see [Voice](#voice)).
+
+**Drop:**
+
+- **STE's approved-word dictionary.** It can't hold API names, product terms or the terminology table. Use the word a developer expects.
 
 ## Terminology
 
 | Use | Instead of | Notes |
 |---|---|---|
-| schema artifact | describable schema | |
+| schema artifact | describable schema, Schema v2 | Say "v2" only where the format version matters (`"version": 2` in `schema.json`). See #273. |
 | reviewed schema context | describable context | |
 | natural-language analytics | NL-to-SQL | In introductory sections; "NL-to-SQL" is fine in reference. |
 | AskDB returns SQL | execution boundary | In beginner-facing sections. |
 | your application owns execution | host owns execution | |
 | large schemas | RAG | Until the concept is introduced. |
+| the read-only check, the tenant check, the sensitive check; together, the SQL checks | validator, lint, guardrail (in prose) | API names keep "guardrail" (`sensitiveGuardrail`, `validateTenantGuardrails`). Say the checks are heuristics where it matters, but don't use "heuristic checks" as their name. |
+| engine package | adapter | `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`. "Connector" is fine for what `create*Connector` returns. |
+| Playground | Ask panel | Studio's view for asking a question. |
 
-Introduce these only after the reader understands the product — fine in concept and reference pages, too early on Start pages and the first guides: Schema v2, RAG, BYO runtime, MCP, bounded results, headless contracts, dialect-agnostic, optional peers, runtime snapshot.
+Introduce these only after the reader understands the product — fine in concept and reference pages, too early on Start pages and the first guides: RAG, BYO runtime, MCP, bounded results, headless contracts, dialect-agnostic, optional peers, runtime snapshot.
 
 Model wiring has two first-party paths: `@askdb/ai`'s built-in providers (`createAiRegistry()`, `createAskDb({ config })`) and a raw Vercel AI SDK `LanguageModel` passed to `ask()`. Present both as equally supported; choose between them by who owns provider config. Name the deprecated `@askdb/ai-*` shims only in deprecation notes and migration tables.
 
@@ -39,6 +68,15 @@ Model wiring has two first-party paths: `@askdb/ai`'s built-in providers (`creat
 | Guides | How-to guides | `guides/`, `guides/integrations/` |
 | Concepts | Explanation | `concepts/` |
 | Reference | Reference | `reference/` |
+
+Every page is exactly one Diátaxis type. A sentence that belongs to another type moves to that type's page and is replaced by a link.
+
+Page titles follow the type:
+
+- **Tutorial:** what the learner builds ("Quickstart" is the one exception, for findability).
+- **How-to guide:** the reader's goal as a command ("Deploy AskDB as an HTTP service"). The sidebar label may shorten it.
+- **Explanation:** a noun phrase that reads after "About" ("Safety boundaries", "The schema artifact").
+- **Reference:** the thing it describes ("CLI reference", "@askdb/core API reference").
 
 The sidebar is hand-written in `astro.config.mjs`; every new page needs an entry there. Pages open with `<p class="doc-eyebrow">` and `<p class="doc-lede">` and end with a "Read next" section linking the natural next pages.
 
