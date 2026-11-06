@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { createConnectorRegistry, type ConnectorConnectionRequest } from "@askdb/introspect";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { createConnectorRegistry, type CatalogQueryRunner, type ConnectorConnectionRequest } from "@askdb/introspect";
+import type { PostgresIntrospectionInput } from "./index.js";
 import { postgresConnectorProvider } from "./provider.js";
+import { POSTGRES_TEMPLATE_VERSION, POSTGRES_TEMPLATES } from "./templates.js";
 
 // Through the registry, which adds the label built from the adapter's parts (ADR 0011).
 const registry = createConnectorRegistry([postgresConnectorProvider]);
@@ -73,5 +78,31 @@ describe("postgresConnectorProvider.createConnector", () => {
     const result = postgresConnectorProvider.createConnector({ provider: "postgres", url: "postgres://db/app", filters });
     expect(result.mode).toBe("live");
     expect(result.input).toEqual({ mode: "live", runner: expect.any(Function), filters });
+  });
+});
+
+describe("postgresConnectorProvider.createConnector schemaId", () => {
+  // An empty catalog in each mode: a runner that returns no rows, and an export bundle of empty files.
+  const emptyCatalog: CatalogQueryRunner = async () => ({ columns: [], rows: [] });
+  const bundleDir = mkdtempSync(join(tmpdir(), "askdb-pg-schema-id-"));
+  const files = Object.fromEntries(POSTGRES_TEMPLATES.map((tpl) => [tpl.name, `${tpl.name}.json`]));
+  for (const file of Object.values(files)) writeFileSync(join(bundleDir, file), "[]");
+  writeFileSync(
+    join(bundleDir, "manifest.json"),
+    JSON.stringify({ engine: "postgres", version: POSTGRES_TEMPLATE_VERSION, files }),
+  );
+  afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
+
+  it.each([
+    ["live", "shop", "shop"],
+    ["live", undefined, "introspected"],
+    ["from-export", "shop", "shop"],
+    ["from-export", undefined, "introspected"],
+  ])("%s: turns config.schemaId %s into SqlSchema.schemaId %s", async (mode, schemaId, expected) => {
+    const connection = mode === "live" ? { url: "postgres://db/app" } : { fromExport: bundleDir };
+    const { connector, input } = postgresConnectorProvider.createConnector({ provider: "postgres", ...connection, schemaId });
+    const described = input as PostgresIntrospectionInput;
+    const result = await connector.describe(described.mode === "live" ? { ...described, runner: emptyCatalog } : described);
+    expect(result.schema.schemaId).toBe(expected);
   });
 });
