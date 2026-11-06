@@ -36,11 +36,10 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
   });
 
   it.each([
-    [["--help"], "Usage: askdb"],
-    [["-h"], "Usage: askdb"],
-    [["help", "ask"], "Usage: askdb ask"],
-    // Unlike `help ask`, this parses `ask` itself, so it fails if config loads before commander's help check.
-    [["ask", "--help"], "Usage: askdb ask"],
+    [["--help"], "askdb help <command>"],
+    [["-h"], "askdb help <command>"],
+    [["help", "ask"], "askdb ask - "],
+    [["ask", "--help"], "askdb ask - "],
     [["introspect", "--help"], "askdb introspect - Schema introspection"],
     [["introspect", "templates", "--engine", "postgres"], "-- schemas"],
     [["studio", "--help"], "askdb-studio - Local browser UI"],
@@ -70,6 +69,16 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
       expect(exec.stderr).toBe("");
     },
   );
+
+  // `grep -q` stops reading at its first match, so the rest of the help meets a closed pipe.
+  it("`askdb --help | grep -q` exits 0 when the reader closes the pipe early", () => {
+    const exec = spawnSync("bash", ["-c", `set -o pipefail; node "${cliJs}" --help | grep -q AskDB`], {
+      cwd: emptyDir,
+      encoding: "utf8",
+    });
+    expect(exec.stderr).toBe("");
+    expect(exec.status).toBe(0);
+  });
 
   it("`askdb bundle` works without a config", () => {
     const out = join(emptyDir, "bundle.json");

@@ -65,9 +65,11 @@ Model wiring has two first-party paths: `@askdb/ai`'s built-in providers (`creat
 | Sidebar section | Diátaxis type | Folder |
 |---|---|---|
 | Start | Tutorial (Quickstart), plus orientation pages, each of one type: Overview (explanation), Install (how-to), Studio (a tutorial-style tour of its views) | root |
-| Guides | How-to guides | `guides/`, `guides/integrations/` |
+| Guides | How-to guides, in groups by the reader's task: Build, Run in production, Tenancy, Maintain, Integrations | `guides/`, `guides/integrations/` |
 | Concepts | Explanation | `concepts/` |
-| Reference | Reference | `reference/` |
+| Reference | Reference, in groups: Surfaces (CLI, HTTP API, configuration), Formats and rules, Packages and releases, APIs | `reference/` |
+
+A sidebar group with no pages yet stays out of `astro.config.mjs` until its first page lands.
 
 Every page is exactly one Diátaxis type. A sentence that belongs to another type moves to that type's page and is replaced by a link.
 
@@ -78,7 +80,7 @@ Page titles follow the type:
 - **Explanation:** a noun phrase that reads after "About" ("Safety boundaries", "The schema artifact").
 - **Reference:** the thing it describes ("CLI reference", "@askdb/core API reference").
 
-The sidebar is hand-written in `astro.config.mjs`; every new page needs an entry there. Pages open with `<p class="doc-eyebrow">` and `<p class="doc-lede">` and end with a "Read next" section linking the natural next pages.
+The sidebar is hand-written in `astro.config.mjs`; every new page needs an entry there. A page that moves or is deleted gets an entry in `redirects` in the same file, so old links and bookmarks still land. Links in the docs go to the new path, since a redirect drops the `#anchor`. Pages open with `<p class="doc-eyebrow">` and `<p class="doc-lede">` and end with a "Read next" section linking the natural next pages.
 
 The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the site structure for LLMs — update it when sections change.
 
@@ -88,13 +90,13 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 - Content root: `apps/docs-site/src/content/docs/`
 - Navigation file: `apps/docs-site/astro.config.mjs` (`sidebar`)
 - Dev server: `pnpm docs:dev` (127.0.0.1:4310)
-- Build / check: `pnpm docs:build`; `pnpm -C apps/docs-site test` (build + internal link check); `pnpm -C apps/docs-site lint` (`astro check`)
+- Build / check: `pnpm docs:build`; `pnpm -C apps/docs-site test` (builds the site, then fails on an internal link to a missing page or `#anchor`); `pnpm -C apps/docs-site lint` (`astro check`)
 - Source lines: one line per paragraph, soft-wrapped by the editor (see `AGENTS.md`).
 - Internal links: root-absolute (`/guides/embed-in-node/`); a remark plugin rebases them.
 
 ## Components
 
-- `InstallTabs` (`<InstallTabs pkgs="…" />`) for every package install.
+- `InstallTabs` (`<InstallTabs pkgs="…" />`) for every package install. The Quickstart is the exception: it uses plain npm commands until pnpm and Yarn work in a new project ([#750](https://github.com/Ygilany/AskDB/issues/750), [#748](https://github.com/Ygilany/AskDB/issues/748)).
 - `Tabs` with a `syncKey` so choices persist site-wide: `pkg` (labels exactly npm / pnpm / yarn), `engine` (database engines), `wiring` (config-driven vs direct model).
 - `Aside` for prerequisites and real hazards — `note`, `tip`, `caution`; keep them rare.
 - `ExampleLink` to point at a runnable example in the repo.

@@ -5,7 +5,9 @@ description: "Full API reference for @askdb/client: createAskDb(), AskDbClient, 
 
 <p class="doc-eyebrow">Reference · @askdb/client</p>
 
-<p class="doc-lede"><code>@askdb/client</code> is a config-driven facade over <code>@askdb/core</code>. <code>createAskDb()</code> resolves the schema, model, and dialect from <code>askdb.config.*</code> once; call sites pass only a question. Use it when you want the shortest path from config to SQL. Use <code>@askdb/core</code> directly when you construct the model yourself, serve multiple schemas, or want zero dependency on <code>@askdb/config</code>.</p>
+<p class="doc-lede"><code>@askdb/client</code> is a config-driven facade over <code>@askdb/core</code>. <code>createAskDb()</code> resolves the schema, model, and dialect from <code>askdb.config.*</code>, so call sites pass only a question.</p>
+
+To choose between the client and calling `@askdb/core`'s `ask()` with your own model, see [Bring your own model → Which should I use?](/guides/bring-your-own-model/#which-should-i-use).
 
 ## `createAskDb(options)`
 
@@ -110,10 +112,10 @@ All `AskPipelineOptions` fields can be overridden per call, except that the two 
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` tenant scope: returns the subtree's IDs grouped by tenant root (`TenantIdsByRoot`), which `ask()` binds to each root's own placeholder. Required for `subtree` scopes. See [`ask()` options](/reference/core-api/#options). |
 | `parameterize` | `boolean` | Default `true`. Set `false` to skip unbound SQL / parameter manifest output tokens. |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | Default `"warn"`. How `ask()` treats SQL that references identifiers marked `sensitive`; see [`ask()` options](/reference/core-api/#options). |
-| `retriever` | `Retriever` | RAG retriever. |
+| `retriever` | `Retriever` | RAG retriever. When supplied, retrieval replaces the full DDL, unless `totalSchemaChunkCount` is at or below `retrievalThresholdChunks`. |
 | `retrievalK` | `number` | Top-k for the retriever. |
-| `retrievalThresholdChunks` | `number` | Chunk count threshold for triggering retrieval. |
-| `totalSchemaChunkCount` | `number` | Total indexed chunk count; from `buildSchemaIndex` result stats. |
+| `retrievalThresholdChunks` | `number` | Chunk count at or below which the full DDL is used even with a retriever (default `30`). Compared with `totalSchemaChunkCount`. |
+| `totalSchemaChunkCount` | `number` | Total indexed chunk count, from `buildSchemaIndex`'s `stats.chunksTotal`. Default `Infinity`: with a retriever, every call retrieves. |
 | `logger` | `AskDbLogger` | Per-call structured logger. |
 | `deps` | `AskGenerateDeps` | `{ generateText?, providerOptions? }`. `generateText` replaces the model call, for tests; the registry isn't used. `providerOptions` is passed to the model call as is, and takes precedence over the options the client resolves from `reasoningEffort`. |
 

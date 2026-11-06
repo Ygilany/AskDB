@@ -15,6 +15,8 @@ description: "What works today for agent integration — CLI, library, HTTP API 
 | **Library** | Embed `ask()` directly in your agent runtime — fastest path for Node agents. See [Embed in a Node app](/guides/embed-in-node/). |
 | **HTTP API** | `@askdb/http-api` for agents in any language. See [Deploy as HTTP service](/guides/deploy-as-http-service/). |
 
+The CLI and the HTTP API can't serve a schema with a tenant policy yet: neither accepts a tenant scope ([#277](https://github.com/Ygilany/AskDB/issues/277), [#343](https://github.com/Ygilany/AskDB/issues/343)). For a tenant-scoped agent tool, use the library.
+
 All three surfaces use the same `@askdb/core` pipeline and run the same SQL checks, whichever you wrap. Those checks are heuristic defense in depth, not a security boundary. An agent can send any question it likes, so run the SQL it gets back under a read-only, least-privilege role. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
 
 ## MCP status
@@ -23,14 +25,14 @@ A first-party Model Context Protocol server is planned. It will expose the same 
 
 Until it ships, the recommended pattern is to write a thin MCP adapter in your own host that calls the HTTP API or the library directly. Your adapter enforces the same trust boundaries — modes, sensitive-field handling, which schema artifact is loaded — that the first-party MCP server will.
 
-Track the roadmap on the [AskDB GitHub project](https://github.com/Ygilany/AskDB).
+The first-party MCP server comes after 1.0 ([mission](https://github.com/Ygilany/AskDB/blob/main/docs/mission.md)).
 
 ## Wrapping AskDB as a tool
 
-A typical agent tool definition for AskDB looks like:
+A typical agent tool definition for AskDB looks like this:
 
 ```ts
-import { createAskDb } from "@askdb/client";
+import { createAskDb, type AskOverrides } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 
 // Initialize once at startup — schema, model, and dialect resolve from config
@@ -41,32 +43,34 @@ const askdb = createAskDb({
   schema: { path: "./my-app.schema" },
 });
 
-{
-  name: "ask_database",
-  description: "Translate a natural-language question into SQL " +
-    "against the application database. Returns SQL — execution is " +
-    "the caller's responsibility.",
-  parameters: {
-    type: "object",
-    properties: {
-      question: { type: "string" },
+// Build the tool per request. The tenant scope comes from your host's auth
+// context for this user, never from the agent's input.
+export function askDatabaseTool(tenantScope?: AskOverrides["tenantScope"]) {
+  return {
+    name: "ask_database",
+    description:
+      "Translate a natural-language question into SQL against the application database. " +
+      "Returns SQL; execution is the caller's responsibility.",
+    parameters: {
+      type: "object",
+      properties: { question: { type: "string" } },
+      required: ["question"],
     },
-    required: ["question"],
-  },
-  async invoke({ question }) {
-    const { sql } = await askdb.ask(question);
-    return { sql };
-  },
+    async invoke({ question }: { question: string }) {
+      const { sql, tenantParams } = await askdb.ask(question, { tenantScope });
+      return { sql, tenantParams };
+    },
+  };
 }
 ```
 
-This works in Vercel AI SDK tools, OpenAI function calls, Anthropic tool use, and any other agent framework that takes a function and a schema.
+Adapt the object to your framework's tool shape: Vercel AI SDK tools, OpenAI function calls, Anthropic tool use and other agent frameworks all take a name, a JSON Schema for the input, and a function. When your host runs the SQL, it runs `sql` with `tenantParams ?? []`.
 
 ## Trust in an agent loop
 
 Two things matter when AskDB sits inside an agent:
 
-1. **The agent never executes SQL directly.** It calls `ask()` and gets back checked SQL — your host code decides whether and how to run it.
+1. **The agent never executes SQL directly.** It calls `ask()` and gets back checked SQL. Your application owns execution: it decides whether and how to run the SQL.
 2. **The agent operates under a tenant scope you supply.** When the schema has tenant policy, pass `tenantScope` from your host's auth context — not from anything the agent (or the user) sent.
 
 ## Read next

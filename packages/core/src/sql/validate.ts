@@ -3,6 +3,7 @@ import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
   ENGINE_LEXER_PROFILES,
   findEscapeStringContinuation,
+  findEscapedByteString,
   findUnicodeEscapedIdentifier,
   GENERIC_LEXER,
   lexSql,
@@ -52,10 +53,11 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * Checks, in order (the first failure throws {@link SqlValidationError}):
  *
  * 1. `SQL_EMPTY` — nothing left after trimming.
- * 2. `SQL_STRING_CONTINUATION`, Postgres lexer only (postgres, cockroachdb, and a dialect id
- *    that is no built-in engine) — an `E'…'` string continued on a later line, which Postgres
- *    reads with backslash escapes; past it the tokens may not be Postgres's, so it runs first
- *    (#703).
+ * 2. `SQL_STRING_CONTINUATION` and then `SQL_ESCAPED_BYTE_STRING`, Postgres lexer only
+ *    (postgres, cockroachdb, and a dialect id that is no built-in engine) — an `E'…'` string
+ *    continued on a later line, which Postgres reads with backslash escapes, and a `b'…'` byte
+ *    string with a backslash or a continuation, which CockroachDB reads with them; past either,
+ *    the tokens may not be the server's, so they run first (#703, #730).
  * 3. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block
  *    comment never closes. Fails closed rather than guessing where it ends.
  * 4. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
@@ -121,7 +123,7 @@ function checkWithProfile(
 ): SqlToken[] {
   const tokens = lexSql(sql, profile);
 
-  // First: past this boundary the tokens may not be the ones Postgres reads (#703).
+  // First: past these boundaries the tokens may not be the ones the server reads (#703, #730).
   if (profile.id === "postgres") {
     const continued = findEscapeStringContinuation(sql, tokens);
     if (continued) {
@@ -129,6 +131,14 @@ function checkWithProfile(
         "SQL_STRING_CONTINUATION",
         `An E'…' string continued on a later line is not allowed: generated SQL continues the E'…' string at offset ${continued.start}.`,
         "Postgres joins E'…' with the next '…' across a newline and reads both with backslash escapes, so the check can't tell where the string ends. Write one literal, or join the parts with ||.",
+      );
+    }
+    const bytes = findEscapedByteString(sql, tokens);
+    if (bytes) {
+      throw validationError(
+        "SQL_ESCAPED_BYTE_STRING",
+        `A b'…' byte string with a backslash, or continued on a later line, is not allowed: generated SQL has one at offset ${bytes.start}.`,
+        "CockroachDB reads b'…' with backslash escapes, also across a continuation, so the check can't tell where the string ends. Write the bytes as a hex string cast to bytea ('\\x00'::bytea).",
       );
     }
   }

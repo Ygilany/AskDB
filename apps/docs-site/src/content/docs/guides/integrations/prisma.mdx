@@ -63,7 +63,7 @@ npx askdb introspect --engine prisma --prisma-schema ./prisma --print
 npx askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
-To make `--prisma-schema` optional on repeat runs, set `introspection.providerConfig.prisma.schemaPath` in `askdb.config.ts` — or rely on auto-discovery: with `provider: "prisma"` and no path configured, AskDB finds `prisma/schema.prisma` (or `schema.prisma`) in your project root automatically.
+To make `--prisma-schema` optional on repeat runs, set `introspection.providerConfig.prisma.schemaPath` in `askdb.config.ts` — or rely on auto-discovery: with `provider: "prisma"` and no path configured, AskDB looks in your project root for `prisma/schema.prisma`, then `schema.prisma`, then a `prisma/` directory (a multi-file schema), and uses the first it finds.
 
 ## Programmatic API
 
@@ -80,12 +80,12 @@ await introspect(
 
 ## Supported providers
 
-`@askdb/prisma` supports any Prisma relational provider. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
+`@askdb/prisma` supports the five Prisma providers below; any other `datasource.provider` throws. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
 
 | Prisma provider | `dialect` id | Engine package (live introspection) |
 | --- | --- | --- |
 | `postgresql` | `"postgres"` | `@askdb/postgres` |
-| `cockroachdb` | `"cockroachdb"` | `@askdb/postgres` |
+| `cockroachdb` | `"cockroachdb"` | none: introspect the `.prisma` file |
 | `mysql` | `"mysql"` | `@askdb/mysql` |
 | `sqlite` | `"sqlite"` | `@askdb/sqlite` |
 | `sqlserver` | `"sqlserver"` | `@askdb/sqlserver` |
@@ -99,6 +99,6 @@ MongoDB is not supported — AskDB targets relational engines.
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Quickstart</strong><span>The full introspect → enrich → ask flow.</span></a>
+  <a href="/quickstart/"><strong>Quickstart</strong><span>A sample database, end to end: introspect, ask, and run the SQL AskDB returns.</span></a>
   <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>How to pair @askdb/prisma with each runtime engine.</span></a>
 </div>

@@ -10,6 +10,7 @@ import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } fr
 import {
   ENGINE_LEXER_PROFILES,
   GENERIC_LEXER,
+  findPostgresOnlyForms,
   hasUnterminatedToken,
   lexSql,
   lexerProfileFor,
@@ -368,7 +369,7 @@ function scanSql(
 ): SensitiveGuardrailResult {
   const profile = dialect ? lexerProfileFor(dialect) : undefined;
   if (profile) {
-    return finalize(scanTokens(lexSql(sql, profile), index, selectModifiersFor(dialect)));
+    return finalize(withPostgresOnlyIssues(scanTokens(lexSql(sql, profile), index, selectModifiersFor(dialect)), sql, dialect));
   }
 
   const modifiers = SELECT_MODIFIERS.any;
@@ -382,7 +383,26 @@ function scanSql(
       else if (ref.matchKind === "qualified") existing.matchKind = "qualified";
     }
   }
-  return finalize(primary);
+  return finalize(withPostgresOnlyIssues(primary, sql, dialect));
+}
+
+/**
+ * `outcome` with a scope issue for each form only the Postgres reading can hold: a `U&"…"` name,
+ * which Postgres decodes and the check matches as written, an `E'…'` string continued on a later
+ * line, which Postgres reads with backslash escapes, and a `b'…'` byte string, which CockroachDB
+ * reads with them. The check can't tell what any of them reads, so it fails closed (#707, #730,
+ * ADR 0012).
+ */
+function withPostgresOnlyIssues(
+  outcome: ScanOutcome,
+  sql: string,
+  dialect: Pick<DialectSpec, "id" | "backslashEscapes"> | undefined,
+): ScanOutcome {
+  const forms = findPostgresOnlyForms(sql, dialect);
+  if (forms.unicodeEscapedIdentifier !== undefined) outcome.issues.add("UNICODE_ESCAPED_IDENTIFIER");
+  if (forms.escapeStringContinuation !== undefined) outcome.issues.add("STRING_CONTINUATION");
+  if (forms.escapedByteString !== undefined) outcome.issues.add("ESCAPED_BYTE_STRING");
+  return outcome;
 }
 
 function finalize(outcome: ScanOutcome): SensitiveGuardrailResult {
@@ -979,6 +999,12 @@ const SCOPE_ISSUE_TEXT: Record<SensitiveScopeIssue, string> = {
     "a table source is not a relation name (table function or table-valued expression)",
   UNTERMINATED_TOKEN:
     "a string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned",
+  UNICODE_ESCAPED_IDENTIFIER:
+    "a Unicode-escaped name (U&\"…\") can't be matched against sensitive columns, since Postgres decodes it",
+  STRING_CONTINUATION:
+    "an E'…' string continues on a later line, which Postgres reads with backslash escapes, so where the string ends is unclear",
+  ESCAPED_BYTE_STRING:
+    "a b'…' byte string holds a backslash or continues on a later line, which CockroachDB reads with backslash escapes, so where the string ends is unclear",
 };
 
 function buildScopeReport(issues: SensitiveScopeIssue[], widened: boolean): SensitiveScopeReport {
