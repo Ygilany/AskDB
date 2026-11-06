@@ -631,13 +631,30 @@ describe("validateTenantGuardrails — a call the tenant check can't read throug
     expect(rules(sql, MYSQL_DIALECT)).not.toContain("UNCHECKABLE_FUNCTION");
   });
 
-  // Only a call counts, not the name inside a literal or used as a column or an alias.
+  // A listed name counts in any code position, not only right before `(`: Postgres reaches a
+  // function in forms with no `(` after its name (#702 review, round 3). So a column, an alias
+  // or a placeholder named like a listed function is refused too, a false positive the rule
+  // accepts so that no spelling of a call gets past it.
   it.each([
-    ["inside a string", `${scoped} AND note = 'query_to_xml(1)'`],
-    ["as a column and an alias", "SELECT crosstab, note AS set_config FROM orders WHERE agency_id = :tenant_agency_ids"],
-  ])("passes a listed name %s", (_label, sql) => {
+    ["a column", `SELECT crosstab FROM orders WHERE agency_id = :tenant_agency_ids`],
+    ["an alias", `SELECT note AS set_config FROM orders WHERE agency_id = :tenant_agency_ids`],
+    ["a qualified name", `SELECT o.ts_stat FROM orders o WHERE o.agency_id = :tenant_agency_ids`],
+    ["a placeholder", `${scoped} AND note = :set_config`],
+  ])("refuses a listed name used as %s", (_label, sql) => {
     for (const dialect of everyDialect) {
-      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual([]);
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual(["UNCHECKABLE_FUNCTION"]);
+    }
+  });
+
+  // MySQL reads `"…"` as a string, and with ANSI_QUOTES as a name, so a listed name in one counts.
+  it("refuses a listed name in double quotes under MySQL", () => {
+    expect(rules(`SELECT "query_to_xml"('x') AS v`, MYSQL_DIALECT)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
+  // Text inside a single-quoted literal isn't code, so a listed name there doesn't count.
+  it("passes a listed name inside a string", () => {
+    for (const dialect of everyDialect) {
+      expect(rules(`${scoped} AND note = 'query_to_xml(1)'`, dialect), dialect?.id ?? "custom").toEqual([]);
     }
   });
 });

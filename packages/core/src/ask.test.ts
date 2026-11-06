@@ -1494,7 +1494,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
 
   // #702: a SELECT can reach rows through a call the per-table checks can't read. Here the
   // call rewrites the setting row-level security reads, then runs a query passed as a string.
-  it("strict: refuses a SELECT whose calls the tenant check can't read, from a custom dialect (UNCHECKABLE_FUNCTION)", async () => {
+  it("strict: refuses a SELECT naming functions the tenant check can't read through, from a custom dialect (UNCHECKABLE_FUNCTION)", async () => {
     const sql =
       "SELECT set_config('app.agency_ids', '1,2,3', true) AS s, query_to_xml('SELECT * FROM orders', true, false, '') AS x";
     const error = await ask({
@@ -1509,7 +1509,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     expect(error).toBeInstanceOf(TenantGuardrailError);
     const warnings = (error as TenantGuardrailError).warnings;
     expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["UNCHECKABLE_FUNCTION", ""]]);
-    expect(warnings[0]!.message).toContain("set_config()");
+    expect(warnings[0]!.message).toContain("set_config");
   });
 
   // #702: the built-in Postgres read-only check allows `table_to_xml` because it only reads,

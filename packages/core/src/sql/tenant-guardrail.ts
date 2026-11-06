@@ -117,13 +117,15 @@ export function tenantRuleWarnings(
   // Nor can they see what a query reaches through a call that runs SQL or reads a table named
   // in a string they blank, runs SQL over another connection, or sets what row-level security
   // reads. The read-only check allows some of these as reads, and a custom AskDialect skips
-  // it, so the tenant check refuses them under every dialect (#702).
-  const call = uncheckableCall(sql, dialect);
-  if (call !== undefined) {
+  // it, so the tenant check refuses them under every dialect (#702). A listed name counts in any
+  // code position, since an engine can reach a function without `(` right after its name.
+  const name = uncheckableName(sql, dialect);
+  if (name !== undefined) {
     warnings.push(
       warn("UNCHECKABLE_FUNCTION", "",
-        `The SQL calls ${call}(), which reads or scopes rows the tenant check can't see. Under a tenant ` +
-        "policy, query the tables directly (pivot with CASE or FILTER, not crosstab)."),
+        `The SQL names ${name}, a function that reads or scopes rows the tenant check can't see. Under a ` +
+        "tenant policy, query the tables directly (pivot with CASE or FILTER, not crosstab), and don't " +
+        "name a column, alias or parameter after one of these functions."),
     );
   }
 
@@ -441,26 +443,31 @@ const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The first call in `sql` to a function in {@link UNCHECKABLE_FUNCTIONS}, its name lowercase, or
- * undefined. A call is a name, bare, quoted or qualified, then `(`, with any comments between.
- * Read under every reading from {@link statementReadings}, so a call any of them sees counts.
+ * The first name in `sql` from {@link UNCHECKABLE_FUNCTIONS}, lowercase, or undefined. A name counts
+ * in any code position, in any case, bare, quoted or qualified, not only right before `(`: an
+ * engine can reach a function in forms with no `(` after its name, so a column, an alias or a
+ * placeholder named like a listed function counts too. Text in comments and single-quoted strings
+ * doesn't. Read under every reading from {@link statementReadings}, so a name any of them sees counts.
  */
-function uncheckableCall(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+function uncheckableName(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
   for (const profile of statementReadings(dialect)) {
-    const tokens = lexSql(sql, profile).filter((t) => t.kind !== "comment");
-    for (let i = 1; i < tokens.length; i++) {
-      if (tokens[i]!.kind !== "punct" || tokens[i]!.text !== "(") continue;
-      const called = nameOf(tokens[i - 1]!);
-      if (called !== undefined && UNCHECKABLE_FUNCTIONS.has(called)) return called;
+    for (const token of lexSql(sql, profile)) {
+      const name = nameOf(token);
+      if (name !== undefined && UNCHECKABLE_FUNCTIONS.has(name)) return name;
     }
   }
   return undefined;
 }
 
-/** A name token's name, lowercase: a word, a quoted identifier, or a `"…"` string, which some servers read as a name. */
+/**
+ * A token's name, lowercase, when it can name a function: a word, a quoted identifier, a `"…"`
+ * string (which some servers read as a name), or a `:name` placeholder, which the shared lexer
+ * reads as one token but Postgres reads as `:` and then a name.
+ */
 function nameOf(token: SqlToken): string | undefined {
   if (token.kind === "word" || token.kind === "quoted_identifier") return token.lower;
   if (token.kind === "string" && token.quote === '"') return token.text.slice(1, -1).toLowerCase();
+  if (token.kind === "parameter" && token.text.startsWith(":") && !token.text.startsWith("::")) return token.lower.slice(1);
   return undefined;
 }
 
