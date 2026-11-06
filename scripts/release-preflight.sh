@@ -40,6 +40,9 @@ pnpm lint
 step "test"
 pnpm test
 
+step "prerelease counter self-test"
+node --test scripts/prerelease-counter.test.mjs
+
 step "installable smoke test"
 pnpm smoke:install
 
