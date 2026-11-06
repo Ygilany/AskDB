@@ -515,6 +515,25 @@ describe("validateTenantGuardrails — every statement is a query, however the s
     expect(rules(sql)).toContain("NOT_SELECT_OR_WITH");
   });
 
+  // A word T-SQL denies starts a statement only after a complete expression; inside one (a
+  // MySQL `IF()`, a column or alias named `open`, `FOR UPDATE`, a subquery) it doesn't.
+  it.each([
+    "SELECT id, IF(id > 5, 'a', 'b') AS size FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT id, open FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT o.close AS open FROM orders o WHERE o.agency_id = :tenant_agency_ids",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND id IN (SELECT open FROM t)",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids FOR UPDATE",
+  ])("passes a query with a T-SQL statement word inside an expression: %s", (sql) => {
+    for (const dialect of [undefined, POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT]) {
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual([]);
+    }
+  });
+
+  // A value such as NULL is a complete expression, so a verb after it starts a statement.
+  it("refuses a T-SQL verb after a keyword that ends an expression", () => {
+    expect(rules(`${scoped} AND note IS NULL EXEC refresh_orders`, SQLSERVER_DIALECT)).toContain("NOT_SELECT_OR_WITH");
+  });
+
   // MySQL skips a `/*!NNNNN … */` body on a server older than NNNNN, so the `;` and the
   // statement after it are code under that reading.
   it("refuses a statement that a versioned MySQL comment hides", () => {

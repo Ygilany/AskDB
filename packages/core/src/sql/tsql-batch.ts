@@ -39,7 +39,7 @@ export type TsqlStatementBoundary = {
  * Reserved words after which an expression or a subquery follows, so a `(SELECT …`
  * after one of them is a subquery. Each is reserved in T-SQL, so none is an alias.
  */
-const EXPRESSION_KEYWORDS = new Set([
+export const EXPRESSION_KEYWORDS: ReadonlySet<string> = new Set([
   "select", "distinct", "all", "any", "some", "top", "percent",
   "from", "join", "where", "on", "having", "by",
   "and", "or", "not", "in", "exists", "like", "between", "escape",
@@ -57,7 +57,7 @@ const RESERVED_FUNCTIONS = new Set([
  * Punctuation an expression may follow: `(`, a comma, an operator, and `.` or `::`
  * before a qualified function name.
  */
-const EXPRESSION_PUNCTUATION = new Set(["(", ",", "=", "<", ">", "+", "-", "*", "/", "%", "&", "|", "^", "~", ".", "::"]);
+export const EXPRESSION_PUNCTUATION: ReadonlySet<string> = new Set(["(", ",", "=", "<", ">", "+", "-", "*", "/", "%", "&", "|", "^", "~", ".", "::"]);
 
 const RESERVED = new Set(SQLSERVER_RESERVED_WORDS);
 const SET_OPERATORS = new Set(["union", "except", "intersect"]);

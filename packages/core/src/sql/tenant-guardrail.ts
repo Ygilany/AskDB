@@ -8,7 +8,8 @@ import {
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { ENGINE_LEXER_PROFILES, lexerProfileFor, lexSql, startsDashComment, type SqlLexerProfile } from "./lexer.js";
+import { ENGINE_LEXER_PROFILES, lexerProfileFor, lexSql, startsDashComment, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
 import { denylistFor } from "./validate.js";
 
 export type TenantGuardrailResult = {
@@ -330,6 +331,18 @@ function scopeRootIds(scope: TenantScope): string[] {
 const TSQL_STATEMENT_WORDS: ReadonlySet<string> = denylistFor(SQLSERVER_DIALECT);
 
 /**
+ * Whether a word after `prev` is inside an expression rather than at a statement start: after
+ * `(`, a comma, an operator or `.`, or after a keyword an expression or a name follows (the
+ * T-SQL boundary check's list, plus `AS` before an alias and `FOR` before `UPDATE` or `XML`).
+ * Anything else, a value such as `NULL` included, may end a statement, so it fails closed.
+ */
+function continuesExpression(prev: SqlToken | undefined): boolean {
+  if (!prev) return false;
+  if (prev.kind === "punct") return prev.text !== ")" && EXPRESSION_PUNCTUATION.has(prev.text);
+  return prev.kind === "word" && (EXPRESSION_KEYWORDS.has(prev.lower) || prev.lower === "as" || prev.lower === "for");
+}
+
+/**
  * Every way a server may lex `sql` into statements: the dialect's profile when it names a
  * built-in engine, otherwise every engine's, and for Postgres and MySQL both string settings
  * (a backslash ends a literal under one and escapes the quote under the other). A MySQL
@@ -350,7 +363,8 @@ function statementReadings(dialect: ValidateTenantGuardrailsOptions["dialect"] |
  * The leading token of the first statement in `sql` that isn't a query, upper-cased (a
  * keyword, or the token's own text when it isn't a word), or undefined when every statement
  * starts with `SELECT` or `WITH`. A statement ends at each `;`, and under the SQL Server
- * reading also at a top-level word from {@link TSQL_STATEMENT_WORDS}. Its first token is read
+ * reading also at a top-level word from {@link TSQL_STATEMENT_WORDS} that doesn't
+ * {@link continuesExpression continue an expression}. Its first token is read
  * past comments and `(` with the shared lexer, under every reading from
  * {@link statementReadings}, so a statement any of them reads as a non-query counts.
  */
@@ -359,8 +373,11 @@ function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["
     const tsql = profile.id === "sqlserver";
     let statementStart = true;
     let depth = 0;
+    let prev: SqlToken | undefined;
     for (const token of lexSql(sql, profile)) {
       if (token.kind === "comment") continue;
+      const before = prev;
+      prev = token;
       if (token.kind === "punct" && token.text === ";") {
         statementStart = true;
         depth = 0;
@@ -376,7 +393,7 @@ function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["
         if (token.kind === "word" && (token.lower === "select" || token.lower === "with")) continue;
         return token.text.slice(0, 40).toUpperCase();
       }
-      if (tsql && depth === 0 && token.kind === "word" && TSQL_STATEMENT_WORDS.has(token.lower)) {
+      if (tsql && depth === 0 && token.kind === "word" && TSQL_STATEMENT_WORDS.has(token.lower) && !continuesExpression(before)) {
         return token.text.toUpperCase();
       }
     }
