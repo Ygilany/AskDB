@@ -1,4 +1,4 @@
-import { SensitiveReferenceError, TenantGuardrailError } from "@askdb/core";
+import { SensitiveReferenceError, TenantGuardrailError, TenantScopeError } from "@askdb/core";
 import { describe, expect, it } from "vitest";
 import { mapAskError } from "./server.js";
 
@@ -46,6 +46,20 @@ describe("mapAskError — guardrail_violation", () => {
 
   it("maps an error with any other name to a generic 500 internal_error", () => {
     expect(mapAskError(foreignCopy("SomethingElse", { rule: "SENSITIVE_TABLE_REFERENCED" }), ctx)).toEqual({
+      status: 500,
+      error: { code: "internal_error", message: "Internal server error. See server logs for this correlationId." },
+    });
+  });
+});
+
+// #716: only a missing scope gets its own code. The server never passes a scope (#343), so any
+// other reason means something it doesn't expect, and stays a generic 500 with nothing leaked.
+describe("mapAskError — tenant scope", () => {
+  it("maps a missing scope to 500 tenant_scope_not_configured, and any other reason to the generic 500", () => {
+    const missing = mapAskError(new TenantScopeError("no scope for table:public.agencies", "MISSING_SCOPE"), ctx);
+    expect(missing).toMatchObject({ status: 500, error: { code: "tenant_scope_not_configured" } });
+    expect(missing.error.message).not.toContain("table:public.agencies");
+    expect(mapAskError(new TenantScopeError("unknown root table:public.x", "UNKNOWN_TENANT_ROOT"), ctx)).toEqual({
       status: 500,
       error: { code: "internal_error", message: "Internal server error. See server logs for this correlationId." },
     });

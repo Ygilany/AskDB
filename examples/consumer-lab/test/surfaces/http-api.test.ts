@@ -21,7 +21,7 @@
  * - `http-health`: `GET /health` answers `200 { ok: true }`.
  * - `http-explain`: `explain: true` returns the guardrail metadata.
  * - `http-tenant-fail-closed`: a schema with `tenant-policy.md` served over HTTP, where the
- *   request has no scope field, fails closed with `500 internal_error`: no SQL, the model is
+ *   request has no scope field, fails closed with `500 tenant_scope_not_configured` (#716): no SQL, the model is
  *   never called, and the server logs `TenantScopeError` under the correlation id
  *   (`docs/contracts/tenant-policy.md`: "`ask()` requires a valid `tenantScope`").
  * Catches: a packed server that maps an error to the wrong code or status (as the model-call
@@ -351,8 +351,9 @@ Every order belongs to one agency.
     const reply = await postAsk(tenant, { question: AGENCIES.text }, { "x-correlation-id": id });
 
     // reference/http-api.mdx: the HTTP API can't supply a tenantScope, so ask() throws
-    // TenantScopeError, which answers a generic 500 and is logged under the correlation id.
-    expectError(reply, 500, "internal_error");
+    // TenantScopeError, which answers 500 tenant_scope_not_configured (#716) and is logged under
+    // the correlation id.
+    expectError(reply, 500, "tenant_scope_not_configured");
     await expect.poll(() => tenant.output()).toMatch(new RegExp(`"correlationId":"${id}"[^\\n]*"errName":"TenantScopeError"`));
     expect(modelCallsFor(AGENCIES.text)).toHaveLength(before);
 

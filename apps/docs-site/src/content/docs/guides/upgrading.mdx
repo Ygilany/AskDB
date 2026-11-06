@@ -19,6 +19,21 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.48
+
+Released with `@askdb/http-api` 1.0.0-beta.48. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Set `dialect` for a schema whose engine AskDB doesn't ship, when you serve it over HTTP
+
+`askdb-http` no longer generates PostgreSQL for a schema whose `provider` has no AskDB dialect ([#720](https://github.com/Ygilany/AskDB/issues/720)). It refuses the request instead, as `askdb ask` does. Checking SQL for one engine under another engine's rules can pass SQL the real engine reads differently.
+
+- **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse.
+- **For a `schemaJson` the request sends,** it answers `400 bad_request`. Send a schema whose `provider` is a built-in dialect id.
+
+### Other changes you may notice in beta.48
+
+- **A schema with a tenant policy** gets `500 tenant_scope_not_configured` from `askdb-http`, not `500 internal_error` ([#716](https://github.com/Ygilany/AskDB/issues/716)). The server still can't set a tenant scope, so it still returns no SQL and never calls the model. If your client matched `internal_error` for this case, match the new code.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.

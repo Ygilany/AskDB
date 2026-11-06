@@ -21,6 +21,7 @@ import {
   SqlGenerationError,
   SqlValidationError,
   TenantGuardrailError,
+  TenantScopeError,
   createAskDbLogger,
   isSupportedAskDbLogLevel,
   parseAskDbModeV1,
@@ -145,7 +146,10 @@ function causeMessage(e: unknown): string | undefined {
  *
  * @internal Exported for unit tests; not re-exported from the package entry point.
  */
-export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: number }): MappedError {
+export function mapAskError(
+  e: unknown,
+  ctx: { timedOut: boolean; timeoutMs: number; schemaFromRequest?: boolean },
+): MappedError {
   if (isErrorOf(e, SqlGenerationError)) {
     return {
       status: 502,
@@ -202,8 +206,33 @@ export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: num
       },
     };
   }
+  // The schema's provider has no AskDB dialect (#720). A schema the request sent is the caller's
+  // to fix; the server's own schema is the operator's, so it reads as a configuration error, and
+  // the log line's errName (DialectNotSupportedError, not ModelNotConfiguredError) names the cause.
   if (isErrorOf(e, DialectNotSupportedError)) {
-    return { status: 400, error: { code: "bad_request", message: e.message } };
+    if (ctx.schemaFromRequest) return { status: 400, error: { code: "bad_request", message: e.message } };
+    return {
+      status: 500,
+      error: {
+        code: "generation_not_configured",
+        message:
+          "The server can't generate SQL for its schema: the schema's database engine has no AskDB dialect. See server logs for this correlationId.",
+      },
+    };
+  }
+  // The server can't set a tenant scope (#343), so core refuses a tenant-policy schema before any
+  // model call (#716). Only a missing scope gets this code; any other reason is unexpected here
+  // and stays the generic 500 below.
+  if (isErrorOf(e, TenantScopeError) && e.reason === "MISSING_SCOPE") {
+    return {
+      status: 500,
+      error: {
+        code: "tenant_scope_not_configured",
+        message:
+          "This schema has a tenant policy, and askdb-http can't set a tenant scope yet, so it can't serve this schema. " +
+          "Generate its SQL with ask() and a tenantScope in your own server.",
+      },
+    };
   }
   return {
     status: 500,
@@ -355,7 +384,6 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         config: rt,
         registry: ai,
         schema: optionSchemaPath ? { path: optionSchemaPath } : undefined,
-        unknownDialect: "fallback-postgres",
       });
     }
 
@@ -388,7 +416,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       writeJson(res, 200, payload);
       return;
     } catch (e) {
-      const mapped = mapAskError(e, { timedOut: abortSignal.aborted, timeoutMs });
+      const mapped = mapAskError(e, { timedOut: abortSignal.aborted, timeoutMs, schemaFromRequest: requestOverride !== undefined });
       const cause = causeMessage(e);
       // Always log the full error server-side; the client only sees `mapped.error`.
       logger.error(
