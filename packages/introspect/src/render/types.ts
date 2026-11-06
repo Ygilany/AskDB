@@ -1,5 +1,6 @@
 import type { V2SchemaJson } from "@askdb/core";
-import type { IntrospectionWarning } from "../types.js";
+import type { EmptyIntrospectionError } from "../errors.js";
+import type { IntrospectionFilters, IntrospectionWarning } from "../types.js";
 
 export type RenderOptions = {
   /** Output directory, typically `"<schemaId>.schema/"`. */
@@ -18,6 +19,11 @@ export type RenderOptions = {
    * `concepts.md`) is **never** modified.
    */
   existingArtifactDir?: string;
+  /**
+   * The filters the connector ran with. Read only to name them in the
+   * {@link EmptyIntrospectionError} thrown when nothing matched.
+   */
+  filters?: IntrospectionFilters;
 };
 
 export type RenderResult = {

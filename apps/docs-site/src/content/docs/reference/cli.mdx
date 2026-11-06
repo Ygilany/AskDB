@@ -180,6 +180,8 @@ askdb introspect \
 
 Pass exactly one of `--out`, `--print` and `--diff`. With none of them, `--out` falls back to `introspection.outputDir`.
 
+When the source has no tables or views to write, after `--schemas`, `--exclude-schemas` and `--tables`, `askdb introspect` exits `1` and writes nothing, with `--out`, `--print` and `--diff` alike. An artifact with no tables can't be loaded, so an existing `schema.json` and `tables/*.md` stay as they were. The message names the schema id, the engine and the filters you passed, and lists the likely causes. See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-).
+
 `askdb introspect` also accepts the [shared logging flags](#shared-logging-flags).
 
 Re-introspecting doesn't change `tenant-policy.md`, so a renamed or dropped column can leave the policy naming IDs the new `schema.json` lacks. When the `--out` directory holds a `tenant-policy.md`, `askdb introspect` loads the directory after writing and prints on stderr what no longer matches. Under `enforcement: strict` that is the error `loadSchema()` will throw until you update the policy. The exit code stays `0`, because the write succeeded. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
