@@ -388,9 +388,10 @@ function scanSql(
 
 /**
  * `outcome` with a scope issue for each form only the Postgres reading can hold: a `U&"…"` name,
- * which Postgres decodes and the check matches as written, and an `E'…'` string continued on a
- * later line, which Postgres reads with backslash escapes. The check can't tell what either one
- * reads, so it fails closed (#707, ADR 0012).
+ * which Postgres decodes and the check matches as written, an `E'…'` string continued on a later
+ * line, which Postgres reads with backslash escapes, and a `b'…'` byte string, which CockroachDB
+ * reads with them. The check can't tell what any of them reads, so it fails closed (#707, #730,
+ * ADR 0012).
  */
 function withPostgresOnlyIssues(
   outcome: ScanOutcome,
@@ -400,6 +401,7 @@ function withPostgresOnlyIssues(
   const forms = findPostgresOnlyForms(sql, dialect);
   if (forms.unicodeEscapedIdentifier !== undefined) outcome.issues.add("UNICODE_ESCAPED_IDENTIFIER");
   if (forms.escapeStringContinuation !== undefined) outcome.issues.add("STRING_CONTINUATION");
+  if (forms.escapedByteString !== undefined) outcome.issues.add("ESCAPED_BYTE_STRING");
   return outcome;
 }
 
@@ -1001,6 +1003,8 @@ const SCOPE_ISSUE_TEXT: Record<SensitiveScopeIssue, string> = {
     "a Unicode-escaped name (U&\"…\") can't be matched against sensitive columns, since Postgres decodes it",
   STRING_CONTINUATION:
     "an E'…' string continues on a later line, which Postgres reads with backslash escapes, so where the string ends is unclear",
+  ESCAPED_BYTE_STRING:
+    "a b'…' byte string holds a backslash or continues on a later line, which CockroachDB reads with backslash escapes, so where the string ends is unclear",
 };
 
 function buildScopeReport(issues: SensitiveScopeIssue[], widened: boolean): SensitiveScopeReport {

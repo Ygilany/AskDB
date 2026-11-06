@@ -50,6 +50,8 @@ const pool = new Pool({
   statement_timeout: 5000,        // 5s — adjust to your workload
   idle_in_transaction_session_timeout: 5000,
 });
+// An idle client whose connection drops emits on the pool; without a listener, the process exits.
+pool.on("error", (err) => console.error({ err }, "idle database client error"));
 ```
 
 ## Row limits
@@ -70,6 +72,7 @@ import { Pool } from "pg";
 
 const ROW_CAP = 1000;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.on("error", (err) => console.error({ err }, "idle database client error"));
 
 async function runCapped(sql: string, params: unknown[] = []) {
   const client = await pool.connect();

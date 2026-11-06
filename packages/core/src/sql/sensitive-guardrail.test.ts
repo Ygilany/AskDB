@@ -772,6 +772,17 @@ describe("validateSensitiveReferences — what only the Postgres reading can hol
     }
   });
 
+  it.each([
+    ["a b'…' string with a backslash", String.raw`SELECT b'\'' AS x, u.password FROM identity.users u --'`],
+    ["a continued b'…' string", "SELECT b'a'\n'\\'' AS x, u.password FROM identity.users u --'"],
+  ])("fails closed on %s, which CockroachDB reads with backslash escapes (#730)", (_label, sql) => {
+    // CockroachDB reads the bytes `'` and then `u.password`; the check saw one string.
+    for (const dialect of [COCKROACHDB_DIALECT, POSTGRES_DIALECT, custom, undefined]) {
+      expect(issues(sql, dialect), String(dialect?.id)).toContain("ESCAPED_BYTE_STRING");
+    }
+    expect(issues(sql, MYSQL_DIALECT)).not.toContain("ESCAPED_BYTE_STRING");
+  });
+
   it("throws under strict mode", () => {
     expect(() =>
       validateSensitiveReferences(String.raw`SELECT U&"p\0061ssword" FROM identity.users`, districtSchema, {

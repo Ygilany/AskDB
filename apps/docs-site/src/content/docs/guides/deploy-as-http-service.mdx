@@ -21,7 +21,7 @@ The package ships an `askdb-http` binary — for most deployments you don't writ
 npx askdb-http --schema-path ./my-app.schema --port 3000
 ```
 
-All flags are optional; each falls back to `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`), then to built-in defaults.
+All flags are optional. Each falls back to `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`). After that, the port defaults to `3000` and the host to `127.0.0.1`; the schema path falls back to the `ASKDB_SCHEMA_PATH` environment variable and has no default.
 
 To embed the server in your own process instead, use the programmatic API:
 
@@ -68,10 +68,13 @@ Response (success):
 ```json
 {
   "ok": true,
-  "correlationId": "01H…",
-  "sql": "SELECT id, name, created_at FROM customers WHERE created_at >= …"
+  "correlationId": "8f14e45f-ceea-4e7a-9f2b-1c3d5e7a9b0c",
+  "sql": "SELECT id, name, created_at FROM customers WHERE created_at >= …",
+  "usage": { "promptTokens": 812, "completionTokens": 64, "totalTokens": 876 }
 }
 ```
+
+`usage` is `null` when the model provider reports no token counts. The [HTTP API reference](/reference/http-api/) lists every request and response field.
 
 The response is SQL only — the server does not run it. Your client takes the SQL and decides what to do with it.
 
@@ -120,6 +123,10 @@ client  ──►  your API gateway  ──►  @askdb/http-api  ──►  mode
 
 The server does not connect to your database. It generates SQL and returns it. Execution is your gateway service's job — that's where your auth context lives.
 
+## Schemas with a tenant policy
+
+`@askdb/http-api` can't serve a schema that has a tenant policy (`tenant-policy.md`) yet. A request has no way to carry a tenant scope, and AskDB never makes one up, so it refuses every such request before calling the model. [#343](https://github.com/Ygilany/AskDB/issues/343) plans a server-side scope hook, and [#277](https://github.com/Ygilany/AskDB/issues/277) a scope for the `askdb-http` binary. Until then, serve tenant-scoped schemas from your own Node service with `ask({ tenantScope })`: see [Multi-tenancy](/guides/multi-tenancy/).
+
 ## Custom schema per request
 
 The default is to load the schema from `host.schemaPath` once at boot. Per-request schemas are **off by default**: a request that sends `schemaJson` gets `403 schema_override_disabled`. An override puts caller-supplied text into the prompt through your model key, so only enable it for tests or callers you trust. For a multi-product deployment where different consumers send different schemas, turn it on in `askdb.config.ts`:
@@ -141,7 +148,7 @@ Bundle the artifact with `askdb bundle` and ship the resulting JSON as the value
 
 ## Correlation IDs
 
-Every response includes a `correlationId`. The server emits structured log events tagged with the same ID — so you can join HTTP requests to the generated SQL and any errors in your log pipeline.
+Every response except `GET /health` includes a `correlationId`: the value of the request's `x-correlation-id` header when the caller sends one, or a new UUID. The server tags its structured log events with the same ID. Send `x-correlation-id` from your gateway to join its logs to the generated SQL and any errors.
 
 ## Read next
 

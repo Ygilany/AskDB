@@ -11,7 +11,7 @@
     "lint": "astro check",
     "test": "pnpm run test:errors && ASTRO_BASE=/ pnpm run build && pnpm run test:links",
     "test:errors": "node --test ./scripts/check-error-reference.test.mjs && node ./scripts/check-error-reference.mjs",
-    "test:links": "node ./scripts/check-base-links.mjs /"
+    "test:links": "node --test ./scripts/check-link-targets.test.mjs && node ./scripts/check-base-links.mjs / && node ./scripts/check-link-targets.mjs /"
   },
   "engines": {
     "node": ">=22.23.4"
