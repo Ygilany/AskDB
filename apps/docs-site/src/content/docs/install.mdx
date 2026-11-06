@@ -11,6 +11,8 @@ import InstallTabs from "../../components/InstallTabs.astro";
 
 Upgrading from an earlier beta? [Upgrade AskDB](/guides/upgrading/) lists what to change for each release.
 
+On the day an AskDB version is published, `pnpm dlx askdb@latest` and `yarn dlx askdb@latest` still install the previous one. pnpm 11 and later, and Yarn 4.18, skip versions less than a day old by default (pnpm's `minimumReleaseAge`, Yarn's `npmMinimalAgeGate`). npm installs the new version at once.
+
 ## What to install — by use case
 
 <div class="home-path-grid">

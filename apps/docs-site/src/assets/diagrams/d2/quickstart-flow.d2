@@ -1,0 +1,13 @@
+# Quickstart: the files the tutorial makes, and which step makes each.
+# AskDB reads the schema and returns SQL; the reader's own code runs it.
+# Vertical, so the text stays full size on a phone.
+direction: down
+
+db: "shop.db\nthe sample database"
+schema: "askdb/schema.json\nthe schema artifact"
+sql: "query.sql\nchecked SQL"
+rows: "the answer\nrows from shop.db"
+
+db -> schema: "askdb introspect"
+schema -> sql: "askdb ask\n+ your question"
+sql -> rows: "run-query.mjs\n(your code)"
