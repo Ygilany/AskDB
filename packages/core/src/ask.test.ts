@@ -1818,6 +1818,17 @@ describe("ask — sensitive-identifier guardrail", () => {
     });
   });
 
+  it.each([
+    // Postgres reads U&"p\0061ssword" as password, and the continued E'…' string ends after
+    // `\'`, so u.password is code; the check matched neither (#707).
+    ["a U& name", String.raw`SELECT U&"p\0061ssword" FROM users`],
+    ["a continued E'…' string", "SELECT E'a'\n'\\'' AS x, u.password FROM users u --'"],
+  ])("strict mode rejects %s from a custom dialect, which no read-only check covers (#707)", async (_label, sql) => {
+    await expect(
+      ask({ question: "credentials", schema: sensitiveSchema, model: fakeModel, dialect: dialectReturning(sql), sensitiveGuardrailMode: "strict" }),
+    ).rejects.toBeInstanceOf(SensitiveReferenceError);
+  });
+
   it("does not flag a benign query against another table", async () => {
     const result = await ask({
       question: "orders",

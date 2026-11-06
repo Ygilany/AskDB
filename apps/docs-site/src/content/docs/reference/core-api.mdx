@@ -264,6 +264,8 @@ When the check can tell it couldn't bind names to tables, it reports that in `un
 | `UNKNOWN_QUALIFIER` | A `qualifier.column` whose qualifier is not a known table, alias, or CTE. | That column is matched against every sensitive column. |
 | `OPAQUE_TABLE_SOURCE` | A table source that is not a relation name (table function, table-valued expression). | Reported only; no widening — such a source exposes no schema columns. |
 | `UNTERMINATED_TOKEN` | A string, quoted identifier, or comment never closes. | Reported only; the rest of the statement could not be scanned. |
+| `UNICODE_ESCAPED_IDENTIFIER` | A Postgres Unicode-escaped name (`U&"p\0061ssword"`), which Postgres decodes and the check matches as written. Raised when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect. | Reported only; the check can't tell which column the name reads. |
+| `STRING_CONTINUATION` | An `E'…'` string continued on a later line, which Postgres reads with backslash escapes. Raised when the SQL may be read as Postgres. | Reported only; a column after it may be hidden from the check. |
 
 `unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure: `passed` is `false`, so it throws `SensitiveReferenceError` (`rule: "UNRESOLVED_TABLE_SCOPE"` when no sensitive reference was found).
 
