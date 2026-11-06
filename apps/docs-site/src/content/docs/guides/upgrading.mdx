@@ -91,6 +91,14 @@ const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, { schema, tena
 - **A template you build by hand** has no `dialectRules`, so pass `dialect` when you rebind it.
 - **An app that loads two copies of `@askdb/core`**, such as ESM beside CJS, gets `"host"` templates, because the other copy's constants are different objects. Pass `dialect`.
 
+### Fix a strict tenant policy that doesn't match `schema.json`
+
+`loadSchema()` now checks every ID in `tenant-policy.md` against `schema.json`, and a policy with `enforcement: strict` must match it ([#332](https://github.com/Ygilany/AskDB/issues/332), ADR 0023). It throws `SchemaParseError` when the policy names a column or foreign key that `schema.json` doesn't have, has a cycle in `hierarchy` or `parent`, or names a root in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare. Before, the policy loaded, and only Studio's Tenancy page showed the problems. The error names `tenant-policy.md` and each ID: update the policy to match `schema.json`. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
+
+- **Every caller gets the same underlying error:** `loadSchema()` throws the `SchemaParseError`, `@askdb/client` wraps it in `SchemaLoadError` as its `cause`, and the HTTP API answers 400 `schema_parse_error`. Studio can't open the workspace until you fix the file ([#640](https://github.com/Ygilany/AskDB/issues/640)).
+- **Under `enforcement: warn`,** the policy still loads, with the problems in `schema.tenantPolicy.warnings`. `ask()` now logs them once per loaded schema as `askdb.tenant.policy_warnings`, through the `logger` you pass to it.
+- **A table that `schema.json` doesn't have** stays a warning in both modes. Its policy entry now reports only the table, not each of its columns.
+
 ## 1.0.0-beta.45
 
 Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/config` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.
