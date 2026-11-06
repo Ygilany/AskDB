@@ -63,9 +63,12 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
  *    parentheses right after a name, at any depth and with trailing spaces, and any such name
  *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
- * 8. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 8. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
+ *    dialect id that is no built-in engine) — a `U&"…"` identifier, whose escapes could spell
+ *    a blocked function or a sensitive column that the later checks match by name (#692).
+ * 9. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 9. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 10. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
@@ -191,6 +194,17 @@ function checkWithProfile(
       `Locking reads are not allowed: generated SQL uses ${locking}.`,
       "A locking read can hold locks that other sessions wait on until the host's transaction ends. Regenerate as a plain SELECT, without FOR UPDATE, FOR SHARE, LOCK IN SHARE MODE or a SQL Server lock hint such as UPDLOCK or HOLDLOCK. On SQL Server, quote a name that isn't plain ASCII ([Größe]), and qualify it when it's the only thing inside parentheses (COUNT(t.[Größe])).",
     );
+  }
+
+  if (profile.id === "postgres") {
+    const escaped = findUnicodeEscapedIdentifier(tokens);
+    if (escaped) {
+      throw validationError(
+        "SQL_UNICODE_ESCAPED_IDENTIFIER",
+        `Unicode-escaped identifiers are not allowed: generated SQL uses ${escaped}.`,
+        `Write the name in plain double quotes ("Größe"), or unquoted. A U&"…" name can spell a blocked function or a sensitive column with escapes the other checks don't decode.`,
+      );
+    }
   }
 
   for (const t of tokens) {
@@ -345,6 +359,29 @@ function isPunct(t: SqlToken | undefined, text: string): boolean {
 
 function isAdjacentPunct(t: SqlToken, next: SqlToken | undefined, text: string): boolean {
   return isPunct(next, text) && next!.start === t.end;
+}
+
+/**
+ * A Postgres Unicode-escaped identifier, as `U&"…"` (either case) with no space between the
+ * parts: the form Postgres's scanner reads as one identifier. With a space, `U& "x"` is the
+ * `&` operator, and `U&'…'` is a string, which names nothing.
+ */
+function findUnicodeEscapedIdentifier(tokens: readonly SqlToken[]): string | undefined {
+  for (let i = 0; i + 2 < tokens.length; i++) {
+    const u = tokens[i]!;
+    const amp = tokens[i + 1]!;
+    const name = tokens[i + 2]!;
+    if (
+      u.kind === "word" &&
+      u.lower === "u" &&
+      isAdjacentPunct(u, amp, "&") &&
+      name.kind === "quoted_identifier" &&
+      name.start === amp.end
+    ) {
+      return `${u.text}&${name.text}`;
+    }
+  }
+  return undefined;
 }
 
 /** First significant token, skipping leading `(` so `(SELECT …) UNION (SELECT …)` passes. */

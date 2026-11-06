@@ -70,7 +70,7 @@ A policy keyed on a setting holds only while the SQL it guards can't change that
 - **`set_config()`.** One generated `SELECT` can call it to set its own tenant IDs before it reads.
 - **A `DO` block.** PL/pgSQL code in a `DO` statement can run `SET LOCAL`, read every tenant's rows, and return them in an error or notice message.
 
-This is documented Postgres behavior, not an AskDB bug. AskDB's checks already reject both, since `set_config` is on the function denylist and `DO` doesn't start with `SELECT` or `WITH`, but those checks are a lint. Close the gap in the database: revoke both from `PUBLIC`, then grant them back to the roles that need them.
+This is documented Postgres behavior, not an AskDB bug. AskDB's checks already reject both: `set_config` is on the function denylist, which also catches a Unicode-escaped spelling such as `U&"set\005fconfig"` (rejected as `SQL_UNICODE_ESCAPED_IDENTIFIER`), and `DO` doesn't start with `SELECT` or `WITH`. But those checks are a lint. Close the gap in the database: revoke both from `PUBLIC`, then grant them back to the roles that need them.
 
 ```sql
 REVOKE EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) FROM PUBLIC;

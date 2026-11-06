@@ -27,6 +27,11 @@ export type SqlValidationRuleCode =
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
   /**
+   * Postgres family: a Unicode-escaped identifier (`U&"set\005fconfig"`). Its escapes can spell
+   * a name the other checks look for, such as a denylisted function, so it is refused (#692).
+   */
+  | "SQL_UNICODE_ESCAPED_IDENTIFIER"
+  /**
    * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
    * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
    * parentheses after a name, which SQL Server may read as a hint.

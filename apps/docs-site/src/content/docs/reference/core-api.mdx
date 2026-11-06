@@ -671,6 +671,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `SQL_NOT_SELECT_OR_WITH` | A first keyword other than `SELECT` or `WITH`. |
 | `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. |
 | `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, such as `pg_sleep(`. |
+| `SQL_UNICODE_ESCAPED_IDENTIFIER` | On Postgres and CockroachDB, a Unicode-escaped identifier such as `U&"set\005fconfig"`, whose escapes could spell a blocked function or a sensitive column. |
 | `SQL_UNTERMINATED` | A string, quoted identifier, dollar-quoted string or block comment that never closes. |
 | `SQL_LOCKING_READ` | A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as `UPDLOCK`. On SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in parentheses after a name, which SQL Server can read as a hint. |
 
