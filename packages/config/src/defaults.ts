@@ -1,6 +1,5 @@
 /**
- * Canonical defaults applied in {@link flattenAskDbConfig} when optional env-backed
- * fields are unset (missing, blank, or invalid after trim).
+ * Defaults the config resolver (`resolve.ts`) fills in when an optional field is unset.
  */
 export const DEFAULT_OPENAI_LANGUAGE_MODEL = "gpt-4o-mini";
 /** @deprecated Use DEFAULT_OPENAI_LANGUAGE_MODEL. Removed at 1.0. */
@@ -35,9 +34,6 @@ export const DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS = 30_000;
 /** Default row cap for Studio execute results (`studio.execute.maxRows`). */
 export const DEFAULT_STUDIO_EXECUTE_MAX_ROWS = 500;
 
-export const PGVECTOR_INDEX_STRATEGIES = ["ivfflat", "hnsw", "none"] as const;
-export type PgvectorIndexStrategyId = (typeof PGVECTOR_INDEX_STRATEGIES)[number];
-
 /**
  * The width earlier versions assumed for an embedding model: 3072 for `text-embedding-3-large`,
  * else 1536, whatever the provider.
@@ -47,61 +43,4 @@ export type PgvectorIndexStrategyId = (typeof PGVECTOR_INDEX_STRATEGIES)[number]
  */
 export function defaultRagEmbeddingDimensions(model: string): number {
   return model.trim() === "text-embedding-3-large" ? 3072 : 1536;
-}
-
-export function parsePositiveInteger(value: string | number | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === "number") {
-    return Number.isInteger(value) && value > 0 ? value : undefined;
-  }
-  const t = value.trim();
-  if (t === "") return undefined;
-  const n = Number(t);
-  if (!Number.isInteger(n) || n <= 0) return undefined;
-  return n;
-}
-
-/**
- * Parse `httpApi.requestTimeoutMs` (or its flat key `ASKDB_HTTP_REQUEST_TIMEOUT_MS`).
- * Returns `undefined` when unset; throws naming `source` unless the value is a positive
- * integer no larger than {@link MAX_HTTP_API_REQUEST_TIMEOUT_MS}.
- */
-export function parseHttpApiRequestTimeoutMs(value: string | number | undefined, source: string): number | undefined {
-  if (value === undefined) return undefined;
-  // A JavaScript config can pass any type; only numbers and numeric strings are parsed.
-  const n = typeof value === "number" || typeof value === "string" ? parsePositiveInteger(value) : undefined;
-  if (n === undefined || n > MAX_HTTP_API_REQUEST_TIMEOUT_MS) {
-    throw new Error(
-      `askdb.config: invalid ${source} ${JSON.stringify(value)} (expected a positive integer number of milliseconds, at most ${MAX_HTTP_API_REQUEST_TIMEOUT_MS}).`,
-    );
-  }
-  return n;
-}
-
-/**
- * Parse `httpApi.listen.port` (or its flat key `PORT`). Returns `undefined` when unset or `NaN`
- * (`Number(env("PORT"))` with `PORT` unset), as Studio does for `studio.listen.port`. Port `0`
- * asks the OS for a free port. Throws naming `source` for anything but an integer from 0 to
- * 65535, or a string holding one.
- */
-export function parseHttpApiListenPort(value: unknown, source: string): number | undefined {
-  if (value === undefined || (typeof value === "number" && Number.isNaN(value))) return undefined;
-  const text = typeof value === "string" ? value.trim() : undefined;
-  // `Number("")` is 0, so a blank string is checked before it's converted.
-  const port = typeof value === "number" ? value : text ? Number(text) : NaN;
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(
-      `askdb.config: invalid ${source} ${typeof value === "string" ? JSON.stringify(value) : String(value)} (expected an integer from 0 to 65535).`,
-    );
-  }
-  return port;
-}
-
-export function normalizePgvectorIndexStrategy(raw: string | undefined): PgvectorIndexStrategyId {
-  if (raw === undefined || raw.trim() === "") return DEFAULT_PGVECTOR_INDEX_STRATEGY;
-  const v = raw.trim().toLowerCase();
-  if (v === "ivfflat" || v === "hnsw" || v === "none") return v;
-  throw new Error(
-    `askdb.config: invalid rag.storeConfig.pgvector.indexStrategy "${raw}" (expected one of: ivfflat, hnsw, none).`,
-  );
 }
