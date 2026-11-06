@@ -34,7 +34,7 @@ A model base URL reaches the provider SDK in four ways:
 
 ## Consequences
 
-- A config with a credentialed `baseUrl` on a connection nothing uses also fails to load. The `@askdb/config` changeset is a minor, and the beta.49 upgrade entry says so.
+- A config with a credentialed `baseUrl` on a connection nothing uses also fails to load. The `@askdb/config` changeset is a minor, and the beta.50 upgrade entry says so.
 - `@askdb/config` and `@askdb/ai` each hold a copy of the rule, because neither depends on the other. Their tests feed both the same URLs (with a password, a user name only, unparseable with an `@`, an `@` in the path).
 - A built-in provider added later runs through `baseURLOption()`: the `@askdb/ai` test iterates `BUILTIN_AI_PROVIDERS`, and the new-ai-adapter skill's template calls it. A provider whose SDK reads its own base URL variable passes that name.
 - `@askdb/rag`'s deprecated `createOpenAiEmbedder({ baseURL })` isn't covered: `@askdb/rag` doesn't depend on `@askdb/ai`, and the helper leaves at 1.0.
