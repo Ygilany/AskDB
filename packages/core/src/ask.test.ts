@@ -300,6 +300,8 @@ describe("ask — the tenant block names no table the prompt leaves out (#771)",
     const prompt = await promptFor([], { retriever, totalSchemaChunkCount: 100 });
     expect(retriever).toHaveBeenCalledOnce();
     expect(prompt).toContain("TABLE public.orders");
+    // The retrieved table keeps its tenant scope.
+    expect(prompt).toContain("  - table:public.orders → filter via table:public.orders#agency_id (Agency scope)");
     for (const id of ["public.campaigns", "public.appointments", "public.notes", "public.lookup_states", "public.service_types"]) {
       expect(linesNaming(prompt, id), id).toEqual([]);
     }

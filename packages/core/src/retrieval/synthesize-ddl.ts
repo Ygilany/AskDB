@@ -115,12 +115,10 @@ export function synthesizeRetrievedDdl(args: {
   }
 
   const lines: string[] = [];
-  let tablesEmitted = 0;
   const emittedIds: string[] = [];
 
   for (const t of schema.tables) {
     if (!tableIds.has(t.id)) continue;
-    tablesEmitted++;
     emittedIds.push(t.id);
     const listedName = promptTableName(t, args.unqualifiedNamespace, quoteIdentifier);
     lines.push(`TABLE ${listedName}${tableAliasNote(t, gate)}`);
@@ -184,7 +182,7 @@ export function synthesizeRetrievedDdl(args: {
 
   return {
     ddl: lines.join("\n").trimEnd(),
-    tablesEmitted,
+    tablesEmitted: emittedIds.length,
     tableIds: emittedIds,
     chunksUsed: results.length,
     mentionDroppedCount: gate.withheld,

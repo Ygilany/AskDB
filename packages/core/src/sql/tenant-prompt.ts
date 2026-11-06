@@ -1,6 +1,8 @@
+import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import type { TenantScope } from "../schema/v2/tenant-policy.js";
 import { placeholderForTenantRoot } from "../schema/v2/tenant-policy.js";
+import { isTrackedTable } from "../schema/v2/tracked.js";
 import { unexpandedSubtreeError } from "./tenant-placeholders.js";
 
 const NEVER_CROSS_ROOTS =
@@ -13,21 +15,17 @@ function labelOfRoot(policy: NormalizedTenantPolicy, id: string): string {
 }
 
 /**
- * The tables an NL→SQL prompt shows, so the tenant block names no other (#771, ADR 0038).
- * `shown`: the tables whose DDL the prompt carries, the tracked ones, and under retrieval only
- * the retrieved ones. `tracked`: the tables not marked `tracked: false`. A join path keeps a
- * tracked table the prompt doesn't show, since the model may still use it, and is dropped when
- * it goes through an untracked one.
+ * What an NL→SQL prompt shows, for its tenant block (#771, ADR 0038). `shown`: the tables whose DDL
+ * the prompt carries, the tracked ones, and under retrieval only the retrieved ones. `tracked`: the
+ * tables not marked `tracked: false`. `tableOfColumn`: each column's table, from the schema, since a
+ * table name may itself hold `#` (SQL Server) and a column id can't be split to find it.
  */
-export type TenantPromptTables = {
-  shown: ReadonlySet<string>;
-  tracked: ReadonlySet<string>;
-};
-
-/** `table:public.orders#agency_id (where …)` → `table:public.orders`. */
-function tableOfColumn(column: string): string {
-  const hash = column.indexOf("#");
-  return hash === -1 ? column : column.slice(0, hash);
+function promptView(schema: NormalizedSchemaV2, tableIds: readonly string[] | undefined) {
+  const tracked = new Set(schema.tables.filter(isTrackedTable).map((t) => t.id));
+  const shown = tableIds === undefined ? tracked : new Set(tableIds.filter((id) => tracked.has(id)));
+  const tableOfColumn = new Map<string, string>();
+  for (const t of schema.tables) for (const c of t.columns) tableOfColumn.set(c.id, t.id);
+  return { shown, tracked, tableOfColumn };
 }
 
 /**
@@ -42,17 +40,27 @@ export function buildTenantPromptBlock(
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
   /**
-   * The tables the prompt shows. With it, the block names only those: an untracked table, or
-   * one retrieval left out, stays out of it, and a root whose table isn't shown keeps only its
-   * label and placeholder. Without it, the block names every table in the policy. `ask()`
-   * always passes it.
+   * The prompt the block is for: its schema, and under retrieval the ids of the tables the
+   * retrieved DDL shows. With it, the block names only the tables the prompt shows: an untracked
+   * table, or one retrieval left out, stays out of it. A root whose table isn't shown keeps only
+   * its label and placeholder, and a join path through a tracked table retrieval left out stays.
+   * Without it, the block names every table in the policy. `ask()` always passes it.
    */
-  tables?: TenantPromptTables,
+  prompt?: { schema: NormalizedSchemaV2; tableIds?: readonly string[] },
 ): string {
   const lines: string[] = [];
-  const shown = (table: string) => tables === undefined || tables.shown.has(table);
-  const tracked = (table: string) => tables === undefined || tables.tracked.has(table);
-  const shownColumns = (columns: string[]) => columns.filter((c) => shown(tableOfColumn(c)));
+  const view = prompt === undefined ? undefined : promptView(prompt.schema, prompt.tableIds);
+  const shown = (table: string) => view === undefined || view.shown.has(table);
+  // A column the schema doesn't list counts as on no table the prompt tracks or shows.
+  const columnTracked = (column: string) => view === undefined || view.tracked.has(view.tableOfColumn.get(column) ?? "");
+  // The columns a printed join path names stay in the scope's column lists even when their table
+  // isn't shown (a tracked table retrieval left out): the path's predicate compares with them.
+  const joinPathColumns = new Set<string>();
+  const columnShown = (column: string) =>
+    view === undefined || view.shown.has(view.tableOfColumn.get(column) ?? "") || joinPathColumns.has(column);
+  // A root's label. An id the policy declares no root for is named only when the prompt shows its table.
+  const rootName = (id: string) =>
+    policy.roots.find((r) => r.id === id)?.label ?? (shown(id) ? id : "an undeclared root");
 
   lines.push("--- TENANT POLICY (mandatory — every tenant-scoped table MUST be filtered) ---");
   lines.push("");
@@ -61,7 +69,7 @@ export function buildTenantPromptBlock(
   lines.push("Tenant hierarchy:");
   for (const root of policy.roots) {
     const parentNote = root.parent
-      ? ` (child of ${labelOfRoot(policy, root.parent.root)})`
+      ? ` (child of ${rootName(root.parent.root)})`
       : " (top-level)";
     // The label and placeholder stay: a tracked table's predicate needs them. The label is text the
     // policy's author wrote for the model; the table id goes when the prompt doesn't show the table.
@@ -76,11 +84,12 @@ export function buildTenantPromptBlock(
     for (const st of scopedTables) {
       let paths = 0;
       for (const path of st.scopeThrough) {
-        const rootLabel = labelOfRoot(policy, path.root);
+        const rootLabel = rootName(path.root);
         if ("column" in path) {
           lines.push(`  - ${st.id} → filter via ${path.column} (${rootLabel} scope)`);
           paths++;
-        } else if (path.join.every((j) => tracked(tableOfColumn(j.from)) && tracked(tableOfColumn(j.to)))) {
+        } else if (path.join.every((j) => columnTracked(j.from) && columnTracked(j.to))) {
+          for (const j of path.join) joinPathColumns.add(j.from).add(j.to);
           const joinPath = path.join.map((j) => `${j.from} → ${j.to}`).join(" → ");
           lines.push(`  - ${st.id} → join path: ${joinPath} (${rootLabel} scope)`);
           paths++;
@@ -100,8 +109,7 @@ export function buildTenantPromptBlock(
     for (const pt of polymorphicTables) {
       lines.push(`  - ${pt.id}: type column = ${pt.typeColumn}, id column = ${pt.idColumn}`);
       for (const [typeVal, targetRoot] of Object.entries(pt.mapping)) {
-        const rootLabel = labelOfRoot(policy, targetRoot);
-        lines.push(`    - '${typeVal}' → ${rootLabel}`);
+        lines.push(`    - '${typeVal}' → ${rootName(targetRoot)}`);
       }
     }
     lines.push("");
@@ -130,7 +138,7 @@ export function buildTenantPromptBlock(
       // A single-root policy keeps its block unchanged.
       const pairColumns = policy.roots.length > 1;
       if (pairColumns) {
-        const columns = shownColumns(columnsHoldingRootIds(policy, access.tenantRoot));
+        const columns = columnsHoldingRootIds(policy, access.tenantRoot).filter((c) => columnShown(c.column)).map((c) => c.text);
         if (columns.length > 0) lines.push(`    columns: ${columns.join(", ")}`);
       }
       lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
@@ -155,7 +163,7 @@ export function buildTenantPromptBlock(
         // A level an expanded subtree covers with no IDs: its placeholder binds nothing.
         const empty = s.ids.length === 0 ? " (no IDs in this scope: don't read this table)" : "";
         lines.push(`    - ${rootLabel} IDs = ${placeholderForTenantRoot({ id: s.tenantRoot, label: rootLabel })}${empty}`);
-        const columns = shownColumns(columnsHoldingRootIds(policy, s.tenantRoot, covered));
+        const columns = columnsHoldingRootIds(policy, s.tenantRoot, covered).filter((c) => columnShown(c.column)).map((c) => c.text);
         if (columns.length > 0) lines.push(`      columns: ${columns.join(", ")}`);
       }
       lines.push(NEVER_CROSS_ROOTS);
@@ -222,11 +230,11 @@ function columnsHoldingRootIds(
   policy: NormalizedTenantPolicy,
   rootId: string,
   coveredRoots: ReadonlySet<string> = new Set(),
-): string[] {
+): { column: string; text: string }[] {
   const root = policy.roots.find((r) => r.id === rootId);
-  const columns: string[] = [];
-  const add = (column: string) => {
-    if (!columns.includes(column)) columns.push(column);
+  const columns: { column: string; text: string }[] = [];
+  const add = (column: string, text = column) => {
+    if (!columns.some((c) => c.text === text)) columns.push({ column, text });
   };
   if (root) add(root.tenantIdColumn);
   for (const child of policy.roots) {
@@ -242,7 +250,7 @@ function columnsHoldingRootIds(
   }
   for (const pt of policy.polymorphicTables) {
     for (const [typeValue, target] of Object.entries(pt.mapping)) {
-      if (target === rootId) add(`${pt.idColumn} (where ${pt.typeColumn} = '${typeValue}')`);
+      if (target === rootId) add(pt.idColumn, `${pt.idColumn} (where ${pt.typeColumn} = '${typeValue}')`);
     }
   }
   return columns;
