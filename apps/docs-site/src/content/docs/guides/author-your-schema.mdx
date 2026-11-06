@@ -40,7 +40,7 @@ npx askdb introspect
 
 With your introspection provider and URL configured in `askdb.config.ts` (and matching env vars in `.env`), no flags are needed. See the [Configuration reference](/reference/config/) for per-engine details.
 
-Stable IDs mean a renamed column doesn't break the enrichment that references it — the ID stays the same and the markdown follows.
+A renamed table or column gets a new ID, and its enrichment and sensitivity marks don't follow it. See [Stable IDs](/concepts/the-schema-artifact/#stable-ids) for what to move after you re-introspect.
 
 ## Bundling for distribution
 
