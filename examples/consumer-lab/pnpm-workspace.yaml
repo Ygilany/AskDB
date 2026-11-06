@@ -6,7 +6,7 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   # @askdb/prisma's @prisma/engines has a postinstall script pnpm 11 refuses to run unapproved.
-  # askdb@1.0.0-beta.44 (the committed baseline) depends on @askdb/prisma. From #259 askdb only
+  # askdb@1.0.0-beta.45 (the committed baseline) depends on @askdb/prisma. From #259 askdb only
   # peers it, but a target `lab:use` packs (`.`, a path, `git:<ref>`) still installs it: pnpm
   # installs an optional peer whose override is a `file:` tarball as a dependency. Keep it.
   "@prisma/engines": true
@@ -29,19 +29,19 @@ overrides:
   # ones, resolves to the install target. Don't edit it by hand.
 # lab:use overrides begin
 # lab:use target: npm:latest
-  "@askdb/ai": "0.1.0-beta.8"
-  "@askdb/client": "1.0.0-beta.7"
-  "@askdb/config": "1.0.0-beta.13"
-  "@askdb/core": "1.0.0-beta.44"
-  "@askdb/enrich": "0.2.0-beta.15"
-  "@askdb/http-api": "1.0.0-beta.44"
-  "@askdb/introspect": "0.3.0-beta.18"
-  "@askdb/mysql": "0.1.0-beta.19"
-  "@askdb/postgres": "0.2.0-beta.20"
-  "@askdb/prisma": "0.2.0-beta.18"
-  "@askdb/rag": "0.2.0-beta.24"
-  "@askdb/sqlite": "0.1.0-beta.19"
-  "@askdb/sqlserver": "0.1.0-beta.20"
-  "@askdb/studio": "0.2.0-beta.37"
-  "askdb": "1.0.0-beta.44"
+  "@askdb/ai": "0.1.0-beta.9"
+  "@askdb/client": "1.0.0-beta.8"
+  "@askdb/config": "1.0.0-beta.14"
+  "@askdb/core": "1.0.0-beta.45"
+  "@askdb/enrich": "0.2.0-beta.16"
+  "@askdb/http-api": "1.0.0-beta.45"
+  "@askdb/introspect": "0.3.0-beta.19"
+  "@askdb/mysql": "0.1.0-beta.20"
+  "@askdb/postgres": "0.2.0-beta.21"
+  "@askdb/prisma": "0.2.0-beta.19"
+  "@askdb/rag": "0.2.0-beta.25"
+  "@askdb/sqlite": "0.1.0-beta.20"
+  "@askdb/sqlserver": "0.1.0-beta.21"
+  "@askdb/studio": "0.2.0-beta.38"
+  "askdb": "1.0.0-beta.45"
 # lab:use overrides end
