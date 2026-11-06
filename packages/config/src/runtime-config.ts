@@ -6,6 +6,7 @@ import {
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
+  parseHttpApiListenPort,
   parseHttpApiRequestTimeoutMs,
   parsePositiveInteger,
 } from "./defaults.js";
@@ -247,11 +248,10 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const logStdoutRaw = pickFlat(flat, "ASKDB_LOG_STDOUT");
   const logStdout = isTruthyFlag(logStdoutRaw);
 
-  const portRaw = pickFlat(flat, "PORT");
-  const portParsed = portRaw !== undefined ? Number(portRaw) : NaN;
   const port =
-    structured.httpApi?.listen?.port ??
-    (!Number.isNaN(portParsed) ? portParsed : 3000);
+    parseHttpApiListenPort(structured.httpApi?.listen?.port, "httpApi.listen.port") ??
+    parseHttpApiListenPort(pickFlat(flat, "PORT"), "PORT") ??
+    3000;
   const host = structured.httpApi?.listen?.host ?? pickFlat(flat, "HOST") ?? "127.0.0.1";
 
   const omitRaw = pickFlat(flat, "ASKDB_OMIT_SENSITIVE_FROM_PROMPT");

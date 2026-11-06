@@ -28,8 +28,6 @@ export const MAX_HTTP_API_REQUEST_TIMEOUT_MS = 2_147_483_647;
  * model a legacy `rag.embedder: "openai"` config translates to. Removed at 1.0.
  */
 export const DEFAULT_RAG_EMBEDDING_MODEL = "text-embedding-3-small";
-/** Under the same visible tree as {@link DEFAULT_INTROSPECT_OUTPUT_DIR} (`./askdb/…`). */
-export const DEFAULT_RAG_FILE_BASE_PATH = "./askdb/rag";
 export const DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS = 64;
 export const DEFAULT_PGVECTOR_INDEX_STRATEGY = "hnsw" as const;
 /** Default per-query statement timeout for Studio execute (`studio.execute.timeoutMs`). */
@@ -78,6 +76,25 @@ export function parseHttpApiRequestTimeoutMs(value: string | number | undefined,
     );
   }
   return n;
+}
+
+/**
+ * Parse `httpApi.listen.port` (or its flat key `PORT`). Returns `undefined` when unset or `NaN`
+ * (`Number(env("PORT"))` with `PORT` unset), as Studio does for `studio.listen.port`. Port `0`
+ * asks the OS for a free port. Throws naming `source` for anything but an integer from 0 to
+ * 65535, or a string holding one.
+ */
+export function parseHttpApiListenPort(value: unknown, source: string): number | undefined {
+  if (value === undefined || (typeof value === "number" && Number.isNaN(value))) return undefined;
+  const text = typeof value === "string" ? value.trim() : undefined;
+  // `Number("")` is 0, so a blank string is checked before it's converted.
+  const port = typeof value === "number" ? value : text ? Number(text) : NaN;
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(
+      `askdb.config: invalid ${source} ${typeof value === "string" ? JSON.stringify(value) : String(value)} (expected an integer from 0 to 65535).`,
+    );
+  }
+  return port;
 }
 
 export function normalizePgvectorIndexStrategy(raw: string | undefined): PgvectorIndexStrategyId {

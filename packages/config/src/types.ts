@@ -238,8 +238,16 @@ export type OpenaiRagEmbedderConfig = {
 };
 
 export type FileStoreConfig = {
-  /** Passed to `createFileStore({ basePath })` — vector files use `<basePath>.embeddings.*`. */
+  /**
+   * Passed to `createFileStore({ basePath })` — vector files use `<basePath>.embeddings.*`.
+   * When unset, the CLI and Studio use `<schema dir>/schema` (`./askdb/schema` with the
+   * default `introspection.outputDir`).
+   */
   basePath?: string;
+  /**
+   * @deprecated Never read: the file store writes its files after every change. Loading a
+   * config that sets it gives a deprecation warning. Remove it.
+   */
   autoFlush?: boolean;
 };
 
@@ -269,7 +277,7 @@ export type IntrospectionProviderConfigs = {
   postgres?: {
     /**
      * Postgres connection URL for live introspection (maps to `ASKDB_INTROSPECT_POSTGRES_URL`).
-     * When omitted, pass `--url` to `askdb introspect` or set `ASKDB_INTROSPECT_POSTGRES_URL` in env.
+     * When omitted, pass `--url` to `askdb introspect`.
      */
     databaseUrl?: string;
   };
@@ -284,7 +292,7 @@ export type IntrospectionProviderConfigs = {
   mysql?: {
     /**
      * MySQL connection URL (e.g. `mysql://user:pass@host:port/database`).
-     * When omitted, pass `--url` to `askdb introspect` or set `ASKDB_INTROSPECT_MYSQL_URL` in env.
+     * When omitted, pass `--url` to `askdb introspect`.
      */
     databaseUrl?: string;
   };
@@ -299,8 +307,7 @@ export type IntrospectionProviderConfigs = {
   sqlserver?: {
     /**
      * Microsoft SQL Server connection URL (mssql URI form or the equivalent
-     * `Server=...;` connection string). When omitted, pass `--url` to `askdb introspect`
-     * or set `ASKDB_INTROSPECT_SQLSERVER_URL` in env.
+     * `Server=...;` connection string). When omitted, pass `--url` to `askdb introspect`.
      */
     databaseUrl?: string;
   };
@@ -427,10 +434,10 @@ export type AskDbConfig = {
   introspection: AskDbIntrospectionConfig;
 
   /**
-   * Override the NL→SQL dialect. When unset, the dialect is inferred from the
-   * introspection provider (or, for Prisma, from the detected `datasource.provider`).
-   * Use this when the inferred dialect is wrong — e.g. Prisma `schema.prisma` declares
-   * `provider = "postgresql"` but you actually target a different engine.
+   * Override the NL→SQL dialect. When unset, `createAskDb` uses the provider recorded in the
+   * schema artifact at introspection time, else `postgres`. Use this when that provider is
+   * wrong — e.g. Prisma `schema.prisma` declares `provider = "postgresql"` but you actually
+   * target a different engine, or the artifact came from MariaDB, which records `mysql`.
    *
    * Keep aligned with `DialectId` in `@askdb/core`. Shipped specs: see `ASKDB_DIALECTS`.
    */
@@ -524,7 +531,11 @@ export type AskDbConfig = {
   /** HTTP API server defaults (first-party `apps/http-api`). */
   httpApi?: {
     listen?: {
-      /** When unset, servers default to `3000`. Use `env("PORT")` for platforms that inject `PORT`. */
+      /**
+       * An integer from 0 to 65535 (`0` asks the OS for a free port). When unset or `NaN`,
+       * servers default to `3000`. Another value fails when the config loads. For platforms
+       * that inject `PORT`, use `Number(env("PORT") ?? 3000)`: `env()` returns a string.
+       */
       port?: number;
       host?: string;
     };
