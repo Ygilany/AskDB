@@ -325,6 +325,28 @@ describe("runInitCli --yes --skip-install", () => {
     }
   });
 
+  // #777: Studio execute on the introspection engine reads the same connection env var, as the wizard does.
+  it.each(["postgres", "mysql", "sqlserver"])(
+    "--database %s --connection-env PG_URL --studio-execute: introspection and execute both read PG_URL",
+    async (database) => {
+      const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+      try {
+        const outPath = join(tmp, "askdb.config.ts");
+        const code = await runInitCli([
+          "--yes", "--skip-install", "--path", outPath,
+          "--database", database, "--connection-env", "PG_URL", "--studio-execute",
+        ]);
+        expect(code).toBe(0);
+        const config = readFileSync(outPath, "utf8");
+        expect(config.match(/databaseUrl: env\("PG_URL"\)/g)).toHaveLength(2);
+        expect(config).not.toContain("DATABASE_URL");
+        expect(readFileSync(join(tmp, ".env.example"), "utf8")).not.toContain("DATABASE_URL");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("--ai-provider azure: config and .env.example include the resource name", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
     try {

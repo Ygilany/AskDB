@@ -193,7 +193,10 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
     studioExecute = {
       enabled: true,
       provider: execProvider,
-      connectionEnv: overrides.studioExecuteConnectionEnv ?? (execProvider === "sqlite" ? undefined : "DATABASE_URL"),
+      // On the introspection engine, execute reads the same connection env var, as the wizard does (#777).
+      connectionEnv:
+        overrides.studioExecuteConnectionEnv ??
+        (execProvider === "sqlite" ? undefined : execProvider === database ? connectionEnv : "DATABASE_URL"),
       sqliteFile: overrides.studioExecuteSqliteFile ?? (execProvider === "sqlite" ? overrides.sqliteFile : undefined),
     };
   } else {
