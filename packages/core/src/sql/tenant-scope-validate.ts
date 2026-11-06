@@ -52,15 +52,6 @@ export function validateTenantScope(
 
   switch (access.kind) {
     case "ids":
-      if (!rootIds.has(access.tenantRoot)) {
-        throw new TenantScopeError(
-          `tenantScope.access references unknown tenant root '${access.tenantRoot}'. ` +
-            `Known roots: ${[...rootIds].join(", ")}`,
-          "UNKNOWN_TENANT_ROOT",
-        );
-      }
-      break;
-
     case "subtree":
       if (!rootIds.has(access.tenantRoot)) {
         throw new TenantScopeError(
