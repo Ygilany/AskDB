@@ -203,7 +203,6 @@ node -e "
       '@askdb/client': 'file:$CLIENT_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
-      '@askdb/prisma': 'file:$PRISMA_TARBALL',
       '@askdb/enrich': 'file:$ENRICH_TARBALL',
       askdb: 'file:$CLI_TARBALL',
       '@askdb/http-api': 'file:$HTTP_API_TARBALL',
@@ -219,6 +218,15 @@ node -e "
 
 echo "smoke: npm install app sandbox…"
 (cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock)
+
+# @askdb/prisma is an optional peer of askdb and @askdb/studio (#259): Prisma's @prisma/engines
+# has a postinstall that pnpm 11 refuses to run unapproved, so it must never come with askdb.
+for prisma_pkg in @askdb/prisma @prisma/engines; do
+  if [ -e "$WORK/apps/node_modules/$prisma_pkg" ]; then
+    echo "smoke: FAILED — installing askdb and @askdb/studio installed $prisma_pkg; @askdb/prisma must stay an optional peer." >&2
+    exit 1
+  fi
+done
 
 echo "smoke: app sandbox package resolution before driver install…"
 (cd "$WORK/apps" && node --input-type=module -e "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url); require.resolve('askdb/package.json'); await import('@askdb/postgres');")
@@ -295,6 +303,69 @@ if [ "$POSTGRES_DRIVER_STATUS" -ne 0 ] && ! grep -Eq 'ECONNREFUSED|connect|Postg
   echo "$POSTGRES_DRIVER_OUTPUT" >&2
   exit 1
 fi
+echo "smoke: askdb introspect --engine prisma without @askdb/prisma exits 1 with the install hint…"
+PRISMA_FIXTURE="$ROOT/packages/prisma/test-fixtures/simple/schema.prisma"
+PRISMA_MISSING_STATUS=0
+PRISMA_MISSING_OUTPUT="$(cd "$WORK/apps" && ./node_modules/.bin/askdb introspect --engine prisma --prisma-schema "$PRISMA_FIXTURE" --print 2>&1)" ||
+  PRISMA_MISSING_STATUS=$?
+if [ "$PRISMA_MISSING_STATUS" -ne 1 ] || ! grep -q 'needs the optional peer dependency `@askdb/prisma`' <<<"$PRISMA_MISSING_OUTPUT"; then
+  echo "smoke: FAILED — expected exit 1 naming @askdb/prisma, got $PRISMA_MISSING_STATUS:" >&2
+  echo "$PRISMA_MISSING_OUTPUT" >&2
+  exit 1
+fi
+
+echo "smoke: askdb init --database prisma names @askdb/prisma at the packed version…"
+PRISMA_VERSION="$(tar -xOzf "$PRISMA_TARBALL" package/package.json | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0, 'utf8')).version)")"
+mkdir -p "$WORK/init-prisma"
+# No package.json above it, so init prints the install command instead of running it.
+INIT_PRISMA_OUTPUT="$(cd "$WORK/init-prisma" && "$WORK/apps/node_modules/.bin/askdb" init --yes --database prisma 2>&1)"
+if ! grep -q "npm install --save .*@askdb/prisma@$PRISMA_VERSION" <<<"$INIT_PRISMA_OUTPUT"; then
+  echo "smoke: FAILED — askdb init --database prisma should install @askdb/prisma@$PRISMA_VERSION:" >&2
+  echo "$INIT_PRISMA_OUTPUT" >&2
+  exit 1
+fi
+
+echo "smoke: an askdb without @askdb/prisma introspects with the project's (as npx askdb does)…"
+# The project installs what askdb init installs for Prisma; askdb runs from another install
+# (the app sandbox, standing in for npx's cache), so only the project can provide @askdb/prisma.
+mkdir -p "$WORK/prisma-project/prisma"
+cp "$PRISMA_FIXTURE" "$WORK/prisma-project/prisma/schema.prisma"
+node -e "
+  const fs = require('fs');
+  const j = {
+    name: 'askdb-prisma-project-smoke',
+    private: true,
+    type: 'module',
+    dependencies: {
+      '@askdb/config': 'file:$CONFIG_TARBALL',
+      '@askdb/core': 'file:$CORE_TARBALL',
+      '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
+      '@askdb/prisma': 'file:$PRISMA_TARBALL'
+    }
+  };
+  fs.writeFileSync('$WORK/prisma-project/package.json', JSON.stringify(j, null, 2) + '\n');
+"
+cat >"$WORK/prisma-project/askdb.config.ts" <<'SMOKEPRISMA'
+import { defineConfig } from "@askdb/config";
+
+export default defineConfig({
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } }, language: { model: "gpt-4o-mini" } },
+  introspection: { provider: "prisma", providerConfig: { prisma: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
+});
+SMOKEPRISMA
+(cd "$WORK/prisma-project" && npm install --silent --no-audit --no-fund --no-package-lock)
+PRISMA_PROJECT_OUTPUT="$(cd "$WORK/prisma-project" && "$WORK/apps/node_modules/.bin/askdb" introspect --print 2>&1)" || {
+  echo "smoke: FAILED — askdb introspect did not load the project's @askdb/prisma:" >&2
+  echo "$PRISMA_PROJECT_OUTPUT" >&2
+  exit 1
+}
+grep -q '"Order"' <<<"$PRISMA_PROJECT_OUTPUT" || {
+  echo "smoke: FAILED — askdb introspect --print with the project's @askdb/prisma printed no Order table:" >&2
+  echo "$PRISMA_PROJECT_OUTPUT" >&2
+  exit 1
+}
+
 echo "smoke: @askdb/rag pgvector store resolves the optional pg peer through resolveFrom…"
 # The consumer has @askdb/rag but no pg; the app sandbox has the real pg. A
 # fake pg exposing Pool only on its default export (as older pg releases and

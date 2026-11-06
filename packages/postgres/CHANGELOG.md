@@ -1,5 +1,20 @@
 # @askdb/postgres
 
+## 0.2.0-beta.21
+
+### Patch Changes
+
+- 3d62eb5: The package READMEs link to ADR 0003, ADR 0011 and the connector authoring guide with absolute GitHub URLs. The old `../../docs/…` links pointed outside the package, so they were dead wherever the README is read from the installed package.
+- Updated dependencies [c099a66]
+- Updated dependencies [5bd780a]
+- Updated dependencies [61f23b0]
+- Updated dependencies [798cc4f]
+- Updated dependencies [3d62eb5]
+- Updated dependencies [aa187f2]
+- Updated dependencies [e8afa01]
+  - @askdb/core@1.0.0-beta.45
+  - @askdb/introspect@0.3.0-beta.19
+
 ## 0.2.0-beta.20
 
 ### Minor Changes

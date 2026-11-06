@@ -45,7 +45,7 @@ export default defineConfig({
 
 Use the `env()` helper (rather than `process.env`) so AskDB can capture which environment variables your config depends on and apply its defaults pass.
 
-`defineConfig` returns the object unchanged at runtime — it exists only for type inference. The full type is `AskDbConfig`.
+`defineConfig` types the object as `AskDbConfig`, so your editor checks it as you write. A plain `export default { … }` loads too: AskDB runs it through `defineConfig` when it loads the file, so both forms get the same checks and deprecation warnings.
 
 ## All top-level fields
 
@@ -61,6 +61,8 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 | `studio` | no | `listen.{host,port}` (defaults `127.0.0.1:5556`) and the `execute` block below. |
 | `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. `allowSchemaOverride` (default `false`) — accept per-request `schemaJson`. `requestTimeoutMs` (default `60000`, at most `2147483647`) — model-call timeout per request. See [HTTP API → Server config](/reference/http-api/#server-config-httpapi). |
 | `dev` | no | `mockSql` — deterministic NL-to-SQL output for tests; bypasses the model call. |
+
+A config without `ai` or `introspection` fails to load, with an error that names the file and the missing block. That includes a config you only use for `askdb introspect`: it still needs an `ai` block.
 
 ### `dialect` — when inference is wrong
 
@@ -210,11 +212,11 @@ AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `
 
 ### Azure deployment names
 
-Azure identifies models by deployment name (e.g. `askdb-reporting`), which may not match the underlying model id AskDB uses to detect reasoning support. Set `ai.language.modelFamily` (or `ASKDB_AI_AZURE_MODEL_FAMILY`) to the real model id — e.g. `"gpt-5"` or `"o3-mini"` — when your deployment name doesn't already look like one.
+Azure identifies models by deployment name (e.g. `askdb-reporting`), which may not match the underlying model id AskDB uses to detect reasoning support. Set `ai.language.modelFamily` to the real model id — e.g. `"gpt-5"` or `"o3-mini"` — when your deployment name doesn't already look like one.
 
 ## The `rag` block
 
-The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set: Studio's RAG page uses the in-memory store and the mock embedder, and the only RAG key in the runtime snapshot is `ASKDB_RAG_EMBEDDER=mock`. When the block is present, `embedder`, `store` and `storeConfig` are required. A config that sets `ai.embedding` but has no `rag` block fails to load, since nothing would use that model: add `rag: { embedder: "ai", … }`, or remove `ai.embedding`.
+The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set: Studio's RAG page uses the in-memory store and the mock embedder, and `getAskDbRuntimeConfig().rag.store` is `"memory"`. When the block is present, `embedder`, `store` and `storeConfig` are required. A config that sets `ai.embedding` but has no `rag` block fails to load, since nothing would use that model: add `rag: { embedder: "ai", … }`, or remove `ai.embedding`.
 
 | Field | What it configures |
 | --- | --- |
@@ -260,6 +262,8 @@ A model set in both places is fine: `ai.language.model` wins, and the warning sa
 
 The first match wins. JSON config files are not supported. If nothing is found, `bootstrapAskDbEnv()` throws — run your process from the directory that holds the config (or pass `cwd` in its options).
 
+`bootstrapAskDbEnv()`, and so the CLI, Studio and the HTTP API, loads every extension in the list, `.mjs` included. It loads the file synchronously, so the file can't use top-level `await`.
+
 ## Environment variables
 
 AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb.config.*`. **You choose the variable names** — they're whatever you pass to `env("…")` in your config. The scaffolded config uses these common names; rename any of them in your config and `.env` together:
@@ -276,7 +280,7 @@ AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb
 | `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.resourceName` | The subdomain of `https://<name>.openai.azure.com`. Required unless you set `ai.providerConfig.azure.baseUrl` to a full endpoint URL instead. Also available on the connection: `apiVersion`, `secondaryApiKey`. |
 | `DATABASE_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection connection. |
 
-Everything else AskDB needs — output directory, mode, log level, Studio query connection, the vector-store URL — is set the same way: a field in `askdb.config.ts`, bound to a name you choose with `env("…")`. You don't set any AskDB-prefixed variables yourself; AskDB derives its internal runtime values from your config.
+Everything else AskDB needs — output directory, mode, log level, Studio query connection, the vector-store URL — is set the same way: a field in `askdb.config.ts`, bound to a name you choose with `env("…")`. AskDB reads one variable of its own from the environment, `ASKDB_DEBUG`, which prints stack traces (see [Troubleshooting](/getting-started/troubleshooting/)). Every other setting comes from your config, so an `ASKDB_*` variable you set in the shell does nothing unless your config reads it with `env("…")`.
 
 ## Studio execute configuration
 
@@ -297,26 +301,26 @@ export default defineConfig({
 });
 ```
 
-| Field | Env key | Default |
-|---|---|---|
-| `studio.execute.enabled` | `ASKDB_STUDIO_EXECUTE_ENABLED` | `false`. While off, `POST /api/execute` returns `403` and the Playground hides Execute. |
-| `studio.execute.provider` | `ASKDB_STUDIO_EXECUTE_PROVIDER` | Active introspection provider, or `"postgres"` |
-| `studio.execute.databaseUrl` | `ASKDB_STUDIO_DATABASE_URL` | None (see `useIntrospectionConnection`) |
-| `studio.execute.file` | `ASKDB_STUDIO_SQLITE_FILE` | None (see `useIntrospectionConnection`) |
-| `studio.execute.useIntrospectionConnection` | `ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION` | `false`. When `true`, reuse the introspection connection if `databaseUrl` / `file` is unset. |
-| `studio.execute.timeoutMs` | `ASKDB_STUDIO_EXECUTE_TIMEOUT_MS` | `30000`. Per-query timeout, positive integer. Not enforced for SQLite. |
-| `studio.execute.maxRows` | `ASKDB_STUDIO_EXECUTE_MAX_ROWS` | `500`. Row cap, positive integer. Results with more rows are truncated. |
+| Field | Default |
+|---|---|
+| `studio.execute.enabled` | `false`. While off, `POST /api/execute` returns `403` and the Playground hides Execute. |
+| `studio.execute.provider` | Active introspection provider, or `"postgres"` |
+| `studio.execute.databaseUrl` | None (see `useIntrospectionConnection`) |
+| `studio.execute.file` | None (see `useIntrospectionConnection`) |
+| `studio.execute.useIntrospectionConnection` | `false`. When `true`, reuse the introspection connection if `databaseUrl` / `file` is unset. |
+| `studio.execute.timeoutMs` | `30000`. Per-query timeout, positive integer. Not enforced for SQLite. |
+| `studio.execute.maxRows` | `500`. Row cap, positive integer. Results with more rows are truncated. |
 
 **Provider resolution order:**
 
-1. `studio.execute.provider` (structured config or `ASKDB_STUDIO_EXECUTE_PROVIDER` env).
+1. `studio.execute.provider`.
 2. The active `introspection.provider` when it is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`).
 3. `"postgres"` for backward compatibility.
 
 **Connection resolution** (per provider):
 
-- **Postgres, MySQL, SQL Server**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → the introspection URL for the same engine, only when `useIntrospectionConnection: true`.
-- **SQLite**: `studio.execute.file` → `ASKDB_STUDIO_SQLITE_FILE` → the introspection SQLite file, only when `useIntrospectionConnection: true`.
+- **Postgres, MySQL, SQL Server**: `studio.execute.databaseUrl` → the introspection URL for the same engine, only when `useIntrospectionConnection: true`.
+- **SQLite**: `studio.execute.file` → the introspection SQLite file, only when `useIntrospectionConnection: true`.
 
 Studio doesn't fall back to your introspection credentials on its own, because those usually belong to a more privileged role than ad-hoc queries should use. [Studio — Security model](/studio/#security-model) describes the read-only transaction, timeout, and row cap applied to every query.
 
@@ -379,6 +383,8 @@ const embeddingModel = rt.ai.embedding
 AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.
 
 `getAskDbRuntimeConfig()` throws until a snapshot is installed. `isAskDbRuntimeInitialized()` returns `true` once one is, so code that may run before or after its host's bootstrap can call `bootstrapAskDbEnv()` only when it's needed. The snapshot is process-wide: when two versions of `@askdb/config` are installed, both see the one your process bootstrapped. `createAskDbHttpServer()` works this way (see [HTTP API → Config loading](/reference/http-api/#config-loading)).
+
+`rt.flat` and `rt.ai.aiEnv` hold internal keys named like environment variables (`ASKDB_STUDIO_PORT`, `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`, …). AskDB builds them from your config and never reads them from the environment, so setting one in the shell changes nothing. Treat them as read-only, and set the config key instead.
 
 ## Config precedence
 

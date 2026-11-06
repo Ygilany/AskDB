@@ -25,7 +25,13 @@ export type SqlValidationRuleCode =
   /** A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`). */
   | "SQL_FORBIDDEN_FUNCTION"
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
-  | "SQL_UNTERMINATED";
+  | "SQL_UNTERMINATED"
+  /**
+   * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
+   * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
+   * parentheses after a name, which SQL Server may read as a hint.
+   */
+  | "SQL_LOCKING_READ";
 
 export class SqlValidationError extends AskDbError {
   /**
@@ -82,11 +88,24 @@ export type TenantScopeRejectionReason =
   /** A multi-ID scope met a tenant predicate with no list form (e.g. `<=`). */
   | "UNSUPPORTED_TENANT_PREDICATE"
   /**
-   * `resolveTenantSql()` in `sql-only` mode got a tenant ID containing a backslash
-   * and a dialect with an unknown `id` and no `backslashEscapes`, so it cannot
-   * escape the ID safely.
+   * A tenant ID that isn't printable ASCII (U+0020 to U+007E), or that contains a
+   * backslash, would be inlined as a literal: by `ask()` or `resolveTenantSql()` in
+   * `sql-only` mode, or in the `sql` that `bindPreparedQuery()` returns. It's refused on
+   * every dialect, because a server whose string settings or connection charset differ
+   * from the dialect's can read part of it as the end of the literal (a backslash, or a
+   * `¥` sent as byte 0x5C under `sjis`). Use `tenantSqlMode: "sql-params"` (the default)
+   * to pass such IDs as driver parameters.
    */
-  | "UNESCAPABLE_TENANT_ID";
+  | "UNESCAPABLE_TENANT_ID"
+  /**
+   * `ask()` got a tenant scope, no `tenantSqlMode`, and a custom `AskDialect` or a
+   * `DialectSpec` whose `id` isn't built in. AskDB can't know which driver markers such a
+   * dialect takes, and its `$N` default is a money constant on SQL Server, so the host
+   * must choose `"sql-params"` or `"sql-only"`.
+   * Also thrown, on every dialect, when `ask()` (with a tenant scope) or
+   * `resolveTenantSql()` gets a `tenantSqlMode` that is neither of the two.
+   */
+  | "TENANT_SQL_MODE_REQUIRED";
 
 export class TenantScopeError extends AskDbError {
   constructor(
@@ -111,7 +130,12 @@ export type QueryParameterRejectionReason =
   /** `values` has a `:tenant_*` key. Tenant IDs come from `tenantScope` only. */
   | "TENANT_VALUE_SUPPLIED"
   /** The tenant markers in `unboundSql` can't be lined up with the business parameters. */
-  | "TENANT_PARAM_ALIGNMENT";
+  | "TENANT_PARAM_ALIGNMENT"
+  /**
+   * `bindPreparedQuery()` needs `guardrails.dialect`: the template was made under a host's
+   * `DialectSpec` (`dialectRules: "host"`), or stored without `dialectRules`.
+   */
+  | "DIALECT_SPEC_REQUIRED";
 
 export class QueryParameterError extends AskDbError {
   constructor(

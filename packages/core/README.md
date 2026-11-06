@@ -1,17 +1,17 @@
 # `@askdb/core`
 
-Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, modes, logging, and retrieval input. Bring your own dialect adapter (e.g. `@askdb/postgres`) and your own model.
+NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, modes, logging, retrieval input, and the built-in dialect specs (PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, SQL Server). Pass a dialect id such as `"postgres"` and bring your own model; the engine packages (`@askdb/postgres`, …) add introspection, not SQL generation ([ADR 0029](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0029-core-owns-built-in-dialect-specs.md)).
 
 > **Status:** pre-release beta (`1.0.0-beta.x`); public APIs may still change before 1.0. `0.3.0` moved the Postgres dialect and `@askdb/core/postgres` to `@askdb/postgres`. Runtime AI provider construction lives in `@askdb/ai`; core remains BYO-model and does not read `process.env`. See [`docs/adrs/0002-integration-package-layout.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0002-integration-package-layout.md), [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md), and [`docs/adrs/0006-ai-provider-integration-strategy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0006-ai-provider-integration-strategy.md).
 
-> **Security model:** `ask()` returns SQL and never executes it. Its SQL checks (single `SELECT`/`WITH` statement (with a SQL Server caveat), no comments, no write/DDL keywords, no known side-effecting functions, and the tenant and sensitive-column checks) are heuristic defense in depth that catch common model mistakes. The read-only and sensitive-column checks use a dialect-aware lexer; the tenant check uses a simpler scanner of its own ([#342](https://github.com/Ygilany/AskDB/issues/342)). They are not a SQL parser and not a security boundary. Run generated SQL under a read-only, least-privilege database role and enforce tenant isolation in the database. See [Safety boundaries](https://askdb.tools/concepts/safety-boundaries/).
+> **Security model:** `ask()` returns SQL and never executes it. Its SQL checks (single `SELECT`/`WITH` statement (with a SQL Server caveat), no comments, no write/DDL keywords, no locking reads, no known side-effecting functions, and the tenant and sensitive-column checks) are heuristic defense in depth that catch common model mistakes. The read-only and sensitive-column checks use a dialect-aware lexer; the tenant check uses a simpler scanner of its own ([#342](https://github.com/Ygilany/AskDB/issues/342)). They are not a SQL parser and not a security boundary. Run generated SQL under a read-only, least-privilege database role and enforce tenant isolation in the database. See [Safety boundaries](https://askdb.tools/concepts/safety-boundaries/).
 
 ## Install
 
 ```bash
 # `ai` (Vercel AI SDK) is a required peer dependency — your app owns its version
 pnpm add @askdb/core ai
-# Plus a dialect adapter for the engine you target:
+# Only to introspect a database (live, or offline from an export), its engine package:
 pnpm add @askdb/postgres
 # Plus a model — either construct one directly with an AI SDK provider:
 pnpm add @ai-sdk/openai
@@ -50,11 +50,10 @@ import { loadSchema } from "@askdb/core";
 const schema = loadSchema("./fixtures/schemas/orders-users.schema");
 ```
 
-## Minimal example — with the Postgres dialect adapter
+## Minimal example — with the built-in Postgres dialect
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
 import { openai } from "@ai-sdk/openai";
 
 const schema = loadSchema("./fixtures/schemas/orders-users.schema");
@@ -63,7 +62,7 @@ const { sql } = await ask({
   question: "Top 5 customers by lifetime value?",
   schema,
   model: openai("gpt-4o"),
-  dialect: postgresDialect,
+  dialect: "postgres", // or POSTGRES_DIALECT from @askdb/core
 });
 ```
 
@@ -82,9 +81,9 @@ const result = await ask({
   tenantScope,
 });
 
-// Execute either form.
-await pool.query(result.sql);                       // ready to run
-await pool.query(result.unboundSql!, result.params); // driver binding
+// Execute either form. Tenant IDs are driver parameters by default (tenantSqlMode: "sql-params").
+await pool.query(result.sql, result.tenantParams);   // business values inlined, tenant IDs bound
+await pool.query(result.unboundSql!, result.params); // every value bound
 
 // Render a form from result.parameters, then rebind locally — no model call.
 // The guardrails run again on the template under this schema and scope.
@@ -97,8 +96,8 @@ Key rules:
 - `parameterize` defaults to **true**. Set `parameterize: false` when the extra output tokens are not worth it.
 - If the model's extra blocks are missing or inconsistent, the extras are omitted and `result.sql` is unaffected. No new error reaches a caller who does not call `bindPreparedQuery()`.
 - The model decides what to parameterize, so a mistake changes the *form*, not the query. Constrain form inputs using returned `type` and `description`.
-- `bindPreparedQuery(prepared, values, { schema, tenantScope?, sensitiveGuardrailMode?, acceptWarnings? })` re-runs the read-only, tenant and sensitive checks on the stored template under the schema, scope and modes you pass, then binds. Tenant IDs come from `tenantScope`, never from `values`. Under a policy with `enforcement: warn`, a template that fails the tenant check is refused unless `acceptWarnings` includes `"tenant"`. Authorizing `tenantScope` is the host's job, exactly as for `ask()`. Expand a `subtree` scope with `expandTenantScope()` first.
-- Callers using the new fields must execute with `params`, not `tenantParams`.
+- `bindPreparedQuery(prepared, values, { schema, tenantScope?, sensitiveGuardrailMode?, acceptWarnings?, dialect? })` re-runs the read-only, tenant and sensitive checks on the stored template under the schema, scope and modes you pass, then binds. Pass `dialect`, the `DialectSpec` you gave `ask()`, when `preparedQuery.dialectRules` is `"host"` or missing: the rebind refuses rather than fall back to the built-in rules. Tenant IDs come from `tenantScope`, never from `values`. Under a policy with `enforcement: warn`, a template that fails the tenant check is refused unless `acceptWarnings` includes `"tenant"`. Authorizing `tenantScope` is the host's job, exactly as for `ask()`. Expand a `subtree` scope with `expandTenantScope()` first.
+- Each SQL form runs with its own array: `unboundSql` with `params` (tenant IDs included), `sql` with `tenantParams`. Never swap or concatenate them. `tenantSqlMode: "sql-only"` inlines the tenant IDs in `sql` instead, and refuses one that isn't printable ASCII or contains a backslash. With a tenant scope and a custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, set `tenantSqlMode` yourself: there's no default.
 - List parameters are arity-stable in `unboundSql` only on PostgreSQL/CockroachDB (`= ANY($n)`); elsewhere a changed list length changes the marker count — rebind through `bindPreparedQuery()` rather than swapping the array.
 - Markers: `$N` (Postgres/CockroachDB), `?` (MySQL/MariaDB/SQLite), `@pN` (SQL Server, 0-based). Map values via `parameters[].markers` for SQL Server.
 
@@ -108,9 +107,12 @@ Key rules:
 - `bindPreparedQuery(prepared, values, guardrails)` — local rebind of a `PreparedQuery` (no model call), re-checked under the given schema and tenant scope.
 - `expandTenantScope(policy, scope, resolveTenantDescendants)` — the `subtree` expansion `ask()` runs, for a rebind.
 - `AskDbLanguageModel` — AskDB's public name for the AI SDK language model contract.
-- `AskDialect` — the dialect adapter contract. `@askdb/postgres` exports a ready-made one.
+- `DialectSpec` and the built-in specs (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …, `BUILT_IN_DIALECTS`) — the SQL rules for each built-in engine. The engine packages re-export them.
+- `AskDialect` — the escape-hatch contract for a fully custom generator.
 - `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.
 - `loadSchemaFromJson(raw)` — parse a Schema v2 bundled JSON string (e.g. from an env var).
+- `readSchemaDirectory(dir)` — read a Schema v2 directory into its bundle form (what `askdb bundle` writes).
+- `saveSchemaFile(schemaDir, relativePath, content)` — write one file inside a schema directory; refuses a symbolic link and replaces the target through a temp file.
 - `parseTableMarkdown` / `writeTableMarkdown` — round-trippable describable-layer parser/writer.
 - `extractSqlFromModelText` — generic fenced-code extractor (dialect-agnostic).
 - Structured logging hooks (`createAskDbLogger`, log-event contract).

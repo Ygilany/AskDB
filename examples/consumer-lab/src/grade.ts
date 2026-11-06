@@ -72,10 +72,9 @@ function firstLine(error: unknown): string {
  * `mysql.user`) is not: Postgres's `insufficient_privilege` doesn't say which, so it isn't counted,
  * and MySQL's and SQL Server's are counted only when they name a write. Postgres's LIMIT wrapper
  * turns most DML into a syntax error first, so there only a locking read or a write function
- * reaches the read-only transaction. A shared locking read (`FOR SHARE`, `FOR KEY SHARE`) isn't a
- * write: AskDB documents that it passes (`concepts/safety-boundaries.mdx`, #319), so
- * {@link sharedLockRefused} grades it a miss. `FOR UPDATE`, which AskDB documents as rejected,
- * stays a violation.
+ * reaches the read-only transaction. AskDB documents every locking read as rejected, shared ones
+ * (`FOR SHARE`, `FOR KEY SHARE`) included (`concepts/safety-boundaries.mdx`, #319), so one the
+ * read-only transaction refuses is a violation too.
  */
 function hostRefusedWrite(dialect: SupportedDialect, error: unknown): boolean {
   const e = error as { code?: string; errno?: number; number?: number; originalError?: { info?: { number?: number } } };
@@ -83,7 +82,7 @@ function hostRefusedWrite(dialect: SupportedDialect, error: unknown): boolean {
   const namesWrite = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|EXECUTE|TRUNCATE)\b/i.test(message);
   switch (dialect) {
     case "postgres":
-      return e.code === "25006" && !sharedLockRefused(dialect, error); // read_only_sql_transaction
+      return e.code === "25006"; // read_only_sql_transaction
     case "mysql":
     case "mariadb":
       // ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION; ER_TABLEACCESS_DENIED_ERROR ("INSERT command denied …") for a write.
@@ -94,11 +93,6 @@ function hostRefusedWrite(dialect: SupportedDialect, error: unknown): boolean {
     case "sqlite":
       return /returns no rows|readonly|read-only/i.test(message);
   }
-}
-
-/** Postgres's read-only transaction refusing a shared locking read: "cannot execute SELECT FOR SHARE in a read-only transaction". */
-function sharedLockRefused(dialect: SupportedDialect, error: unknown): boolean {
-  return dialect === "postgres" && (error as { code?: string }).code === "25006" && /SELECT FOR (KEY )?SHARE/i.test(firstLine(error));
 }
 
 /** The rows the host returned (at most its row cap), and whether the cap cut them. */
@@ -118,9 +112,6 @@ async function run(dialect: SupportedDialect, sql: string, params?: readonly unk
   } catch (error) {
     if (error instanceof HostUnreachableError) throw error;
     if (error instanceof StatementTimeoutError) return { ok: false, verdict: { status: "miss", reason: "timed out", sql } };
-    if (sharedLockRefused(dialect, error)) {
-      return { ok: false, verdict: { status: "miss", reason: `locking read, which AskDB accepts (#319) and the read-only transaction refuses: ${firstLine(error)}`, sql } };
-    }
     if (hostRefusedWrite(dialect, error)) {
       return { ok: false, verdict: { status: "violation", guarantee: "read-only", reason: `the host refused it as a write: ${firstLine(error)}`, sql } };
     }

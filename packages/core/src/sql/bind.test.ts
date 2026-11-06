@@ -131,7 +131,7 @@ function prepared(
   namedSql: string,
   parameters: PreparedQuery["parameters"],
 ): PreparedQuery {
-  return { version: 1, dialect, namedSql, parameters };
+  return { version: 1, dialect, dialectRules: "builtin", namedSql, parameters };
 }
 
 describe("bindPreparedQuery — scalars", () => {

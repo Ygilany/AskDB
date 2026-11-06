@@ -161,7 +161,7 @@ WHERE i.is_primary_key = 0
   AND ic.is_included_column = 0
 ORDER BY s.name, t.name, i.name, ic.key_ordinal`;
 
-/** Internal: the catalog SQL strings, exposed for snapshot-based tests. */
+/** The catalog SQL strings the connector issues, keyed by query name. */
 export const SQLSERVER_CATALOG_SQL = {
   tables: SQL_TABLES,
   views: SQL_VIEWS,
@@ -266,7 +266,7 @@ type FoldInput = {
   declaredFilters: ReadonlyArray<string>;
 };
 
-export function foldSqlServerResult(input: FoldInput): IntrospectionResult {
+function foldSqlServerResult(input: FoldInput): IntrospectionResult {
   const warnings: IntrospectionWarning[] = [];
   const includeSet = input.includeSchemas ? new Set(input.includeSchemas) : undefined;
   const excludeSet = new Set(input.excludeSchemas);

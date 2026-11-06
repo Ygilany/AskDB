@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import { formatTenantPolicyWarning, loadSchema, type TenantPolicyWarning } from "@askdb/core";
 import {
+  connectorPackageMissingMessage,
   createConnectorRegistry,
   introspect,
   isSchemaV2Json,
@@ -16,14 +17,33 @@ import {
   type IntrospectResult,
   type IntrospectionFilters,
 } from "@askdb/introspect";
+import { createOptionalDriverLoader, rethrowDriverImportError } from "@askdb/introspect/kit";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
-import { prismaConnectorProvider } from "@askdb/prisma";
+import { labelled } from "./error-values.js";
 import { createCliLogger } from "./logger.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 import { requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
+
+/**
+ * `@askdb/prisma` is an optional peer of `askdb`: it pulls in Prisma, whose
+ * `@prisma/engines` build pnpm 11 refuses to run unapproved (#259). It is
+ * imported only when `--engine prisma` is selected, from this install first,
+ * then from the project in the working directory, where `askdb init` installs
+ * it (as with database drivers, so `npx askdb` finds it too).
+ */
+const prismaPackage = createOptionalDriverLoader({
+  packageName: "@askdb/prisma",
+  importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
+  missingMessage: connectorPackageMissingMessage({
+    provider: "prisma",
+    packageName: "@askdb/prisma",
+    allowBuilds: PRISMA_BUILD_APPROVALS,
+  }),
+});
 
 /**
  * The engines `askdb introspect` supports out of the box. Engine-specific
@@ -35,7 +55,7 @@ export const defaultConnectorRegistry: ConnectorRegistry = createConnectorRegist
   mysqlConnectorProvider,
   sqliteConnectorProvider,
   sqlServerConnectorProvider,
-  prismaConnectorProvider,
+  { provider: "prisma", load: async () => (await prismaPackage.load()).prismaConnectorProvider },
 ]);
 
 export type RunIntrospectCliOptions = {
@@ -77,18 +97,18 @@ export async function runIntrospectCli(
     process.stdout.write(`${readCliVersion()}\n`);
     return 0;
   }
+  const registry = options.connectorRegistry ?? defaultConnectorRegistry;
   if (argv.includes("--help") || argv.includes("-h")) {
-    printHelp();
+    printHelp(registry);
     return 0;
   }
-  const registry = options.connectorRegistry ?? defaultConnectorRegistry;
   const templates = argv[0] === "templates";
   // Only an introspection run reads askdb.config. A missing or broken config propagates to
   // the CLI's top-level error handler, the same as for `askdb ask`.
   if (!templates) requireAskDbConfig();
   try {
     return templates
-      ? runTemplatesCommand(argv.slice(1), registry)
+      ? await runTemplatesCommand(argv.slice(1), registry)
       : await runIntrospectCommand(argv, registry);
   } catch (error) {
     process.stderr.write(`${formatError(error)}\n`);
@@ -96,12 +116,20 @@ export async function runIntrospectCli(
   }
 }
 
-function runTemplatesCommand(argv: readonly string[], registry: ConnectorRegistry): number {
+async function runTemplatesCommand(argv: readonly string[], registry: ConnectorRegistry): Promise<number> {
   const opts = parseOptions(argv);
-  const engine = resolveEngine(registry, opts.engine);
+  const engine = await resolveEngine(registry, opts.engine);
   const bundle = registry.getTemplates(engine);
   if (!bundle) {
-    const withTemplates = registry.providers().filter((id) => registry.getTemplates(id) !== undefined);
+    // Only loaded engines are named: loading the others would import optional engine
+    // packages (`@askdb/prisma`) this command doesn't use. An unloaded lazy entry throws.
+    const withTemplates = registry.providers().filter((id) => {
+      try {
+        return registry.getTemplates(id) !== undefined;
+      } catch {
+        return false;
+      }
+    });
     throw new Error(
       `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for ` +
         (withTemplates.length > 0 ? withTemplates.map((id) => `--engine ${id}`).join(", ") : "engines that provide them") +
@@ -123,7 +151,7 @@ async function runIntrospectCommand(
   const rt = getAskDbRuntimeConfig();
   // When --engine isn't passed, fall back to the configured introspection.provider
   // so `askdb introspect` works flag-free for any configured engine.
-  const engine = resolveEngine(registry, opts.engine ?? rt.introspection.provider);
+  const engine = await resolveEngine(registry, opts.engine ?? rt.introspection.provider);
   // Schemas (MySQL/MariaDB: databases) to introspect: `--schemas` wins, then introspection.schemas.
   if (!opts.schemas && rt.introspection.schemas) {
     opts.schemas = rt.introspection.schemas;
@@ -145,7 +173,7 @@ async function runIntrospectCommand(
   }
   if (!opts.print && !opts.diff && !opts.out) {
     throw new Error(
-      "Provide one output mode: --out <dir>, --print, or --diff <existing-dir> (or set ASKDB_INTROSPECT_OUT to default --out).",
+      "Provide one output mode: --out <dir>, --print, or --diff <existing-dir> (or set introspection.outputDir in askdb.config to default --out).",
     );
   }
   if ([opts.print, Boolean(opts.diff), Boolean(opts.out)].filter(Boolean).length > 1) {
@@ -287,62 +315,140 @@ function buildFilters(opts: CliOptions): IntrospectionFilters | undefined {
   return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
+/**
+ * Every flag `askdb introspect` accepts. `parseOptions` and `printHelp` both read this table,
+ * so the help can't leave out a flag the parser takes (#281).
+ */
+const INTROSPECT_FLAGS: readonly {
+  /** Spellings, short form first: `["-v", "--verbose"]`. */
+  names: readonly string[];
+  /** Placeholder for the flag's value, e.g. `<dir>`; absent for a boolean flag. */
+  value?: string;
+  /** The help line; a function when it depends on the engines the registry holds. */
+  help: string | ((registry: ConnectorRegistry) => string);
+  apply(opts: CliOptions, value: string): void;
+}[] = [
+  {
+    names: ["--engine"],
+    value: "<id>",
+    help: (registry) => `${registry.providers().join(", ")}. Default: introspection.provider.`,
+    apply: (opts, value) => (opts.engine = value),
+  },
+  {
+    names: ["--url"],
+    value: "<url>",
+    help: "Live database connection string (a file path for SQLite).",
+    apply: (opts, value) => (opts.url = value),
+  },
+  {
+    names: ["--from-export"],
+    value: "<bundle-dir>",
+    help: "Read a previously exported bundle instead of a live database. Postgres only.",
+    apply: (opts, value) => (opts.fromExport = value),
+  },
+  {
+    names: ["--prisma-schema"],
+    value: "<schema.prisma|schema-dir>",
+    help: "Prisma schema file or directory. With --engine prisma.",
+    apply: (opts, value) => (opts.prismaSchema = value),
+  },
+  {
+    names: ["--out"],
+    value: "<dir>",
+    help: "Write the schema artifact here. Default: introspection.outputDir.",
+    apply: (opts, value) => (opts.out = value),
+  },
+  {
+    names: ["--print"],
+    help: "Print the introspection result without writing files.",
+    apply: (opts) => (opts.print = true),
+  },
+  {
+    names: ["--diff"],
+    value: "<existing-dir>",
+    help: "Diff the introspection result against an existing schema artifact.",
+    apply: (opts, value) => (opts.diff = value),
+  },
+  {
+    names: ["--schema-id"],
+    value: "<id>",
+    help: "Identifier written into schema.json. Default: the output directory's name.",
+    apply: (opts, value) => (opts.schemaId = value),
+  },
+  {
+    names: ["--schemas"],
+    value: "<a,b>",
+    help: "Database schemas to include (MySQL/MariaDB: databases). Default: introspection.schemas.",
+    apply: (opts, value) => (opts.schemas = parseList(value)),
+  },
+  {
+    names: ["--exclude-schemas"],
+    value: "<a,b>",
+    help: "Database schemas to skip.",
+    apply: (opts, value) => (opts.excludeSchemas = parseList(value)),
+  },
+  {
+    names: ["--tables"],
+    value: "<glob[,glob]>",
+    help: "Tables to include. Repeatable; values accumulate.",
+    apply: (opts, value) => (opts.tables = [...(opts.tables ?? []), ...parseList(value)]),
+  },
+  {
+    names: ["-v", "--verbose"],
+    help: "Emit structured JSON logs (info) to stderr.",
+    apply: (opts) => (opts.verbose = true),
+  },
+  {
+    names: ["--log-level"],
+    value: "<level>",
+    help: "Structured log level (trace|debug|info|warn|error|fatal|silent). Default: logging.level.",
+    apply: (opts, value) => (opts.logLevel = value),
+  },
+  {
+    names: ["--log-file"],
+    value: "<path>",
+    help: "Append structured JSON logs to this file. Default: logging.logFile.",
+    apply: (opts, value) => (opts.logFile = value),
+  },
+  {
+    names: ["--log-stdout"],
+    help: "Mirror structured JSON logs to stdout. Default: logging.logStdout.",
+    apply: (opts) => (opts.logStdout = true),
+  },
+  {
+    names: ["--correlation-id"],
+    value: "<id>",
+    help: "Correlation ID for logs. Default: logging.correlationId.",
+    apply: (opts, value) => (opts.correlationId = value),
+  },
+];
+
+const FLAG_BY_NAME = new Map(INTROSPECT_FLAGS.flatMap((flag) => flag.names.map((name) => [name, flag] as const)));
+
 function parseOptions(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
-    switch (arg) {
-      case "--url":
-        opts.url = readValue(argv, ++i, arg);
-        break;
-      case "--from-export":
-        opts.fromExport = readValue(argv, ++i, arg);
-        break;
-      case "--prisma-schema":
-        opts.prismaSchema = readValue(argv, ++i, arg);
-        break;
-      case "--out":
-        opts.out = readValue(argv, ++i, arg);
-        break;
-      case "--print":
-        opts.print = true;
-        break;
-      case "--diff":
-        opts.diff = readValue(argv, ++i, arg);
-        break;
-      case "--engine":
-        opts.engine = readValue(argv, ++i, arg);
-        break;
-      case "--schema-id":
-        opts.schemaId = readValue(argv, ++i, arg);
-        break;
-      case "--schemas":
-        opts.schemas = parseList(readValue(argv, ++i, arg));
-        break;
-      case "--exclude-schemas":
-        opts.excludeSchemas = parseList(readValue(argv, ++i, arg));
-        break;
-      case "--tables":
-        opts.tables = [...(opts.tables ?? []), ...parseList(readValue(argv, ++i, arg))];
-        break;
-      case "-v":
-      case "--verbose":
-        opts.verbose = true;
-        break;
-      case "--log-level":
-        opts.logLevel = readValue(argv, ++i, arg);
-        break;
-      case "--log-file":
-        opts.logFile = readValue(argv, ++i, arg);
-        break;
-      case "--log-stdout":
-        opts.logStdout = true;
-        break;
-      case "--correlation-id":
-        opts.correlationId = readValue(argv, ++i, arg);
-        break;
-      default:
-        throw new Error(`Unknown option: ${arg}`);
+    // Errors never repeat an argument's value: it can be a connection string, password included.
+    if (!arg.startsWith("-")) {
+      throw new Error(
+        "Unexpected argument: askdb introspect takes no positional arguments. Pass values with their flag, such as --url <url>.",
+      );
+    }
+    // `--flag=value` works like `--flag value`, as in `askdb rag`.
+    const eq = arg.indexOf("=");
+    const name = eq === -1 ? arg : arg.slice(0, eq);
+    const inline = eq === -1 ? undefined : arg.slice(eq + 1);
+    const flag = FLAG_BY_NAME.get(name);
+    if (!flag) throw new Error(labelled("Unknown option", name));
+    if (!flag.value) {
+      if (inline !== undefined) throw new Error(`${name} takes no value.`);
+      flag.apply(opts, "");
+    } else if (inline === undefined) {
+      flag.apply(opts, readValue(argv, ++i, name));
+    } else {
+      if (!inline) throw new Error(`${name} requires a value.`);
+      flag.apply(opts, inline);
     }
   }
   return opts;
@@ -363,10 +469,14 @@ function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
-function resolveEngine(registry: ConnectorRegistry, engine = "postgres"): ConnectorProviderId {
-  if (registry.hasProvider(engine)) return engine;
-  const supported = registry.providers().join(", ");
-  throw new Error(`Unsupported introspection engine '${engine}' (expected one of: ${supported}).`);
+/** The registered engine, with its adapter loaded (an optional engine package is imported here). */
+async function resolveEngine(registry: ConnectorRegistry, engine = "postgres"): Promise<ConnectorProviderId> {
+  if (!registry.hasProvider(engine)) {
+    const supported = registry.providers().join(", ");
+    throw new Error(`Unsupported introspection engine '${engine}' (expected one of: ${supported}).`);
+  }
+  await registry.load(engine);
+  return engine;
 }
 
 function inferSchemaId(path: string | undefined): string | undefined {
@@ -375,14 +485,24 @@ function inferSchemaId(path: string | undefined): string | undefined {
   return name.endsWith(".schema") ? name.slice(0, -".schema".length) : name;
 }
 
-function printHelp(): void {
+function printHelp(registry: ConnectorRegistry): void {
+  const optionLines = [
+    ...INTROSPECT_FLAGS.map((flag) => ({
+      usage: flag.names.join(", ") + (flag.value ? ` ${flag.value}` : ""),
+      help: typeof flag.help === "function" ? flag.help(registry) : flag.help,
+    })),
+    // Handled before option parsing, in runIntrospectCli.
+    { usage: "-V, --version", help: "Print the askdb version." },
+    { usage: "-h, --help", help: "Print this help." },
+  ];
+  const width = Math.max(...optionLines.map((line) => line.usage.length)) + 2;
   process.stdout.write(
     [
       "askdb introspect - Schema introspection for AskDB",
       "",
       "Usage:",
-      "  askdb introspect                                    (Postgres: DATABASE_URL + ASKDB_INTROSPECT_OUT from askdb.config after bootstrap)",
-      "  askdb introspect --out <dir>                        (uses DATABASE_URL from env/.env)",
+      "  askdb introspect                                    (engine, connection and output directory from askdb.config)",
+      "  askdb introspect --out <dir>",
       "  askdb introspect --url <postgres-url> --out <dir>",
       "  askdb introspect --from-export <bundle-dir> --out <dir>",
       "  askdb introspect --engine mysql --url <mysql-url> --out <dir>",
@@ -395,21 +515,15 @@ function printHelp(): void {
       "  askdb introspect --from-export <bundle-dir> --diff <existing-dir>",
       "  askdb introspect templates --engine postgres",
       "",
-      "Defaults (after askdb.config bootstrap):",
-      "  ASKDB_INTROSPECT_POSTGRES_URL  From introspection.providerConfig.postgres.databaseUrl.",
-      "  ASKDB_INTROSPECT_OUT           From introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
-      "  --prisma-schema       From introspection.providerConfig.prisma.schemaPath when set; otherwise",
-      "                        prisma/schema.prisma or schema.prisma is auto-discovered in the project root.",
+      "Defaults from askdb.config (bind a value to an environment variable with env(\"NAME\")):",
+      "  --url            For the engine introspection.provider names: introspection.providerConfig.<engine>.databaseUrl",
+      "                   (SQLite: introspection.providerConfig.sqlite.file). With another --engine, pass --url.",
+      "  --out            introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
+      "  --prisma-schema  introspection.providerConfig.prisma.schemaPath when set; otherwise",
+      "                   prisma/schema.prisma or schema.prisma is auto-discovered in the project root.",
       "",
       "Options:",
-      "  --schema-id <id>",
-      "  --prisma-schema <schema.prisma|schema-dir>",
-      "  --schemas <a,b>",
-      "  --exclude-schemas <a,b>",
-      "  --tables <glob[,glob]>",
-      "  --log-level <level>",
-      "  --log-file <path>",
-      "  --correlation-id <id>",
+      ...optionLines.map((line) => `  ${line.usage.padEnd(width)}${line.help}`),
       "",
     ].join("\n"),
   );

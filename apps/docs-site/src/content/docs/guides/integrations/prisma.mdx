@@ -3,6 +3,7 @@ title: "Prisma"
 description: "Use @askdb/prisma to read your schema directly from a .prisma file — no live database required."
 ---
 
+import { Aside } from "@astrojs/starlight/components";
 import InstallTabs from "../../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Integration · Prisma</p>
@@ -13,17 +14,37 @@ import InstallTabs from "../../../../components/InstallTabs.astro";
 
 - You have a `schema.prisma` and want to skip the live-database introspection step.
 - You're working in CI, on a laptop without DB access, or in an air-gapped environment.
-- You pair it with `@askdb/postgres` (or another engine) for the actual SQL dialect at generation time.
+- You pass `ask()` the matching `dialect` id at generation time (see [Supported providers](#supported-providers)); no engine package is needed for that.
 
 ## Install
 
+For the CLI and Studio, install `@askdb/prisma` in your project next to `askdb`. `askdb` and `@askdb/studio` list it as an optional peer: they load it only to read a Prisma schema, and don't install it, because it brings in Prisma.
+
+<InstallTabs pkgs="askdb @askdb/prisma" />
+
+`npx askdb@latest init --database prisma` installs it for you. `askdb` also finds the copy in your project when it runs from elsewhere, as `npx askdb` does. To run the CLI without installing anything, name both packages in the one-off command: `npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`.
+
+Without it, `askdb introspect --engine prisma` exits 1 and names the package to install, and Studio shows the same message instead of resyncing.
+
+<Aside type="caution" title="pnpm 11: approve the Prisma build">
+`@askdb/prisma` depends on Prisma, whose `@prisma/engines` package has an install script. pnpm 11 doesn't run it until you approve it, and `pnpm add` exits 1 with `ERR_PNPM_IGNORED_BUILDS`. Approve it in the same command:
+
+```bash
+pnpm add --allow-build=@prisma/engines @askdb/prisma
+```
+
+This writes `allowBuilds` with `'@prisma/engines': true` to your `pnpm-workspace.yaml`. You can also run `pnpm approve-builds` after the install. A project that already uses Prisma has usually approved it. `askdb init` and Studio's guided setup approve it when they install `@askdb/prisma` with pnpm 10.4 or later, the first pnpm with `--allow-build`.
+</Aside>
+
+To call the connector from your own code instead of the CLI:
+
 <InstallTabs pkgs="@askdb/prisma @askdb/introspect ai" />
 
-Plus the engine you want at runtime — for example, Postgres:
+Plus `@askdb/core` and a model provider to generate SQL — for example, OpenAI:
 
-<InstallTabs pkgs="@askdb/core @askdb/postgres ai @ai-sdk/openai" />
+<InstallTabs pkgs="@askdb/core ai @ai-sdk/openai" />
 
-`@askdb/prisma` doesn't bundle a SQL dialect — pair it with whichever engine package matches your runtime database.
+`@askdb/prisma` doesn't bundle a SQL dialect. The built-in dialects live in `@askdb/core`: pass `ask()` the dialect id that matches your runtime database (see the table below). The artifact records your `datasource.provider`, so the CLI picks the dialect from it when `askdb.config.ts` sets no `dialect`.
 
 ## CLI workflow
 
@@ -59,20 +80,21 @@ await introspect(
 
 ## Supported providers
 
-`@askdb/prisma` supports any Prisma relational provider — at generation time, pair it with the matching AskDB engine adapter:
+`@askdb/prisma` supports any Prisma relational provider. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
 
-| Prisma provider | Runtime engine adapter |
-| --- | --- |
-| `postgresql` / `cockroachdb` | `@askdb/postgres` |
-| `mysql` | `@askdb/mysql` |
-| `sqlite` | `@askdb/sqlite` |
-| `sqlserver` | `@askdb/sqlserver` |
+| Prisma provider | `dialect` id | Engine package (live introspection) |
+| --- | --- | --- |
+| `postgresql` | `"postgres"` | `@askdb/postgres` |
+| `cockroachdb` | `"cockroachdb"` | `@askdb/postgres` |
+| `mysql` | `"mysql"` | `@askdb/mysql` |
+| `sqlite` | `"sqlite"` | `@askdb/sqlite` |
+| `sqlserver` | `"sqlserver"` | `@askdb/sqlserver` |
 
 MongoDB is not supported — AskDB targets relational engines.
 
 ## What it doesn't do
 
-`@askdb/prisma` is a file-only connector. It does not connect to a database, it does not execute generated SQL, and it does not include a SQL dialect. For SQL generation, supply a dialect from one of the engine packages above.
+`@askdb/prisma` is a file-only connector. It does not connect to a database, it does not execute generated SQL, and it does not include a SQL dialect. For SQL generation, pass `ask()` the dialect id from the table above.
 
 ## Read next
 

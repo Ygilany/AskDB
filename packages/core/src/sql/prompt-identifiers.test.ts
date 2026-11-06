@@ -39,6 +39,8 @@ describe("promptIdentifierQuoter", () => {
     }
     // A dialect's own extraForbiddenKeywords count too: `set` on SQL Server only.
     expect([sqlserver("set"), postgres("set")]).toEqual(["[set]", "set"]);
+    // So do T-SQL's lock hints, which the locking-read check rejects bare on SQL Server only.
+    expect([sqlserver("rowlock"), postgres("rowlock")]).toEqual(["[rowlock]", "rowlock"]);
   });
 
   it("leaves plain names bare", () => {
@@ -92,5 +94,10 @@ describe("promptIdentifierQuoter", () => {
     expect(quote("set")).toBe('"set"');
     expect(validateSelectSql(spec, `SELECT ${quote("set")} FROM t`)).toBe('SELECT "set" FROM t');
     expect(() => validateSelectSql(spec, "SELECT set FROM t")).toThrow(/SET/i);
+    expect(validateSelectSql(spec, `SELECT ${quote("updlock")} FROM t`)).toBe('SELECT "updlock" FROM t');
+    expect(() => validateSelectSql(spec, "SELECT updlock FROM t")).toThrow(/UPDLOCK/);
+    // And a name that isn't plain ASCII, which SQL Server may read as a lock hint (#319).
+    expect(validateSelectSql(spec, `SELECT ${quote("café")} FROM t`)).toBe('SELECT "café" FROM t');
+    expect(() => validateSelectSql(spec, "SELECT café FROM t")).toThrow(/café/);
   });
 });

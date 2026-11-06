@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -18,10 +18,12 @@ import {
 } from "@askdb/ai";
 import {
   ask,
+  DEFAULT_TENANT_SQL_MODE,
   formatSchemaV2ForNlToSql,
   formatSensitiveReference,
   isBuiltInDialectId,
   loadSchema,
+  saveSchemaFile,
   schemaHasSensitiveIdentifiers,
   SensitiveEnrichmentTargetError,
   SqlValidationError,
@@ -296,7 +298,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       }
       if (req.method === "GET" && url.pathname === "/api/introspect/status") {
         requireWorkspace(state);
-        return writeJson(res, 200, buildIntrospectionPlanDto());
+        return writeJson(res, 200, await buildIntrospectionPlanDto());
       }
       if (req.method === "POST" && url.pathname === "/api/introspect") {
         if (!isLoopbackRequest(req)) {
@@ -573,8 +575,8 @@ async function handleResync(state: StudioState): Promise<IntrospectRunResponse> 
   };
 }
 
-function buildIntrospectionPlanDto(): IntrospectionPlanDto {
-  const plan = resolveStudioIntrospectionPlan();
+async function buildIntrospectionPlanDto(): Promise<IntrospectionPlanDto> {
+  const plan = await resolveStudioIntrospectionPlan();
   return plan.ok
     ? { ok: true, engine: plan.engine, sourceLabel: plan.sourceLabel }
     : { ok: false, engine: plan.engine, error: plan.error };
@@ -909,7 +911,7 @@ async function askSampleQuestion(
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
-      `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
+      `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set dev.mockSql in askdb.config to bypass the live model.`,
     );
   }
   const reasoningEffort = mockSql ? undefined : resolveReasoningEffort(rt.ai.aiEnv, "nlToSql");
@@ -989,7 +991,7 @@ async function askSampleQuestion(
     tenant: options.tenantScope
       ? {
           enabled: true,
-          sqlMode: options.tenantSqlMode ?? "sql-only",
+          sqlMode: options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE,
           bindings: result.tenantBindings ?? [],
           params: result.tenantParams ?? [],
         }
@@ -1529,7 +1531,7 @@ function appendPlaygroundHistory(
   };
   const updated = [newEntry, ...existing].slice(0, HISTORY_MAX_STORED);
   ensureSchemaDirGitignore(schemaDir);
-  writeFileSync(histPath, JSON.stringify(updated, null, 2), "utf8");
+  saveSchemaFile(schemaDir, HISTORY_FILE_NAME, JSON.stringify(updated, null, 2));
 }
 
 /**
@@ -1540,22 +1542,24 @@ function appendPlaygroundHistory(
  * - No `.gitignore` yet: write one that also ignores `.env` files — the same
  *   rules `askdb init` writes (plan 043) — unless the schema dir is the project
  *   root, where ignoring `.env` is the project's call, not Studio's.
- * - Existing `.gitignore` without the entry: append the entry; never rewrite.
+ * - Existing `.gitignore` without the entry: add the entry at the end and keep
+ *   every existing byte as it was.
+ * - Both are saved with `saveSchemaFile()`, so a `.gitignore` that is a symbolic
+ *   link is refused, not written through (ADR 0028).
  * - Failure is non-fatal: history still saves.
  */
 function ensureSchemaDirGitignore(schemaDir: string): void {
   const gitignorePath = join(schemaDir, ".gitignore");
   try {
     if (existsSync(gitignorePath)) {
-      const content = readFileSync(gitignorePath, "utf8");
-      const lines = content.split(/\r?\n/).map((line) => line.trim());
+      // Kept as bytes: Git matches patterns byte for byte, and a non-UTF-8 file name
+      // in an existing line must survive the rewrite.
+      const content = readFileSync(gitignorePath);
+      const lines = content.toString("utf8").split(/\r?\n/).map((line) => line.trim());
       if (lines.includes(HISTORY_FILE_NAME) || lines.includes(`/${HISTORY_FILE_NAME}`)) return;
-      const separator = content === "" || content.endsWith("\n") ? "" : "\n";
-      appendFileSync(
-        gitignorePath,
-        `${separator}# AskDB Studio Playground history (local only)\n${HISTORY_FILE_NAME}\n`,
-        "utf8",
-      );
+      const separator = content.length === 0 || content.at(-1) === 0x0a ? "" : "\n";
+      const entry = `${separator}# AskDB Studio Playground history (local only)\n${HISTORY_FILE_NAME}\n`;
+      saveSchemaFile(schemaDir, ".gitignore", Buffer.concat([content, Buffer.from(entry, "utf8")]));
       return;
     }
     const lines = [
@@ -1576,7 +1580,7 @@ function ensureSchemaDirGitignore(schemaDir: string): void {
         "!.env.example",
       );
     }
-    writeFileSync(gitignorePath, `${lines.join("\n")}\n`, "utf8");
+    saveSchemaFile(schemaDir, ".gitignore", `${lines.join("\n")}\n`);
   } catch {
     // Non-fatal: the history write matters more than this defensive file.
   }
@@ -1604,7 +1608,7 @@ function deletePlaygroundHistoryEntry(
   if (filtered.length === existing.length) {
     return { ok: false, error: "not found" };
   }
-  writeFileSync(histPath, JSON.stringify(filtered, null, 2), "utf8");
+  saveSchemaFile(schemaDir, HISTORY_FILE_NAME, JSON.stringify(filtered, null, 2));
   return { ok: true };
 }
 

@@ -12,7 +12,7 @@ import {
   type QueryParamSlot,
   type RenderedQuery,
 } from "./bind.js";
-import { BUILT_IN_DIALECTS, isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { BUILT_IN_DIALECTS, isBuiltInDialectId, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { decide, throwIfDenied } from "./guardrail-decide.js";
 import { evaluateGuardrails, guardrailPlan } from "./guardrails.js";
 import type { SensitiveGuardrailMode } from "./sensitive-guardrail.js";
@@ -43,6 +43,13 @@ export type BindGuardrails = {
    * `enforcement: warn`) is refused unless this includes `"tenant"`.
    */
   acceptWarnings?: ReadonlyArray<"tenant">;
+  /**
+   * The dialect rules to check and render under: the `DialectSpec` `ask()` ran with, or a
+   * built-in id. Its `id` must be the template's `dialect`. Required for a template with
+   * `dialectRules: "host"`, or one stored without `dialectRules`; a `"builtin"` template
+   * defaults to the built-in spec (ADR 0032).
+   */
+  dialect?: DialectSpec | BuiltInDialectId;
 };
 
 export type BoundQuery = {
@@ -78,9 +85,11 @@ type Values = Record<string, QueryParameterValue | readonly QueryParameterValue[
  * Throws `QueryParameterError` without `guardrails` (`MISSING_GUARDRAIL_CONTEXT`), for a
  * `:tenant_*` key in `values` (`TENANT_VALUE_SUPPLIED`), and when the tenant markers can't
  * be aligned with the business params (`TENANT_PARAM_ALIGNMENT`). Throws `TenantScopeError`
- * for a missing or invalid scope, an unexpanded `subtree` (`SUBTREE_NOT_RESOLVABLE`), and a
+ * for a missing or invalid scope, an unexpanded `subtree` (`SUBTREE_NOT_RESOLVABLE`), a
  * placeholder the scope has no IDs for, including any placeholder under a `global` scope or
- * a schema without a tenant policy (`UNRESOLVED_TENANT_PLACEHOLDER`). Synchronous.
+ * a schema without a tenant policy (`UNRESOLVED_TENANT_PLACEHOLDER`), and a tenant ID
+ * that isn't printable ASCII or that contains a backslash, which `sql` can't inline safely
+ * (`UNESCAPABLE_TENANT_ID`). Synchronous.
  */
 export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guardrails: BindGuardrails): BoundQuery {
   if (typeof guardrails !== "object" || guardrails === null || guardrails.schema === undefined) {
@@ -93,7 +102,7 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw new QueryParameterError(`Unknown dialect '${prepared.dialect}'.`, "DIALECT_UNSUPPORTED");
   }
-  const spec = BUILT_IN_DIALECTS[prepared.dialect];
+  const spec = rebindSpec(prepared, guardrails.dialect);
   rejectTenantValues(values);
 
   const { schema } = guardrails;
@@ -141,9 +150,9 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
     );
   }
 
-  let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true });
+  let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true, dialect: spec });
   if (policy && scope) {
-    const sql = resolveTenantSql(bound.sql, policy, scope, "sql-only", 1, spec).sql;
+    const sql = inlineTenantIdsForRebind(bound.sql, policy, scope, spec);
     const unbound = bindTenantIntoUnboundSql(bound, {
       namedSql: prepared.namedSql,
       tenantPolicy: policy,
@@ -263,4 +272,66 @@ export function bindTenantIntoUnboundSql(
     indices: b.indices.map((i) => indexMap.get(i)!),
   }));
   return { unboundSql: unbound.sql, params: combined, bindings };
+}
+
+/**
+ * The rebind's `sql` always inlines the tenant IDs, so an ID that can't be inlined has no
+ * other mode to go to here: say so, instead of `resolveTenantSql()`'s advice to switch
+ * `tenantSqlMode`, which `bindPreparedQuery()` doesn't take.
+ */
+function inlineTenantIdsForRebind(
+  sql: string,
+  policy: NormalizedTenantPolicy,
+  scope: TenantScope,
+  spec: DialectSpec,
+): string {
+  try {
+    return resolveTenantSql(sql, policy, scope, "sql-only", 1, spec).sql;
+  } catch (error) {
+    if (error instanceof TenantScopeError && error.reason === "UNESCAPABLE_TENANT_ID") {
+      throw new TenantScopeError(
+        "A tenant ID contains a backslash or a character outside printable ASCII, and bindPreparedQuery() " +
+          "inlines tenant IDs into the sql it returns: a server whose string settings or connection charset " +
+          "differ from the dialect's can read such an ID as the end of the literal, so it can't be rebound. " +
+          "ask() with tenantSqlMode 'sql-params' (the default) passes it as a driver parameter instead.",
+        "UNESCAPABLE_TENANT_ID",
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * The spec a rebind checks and renders under. A `"builtin"` template uses its built-in spec
+ * unless the host passes one. A `"host"` template, or one stored without `dialectRules`, has
+ * rules AskDB can't recover, so it needs the host's spec rather than a guess (ADR 0032).
+ */
+function rebindSpec(prepared: PreparedQuery, dialect: BindGuardrails["dialect"]): DialectSpec {
+  if (dialect === undefined) {
+    if (prepared.dialectRules === "builtin") return BUILT_IN_DIALECTS[prepared.dialect];
+    const fix =
+      `Pass guardrails.dialect: the DialectSpec ask() ran with, or the built-in id '${prepared.dialect}' ` +
+      "if it ran with the built-in rules.";
+    const rules = prepared.dialectRules as unknown;
+    throw new QueryParameterError(
+      rules === "host"
+        ? "This template was made by ask() under a host's DialectSpec (dialectRules: 'host'), so " +
+            `bindPreparedQuery() checks and renders it only under that spec. ${fix} A constant from another ` +
+            "copy of @askdb/core counts as a host's spec."
+        : rules === undefined || rules === null
+          ? "This template has no dialectRules: it was stored before AskDB recorded which dialect rules ask() " +
+              `used, so bindPreparedQuery() won't guess. ${fix}`
+          : `This template has dialectRules ${JSON.stringify(rules).replace(/"/g, "'")}, which is neither 'builtin' ` +
+              `nor 'host', so bindPreparedQuery() won't guess. ${fix}`,
+      "DIALECT_SPEC_REQUIRED",
+    );
+  }
+  const spec = typeof dialect === "string" ? (isBuiltInDialectId(dialect) ? BUILT_IN_DIALECTS[dialect] : undefined) : dialect;
+  if (spec?.id !== prepared.dialect) {
+    throw new QueryParameterError(
+      `guardrails.dialect must have the template's dialect id '${prepared.dialect}'.`,
+      "DIALECT_UNSUPPORTED",
+    );
+  }
+  return spec;
 }

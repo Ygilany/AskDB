@@ -1,19 +1,22 @@
 import {
   copyFileSync,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { integrationSuite } from "../../../../../scripts/test-utils/integration.mjs";
 import { SchemaParseError } from "../../errors.js";
-import { loadSchema, loadSchemaFromJson } from "./loader.js";
+import { loadSchema, loadSchemaFromJson, readSchemaDirectory } from "./loader.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../../fixtures/schemas");
@@ -216,6 +219,10 @@ describe("loadSchema — a JSON file inside a schema directory must be schema.js
       copyFileSync(join(multiTenantDir, "tenant-policy.md"), join(dir, "tenant-policy.md")),
     tables: (dir) => mkdirSync(join(dir, "tables")),
     "concepts.md": (dir) => writeFileSync(join(dir, "concepts.md"), "---\nconcepts: []\n---\n"),
+    // In any case: on Linux a wrong-case name escaped the check, and the copy loaded
+    // with no tenant policy.
+    "Tenant-Policy.md": (dir) =>
+      copyFileSync(join(multiTenantDir, "tenant-policy.md"), join(dir, "Tenant-Policy.md")),
   };
 
   it.each(Object.keys(siblings))(
@@ -233,6 +240,78 @@ describe("loadSchema — a JSON file inside a schema directory must be schema.js
     },
   );
 });
+
+describe("loadSchema — a schema directory's file names must be spelled exactly", () => {
+  // Renamed on disk, so readdir reports the wrong case on every filesystem. Where names
+  // are case-sensitive (Linux), the loader would otherwise skip the file: no tenant
+  // policy (and no tenantScope requirement), or no `sensitive: true` from tables/*.md.
+  // The directory path still needs `schema.json` exactly (ADR 0019).
+  it.each([
+    { fixture: multiTenantDir, renames: [["tenant-policy.md", "Tenant-Policy.md"]] },
+    { fixture: v2Dir, renames: [["tables", "Tables"]] },
+    { fixture: v2Dir, renames: [["schema.json", "Schema.json"]] },
+    // A long s: APFS stores `tableſ` and `tables` as one name, so on macOS it opened as
+    // `tables/` but wasn't listed under that name.
+    { fixture: v2Dir, renames: [["tables", "tableſ"]] },
+    {
+      // One error names them all, including a file inside the wrong-case Tables/.
+      fixture: v2Dir,
+      renames: [
+        ["concepts.md", "Concepts.md"],
+        ["tables/users.md", "tables/users.MD"],
+        ["tables", "Tables"],
+      ],
+    },
+  ])("a directory holding $renames.0.1 throws SchemaParseError naming each rename", ({ fixture, renames }) => {
+    const dir = copyFixture(fixture);
+    for (const [from, to] of renames) renameSync(join(dir, from!), join(dir, to!));
+
+    const caught = thrownBy(() => loadSchema(dir));
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    for (const [from, to] of renames) {
+      expect((caught as SchemaParseError).message).toContain(`${to} to ${from}`);
+    }
+  });
+
+  it("checks the same names when given the directory's schema.json path", () => {
+    const dir = copyFixture(multiTenantDir);
+    renameSync(join(dir, "tenant-policy.md"), join(dir, "Tenant-Policy.md"));
+    expect(() => loadSchema(join(dir, "schema.json"))).toThrow(SchemaParseError);
+  });
+});
+
+/** Why the temp directory can't hold two names that differ only in case, or `false`. */
+const caseInsensitiveTmp = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "askdb-loader-case-"));
+  try {
+    writeFileSync(join(dir, "a"), "");
+    return existsSync(join(dir, "A")) && "the temp directory's filesystem ignores case (macOS and Windows defaults)";
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+
+integrationSuite({ unavailable: caseInsensitiveTmp })(
+  "loadSchema — both spellings of a name, on a case-sensitive filesystem",
+  () => {
+    // Renaming one spelling onto the other would overwrite tenant-policy.md or move
+    // Tables/ inside tables/, where the loader never looks, so the error says to keep one.
+    it.each([
+      { fixture: multiTenantDir, exact: "tenant-policy.md", wrong: "Tenant-Policy.md" },
+      { fixture: v2Dir, exact: "tables", wrong: "Tables" },
+      { fixture: v2Dir, exact: "tables/users.md", wrong: "tables/users.MD" },
+    ])("$wrong beside $exact throws SchemaParseError saying to keep one", ({ fixture, exact, wrong }) => {
+      const dir = copyFixture(fixture);
+      cpSync(join(dir, exact), join(dir, wrong), { recursive: true });
+
+      const caught = thrownBy(() => loadSchema(dir));
+      expect(caught).toBeInstanceOf(SchemaParseError);
+      expect((caught as SchemaParseError).message).toContain(
+        `keep one of ${wrong}, ${exact}, named ${exact}`,
+      );
+    });
+  },
+);
 
 describe("loadSchema — optional files fail closed when present but broken", () => {
   it("missing tenant-policy.md loads with no tenant policy", () => {
@@ -264,6 +343,15 @@ describe("loadSchema — optional files fail closed when present but broken", ()
       policyPath,
       readFileSync(policyPath, "utf8").replace("enforcement: strict", "enforcement: strictt"),
     );
+    expect(() => loadSchema(dir)).toThrow(SchemaParseError);
+  });
+
+  it("a tenant-policy.md link whose target is missing throws SchemaParseError, not no policy", () => {
+    // The directory lists the file, so it is present; reading it fails with ENOENT,
+    // which must not count as "absent" here.
+    const dir = copyFixture(multiTenantDir);
+    rmSync(join(dir, "tenant-policy.md"));
+    symlinkSync("deleted-policy.md", join(dir, "tenant-policy.md"));
     expect(() => loadSchema(dir)).toThrow(SchemaParseError);
   });
 
@@ -424,5 +512,36 @@ describe("loadSchema — bundles treat optional files exactly like the directory
     );
     expect(caught).toBeInstanceOf(SchemaParseError);
     expect((caught as SchemaParseError).message).toContain("tenant-policy.md (in <inline JSON>)");
+  });
+});
+
+describe("readSchemaDirectory", () => {
+  const ORDERS_USERS_TENANT_POLICY = [
+    "---",
+    "schemaId: orders-users",
+    "enforcement: strict",
+    "roots:",
+    "  - id: table:public.users",
+    "    tenantIdColumn: table:public.users#id",
+    "    label: User",
+    "scopedTables:",
+    "  - id: table:public.orders",
+    "    scopeThrough:",
+    "      - root: table:public.users",
+    "        column: table:public.orders#user_id",
+    "---",
+    "",
+  ].join("\n");
+
+  it("returns a bundle that loadSchemaFromJson loads to the same schema as loadSchema(dir)", () => {
+    // orders-users has tables/ and concepts.md; the written policy makes all three optional parts present.
+    const dir = copyFixture(v2Dir);
+    writeFileSync(join(dir, "tenant-policy.md"), ORDERS_USERS_TENANT_POLICY);
+    const viaDir = loadSchema(dir);
+    expect(viaDir.tenantPolicy).toBeDefined();
+    expect(viaDir.concepts).not.toHaveLength(0);
+    expect(viaDir.tables.find((t) => t.name === "users")?.aliases).toEqual(["accounts", "members"]);
+
+    expect(loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir)))).toEqual(viaDir);
   });
 });

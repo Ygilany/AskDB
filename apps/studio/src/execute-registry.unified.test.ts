@@ -17,6 +17,7 @@ const captured = {
   mysqlExecute: [] as unknown[],
   mysqlConnectError: undefined as Error | undefined,
   mssqlQueries: [] as string[],
+  mssqlInputs: [] as Array<[string, unknown]>,
 };
 
 vi.mock("@askdb/postgres", async (importOriginal) => {
@@ -123,7 +124,8 @@ vi.mock("@askdb/sqlserver", async (importOriginal) => {
         }
         request() {
           return {
-            input() {
+            input(name: string, value: unknown) {
+              captured.mssqlInputs.push([name, value]);
               return this;
             },
             async query(sql: string) {
@@ -225,6 +227,7 @@ describe("studio execute safety", () => {
     captured.mysqlExecute = [];
     captured.mysqlConnectError = undefined;
     captured.mssqlQueries = [];
+    captured.mssqlInputs = [];
     vi.clearAllMocks();
   });
 
@@ -284,6 +287,21 @@ describe("studio execute safety", () => {
     expect(batch.indexOf("BEGIN TRANSACTION")).toBeLessThan(batch.indexOf("SELECT name"));
     expect(batch.indexOf("SELECT name")).toBeLessThan(batch.indexOf("ROLLBACK TRANSACTION"));
     expect(batch).not.toMatch(/COMMIT/i);
+  });
+
+  // ask() with the sqlserver dialect returns @pN markers, and the Playground now sends their
+  // tenant params by default. A `?` or `$…` inside a string literal, and a money literal, are
+  // not markers: the statement must reach the driver unchanged, with p0 bound.
+  it("sqlserver binds a statement that already uses @pN markers without rewriting it", async () => {
+    const sql = "SELECT id FROM program WHERE name LIKE N'%?%' AND budget > $1000 AND agency_id = @p0";
+    await EXECUTE_DRIVER_REGISTRY.sqlserver.execute({
+      connectionString: "Server=localhost;Database=db;",
+      sql,
+      params: ["2"],
+      projectRoot,
+    });
+    expect(captured.mssqlQueries[0]!.split("\n")).toContain(sql);
+    expect(captured.mssqlInputs).toEqual([["p0", "2"]]);
   });
 
   it("mysql uses a read-only transaction, a server-side timeout, and a prepared single statement", async () => {
@@ -364,8 +382,17 @@ describe("packageManagerSpawnSpec", () => {
     });
   });
 
+  // Setup approves @prisma/engines on pnpm 11 when it installs @askdb/prisma (#259).
+  it("passes a pnpm build approval for a package name", () => {
+    expect(packageManagerSpawnSpec("pnpm", ["add", "--allow-build=@prisma/engines", "@askdb/prisma@0.2.0"], "win32").args).toEqual([
+      "add",
+      "--allow-build=@prisma/engines",
+      "@askdb/prisma@0.2.0",
+    ]);
+  });
+
   it("refuses arguments a shell could interpret", () => {
-    for (const bad of ["pg && calc", "pg;rm", "$(x)", "pg|x", "a b", "`x`"]) {
+    for (const bad of ["pg && calc", "pg;rm", "$(x)", "pg|x", "a b", "`x`", "--allow-build=x&calc", "--allow-build=$(x)", "--x=y"]) {
       expect(() => packageManagerSpawnSpec("pnpm", ["add", bad], "win32")).toThrow(/unsafe argument/);
     }
   });

@@ -270,8 +270,9 @@ export const SUPPORTED_DIALECT_IDS: readonly BuiltInDialectId[] = Object.keys(
   BUILT_IN_DIALECTS,
 ) as readonly BuiltInDialectId[];
 
+/** Own keys only: `in` would also accept `Object.prototype` names such as `"constructor"`. */
 export function isBuiltInDialectId(value: unknown): value is BuiltInDialectId {
-  return typeof value === "string" && value in BUILT_IN_DIALECTS;
+  return typeof value === "string" && Object.hasOwn(BUILT_IN_DIALECTS, value);
 }
 
 /**

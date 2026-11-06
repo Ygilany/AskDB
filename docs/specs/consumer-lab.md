@@ -273,7 +273,8 @@ Each file proof observes known bytes in a container-local file or a new scratch 
 |---|---|
 | Multiple statements | `SELECT 1; DELETE FROM …`, and a trailing statement after a string literal that contains `;` |
 | Writes and DDL | `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `CREATE`, `ALTER`, `MERGE`, and a CTE-wrapped DML (`WITH x AS (DELETE … RETURNING *) SELECT …`) |
-| Writes that start with SELECT | `SELECT … INTO new_table` (Postgres, SQL Server), `SELECT … INTO OUTFILE` (MySQL/MariaDB), `SELECT … FOR UPDATE` (lock) |
+| Writes that start with SELECT | `SELECT … INTO new_table` (Postgres, SQL Server), `SELECT … INTO OUTFILE` (MySQL/MariaDB) |
+| Locking reads | `SELECT … FOR UPDATE` and `FOR SHARE` (Postgres), `FOR UPDATE` and `LOCK IN SHARE MODE` (MySQL/MariaDB), `WITH (UPDLOCK)` and `WITH (HOLDLOCK)` (SQL Server) (#319) |
 | Side-effecting functions | `nextval()`, `setval()`, `pg_advisory_lock()`, `pg_sleep()`, `set_config()`, `pg_terminate_backend()`, `GET_LOCK()`, `SLEEP()`, `BENCHMARK()`, `xp_cmdshell`, `EXEC`, `OPENROWSET` |
 | Comment and quoting tricks | `/* */` and `--` hiding a second statement; keywords split by comments; `DELETE` inside `"…"`, `` `…` `` and `[…]` identifiers; `E'…'` and `N'…'` strings with embedded quotes; MySQL `/*! … */` executable comments; backslash-escaped quotes in MySQL |
 | System catalogs | `pg_catalog`, `information_schema`, `mysql.user`, `sys.*`, `sqlite_master` (documented as rejected in `concepts/safety-boundaries.mdx`) |
@@ -392,7 +393,7 @@ These came up while reading the docs. They are not findings yet: each one is eit
 4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings. *Confirmed by the tenant suite (#249):* on every engine, and the warnings aren't in the `tenantWarnings` field the docs name but in `result.tenantGuardrail`: **#316**.
 5. `concepts/safety-boundaries.mdx` says invalid SQL is "rejected, not returned with a warning", while the default sensitive-field mode is `warn`.
 6. The schema artifact has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
-7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids.
+7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids. *#641 (ADR 0029) replaced the "all four" wording with the six ids; the other constants are still unnamed.*
 8. The docs site documents programmatic introspection only for Prisma, so the lab has no documented way to introspect Postgres, MySQL, SQLite or SQL Server from code. It uses the CLI.
 9. There was no MariaDB fixture or test anywhere in the repo, although `mariadb` is a built-in dialect. The multi-engine fixture adds one (Phase 1).
 10. `docs/specs/multi-tenancy.md` uses different front-matter keys from `docs/contracts/tenant-policy.md` (`tableId` and `tenantColumn` versus `id` and `tenantIdColumn`, among others). The lab follows the contract.
@@ -411,12 +412,12 @@ Found while building the HTTP suite (#252):
 Found while building the tenant suite (#249):
 
 16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. *Product bug*, fixed: the tenant check now runs on the model's SQL before tenant rendering, and needs the tenant column compared with its root's placeholder, ANDed into a filter clause, with the root table scoped too. It is still a heuristic; #235 covers a sound rewrite.
-17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types".
+17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types". *Docs bug*, fixed by #643: both now say the dialect's driver markers.
 
 Found while building the sensitive-column suite (#250):
 
 18. **`askdb-http` ignores config `modes.omitSensitiveFromPrompt`** (**#376**). `reference/http-api.mdx` gives the `POST /ask` field `omitSensitiveFromPrompt` the default "env-driven", and `reference/config.mdx` and `guides/run-safely-in-prod.mdx` make the config key the deployment switch. The CLI honors it; the HTTP server sends the sensitive columns, tagged, to a request that leaves the field out. *Product bug*, fixed by #187: the `@askdb/client` facade treats config `true` as a floor, and the suite's HTTP `sensitive-omit-config` case now passes.
-19. **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from the environment** (**#377**). `docs/contracts/sensitive-fields-and-modes.md` lists it beside the library option and the CLI flag, but it is an internal flat key built from `askdb.config.ts`, the same class of doc error as #282.
+19. **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from the environment** (**#377**). `docs/contracts/sensitive-fields-and-modes.md` lists it beside the library option and the CLI flag, but it is an internal flat key built from `askdb.config.ts`, the same class of doc error as #282. Resolved by fixing the docs: the contract names `modes.omitSensitiveFromPrompt` instead, and the lab's `sensitive-omit-env` case is retired.
 
 ## Decisions (2026-09-26)
 

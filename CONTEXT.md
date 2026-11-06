@@ -18,6 +18,12 @@ _Avoid_: chat model, generation model
 The model that turns text into vectors for retrieval. It is always a different model from the language model, even when both come from the same provider.
 _Avoid_: embeddings model
 
+### SQL generation
+
+**Dialect spec**:
+The SQL rules for one engine family that NL-to-SQL generation follows: the prompt brief, the forbidden keywords and functions, list binding, escaping and quoting, the namespace rules and the reserved words. `@askdb/core` owns the six built-in dialect specs (`postgres`, `cockroachdb`, `mysql`, `mariadb`, `sqlite`, `sqlserver`), and the engine packages re-export them (ADR 0029). A host can pass its own spec, spread from a built-in one.
+_Avoid_: dialect package
+
 ### Retrieval
 
 **Embedder**:
@@ -35,7 +41,11 @@ What an engine package exports so a host can pick it by provider id: it builds t
 _Avoid_: provider, driver
 
 **Connector registry**:
-The set of connector provider adapters a host registered, keyed by provider id (`createConnectorRegistry` in `@askdb/introspect`). Provider ids are open strings, so a third-party engine registers its own.
+The set of connector provider adapters a host registered, keyed by provider id (`createConnectorRegistry` in `@askdb/introspect`). Provider ids are open strings, so a third-party engine registers its own. An entry is an adapter or a lazy entry; the host calls `registry.load()` once the engine is selected.
+
+**Lazy entry**:
+A registry entry for an engine package the host may not have installed, `{ provider, load }`: the registry lists it without importing it, and `registry.load()` imports it on first use. Until then the registry's synchronous methods throw for it (ADR 0008, 2026-11-05 amendment). The CLI and Studio register `@askdb/prisma` this way.
+_Avoid_: lazy adapter, deferred provider
 
 **Connection label**:
 A display-safe description of a connection, such as `postgres://db:5432/app`, built only from the parts the engine's parser extracts; a connection that doesn't parse cleanly is `configured <engine> connection` (ADR 0011). The registry returns it as `sourceLabel`.

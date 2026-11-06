@@ -27,7 +27,7 @@ Release tooling uses changesets for versioning and changelog generation. Package
 
 ## Design decisions
 
-- **Dialect adapter as the integration seam** — `@askdb/core` is dialect-agnostic and imports no database driver. Consumers pass a built-in dialect string (`"postgres"`, `"mysql"`, etc.) or a custom `AskDialect` adapter. `pnpm add @askdb/core` pulls in no database dependency. See [ADR 0002](../adrs/0002-integration-package-layout.md).
+- **Built-in dialect specs in core** — `@askdb/core` owns the built-in dialect specs and imports no database driver. Consumers pass a built-in dialect string (`"postgres"`, `"mysql"`, etc.), a `DialectSpec`, or a custom `AskDialect` adapter. `pnpm add @askdb/core` pulls in no database dependency. See [ADR 0029](../adrs/0029-core-owns-built-in-dialect-specs.md), which supersedes this part of [ADR 0002](../adrs/0002-integration-package-layout.md).
 - **Database drivers as optional peer dependencies** — each integration package (`@askdb/postgres`, `@askdb/mysql`, etc.) declares its driver as an optional peer; the lazy-import path throws a clear error if the driver is absent when the live connector is used.
 - **CLI hosts connector providers, not drivers** — `askdb` includes first-party connector providers so `askdb introspect` can route by engine, but it does not bundle database drivers. Live connector runners first resolve optional peers from their normal package graph, then from the caller's project so ephemeral CLI launches can use drivers installed with the application or supplied in the same `npx`/`pnpm dlx` command.
 - **Pre-1.0 breaking changes without migrators** — before 1.0, breaking changes ship with a changeset entry describing the break. No compatibility shims. The changeset records the full surface diff.

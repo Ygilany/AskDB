@@ -15,6 +15,7 @@ export {
   type ValidateSensitiveReferencesOptions,
 } from "./sql/sensitive-guardrail.js";
 export {
+  DEFAULT_TENANT_SQL_MODE,
   resolveTenantSql,
   extractTenantPlaceholders,
   placeholderForRoot,
@@ -72,11 +73,13 @@ export type {
 export {
   loadSchema,
   loadSchemaFromJson,
+  readSchemaDirectory,
   parseTableMarkdown,
   parseConceptsMarkdown,
   writeTableMarkdown,
   writeConceptsMarkdown,
   writeTenantPolicyMarkdown,
+  saveSchemaFile,
   formatSchemaV2ForNlToSql,
   v2SchemaJsonSchema,
   v2TableSchema,
@@ -156,7 +159,6 @@ export type {
 } from "./enrichment/index.js";
 export {
   formatSchemaForNlToSql,
-  formatSchemaForPrompt,
   normalizeAskDbSchema,
   type FormatNlToSqlOptions,
   type NlToSqlSchemaFormatStats,

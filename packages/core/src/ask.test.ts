@@ -558,6 +558,23 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     expect(prompt).not.toContain("quote each part separately");
   });
 
+  // The SQL Server check rejects a name that isn't plain ASCII unquoted, and a quoted column alone
+  // in parentheses after a name, where SQL Server could read a lock hint (#319).
+  it.each([
+    ["sqlserver", "sqlserver", "`AS [注文数]`", "`SUM(o.[金額])`"],
+    ["an id that is no built-in engine", { ...POSTGRES_DIALECT, id: "redshift" as DialectSpec["id"] }, '`AS "注文数"`', '`SUM(o."金額")`'],
+  ] as const)("on %s, says to quote non-ASCII names and qualify a quoted column alone in parentheses", async (_name, dialect, alias, call) => {
+    const prompt = await promptFor(dialect, schemaOf("billing"));
+    expect(prompt).toContain(
+      `- Quote every name that isn't plain ASCII, aliases included (${alias}), and qualify a quoted column that is the only thing inside parentheses: ${call}.`,
+    );
+  });
+
+  // One engine per other lexer family.
+  it.each(["postgres", "mysql", "sqlite"] as const)("on %s, leaves out the non-ASCII name rule", async (dialect) => {
+    expect(await promptFor(dialect, schemaOf("billing"))).not.toContain("isn't plain ASCII");
+  });
+
   it("leaves the qualified-name rule out of a v1 schema's prompt, which lists no schemas", async () => {
     const prompt = await promptFor("postgres", minimalSchema as never);
     expect(prompt).not.toContain("quote each part separately");
@@ -784,6 +801,71 @@ describe("ask — parameterize", () => {
     expect(result.tenantBindings).toHaveLength(1);
     expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
     expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
+  });
+});
+
+// A tenant ID with a backslash can't be inlined safely: on a server that reads strings
+// differently from the dialect, `'x\'' OR 1=1 -- '` closes early and the OR runs as SQL
+// (#371's repro returned every row on Postgres with standard_conforming_strings = off).
+// ask() renders after its checks, so nothing would see the changed statement.
+describe("ask — a tenant ID containing a backslash (#360, #371)", () => {
+  const schema = loadSchema(multiTenantDir);
+  const hostileId = "x\\' OR 1=1 -- ";
+  const hostileScope: TenantScope = {
+    access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [hostileId] },
+  };
+  const scopedSql = "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids";
+  const generateText = vi.fn(async () => ({ text: "```sql\n" + scopedSql + "\n```" }));
+
+  it.each<[string, AskDialectInput]>([
+    ["a custom AskDialect (#360)", { generate: async () => ({ sql: scopedSql }) }],
+    ["the built-in postgres dialect (#371)", "postgres"],
+    ["the built-in mysql dialect (#371)", "mysql"],
+  ])("sql-only mode refuses it with %s instead of returning SQL", async (_label, dialect) => {
+    const error = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect,
+      tenantScope: hostileScope,
+      tenantSqlMode: "sql-only",
+      deps: { generateText },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("UNESCAPABLE_TENANT_ID");
+  });
+
+  // The remedy the error names: the default mode carries the ID as a driver parameter
+  // in both executable pairs, so neither form inlines it.
+  it("the default mode binds it as a parameter in sql and in unboundSql", async () => {
+    const result = await ask({
+      question: "how many paid orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: hostileScope,
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: [
+            "```sql",
+            "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = :tenant_agency_ids",
+            "```",
+            "```sql-unbound",
+            "SELECT count(*) FROM orders WHERE status = :status_name AND agency_id = :tenant_agency_ids",
+            "```",
+            "```json",
+            '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"}]}',
+            "```",
+          ].join("\n"),
+        })),
+      },
+    });
+
+    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = $1");
+    expect(result.tenantParams).toEqual([hostileId]);
+    expect(result.unboundSql).toBe("SELECT count(*) FROM orders WHERE status = $1 AND agency_id = $2");
+    expect(result.params).toEqual(["paid", hostileId]);
   });
 });
 
@@ -1212,6 +1294,7 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
       model: fakeModel,
       dialect: "postgres",
       tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
       logger: { info, error: vi.fn() },
       deps: { generateText },
     });
@@ -1271,7 +1354,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = { generate: async () => ({ sql: "SELECT * FROM orders" }) };
     await expect(
-      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
+      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" }),
     ).rejects.toThrow(TenantGuardrailError);
   });
 
@@ -1284,7 +1367,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
       }),
     };
     await expect(
-      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
+      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" }),
     ).rejects.toThrow(TenantGuardrailError);
   });
 
@@ -1300,7 +1383,14 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
         },
       }),
     };
-    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope });
+    const result = await ask({
+      question: "q",
+      schema,
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
+    });
     expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '42'");
     expect(result.tenantGuardrail?.passed).toBe(false);
     expect(result.tenantGuardrail?.warnings).toEqual([
@@ -1315,7 +1405,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
         sql: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids",
       }),
     };
-    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope });
+    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
   });
 
@@ -1485,7 +1575,7 @@ describe("ask — one guardrail decision point (ADR 0010)", () => {
         tenantGuardrail: { passed: false, warnings: [] },
       }),
     };
-    const result = await ask({ question: "q", schema: warn, model: fakeModel, dialect, tenantScope: agencyScope });
+    const result = await ask({ question: "q", schema: warn, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
 
     expect(result.verdict.outcome).toBe("warn");
     expect(result.verdict.findings).toEqual([
@@ -1778,6 +1868,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(ordersByAgency),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["2", "3"] }),
     });
 
@@ -1792,6 +1883,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(ordersByAgency),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [clients]: ["5"] }),
     });
 
@@ -1807,6 +1899,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect("SELECT id FROM notes WHERE owner_type = 'sub_agency' AND owner_id IN (:tenant_sub_agency_ids)"),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: [], [clients]: ["5"] }),
     }).catch((e: unknown) => e);
 
@@ -1856,6 +1949,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(ordersByAgency),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => {
         roots.find((root) => root.id === subAgencies)!.label = "agency";
         return { [agencies]: ["1"], [subAgencies]: ["5"] };
@@ -1879,6 +1973,7 @@ describe("ask — subtree tenant scope expansion", () => {
         "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
       ),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => resolved,
     }).catch((e: unknown) => e);
 
@@ -1898,6 +1993,7 @@ describe("ask — subtree tenant scope expansion", () => {
         "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
       ),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => resolved,
     });
 
@@ -1947,6 +2043,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(sql),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"], [clients]: ["5"] }),
     }).catch((e: unknown) => e);
 
@@ -1983,6 +2080,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(sql),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => resolved,
     }).catch((e: unknown) => e);
 
@@ -2011,6 +2109,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect,
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"] }),
     });
 
@@ -2034,6 +2133,7 @@ describe("ask — subtree tenant scope expansion", () => {
           ],
         },
       },
+      tenantSqlMode: "sql-only",
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(TenantScopeError);
@@ -2066,6 +2166,7 @@ describe("ask — subtree tenant scope expansion", () => {
       model: fakeModel,
       dialect: sqlDialect(sql),
       tenantScope: agencySubtree,
+      tenantSqlMode: "sql-only",
       resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"], [clients]: ["5"] }),
     });
 
@@ -2155,7 +2256,13 @@ describe("ask — subtree tenant scope expansion", () => {
   ] satisfies Array<{ name: string; access: TenantScope["access"] }>)(
     "leaves $name access untouched",
     async ({ access }) => {
-      const base = { question: "count orders", schema, model: fakeModel, tenantScope: { access } };
+      const base = {
+        question: "count orders",
+        schema,
+        model: fakeModel,
+        tenantScope: { access },
+        tenantSqlMode: "sql-only" as const,
+      };
       const resolveTenantDescendants = vi.fn(() => ({ [agencies]: ["should-not-appear"] }));
       const without = await ask({ ...base, dialect: sqlDialect(ordersByAgency) });
       const withResolver = await ask({ ...base, dialect: sqlDialect(ordersByAgency), resolveTenantDescendants });

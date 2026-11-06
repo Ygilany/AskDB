@@ -69,6 +69,7 @@ describe("ask() — tenant scope integration", () => {
       model: fakeModel,
       dialect,
       tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
       logger: { info, error: vi.fn() },
     });
 
@@ -95,6 +96,7 @@ describe("ask() — tenant scope integration", () => {
       model: fakeModel,
       dialect,
       tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
     });
 
     const options = generate.mock.calls[0]![3];

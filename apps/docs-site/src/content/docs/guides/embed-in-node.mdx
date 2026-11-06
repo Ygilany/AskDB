@@ -79,19 +79,20 @@ AskDB's SQL checks catch common model mistakes but aren't a security boundary. C
 | `sql` | `string` | Always. The generated, checked SQL string. |
 | `verdict` | `GuardrailVerdict` | Always. The guardrail findings and the outcome (`"allow"` or `"warn"`; a `"deny"` throws). See [Guardrail verdict](/reference/core-api/#guardrail-verdict). |
 | `unboundSql` | `string \| undefined` | When `parameterize` is on (default) and the model returned consistent extras. Driver markers. |
-| `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order (includes tenant IDs in `tenantSqlMode: "sql-params"`). |
+| `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order (includes tenant IDs in `tenantSqlMode: "sql-params"`, the default). |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes values). |
 | `preparedQuery` | `PreparedQuery \| undefined` | Definitions + template for `askdb.bind()` / `bindPreparedQuery()` (no values). |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). Use it for cost tracking or quota enforcement. |
 | `explain` | `unknown \| undefined` | When `explain: true` is passed. Heuristic guardrail metadata — which read-only rules fired and why. |
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Whether the SQL references tenant-scoped tables correctly. |
-| `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` is set. Tenant IDs for the markers in `sql` — run `sql` with `tenantParams`, or `unboundSql` with `params`; never concatenate them. |
+| `tenantParams` | `unknown[] \| undefined` | When a tenant scope binds IDs in `tenantSqlMode: "sql-params"`, the default. Tenant IDs for the markers in `sql` — run `sql` with `tenantParams`, or `unboundSql` with `params`; never concatenate them. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When tenant scope bindings were resolved. Structured binding metadata for audit logging. |
 
 ```ts
 const result = await askdb.ask(question, { tenantScope });
 
-await pool.query(result.sql);
+// Two executable pairs; each runs with its own params array.
+await pool.query(result.sql, result.tenantParams);
 await pool.query(result.unboundSql!, result.params);
 
 // A new value, no model call: re-checked under the client's schema and this scope.
@@ -103,7 +104,7 @@ if (result.usage) {
 }
 ```
 
-Every `ask()` is still one model call. Set `{ parameterize: false }` to skip the extra output tokens. `askdb.bind()` re-runs the guardrails on the stored template and renders tenant IDs from the `tenantScope` you pass, so authorizing that scope stays your job, as for `ask()`. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options).
+Every `ask()` is still one model call. Set `{ parameterize: false }` to skip the extra output tokens. `askdb.bind()` re-runs the guardrails on the stored template and renders tenant IDs from the `tenantScope` you pass, so authorizing that scope stays your job, as for `ask()`. If `askdb.ask()` ran with your own `DialectSpec`, pass the same spec as `dialect` to `askdb.bind()`, or it refuses. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options).
 
 The full result and option types are in the [@askdb/core API reference](/reference/core-api/).
 
@@ -115,7 +116,7 @@ The full result and option types are in the [@askdb/core API reference](/referen
 
 `ai` is a required peer dependency of `@askdb/core` (AI SDK 6 or 7) — your app owns its version.
 
-Dialects for all four engines are built into `@askdb/core` — install `@askdb/postgres` only if this service also runs `askdb introspect` programmatically.
+All six built-in dialects are built into `@askdb/core` — install `@askdb/postgres` only if this service also runs `askdb introspect` programmatically.
 
 ```ts
 // ask-handler.ts

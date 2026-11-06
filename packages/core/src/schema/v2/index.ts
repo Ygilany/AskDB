@@ -1,7 +1,8 @@
-export { loadSchema, loadSchemaFromJson } from "./loader.js";
+export { loadSchema, loadSchemaFromJson, readSchemaDirectory } from "./loader.js";
 export type { BundledSchemaV2 } from "./loader.js";
 export { parseTableMarkdown, parseConceptsMarkdown } from "./parser.js";
 export { writeTableMarkdown, writeConceptsMarkdown, writeTenantPolicyMarkdown } from "./writer.js";
+export { saveSchemaFile } from "./save-file.js";
 export { formatSchemaV2ForNlToSql } from "./format.js";
 export { v2SchemaJsonSchema, v2TableSchema, v2ColumnSchema } from "./physical.js";
 export type { V2SchemaJson, V2Table, V2Column } from "./physical.js";

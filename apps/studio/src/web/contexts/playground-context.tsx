@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { TenantSqlOutputMode, TenantScope } from "@askdb/core";
 import type { AskResponse, ExecuteResponse, ExecuteStatusResponse, PlaygroundHistoryEntry } from "@/shared/api";
 import { ask, deleteFromHistory, executeQuery, getExecuteStatus, getHistory, installExecuteDriver, saveToHistory } from "../api";
+import { historyTenant, historyTenantParams, PLAYGROUND_DEFAULT_TENANT_SQL_MODE } from "../lib/playground-tenant";
 import type { StatusMessage } from "./workspace-context";
 import { useWorkspace } from "./workspace-context";
 
@@ -68,7 +69,7 @@ const initialPlaygroundState: PlaygroundState = {
   askMode: "full",
   askMessage: null,
   askResult: null,
-  askTenantSqlMode: "sql-only",
+  askTenantSqlMode: PLAYGROUND_DEFAULT_TENANT_SQL_MODE,
   executeResult: null,
   executeMessage: null,
   executeStatus: null,
@@ -288,9 +289,7 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
           sql: result.sql,
           sqlMode: playgroundState.askTenantSqlMode,
           tenantScope: tenantScope as Record<string, unknown> | undefined,
-          tenantParams: result.tenant?.params && result.tenant.params.length > 0
-            ? Object.fromEntries(result.tenant.params.map((v, i) => [String(i + 1), v]))
-            : undefined,
+          tenantParams: historyTenantParams(result.tenant?.params),
           explain: typeof result.explain === "string" ? result.explain : undefined,
         }).then(() => void refreshHistory());
       } catch (error) {
@@ -436,7 +435,7 @@ function playgroundReducer(state: PlaygroundState, action: PlaygroundAction): Pl
           explain: action.entry.explain ?? null,
           warnings: [],
           rag: { enabled: false, chunks: [] },
-          tenant: null,
+          tenant: historyTenant(action.entry),
           usage: null,
         } as AskResponse,
         askTenantSqlMode: action.sqlMode,

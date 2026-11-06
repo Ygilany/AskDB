@@ -1,5 +1,14 @@
 # @askdb/prisma
 
+## 0.2.0-beta.19
+
+### Patch Changes
+
+- 720abe7: `@askdb/prisma` now loads `@prisma/internals` on the first `describePrismaSchema()` call (or the first `describe()` of a connector from `createPrismaConnector()`), not when the package is imported. Hosts that register `prismaConnectorProvider`, as the `askdb` CLI and Studio do, no longer pay for Prisma on every start: `askdb --help` loads no `@prisma/*` module and starts in about half the time (0.27s to 0.14s median on one machine). Introspecting a Prisma schema works as before.
+- Updated dependencies [3d62eb5]
+- Updated dependencies [aa187f2]
+  - @askdb/introspect@0.3.0-beta.19
+
 ## 0.2.0-beta.18
 
 ### Minor Changes
