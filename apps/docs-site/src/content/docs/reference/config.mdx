@@ -43,7 +43,10 @@ export default defineConfig({
 });
 ```
 
-Use the `env()` helper (rather than `process.env`) so AskDB can capture which environment variables your config depends on and apply its defaults pass.
+`env(name)` and `requiredEnv(name)`, both from `@askdb/config`, read an environment variable when the config file loads, and trim it:
+
+- **`env()`** returns `undefined` when the variable is missing or blank, so the field stays unset and gets its default.
+- **`requiredEnv()`** throws when the variable is missing or blank. Every command loads the whole config, so the variable must be set even for a command that doesn't use it, such as an API key when you run `askdb introspect`.
 
 `defineConfig` types the object as `AskDbConfig`, so your editor checks it as you write. A plain `export default { … }` loads too: AskDB runs it through `defineConfig` when it loads the file, so both forms get the same checks and deprecation warnings.
 
@@ -52,56 +55,30 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 | Field | Required | What it configures |
 | --- | --- | --- |
 | `ai` | yes | Provider connections (`provider`, `providerConfig`), the language model (`language`) and the embedding model (`embedding`). See [The `ai` block](#the-ai-block) and [Bring your own model](/guides/bring-your-own-model/). |
-| `introspection` | yes | Introspection engine (`provider`: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`), its connection (`providerConfig`), `outputDir` (default `./askdb/`), and optionally `schemas`: the schemas to introspect, like `askdb introspect --schemas` (which overrides it). On MySQL/MariaDB these are databases. |
-| `rag` | no | Embedder (`mock`, or `ai` for the `ai.embedding` model) and vector store (`file`, `memory`, `pgvector`) plus the store's config branch. See [The `rag` block](#the-rag-block). Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store. |
-| `dialect` | no | Override the NL-to-SQL dialect (`postgres`, `mysql`, `sqlite`, `sqlserver`). When unset, it's inferred from the schema artifact's recorded provider. |
+| `introspection` | yes | The engine `askdb introspect` reads (`provider`), its connection (`providerConfig`), the output directory (`outputDir`) and the schemas to read (`schemas`). See [The `introspection` block](#the-introspection-block). |
+| `dialect` | no | Overrides the NL-to-SQL dialect: `postgres`, `cockroachdb`, `mysql`, `mariadb`, `sqlite` or `sqlserver`. When unset, it's inferred from the schema artifact's recorded provider. See [`dialect`](#dialect). |
+| `rag` | no | Experimental. The embedder (`mock`, or `ai` for the `ai.embedding` model), the vector store (`file`, `memory`, `pgvector`) and the store's options. Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store. See [The `rag` block](#the-rag-block). |
 | `modes` | no | `askdbMode` (`schema_only` default, `bounded_results`) and `omitSensitiveFromPrompt` (default `false`). Both are floors: a CLI flag, a client call, or an HTTP request can tighten them, never loosen them. See [`modes` and `host`](#modes-and-host). |
-| `host` | no | `schemaPath` — the default schema artifact for embedding hosts and the HTTP API. `schemaJson` — inline artifact JSON, for environments without a file system path. |
-| `logging` | no | `level`, plus `logFile`, `logStdout`, and `correlationId` defaults for the CLI's structured logs. |
-| `studio` | no | `listen.{host,port}` (defaults `127.0.0.1:5556`) and the `execute` block below. |
-| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. `allowSchemaOverride` (default `false`) — accept per-request `schemaJson`. `requestTimeoutMs` (default `60000`, at most `2147483647`) — model-call timeout per request. See [HTTP API → Server config](/reference/http-api/#server-config-httpapi). |
-| `dev` | no | `mockSql` — deterministic NL-to-SQL output for tests; bypasses the model call. |
+| `host` | no | `schemaPath` or `schemaJson`: the default schema artifact for `createAskDb` and the HTTP API. See [`modes` and `host`](#modes-and-host). |
+| `logging` | no | The level, log file, stdout copy and correlation ID of the structured logs from the CLI and the HTTP API server. See [`logging` and `dev`](#logging-and-dev). |
+| `dev` | no | `mockSql`: fixed SQL in place of the model call, for tests. See [`logging` and `dev`](#logging-and-dev). |
+| `studio` | no | Experimental. Studio's listen address and the Query Playground's `execute` block. See [The `studio` block](#the-studio-block). |
+| `httpApi` | no | The HTTP API server's listen address, schema override and request timeout. See [The `httpApi` block](#the-httpapi-block). |
 
 A config without `ai` or `introspection` fails to load, with an error that names the file and the missing block. That includes a config you only use for `askdb introspect`: it still needs an `ai` block.
 
-### `dialect` — when inference is wrong
-
-The dialect normally resolves from the schema artifact (the engine recorded at introspection time). Set `dialect` only when that inference is wrong — for example, a Prisma schema that declares `provider = "postgresql"` while your runtime target is a different engine:
-
-```ts
-export default defineConfig({
-  // ...
-  dialect: "mysql",
-});
-```
-
-### `modes` and `host`
-
-```ts
-export default defineConfig({
-  // ...
-  modes: {
-    askdbMode: "schema_only",        // default
-    omitSensitiveFromPrompt: true,   // strict sensitive-column handling
-  },
-  host: {
-    schemaPath: "./my-app.schema",   // default artifact for embedding + HTTP API
-  },
-});
-```
-
-`modes.askdbMode` is the loosest mode a run gets, on every surface that reads config: the CLI, `@askdb/client`, and the HTTP API. A run that names no mode uses it. A run can ask for `schema_only` to tighten it. A run that asks for `bounded_results` while the config mode is `schema_only` runs `schema_only`, with no error; the `askdb.pipeline.mode` log line records the mode that ran.
-
-`modes.omitSensitiveFromPrompt: true` works the same way: a run can't turn it off. `@askdb/core`'s `ask()` reads no config, so pass `mode` to it yourself.
+The sections below list every field of each block, with its type and default. **Required** in the Default column means the field must be set whenever its block is present; every other field is optional. Old fields that still load are listed under [Deprecated keys](#deprecated-keys).
 
 ## The `ai` block
 
-`ai` separates *how to reach a provider* from *which model to use for what*:
+`ai` separates *how to reach a provider* from *which model to use for what*: `providerConfig` holds the connections, and `language` and `embedding` each pick a model.
 
-- **`ai.providerConfig`** holds provider connections: keys, endpoints, Azure resources, API versions. No model names.
-- **`ai.language`** picks the language model AskDB writes SQL and enrichment suggestions with.
-- **`ai.embedding`** picks the embedding model behind `rag.embedder: "ai"`.
-- **`ai.provider`** is the default provider for both sections.
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `provider` | `string` | none | The default provider for both sections: `openai`, `azure`, `foundry`, `anthropic`, `google`, `gateway`, or a [custom provider](#custom-providers) id. |
+| `providerConfig` | object | none | Provider connections, keyed by provider id: keys, endpoints, Azure resources, API versions. No model names. See [`ai.providerConfig`](#aiproviderconfig). |
+| `language` | object | `ai.provider` and its default model | The language model AskDB writes SQL and enrichment suggestions with. See [`ai.language`](#ailanguage). |
+| `embedding` | object | none | The embedding model behind `rag.embedder: "ai"`. See [`ai.embedding`](#aiembedding). |
 
 A section's provider is its own `provider`, else `ai.provider`. Its connection is its own `connection`, else the connection named `"default"` within that provider. Loading fails when a section has no provider, names a connection that doesn't exist, or uses a built-in provider with no connection at all. Each section only ever receives its own connection's settings, so a key configured for one provider is never sent to another.
 
@@ -145,7 +122,7 @@ export default defineConfig({
 
 ### `ai.providerConfig`
 
-Keyed by provider id. Each value is one connection, or a list of connections when a provider needs more than one.
+Keyed by provider id. Each value is one connection, or a list of connections when a provider needs more than one. Every connection field is a `string` with no default.
 
 | Provider key | Connection fields |
 | --- | --- |
@@ -160,24 +137,24 @@ Every connection also takes `name`, which defaults to `"default"` and must be un
 
 ### `ai.language`
 
-| Field | Default | Notes |
-| --- | --- | --- |
-| `provider` | `ai.provider` | |
-| `connection` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
-| `model` | The provider's default language model | `openai`: `gpt-4o-mini`. `anthropic`: `claude-sonnet-4-6`. `google`: `gemini-2.0-flash`. `gateway`: `openai/gpt-4o-mini`. `azure` and `foundry`: the deployment name, default `gpt-4o-mini`. A custom provider has no default. |
-| `modelFamily` | none | Azure and Foundry: the underlying model id when `model` is a deployment name. See [Azure deployment names](#azure-deployment-names). |
-| `reasoning` | none | See [Reasoning effort](#reasoning-effort). |
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `provider` | `string` | `ai.provider` | |
+| `connection` | `string` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
+| `model` | `string` | The provider's default language model | `openai`: `gpt-4o-mini`. `anthropic`: `claude-sonnet-4-6`. `google`: `gemini-2.0-flash`. `gateway`: `openai/gpt-4o-mini`. `azure` and `foundry`: the deployment name, default `gpt-4o-mini`. A custom provider has no default. |
+| `modelFamily` | `string` | none | Azure and Foundry: the underlying model id when `model` is a deployment name. See [Azure deployment names](#azure-deployment-names). |
+| `reasoning` | object | none | See [Reasoning effort](#reasoning-effort). |
 
 ### `ai.embedding`
 
 Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`. Setting it in a config with no `rag` block is an error.
 
-| Field | Default | Notes |
-| --- | --- | --- |
-| `provider` | `ai.provider` | Anthropic has no embeddings API, so a config whose `ai.embedding` provider resolves to `anthropic` fails to load. Set `provider` (for example `"openai"`) and give it a connection. |
-| `connection` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
-| `model` | none, required | AskDB has no default embedding model. On Azure, the embedding deployment name. On the AI Gateway, an `<upstream>/<model>` id such as `openai/text-embedding-3-small`. |
-| `dimensions` | The model's own width | A positive integer: the vector size to request from the provider, for models that let you choose one (OpenAI's `text-embedding-3` models, Gemini's; on the AI Gateway, `openai/…` and `google/…` models). Unset, AskDB assumes nothing: it uses the width the model returns, which it learns when it first builds the index, so the `pgvector` store doesn't need it either. |
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `provider` | `string` | `ai.provider` | Anthropic has no embeddings API, so a config whose `ai.embedding` provider resolves to `anthropic` fails to load. Set `provider` (for example `"openai"`) and give it a connection. |
+| `connection` | `string` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
+| `model` | `string` | Required | AskDB has no default embedding model. On Azure, the embedding deployment name. On the AI Gateway, an `<upstream>/<model>` id such as `openai/text-embedding-3-small`. |
+| `dimensions` | `number` or `string` | The model's own width | A positive integer, or a string holding one: the vector size to request from the provider, for models that let you choose one (OpenAI's `text-embedding-3` models, Gemini's; on the AI Gateway, `openai/…` and `google/…` models). Unset, AskDB assumes nothing: it uses the width the model returns, which it learns when it first builds the index, so the `pgvector` store doesn't need it either. |
 
 Changing the `ai.embedding` provider, model or dimensions changes the index's embedder id: Studio then reports the RAG index as stale and asks you to reindex before using it.
 
@@ -202,9 +179,11 @@ export default defineConfig({
 });
 ```
 
-- `effort` — global default. One of `"minimal" | "low" | "medium" | "high"`.
-- `nlToSql` — overrides `effort` for NL→SQL generation calls (`ask()`). Typically left unset (provider default) or `"medium"`/`"high"` — this path is accuracy-sensitive.
-- `enrichment` — overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()`). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical.
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `effort` | `"minimal" \| "low" \| "medium" \| "high"` | none | Global default for every AskDB model call. |
+| `nlToSql` | Same as `effort` | `effort` | Overrides `effort` for NL→SQL generation calls (`ask()`). Typically left unset (provider default) or `"medium"`/`"high"` — this path is accuracy-sensitive. |
+| `enrichment` | Same as `effort` | `effort` | Overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()`). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical. |
 
 AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic `thinking` (adaptive thinking plus `effort` on Claude Sonnet 4.6, Opus 4.6 and newer, and the 5.x models; a `budgetTokens` budget on Claude 3.7 Sonnet and the 4.0–4.5 models). Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gpt-5-chat-latest`, `gemini-2.0-flash`, `claude-3-5-haiku`) never receive these options, even when `reasoning` is set. Where a model has no `minimal` level, AskDB sends `low` instead: OpenAI and Azure gpt-6 and later (which accept `low` through `max`), and Anthropic models that take `effort`. For the Vercel AI Gateway (`gateway`), AskDB uses the mapping of the model's upstream (`openai/…`, `google/…`, `anthropic/…`) on the id after the prefix, and the gateway passes the options on; models from other upstreams get no reasoning options.
 
@@ -214,17 +193,180 @@ AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `
 
 Azure identifies models by deployment name (e.g. `askdb-reporting`), which may not match the underlying model id AskDB uses to detect reasoning support. Set `ai.language.modelFamily` to the real model id — e.g. `"gpt-5"` or `"o3-mini"` — when your deployment name doesn't already look like one.
 
+## The `introspection` block
+
+`introspection` is required. `askdb introspect` reads it, and its flags override each field for one run (see [CLI reference](/reference/cli/)). `providerConfig` can hold connections for several engines; `askdb introspect` uses the one `provider` names.
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `provider` | `"postgres" \| "mysql" \| "sqlite" \| "sqlserver" \| "prisma"` | Required | The engine to introspect. MariaDB uses `mysql`. |
+| `providerConfig.postgres.databaseUrl` | `string` | none | Postgres connection URL. Without it, pass `askdb introspect --url`. |
+| `providerConfig.mysql.databaseUrl` | `string` | none | MySQL or MariaDB connection URL, such as `mysql://user:pass@host:3306/database`. Without it, pass `--url`. |
+| `providerConfig.sqlite.file` | `string` | none | Path to a `.db` or `.sqlite` file, or `:memory:` for an empty database. Without it, pass `--url <path>`. |
+| `providerConfig.sqlserver.databaseUrl` | `string` | none | SQL Server connection URL: an mssql URI or a `Server=…;` connection string. Without it, pass `--url`. |
+| `providerConfig.prisma.schemaPath` | `string` | `prisma/schema.prisma`, else `schema.prisma`, in the project root | A `schema.prisma` file, or a directory of `.prisma` files. `--prisma-schema` overrides it. |
+| `outputDir` | `string` | `./askdb/` | Where `askdb introspect` writes the schema artifact. `--out` overrides it. `askdb ask` and Studio read the artifact from here. |
+| `schemas` | `string[]` | Postgres and SQL Server: every non-system schema. MySQL and MariaDB: the URL's database. | The schemas to introspect, such as `["public", "sales"]`. `--schemas` overrides it. On MySQL and MariaDB these are databases: each becomes its own namespace, and foreign keys between them are kept. |
+
+## `dialect`
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `dialect` | `"postgres" \| "cockroachdb" \| "mysql" \| "mariadb" \| "sqlite" \| "sqlserver"` | The schema artifact's recorded provider, else `postgres` | The NL-to-SQL dialect `createAskDb` uses, and so the CLI and the HTTP API. `@askdb/core`'s `ask()` reads no config: pass `dialect` to it yourself. |
+
+The dialect normally resolves from the schema artifact (the engine recorded at introspection time). Set `dialect` only when that inference is wrong — for example, a Prisma schema that declares `provider = "postgresql"` while your runtime target is a different engine:
+
+```ts
+export default defineConfig({
+  // ...
+  dialect: "mysql",
+});
+```
+
+An artifact introspected from MariaDB records `mysql`, so set `dialect: "mariadb"` to use the MariaDB dialect.
+
+`cockroachdb` is a built-in dialect: it reuses the Postgres rules and adds CockroachDB's reserved words. It sits outside the 1.0 support claim, because AskDB's end-to-end tests don't cover it. The 1.0 claim covers PostgreSQL, MySQL, MariaDB, SQLite and SQL Server.
+
 ## The `rag` block
+
+Experimental: `rag` follows the 0.x `@askdb/rag` package, so a minor release of `@askdb/config` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set: Studio's RAG page uses the in-memory store and the mock embedder, and `getAskDbRuntimeConfig().rag.store` is `"memory"`. When the block is present, `embedder`, `store` and `storeConfig` are required. A config that sets `ai.embedding` but has no `rag` block fails to load, since nothing would use that model: add `rag: { embedder: "ai", … }`, or remove `ai.embedding`.
 
-| Field | What it configures |
-| --- | --- |
-| `embedder` | `"mock"`, a deterministic lexical embedder that needs no key, or `"ai"`, the [`ai.embedding`](#aiembedding) model. |
-| `store` | `"file"`, `"memory"` or `"pgvector"`. |
-| `storeConfig` | The selected store's branch: `file.{basePath, autoFlush}`, `memory: {}`, or `pgvector.{databaseUrl, table, indexStrategy, dimensions}`. |
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `embedder` | `"mock" \| "ai"` | Required | `"mock"` is a deterministic lexical embedder that needs no key. `"ai"` is the [`ai.embedding`](#aiembedding) model. `"openai"` and `"ai-sdk"` still load, but they're [deprecated](#deprecated-keys). |
+| `store` | `"file" \| "memory" \| "pgvector"` | Required | The vector store. |
+| `storeConfig` | object | Required | The selected store's options, below. The `file` and `pgvector` stores need their branch, even an empty one (`storeConfig: { file: {} }`); `memory` takes `storeConfig: {}`. |
+
+### `rag.storeConfig`
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `file.basePath` | `string` | `./askdb/rag` | Path prefix of the file store. It writes `<basePath>.embeddings.bin` and `<basePath>.embeddings.json`. |
+| `file.autoFlush` | `boolean` | none | Accepted, but not read today: the CLI and Studio write the files after every change ([#676](https://github.com/Ygilany/AskDB/issues/676)). |
+| `memory` | `{}` | none | The in-memory store has no options. |
+| `pgvector.databaseUrl` | `string` | Required with `store: "pgvector"` | Connection URL of the Postgres database with pgvector. |
+| `pgvector.table` | `string` | `askdb_rag_chunks` | The table that holds the chunks and their vectors. |
+| `pgvector.indexStrategy` | `"hnsw" \| "ivfflat" \| "none"` | `"hnsw"` | The index `askdb rag setup-store`, `askdb rag index` and Studio create. `"none"` means sequential scans. With `store: "pgvector"`, another value fails to load. |
 
 With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. `storeConfig.pgvector.dimensions` is [deprecated](#deprecated-keys): with `embedder: "ai"` it moves to `ai.embedding.dimensions`, and with `embedder: "mock"`, whose vectors are always 64 wide, it's ignored.
+
+## `modes` and `host`
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `modes.askdbMode` | `"schema_only" \| "bounded_results"` | `"schema_only"` | The loosest mode a run gets (see below). `bounded_results` is reserved: today it runs exactly like `schema_only`. |
+| `modes.omitSensitiveFromPrompt` | `boolean` | `false` | Leaves sensitive columns, and schema text that names one, out of the prompt. A run can't turn it off. See [Privacy model](/concepts/privacy-model/). |
+| `host.schemaPath` | `string` | none | The schema artifact `createAskDb` and the HTTP API load when a call names none. `askdb ask` reads `introspection.outputDir` instead. |
+| `host.schemaJson` | `string` | none | The schema artifact as inline JSON, for environments without a file system path. When both are set, `schemaJson` wins. |
+
+```ts
+export default defineConfig({
+  // ...
+  modes: {
+    askdbMode: "schema_only",        // default
+    omitSensitiveFromPrompt: true,   // strict sensitive-column handling
+  },
+  host: {
+    schemaPath: "./my-app.schema",   // default artifact for embedding + HTTP API
+  },
+});
+```
+
+`modes.askdbMode` is the loosest mode a run gets, on every surface that reads config: the CLI, `@askdb/client`, and the HTTP API. A run that names no mode uses it. A run can ask for `schema_only` to tighten it. A run that asks for `bounded_results` while the config mode is `schema_only` runs `schema_only`, with no error; the `askdb.pipeline.mode` log line records the mode that ran.
+
+`modes.omitSensitiveFromPrompt: true` works the same way: a run can't turn it off. `@askdb/core`'s `ask()` reads no config, so pass `mode` to it yourself.
+
+## `logging` and `dev`
+
+`logging` sets the defaults for the structured JSON logs of the CLI (`askdb ask`, `askdb introspect`, `askdb rag index` and `askdb rag query`) and the HTTP API server. Studio doesn't read it. Logs go to stderr, and each CLI flag overrides its field for one run (see [Shared logging flags](/reference/cli/#shared-logging-flags)).
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `logging.level` | `"fatal" \| "error" \| "warn" \| "info" \| "debug" \| "trace" \| "silent"` | CLI: `"silent"`, or `"info"` with `-v`, `--log-file` or `--log-stdout`. HTTP server: `"info"`. | Another value fails to load. A `logFile` or `logStdout` in config doesn't raise the CLI's level: set `level` too. |
+| `logging.logFile` | `string` | none | Also appends the logs to this file. Parent directories are created. |
+| `logging.logStdout` | `boolean` | `false` | Also copies the logs to stdout. |
+| `logging.correlationId` | `string` | A new UUID per run | CLI only: the ID on every log line of a run. `--correlation-id` overrides it. The HTTP server uses each request's `x-correlation-id` header instead, else a new UUID. |
+| `dev.mockSql` | `string` | none | SQL that `askdb ask`, `createAskDb` and the HTTP API use in place of the model call, for tests and local development. |
+
+## The `studio` block
+
+Experimental: `studio` follows the 0.x `@askdb/studio` package, so a minor release of `@askdb/config` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `listen.host` | `string` | `"127.0.0.1"` | Studio's bind address. `askdb studio --host` overrides it. |
+| `listen.port` | `number` | `5556` | Studio's port, an integer from 1 to 65535. `--port` overrides it. Another value fails when Studio starts. |
+| `execute` | object | none | Live query execution from the Query Playground. See [Studio execute configuration](#studio-execute-configuration). |
+
+### Studio execute configuration
+
+The `studio.execute` block configures the Query Playground's live execution feature. It is **off by default**: set `enabled: true` and give Studio its own connection, ideally for a read-only database role.
+
+```ts
+export default defineConfig({
+  studio: {
+    execute: {
+      enabled: true,
+      provider: "mysql",                       // "postgres" | "mysql" | "sqlite" | "sqlserver"
+      databaseUrl: env("STUDIO_READONLY_URL"), // network databases (Postgres, MySQL, SQL Server)
+      // file: env("SQLITE_FILE"),             // SQLite only
+      // timeoutMs: 30000,
+      // maxRows: 500,
+    },
+  },
+});
+```
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `studio.execute.enabled` | `boolean` | `false` | While off, `POST /api/execute` returns `403` and the Playground hides Execute. |
+| `studio.execute.provider` | `"postgres" \| "mysql" \| "sqlite" \| "sqlserver"` | The active introspection provider, or `"postgres"` | See the resolution order below. |
+| `studio.execute.databaseUrl` | `string` | none | Connection URL for Postgres, MySQL and SQL Server. See `useIntrospectionConnection`. |
+| `studio.execute.file` | `string` | none | SQLite file path. See `useIntrospectionConnection`. |
+| `studio.execute.useIntrospectionConnection` | `boolean` | `false` | When `true`, reuse the introspection connection if `databaseUrl` / `file` is unset. |
+| `studio.execute.timeoutMs` | `number` | `30000` | Per-query timeout in milliseconds, a positive integer. Not enforced for SQLite. |
+| `studio.execute.maxRows` | `number` | `500` | Row cap, a positive integer. Results with more rows are truncated. |
+
+**Provider resolution order:**
+
+1. `studio.execute.provider`.
+2. The active `introspection.provider` when it is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`).
+3. `"postgres"` for backward compatibility.
+
+**Connection resolution** (per provider):
+
+- **Postgres, MySQL, SQL Server**: `studio.execute.databaseUrl` → the introspection URL for the same engine, only when `useIntrospectionConnection: true`.
+- **SQLite**: `studio.execute.file` → the introspection SQLite file, only when `useIntrospectionConnection: true`.
+
+Studio doesn't fall back to your introspection credentials on its own, because those usually belong to a more privileged role than ad-hoc queries should use. [Studio — Security model](/studio/#security-model) describes the read-only transaction, timeout, and row cap applied to every query.
+
+Each execute provider requires its optional peer driver package (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). See [Studio — driver packages](/studio/#driver-packages) for install instructions.
+
+## The `httpApi` block
+
+`httpApi` configures the `askdb-http` server and `createAskDbHttpServer()`. An `askdb-http` flag or a `createAskDbHttpServer()` option overrides `listen` (see [HTTP API → Server config](/reference/http-api/#server-config-httpapi)).
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `listen.port` | `number` | `3000` | The server's port. |
+| `listen.host` | `string` | `"127.0.0.1"` | The bind address. Bind to `0.0.0.0` only behind a gateway. |
+| `allowSchemaOverride` | `boolean` | `false` | Accept a per-request `schemaJson` on `POST /ask`. An override lets any caller send arbitrary schema and prompt content through the server's model key, so enable it only for tests or trusted multi-schema deployments. |
+| `requestTimeoutMs` | `number` | `60000` | Aborts the model call of a `POST /ask` request after this many milliseconds: a positive integer, at most `2147483647`. Another value fails to load. |
+
+On a platform that injects the port as `PORT`, convert it to a number. `env()` returns a string, so `port: env("PORT")` doesn't type-check:
+
+```ts
+export default defineConfig({
+  // ...
+  httpApi: {
+    listen: { port: Number(env("PORT") ?? 3000) },
+  },
+});
+```
+
+Keep the `?? 3000`. With `PORT` unset, `Number(env("PORT"))` is `NaN`, and the server fails to start ([#676](https://github.com/Ygilany/AskDB/issues/676)).
 
 ## Deprecated keys
 
@@ -281,50 +423,6 @@ AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb
 | `DATABASE_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection connection. |
 
 Everything else AskDB needs — output directory, mode, log level, Studio query connection, the vector-store URL — is set the same way: a field in `askdb.config.ts`, bound to a name you choose with `env("…")`. AskDB reads one variable of its own from the environment, `ASKDB_DEBUG`, which prints stack traces (see [Troubleshooting](/getting-started/troubleshooting/)). Every other setting comes from your config, so an `ASKDB_*` variable you set in the shell does nothing unless your config reads it with `env("…")`.
-
-## Studio execute configuration
-
-The `studio.execute` block configures the Query Playground's live execution feature. It is **off by default**: set `enabled: true` and give Studio its own connection, ideally for a read-only database role.
-
-```ts
-export default defineConfig({
-  studio: {
-    execute: {
-      enabled: true,
-      provider: "mysql",                       // "postgres" | "mysql" | "sqlite" | "sqlserver"
-      databaseUrl: env("STUDIO_READONLY_URL"), // network databases (Postgres, MySQL, SQL Server)
-      // file: env("SQLITE_FILE"),             // SQLite only
-      // timeoutMs: 30000,
-      // maxRows: 500,
-    },
-  },
-});
-```
-
-| Field | Default |
-|---|---|
-| `studio.execute.enabled` | `false`. While off, `POST /api/execute` returns `403` and the Playground hides Execute. |
-| `studio.execute.provider` | Active introspection provider, or `"postgres"` |
-| `studio.execute.databaseUrl` | None (see `useIntrospectionConnection`) |
-| `studio.execute.file` | None (see `useIntrospectionConnection`) |
-| `studio.execute.useIntrospectionConnection` | `false`. When `true`, reuse the introspection connection if `databaseUrl` / `file` is unset. |
-| `studio.execute.timeoutMs` | `30000`. Per-query timeout, positive integer. Not enforced for SQLite. |
-| `studio.execute.maxRows` | `500`. Row cap, positive integer. Results with more rows are truncated. |
-
-**Provider resolution order:**
-
-1. `studio.execute.provider`.
-2. The active `introspection.provider` when it is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`).
-3. `"postgres"` for backward compatibility.
-
-**Connection resolution** (per provider):
-
-- **Postgres, MySQL, SQL Server**: `studio.execute.databaseUrl` → the introspection URL for the same engine, only when `useIntrospectionConnection: true`.
-- **SQLite**: `studio.execute.file` → the introspection SQLite file, only when `useIntrospectionConnection: true`.
-
-Studio doesn't fall back to your introspection credentials on its own, because those usually belong to a more privileged role than ad-hoc queries should use. [Studio — Security model](/studio/#security-model) describes the read-only transaction, timeout, and row cap applied to every query.
-
-Each execute provider requires its optional peer driver package (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). See [Studio — driver packages](/studio/#driver-packages) for install instructions.
 
 ## Custom providers
 
