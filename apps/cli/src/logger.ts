@@ -32,8 +32,8 @@ export function resolveCliLogLevel(flags: CliLoggingFlags, runtimeConfig: AskDbR
     }
     return level;
   }
-  const configured = runtimeConfig.logging.level?.toLowerCase();
-  if (configured && isSupportedAskDbLogLevel(configured)) return configured;
+  const configured = runtimeConfig.logging.level;
+  if (configured) return configured;
   if (flags.verbose || flags.logFile || flags.logStdout) return "info";
   return "silent";
 }
