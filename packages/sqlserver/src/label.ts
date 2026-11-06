@@ -9,8 +9,9 @@ import { isPrismaSqlServerUrlAmbiguous, resolveConnectionInput } from "./exec/sq
  *
  * - `resolveConnectionInput()` turns `mssql://…` and Prisma's
  *   `sqlserver://host:port;key=value` form into `{ server, port, database }`
- *   (the latter backward compatible, plus Prisma's `{…}` escapes where they wrap a `;`), and hands
- *   ADO.NET strings to `mssql`;
+ *   (the latter by the compatibility rules `parsePrismaSqlServerUrl`
+ *   documents, with Prisma's `{…}` escapes only where they wrap a `;`), and
+ *   hands ADO.NET strings to `mssql`;
  * - `mssql` parses ADO.NET strings with `@tediousjs/connection-string`
  *   (`parse(…).toSchema(MSSQL_SCHEMA)`), then splits `data source` into
  *   server, instance and port. The split below mirrors that step; a
@@ -20,10 +21,10 @@ import { isPrismaSqlServerUrlAmbiguous, resolveConnectionInput } from "./exec/sq
  * Returns `undefined` (the registry labels it `configured sqlserver
  * connection`) when a parser throws, when there is no server, for a named
  * instance or named pipe, for any other scheme, for an `@` in the
- * `sqlserver://` form (it has no userinfo) or a `sqlserver://` string that can be
- * read more than one way (`isPrismaSqlServerUrlAmbiguous`), and for an `@` or `#` after the
- * host of an `mssql://` URL (a password containing `/`, `?` or `#` is split
- * there). `formatConnectionLabel`'s allowlist is the second check.
+ * `sqlserver://` form (it has no userinfo) or a `sqlserver://` string that can
+ * be read more than one way (`isPrismaSqlServerUrlAmbiguous`), and for an `@`
+ * or `#` after the host of an `mssql://` URL (a password containing `/`, `?` or
+ * `#` is split there). `formatConnectionLabel`'s allowlist is the second check.
  */
 export function parseSqlServerConnection(input: string): ConnectionLabelParts | undefined {
   let resolved: ReturnType<typeof resolveConnectionInput>;

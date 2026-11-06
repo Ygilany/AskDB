@@ -1,6 +1,5 @@
 import { runtimeIntrospectionString } from "@askdb/introspect/kit";
 import {
-  type Connector,
   type ConnectorConfig,
   type ConnectorProviderAdapter,
   type ConnectorResult,
@@ -17,7 +16,7 @@ export const prismaConnectorProvider: ConnectorProviderAdapter = {
         schemaId: config.schemaId,
         filters: config.filters,
       },
-      connector: createPrismaConnector() as Connector<unknown>,
+      connector: createPrismaConnector(),
     };
   },
   /**

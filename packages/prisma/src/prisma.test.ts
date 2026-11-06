@@ -187,6 +187,20 @@ describe("describePrismaSchema", () => {
     ]);
   });
 
+  it.each([
+    [{ excludeSchemas: ["public"] }, []],
+    [{ schemas: ["public"], excludeSchemas: ["public"] }, []],
+    [{ excludeSchemas: ["other"] }, ["OrderStatus"]],
+  ])("applies schema filters %j to enums", async (filters, enumNames) => {
+    const result = await describePrismaSchema({
+      schemaPath: resolve(FIXTURE_DIR, "simple/schema.prisma"),
+      filters,
+    });
+    const enums = result.schema.schemas.flatMap((ns) => ns.enums.map((e) => e.name));
+    expect(enums).toEqual(enumNames);
+    expect(result.schema.schemas.map((ns) => ns.name)).toEqual(enumNames.length ? ["public"] : []);
+  });
+
   it("rejects MongoDB Prisma schemas", async () => {
     await expect(
       describePrismaSchema({
