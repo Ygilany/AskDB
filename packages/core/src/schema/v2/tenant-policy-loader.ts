@@ -2,6 +2,7 @@ import { SchemaParseError } from "../../errors.js";
 import { readFrontMatter } from "./parser.js";
 import {
   assertDistinctRootPlaceholders,
+  formatTenantPolicyWarning,
   tenantPolicyFrontmatterSchema,
   TENANT_POLICY_H2_SECTIONS,
   type ParsedTenantPolicyMarkdown,
@@ -62,6 +63,14 @@ function extractTenantPolicySections(
 // Cross-reference validation & normalization
 // ---------------------------------------------------------------------------
 
+/** Problems that stay warnings in every mode: an entry for a table schema.json no longer has. */
+const TABLE_REMOVED_KINDS: ReadonlySet<TenantPolicyWarning["kind"]> = new Set([
+  "orphaned_root_id",
+  "orphaned_scoped_table_id",
+  "orphaned_polymorphic_table_id",
+  "orphaned_global_table_id",
+]);
+
 export function normalizeTenantPolicy(
   parsed: ParsedTenantPolicyMarkdown,
   physicalTableIds: Set<string>,
@@ -74,13 +83,15 @@ export function normalizeTenantPolicy(
   assertDistinctRootPlaceholders(fm.roots);
 
   const rootIds = new Set(fm.roots.map((r) => r.id));
+  // An entry whose own table schema.json no longer has reports only that table: its
+  // columns went with it, and the entry scopes nothing, so they are not checked.
+  const tableRemoved = (tableId: string) => !physicalTableIds.has(tableId);
 
   // Validate root table IDs exist in physical schema
   for (const root of fm.roots) {
-    if (!physicalTableIds.has(root.id)) {
+    if (tableRemoved(root.id)) {
       warnings.push({ kind: "orphaned_root_id", id: root.id });
-    }
-    if (!physicalColumnIds.has(root.tenantIdColumn)) {
+    } else if (!physicalColumnIds.has(root.tenantIdColumn)) {
       warnings.push({
         kind: "orphaned_column_id",
         id: root.tenantIdColumn,
@@ -95,7 +106,7 @@ export function normalizeTenantPolicy(
           context: `parent of root ${root.id}`,
         });
       }
-      if (!physicalColumnIds.has(root.parent.foreignKey)) {
+      if (!tableRemoved(root.id) && !physicalColumnIds.has(root.parent.foreignKey)) {
         warnings.push({
           kind: "orphaned_fk_id",
           id: root.parent.foreignKey,
@@ -121,7 +132,8 @@ export function normalizeTenantPolicy(
         context: `hierarchy child`,
       });
     }
-    if (!physicalColumnIds.has(edge.foreignKey)) {
+    // The edge's foreign key sits on the child's table.
+    if (!tableRemoved(edge.child) && !physicalColumnIds.has(edge.foreignKey)) {
       warnings.push({
         kind: "orphaned_fk_id",
         id: edge.foreignKey,
@@ -138,7 +150,8 @@ export function normalizeTenantPolicy(
 
   // Validate scoped tables
   for (const st of fm.scopedTables ?? []) {
-    if (!physicalTableIds.has(st.id)) {
+    const removed = tableRemoved(st.id);
+    if (removed) {
       warnings.push({ kind: "orphaned_scoped_table_id", id: st.id });
     }
     for (const path of st.scopeThrough) {
@@ -149,6 +162,7 @@ export function normalizeTenantPolicy(
           context: `scopeThrough on ${st.id}`,
         });
       }
+      if (removed) continue;
       if ("column" in path) {
         if (!physicalColumnIds.has(path.column)) {
           warnings.push({
@@ -180,17 +194,18 @@ export function normalizeTenantPolicy(
 
   // Validate polymorphic tables
   for (const pt of fm.polymorphicTables ?? []) {
-    if (!physicalTableIds.has(pt.id)) {
+    const removed = tableRemoved(pt.id);
+    if (removed) {
       warnings.push({ kind: "orphaned_polymorphic_table_id", id: pt.id });
     }
-    if (!physicalColumnIds.has(pt.typeColumn)) {
+    if (!removed && !physicalColumnIds.has(pt.typeColumn)) {
       warnings.push({
         kind: "orphaned_column_id",
         id: pt.typeColumn,
         context: `polymorphic typeColumn on ${pt.id}`,
       });
     }
-    if (!physicalColumnIds.has(pt.idColumn)) {
+    if (!removed && !physicalColumnIds.has(pt.idColumn)) {
       warnings.push({
         kind: "orphaned_column_id",
         id: pt.idColumn,
@@ -210,8 +225,21 @@ export function normalizeTenantPolicy(
 
   // Validate global tables
   for (const gt of fm.globalTables ?? []) {
-    if (!physicalTableIds.has(gt)) {
+    if (tableRemoved(gt)) {
       warnings.push({ kind: "orphaned_global_table_id", id: gt });
+    }
+  }
+
+  // Under strict, a policy that doesn't match schema.json fails the load: tenancy
+  // must not run on a policy with a renamed column or a cycle (ADR 0023). Only a
+  // removed table's entry stays a warning, since it scopes nothing.
+  if (fm.enforcement === "strict") {
+    const errors = warnings.filter((w) => !TABLE_REMOVED_KINDS.has(w.kind));
+    if (errors.length > 0) {
+      throw new SchemaParseError(
+        `the tenant policy doesn't match schema.json, and enforcement is strict: ` +
+          `${errors.map(formatTenantPolicyWarning).join("; ")}. Update tenant-policy.md to match schema.json.`,
+      );
     }
   }
 
@@ -289,45 +317,36 @@ function buildCoverage(
 // ---------------------------------------------------------------------------
 
 function detectHierarchyCycles(fm: TenantPolicyFrontmatter): string[] {
-  const parentMap = new Map<string, string>();
-
+  // Every parent of every child: the hierarchy is a DAG, so a root may have several
+  // parents, and keeping one per child would hide a cycle behind a later edge.
+  const parents = new Map<string, Set<string>>();
+  const addEdge = (child: string, parent: string) => {
+    const set = parents.get(child) ?? new Set<string>();
+    set.add(parent);
+    parents.set(child, set);
+  };
   for (const root of fm.roots) {
-    if (root.parent) {
-      parentMap.set(root.id, root.parent.root);
-    }
+    if (root.parent) addEdge(root.id, root.parent.root);
   }
+  for (const edge of fm.hierarchy ?? []) addEdge(edge.child, edge.parent);
 
-  // Also use hierarchy edges
-  for (const edge of fm.hierarchy ?? []) {
-    parentMap.set(edge.child, edge.parent);
-  }
-
-  // Walk each node up — if we revisit a node, there's a cycle
-  const visited = new Set<string>();
-  const inStack = new Set<string>();
+  // Depth-first walk up the parent edges; reaching a node still on the stack closes a cycle.
+  const state = new Map<string, "open" | "done">();
+  const stack: string[] = [];
   const cycleNodes: string[] = [];
-
-  for (const node of parentMap.keys()) {
-    if (visited.has(node)) continue;
-    const path: string[] = [];
-    let current: string | undefined = node;
-    while (current && !visited.has(current)) {
-      if (inStack.has(current)) {
-        // Found a cycle — collect the cycle nodes
-        const cycleStart = path.indexOf(current);
-        if (cycleStart !== -1) {
-          cycleNodes.push(...path.slice(cycleStart));
-        }
-        break;
-      }
-      inStack.add(current);
-      path.push(current);
-      current = parentMap.get(current);
+  const visit = (node: string): void => {
+    state.set(node, "open");
+    stack.push(node);
+    for (const parent of parents.get(node) ?? []) {
+      const seen = state.get(parent);
+      if (seen === "open") cycleNodes.push(...stack.slice(stack.indexOf(parent)));
+      else if (seen === undefined) visit(parent);
     }
-    for (const n of path) {
-      visited.add(n);
-      inStack.delete(n);
-    }
+    stack.pop();
+    state.set(node, "done");
+  };
+  for (const node of parents.keys()) {
+    if (!state.has(node)) visit(node);
   }
 
   return [...new Set(cycleNodes)];

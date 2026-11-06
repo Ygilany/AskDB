@@ -183,10 +183,12 @@ unknownKey: bad
 // Cross-reference validation
 // ---------------------------------------------------------------------------
 
+// Under `warn`, every problem is collected into `warnings`. Under `strict` most of them
+// fail the load instead; the unknown-root cases below and loader.test.ts cover that.
 describe("normalizeTenantPolicy — cross-reference validation", () => {
   const validContent = `---
 schemaId: test
-enforcement: strict
+enforcement: warn
 roots:
   - id: table:public.orgs
     tenantIdColumn: table:public.orgs#id
@@ -252,26 +254,67 @@ globalTables:
     expect(result.warnings.some((w) => w.kind === "orphaned_global_table_id")).toBe(true);
   });
 
-  it("warns about unknown roots in scopeThrough", () => {
-    const content = `---
+  // A root that `roots` doesn't declare is an error under `strict` wherever the policy
+  // names it (ADR 0023), and the only finding under `warn`.
+  it.each([
+    {
+      kind: "unknown_root_in_scope",
+      section: `scopedTables:
+  - id: table:public.items
+    scopeThrough:
+      - root: table:public.nonexistent
+        column: table:public.items#org_id`,
+    },
+    {
+      kind: "unknown_root_in_hierarchy",
+      section: `hierarchy:
+  - parent: table:public.nonexistent
+    child: table:public.orgs
+    foreignKey: table:public.orgs#parent_id`,
+    },
+    {
+      kind: "unknown_root_in_mapping",
+      section: `polymorphicTables:
+  - id: table:public.items
+    typeColumn: table:public.items#owner_type
+    idColumn: table:public.items#owner_id
+    mapping:
+      org: table:public.orgs
+      other: table:public.nonexistent`,
+    },
+  ])("$kind: a warning under warn, a failed load under strict", ({ kind, section }) => {
+    const policy = (enforcement: "warn" | "strict") =>
+      parseTenantPolicyMarkdown(`---
 schemaId: test
-enforcement: strict
+enforcement: ${enforcement}
 roots:
   - id: table:public.orgs
     tenantIdColumn: table:public.orgs#id
     label: Org
-scopedTables:
-  - id: table:public.items
-    scopeThrough:
-      - root: table:public.nonexistent
-        column: table:public.items#org_id
+${section}
 ---
-`;
-    const parsed = parseTenantPolicyMarkdown(content);
+`);
     const tableIds = new Set(["table:public.orgs", "table:public.items"]);
-    const colIds = new Set(["table:public.orgs#id", "table:public.items#org_id"]);
-    const result = normalizeTenantPolicy(parsed, tableIds, colIds);
-    expect(result.warnings.some((w) => w.kind === "unknown_root_in_scope")).toBe(true);
+    const colIds = new Set([
+      "table:public.orgs#id",
+      "table:public.orgs#parent_id",
+      "table:public.items#org_id",
+      "table:public.items#owner_type",
+      "table:public.items#owner_id",
+    ]);
+    expect(normalizeTenantPolicy(policy("warn"), tableIds, colIds).warnings).toEqual([
+      expect.objectContaining({ kind, id: "table:public.nonexistent" }),
+    ]);
+    let caught: unknown;
+    try {
+      normalizeTenantPolicy(policy("strict"), tableIds, colIds);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    expect((caught as SchemaParseError).message).toContain(
+      "table:public.nonexistent is not one of the policy's roots",
+    );
   });
 });
 
@@ -283,7 +326,7 @@ describe("normalizeTenantPolicy — hierarchy cycle detection", () => {
   it("detects cycles in roots with parent references", () => {
     const content = `---
 schemaId: test
-enforcement: strict
+enforcement: warn
 roots:
   - id: table:public.a
     tenantIdColumn: table:public.a#id
@@ -311,6 +354,52 @@ roots:
     expect(result.warnings.some((w) => w.kind === "hierarchy_cycle")).toBe(true);
   });
 
+  // A root may have two parents (the hierarchy is a DAG), so a cycle edge must not be
+  // lost when a later edge gives the same child another parent (#647 review).
+  it("strict: rejects a cycle through a root whose second parent edge comes after the cycle edge", () => {
+    const tables = ["a", "b", "c", "r"];
+    const parsed = parseTenantPolicyMarkdown(`---
+schemaId: test
+enforcement: strict
+roots:
+${tables.map((t) => `  - id: table:public.${t}\n    tenantIdColumn: table:public.${t}#id\n    label: ${t.toUpperCase()}`).join("\n")}
+hierarchy:
+  - parent: table:public.c
+    child: table:public.a
+    foreignKey: table:public.a#c_id
+  - parent: table:public.a
+    child: table:public.b
+    foreignKey: table:public.b#a_id
+  - parent: table:public.b
+    child: table:public.c
+    foreignKey: table:public.c#b_id
+  - parent: table:public.r
+    child: table:public.a
+    foreignKey: table:public.a#r_id
+---
+`);
+    const tableIds = new Set(tables.map((t) => `table:public.${t}`));
+    const colIds = new Set([
+      ...tables.map((t) => `table:public.${t}#id`),
+      "table:public.a#c_id",
+      "table:public.b#a_id",
+      "table:public.c#b_id",
+      "table:public.a#r_id",
+    ]);
+    const caught = (() => {
+      try {
+        normalizeTenantPolicy(parsed, tableIds, colIds);
+      } catch (e) {
+        return e;
+      }
+      return undefined;
+    })();
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    const message = (caught as SchemaParseError).message;
+    expect(message).toMatch(/hierarchy cycle through/);
+    for (const id of ["table:public.a", "table:public.b", "table:public.c"]) expect(message).toContain(id);
+    expect(message).not.toContain("table:public.r");
+  });
 });
 
 // Each root's IDs bind through the placeholder derived from its label. Two roots whose
