@@ -114,6 +114,7 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **A connection's `secondaryApiKey` is used on every provider** when the connection has no `apiKey`. Before, only Azure and Foundry read it; the connection types still declare it only there.
 - **An `ai.language` or `ai.embedding` provider that no registered adapter handles** now fails with the message that says how to register it, as `createLanguageModel` already did, instead of `Unknown ASKDB_AI_PROVIDER`.
 - **`getAskDbRuntimeConfig().deprecations` is empty**, since no config key is deprecated now. It stays for the next deprecation.
+- **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
 
 ## 1.0.0-beta.49
 
