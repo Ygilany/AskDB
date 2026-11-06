@@ -151,6 +151,17 @@ describe("planAskDbScaffold", () => {
 
   // `docker run --env-file` reads `NAME=VALUE` per line, everything after `=` as the value, and
   // skips `#` lines. An inline `NAME= # purpose` would set NAME to "# purpose".
+  // The `mssql` driver reads only `TrustServerCertificate` without spaces, so a host that reuses
+  // this DATABASE_URL for its own pool gets the same certificate setting AskDB does (#803).
+  it("hints the SQL Server URL in the ADO.NET form both AskDB and mssql read", () => {
+    const plan = planAskDbScaffold(answers({ database: "sqlserver", connectionEnv: "DATABASE_URL" }), VERSIONS);
+    expect(plan.envExample.split("\n").find((line) => line.startsWith("# sqlserver"))).toBe(
+      "# sqlserver connection URL, for introspection. Format: Data Source=<DATABASE_HOST>,<DATABASE_PORT>;" +
+        "Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;TrustServerCertificate=True;" +
+        "Authentication=SqlPassword;",
+    );
+  });
+
   it("writes a .env.example that `--env-file` reads as the listed variables, each one empty", () => {
     for (const { name, answers } of CASES) {
       const plan = planAskDbScaffold(answers, VERSIONS);
