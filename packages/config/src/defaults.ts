@@ -15,6 +15,10 @@ export const DEFAULT_GATEWAY_LANGUAGE_MODEL = "openai/gpt-4o-mini";
 /** @deprecated Use DEFAULT_GATEWAY_LANGUAGE_MODEL. Removed at 1.0. */
 export const DEFAULT_GATEWAY_CHAT_MODEL = DEFAULT_GATEWAY_LANGUAGE_MODEL;
 export const DEFAULT_INTROSPECT_OUTPUT_DIR = "./askdb/";
+/** The default `httpApi.listen.port`. */
+export const DEFAULT_HTTP_API_PORT = 3000;
+/** The default `httpApi.listen.host`. */
+export const DEFAULT_HTTP_API_HOST = "127.0.0.1";
 /** Default model-call timeout for `@askdb/http-api` `POST /ask` (`httpApi.requestTimeoutMs`). */
 export const DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS = 60_000;
 /**
@@ -24,7 +28,8 @@ export const DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS = 60_000;
 export const MAX_HTTP_API_REQUEST_TIMEOUT_MS = 2_147_483_647;
 /**
  * @deprecated AskDB has no default embedding model: set `ai.embedding.model`. This is only the
- * model a legacy `rag.embedder: "openai"` config translates to. Removed at 1.0.
+ * model a legacy `rag.embedder` (`"openai"`, or `"ai-sdk"` on openai, azure or foundry) translates
+ * to when no model is set. Removed at 1.0.
  */
 export const DEFAULT_RAG_EMBEDDING_MODEL = "text-embedding-3-small";
 export const DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS = 64;

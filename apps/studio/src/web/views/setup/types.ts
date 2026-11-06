@@ -1,7 +1,11 @@
-export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
+import type { AskDbScaffoldAnswers } from "@askdb/config/scaffold";
+
+// The planner in `@askdb/config/scaffold` ships Node code the browser bundle can't import, so
+// the wizard keeps its own lists below; `setup-engines.test.ts` fails if they drift from it.
+export type SetupDatabase = AskDbScaffoldAnswers["database"];
 export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry" | "gateway";
-export type SetupRagStore = "file" | "memory" | "pgvector";
-export type SetupExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
+export type SetupRagStore = AskDbScaffoldAnswers["rag"]["store"];
+export type SetupExecuteProvider = NonNullable<AskDbScaffoldAnswers["studioExecute"]>["provider"];
 
 export const DATABASES: Array<{ value: SetupDatabase; label: string }> = [
   { value: "postgres", label: "PostgreSQL" },
@@ -37,6 +41,7 @@ export const EXECUTE_PROVIDERS: Array<{ value: SetupExecuteProvider; label: stri
   { value: "sqlserver", label: "SQL Server" },
 ];
 
+/** The connection URL variable each engine defaults to; `""` for an engine that reads no URL. */
 export const CONNECTION_ENV_DEFAULTS: Record<SetupDatabase, string> = {
   postgres: "DATABASE_URL",
   mysql: "DATABASE_URL",

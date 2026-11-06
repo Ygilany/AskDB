@@ -14,12 +14,14 @@ export type SqliteIntrospectionInput = {
   mode: "live";
   runner: CatalogQueryRunner;
   filters?: IntrospectionFilters;
+  /** `schemaId` of the resulting `SqlSchema`. Defaults to `"introspected"`. */
+  schemaId?: string;
 };
 
 export function createSqliteConnector(): Connector<SqliteIntrospectionInput> {
   return {
     async describe(input: SqliteIntrospectionInput): Promise<IntrospectionResult> {
-      return describeSqlite({ runner: input.runner, filters: input.filters });
+      return describeSqlite({ runner: input.runner, filters: input.filters, schemaId: input.schemaId });
     },
   };
 }

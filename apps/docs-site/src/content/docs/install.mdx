@@ -26,6 +26,6 @@ On the day an AskDB version is published, `pnpm dlx askdb@latest` and `yarn dlx 
 
 To introspect a `schema.prisma` file instead of a live database, install `@askdb/prisma` next to `askdb`. `askdb` doesn't bring it in, because it pulls in Prisma itself:
 
-<InstallTabs pkgs="askdb @askdb/prisma" />
+<InstallTabs pkgs="askdb @askdb/prisma ai zod" />
 
-On pnpm 11, `@askdb/prisma` also needs its Prisma build approved, or `pnpm add` exits 1. The [Prisma guide](/guides/integrations/prisma/#install) shows how. `askdb init --database prisma` installs it and, on pnpm 10.4 or later, approves the build for you.
+On pnpm 11, `@askdb/prisma` also needs its Prisma build approved, or `pnpm add` exits 1. The [Prisma guide](/guides/integrations/prisma/#install) shows how. Yarn Plug'n'Play also needs `ai` and `zod` in the project, so the line installs them too. `askdb init --database prisma` installs all of them and, on pnpm 10.4 or later, approves the build for you.

@@ -44,7 +44,7 @@ Rejected. Studio, `@askdb/enrich` and `@askdb/rag` are still moving: Studio's au
   - the `studio` and `rag` blocks of `defineConfig` in `@askdb/config`, with the types and environment variables that feed them;
   - the `askdb studio`, `enrich`, `bundle` and `rag` commands;
   - `askdb init`'s `--rag-store`, `--pgvector-env` and `--studio-execute` flags, and the `rag` and `studio` sections it writes;
-  - the `@askdb/config/scaffold` entry point: the config renderer and package-manager helpers that `askdb init` and Studio's setup wizard share (added 2026-11-06, #711).
+  - the `@askdb/config/scaffold` entry point: the scaffold planner (config, `.env.example` and install plan) and package-manager helpers that `askdb init` and Studio's setup wizard share (added 2026-11-06, #711).
 - **Engines:** all five engine families are supported at 1.0, and the consumer lab covers each one.
 - **No fixed date.** rc.1 ships when the `1.0.0-rc.1 — public launch` milestone's gates close.
 

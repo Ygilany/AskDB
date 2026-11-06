@@ -15,7 +15,7 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
     if (config.fromExport) {
       return {
         mode: "from-export",
-        input: { mode: "from-export", bundlePath: config.fromExport, filters: config.filters },
+        input: { mode: "from-export", bundlePath: config.fromExport, filters: config.filters, schemaId: config.schemaId },
         connector: createPostgresConnector(),
       };
     }
@@ -30,6 +30,7 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
         mode: "live",
         runner: createPostgresCatalogQueryRunner(config.url),
         filters: config.filters,
+        schemaId: config.schemaId,
       },
       connector: createPostgresConnector(),
     };

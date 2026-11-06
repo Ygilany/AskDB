@@ -1,5 +1,13 @@
 # @askdb/prisma
 
+## 0.2.0-beta.23
+
+### Patch Changes
+
+- Updated dependencies [82c2f94]
+- Updated dependencies [a8cef1b]
+  - @askdb/introspect@0.3.0-beta.23
+
 ## 0.2.0-beta.22
 
 ### Patch Changes

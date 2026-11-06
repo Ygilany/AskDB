@@ -9,7 +9,6 @@ import {
   introspect,
   isSchemaV2Json,
   renderSchemaV2Body,
-  type Connector,
   type ConnectorConfig,
   type ConnectorProviderId,
   type ConnectorRegistry,
@@ -24,7 +23,7 @@ import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { errorMessage } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
-import { createCliLogger, loggingFlags } from "./logger.js";
+import { createCliLogger, loggingFlags, type CliLoggingFlags } from "./logger.js";
 import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 /**
@@ -57,7 +56,7 @@ export const defaultConnectorRegistry: ConnectorRegistry = createConnectorRegist
   { provider: "prisma", load: async () => (await prismaPackage.load()).prismaConnectorProvider },
 ]);
 
-export type RunIntrospectCliOptions = {
+type RunIntrospectCliOptions = {
   /** Registry to dispatch `--engine` through. Defaults to the built-in engines. */
   connectorRegistry?: ConnectorRegistry;
 };
@@ -69,7 +68,7 @@ const INTROSPECT_EVENTS = {
   error: "askdb.introspect.error",
 } as const;
 
-type CliOptions = {
+type CliOptions = CliLoggingFlags & {
   /** `askdb introspect templates`: print the export queries instead of introspecting. */
   templates?: boolean;
   url?: string;
@@ -83,11 +82,6 @@ type CliOptions = {
   schemas?: string[];
   excludeSchemas?: string[];
   tables?: string[];
-  verbose?: boolean;
-  logLevel?: string;
-  logFile?: string;
-  logStdout?: boolean;
-  correlationId?: string;
 };
 
 export async function runIntrospectCli(
@@ -149,10 +143,8 @@ async function runTemplatesCommand(opts: CliOptions, registry: ConnectorRegistry
 
 async function runIntrospectCommand(opts: CliOptions, registry: ConnectorRegistry): Promise<number> {
   const rt = getAskDbRuntimeConfig();
-  // When --engine isn't passed, fall back to the configured introspection.provider
-  // so `askdb introspect` works flag-free for any configured engine.
   const engine = await resolveEngine(registry, opts.engine ?? rt.introspection.provider);
-  // Schemas (MySQL/MariaDB: databases) to introspect: `--schemas` wins, then introspection.schemas.
+  // For MySQL and MariaDB, schemas are databases.
   if (!opts.schemas && rt.introspection.schemas) {
     opts.schemas = rt.introspection.schemas;
   }
@@ -170,11 +162,6 @@ async function runIntrospectCommand(opts: CliOptions, registry: ConnectorRegistr
   }
   if (!opts.print && !opts.diff && !opts.out) {
     opts.out = rt.introspection.outputDir;
-  }
-  if (!opts.print && !opts.diff && !opts.out) {
-    throw new Error(
-      "Provide one output mode: --out <dir>, --print, or --diff <existing-dir> (or set introspection.outputDir in askdb.config to default --out).",
-    );
   }
   if ([opts.print, Boolean(opts.diff), Boolean(opts.out)].filter(Boolean).length > 1) {
     throw new Error("Use only one output mode: --out, --print, or --diff.");
@@ -237,7 +224,7 @@ async function runWithOutput(
   opts: CliOptions,
   schemaId: string,
 ): Promise<IntrospectResult> {
-  const connector = runConfig.connector as Connector<unknown>;
+  const connector = runConfig.connector;
   const input = runConfig.input;
 
   if (opts.print) {
@@ -315,10 +302,7 @@ function buildFilters(opts: CliOptions): IntrospectionFilters | undefined {
   return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
-/**
- * Every flag `askdb introspect` accepts. The parser and the help both read this table, so the
- * help can't leave out a flag the parser takes (#281). `--engine`'s help names `registry`'s engines.
- */
+/** Every flag `askdb introspect` accepts. `--engine`'s help names `registry`'s engines. */
 const introspectFlags = (registry: ConnectorRegistry): readonly Flag<CliOptions>[] => [
   {
     names: ["--engine"],

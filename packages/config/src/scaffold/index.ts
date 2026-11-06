@@ -1,13 +1,17 @@
 /**
  * `@askdb/config/scaffold`: helpers for tools that set up a project and write a new
- * `askdb.config.ts` (`askdb init`, Studio's setup wizard). Kept off the main entry,
- * which user configs import, so tooling can change without touching the config API.
+ * `askdb.config.ts` (`askdb init`, Studio's setup wizard): the planner, which turns a
+ * project's answers into its config, `.env.example` and installs, and the package-manager
+ * helpers that run the installs. Kept off the main entry, which user configs import, so
+ * tooling can change without touching the config API.
  *
  * @experimental Tooling for `askdb init` and AskDB Studio: a minor release of
  * `@askdb/config` may change these exports (ADR 0030).
  */
 export { renderAskDbAiConfigScaffold } from "./ai.js";
 export type { AskDbAiConfigScaffold, AskDbAiConfigScaffoldInput, AskDbScaffoldEnvVar } from "./ai.js";
+export { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold } from "./plan.js";
+export type { AskDbScaffoldAnswers, AskDbScaffoldPlan, ScaffoldValue } from "./plan.js";
 export {
   detectPackageManager,
   findNearestPackageJsonDir,

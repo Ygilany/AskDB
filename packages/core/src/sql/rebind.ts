@@ -1,35 +1,31 @@
 import { QueryParameterError, TenantScopeError, type GuardrailVerdict } from "../errors.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
-import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
+import type { TenantScope } from "../schema/v2/tenant-policy.js";
 import {
   isTenantPlaceholderName,
-  markerStyleForDialect,
-  renderPreparedQuery,
-  scanPlaceholders,
   type PreparedQuery,
   type QueryParameterBinding,
   type QueryParameterValue,
   type QueryParamSlot,
-  type RenderedQuery,
 } from "./bind.js";
-import { BUILT_IN_DIALECTS, isBuiltInDialectId, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import {
+  assertRenderedSql,
+  readPreparedQueryDialect,
+  renderTemplate,
+  renderTenantSql,
+  tenantRendering,
+} from "./checked-statement.js";
+import { isBuiltInDialectId, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { enforceGuardrails } from "./guardrails.js";
 import type { SensitiveGuardrailMode } from "./sensitive-guardrail.js";
-import {
-  assertTenantSqlMode,
-  DEFAULT_TENANT_SQL_MODE,
-  findTenantPlaceholderAnyCase,
-  resolveTenantSql,
-  unexpandedSubtreeError,
-  type TenantSqlOutputMode,
-} from "./tenant-placeholders.js";
+import { findTenantPlaceholderAnyCase, unexpandedSubtreeError, type TenantSqlOutputMode } from "./tenant-placeholders.js";
 import { validateTenantScope } from "./tenant-scope-validate.js";
-import { validateSelectSql } from "./validate.js";
 
 /**
  * The checked rebind (ADR 0010, "Enforcing reuse: re-check at rebind"). It sits above the
- * mechanical renderer (`bind.ts`), tenant substitution (`tenant-placeholders.ts`) and the
- * guardrail checks, which import none of this module.
+ * shared renderer (`checked-statement.ts`), the mechanical renderer (`bind.ts`), tenant
+ * substitution (`tenant-placeholders.ts`) and the guardrail checks, which import none of
+ * this module.
  */
 
 /** The guardrail context `bindPreparedQuery()` checks the template under. Required. */
@@ -125,27 +121,24 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw new QueryParameterError(`Unknown dialect '${prepared.dialect}'.`, "DIALECT_UNSUPPORTED");
   }
-  const spec = rebindSpec(prepared, guardrails.dialect);
-  const tenantMode = guardrails.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
-  assertTenantSqlMode(tenantMode, "bindPreparedQuery()");
-  rejectTenantValues(values);
-
+  const spec = readPreparedQueryDialect(prepared, guardrails.dialect);
   const { schema } = guardrails;
   const policy = "schemaId" in schema ? schema.tenantPolicy : undefined;
-  let scope: TenantScope | undefined;
+  const tenant = tenantRendering(policy, guardrails.tenantScope, guardrails.tenantSqlMode, "bindPreparedQuery()");
+  rejectTenantValues(values);
+
   if (policy) {
-    validateTenantScope(policy, guardrails.tenantScope);
-    scope = guardrails.tenantScope!;
-    if (scope.access.kind === "subtree") {
-      throw unexpandedSubtreeError(scope.access.tenantRoot, "bindPreparedQuery()");
-    }
+    // Throws for a missing scope, so `tenant` is set from here on whenever there is a policy.
+    validateTenantScope(policy, tenant?.scope);
+    const access = tenant!.scope.access;
+    if (access.kind === "subtree") throw unexpandedSubtreeError(access.tenantRoot, "bindPreparedQuery()");
   }
   const { verdict } = enforceGuardrails({
     path: "rebind",
     forms: { template: prepared.namedSql },
     dialect: spec,
     schema,
-    ...(policy && scope ? { tenant: { policy, scope } } : {}),
+    ...(tenant ? { tenant } : {}),
     sensitiveGuardrailMode: guardrails.sensitiveGuardrailMode,
     acceptWarnings: guardrails.acceptWarnings,
   });
@@ -166,36 +159,13 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
     );
   }
 
-  let bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true, dialect: spec });
-  let tenantParams: unknown[] | undefined;
-  if (policy && scope) {
-    // `sql` carries business values as inlined literals, so its only markers are tenant
-    // markers, numbered from the first slot, as in ask() (ADR 0024).
-    const resolved = resolveTenantSql(bound.sql, policy, scope, tenantMode, 1, spec);
-    const sql = resolved.sql;
-    if (resolved.mode === "sql-params" && resolved.params.length > 0) tenantParams = resolved.params;
-    const unbound = bindTenantIntoUnboundSql(bound, {
-      namedSql: prepared.namedSql,
-      tenantPolicy: policy,
-      tenantScope: scope,
-      dialectSpec: spec,
-    });
-    if (!unbound) {
-      throw new QueryParameterError(
-        "The template's tenant markers can't be aligned with its business parameters in unboundSql.",
-        "TENANT_PARAM_ALIGNMENT",
-      );
-    }
-    bound = { ...unbound, sql };
-  }
-
-  // Rendering only swaps placeholders (ADR 0010, decision 0); these assert that contract.
-  if (scanPlaceholders(bound.sql, spec).length > 0 || scanPlaceholders(bound.unboundSql, spec).length > 0) {
-    throw new QueryParameterError("One or more placeholders remain after binding.", "UNRESOLVED_PLACEHOLDER");
-  }
-  validateSelectSql(spec, bound.sql);
-  validateSelectSql(spec, bound.unboundSql);
-  return { ...bound, ...(tenantParams ? { tenantParams } : {}), verdict };
+  const rendered = renderTemplate(prepared, values, spec, tenant);
+  const { unboundSql, params, bindings } = rendered;
+  if (!tenant) return { sql: rendered.businessSql, unboundSql, params, bindings, verdict };
+  const { sql, tenantParams } = renderTenantSql(rendered.businessSql, spec, tenant);
+  // renderTemplate checked its two forms; `sql` is rendered here, so it's checked here.
+  assertRenderedSql(sql, spec);
+  return { sql, ...(tenantParams ? { tenantParams } : {}), unboundSql, params, bindings, verdict };
 }
 
 function rejectTenantValues(values: Values): void {
@@ -206,126 +176,4 @@ function rejectTenantValues(values: Values): void {
       "TENANT_VALUE_SUPPLIED",
     );
   }
-}
-
-/**
- * Substitute tenant placeholders in a rendered `unboundSql` (business markers bound,
- * `:tenant_*` placeholders still in place) with driver markers, and fold their values into
- * `params`, so `unboundSql` + `params` is a single executable pair. Shared by `ask()`
- * (`tenantSqlMode: "sql-params"`) and `bindPreparedQuery()`.
- *
- * - `$N` / `@pN` dialects: markers are explicitly numbered, so tenant markers continue
- *   after the business slots and tenant values are appended.
- * - `?` dialects: markers are positional, so `params` must follow source order. Business
- *   and tenant values are interleaved by walking the named template in order, and
- *   `bindings[].indices` are remapped to the new positions.
- *
- * Returns undefined when the business binding and the tenant substitution disagree about
- * the statement's shape, rather than misaligned params.
- */
-export function bindTenantIntoUnboundSql(
-  bound: Pick<RenderedQuery, "unboundSql" | "params" | "bindings">,
-  ctx: {
-    /** The template, with business and tenant placeholders. */
-    namedSql: string;
-    tenantPolicy: NormalizedTenantPolicy;
-    tenantScope: TenantScope;
-    dialectSpec: DialectSpec | undefined;
-  },
-): Pick<RenderedQuery, "unboundSql" | "params" | "bindings"> | undefined {
-  const business = bound.params;
-  const unbound = resolveTenantSql(
-    bound.unboundSql,
-    ctx.tenantPolicy,
-    ctx.tenantScope,
-    "sql-params",
-    business.length + 1,
-    ctx.dialectSpec,
-  );
-  if (unbound.mode !== "sql-params") return undefined;
-  const tenantValues = unbound.params as QueryParamSlot[];
-
-  const dialectId = ctx.dialectSpec?.id;
-  const style =
-    dialectId !== undefined && isBuiltInDialectId(dialectId) ? markerStyleForDialect(dialectId) : "dollar";
-  if (style !== "question") {
-    return { unboundSql: unbound.sql, params: [...business, ...tenantValues], bindings: bound.bindings };
-  }
-
-  const idsByPlaceholder = new Map(unbound.bindings.map((b) => [b.placeholder, b.ids]));
-  const bindingByName = new Map(bound.bindings.map((b) => [b.name, b]));
-  // Same lexer reading as the renderer and the tenant substitution above.
-  const occurrences = scanPlaceholders(ctx.namedSql, ctx.dialectSpec);
-  const occurrenceCount = new Map<string, number>();
-  for (const occ of occurrences) {
-    occurrenceCount.set(occ.name, (occurrenceCount.get(occ.name) ?? 0) + 1);
-  }
-
-  const combined: QueryParamSlot[] = [];
-  const indexMap = new Map<number, number>();
-  const seen = new Map<string, number>();
-  for (const occ of occurrences) {
-    const tenantIds = idsByPlaceholder.get(occ.placeholder);
-    if (tenantIds) {
-      combined.push(...tenantIds);
-      continue;
-    }
-    // The renderer pushes each occurrence's values contiguously, in source order, so
-    // occurrence k of a name owns the k-th equal slice of its indices.
-    const binding = bindingByName.get(occ.name);
-    const total = occurrenceCount.get(occ.name)!;
-    if (!binding || binding.indices.length % total !== 0) return undefined;
-    const per = binding.indices.length / total;
-    const k = seen.get(occ.name) ?? 0;
-    seen.set(occ.name, k + 1);
-    for (const idx of binding.indices.slice(k * per, (k + 1) * per)) {
-      if (idx >= business.length || indexMap.has(idx)) return undefined;
-      indexMap.set(idx, combined.length);
-      combined.push(business[idx]!);
-    }
-  }
-  if (indexMap.size !== business.length || combined.length !== business.length + tenantValues.length) {
-    return undefined;
-  }
-
-  const bindings: QueryParameterBinding[] = bound.bindings.map((b) => ({
-    ...b,
-    indices: b.indices.map((i) => indexMap.get(i)!),
-  }));
-  return { unboundSql: unbound.sql, params: combined, bindings };
-}
-
-/**
- * The spec a rebind checks and renders under. A `"builtin"` template uses its built-in spec
- * unless the host passes one. A `"host"` template, or one stored without `dialectRules`, has
- * rules AskDB can't recover, so it needs the host's spec rather than a guess (ADR 0032).
- */
-function rebindSpec(prepared: PreparedQuery, dialect: BindGuardrails["dialect"]): DialectSpec {
-  if (dialect === undefined) {
-    if (prepared.dialectRules === "builtin") return BUILT_IN_DIALECTS[prepared.dialect];
-    const fix =
-      `Pass guardrails.dialect: the DialectSpec ask() ran with, or the built-in id '${prepared.dialect}' ` +
-      "if it ran with the built-in rules.";
-    const rules = prepared.dialectRules as unknown;
-    throw new QueryParameterError(
-      rules === "host"
-        ? "This template was made by ask() under a host's DialectSpec (dialectRules: 'host'), so " +
-            `bindPreparedQuery() checks and renders it only under that spec. ${fix} A constant from another ` +
-            "copy of @askdb/core counts as a host's spec."
-        : rules === undefined || rules === null
-          ? "This template has no dialectRules: it was stored before AskDB recorded which dialect rules ask() " +
-              `used, so bindPreparedQuery() won't guess. ${fix}`
-          : `This template has dialectRules ${JSON.stringify(rules).replace(/"/g, "'")}, which is neither 'builtin' ` +
-              `nor 'host', so bindPreparedQuery() won't guess. ${fix}`,
-      "DIALECT_SPEC_REQUIRED",
-    );
-  }
-  const spec = typeof dialect === "string" ? (isBuiltInDialectId(dialect) ? BUILT_IN_DIALECTS[dialect] : undefined) : dialect;
-  if (spec?.id !== prepared.dialect) {
-    throw new QueryParameterError(
-      `guardrails.dialect must have the template's dialect id '${prepared.dialect}'.`,
-      "DIALECT_UNSUPPORTED",
-    );
-  }
-  return spec;
 }
