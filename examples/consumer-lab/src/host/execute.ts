@@ -6,14 +6,15 @@
  *
  * | Engine     | Read-only                                  | Timeout                   | Row cap                         |
  * |------------|--------------------------------------------|---------------------------|---------------------------------|
- * | Postgres   | `fixture_reader`, `BEGIN READ ONLY`        | `statement_timeout`       | the checklist's LIMIT wrapper   |
+ * | Postgres   | `fixture_reader`, `BEGIN READ ONLY`        | `statement_timeout`       | cursor, `FETCH cap + 1`         |
  * | MySQL      | `fixture_reader`, `START TRANSACTION READ ONLY` | `max_execution_time` | stop reading after cap + 1 rows |
  * | MariaDB    | `fixture_reader`, `START TRANSACTION READ ONLY` | `max_statement_time` | stop reading after cap + 1 rows |
- * | SQL Server | `fixture_reader` (no read-only transaction exists) | request timeout (cancels) | `SET ROWCOUNT cap + 1` |
+ * | SQL Server | `fixture_reader` (no read-only transaction exists) | request timeout (cancels) | `SET ROWCOUNT cap + 1` in the statement's query |
  * | SQLite     | read-only file handle, `query_only`        | child process killed      | stop reading after cap + 1 rows |
  *
- * The checklist's `SELECT * FROM (…) LIMIT n` wrapper is invalid on SQL Server and loses
- * the statement's ORDER BY on MariaDB (#266), so only Postgres uses it.
+ * Each row cap is the checklist's recipe for that engine ("Row limits"), so the docs and
+ * the lab agree. None rewrites the statement into a derived table: `SELECT * FROM (…) LIMIT n`
+ * is invalid on SQL Server and loses the statement's ORDER BY on MariaDB (#266).
  */
 import { fork } from "node:child_process";
 import mssql from "mssql";
@@ -85,10 +86,9 @@ export async function executeReadOnly(dialect: SupportedDialect, sql: string, op
     timeoutMs: Math.trunc(opts.statementTimeoutMs ?? 5000),
     params: opts.params ? [...opts.params] : [],
   };
-  // A trailing semicolon is allowed in AskDB's output (the NL→SQL prompt's "optional
-  // semicolon"), but it would break a wrapper around the statement.
-  const statement = sql.trim().replace(/;\s*$/, "");
-  const read = await RUNNERS[dialect](statement, o, dialect);
+  // AskDB's output may end with a semicolon (the NL→SQL prompt's "optional semicolon").
+  // Every runner takes it as is, as the guide's row-cap recipes do.
+  const read = await RUNNERS[dialect](sql.trim(), o, dialect);
   return { columns: read.columns, rows: read.rows.slice(0, o.rowCap), truncated: read.rows.length > o.rowCap };
 }
 
@@ -118,8 +118,12 @@ async function runPostgres(sql: string, o: Resolved) {
     await connecting("postgres", () => client.connect());
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${o.timeoutMs}`);
-    const capped = `SELECT * FROM (${sql}) AS askdb_q LIMIT ${o.rowCap + 1}`;
-    const result = await client.query({ text: capped, values: o.params, rowMode: "array" });
+    // A cursor returns the rows in the statement's own order; DECLARE needs the transaction above.
+    // "extended" sends the statement on its own even with no params, so a stacked second statement
+    // fails instead of running (it could end the read-only transaction). @types/pg lacks queryMode.
+    const declare = { text: `DECLARE askdb_rows NO SCROLL CURSOR FOR ${sql}`, values: o.params, queryMode: "extended" };
+    await client.query(declare);
+    const result = await client.query({ text: `FETCH ${o.rowCap + 1} FROM askdb_rows`, rowMode: "array" });
     return { columns: result.fields.map((f) => f.name), rows: result.rows as unknown[][] };
   } catch (error) {
     // 57014 query_canceled: what statement_timeout raises.
@@ -206,11 +210,12 @@ async function runSqlServer(sql: string, o: Resolved) {
     await connecting("sqlserver", () => pool.connect());
     await tx.begin();
     begun = true;
-    // Caps the rows any following statement returns, and keeps its ORDER BY.
-    await new mssql.Request(tx).batch(`SET ROWCOUNT ${o.rowCap + 1}`);
     const request = new mssql.Request(tx);
     o.params.forEach((value, i) => request.input(`p${i}`, value));
-    const result = await request.query(sql);
+    // Caps the statement's rows and keeps its ORDER BY. Inside a parameterized query (run
+    // through sp_executesql), ROWCOUNT ends with the query, so the connection doesn't keep it.
+    request.input("askdb_row_cap", mssql.Int, o.rowCap + 1);
+    const result = await request.query(`SET ROWCOUNT @askdb_row_cap;\n${sql}`);
     const recordset = result.recordset ?? [];
     const meta = (recordset as unknown as { columns?: unknown }).columns;
     const columns = Array.isArray(meta) ? (meta as { name: string }[]).map((c) => c.name) : Object.keys(meta ?? {});

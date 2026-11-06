@@ -70,9 +70,9 @@ function firstLine(error: unknown): string {
  * read-only role lacks, or SQLite's read-only handle. SQL that passed AskDB's read-only check and
  * gets this is a read-only guarantee violation. A denied *read* (a model reading `pg_authid` or
  * `mysql.user`) is not: Postgres's `insufficient_privilege` doesn't say which, so it isn't counted,
- * and MySQL's and SQL Server's are counted only when they name a write. Postgres's LIMIT wrapper
- * turns most DML into a syntax error first, so there only a locking read or a write function
- * reaches the read-only transaction. AskDB documents every locking read as rejected, shared ones
+ * and MySQL's and SQL Server's are counted only when they name a write. Postgres's row-cap cursor
+ * (`DECLARE … CURSOR FOR`) takes only a query, so most DML fails there first, and only a locking
+ * read or a write function reaches the read-only transaction. AskDB documents every locking read as rejected, shared ones
  * (`FOR SHARE`, `FOR KEY SHARE`) included (`concepts/safety-boundaries.mdx`, #319), so one the
  * read-only transaction refuses is a violation too.
  */
