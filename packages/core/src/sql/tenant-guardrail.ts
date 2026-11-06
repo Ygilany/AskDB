@@ -498,13 +498,13 @@ function nameOf(token: SqlToken): string | undefined {
 /**
  * The first Postgres `U&"…"` name in `sql`, as written, when the SQL may be read as Postgres:
  * a dialect on the Postgres lexer (postgres, cockroachdb), a dialect that is no built-in engine,
- * or none. An unknown dialect's `backslashEscapes` is honored, as on the read-only check.
+ * or none, under each reading `postgresReadingProfiles` gives (an unknown dialect that sets
+ * `backslashEscapes` is read both with and without escapes).
  */
 function unicodeEscapedName(
   sql: string,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
 ): string | undefined {
-  // The same readings the string-continuation rule uses (`postgresReadingProfiles`).
   for (const profile of postgresReadingProfiles(dialect)) {
     const name = findUnicodeEscapedIdentifier(lexSql(sql, profile));
     if (name !== undefined) return name;
