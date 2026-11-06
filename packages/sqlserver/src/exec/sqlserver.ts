@@ -10,8 +10,6 @@ import {
 
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
-// `mssql` is CJS with named exports; the runtime namespace and the type-time
-// namespace agree (no `export =` quirk).
 type MssqlModule = typeof import("mssql");
 
 /**
@@ -25,15 +23,17 @@ const mssqlLoader = createOptionalDriverLoader<MssqlModule>({
   missingMessage: missingDriverMessage({ engine: "SQL Server", packageName: "mssql" }),
 });
 
-type MssqlDriverModule = MssqlModule;
-
 /**
  * Resolve and cache the optional `mssql` peer driver, with the same lazy-import
  * + project-root fallback behavior as the catalog runner.
  */
-export async function loadMssqlDriver(options?: DriverLoadOptions): Promise<MssqlDriverModule> {
+export async function loadMssqlDriver(options?: DriverLoadOptions): Promise<MssqlModule> {
   const mod = await mssqlLoader.load(options);
-  return (mod as unknown as { default?: MssqlDriverModule }).default ?? mod;
+  // `mssql` is CJS, and Node's ESM interop finds none of its named exports:
+  // `ConnectionPool` and the rest exist only on `.default`, which the static
+  // type doesn't model. Fall back to the namespace for bundlers that hoist the
+  // named exports.
+  return (mod as unknown as { default?: MssqlModule }).default ?? mod;
 }
 
 export function isMssqlDriverInstalled(options?: DriverLoadOptions): boolean {
@@ -133,39 +133,41 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  * Parse Prisma's SQL Server connection URL,
  * `sqlserver://HOST[:PORT][;key=value…]`.
  *
- * Backward compatible with the parser this replaces for every string it could
- * read: it connects with exactly the same values as before. Segments are split on `;`,
- * a key ends at its first `=` (so `password=a=b` is `a=b`), keys are trimmed
- * and lower-cased, values are trimmed, non-ASCII is fine, a segment without
- * `=` or with an empty key or value is skipped, and a later key replaces an
- * earlier one. The host part ends at its last `:`, and a port that isn't a
- * number is ignored.
+ * These rules are a compatibility contract: connection strings in use depend
+ * on them, so changing one would change what a working string connects with.
  *
- * On top of that it reads Prisma's `{…}` escaping (Prisma's SQL Server docs:
- * "If your credentials contain `: \ = ; / [ ] { }`, wrap values in curly
- * braces", e.g. `password={Pass:Word;}`), but only where the old parser never
+ * Segments are split on `;`, a key ends at its first `=` (so `password=a=b` is
+ * `a=b`), keys are trimmed and lower-cased, values are trimmed, non-ASCII is
+ * fine, a segment without `=` or with an empty key or value is skipped, and a
+ * later key replaces an earlier one. The host part ends at its last `:`, and
+ * the port is read with `parseInt`, so `h:14x3` is port 14 and a port it can't
+ * read (`h:abc`) is ignored.
+ *
+ * On top of those rules it reads Prisma's `{…}` escaping (Prisma's SQL Server
+ * docs: "If your credentials contain `: \ = ; / [ ] { }`, wrap values in curly
+ * braces", e.g. `password={Pass:Word;}`), but only where the rules above can't
  * read the value as written: a value that starts with `{`, has a `;` before its
- * first `}`, and ends at a `}` whose `;`-separated piece holds no `=`. The old
- * parser cut such a value at its first `;` and dropped that last piece (a piece
- * without `=` is skipped), so it never connected with the value the user wrote.
- * The value is everything between the braces, read verbatim, so `;`, `=` and
- * braces inside it are part of it (`{{a;b}}` is `{a;b}`); it ends at the first
- * `}` followed only by blanks and then `;` or the end of the string.
+ * first `}`, and ends at a `}` whose `;`-separated piece holds no `=`. The rules
+ * above would cut such a value at its first `;` and skip that last piece (it
+ * has no `=`), so they never read the value the user wrote. The value is
+ * everything between the braces, read verbatim, so `;`, `=` and braces inside
+ * it are part of it (`{{a;b}}` is `{a;b}`); it ends at the first `}` followed
+ * only by blanks and then `;` or the end of the string.
  *
- * Any other `{` or `}` is a plain character, as before: `password={abc}` is
- * `{abc}`, and an unclosed `{` is part of the value. Braces that close before
- * any `;` never reach into a later value (`password={ab}cd;user={me}` reads
- * `{ab}cd` and `{me}`), and neither does a `{` whose closing `}` ends a later
- * `key=value` piece (`password={Xy7;user={me}` reads `{Xy7` and `{me}`).
- * This is where it differs from Prisma, which reads every `{…}` as an escape
- * (`{abc}` is `abc`) and ends it at the first `}`.
+ * Any other `{` or `}` is a plain character: `password={abc}` is `{abc}`, and
+ * an unclosed `{` is part of the value. Braces that close before any `;` never
+ * reach into a later value (`password={ab}cd;user={me}` reads `{ab}cd` and
+ * `{me}`), and neither does a `{` whose closing `}` ends a later `key=value`
+ * piece (`password={Xy7;user={me}` reads `{Xy7` and `{me}`). This is where it
+ * differs from Prisma, which reads every `{…}` as an escape (`{abc}` is `abc`)
+ * and ends it at the first `}`.
  *
- * Prisma's credential aliases are read (`username` and `uid` for `user`,
- * `pwd` for `password`) only when the canonical key is absent: the old parser
- * dropped them, so such a string had no credentials, and where the canonical
- * key is present it still wins. `initial catalog` is not, because the old parser ignored it and
- * the connection used the login's default database; reading it now would
- * change where a working string connects.
+ * Prisma's credential aliases (`username` and `uid` for `user`, `pwd` for
+ * `password`) are read only when the canonical key is absent, and the
+ * canonical key wins when both are present. Read without the aliases, such a
+ * string has no credentials.
+ * `initial catalog` is not read: a string that sets it connects to the login's
+ * default database, and reading it would change where that string connects.
  */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));
@@ -195,8 +197,7 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
     if (key && value) params[key] = value;
   }
 
-  // The canonical key wins, as it did when the aliases were ignored; an alias
-  // is used only when the canonical key is absent.
+  // The canonical key wins; an alias is used only when the canonical key is absent.
   const pick = (...keys: string[]): string | undefined =>
     keys.map((key) => params[key]).find((value) => value !== undefined);
   const database = params["database"];
@@ -222,10 +223,9 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
  * True when a Prisma-style `sqlserver://` string can be read more than one
  * way, so a display label must not trust its parts: it has a `{` (an escape
  * only around a whole value holding a `;`, while Prisma reads every `{…}` as
- * one), a quote, a segment that
- * isn't `key=value` (an unbraced `;` inside a value), an empty segment before
- * another one, or an unclosed `{`. The connection still uses
- * `parsePrismaSqlServerUrl`'s reading.
+ * one), a quote, a segment that isn't `key=value` (an unbraced `;` inside a
+ * value), an empty segment before another one, or an unclosed `{`. The
+ * connection still uses `parsePrismaSqlServerUrl`'s reading.
  */
 export function isPrismaSqlServerUrlAmbiguous(connectionString: string): boolean {
   const rest = connectionString.slice("sqlserver://".length);
@@ -278,7 +278,7 @@ function splitPrismaSegments(input: string): PrismaPiece[][] {
  * `firstSemi`), or `undefined`: the value must start with `{`, a `;` must come
  * before the first `}` after it, the first `}` followed only by blanks and then
  * `;` or the end of the input closes it, and the `;`-separated piece that `}`
- * ends must hold no `=` (the old parser skipped that piece).
+ * ends must hold no `=` (a piece with `=` is a `key=value` the plain rules read).
  */
 function escapedValue(
   input: string,
@@ -298,7 +298,7 @@ function escapedValue(
   const match = closing.exec(input);
   if (!match) return undefined;
   const close = match.index;
-  // The piece the `}` ends is a `key=value` the old parser read: plain text.
+  // The piece the `}` ends is a `key=value` the plain rules read: plain text.
   if (input.slice(input.lastIndexOf(";", close) + 1, close).includes("=")) return undefined;
   const end = match[0].endsWith(";") ? close + match[0].length - 1 : input.length;
   return { open, close, end };
@@ -331,8 +331,7 @@ async function runSqlServerCatalogQuery(
   params: ReadonlyArray<unknown> | undefined,
   options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await mssqlLoader.load(options);
-  const mssql = (mod as unknown as { default?: MssqlModule }).default ?? mod;
+  const mssql = await loadMssqlDriver(options);
   const pool = new mssql.ConnectionPool(resolveConnectionInput(connectionString) as never);
   await pool.connect();
   try {

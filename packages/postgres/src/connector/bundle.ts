@@ -32,7 +32,6 @@ const SYSTEM_SCHEMA_PATTERNS = [
   "pg_catalog",
   "pg_toast",
   "pg_temp_",
-  "pg_toast_temp_",
 ] as const;
 
 // Matches the live path's SYSTEM_SCHEMA_PREDICATE: these two are exact names only.
@@ -289,7 +288,7 @@ function readTemplateCsv(path: string, tpl: SqlTemplate): Record<string, unknown
     );
   }
   const [header, ...data] = rows;
-  assertHeader(path, tpl, header ?? []);
+  assertHeader(path, tpl, header);
   return data
     .filter((row) => row.some((cell) => cell.length > 0))
     .map((row, rowIndex) => {
@@ -347,7 +346,7 @@ function coerceField(
   if (value === "" || value === "\\N") return null;
 
   if (isNumberField(template, column)) return Number(value);
-  if (isBooleanField(template, column)) return parseBoolean(template, column, value);
+  if (isBooleanField(column)) return parseBoolean(template, column, value);
   return value;
 }
 
@@ -359,7 +358,7 @@ function isNumberField(template: PostgresSqlTemplateName, column: string): boole
   );
 }
 
-function isBooleanField(template: PostgresSqlTemplateName, column: string): boolean {
+function isBooleanField(column: string): boolean {
   return (
     column === "row_level_security" ||
     column === "is_nullable" ||

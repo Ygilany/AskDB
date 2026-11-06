@@ -15,8 +15,7 @@ import {
 } from "./parameter-manifest.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
-import { decide, tenantGuardrailResult, throwIfDenied } from "./guardrail-decide.js";
-import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./guardrails.js";
+import { enforceGuardrails } from "./guardrails.js";
 import type { TenantGuardrailResult } from "./tenant-guardrail.js";
 import {
   buildSelectGuardrailExplanation,
@@ -100,32 +99,18 @@ export async function generateSelectSql(
   deps: GenerateSqlDeps = {},
 ): Promise<GenerateSelectSqlResult> {
   const generated = await runGenerateSelectSql(dialect, question, schema, model, deps);
-  const tenant =
-    deps.tenantPolicy && deps.tenantScope ? { policy: deps.tenantPolicy, scope: deps.tenantScope } : undefined;
-  const { checks, modes } = guardrailPlan("generate", { dialect, schema, tenantPolicy: tenant?.policy });
-  const findings = evaluateGuardrails(
-    {
-      forms: {
-        sql: generated.sql,
-        ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
-      },
-      dialect,
-      schema,
-      ...(tenant ? { tenant } : {}),
+  const { verdict, tenantGuardrail } = enforceGuardrails({
+    path: "generate",
+    forms: {
+      sql: generated.sql,
+      ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
     },
-    checks,
-  );
-  const verdict = decide(findings, modes, "return");
-  logGuardrailVerdict(deps.logger, verdict, { tenantPolicy: tenant?.policy, sensitiveChecked: false });
-  try {
-    throwIfDenied(verdict, modes, "return");
-  } catch (e) {
-    logGenerateFailed(deps.logger, e);
-    throw e;
-  }
-  const out: GenerateSelectSqlResult = { ...generated, verdict };
-  if (tenant) out.tenantGuardrail = tenantGuardrailResult(findings);
-  return out;
+    dialect,
+    schema,
+    ...(deps.tenantPolicy && deps.tenantScope ? { tenant: { policy: deps.tenantPolicy, scope: deps.tenantScope } } : {}),
+    logger: deps.logger,
+  });
+  return { ...generated, verdict, ...(tenantGuardrail ? { tenantGuardrail } : {}) };
 }
 
 /**

@@ -297,15 +297,18 @@ See [the CLI reference](/reference/cli/).
 
 | Package | Depends on |
 | --- | --- |
-| `@askdb/core` | AI SDK core package (`ai`, AI SDK 6 or 7) as a required peer |
+| `@askdb/core` | `ai` (AI SDK 6 or 7) as a required peer |
 | `@askdb/introspect` | `@askdb/core` |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect`; the database driver (`pg`, `mysql2`, `better-sqlite3`, `mssql`) as an optional peer |
 | `@askdb/prisma` | `@askdb/introspect`, Prisma (`@prisma/internals`) |
-| `@askdb/ai` | AI SDK core package (`ai`); `@ai-sdk/*` provider packages as optional peers |
-| `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
-| `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used); `@askdb/prisma` as an optional peer |
-| `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
-| `askdb` (CLI) | All of the above (lazy-imported per command), except `@askdb/prisma`, an optional peer |
+| `@askdb/ai` | `ai` as a peer; the `@ai-sdk/*` provider packages as optional peers |
+| `@askdb/config` | No AskDB package |
+| `@askdb/client` | `@askdb/ai`; `@askdb/core`, `@askdb/config` and `ai` as peers; the `@ai-sdk/*` provider packages as optional peers |
+| `@askdb/enrich` | `@askdb/core` |
+| `@askdb/rag` | `@askdb/core`; `ai`, `@ai-sdk/openai` and `pg` as optional peers |
+| `@askdb/studio` | `@askdb/core`, `@askdb/ai`, `@askdb/config`, `@askdb/enrich`, `@askdb/introspect`, `@askdb/rag`, the four engine packages, `ai` and the four `@ai-sdk/*` provider packages; `@askdb/prisma` and the database drivers as optional peers |
+| `@askdb/http-api` | `@askdb/client`, `@askdb/core`, `@askdb/ai`, `@askdb/config`, `ai` and the four `@ai-sdk/*` provider packages. No engine package: it doesn't connect to your database. |
+| `askdb` (CLI) | Every package above except `@askdb/http-api`, plus `ai` and the four `@ai-sdk/*` provider packages, lazy-imported per command. `@askdb/prisma` is an optional peer. |
 
 Reusable packages stay small and layered. First-party surfaces (CLI, Studio, HTTP API) compose them.
 

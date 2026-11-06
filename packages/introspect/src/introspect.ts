@@ -21,8 +21,8 @@ export type IntrospectResult = IntrospectionResult & {
  * into a Schema v2 directory.
  *
  * The input shape is owned by the integration package — for `@askdb/postgres` it is
- * `PostgresIntrospectionInput` (live or from-export). For a future Prisma integration it
- * would be a `schema.prisma` file path.
+ * `PostgresIntrospectionInput` (live or from-export); for `@askdb/prisma` it is
+ * `PrismaIntrospectionInput` (a `schema.prisma` path, or a directory of `.prisma` files).
  */
 export async function introspect<TInput>(
   input: TInput,

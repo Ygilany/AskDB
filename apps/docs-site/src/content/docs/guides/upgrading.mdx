@@ -21,7 +21,51 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.48
 
-Not published yet: these changes ship with `@askdb/core` 1.0.0-beta.48.
+Released with `@askdb/client` 1.0.0-beta.11, `@askdb/config` 1.0.0-beta.17 and `@askdb/core` 1.0.0-beta.48. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Fix config values of the wrong type, which now fail to load
+
+`@askdb/config` now checks each setting once, when the config loads, and builds every runtime value from your config alone ([#711](https://github.com/Ygilany/AskDB/issues/711)). A value of the wrong type fails to load in every tool that loads the config, with an error that names the file and the config key.
+
+**A boolean setting must be `true` or `false`.** `logging.logStdout` and `modes.omitSensitiveFromPrompt` now fail on any other value, as `studio.execute.enabled`, `studio.execute.useIntrospectionConnection` and `httpApi.allowSchemaOverride` already did. A string here was read wrong before, without a warning:
+
+| In your config | Before | Now |
+| --- | --- | --- |
+| `logging: { logStdout: "true" }` | Loaded, and didn't copy the logs to stdout: only `true` turned it on. | Fails: `AskDB config at /app/askdb.config.ts: logging.logStdout must be a boolean (got "true").` |
+| `modes: { omitSensitiveFromPrompt: "false" }` | Loaded, and silently turned omission **on**: any non-empty string counted as `true`. | Fails: `AskDB config at /app/askdb.config.ts: modes.omitSensitiveFromPrompt must be a boolean (got "false").` |
+
+To read one from the environment, compare the string: `omitSensitiveFromPrompt: env("OMIT_SENSITIVE") === "true"`.
+
+**A string setting must be a string, or `null` for unset**, such as `logging.logFile`, `host.schemaPath` or a `databaseUrl`. Any other value fails, `false` and `0` included. Before, AskDB ignored `false` or `0` for a few keys, such as `logging.logFile` and `dev.mockSql`, and stopped the load with a `TypeError` that named no key for the rest. Write `undefined` or `null` to leave a string setting unset.
+
+Code that reads or installs the runtime config may need a change too:
+
+- **`getAskDbRuntimeConfig().logging.level` is `AskDbLogLevel | undefined`, and `modes.askdbMode` is `AskDbModeV1 | undefined`,** not `string`. Code that builds an `AskDbRuntimeConfig` by hand with a `string`, for example in a test, no longer typechecks. Type the value with the union, or cast one you know is valid:
+
+  ```ts
+  import type { AskDbLogLevel, AskDbModeV1 } from "@askdb/config";
+
+  const level: AskDbLogLevel = "debug"; // was: const level: string = "debug"
+  const modes = { askdbMode: mode as AskDbModeV1, omitSensitiveFromPrompt: false };
+  ```
+
+- **`setAskDbRuntimeForTests()` takes an `AskDbConfig`,** the object you write in `askdb.config.ts`, and installs it as `bootstrapAskDbEnv()` installs a loaded file. Replace `setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) })` with `setAskDbRuntimeForTests(structured)`. If a test put a setting only in `flat`, set it in the config instead, such as `dev: { mockSql }` in place of `ASKDB_MOCK_SQL`.
+- **`createAskDb()` reads the default schema from `host.schemaJson`, then `host.schemaPath`, and nowhere else.** A runtime config built by hand with `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `ai.aiEnv` and no `host` block now throws `SchemaNotConfiguredError`: set `structured.host` instead. A config loaded from a file works as before.
+
+### Run `unboundSql` with the tenant IDs in `params` under `"sql-only"`
+
+`tenantSqlMode` now governs `sql` only ([#731](https://github.com/Ygilany/AskDB/issues/731)). Under `"sql-only"`, `ask()` used to inline the tenant IDs into `unboundSql` and leave them out of `params`, while `bindPreparedQuery()` and `askdb.bind()` bound them. Now `ask()` binds them too: `unboundSql` holds driver markers for the tenant IDs, and `params` holds their values, as in `"sql-params"` mode. `sql` is unchanged, with the IDs inlined as literals.
+
+```diff
+ // ask({ …, tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } }, tenantSqlMode: "sql-only" })
+ result.sql        // SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'   (unchanged)
+-result.unboundSql // SELECT * FROM orders WHERE agency_id = '42' AND status = $1
+-result.params     // ["open"]
++result.unboundSql // SELECT * FROM orders WHERE agency_id = $2 AND status = $1
++result.params     // ["open", "42"]
+```
+
+If you run `unboundSql` with `params`, you need no change: the pair still returns the same rows. If you run `unboundSql` with your own array of business values, switch to `params` before you upgrade, and check every place that runs `unboundSql`. With your array, the values no longer line up with the markers: the tenant markers come first in source order on `?` dialects, so your first business value can land on a tenant marker. The drivers AskDB documents (`pg`, `mysql2`, `mssql`, `better-sqlite3`) refuse the short array, so the query fails. `node:sqlite` doesn't check the number of values it binds: it binds them in order and the rest as `NULL`, which can return another tenant's rows. Always pass `params` as returned. If you need one SQL string with the IDs inlined, use `sql`.
 
 ### Other changes you may notice in beta.48
 
@@ -50,7 +94,7 @@ A `global` tenant scope whose `reason` is missing, isn't a string, or is blank n
 
 On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped identifier such as `U&"set\005fconfig"`, and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_UNICODE_ESCAPED_IDENTIFIER` ([#692](https://github.com/Ygilany/AskDB/issues/692), ADR 0012). Postgres decodes the escapes, which could spell a blocked function, such as `set_config`, a scoped table (`U&"\006Frders"` reads `orders`) or a sensitive column, and the checks didn't decode them.
 
-- **The tenant check refuses the same names,** in any position, with the new `TenantGuardrailRuleCode` `UNICODE_ESCAPED_IDENTIFIER` and `tableId: ""` ([#704](https://github.com/Ygilany/AskDB/issues/704)). It applies whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws or warns.
+- **The tenant check refuses the same names,** in any position, with the new `TenantGuardrailRuleCode` `UNICODE_ESCAPED_IDENTIFIER` and `tableId: ""` ([#704](https://github.com/Ygilany/AskDB/issues/704)). It applies whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws or warns. For a dialect id that is no built-in engine and sets `backslashEscapes: true`, it reads the SQL both with and without backslash escapes and reports a name either reading finds.
 - **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
 - **If you store SQL with a `U&"…"` name and rebind it,** the rebind now rejects it. Write the name in plain double quotes (`"注文数"`) instead.
 
@@ -71,6 +115,16 @@ With a tenant policy and any scope but `global`, the tenant check now refuses a 
 - **A pivot the model writes with `crosstab`** is refused under a tenant policy, because the check can't read the query `crosstab` runs. Re-ask the question: a pivot written with `CASE` or `FILTER` passes, with the tenant predicate in its `WHERE` clause.
 - **A column, alias or parameter named like one of these functions** (`crosstab`, `set_config`) is refused too, because the check matches a listed name anywhere in the SQL. If your schema has such a column, every query that names it is refused under a tenant policy: rename the column, or expose it through a view under another name.
 - **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `UNCHECKABLE_FUNCTION`.
+
+### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
+
+On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
+
+- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
+- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
+- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
 
 ### Other changes you may notice in beta.47
 

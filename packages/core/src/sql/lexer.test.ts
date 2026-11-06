@@ -104,6 +104,23 @@ describe("lexSql", () => {
   });
 });
 
+describe("lexSql — a `:` before an E'…' string (#703)", () => {
+  it("reads `:E'…'` as `:` and an escape string, not a `:E` placeholder", () => {
+    // A JSON_OBJECT key's or an array slice's `:`; the E-string's \\' doesn't end it.
+    expect(kinds(String.raw`'k':E'a\'b'`, POSTGRES_LEXER)).toEqual(["string:'k'", "punct::", String.raw`string:E'a\'b'`]);
+    expect(kinds("[1:e'2']", POSTGRES_LEXER)).toEqual(["punct:[", "number:1", "punct::", "string:e'2'", "punct:]"]);
+  });
+
+  it("keeps placeholders, and `:E` where there are no E-strings", () => {
+    expect(kinds(":tenant_agency_ids :e1 :E", POSTGRES_LEXER)).toEqual([
+      "parameter::tenant_agency_ids",
+      "parameter::e1",
+      "parameter::E",
+    ]);
+    expect(kinds(":E'a'", MYSQL_LEXER)).toEqual(["parameter::E", "string:'a'"]);
+  });
+});
+
 describe("lexerProfileFor", () => {
   it("maps dialect families and honours backslashEscapes", () => {
     expect(lexerProfileFor(POSTGRES_DIALECT)).toBe(POSTGRES_LEXER);
