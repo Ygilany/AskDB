@@ -21,6 +21,7 @@ import {
   type PackageManager,
   type ScaffoldValue,
 } from "@askdb/config/scaffold";
+import { errorMessage } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { showable } from "./error-values.js";
 
@@ -735,8 +736,7 @@ async function finishInit(
   try {
     writeFileSync(configTarget, plan.configSource, { encoding: "utf8" });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    process.stderr.write(`Failed to write config: ${msg}\n`);
+    process.stderr.write(`Failed to write config: ${errorMessage(e)}\n`);
     return 1;
   }
 
