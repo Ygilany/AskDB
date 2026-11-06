@@ -300,7 +300,7 @@ Driver: `pg` (optional peer, `>=8`).
 | `PostgresSqlTemplateName` | `"schemas"`, `"tables"`, `"columns"`, `"primary_keys"`, `"foreign_keys"`, `"unique_constraints"`, `"check_constraints"`, `"indexes"`, `"enums"`, `"sequences"`, `"views"`, `"comments"`. |
 | `createPostgresCatalogQueryRunner(connectionString, options?)` | Runs each catalog query inside a `BEGIN READ ONLY` transaction on a fresh pool. TLS settings come from the connection string. |
 | `loadPgDriver(options?)`, `isPgDriverInstalled(options?)` | Load or check `pg`. |
-| `postgresConnectorProvider` | The adapter. An export bundle (`fromExport`) wins over `url`. Without either, it falls back to `introspection.providerConfig.postgres.databaseUrl`. |
+| `postgresConnectorProvider` | The connector provider. An export bundle (`fromExport`) wins over `url`. Without either, it falls back to `introspection.providerConfig.postgres.databaseUrl`. |
 | `POSTGRES_DIALECT`, `postgresDialect`, `PostgresDialect` | Re-exports from `@askdb/core`: the dialect, a compatibility alias of it, and `DialectSpec` under another name. |
 
 #### Export bundles
@@ -318,7 +318,7 @@ Driver: `mysql2` (optional peer, `>=3`). MariaDB uses the same package and the `
 | `describeMysql(input)` | `DescribeMysqlInput` (`{ runner, filters?, schemaId? }`). Without `filters.schemas`, it reads the connection's database and files its tables under `public`. With `filters.schemas`, each listed database becomes its own namespace, and `excludeSchemas` removes entries from the list. A foreign key into a database that wasn't read gives a `cross_database_fk` warning. When the connection has no database selected and no list is given, it throws an `AskDbError` asking for the database name in the URL. |
 | `createMysqlCatalogQueryRunner(connectionString, options?)` | Takes a `mysql://user:password@host:port/database` URL and opens one connection per query, with no transaction. |
 | `loadMysql2Driver(options?)`, `isMysql2DriverInstalled(options?)` | Load `mysql2/promise`, or check `mysql2`. |
-| `mysqlConnectorProvider` | The adapter, built with `defineLiveConnectorProvider`. Falls back to `introspection.providerConfig.mysql.databaseUrl`. |
+| `mysqlConnectorProvider` | The connector provider, built with `defineLiveConnectorProvider`. Falls back to `introspection.providerConfig.mysql.databaseUrl`. |
 | `MYSQL_DIALECT`, `MARIADB_DIALECT`, `MysqlDialect` | Re-exports from `@askdb/core`. |
 
 ### `@askdb/sqlite`
@@ -330,9 +330,9 @@ Driver: `better-sqlite3` (optional peer, `>=12`).
 | `createSqliteConnector()` | A `Connector<SqliteIntrospectionInput>`, live only. |
 | `SqliteIntrospectionInput` | `{ mode: "live"; runner; filters? }`. |
 | `describeSqlite(input)` | `DescribeSqliteInput` (`{ runner, filters?, schemaId? }`). Files every table under `public`. Only `filters.tables` applies, and `sqlite_` internal objects are skipped. Needs SQLite 3.16 or later. |
-| `createSqliteCatalogQueryRunner(filename, options?)` | Opens the file read-only on each query, and the file must exist: a missing file rejects with `better-sqlite3`'s own error. A relative path resolves against the process's working directory. `:memory:` gives an empty database. |
+| `createSqliteCatalogQueryRunner(filename, options?)` | Opens the file read-only on each query, and the file must exist: a missing file rejects with `better-sqlite3`'s own error. A relative path resolves against the process's working directory. `:memory:` doesn't work: `better-sqlite3` can't open an in-memory database read-only. |
 | `loadBetterSqlite3Driver(options?)`, `isBetterSqlite3DriverInstalled(options?)`, `Bs3Namespace` | Load or check `better-sqlite3`. `Bs3Namespace` is the loaded module, whose `default` is the constructor. |
-| `sqliteConnectorProvider` | The adapter, built with `defineLiveConnectorProvider`. `url` holds the file path, and it falls back to `introspection.providerConfig.sqlite.file`. |
+| `sqliteConnectorProvider` | The connector provider, built with `defineLiveConnectorProvider`. `url` holds the file path, and it falls back to `introspection.providerConfig.sqlite.file`. |
 | `SQLITE_DIALECT`, `SqliteDialect` | Re-exports from `@askdb/core`. |
 
 ### `@askdb/sqlserver`
@@ -347,7 +347,7 @@ Driver: `mssql` (optional peer, `>=12`).
 | `createSqlServerCatalogQueryRunner(connectionString, options?)` | Accepts an ADO.NET string (`Server=host,1433;Database=db;User Id=u;Password=p;`), an `mssql://user:pass@host:1433/database` URL, or a Prisma-style `sqlserver://host:1433;database=db;user=u;password=p`. Opens a pool per query; a connection failure rejects with the driver's own error. AskDB sets no TLS options of its own, so the driver's defaults apply unless the string sets `encrypt` or `trustServerCertificate`. |
 | `resolveConnectionInput(connectionString)` | The conversion the runner applies: a URL becomes an `MssqlConfigInput` (`{ server, port?, database?, user?, password?, options?: { encrypt?, trustServerCertificate? } }`), and an ADO.NET string comes back with spaced keys such as `Trust Server Certificate` normalized. A URL without a host throws an `AskDbError`. |
 | `loadMssqlDriver(options?)`, `isMssqlDriverInstalled(options?)` | Load or check `mssql`. |
-| `sqlServerConnectorProvider` | The adapter, built with `defineLiveConnectorProvider`. Falls back to `introspection.providerConfig.sqlserver.databaseUrl`. |
+| `sqlServerConnectorProvider` | The connector provider, built with `defineLiveConnectorProvider`. Falls back to `introspection.providerConfig.sqlserver.databaseUrl`. |
 | `SQLSERVER_DIALECT`, `SqlServerDialect` | Re-exports from `@askdb/core`. |
 
 [Switch engines](/guides/switch-engines/) covers the SQL Server connection formats and TLS settings in practice.
@@ -363,7 +363,7 @@ A file-only connector: it reads `.prisma` files and never connects to a database
 | `describePrismaSchema(input)` | Reads the schema and returns an `IntrospectionResult` whose `provider` comes from the first datasource (see below). Schema filters apply to each model's `@@schema` (default `public`), and table globs to `<schema>.<table>` with the `@@map` name. |
 | `discoverPrismaSchemaPath(cwd?)` | Looks in `cwd` (default `process.cwd()`) for `prisma/schema.prisma`, then `schema.prisma`, then a `prisma/` directory with `.prisma` files. Throws when there is none. |
 | `PrismaSchemaProvider` | The supported `datasource.provider` values: `"postgresql" \| "mysql" \| "sqlite" \| "sqlserver" \| "cockroachdb"`. |
-| `prismaConnectorProvider` | The adapter. It takes `schemaPath` (an explicit one wins over `introspection.providerConfig.prisma.schemaPath`) and rejects `url` and `fromExport`. |
+| `prismaConnectorProvider` | The connector provider. It takes `schemaPath` (an explicit one wins over `introspection.providerConfig.prisma.schemaPath`) and rejects `url` and `fromExport`. |
 
 | `datasource.provider` | `provider` in the result |
 | --- | --- |
