@@ -1,0 +1,13 @@
+# Quickstart: the four commands, and the loop that improves the SQL.
+# Vertical, so the text stays full size on a phone.
+direction: down
+
+init: "askdb init: scaffold the config"
+introspect: "askdb introspect: read the database"
+studio: "askdb studio: enrich, try questions"
+ask: "askdb ask: checked SQL"
+
+init -> introspect -> studio -> ask
+ask -> studio: "not right yet" {
+  style.stroke-dash: 4
+}

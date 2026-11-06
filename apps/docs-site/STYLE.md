@@ -98,7 +98,17 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 - `Tabs` with a `syncKey` so choices persist site-wide: `pkg` (labels exactly npm / pnpm / yarn), `engine` (database engines), `wiring` (config-driven vs direct model).
 - `Aside` for prerequisites and real hazards — `note`, `tip`, `caution`; keep them rare.
 - `ExampleLink` to point at a runnable example in the repo.
-- Diagrams live in `src/assets/diagrams/` as SVG.
+- Diagrams are written in [D2](https://d2lang.com/) and rendered to inline SVG at build time by `astro-d2`. CI and the Pages deploy need no D2 binary. See "Diagrams" below.
+
+## Diagrams
+
+- Put a diagram's source in `src/assets/diagrams/d2/<name>.d2` and show it with a `d2` fence: ```` ```d2 src="../../assets/diagrams/d2/<name>.d2" ```` (the `src` path is relative to the page). A short diagram can go in the fence body instead.
+- Wrap the fence in `<figure style="--d2-width: 334px">` and set the value to the diagram's natural width: the last number of the outer `viewBox` in the built page. Without it, the diagram stretches to fill the content column. Don't use the fence's `width` or `title` attributes: `astro-d2` ignores both with D2's WebAssembly build.
+- End the figure with a `<figcaption>` that says what the diagram shows. It is the diagram's text alternative. Leave a blank line before and after the fence, or MDX doesn't render it.
+- Keep the natural width at 720 px (the content column) or less. A flow of four or more steps reads better top to bottom (`direction: down`): the text then stays full size on a phone.
+- Use D2's default palette only. `custom.css` maps it to the site's colours, so the diagram follows the light and dark toggle. A hard-coded colour (`style.fill: "#…"`) does not follow it.
+- Use the same words in node labels as on the page: command names, package names and terms from "Terminology".
+- The older diagrams in `src/assets/diagrams/*.svg` are hand-drawn. Redraw one in D2 when its page changes.
 
 ## Code samples
 
