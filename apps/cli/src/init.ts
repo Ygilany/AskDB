@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBuiltinAiProviderSetup, listBuiltinAiProviderSetups } from "@askdb/ai";
-import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "@askdb/config";
+import { ASKDB_AI_PROVIDERS, ASKDB_RAG_STORES, type AskDbAiProviderId, type AskDbRagStore } from "@askdb/config";
 import {
   AskDbScaffoldInputError,
   detectPackageManager,
@@ -26,10 +26,6 @@ import { showable } from "./error-values.js";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type InitAnswers = {
   database: "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
   connectionEnv?: string;
@@ -39,7 +35,7 @@ export type InitAnswers = {
   aiProvider: AskDbAiProviderId;
   aiKeyEnv: string;
   aiModelEnv?: string;
-  ragStore: "file" | "memory" | "pgvector";
+  ragStore: AskDbRagStore;
   pgvectorEnv?: string;
   studioExecute:
     | { enabled: false }
@@ -68,10 +64,6 @@ export type InitPrompter = {
   }): Promise<boolean>;
 };
 
-// ---------------------------------------------------------------------------
-// The scaffold plan
-// ---------------------------------------------------------------------------
-
 /**
  * Selectable AI providers, in `@askdb/ai`'s built-in table order: every id that has an
  * `askdb.config.*` branch (`ASKDB_AI_PROVIDERS`), with the key/model env var names to
@@ -79,7 +71,7 @@ export type InitPrompter = {
  */
 const AI_PROVIDER_SETUPS = listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS);
 /** Every id `--ai-provider` accepts; its help line lists them. */
-export const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
+const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
 
 function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: string } {
   const setup = getBuiltinAiProviderSetup(provider);
@@ -153,10 +145,6 @@ export function planInitScaffold(answers: InitAnswers, specs: InitDepSpecs): Ask
   }
 }
 
-// ---------------------------------------------------------------------------
-// Default answers
-// ---------------------------------------------------------------------------
-
 type InitAnswerOverrides = Partial<{
   database: InitAnswers["database"];
   connectionEnv: string;
@@ -218,10 +206,6 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
   };
 }
 
-// ---------------------------------------------------------------------------
-// Dependency versions
-// ---------------------------------------------------------------------------
-
 const require = createRequire(import.meta.url);
 
 export type InitDepSpecs = { configSpec: string; prismaSpec: string };
@@ -256,10 +240,6 @@ function builtWithVersion(packageName: string, declared: string | undefined): st
   }
 }
 
-// ---------------------------------------------------------------------------
-// Package manager install
-// ---------------------------------------------------------------------------
-
 /** Runs the package manager's add command; `allowBuilds` are the pnpm build approvals it passes. */
 type InstallFn = (pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]) => boolean;
 
@@ -270,10 +250,6 @@ function defaultInstaller(pm: PackageManager, packageDir: string, packages: stri
   return r.status === 0;
 }
 
-// ---------------------------------------------------------------------------
-// Option parsing
-// ---------------------------------------------------------------------------
-
 type InitOptions = {
   force: boolean;
   path: string;
@@ -281,7 +257,6 @@ type InitOptions = {
   yes: boolean;
   interactive: boolean | undefined;
   noInteractive: boolean;
-  // wizard flags
   database?: InitAnswers["database"];
   connectionEnv?: string;
   sqliteFile?: string;
@@ -296,7 +271,6 @@ type InitOptions = {
 };
 
 const VALID_DATABASES = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-const VALID_RAG_STORES = ["file", "memory", "pgvector"] as const;
 
 /** A flag that takes one of `allowed`; the error repeats a bad value only when it's `showable`. */
 function oneOf<T extends string>(flag: string, allowed: readonly T[], value: string): T {
@@ -386,8 +360,8 @@ const INIT_FLAGS: readonly Flag<InitOptions>[] = [
     names: ["--rag-store"],
     value: "<name>",
     group: "RAG options",
-    help: `${VALID_RAG_STORES.join("|")} (default: file)`,
-    apply: (opts, value) => (opts.ragStore = oneOf("--rag-store", VALID_RAG_STORES, value)),
+    help: `${ASKDB_RAG_STORES.join("|")} (default: file)`,
+    apply: (opts, value) => (opts.ragStore = oneOf("--rag-store", ASKDB_RAG_STORES, value)),
   },
   {
     names: ["--pgvector-env"],
@@ -445,16 +419,12 @@ export function initCommand(installer: InstallFn = defaultInstaller): CommandSpe
   };
 }
 
-// ---------------------------------------------------------------------------
-// TTY wizard
-// ---------------------------------------------------------------------------
-
 function validatePath(value: string): true | string {
   if (!value.trim()) return "Cannot be empty.";
   return true;
 }
 
-export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
+export async function runWizard(prompter: InitPrompter): Promise<InitAnswers> {
   const database = await prompter.select<InitAnswers["database"]>({
     message: "Database source",
     choices: [
@@ -595,10 +565,6 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
   };
 }
 
-// ---------------------------------------------------------------------------
-// Real Inquirer prompter
-// ---------------------------------------------------------------------------
-
 async function buildInquirerPrompter(): Promise<InitPrompter> {
   const { select, input, confirm } = await import("@inquirer/prompts");
   return {
@@ -607,10 +573,6 @@ async function buildInquirerPrompter(): Promise<InitPrompter> {
     confirm: (opts) => confirm({ message: opts.message, default: opts.default }),
   };
 }
-
-// ---------------------------------------------------------------------------
-// Next steps printer
-// ---------------------------------------------------------------------------
 
 function printNextSteps(answers: InitAnswers): void {
   const lines = ["\nNext steps:"];
@@ -630,10 +592,6 @@ function printNextSteps(answers: InitAnswers): void {
   process.stdout.write(lines.join("\n") + "\n");
 }
 
-// ---------------------------------------------------------------------------
-// Main entry point
-// ---------------------------------------------------------------------------
-
 export async function runInitCli(argv: readonly string[], installer?: InstallFn): Promise<number> {
   return runCommand(initCommand(installer), argv);
 }
@@ -650,7 +608,6 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
     return 1;
   }
 
-  // Determine interactive mode
   const isTTY = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
   const wantInteractive = opts.interactive === true || (!opts.yes && !opts.noInteractive && isTTY);
 
@@ -672,23 +629,15 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
       return await finishInit(configTarget, answers, planInitScaffold(answers, resolveInitDepSpecs()), opts, installer);
     }
 
-    let wizardResult: InitAnswers | null;
     try {
-      wizardResult = await runWizard(prompter);
+      answers = await runWizard(prompter);
     } catch {
       process.stderr.write("\nSetup cancelled.\n");
       return 1;
     }
 
-    if (!wizardResult) {
-      process.stderr.write("\nSetup cancelled.\n");
-      return 1;
-    }
-
-    answers = wizardResult;
     plan = planInitScaffold(answers, resolveInitDepSpecs());
 
-    // Summary and confirmation
     process.stdout.write("\n--- Summary ---\n");
     process.stdout.write(`  Config path:   ${configTarget}\n`);
     process.stdout.write(`  Database:      ${answers.database}\n`);

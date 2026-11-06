@@ -16,9 +16,9 @@ async function runStudio(argv: readonly string[]): Promise<number> {
   return runStudioBin(argv);
 }
 
-export const COMMANDS: readonly CliCommand[] = [
-  { name: "init", summary: initCommand().summary, run: (argv) => runInitCli(argv) },
-  { name: "introspect", summary: introspectCommand().summary, run: (argv) => runIntrospectCli(argv) },
+const COMMANDS: readonly CliCommand[] = [
+  { name: "init", summary: initCommand().summary, run: runInitCli },
+  { name: "introspect", summary: introspectCommand().summary, run: runIntrospectCli },
   { name: "studio", summary: "Start the local browser UI for Schema v2 enrichment", run: runStudio },
   { name: "enrich", summary: "Open Studio for Schema v2 enrichment (alias of `askdb studio`)", run: runStudio },
   { name: "bundle", summary: bundleCommand().summary, run: runBundleCli },

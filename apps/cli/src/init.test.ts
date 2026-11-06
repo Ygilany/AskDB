@@ -21,10 +21,6 @@ vi.mock("@inquirer/prompts", () => ({
   confirm: vi.fn().mockRejectedValue(new Error("unexpected prompt")),
 }));
 
-// ---------------------------------------------------------------------------
-// Fixture helpers
-// ---------------------------------------------------------------------------
-
 const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0", prismaSpec: "0.2.0" };
 
 /** A prompter that always accepts the default (like pressing Enter), recording every message asked. */
@@ -46,10 +42,6 @@ function createRecordingPrompter(): { prompter: InitPrompter; messages: string[]
   };
   return { prompter, messages };
 }
-
-// ---------------------------------------------------------------------------
-// resolveDefaultInitAnswers
-// ---------------------------------------------------------------------------
 
 describe("resolveDefaultInitAnswers", () => {
   it("non-interactive defaults: postgres/openai/file/no-execute", () => {
@@ -88,18 +80,13 @@ describe("resolveDefaultInitAnswers", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// runWizard — env var NAMES are defaulted, never prompted for
-// ---------------------------------------------------------------------------
-
 describe("runWizard", () => {
   it("never asks the user to name an env var — uses conventional defaults", async () => {
     const { prompter, messages } = createRecordingPrompter();
     const answers = await runWizard(prompter);
-    expect(answers).not.toBeNull();
-    expect(answers!.connectionEnv).toBe("DATABASE_URL");
-    expect(answers!.aiKeyEnv).toBe("OPENAI_API_KEY");
-    expect(answers!.aiModelEnv).toBe("OPENAI_MODEL");
+    expect(answers.connectionEnv).toBe("DATABASE_URL");
+    expect(answers.aiKeyEnv).toBe("OPENAI_API_KEY");
+    expect(answers.aiModelEnv).toBe("OPENAI_MODEL");
     for (const message of messages) {
       expect(message.toLowerCase()).not.toContain("env var");
     }
@@ -127,16 +114,16 @@ describe("runWizard", () => {
       return (opts.default ?? opts.choices[0]!.value) as never;
     }) as InitPrompter["select"];
     const answers = await runWizard(prompter);
-    expect(answers!.ragStore).toBe("pgvector");
-    expect(answers!.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
+    expect(answers.ragStore).toBe("pgvector");
+    expect(answers.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
     expect(messages.some((m) => m.toLowerCase().includes("env var"))).toBe(false);
   });
 
   it("defaults Studio execute to off when the user accepts every default", async () => {
     const { prompter } = createRecordingPrompter();
     const answers = await runWizard(prompter);
-    expect(answers!.studioExecute).toEqual({ enabled: false });
-    expect(planInitScaffold(answers!, FAKE_SPECS).configSource).not.toContain("studio:");
+    expect(answers.studioExecute).toEqual({ enabled: false });
+    expect(planInitScaffold(answers, FAKE_SPECS).configSource).not.toContain("studio:");
   });
 
   it("Prisma + Studio execute still asks which live provider to use (a real decision)", async () => {
@@ -151,15 +138,11 @@ describe("runWizard", () => {
       return true;
     };
     const answers = await runWizard(prompter);
-    expect(answers!.database).toBe("prisma");
-    expect(answers!.studioExecute).toEqual({ enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" });
+    expect(answers.database).toBe("prisma");
+    expect(answers.studioExecute).toEqual({ enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" });
     expect(messages).toContain("Studio execute needs a live database provider. Which one?");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Option parser (indirectly via runInitCli error paths)
-// ---------------------------------------------------------------------------
 
 describe("option parser", () => {
   it("rejects invalid --database value", async () => {
@@ -202,10 +185,6 @@ describe("option parser", () => {
     expect(writes.join("")).toContain("--yes");
   });
 });
-
-// ---------------------------------------------------------------------------
-// runInitCli integration
-// ---------------------------------------------------------------------------
 
 describe("runInitCli --yes --skip-install", () => {
   it("writes config with default Postgres branch", async () => {
@@ -428,10 +407,6 @@ describe("runInitCli --yes --skip-install", () => {
     }
   });
 });
-
-// ---------------------------------------------------------------------------
-// Existing helper tests (preserved)
-// ---------------------------------------------------------------------------
 
 describe("init helpers", () => {
   it("resolveInitDepSpecs returns non-empty specs", () => {
