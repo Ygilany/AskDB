@@ -98,8 +98,8 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | `-y, --yes` | Accept defaults without prompts. |
 | `--interactive` | Force wizard mode; errors if stdin/stdout are not TTYs. |
 | `--no-interactive` | Never prompt; use defaults or flags. |
-| `--path <file>` | Write the config to a custom path. |
-| `--force` | Overwrite an existing file. |
+| `--path <file>` | Write the config to a custom path. Default `askdb.config.ts`. |
+| `-f, --force` | Overwrite an existing file. |
 | `--skip-install` | Only write the file; don't install packages. |
 
 **Database flags**
@@ -149,19 +149,29 @@ askdb introspect \
 
 | Flag | Description |
 | --- | --- |
-| `--url <connstr>` | Live database connection string. Falls back to `introspection.providerConfig.<engine>.databaseUrl` (SQLite: `.file`) in `askdb.config.ts` when `introspection.provider` names the engine. |
-| `--engine <id>` | Engine override: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
+| `--url <connstr>` | Live database connection string (a file path for SQLite). Falls back to `introspection.providerConfig.<engine>.databaseUrl` (SQLite: `.file`) in `askdb.config.ts` when `introspection.provider` names the engine. |
+| `--engine <id>` | Engine: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. Falls back to `introspection.provider`, then `postgres`. |
 | `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
-| `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. |
+| `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. The directory holds a `manifest.json` and the result of each query that [`askdb introspect templates`](#askdb-introspect-templates) prints. |
 | `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. If `schema.json` there is a symbolic link, the command fails instead of writing to the file the link points at; replace the link with a regular file. |
-| `--schema-id <id>` | Identifier embedded in `schema.json`. |
+| `--schema-id <id>` | Identifier embedded in `schema.json`. Default: the name of the `--out` or `--diff` directory without a `.schema` suffix (`./my-app.schema` gives `my-app`), else `introspected`. |
 | `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. |
 | `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
-| `--tables <list>` | Comma-separated tables to include. Repeatable — values accumulate. |
+| `--tables <list>` | Comma-separated table patterns to include, matched against `<schema>.<table>`: `*` matches any run of characters, including dots, and `?` matches one character. Write `public.orders` or `*.orders`, not `orders`, which matches no table. A pattern that matches nothing emits an `askdb.introspect.warning` log event (see `-v`). Repeatable — values accumulate. |
 | `--print` | Print the introspection result without writing. |
 | `--diff <existing>` | Diff against an existing schema artifact. |
 
+Pass exactly one of `--out`, `--print` and `--diff`. With none of them, `--out` falls back to `introspection.outputDir`.
+
 `askdb introspect` also accepts the [shared logging flags](#shared-logging-flags).
+
+#### `askdb introspect templates`
+
+```bash
+askdb introspect templates --engine postgres > askdb-templates.sql
+```
+
+Prints the SQL queries that `--from-export` reads the results of, each headed by a `-- <name>` comment. Run them against the database yourself, for example where `askdb` can't connect, and save each result in the bundle directory. Only `postgres` has templates; another engine exits `1` and names the engines that do. It reads no config, so it works in any directory, and `--engine` defaults to `postgres` rather than `introspection.provider`.
 
 Live introspection requires the matching engine driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`) in the project running `askdb`, or supplied in the same one-off command:
 
@@ -174,15 +184,11 @@ Prisma introspection needs `@askdb/prisma` the same way: in the project running 
 
 ### `askdb enrich`
 
-Alias of [`askdb studio`](#askdb-studio): opens Studio for authoring per-table descriptions, aliases, concepts, and sensitive markers.
+Alias of [`askdb studio`](#askdb-studio): opens Studio for authoring per-table descriptions, aliases, concepts, and sensitive markers. It takes the same flags as `askdb studio`: `-s, --schema`, `--port` and `--host`.
 
 ```bash
-askdb enrich --schema ./my-app.schema
+askdb enrich --schema ./my-app.schema --port 5600
 ```
-
-| Flag | Description |
-| --- | --- |
-| `-s, --schema <path>` | Path to the schema artifact. |
 
 ### `askdb studio`
 
@@ -231,15 +237,28 @@ askdb ask \
 | `--mode <mode>` | Operating mode: `schema_only` or `bounded_results`. It can only tighten config `modes.askdbMode` (default `schema_only`): `--mode bounded_results` runs `schema_only` unless the config sets `bounded_results`. |
 | `--explain` | After the SQL, print a JSON block describing the heuristic guardrails satisfied. |
 | `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
-| `--mock-sql <sql>` | Deterministic output for tests — bypasses the live model call. |
+| `--mock-sql <sql>` | Deterministic output for tests — bypasses the live model call. Overrides `dev.mockSql` in `askdb.config.ts`, which does the same. With neither, `askdb ask` needs an AI key: without one it prints which key is missing and exits `1`. |
 
 `askdb ask` also accepts the [shared logging flags](#shared-logging-flags).
 
+#### Output
+
+Stdout has the checked SQL after a `-- sql --` line. With `--explain`, a `-- explain --` line and the guardrail JSON follow:
+
+```text
+-- sql --
+SELECT customer_id, SUM(total) AS lifetime_value FROM orders GROUP BY customer_id ORDER BY lifetime_value DESC LIMIT 5
+-- explain --
+{ … }
+```
+
+Everything else goes to stderr, so stdout stays parseable: errors, `Note:` lines (a dialect note, or a sensitive-scope note), and the sensitive warning. Execution is not part of the CLI.
+
 If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict`, rely on `bindPreparedQuery()` re-running it on a rebind, or call it directly on cached SQL.
 
-You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.config.ts` when set, otherwise the engine recorded in the schema artifact at introspection time, otherwise `postgres`.
+#### Dialect
 
-`askdb ask` returns the checked SQL on stdout. Execution is not part of the CLI.
+You never pass a SQL dialect. It resolves from `dialect` in `askdb.config.ts` when set, otherwise from the engine the schema artifact records (its `provider`), otherwise `postgres` when the artifact records none. An artifact whose `provider` isn't a built-in dialect id fails with `DialectNotSupportedError` and exit `1`; set `dialect` in the config to use one of the built-in dialects for it. When the config's `dialect` and the artifact's engine differ, the config wins and a `Note:` line on stderr says so.
 
 ## Shared logging flags
 
@@ -329,6 +348,8 @@ askdb rag index ./my-app.schema --store pgvector
 | `--pg-url` / `--pg-table` | pgvector connection and table. The table is provisioned (idempotently) and its width checked before indexing. |
 | `--force` | Re-embed every chunk, even ones the store already holds. |
 
+Stdout is one JSON object: `schemaId`, `chunksTotal`, `chunksIndexed` (embedded in this run), `chunksReused` (already in the store), `sensitiveExcluded` and `sensitiveIncluded`.
+
 Only chunks the store doesn't already hold (same id and content hash) are embedded. `schema.lock.json` records the embedder id, store, and dimensions; a different embedder id (which includes the requested width) re-embeds everything, and a different store gets whatever it doesn't hold. A different width needs a store with no vectors of the old width: a new or recreated pgvector table, or deleted file-store embeddings files.
 
 ### `askdb rag query`
@@ -342,9 +363,11 @@ askdb rag query ./my-app.schema --question "customer signups" -k 8
 | Flag | Description |
 | --- | --- |
 | `--question <text>` | The query text (required). |
-| `-k <n>` | Top-k chunks to return. Default `8`. |
+| `-k, --k <n>` | Top-k chunks to return. Default `8`. |
 | `--types <list>` | Restrict chunk types, comma-separated: `table`, `column`, `cql`, `question`, `concept`, `relationship`, `tenant-policy`. Any other value is an error. |
 | `[schema-dir]`, `--store`, `--embedder`, `--embedder-model`, `--dimensions`, `--file-path`, `--pg-url`, `--pg-table` | As for `index`, and they must match the `index` run. `query` fails if the embedder id or dimensions differ from `schema.lock.json`, or if the lock records no embedder id. The memory store isn't supported: it only lives inside one process. |
+
+Stdout is one JSON object: `question`, `k`, and `results`, best match first. Each result has `id`, `score` (rounded to 6 decimals), `type` (the chunk type), `schemaId`, `refs` (the schema IDs the chunk is about) and `textPreview` (the chunk's first 200 characters).
 
 `index` and `query` accept the [shared logging flags](#shared-logging-flags).
 
@@ -352,13 +375,12 @@ askdb rag query ./my-app.schema --question "customer signups" -k 8
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Success. |
-| `1` | Generic error (config, IO, generation, validation). |
-| `2` | Invalid CLI arguments. |
+| `0` | Success, including `--help` and `--version`. |
+| `1` | Any error: invalid arguments, a missing or broken config, IO, generation, or a guardrail. |
 
-`askdb rag` exits `1` for every error, including invalid arguments.
+Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command, and `askdb bundle` without both of its arguments (`--help` included), print their usage to stderr and exit `1`.
 
-Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/packages/).
+Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging).
 
 An unexpected error, such as a config file that fails to load, prints its message and the hint `Set ASKDB_DEBUG=1 to print the stack trace.` Set `ASKDB_DEBUG` to `1` or `true` to add the stack trace. Any other value, including `0`, leaves it off, and the `DEBUG` variable used by the `debug` package has no effect.
 
