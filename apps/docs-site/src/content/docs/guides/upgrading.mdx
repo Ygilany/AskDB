@@ -23,6 +23,15 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
 
+### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
+
+`bindPreparedQuery()` now refuses a stored template whose parameter declares a `type` or `cardinality` AskDB doesn't support. It throws `QueryParameterError` with the new `QueryParameterRejectionReason` `INVALID_DECLARATION`, naming the parameter, before it reads any value ([#789](https://github.com/Ygilany/AskDB/issues/789)).
+
+- **An unknown `type`**, anything but `string`, `number`, `boolean`, `date` or `datetime`, used to fail as a raw `TypeError`.
+- **An unknown `cardinality` is a behavior change.** A template that declared anything but `one` or `many` used to bind as `one`; it now throws.
+- **A `switch` over every `QueryParameterRejectionReason`** needs a case for the new member.
+- **Fix the template, not the value:** regenerate it with `ask()`. A template `ask()` produced always declares supported values; one edited or built by hand may not.
+
 ### Take credentials out of a model base URL
 
 A model base URL with a username or password, such as `http://user:pass@proxy.example/v1`, now fails before any request ([#787](https://github.com/Ygilany/AskDB/issues/787), ADR 0036). Such a URL never worked: `fetch` refused it with an error that quoted the whole URL, credentials included, in `SqlGenerationError` and the `askdb.pipeline.failed` log.
