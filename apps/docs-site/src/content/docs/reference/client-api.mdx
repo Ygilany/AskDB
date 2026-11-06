@@ -5,7 +5,9 @@ description: "Full API reference for @askdb/client: createAskDb(), AskDbClient, 
 
 <p class="doc-eyebrow">Reference · @askdb/client</p>
 
-<p class="doc-lede"><code>@askdb/client</code> is a config-driven facade over <code>@askdb/core</code>. <code>createAskDb()</code> resolves the schema, model, and dialect from <code>askdb.config.*</code> once; call sites pass only a question. Use it when you want the shortest path from config to SQL. Use <code>@askdb/core</code> directly when you construct the model yourself, serve multiple schemas, or want zero dependency on <code>@askdb/config</code>.</p>
+<p class="doc-lede"><code>@askdb/client</code> is a config-driven facade over <code>@askdb/core</code>. <code>createAskDb()</code> resolves the schema, model, and dialect from <code>askdb.config.*</code>, so call sites pass only a question.</p>
+
+To choose between the client and calling `@askdb/core`'s `ask()` with your own model, see [Bring your own model → Which should I use?](/guides/bring-your-own-model/#which-should-i-use).
 
 ## `createAskDb(options)`
 
