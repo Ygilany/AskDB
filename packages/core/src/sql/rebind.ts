@@ -2,6 +2,7 @@ import { QueryParameterError, TenantScopeError, type GuardrailVerdict } from "..
 import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { TenantScope } from "../schema/v2/tenant-policy.js";
 import {
+  assertParameterDeclarations,
   isTenantPlaceholderName,
   type PreparedQuery,
   type QueryParameterBinding,
@@ -102,8 +103,9 @@ type Values = Record<string, QueryParameterValue | readonly QueryParameterValue[
  *   `bindings` lists the business parameters.
  *
  * Throws `QueryParameterError` without `guardrails` (`MISSING_GUARDRAIL_CONTEXT`), for a
- * `:tenant_*` key in `values` (`TENANT_VALUE_SUPPLIED`), and when the tenant markers can't
- * be aligned with the business params (`TENANT_PARAM_ALIGNMENT`). Throws `TenantScopeError`
+ * `:tenant_*` key in `values` (`TENANT_VALUE_SUPPLIED`), when the tenant markers can't
+ * be aligned with the business params (`TENANT_PARAM_ALIGNMENT`), and for a parameter whose
+ * `type` or `cardinality` AskDB doesn't support (`INVALID_DECLARATION`). Throws `TenantScopeError`
  * for a missing or invalid scope, an unexpanded `subtree` (`SUBTREE_NOT_RESOLVABLE`), a
  * placeholder the scope has no IDs for, including any placeholder under a `global` scope or
  * a schema without a tenant policy (`UNRESOLVED_TENANT_PLACEHOLDER`), and a tenant ID
@@ -121,6 +123,8 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw new QueryParameterError(`Unknown dialect '${prepared.dialect}'.`, "DIALECT_UNSUPPORTED");
   }
+  // Before any value is read: a broken template is reported as one even when a value is missing too.
+  assertParameterDeclarations(prepared.parameters);
   const spec = readPreparedQueryDialect(prepared, guardrails.dialect);
   const { schema } = guardrails;
   const policy = "schemaId" in schema ? schema.tenantPolicy : undefined;

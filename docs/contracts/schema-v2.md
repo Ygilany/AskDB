@@ -9,7 +9,7 @@ This document is the **format contract** for AskDB's describable-schema layer. I
 5. **Sensitive propagation** — how the `sensitive` flag flows from the physical layer (escalated by front-matter) into prompts and chunks.
 6. **Versioning** — how Schema v2 evolves pre-1.0 and how a future v3 would land.
 
-Schema v2 is the **only** schema format AskDB understands once Phase 5 lands. Pre-1.0 we are not maintaining a backward-compat path to any earlier internal format; the `version` literal in `schema.json` stays `2` as a stable marker.
+Schema v2 is the **only** schema format AskDB understands. Pre-1.0 we are not maintaining a backward-compat path to any earlier internal format; the `version` literal in `schema.json` stays `2` as a stable marker.
 
 ---
 
@@ -41,15 +41,11 @@ A v2 directory with `schema.json` and zero `tables/*.md` files is valid — `@as
 
 ### Bundled distribution
 
-For consumers that want a single artifact to ship, `askdb bundle` (Phase 7) compiles a directory into one packed JSON:
-
-```text
-my-app.schema.bundle.json
-```
+For consumers that want a single artifact to ship, `askdb bundle <schema-dir> --out <bundle.json>` compiles a directory into one packed JSON. `--out` is required: there is no default output name.
 
 The bundle preserves all field semantics and IDs; it is read-only — authoring still happens against the directory.
 
-The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`. `@askdb/core` owns the format and exports it as the `BundledSchemaV2` type. It also owns the read: `readSchemaDirectory(dir)` returns a directory's bundle, `loadSchema(directory)` reads the directory through it, and `@askdb/enrich`'s `bundleSchemaDirectory()` returns it ([ADR 0027](../adrs/0027-core-reads-schema-directory-with-exact-names.md)). So the bundler refuses every directory the loader refuses: a wrong-case file name (see [Loading a schema](#loading-a-schema)), or a `tenant-policy.md`, `concepts.md` or `tables/` that exists but can't be read.
+The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`. `@askdb/core` owns the format and exports it as the `BundledSchemaV2` type. It also owns the read: `readSchemaDirectory(dir)` returns a directory's bundle, `loadSchema(directory)` reads the directory through it, and `@askdb/enrich`'s `bundleSchemaDirectory()` returns it ([ADR 0027](../adrs/0027-core-reads-schema-directory-with-exact-names.md)). So the bundler refuses what the directory read refuses: a wrong-case file name (see [Loading a schema](#loading-a-schema)), a `tenant-policy.md`, `concepts.md` or `tables/` that exists but can't be read, or a missing or invalid `schema.json`. The read doesn't parse the markdown files, so the bundler doesn't refuse a malformed front-matter block, an invalid tenant policy, or two table files with the same `id`. Those errors surface when the bundle is loaded.
 
 ```jsonc
 {
@@ -72,7 +68,7 @@ An error in a bundled file names the file and the bundle, for example `tenant-po
 | Path | Loads |
 |---|---|
 | A schema directory | its `schema.json` and every optional file beside it |
-| A bundle (JSON with `bundled: true`) | the files the bundle carries (see [Bundled distribution](#bundled-distribution)) |
+| A bundle (a JSON object with a `bundled` key; the loader checks for the key, not its value) | the files the bundle carries (see [Bundled distribution](#bundled-distribution)) |
 | A file named `schema.json`, in any case (`Schema.json`, `SCHEMA.JSON`) | its directory, exactly as the directory path does; the physical layer is read from the path given |
 | Any other JSON file | its physical layer only, with no describable layer and no tenant policy |
 
@@ -123,7 +119,7 @@ The physical layer is JSON with stable IDs and relationships. The current `versi
 }
 ```
 
-Required table fields are `id`, `name`, `schema`, and `columns`. Required column fields are `id`, `name`, `type`, and `nullable`. `primaryKey`, `sensitive`, and `relationships` are optional at the schema level, though AskDB's generated artifacts currently emit `sensitive: false` for tables and columns so the physical layer remains explicit.
+`tables` has at least one entry: `loadSchema()` rejects an empty array, and introspection refuses to write one ([ADR 0037](../adrs/0037-introspection-refuses-an-empty-artifact.md)). Required table fields are `id`, `name`, `schema`, and `columns`. Required column fields are `id`, `name`, `type`, and `nullable`. `primaryKey`, `sensitive`, and `relationships` are optional at the schema level, though AskDB's generated artifacts currently emit `sensitive: false` for tables and columns so the physical layer remains explicit.
 
 ### Stable ID scheme
 
@@ -148,6 +144,8 @@ Required table fields are `id`, `name`, `schema`, and `columns`. Required column
 ## Describable layer — `tables/<table>.md`
 
 One file per described table. Format: **YAML front-matter** for structured fields, **markdown body** for prose.
+
+**Front-matter is YAML only.** The block opens with `---`, `---yaml` or `---yml` (any case). Any other language tag, such as `---js`, `---json`, `---coffee` or `---toml`, is refused before the block is read: the loader throws `SchemaParseError` with `Malformed <kind> front-matter YAML in <file>: front-matter must be YAML`, where `<kind>` is `table`, `concepts` or `tenant-policy`. The rule covers `tables/*.md`, `concepts.md` and `tenant-policy.md`, for directory and bundle loads alike. It holds since `@askdb/core` 1.0.0-beta.48; before that, a crafted front-matter block could run code in the loading process ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)).
 
 **Filenames.** Files are linked to tables by the front-matter `id`, never by filename, so an existing file keeps its name whatever it is. When `@askdb/enrich` creates a file for a table that has none yet, it picks ([ADR 0013](../adrs/0013-table-filename-scheme.md)):
 
@@ -210,11 +208,11 @@ The front-matter shape is validated by zod (in `@askdb/core`). Cross-reference c
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Intended to equal a `table:*` id from `schema.json`. Unknown table IDs are reported as loader warnings and are ignored by normalization/chunking. |
-| `name` | string | yes | Human-friendly table name (often equals the SQL name). |
+| `name` | string | yes | Human-friendly table name (often equals the SQL name). Validated, but the loader doesn't read it: the normalized table's name comes from `schema.json`. |
 | `schemaId` | string | yes | Intended to match the parent `schema.json`'s `schemaId`. Current zod validation only requires a non-empty string; the loader does not enforce equality. |
-| `primaryEntity` | string | no | Slug of the concept this table primarily represents (e.g. `order`). |
+| `primaryEntity` | string | no | Slug of the concept this table primarily represents (e.g. `order`). Only `@askdb/rag` reads it (table and example-question chunks); the full-schema prompt doesn't show it. |
 | `aliases` | string[] | no | Alternate phrases users say for this table. |
-| `tags` | string[] | no | Free-form labels (`pii`, `revenue`, `internal-only`). |
+| `tags` | string[] | no | Free-form labels (`pii`, `revenue`, `internal-only`). Kept in the file for authors and tools; neither the loader, the prompt nor `@askdb/rag` reads them. |
 | `sensitive` | boolean | no | **Escalate-only.** `true` makes the table (and therefore every column in it) sensitive even when `schema.json` does not. `false` never un-marks a table `schema.json` marks sensitive; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning. See [Sensitive propagation](#sensitive-propagation). |
 | `tracked` | boolean | no | Defaults to `true`. Set `false` to keep the table in the schema artifact but exclude it from full-schema NL→SQL prompt DDL and RAG indexing. |
 | `toIgnore` / `to-ignore` | boolean | no | Authoring aliases for table exclusion. `true` is normalized to `tracked: false`; writers persist the canonical `tracked` field. |
@@ -229,16 +227,16 @@ Front-matter must be **complete enough to validate** — unknown keys are an err
 
 ### Markdown body — recognized H2 sections
 
-Authoring surfaces and the chunker recognize these H2 headings (case-insensitive). Other H2s are stored as freeform body text:
+The parser recognizes these H2 headings by whole-heading match after trimming, ignoring case; if a heading repeats, the last one wins. Other H2s are stored as freeform body text. Only `Common query language` reaches the full-schema NL→SQL prompt; the other three feed only `@askdb/rag`'s chunker, so they reach the model only through retrieval:
 
-| H2 | Used by chunker as | Notes |
+| H2 | Read by | Notes |
 |---|---|---|
-| `Common query language` | high-priority retrieval text (alias-style mappings) | The single highest-value section for grounding NL→SQL. |
-| `Example questions` | retrieval text (intent matching) | Each `- ` item becomes a sub-chunk for question-style retrieval. |
-| `Business context` | retrieval text (background) | Long-form context. |
-| `Column notes` | per-column appendix | Bulleted items keyed by `` `column_name` `` extend the column chunk. |
+| `Common query language` | the NL→SQL prompt (as `--` comments under the table) and the chunker (high-priority retrieval text) | The single highest-value section for grounding NL→SQL. |
+| `Example questions` | `@askdb/rag` only (intent matching) | Each `- ` or `* ` item becomes a sub-chunk for question-style retrieval. |
+| `Business context` | `@askdb/rag` only (background) | Long-form context. |
+| `Column notes` | `@askdb/rag` only (per-column appendix) | Items of the form ``- `column_name`: note`` extend the column chunk; `-` or `—` may replace the colon. They match the column's **name**, not its id. |
 
-The **first paragraph** under `# Table: <name>` is the table's primary description — used in prompts even when no other H2 is present.
+The **first paragraph** of the body, after an optional leading heading (by convention `# Table: <name>`; any line starting with `#` counts), is the table's primary description: its lines are joined with spaces, and it ends at a blank line or the next heading. Both the NL→SQL prompt and the chunker use it, even when no H2 is present.
 
 ---
 
@@ -266,7 +264,7 @@ concepts:
 Brief prose section if humans want to elaborate.
 ```
 
-Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunking-rules)).
+Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunking-rules)). They reach the model only through `@askdb/rag` retrieval: the full-schema NL→SQL prompt doesn't include them. `concepts` is required (it may be empty), the loader doesn't check the `concept:` prefix of an `id` or the IDs in `links`, and the body isn't read. `@askdb/enrich`'s `saveConcepts()` refuses a link that isn't a table or column ID in `schema.json`.
 
 ---
 
@@ -319,6 +317,8 @@ Each table has at most one markdown file. Two `tables/*.md` files whose front-ma
 
 Every loader warning that names a table markdown file (`orphaned_table_id`, `orphaned_column_id`, `sensitivity_downgrade_ignored`, `misplaced_column_id`, `duplicate_column_id`) reports the file actually read as `tables/<filename>` (for a bundle, the `tables` entry key), not a path derived from front-matter `name`, since table markdown filenames are free-form.
 
+The `SchemaV2Warning` type also has `missing_table_md` (`tableId`) and `missing_column_md` (`tableId`, `columnId`). The core loader never emits them: only `@askdb/enrich`'s workspace does, for a physical table with no markdown file and for a column of a described table with no `columns[]` entry, and Studio shows them. The CLI prints no `SchemaV2Warning`s.
+
 Describable-layer fields (description, aliases, enum, `Common query language`) of an effectively sensitive table or column are dropped from the normalized schema exactly as they are for `schema.json`-sensitive ones. Prompt tagging and omission govern only what the model **sees**; SQL that reaches execution by another route (a host SQL cache, a replayed statement, a regenerated artifact) is covered by `validateSensitiveReferences` — see [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md). Behavior matches today's [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) defaults extended for v2:
 
 | Surface | Default behavior for sensitive table/column | Override |
@@ -358,7 +358,7 @@ Re-introspection and on-disk evolution behavior:
 | v2 directory with **only** `schema.json` (no `tables/*.md`) | Loaded with an empty describable layer; every table falls back to physical names + types. |
 | v2 directory with `tables/*.md` for **some** tables | Described tables benefit; un-described tables fall back to physical names + types. |
 | Adding a new column via re-introspection | `schema.json` updates with a fresh column id; matching `tables/<table>.md` is **not** auto-edited; `@askdb/enrich`-backed authoring surfaces show the new column as un-described on next open; chunker emits a chunk for the new column with no description. |
-| Removing a column | `schema.json` drops the column id; `@askdb/enrich` flags any now-orphaned `columns[].id` in front-matter and authoring surfaces can offer a one-shot prune. Chunker drops the dead chunk. |
+| Removing a column | `schema.json` drops the column id; the loader reports any now-orphaned `columns[].id` in front-matter as `orphaned_column_id`, and authoring surfaces can offer a one-shot prune. Chunker drops the dead chunk. |
 | Renaming a column | Treated as remove + add (IDs are not auto-mapped). User confirms in an authoring surface; embeddings re-fire. |
 
 ---

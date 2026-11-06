@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { QueryParameterRejectionReason } from "../errors.js";
 import {
   isValidListContext,
+  QUERY_PARAMETER_CARDINALITIES,
+  QUERY_PARAMETER_TYPES,
   scanPlaceholders,
   type QueryParameterType,
   type QueryParameterValue,
@@ -41,8 +43,8 @@ const NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 const parameterSchema = z.object({
   name: z.string(),
-  type: z.enum(["string", "number", "boolean", "date", "datetime"]),
-  cardinality: z.enum(["one", "many"]),
+  type: z.enum(QUERY_PARAMETER_TYPES),
+  cardinality: z.enum(QUERY_PARAMETER_CARDINALITIES),
   description: z.string().optional(),
   value: z.unknown(),
 });

@@ -40,7 +40,12 @@ npx askdb introspect
 
 With your introspection provider and URL configured in `askdb.config.ts` (and matching env vars in `.env`), no flags are needed. See the [Configuration reference](/reference/config/) for per-engine details.
 
-A renamed table or column gets a new ID, and its enrichment and sensitivity marks don't follow it. See [Stable IDs](/concepts/the-schema-artifact/#stable-ids) for what to move after you re-introspect.
+A renamed table or column gets a new [ID](/reference/schema-artifact-format/#stable-ids), and its enrichment and sensitivity marks don't follow it. After a rename in the database:
+
+1. Run `git diff schema.json` to see which IDs changed. Look for removed `"sensitive": true` lines too: re-introspection drops a mark on an ID that no longer exists, and doesn't warn about it.
+2. In `tables/*.md`, change each `id` and `columns[].id` that names an old ID to the new one.
+3. Put back the sensitivity marks you found in step 1, in `schema.json` or in the front-matter.
+4. Check that nothing still names an old ID. Studio lists [loader warnings](/reference/schema-artifact-format/#loader-warnings) such as `orphaned_table_id` under **Settings → Schema Warnings**. In code, read `loadSchema(dir).warnings`.
 
 ## Bundling for distribution
 
@@ -51,6 +56,8 @@ npx askdb bundle ./my-app.schema --out my-app.schema.bundle.json
 ```
 
 The bundle file is the entire artifact in one JSON. Load it with `loadSchema` the same way as a directory.
+
+`askdb bundle` checks the file names and `schema.json`, but it doesn't parse the markdown files. Load the bundle once before you ship it, for example in a test, so a front-matter error fails there and not in the service.
 
 ## Commit it
 
@@ -64,6 +71,6 @@ Your enrichment doesn't get sent to the model as the markdown you write. When yo
 
 <div class="home-path-grid">
   <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Declaring tenant roots and scoped tables in your artifact.</span></a>
-  <a href="/concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>The on-disk format in detail.</span></a>
+  <a href="/reference/schema-artifact-format/"><strong>Schema artifact format</strong><span>The on-disk format in detail.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>When your enriched artifact is too big for a single prompt.</span></a>
 </div>
