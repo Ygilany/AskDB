@@ -64,6 +64,7 @@ unknownKey: should-fail
 Body.
 `;
     expect(() => parseTableMarkdown(bad, "fake.md")).toThrow(SchemaParseError);
+    expect(() => parseTableMarkdown(bad, "fake.md")).toThrow(/^Invalid table front-matter in fake\.md: /);
   });
 
   it("accepts to-ignore aliases and normalizes them to tracked=false", () => {
@@ -124,6 +125,12 @@ describe("parseConceptsMarkdown", () => {
     expect(parsed.frontmatter.concepts).toHaveLength(2);
     expect(parsed.frontmatter.concepts[0].id).toBe("concept:customer");
     expect(parsed.frontmatter.concepts[0].synonyms).toContain("buyer");
+  });
+
+  it("rejects front-matter with unknown keys, naming the concepts file", () => {
+    const bad = "---\nconcepts: []\nunknownKey: should-fail\n---\nBody.\n";
+    expect(() => parseConceptsMarkdown(bad, "fake.md")).toThrow(SchemaParseError);
+    expect(() => parseConceptsMarkdown(bad, "fake.md")).toThrow(/^Invalid concepts front-matter in fake\.md: /);
   });
 });
 
