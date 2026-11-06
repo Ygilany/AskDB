@@ -1,5 +1,41 @@
 # @askdb/introspect
 
+## 0.3.0-beta.20
+
+### Minor Changes
+
+- f3decbb: Every AskDB write into a schema directory now refuses symbolic links (#617, ADR 0028).
+  
+  - New `@askdb/core` export: `saveSchemaFile(schemaDir, relativePath, content)` writes one file inside a schema directory; `content` is a string (written as UTF-8) or a `Uint8Array`. It refuses a symbolic link at the file or at a directory between it and the schema directory (such as `tables/`), and a `relativePath` with an empty, `.` or `..` part or a NUL byte. It writes a temp file next to the target, with the target's permission bits, group and, where allowed, owner, and renames it over the target, so a hard link is replaced instead of written through and the write is atomic. A read-only target is refused with `EACCES`. The schema directory itself may be a symbolic link. This is the helper `@askdb/enrich`'s saves used since #372, moved to core so every writer shares it.
+  - `@askdb/introspect`: `renderToSchemaV2()`, and so `introspect()` with render options, writes `schema.json` through `saveSchemaFile()`. A `schema.json` that is a symbolic link now throws `Refusing to write schema.json outside the schema directory: "schema.json" is a symbolic link`. Before, the write went to the file the link pointed at.
+  - `askdb`: `askdb introspect --out` fails the same way on a linked `schema.json`.
+  - `@askdb/studio`: Playground history (`playground-history.json`, saved on every generate and on delete) and the `.gitignore` entry Studio adds for it are written through `saveSchemaFile()`, and so is `schema.json` on **Resync schema**. A linked history file fails the request with the refusal message. A linked `.gitignore` is left as it is and the history still saves, as with any `.gitignore` failure before. A dangling link at `.gitignore` no longer creates the file it names. The `.gitignore` update keeps the existing file's bytes, so a non-UTF-8 file name in it survives.
+  - `@askdb/enrich`: `saveTable()`, `saveConcepts()` and `saveTenantPolicy()` call core's `saveSchemaFile()`; the behavior is unchanged. The refusal for a table now reads `Refusing to write tables/orders.md outside the schema directory: …` instead of `Refusing to write table markdown outside tables/: …`. The check on a table filename keeps its message.
+  
+  **Upgrade notes:**
+  
+  - `renderToSchemaV2()`, `introspect()` with render options, and `askdb introspect --out` throw when `schema.json` in the output directory is a symbolic link. Replace the link with a regular file.
+  - Writing `schema.json` now needs write access to the output directory for the temp file, and a hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's mode bits, owner and group, but not an access control list (#659). On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; running again usually works.
+- 76dc3a3: `createConnectorRegistry()` accepts **lazy entries** next to adapters: `{ provider, load }`, where `load()` imports an engine package the host may not have installed and returns its adapter (`LazyConnectorProviderAdapter`, `ConnectorProviderEntry`). `hasProvider()` and `providers()` list a lazy entry without loading it. The new `registry.load(provider)` imports it once (concurrent calls share the import, and a failed one is retried), rejects an adapter whose `provider` differs from the entry's, and resolves an adapter object as it is. Until an entry is loaded, `createConnector`, `resolveConnection`, `getTemplates` and `connectionLabel` throw for it instead of falling back. `connectorPackageMissingMessage({ provider, packageName, allowBuilds })` gives the `askdb` CLI's and Studio's install hint for a missing engine package, with the pnpm build approvals it needs. A registry of adapters only behaves as before. See ADR 0008's 2026-11-05 amendment.
+  
+  The kit's `createOptionalDriverLoader` no longer says to install a driver that is on disk but that Node can't resolve. Node 24 and later can keep a failed package lookup until the process exits, so a long-running host can miss a package installed after its first attempt; the loader now says to restart the process instead.
+
+### Patch Changes
+
+- Updated dependencies [47eef72]
+- Updated dependencies [d82125c]
+- Updated dependencies [b40309d]
+- Updated dependencies [f3decbb]
+- Updated dependencies [7ca1940]
+- Updated dependencies [234eec0]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [cdab7d7]
+- Updated dependencies [ed7f35c]
+- Updated dependencies [4d6a315]
+- Updated dependencies [4d6a315]
+  - @askdb/core@1.0.0-beta.46
+
 ## 0.3.0-beta.19
 
 ### Minor Changes

@@ -1,5 +1,25 @@
 # @askdb/postgres
 
+## 0.2.0-beta.22
+
+### Patch Changes
+
+- Updated dependencies [47eef72]
+- Updated dependencies [d82125c]
+- Updated dependencies [b40309d]
+- Updated dependencies [f3decbb]
+- Updated dependencies [7ca1940]
+- Updated dependencies [76dc3a3]
+- Updated dependencies [234eec0]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [cdab7d7]
+- Updated dependencies [ed7f35c]
+- Updated dependencies [4d6a315]
+- Updated dependencies [4d6a315]
+  - @askdb/core@1.0.0-beta.46
+  - @askdb/introspect@0.3.0-beta.20
+
 ## 0.2.0-beta.21
 
 ### Patch Changes
