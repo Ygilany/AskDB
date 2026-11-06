@@ -16,6 +16,8 @@ import {
   ASKDB_MODES_V1,
   AskDbLogEvent,
   type AskDbModeV1,
+  type BuiltInDialectId,
+  type NormalizedSchemaV2,
   SensitiveReferenceError,
   SqlGenerationError,
   SqlValidationError,
@@ -25,8 +27,6 @@ import {
   createAskDbLogger,
   isBuiltInDialectId,
   loadSchemaFromJson,
-  type BuiltInDialectId,
-  type NormalizedSchemaV2,
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -137,6 +137,11 @@ function causeMessage(e: unknown): string | undefined {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+/** What's wrong with a schema's `provider` for SQL generation, worded once for the log and the 400. */
+function providerProblem(provider: string): string {
+  return provider ? `declares provider '${provider}', which has no AskDB dialect` : "declares no provider";
+}
+
 /**
  * Load a request's `schemaJson` with the dialect it answers for (#809): its own `provider`, never
  * the config's `dialect`, which describes the server's own schema. A schema that names no
@@ -153,12 +158,7 @@ function loadRequestSchema(json: string): { schema: NormalizedSchemaV2; dialect:
   }
   const provider = schema.provider ?? "";
   if (!isBuiltInDialectId(provider)) {
-    throw new DialectNotSupportedError(
-      provider,
-      provider
-        ? `Request schema declares provider '${provider}', which has no AskDB dialect.`
-        : "Request schema declares no provider, so its SQL dialect is unknown.",
-    );
+    throw new DialectNotSupportedError(provider, `The request's schemaJson ${providerProblem(provider)}.`);
   }
   return { schema, dialect: provider };
 }
@@ -237,13 +237,12 @@ export function mapAskError(
   // (DialectNotSupportedError, not ModelNotConfiguredError) names the cause.
   if (isErrorOf(e, DialectNotSupportedError)) {
     if (ctx.schemaFromRequest) {
-      const declared = e.provider ? `declares provider '${e.provider}', which has no AskDB dialect` : "declares no provider";
       return {
         status: 400,
         error: {
           code: "bad_request",
           message:
-            `The request's schemaJson ${declared}. ` +
+            `The request's schemaJson ${providerProblem(e.provider)}. ` +
             `Send a schema whose provider is one of: ${SUPPORTED_DIALECT_IDS.join(", ")}.`,
         },
       };
@@ -430,9 +429,9 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     const abortSignal = AbortSignal.timeout(timeoutMs);
 
     try {
-      const request = requestOverride === undefined ? undefined : loadRequestSchema(requestOverride);
+      const requestSchema = requestOverride === undefined ? undefined : loadRequestSchema(requestOverride);
       const out = await askdb.ask(body.question, {
-        ...(request ? { schema: request.schema, dialect: request.dialect } : {}),
+        ...(requestSchema ? { schema: requestSchema.schema, dialect: requestSchema.dialect } : {}),
         logger,
         ...(requestedMode ? { mode: requestedMode } : {}),
         explain: body.explain === true,
