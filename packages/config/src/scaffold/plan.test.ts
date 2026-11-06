@@ -149,6 +149,21 @@ describe("planAskDbScaffold", () => {
     },
   );
 
+  // The hint is copied into production, so it keeps the certificate check; the note opts a development
+  // server out with the key spelled without spaces, the one form both AskDB and `mssql` read (#803).
+  it("hints the SQL Server URL without TrustServerCertificate, and how to add it for a development server", () => {
+    const plan = planAskDbScaffold(answers({ database: "sqlserver", connectionEnv: "DATABASE_URL" }), VERSIONS);
+    const lines = plan.envExample.split("\n");
+    const hint = lines.findIndex((line) => line.startsWith("# sqlserver"));
+    expect(lines.slice(hint, hint + 3)).toEqual([
+      "# sqlserver connection URL, for introspection. Format: Data Source=<DATABASE_HOST>,<DATABASE_PORT>;" +
+        "Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Authentication=SqlPassword;",
+      "# For a development server with a self-signed certificate (such as the SQL Server Docker image), add " +
+        "TrustServerCertificate=True; to this URL. Leave it out for a server with a CA-signed certificate.",
+      "DATABASE_URL=",
+    ]);
+  });
+
   // `docker run --env-file` reads `NAME=VALUE` per line, everything after `=` as the value, and
   // skips `#` lines. An inline `NAME= # purpose` would set NAME to "# purpose".
   it("writes a .env.example that `--env-file` reads as the listed variables, each one empty", () => {
