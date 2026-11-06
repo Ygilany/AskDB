@@ -8,7 +8,7 @@ import InstallTabs from "../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Visual tour</p>
 
-<p class="doc-lede">Studio is a local web app that reads and writes your schema artifact directly — nothing leaves your machine. Launch it from your project root and your browser opens a seven-view UI for enriching tables, defining concepts, configuring tenant isolation, and testing natural-language questions against the SQL they generate.</p>
+<p class="doc-lede">Studio is a local web app that reads and writes your schema artifact directly on your machine. Its AI features send schema text and your questions to the model provider you configure. Launch it from your project root and your browser opens a seven-view UI for enriching tables, defining concepts, configuring tenant isolation, and testing natural-language questions against the SQL they generate.</p>
 
 ```bash
 npx askdb studio
@@ -141,7 +141,7 @@ The Tenancy view is where you declare tenant isolation for multi-tenant schemas.
 
 ## Studio and your data
 
-Studio binds to `127.0.0.1` by default — it is not reachable from outside your machine without an explicit host override. The model only ever sees schema text (table names, column names, descriptions, concepts): it never reads your actual rows. AI features — enrichment suggestions, tenant policy drafts, NL→SQL generation — are optional and only active when a model API key is configured in your environment. Each of them follows `modes.omitSensitiveFromPrompt`.
+Studio binds to `127.0.0.1` by default — it is not reachable from outside your machine without an explicit host override. The model sees the question and schema text (table names, column names, descriptions, concepts). In the Playground, it also sees your tenant policy and any tenant scope context you enter. It never reads your actual rows. AI features — enrichment suggestions, tenant policy drafts, NL→SQL generation — are optional and only active when a model API key is configured in your environment. Each of them follows `modes.omitSensitiveFromPrompt`.
 
 ## Security model
 
