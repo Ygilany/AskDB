@@ -101,13 +101,17 @@ const table = schemaJson.tables.find((t) => t.id === tableId); // a V2Table
 await suggestEnrichment({ kind: "table-description", table }, { schemaId: schemaJson.schemaId }, model, deps);
 
 // After
-const schema = loadSchema("./my-app.schema"); // from @askdb/core
+import { loadSchema, suggestEnrichment } from "@askdb/core";
+import { buildSuggestionContext, buildSuggestionTarget } from "@askdb/enrich";
+
+const schema = loadSchema("./my-app.schema");
 const source = { scope: "table", tableId, field: "description" } as const;
 await suggestEnrichment(buildSuggestionTarget(schema, source), buildSuggestionContext(schema, tableId), model, deps);
 ```
 
 - **If you build both with `@askdb/enrich`'s `buildSuggestionTarget()` and `buildSuggestionContext()`,** or use Studio, you have nothing to change.
 - **A table you build by hand** must set `sensitive` on the table, and `sensitive` and `primaryKey` on every column. Mark sensitive each column that `tables/*.md` marks, and every column of a sensitive table, as `loadSchema()` does.
+- **`loadSchemaFromJson()` of a bare `schema.json`** typechecks too, but has no front-matter flags. Load the schema directory or a bundle with `loadSchema()` instead.
 
 ## 1.0.0-beta.45
 

@@ -5,9 +5,11 @@ import type { NormalizedV2Table } from "../schema/v2/normalized.js";
  * active prompt and asks `suggestEnrichment` for 1–3 candidates the user
  * reviews and confirms.
  *
- * `table` is a table from `loadSchema()`'s result, as `@askdb/enrich`'s
- * `buildSuggestionTarget` returns, so it carries effective sensitivity (front-matter
- * escalation included), which the enrichment prompt's omission rule reads (ADR 0026).
+ * `table` is a `NormalizedV2Table`, so it has a `sensitive` flag on the table and every
+ * column, which the enrichment prompt's omission rule reads (ADR 0026). The type can't tell
+ * where the flags came from: take the table from `loadSchema()` on the schema directory or a
+ * bundle, as Studio does, so front-matter escalation applies. `loadSchemaFromJson()` of a bare
+ * `schema.json` has no front-matter flags.
  */
 export type EnrichmentTarget =
   | { kind: "table-description"; table: NormalizedV2Table }
