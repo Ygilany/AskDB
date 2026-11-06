@@ -413,7 +413,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     },
     dialect: dialectSpec,
     schema: options.schema,
-    ...(tenant ? { tenant: { policy: tenant.policy, scope: tenant.scope } } : {}),
+    ...(tenant ? { tenant } : {}),
     sensitiveGuardrailMode: options.sensitiveGuardrailMode,
     generatorTenantGuardrail: generated.tenantGuardrail,
     logger,

@@ -138,7 +138,7 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
     forms: { template: prepared.namedSql },
     dialect: spec,
     schema,
-    ...(tenant ? { tenant: { policy: tenant.policy, scope: tenant.scope } } : {}),
+    ...(tenant ? { tenant } : {}),
     sensitiveGuardrailMode: guardrails.sensitiveGuardrailMode,
     acceptWarnings: guardrails.acceptWarnings,
   });
