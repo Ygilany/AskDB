@@ -12,7 +12,7 @@ import type { IntrospectionWarning } from "../types.js";
  * filter looks valid but matches nothing, emit an `ambiguous_filter` warning
  * (see {@link ambiguousFilterWarnings}).
  */
-export function compileGlob(pattern: string): RegExp {
+function compileGlob(pattern: string): RegExp {
   let out = "^";
   for (const ch of pattern) {
     if (ch === "*") out += ".*";

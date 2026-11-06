@@ -60,7 +60,7 @@ export function defineLiveConnectorProvider(spec: LiveConnectorProviderSpec): Co
         runner: spec.createRunner(config.url),
         filters: config.filters,
       };
-      return { mode: "live", input, connector: spec.createConnector() as Connector<unknown> };
+      return { mode: "live", input, connector: spec.createConnector() };
     },
     resolveConnection({ explicit = {}, runtime, surface }) {
       const url = explicit.url ?? runtimeIntrospectionString(runtime, spec.runtimeKey);
