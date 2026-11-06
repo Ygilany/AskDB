@@ -416,11 +416,13 @@ function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["
 
 /**
  * Functions whose reads the tenant check can't see, lowercase (#702). A function belongs here when
- * any role can call it once its engine or extension provides it, and it runs a query passed as a
- * string, returns row data from a table, schema or database named in a string, runs SQL over
- * another connection, or sets a value row-level security may read. Fixed here, not taken from a
- * `DialectSpec`, so a spec that overrides `blockedFunctions` can't shrink it; and the read-only
- * check allows the plain reads among them (`table_to_xml`, `crosstab`).
+ * it is built into Postgres or SQL Server, or comes from an extension that ships with Postgres
+ * (`tablefunc`, `dblink`, `xml2`); any role can call it; and it runs a query passed as a string,
+ * returns row data from a table, schema or database named in a string, runs SQL over another
+ * connection, or sets a value row-level security may read. A function from any other extension
+ * (pgRouting's `pgr_*`, SQLite's loadable `eval()`) or of the host's own isn't here and passes.
+ * Fixed here, not taken from a `DialectSpec`, so a spec that overrides `blockedFunctions` can't
+ * shrink it; and the read-only check allows the plain reads among them (`table_to_xml`, `crosstab`).
  */
 const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
   // Run a query passed as a string. `crosstab*` come from Postgres's `tablefunc` extension.
