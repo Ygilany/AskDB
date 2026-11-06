@@ -20,7 +20,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 | `@askdb/client` | `createAskDb()` — resolves the schema, model, and dialect from config. |
 | `@ai-sdk/openai` | The AI SDK package for the provider your config selects. Swap it for `@ai-sdk/anthropic`, `@ai-sdk/google`, or `@ai-sdk/azure` (the Vercel AI Gateway needs none). AskDB loads it on first use. |
 | `@askdb/config` | Loads `.env` and `askdb.config.ts` at startup. |
-| `@askdb/core`, `ai` | Required peer dependencies of `@askdb/client` (`ai` at AI SDK 7). npm and pnpm add them for you; Yarn doesn't, so list them. |
+| `@askdb/core`, `ai` | With `@askdb/config`, the required peer dependencies of `@askdb/client` (`ai` at AI SDK 7). npm and pnpm add them for you; Yarn doesn't, so list them. |
 | `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
 
 ## Wire it into a handler
@@ -40,20 +40,37 @@ const askdb = createAskDb({
   schema: { path: "./my-app.schema" },             // or set host.schemaPath in config and omit
 });
 
+// Connect as a read-only, least-privilege role, with a statement timeout.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Run under a read-only role for defense in depth.
   statement_timeout: 5000,
   max: 10,
 });
 
+// Runs one generated statement in a read-only transaction.
+async function runReadOnly(sql: string, params: unknown[] = []) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN READ ONLY");
+    // queryMode "extended" sends the statement on its own, so a stacked second statement fails.
+    // A variable, not an inline object: @types/pg doesn't declare queryMode.
+    const query = { text: sql, values: params, queryMode: "extended" };
+    const { rows } = await client.query(query);
+    return rows;
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
+}
+
 export async function askQuestion(question: string) {
-  const { sql } = await askdb.ask(question);
+  const { sql, tenantParams } = await askdb.ask(question);
 
   // Audit hook — log every question and generated SQL.
   console.log({ question, sql });
 
-  const { rows } = await pool.query(sql);
+  // `sql` runs with `tenantParams`, which is empty unless you pass a tenant scope.
+  const rows = await runReadOnly(sql, tenantParams ?? []);
   return { sql, rows };
 }
 ```
@@ -64,7 +81,7 @@ export async function askQuestion(question: string) {
 This example uses `pg` to run the SQL, but the driver is your choice — AskDB never opens a connection. If you already use an ORM or query builder (Prisma, Drizzle, Sequelize, Knex, …), skip `pg` entirely and pass the returned `sql` string to your existing client, e.g. `prisma.$queryRawUnsafe(sql)` or `db.execute(sql)`.
 </Aside>
 
-That's the whole pipeline. AskDB returns checked SQL — your handler logs it, runs it, and returns the result.
+AskDB returns checked SQL; your handler logs it, runs it, and returns the result. `runReadOnly` reads every row the query returns. To cap the rows, use `runCapped` from [Row limits](/guides/run-safely-in-prod/#row-limits), as the [Express example](#complete-example-express-server) below does.
 
 <Aside type="caution">
 AskDB's SQL checks catch common model mistakes but aren't a security boundary. Connect `DATABASE_URL` as a read-only, least-privilege role and keep `statement_timeout` set. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
@@ -84,6 +101,7 @@ AskDB's SQL checks catch common model mistakes but aren't a security boundary. C
 | `preparedQuery` | `PreparedQuery \| undefined` | Definitions + template for `askdb.bind()` / `bindPreparedQuery()` (no values). |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). Use it for cost tracking or quota enforcement. |
 | `explain` | `unknown \| undefined` | When `explain: true` is passed. Heuristic guardrail metadata — which read-only rules fired and why. |
+| `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema marks at least one table or column `sensitive` and `sensitiveGuardrailMode` isn't `"off"`. Whether the SQL references a sensitive table or column. |
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Whether the SQL references tenant-scoped tables correctly. |
 | `tenantParams` | `unknown[] \| undefined` | When a tenant scope binds IDs in `tenantSqlMode: "sql-params"`, the default. Tenant IDs for the markers in `sql` — run `sql` with `tenantParams`, or `unboundSql` with `params`; never concatenate them. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When tenant scope bindings were resolved. Structured binding metadata for audit logging. |
@@ -129,38 +147,41 @@ import { Pool } from "pg";
 const schema = loadSchema("./my-app.schema");
 const model = openai("gpt-4o-mini");
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Connect as a read-only, least-privilege role, with a statement timeout.
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, statement_timeout: 5000 });
 
 export async function askQuestion(question: string) {
-  const { sql } = await ask({
+  const { sql, tenantParams } = await ask({
     question,
     schema,
     dialect: "postgres",
     model,
   });
 
-  const { rows } = await pool.query(sql);
+  // runReadOnly: copy the helper from the first example; it uses this pool.
+  const rows = await runReadOnly(sql, tenantParams ?? []);
   return { sql, rows };
 }
 ```
 
-Every option `ask()` takes — modes, tenant scope, retrieval, sensitive-field handling — is in the [@askdb/core API reference](/reference/core-api/). The same options work as per-call overrides on `askdb.ask(question, overrides)`.
+Every option `ask()` takes — modes, tenant scope, retrieval, sensitive-field handling — is in the [@askdb/core API reference](/reference/core-api/). On `askdb.ask(question, overrides)`, the question is the first argument and the other options are per-call overrides. `schema`, `model` and `dialect` take the client's forms, and `mode` and `omitSensitiveIdentifiersFromNlToSqlPrompt` can only tighten what the config sets. See [`AskOverrides`](/reference/client-api/#overrides--askoverrides).
 
 ## Switching engines
 
-Same `ask()` call, different dialect string. Change `dialect: "postgres"` to `"mysql"`, `"sqlite"`, or `"sqlserver"`. See [Switch engines](/guides/switch-engines/) for the full migration matrix.
+Same `ask()` call, different dialect string. Change `dialect: "postgres"` to `"cockroachdb"`, `"mysql"`, `"mariadb"`, `"sqlite"` or `"sqlserver"`. See [Switch engines](/guides/switch-engines/) for the full migration matrix.
 
 ## Complete example: Express server
 
 The snippet below is a copy-paste-ready Express server. Schema, model, and dialect are fully config-driven — `askdb.config.ts` sets `host.schemaPath` and the AI provider; `server.ts` only handles HTTP.
 
-The `/ask` endpoint accepts an optional `execute` flag: `false` (default) returns just the SQL; `true` also runs it through a `pg.Pool` and returns the rows. This keeps SQL generation and execution decoupled — your service controls both.
+The `/ask` endpoint accepts an optional `execute` flag: `false` (default) returns just the SQL; `true` also runs it and returns the rows. It runs the SQL the way [Run safely in production](/guides/run-safely-in-prod/) describes: under a read-only role with a statement timeout, inside a read-only transaction, and capped at 1,000 rows ([Row limits](/guides/run-safely-in-prod/#row-limits)). Errors go to the server log under a request ID; the caller gets a generic message, because an error can carry provider or schema details.
 
 ```ts
 // server.ts
+import { randomUUID } from "node:crypto";
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import express, { Request, Response } from "express";
+import express, { type Request, type Response } from "express";
 import pg from "pg";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
@@ -173,40 +194,77 @@ const askdb = createAskDb({
   // schema resolved from host.schemaPath in askdb.config.ts
 });
 
+// Connect as a read-only, least-privilege role, with a statement timeout.
 const pool = process.env.DATABASE_URL
-  ? new pg.Pool({ connectionString: process.env.DATABASE_URL })
+  ? new pg.Pool({ connectionString: process.env.DATABASE_URL, statement_timeout: 5000 })
   : null;
 
-app.post("/ask", async (req: Request, res: Response) => {
-  const { question, execute } = req.body as { question?: string; execute?: boolean };
+const ROW_CAP = 1000;
 
-  if (!question || typeof question !== "string" || question.trim() === "") {
-    res.status(400).json({ error: "question is required and must be a non-empty string" });
+// Runs one generated statement in a read-only transaction and reads at most
+// ROW_CAP rows, as in the docs' "Run safely in production" guide (Row limits).
+async function runCapped(db: pg.Pool, sql: string, params: unknown[] = []) {
+  const client = await db.connect();
+  const onError = () => undefined;
+  client.on("error", onError);
+  try {
+    await client.query("BEGIN READ ONLY");
+    // A variable, not an inline object: @types/pg doesn't declare queryMode.
+    const declare = { text: `DECLARE askdb_rows NO SCROLL CURSOR FOR ${sql}`, values: params, queryMode: "extended" };
+    await client.query(declare);
+    const { rows } = await client.query(`FETCH ${ROW_CAP + 1} FROM askdb_rows`);
+    return { rows: rows.slice(0, ROW_CAP), truncated: rows.length > ROW_CAP };
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.off("error", onError);
+    client.release();
+  }
+}
+
+app.post("/ask", async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { question, execute } = (req.body ?? {}) as { question?: unknown; execute?: unknown };
+
+  if (typeof question !== "string" || question.trim() === "") {
+    res.status(400).json({ requestId, error: "question is required and must be a non-empty string" });
     return;
   }
 
-  const shouldExecute = execute === true;
+  if (execute !== undefined && typeof execute !== "boolean") {
+    res.status(400).json({ requestId, error: "execute must be a boolean when provided" });
+    return;
+  }
 
-  if (shouldExecute && !pool) {
-    res.status(500).json({ error: "DATABASE_URL is not configured" });
+  if (execute && !pool) {
+    res.status(500).json({ requestId, error: "DATABASE_URL is not configured" });
+    return;
+  }
+
+  // Errors can carry provider or schema details: log them, and send the caller a generic message.
+  let result;
+  try {
+    result = await askdb.ask(question.trim());
+  } catch (err) {
+    console.error({ requestId, question, err });
+    res.status(500).json({ requestId, error: "Could not generate SQL for this question. See the server log for this requestId." });
+    return;
+  }
+
+  // `sql` runs with `tenantParams` (none here: this server passes no tenant scope).
+  const { sql, tenantParams } = result;
+  console.log({ requestId, question, sql, execute: execute === true });
+
+  if (!execute) {
+    res.json({ requestId, sql });
     return;
   }
 
   try {
-    const { sql } = await askdb.ask(question.trim());
-
-    console.log({ question, sql, execute: shouldExecute });
-
-    if (!shouldExecute) {
-      res.json({ sql });
-      return;
-    }
-
-    const result = await pool!.query(sql);
-    res.json({ sql, rows: result.rows, rowCount: result.rowCount });
+    const { rows, truncated } = await runCapped(pool!, sql, tenantParams ?? []);
+    res.json({ requestId, sql, rows, truncated });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
+    console.error({ requestId, sql, err });
+    res.status(500).json({ requestId, sql, error: "The query failed. See the server log for this requestId." });
   }
 });
 
