@@ -151,6 +151,25 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
         "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id IN ('5', '6')",
     );
     expect(bound.params).toEqual(["open", "1", "5", "6"]);
+
+    // By default each root's IDs become markers in `sql`, in source order across roots.
+    const byDefault = bindPreparedQuery(template(sql), { status_name: "open" }, {
+      schema: strictSchema,
+      tenantScope: {
+        access: {
+          kind: "multi_root",
+          scopes: [
+            { tenantRoot: agencies, ids: ["1"] },
+            { tenantRoot: clients, ids: ["5", "6"] },
+          ],
+        },
+      },
+    });
+    expect(byDefault.sql).toBe(
+      "SELECT n.id FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = $1 AND n.body = 'open' " +
+        "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id IN ($2, $3)",
+    );
+    expect(byDefault.tenantParams).toEqual(["1", "5", "6"]);
   });
 
   it("throws SUBTREE_NOT_RESOLVABLE for an unexpanded subtree scope", () => {
@@ -183,11 +202,13 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
       dialect: "postgres" as const,
       unboundSql: "SELECT count(*) FROM orders WHERE agency_id IN ($2, $3) AND status = $1",
       params: ["open", "7", "8"],
+      paramsSql: "SELECT count(*) FROM orders WHERE agency_id IN ($1, $2) AND status = 'open'",
     },
     {
       dialect: "mysql" as const,
       unboundSql: "SELECT count(*) FROM orders WHERE agency_id IN (?, ?) AND status = ?",
       params: ["7", "8", "open"],
+      paramsSql: "SELECT count(*) FROM orders WHERE agency_id IN (?, ?) AND status = 'open'",
     },
   ])("$dialect: an `agency_id = :tenant_agency_ids` template from ask() rebinds under two IDs", async (c) => {
     const prepared = await askForTemplate({
@@ -206,6 +227,17 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     expect(bound.unboundSql).toBe(c.unboundSql);
     expect(bound.params).toEqual(c.params);
     expect(bound.bindings.map((b) => [b.name, b.indices])).toEqual([["status_name", [c.params.indexOf("open")]]]);
+
+    // By default (sql-params) `sql` numbers its tenant markers from the first slot, and
+    // `tenantParams` follows them; `unboundSql` + `params` don't depend on the mode.
+    const byDefault = bindPreparedQuery(prepared, { status_name: "open" }, {
+      schema: strictSchema,
+      tenantScope: agencyIds("7", "8"),
+    });
+    expect(byDefault.sql).toBe(c.paramsSql);
+    expect(byDefault.tenantParams).toEqual(["7", "8"]);
+    expect(byDefault.unboundSql).toBe(c.unboundSql);
+    expect(byDefault.params).toEqual(c.params);
   });
 
   // ask() used to mask :tenant_* as this token and unmask by regex; a business value equal

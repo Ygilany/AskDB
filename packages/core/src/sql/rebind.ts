@@ -181,14 +181,9 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   if (policy && scope) {
     // `sql` carries business values as inlined literals, so its only markers are tenant
     // markers, numbered from the first slot, as in ask() (ADR 0024).
-    let sql: string;
-    if (tenantMode === "sql-only") {
-      sql = inlineTenantIdsForRebind(bound.sql, policy, scope, spec);
-    } else {
-      const resolved = resolveTenantSql(bound.sql, policy, scope, "sql-params", 1, spec);
-      sql = resolved.sql;
-      if (resolved.mode === "sql-params" && resolved.params.length > 0) tenantParams = resolved.params;
-    }
+    const resolved = resolveTenantSql(bound.sql, policy, scope, tenantMode, 1, spec);
+    const sql = resolved.sql;
+    if (resolved.mode === "sql-params" && resolved.params.length > 0) tenantParams = resolved.params;
     const unbound = bindTenantIntoUnboundSql(bound, {
       namedSql: prepared.namedSql,
       tenantPolicy: policy,
@@ -308,32 +303,6 @@ export function bindTenantIntoUnboundSql(
     indices: b.indices.map((i) => indexMap.get(i)!),
   }));
   return { unboundSql: unbound.sql, params: combined, bindings };
-}
-
-/**
- * In `"sql-only"` mode the rebind's `sql` inlines the tenant IDs. An ID that can't be inlined
- * gets a message that names `bindPreparedQuery()` and points at its own `tenantSqlMode`.
- */
-function inlineTenantIdsForRebind(
-  sql: string,
-  policy: NormalizedTenantPolicy,
-  scope: TenantScope,
-  spec: DialectSpec,
-): string {
-  try {
-    return resolveTenantSql(sql, policy, scope, "sql-only", 1, spec).sql;
-  } catch (error) {
-    if (error instanceof TenantScopeError && error.reason === "UNESCAPABLE_TENANT_ID") {
-      throw new TenantScopeError(
-        "A tenant ID contains a backslash or a character outside printable ASCII, and in tenantSqlMode " +
-          "'sql-only' bindPreparedQuery() inlines tenant IDs into the sql it returns: a server whose string " +
-          "settings or connection charset differ from the dialect's can read such an ID as the end of the " +
-          "literal. Use tenantSqlMode 'sql-params' (the default), which passes it as a driver parameter.",
-        "UNESCAPABLE_TENANT_ID",
-      );
-    }
-    throw error;
-  }
 }
 
 /**

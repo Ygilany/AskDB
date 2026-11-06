@@ -168,13 +168,14 @@ suite("tenant parameter binding executes on SQLite (better-sqlite3)", () => {
       });
       db.prepare("INSERT INTO orders VALUES ('agência', 'paid', 40, 'f')").run();
       try {
-        for (const [id, rows] of [["7", 2], ["agência", 1]] as const) {
+        // Two IDs as well, so the markers' order is checked against a real driver.
+        for (const [ids, rows] of [[["7"], 2], [["agência"], 1], [["7", "agência"], 3]] as const) {
           const bound = bindPreparedQuery(result.preparedQuery!, { status_name: "paid", min_total: 10 }, {
             schema,
-            tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [id] } },
+            tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: [...ids] } },
           });
-          expect(count(bound.sql, bound.tenantParams), id).toBe(rows);
-          expect(count(bound.unboundSql, bound.params), id).toBe(rows);
+          expect(count(bound.sql, bound.tenantParams), ids.join()).toBe(rows);
+          expect(count(bound.unboundSql, bound.params), ids.join()).toBe(rows);
         }
       } finally {
         db.prepare("DELETE FROM orders WHERE agency_id = 'agência'").run();
