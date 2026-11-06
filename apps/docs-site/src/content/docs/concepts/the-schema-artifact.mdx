@@ -45,7 +45,7 @@ You author the artifact as a folder, because a folder of small files diffs and r
 
 The loader reads the artifact's file names exactly, and refuses one in the wrong case, such as `Tenant-Policy.md`, on every OS. On Linux, where file names are case-sensitive, it would otherwise skip that file without a word, and a skipped `tenant-policy.md` turns tenant enforcement off. On macOS and Windows the same folder would load. Refusing everywhere makes the mistake fail on a laptop before it can fail open in production.
 
-A schema directory or bundle is input AskDB parses and puts into the model prompt, so whoever can write it can change what AskDB loads and what the model sees. Before `@askdb/core` 1.0.0-beta.48, a crafted front-matter block in a schema markdown file could also run code in the process that loaded it ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)); since beta.48, schema front-matter must be YAML. Load schema files only from sources you trust.
+A schema directory or bundle (`schema.json`, `tables/*.md`, `concepts.md`, `tenant-policy.md`, or an inline `schemaJson`) is input AskDB parses and puts into the model prompt, so whoever can write it can change what AskDB loads and what the model sees. Before `@askdb/core` 1.0.0-beta.48, a crafted front-matter block in a schema markdown file could also run code in the process that loaded it ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)); since beta.48, schema front-matter must be YAML. Load schema files only from sources you trust.
 
 ## Why a file, not a prompt template
 
