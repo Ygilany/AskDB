@@ -400,6 +400,9 @@ describe("http-api", () => {
       expect(status).toBe(400);
       expect(json.error.code).toBe("bad_request");
       expect(json.error.message).toContain("snowflake");
+      // The caller can't edit the server's config, so the message names the ids to send instead.
+      expect(json.error.message).not.toContain("askdb.config");
+      expect(json.error.message).toContain("postgres, cockroachdb, mysql, mariadb, sqlite, sqlserver");
       expect(json.sql).toBeUndefined();
     } finally {
       await app.close();

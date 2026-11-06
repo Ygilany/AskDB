@@ -124,7 +124,7 @@ Generate SQL from a question.
 | `mode` | no | `modes.askdbMode`, else `schema_only` | One of `schema_only`, `bounded_results`. Also accepted as the `x-askdb-mode` header (the body wins). It can only tighten the server's `modes.askdbMode`: `bounded_results` runs `schema_only` unless the server sets `modes.askdbMode: "bounded_results"`. An unrecognized value returns `400 bad_request`. |
 | `explain` | no | `false` | Return heuristic guardrail metadata. Must be a JSON boolean: any other value, such as `"false"`, returns `400 bad_request`. |
 | `omitSensitiveFromPrompt` | no | `modes.omitSensitiveFromPrompt` | `true` omits sensitive columns from the prompt for this request. It can only tighten the server setting. When the server sets `modes.omitSensitiveFromPrompt: true`, sending `false` has no effect. Must be a JSON boolean: any other value, such as `"true"` or `1`, returns `400 bad_request`. |
-| `schemaJson` | no | — | Inline schema artifact that replaces the server schema for this request. Rejected with `403 schema_override_disabled` unless the server sets `httpApi.allowSchemaOverride: true`. Preferred: set `host.schemaPath` in `askdb.config.ts` server-side. |
+| `schemaJson` | no | — | Inline schema artifact that replaces the server schema for this request. Rejected with `403 schema_override_disabled` unless the server sets `httpApi.allowSchemaOverride: true`. When `askdb.config.ts` sets `dialect`, the server generates SQL for that dialect whatever the artifact's `provider` says. Preferred: set `host.schemaPath` in `askdb.config.ts` server-side. |
 
 An optional field sent as JSON `null` counts as absent, as does an empty or whitespace-only `schemaJson`. A `null` body `mode` falls back to the `x-askdb-mode` header, then to config.
 
@@ -174,7 +174,7 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 | Code | HTTP | When |
 | --- | --- | --- |
 | `not_found` | `404` | Unknown route. |
-| `bad_request` | `400` | Malformed JSON, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, a retired execution field, no schema configured server-side, or a request `schemaJson` whose `provider` has no AskDB dialect. |
+| `bad_request` | `400` | Malformed JSON, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, a retired execution field, no schema configured server-side, or a request `schemaJson` whose `provider` has no AskDB dialect while `dialect` isn't set in `askdb.config.*`. |
 | `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
 | `schema_override_disabled` | `403` | The request sent `schemaJson` but `httpApi.allowSchemaOverride` is not `true`. |
 | `schema_parse_error` | `400` | The schema artifact (inline `schemaJson` or the server's configured schema) couldn't be loaded or parsed. |

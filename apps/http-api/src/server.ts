@@ -19,6 +19,7 @@ import {
   SensitiveReferenceError,
   SqlGenerationError,
   SqlValidationError,
+  SUPPORTED_DIALECT_IDS,
   TenantGuardrailError,
   TenantScopeError,
   createAskDbLogger,
@@ -200,10 +201,22 @@ export function mapAskError(
     };
   }
   // The schema's provider has no AskDB dialect (#720). A schema the request sent is the caller's
-  // to fix; the server's own schema is the operator's, so it reads as a configuration error, and
-  // the log line's errName (DialectNotSupportedError, not ModelNotConfiguredError) names the cause.
+  // to fix, so the message names the ids to send; core's own message points at the server's
+  // config, which the caller can't edit. The server's own schema is the operator's, so it reads
+  // as a configuration error, and the log line's errName (DialectNotSupportedError, not
+  // ModelNotConfiguredError) names the cause.
   if (isErrorOf(e, DialectNotSupportedError)) {
-    if (ctx.schemaFromRequest) return { status: 400, error: { code: "bad_request", message: e.message } };
+    if (ctx.schemaFromRequest) {
+      return {
+        status: 400,
+        error: {
+          code: "bad_request",
+          message:
+            `The request's schemaJson declares provider '${e.provider}', which has no AskDB dialect. ` +
+            `Send a schema whose provider is one of: ${SUPPORTED_DIALECT_IDS.join(", ")}.`,
+        },
+      };
+    }
     return {
       status: 500,
       error: {

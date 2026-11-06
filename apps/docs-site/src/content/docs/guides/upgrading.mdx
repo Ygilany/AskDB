@@ -54,8 +54,8 @@ See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-
 
 `askdb-http` no longer generates PostgreSQL for a schema whose `provider` has no AskDB dialect ([#720](https://github.com/Ygilany/AskDB/issues/720)). It refuses the request instead, as `askdb ask` does. Checking SQL for one engine under another engine's rules can pass SQL the real engine reads differently.
 
-- **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse.
-- **For a `schemaJson` the request sends,** it answers `400 bad_request`. Send a schema whose `provider` is a built-in dialect id.
+- **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse. The server then uses that dialect for every schema it serves, a request `schemaJson` included, whatever its `provider` says.
+- **For a `schemaJson` the request sends,** while `dialect` isn't set, it answers `400 bad_request`. Send a schema whose `provider` is a built-in dialect id.
 
 ### Other changes you may notice in beta.50
 

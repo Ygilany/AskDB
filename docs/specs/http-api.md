@@ -83,13 +83,13 @@ Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 | Code | HTTP | Source |
 | --- | --- | --- |
-| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError`, and `DialectNotSupportedError` for a request `schemaJson` (#720) |
+| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError`, and `DialectNotSupportedError` for a request `schemaJson` (#720). A configured `dialect` wins over every schema's `provider`, a request `schemaJson`'s included, so then neither `DialectNotSupportedError` row applies. |
 | `schema_parse_error` | 400 | `SchemaLoadError` |
 | `sql_validation_error` | 400 | `SqlValidationError` (with `rule`) |
 | `schema_override_disabled` | 403 | `schemaJson` sent while `httpApi.allowSchemaOverride` is off |
 | `not_found` | 404 | Unknown route |
 | `payload_too_large` | 413 | Body over `maxBodyBytes` |
-| `guardrail_violation` | 422 | `SensitiveReferenceError`, `TenantGuardrailError` (with `rule`). Not reachable today: the server never sets `sensitiveGuardrailMode: "strict"` and never passes a `tenantScope`, so a tenant-policy schema throws `TenantScopeError` first (→ `500 internal_error`). |
+| `guardrail_violation` | 422 | `SensitiveReferenceError`, `TenantGuardrailError` (with `rule`). Not reachable today: the server never sets `sensitiveGuardrailMode: "strict"` and never passes a `tenantScope`, so a tenant-policy schema throws `TenantScopeError` first (→ `500 tenant_scope_not_configured`). |
 | `generation_not_configured` | 500 | `ModelNotConfiguredError`, and `DialectNotSupportedError` for the server's configured schema (#720). The server builds its client without `unknownDialect`, so an unknown provider is refused, never generated as PostgreSQL. The log's `errName` tells the two apart. |
 | `tenant_scope_not_configured` | 500 | `TenantScopeError` with reason `MISSING_SCOPE`: a tenant-policy schema, which the server can't scope (#716, #343) |
 | `internal_error` | 500 | Anything else, including a `TenantScopeError` with any other reason. The message is generic. |
