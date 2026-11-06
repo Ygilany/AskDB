@@ -6,13 +6,30 @@ import type {
   AskDbRagStore,
   AskDbStudioExecuteProvider,
 } from "./constants.js";
-import type { AskDbConfig } from "./types.js";
+import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
 
-/** One resolved `ai` section: its provider, the connection it uses, its model, and an env view built from that connection only. */
+/**
+ * The provider connection an `ai` section uses: its name in `ai.providerConfig.<provider>` and its
+ * settings, trimmed. A setting the connection doesn't set is absent.
+ */
+export type AskDbRuntimeAiConnection = {
+  /** The connection's `name`, `"default"` when unnamed. */
+  name: string;
+  apiKey?: string;
+  /** The connection's `secondaryApiKey` (Azure and Foundry). */
+  apiKeySecondary?: string;
+  baseUrl?: string;
+  resourceName?: string;
+  apiVersion?: string;
+};
+
+/**
+ * One resolved `ai` section: its provider, the connection it uses, its model, and an env view built
+ * from that connection only. Assignable to `@askdb/ai`'s `AiLanguageSection` / `AiEmbeddingSection`.
+ */
 export type AskDbRuntimeAiSection = {
   provider: string;
-  /** Connection name within `ai.providerConfig.<provider>`. */
-  connection: string;
+  connection: AskDbRuntimeAiConnection;
   model: string | undefined;
   /** `AiEnv` for `@askdb/ai` registry calls, built from this section's connection only. */
   env: Record<string, string | undefined>;
@@ -29,7 +46,11 @@ export type AskDbRuntimeAiConfig = {
    */
   aiEnv: Record<string, string | undefined>;
   /** `ai.language`: the language model. `model` is undefined only for a custom provider with no model set. */
-  language: AskDbRuntimeAiSection & { modelFamily: string | undefined };
+  language: AskDbRuntimeAiSection & {
+    modelFamily: string | undefined;
+    /** `ai.language.reasoning`, as written; unset leaves the effort to the provider/model. */
+    reasoning: AskDbAiReasoningConfig | undefined;
+  };
   /**
    * `ai.embedding`: the embedding model. Undefined unless `rag.embedder` is `"ai"`. Pass `env`
    * to `resolveEmbeddingConfig` / `createEmbeddingModelFromEnv`, and `{ dimensions }` as the

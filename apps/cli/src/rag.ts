@@ -350,7 +350,7 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
   if (!aiConfig) {
     throw new Error(
       `askdb rag: embeddings need an API key on the ai.embedding connection ` +
-        `("${embedding.connection}" in ai.providerConfig.${embedding.provider}). ` +
+        `("${embedding.connection.name}" in ai.providerConfig.${embedding.provider}). ` +
         "Set it in askdb.config.*, or pass --embedder mock.",
     );
   }

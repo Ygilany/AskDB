@@ -1325,7 +1325,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     kind: "ai-sdk",
     provider,
     configuredProvider: embedding.provider,
-    connection: embedding.connection,
+    connection: embedding.connection.name,
     embedderId: aiSdkEmbedderId({ provider, model, dimensions }),
     dimensions,
     configured: Boolean(aiConfig),

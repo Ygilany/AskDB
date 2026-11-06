@@ -55,3 +55,31 @@ export function resolveReasoningEffort(
   if (global && isReasoningEffort(global)) return global;
   return undefined;
 }
+
+/** `ai.language.reasoning`: a default effort, and one per call purpose that overrides it. */
+export type AiReasoningSection = {
+  effort?: ReasoningEffort;
+  nlToSql?: ReasoningEffort;
+  enrichment?: ReasoningEffort;
+};
+
+/**
+ * Resolves the effective reasoning effort for a call site from a typed section, such as
+ * `getAskDbRuntimeConfig().ai.language.reasoning` from `@askdb/config`: the section counterpart of
+ * {@link resolveReasoningEffort}.
+ *
+ * Precedence: explicit `override` > the call purpose's own effort (`reasoning.nlToSql` or
+ * `reasoning.enrichment`) > `reasoning.effort` > `undefined` (provider/model default). A value
+ * that isn't a {@link ReasoningEffort} is skipped.
+ */
+export function resolveReasoningEffortFromSection(
+  reasoning: AiReasoningSection | undefined,
+  usage: AiCallPurpose,
+  override?: ReasoningEffort,
+): ReasoningEffort | undefined {
+  if (override) return override;
+  for (const value of [reasoning?.[usage], reasoning?.effort]) {
+    if (value !== undefined && isReasoningEffort(value)) return value;
+  }
+  return undefined;
+}

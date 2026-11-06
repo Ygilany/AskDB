@@ -785,7 +785,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
             storeConfig: { memory: {} },
           }),
         );
-        expect(rt.ai.embedding).toMatchObject({ provider: "openai", connection, model: "text-embedding-3-small" });
+        expect(rt.ai.embedding).toMatchObject({ provider: "openai", connection: { name: connection }, model: "text-embedding-3-small" });
         expect(rt.ai.embedding?.env.OPENAI_API_KEY).toBe(ragKey);
         expect(rt.ai.embedding?.env.OPENAI_BASE_URL).toBe(baseUrl);
         expect(rt.rag.embedder.apiKey).toBe(ragKey);
@@ -816,7 +816,13 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         ASKDB_AI_AZURE_RESOURCE_NAME: "westus-embed",
         ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-small",
       });
-      expect(rt.ai.language).toMatchObject({ provider: "anthropic", connection: "default", model: "claude-sonnet-4-6" });
+      expect(rt.ai.embedding?.connection).toEqual({ name: "westus", apiKey: "embed-key", resourceName: "westus-embed" });
+      expect(rt.ai.language).toMatchObject({
+        provider: "anthropic",
+        connection: { name: "default", apiKey: "ant-key" },
+        model: "claude-sonnet-4-6",
+        reasoning: { effort: "low", nlToSql: "medium" },
+      });
       expect(rt.ai.language.env.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBe("medium");
       expect(rt.ai.embedding?.dimensions).toBe(1536);
       expect(rt.deprecations).toEqual([]);

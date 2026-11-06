@@ -1,12 +1,13 @@
+import type { AskDbRuntimeAiConnection } from "./runtime-types.js";
 import type { AskDbAiReasoningConfig } from "./types.js";
 
-/** Every setting a built-in provider connection can carry, besides its name. */
+/** Every setting a built-in provider connection can carry, besides its name, as `askdb.config` spells it. */
 export const CONNECTION_FIELDS = ["apiKey", "secondaryApiKey", "resourceName", "baseUrl", "apiVersion"] as const;
 
 export type ConnectionSettings = { [Field in (typeof CONNECTION_FIELDS)[number]]?: string };
 
 /** A provider connection after resolution: its settings, trimmed, plus its name. */
-export type NormalizedAiConnection = ConnectionSettings & { name: string };
+export type NormalizedAiConnection = AskDbRuntimeAiConnection;
 
 /** Writes `value`, trimmed, under `key` unless it's unset or blank. */
 export function setEnvKey(out: Record<string, string>, key: string, value: string | undefined): void {
@@ -39,7 +40,7 @@ function applyAiConnection(out: Record<string, string>, provider: string, connec
     case "foundry":
       // `@askdb/core` treats `foundry` like Azure for env parsing.
       setEnvKey(out, "AZURE_OPENAI_API_KEY", connection.apiKey);
-      setEnvKey(out, "AZURE_OPENAI_API_KEY_SECONDARY", connection.secondaryApiKey);
+      setEnvKey(out, "AZURE_OPENAI_API_KEY_SECONDARY", connection.apiKeySecondary);
       setEnvKey(out, "ASKDB_AI_AZURE_RESOURCE_NAME", connection.resourceName);
       setEnvKey(out, "AZURE_OPENAI_BASE_URL", connection.baseUrl);
       setEnvKey(out, "AZURE_OPENAI_API_VERSION", connection.apiVersion);

@@ -161,11 +161,20 @@ function defaultLanguageModel(provider: string): string | undefined {
   }
 }
 
+/** The runtime name of each authored connection field: `secondaryApiKey` is `apiKeySecondary`, as `@askdb/ai` spells it. */
+const RUNTIME_CONNECTION_FIELD = {
+  apiKey: "apiKey",
+  secondaryApiKey: "apiKeySecondary",
+  resourceName: "resourceName",
+  baseUrl: "baseUrl",
+  apiVersion: "apiVersion",
+} as const satisfies Record<(typeof CONNECTION_FIELDS)[number], keyof NormalizedAiConnection>;
+
 function toConnection(raw: RawConnection, name: string): NormalizedAiConnection {
   const connection: NormalizedAiConnection = { name };
   for (const field of CONNECTION_FIELDS) {
     const value = nonBlank(raw[field]);
-    if (value !== undefined) connection[field] = value;
+    if (value !== undefined) connection[RUNTIME_CONNECTION_FIELD[field]] = value;
   }
   return connection;
 }
@@ -862,15 +871,16 @@ function resolveAi(ai: NormalizedAskDbConfig["ai"], flat: FlatMap): ResolvedAskD
   return {
     language: {
       provider: language.provider,
-      connection: language.connection.name,
+      connection: { ...language.connection },
       model: language.model,
       env: languageEnv,
       modelFamily: language.modelFamily,
+      reasoning: language.reasoning,
     },
     embedding: embedding
       ? {
           provider: embedding.provider,
-          connection: embedding.connection.name,
+          connection: { ...embedding.connection },
           model: embedding.model,
           env: aiEmbeddingEnv(embedding),
           dimensions: embedding.dimensions,

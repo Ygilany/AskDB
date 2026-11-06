@@ -1,5 +1,11 @@
 import { withEmbeddingProviderOptions } from "../embedding.js";
-import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import {
+  nonBlank,
+  resolveBaseConfig,
+  resolveBaseConfigFromSection,
+  type AiConfig,
+  type AiProviderAdapter,
+} from "../provider.js";
 import { baseURLOption } from "../base-url.js";
 import { openaiReasoningEffort } from "./openai-reasoning.js";
 import { rethrowMissingPeer } from "./optional-peer.js";
@@ -30,35 +36,18 @@ export const azureProvider: AiProviderAdapter = {
   aliases: ALIASES,
   configHint: CONFIG_HINT,
   resolveConfig(env, options) {
-    const config = resolveBaseConfig("azure", env, ENV_SPEC, options);
-    if (!config) return undefined;
-
-    const resourceName = env.ASKDB_AI_AZURE_RESOURCE_NAME || env.AZURE_RESOURCE_NAME;
-    const apiVersion =
-      env.ASKDB_AI_AZURE_API_VERSION || env.AZURE_OPENAI_API_VERSION || env.AZURE_API_VERSION;
-    const modelFamily = env.ASKDB_AI_AZURE_MODEL_FAMILY;
-
-    if (!config.baseURL && !resourceName) {
-      throw new Error(
-        "Azure provider requires a resource name or endpoint URL. In askdb.config.*, set " +
-          "ai.providerConfig.azure.resourceName (e.g. 'my-foundry' for " +
-          "https://my-foundry.openai.azure.com) or ai.providerConfig.azure.baseUrl " +
-          "(use providerConfig.foundry.* when ai.provider is \"foundry\"). " +
-          "Without a config file, set the AZURE_RESOURCE_NAME or AZURE_OPENAI_BASE_URL " +
-          "environment variable instead.",
-      );
-    }
-
-    const providerOptions = {
-      ...(resourceName ? { resourceName } : {}),
-      ...(apiVersion ? { apiVersion } : {}),
-      ...(modelFamily ? { modelFamily } : {}),
-    };
-
-    return {
-      ...config,
-      ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
-    };
+    return withAzureSettings(resolveBaseConfig("azure", env, ENV_SPEC, options), {
+      resourceName: env.ASKDB_AI_AZURE_RESOURCE_NAME || env.AZURE_RESOURCE_NAME,
+      apiVersion: env.ASKDB_AI_AZURE_API_VERSION || env.AZURE_OPENAI_API_VERSION || env.AZURE_API_VERSION,
+      modelFamily: env.ASKDB_AI_AZURE_MODEL_FAMILY,
+    });
+  },
+  resolveConfigFromSection(section, options) {
+    return withAzureSettings(resolveBaseConfigFromSection("azure", section, ENV_SPEC, options), {
+      resourceName: nonBlank(section.connection.resourceName),
+      apiVersion: nonBlank(section.connection.apiVersion),
+      modelFamily: nonBlank(section.modelFamily),
+    });
   },
   async createLanguageModel(config) {
     const azure = await createProvider(config);
@@ -100,6 +89,38 @@ export const azureProvider: AiProviderAdapter = {
     return { openai: { reasoningEffort: effort, forceReasoning: true } };
   },
 };
+
+type AzureSettings = { resourceName?: string; apiVersion?: string; modelFamily?: string };
+
+/**
+ * Adds the Azure settings to a resolved config as `providerOptions`, from env or a section alike.
+ * A config needs a resource name or a base URL.
+ */
+function withAzureSettings(config: AiConfig | undefined, settings: AzureSettings): AiConfig | undefined {
+  if (!config) return undefined;
+  const { resourceName, apiVersion, modelFamily } = settings;
+  if (!config.baseURL && !resourceName) {
+    throw new Error(
+      "Azure provider requires a resource name or endpoint URL. In askdb.config.*, set " +
+        "ai.providerConfig.azure.resourceName (e.g. 'my-foundry' for " +
+        "https://my-foundry.openai.azure.com) or ai.providerConfig.azure.baseUrl " +
+        "(use providerConfig.foundry.* when ai.provider is \"foundry\"). " +
+        "Without a config file, set the AZURE_RESOURCE_NAME or AZURE_OPENAI_BASE_URL " +
+        "environment variable instead.",
+    );
+  }
+
+  const providerOptions = {
+    ...(resourceName ? { resourceName } : {}),
+    ...(apiVersion ? { apiVersion } : {}),
+    ...(modelFamily ? { modelFamily } : {}),
+  };
+
+  return {
+    ...config,
+    ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
+  };
+}
 
 async function createProvider(config: AiConfig) {
   const baseURL = baseURLOption(config);

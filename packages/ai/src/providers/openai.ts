@@ -1,5 +1,5 @@
 import { withEmbeddingProviderOptions } from "../embedding.js";
-import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { resolveBaseConfig, resolveBaseConfigFromSection, type AiConfig, type AiProviderAdapter } from "../provider.js";
 import { baseURLOption } from "../base-url.js";
 import { openaiReasoningEffort } from "./openai-reasoning.js";
 import { rethrowMissingPeer } from "./optional-peer.js";
@@ -36,6 +36,9 @@ export const openaiProvider: AiProviderAdapter = {
   configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("openai", env, ENV_SPEC, options);
+  },
+  resolveConfigFromSection(section, options) {
+    return resolveBaseConfigFromSection("openai", section, ENV_SPEC, options);
   },
   async createLanguageModel(config) {
     const openai = await createProvider(config);

@@ -10,6 +10,7 @@ export {
 export type {
   AskDbRuntimeConfig,
   AskDbRuntimeAiConfig,
+  AskDbRuntimeAiConnection,
   AskDbRuntimeAiSection,
   AskDbRuntimeIntrospectionConfig,
   AskDbRuntimeRagConfig,
