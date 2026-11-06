@@ -2,9 +2,9 @@ import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
   ENGINE_LEXER_PROFILES,
+  findUnicodeEscapedIdentifier,
   GENERIC_LEXER,
   lexSql,
-  findUnicodeEscapedIdentifier,
   lexerProfileFor,
   type SqlLexerProfile,
   type SqlToken,
@@ -219,10 +219,13 @@ function checkWithProfile(
   }
 
   tokens.forEach((t, idx) => {
+    // A `:name` parameter token counts too: before `(` it's no placeholder, and in an array slice
+    // (`[1:set_config(…)]`) Postgres reads the `:` as the separator and the rest as a call.
+    const colonName = t.kind === "parameter" && t.text.startsWith(":");
     const nameLike =
-      t.kind === "word" || t.kind === "quoted_identifier" || (t.kind === "string" && t.quote === '"');
+      t.kind === "word" || t.kind === "quoted_identifier" || (t.kind === "string" && t.quote === '"') || colonName;
     if (!nameLike) return;
-    const name = t.kind === "string" ? t.text.slice(1, -1).toLowerCase() : t.lower;
+    const name = t.kind === "string" ? t.text.slice(1, -1).toLowerCase() : colonName ? t.lower.slice(1) : t.lower;
     if (functions.has(name) && isPunct(tokens[idx + 1], "(")) {
       throw validationError(
         "SQL_FORBIDDEN_FUNCTION",

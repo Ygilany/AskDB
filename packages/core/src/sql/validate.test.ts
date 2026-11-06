@@ -372,8 +372,15 @@ describe("validateSelectSql — Unicode-escaped identifiers (#692)", () => {
     ["a column name, not a call", `SELECT U&"s\\0073n" FROM people.person`],
     // #704: Postgres reads it as orders, and it returned both tenants' rows.
     ["a table name", `SELECT id FROM U&"\\006Frders"`],
+    // `:U` lexes as a parameter, but Postgres reads the `:` as the slice separator.
+    ["a name right after a slice's `:`", `SELECT (ARRAY[1,2,3])[1:U&"set\\005fconfig"('app.agency_id', '2', true)::int] AS x`],
   ])("rejects %s", (_label, sql) => {
     expectRule(sql, "SQL_UNICODE_ESCAPED_IDENTIFIER");
+  });
+
+  it("rejects a blocked function written right after a slice's `:`", () => {
+    // Postgres 17 ran set_config here: `:set_config` lexes as one parameter token.
+    expectRule(`SELECT (ARRAY[1,2,3])[1:set_config('app.agency_id', '2', true)::int] AS x`, "SQL_FORBIDDEN_FUNCTION");
   });
 
   it("rejects it on CockroachDB and on a dialect id that is no built-in engine", () => {
@@ -383,8 +390,13 @@ describe("validateSelectSql — Unicode-escaped identifiers (#692)", () => {
   });
 
   it("accepts the & operator, a U& string, and the same text on engines without U& names", () => {
-    const operator = `SELECT u & "x" FROM t`;
-    expect(validateSelectSql(POSTGRES_DIALECT, operator)).toBe(operator);
+    // With a space on either side of `&`, Postgres reads the `&` operator.
+    for (const operator of [`SELECT u & "x" FROM t`, `SELECT u& "x" FROM t`, `SELECT u &"x" FROM t`]) {
+      expect(validateSelectSql(POSTGRES_DIALECT, operator)).toBe(operator);
+    }
+    // A tenant placeholder still reads as one.
+    const placeholder = `SELECT id FROM orders WHERE agency_id = :tenant_agency_ids`;
+    expect(validateSelectSql(POSTGRES_DIALECT, placeholder)).toBe(placeholder);
     const unicodeString = `SELECT U&'\\0041' AS a`;
     expect(validateSelectSql(POSTGRES_DIALECT, unicodeString)).toBe(unicodeString);
     // SQLite reads it as `u` AND the column "x".

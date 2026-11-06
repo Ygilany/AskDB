@@ -8,7 +8,7 @@ import {
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { POSTGRES_LEXER, findUnicodeEscapedIdentifier, lexSql, startsDashComment } from "./lexer.js";
+import { POSTGRES_LEXER, findUnicodeEscapedIdentifier, lexSql, lexerProfileFor, startsDashComment } from "./lexer.js";
 
 export type TenantGuardrailResult = {
   passed: boolean;
@@ -322,16 +322,17 @@ function scopeRootIds(scope: TenantScope): string[] {
 
 /**
  * The first Postgres `U&"…"` name in `sql`, as written, when the SQL may be read as Postgres:
- * a postgres or cockroachdb dialect, or a dialect that is no built-in engine, or none.
+ * a dialect on the Postgres lexer (postgres, cockroachdb), a dialect that is no built-in engine,
+ * or none. An unknown dialect's `backslashEscapes` is honored, as on the read-only check.
  */
 function unicodeEscapedName(
   sql: string,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
 ): string | undefined {
-  if (dialect !== undefined && isBuiltInDialectId(dialect.id) && dialect.id !== "postgres" && dialect.id !== "cockroachdb") {
-    return undefined;
-  }
-  const profile = dialect?.backslashEscapes === true ? { ...POSTGRES_LEXER, backslashEscapes: true } : POSTGRES_LEXER;
+  // The same gate the read-only check uses: a built-in engine on another lexer reads no U& names.
+  const known = dialect === undefined ? undefined : lexerProfileFor(dialect);
+  if (known !== undefined && known.id !== "postgres") return undefined;
+  const profile = known ?? (dialect?.backslashEscapes === true ? { ...POSTGRES_LEXER, backslashEscapes: true } : POSTGRES_LEXER);
   return findUnicodeEscapedIdentifier(lexSql(sql, profile));
 }
 

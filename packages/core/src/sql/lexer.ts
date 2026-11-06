@@ -548,6 +548,9 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
  * parts: the form Postgres's scanner reads as one identifier. With a space, `U& "x"` is the
  * `&` operator, and `U&'…'` is a string, which names nothing. Returns the name as written.
  *
+ * The `U` can also arrive inside a `:U` parameter token: in an array slice such as
+ * `[1:U&"…"]`, Postgres reads the `:` as the slice separator and the rest as the name.
+ *
  * Only Postgres-family engines read this form. AskDB doesn't decode it: the read-only check
  * and the tenant check both refuse it instead (#692, #704, ADR 0012).
  */
@@ -557,15 +560,14 @@ export function findUnicodeEscapedIdentifier(tokens: readonly SqlToken[]): strin
     const amp = tokens[i + 1]!;
     const name = tokens[i + 2]!;
     if (
-      u.kind === "word" &&
-      u.lower === "u" &&
+      ((u.kind === "word" && u.lower === "u") || (u.kind === "parameter" && u.lower === ":u")) &&
       amp.kind === "punct" &&
       amp.text === "&" &&
       amp.start === u.end &&
       name.kind === "quoted_identifier" &&
       name.start === amp.end
     ) {
-      return `${u.text}&${name.text}`;
+      return `${u.text.slice(-1)}&${name.text}`;
     }
   }
   return undefined;
