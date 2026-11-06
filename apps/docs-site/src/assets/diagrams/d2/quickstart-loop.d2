@@ -1,0 +1,13 @@
+# Quickstart: the four steps, named as the page's headings, and the loop that improves the SQL.
+# Vertical, so the text stays full size on a phone.
+direction: down
+
+init: "1. Scaffold your config\naskdb init"
+introspect: "2. Introspect your database\naskdb introspect"
+studio: "3. Enrich and test in Studio\naskdb studio"
+ask: "4. Ask your question\naskdb ask"
+
+init -> introspect -> studio -> ask
+ask -> studio: "not right yet" {
+  style.stroke-dash: 4
+}
