@@ -44,6 +44,7 @@ export type AskHttpErrorResponse = {
       | "schema_parse_error"
       | "schema_override_disabled"
       | "generation_not_configured"
+      | "tenant_scope_not_configured"
       | "sql_validation_error"
       | "guardrail_violation"
       | "sql_generation_error"
