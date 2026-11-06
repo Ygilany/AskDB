@@ -47,6 +47,14 @@ On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_unicode_escaped_identifier) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
 
+### Return only queries from a custom `AskDialect` under a tenant policy
+
+With a tenant policy and any scope but `global`, the tenant check now refuses a statement that doesn't start with `SELECT` or `WITH`, under every dialect ([#698](https://github.com/Ygilany/AskDB/issues/698)). Before, a custom `AskDialect` could return a `DO` block, `CALL`, `EXPLAIN` or `SHOW`, and the check passed it: it reads a `DO` body as a dollar-quoted string, so it saw no tenant-scoped table, and the block could read every tenant's rows. Now `ask()` throws `TenantGuardrailError` under `enforcement: strict`, and returns a `NOT_SELECT_OR_WITH` warning in `tenantGuardrail` under `warn`. Each statement after a `;` counts too, and on SQL Server each one a verb such as `EXEC` starts with no `;`. A leading comment or parenthesis doesn't hide the first keyword. The same check runs when you rebind a stored template with `bindPreparedQuery()` or `askdb.bind()`, so a template with such a statement is refused there too (under `warn`, unless you pass `acceptWarnings: ["tenant"]`).
+
+- **If your custom `AskDialect` returns queries,** you have nothing to change. Built-in dialect ids and `DialectSpec`s already reject other statements in the read-only check (`SQL_NOT_SELECT_OR_WITH`).
+- **If it returns another statement on purpose** for a schema with a tenant policy and a scope other than `global`, `ask()` no longer returns it under `strict`. Generate a `SELECT` or `WITH` query instead.
+- **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `NOT_SELECT_OR_WITH`.
+
 ### Other changes you may notice in beta.47
 
 - **`httpApi.listen.port`** is checked when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). A value that isn't an integer from 0 to 65535, or a string holding one, fails with `askdb.config: invalid httpApi.listen.port`, in every tool that loads the config. Before, the HTTP server passed such a value straight to `listen()`. A value that reads as `NaN`, such as `Number(env("PORT"))` with `PORT` unset, now counts as unset: the server uses port 3000 instead of failing to start.

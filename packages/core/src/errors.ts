@@ -157,6 +157,15 @@ export type TenantGuardrailRuleCode =
   | "UNKNOWN_TABLE_REFERENCED"
   | "UNPROVABLE_SCOPE"
   /**
+   * A statement doesn't start with `SELECT` or `WITH` (a `DO` block, `CALL`, `EXPLAIN`,
+   * `SHOW`, …), so the tenant check can't read what it touches. A statement ends at each
+   * `;`, and on SQL Server also at a statement verb such as `EXEC` with no `;` before it.
+   * Reported for the whole SQL, with `tableId: ""`, under every dialect, a custom
+   * `AskDialect` included; not under a `global` scope, where the tenant check doesn't run
+   * (#698).
+   */
+  | "NOT_SELECT_OR_WITH"
+  /**
    * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a
    * function. Postgres decodes it, and the tenant check matches names as written, so it can't
    * tell what the name reads. Reported for the whole SQL, with `tableId: ""`, whenever the SQL

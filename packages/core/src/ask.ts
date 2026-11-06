@@ -127,8 +127,14 @@ export type AskDialectGenerateResult = {
  *     policy, `ask()` runs the tenant guardrail on the returned `sql` (and
  *     `unboundNamedSql`), with its `:tenant_<root>_ids` placeholders still in place,
  *     then substitutes them, regardless of dialect; `strict` policies throw
- *     `TenantGuardrailError`. A `tenantGuardrail` your generator returns adds
- *     findings to that check (`form: "generator"`), never replaces it.
+ *     `TenantGuardrailError`. Under a tenant policy, with any scope but `global`, every
+ *     statement you return must start with `SELECT` or `WITH`, however an engine may
+ *     split it (at a `;`, or on SQL Server at a verb such as `EXEC`): the check can't
+ *     read what a `DO` block, `CALL`, `EXPLAIN` or `SHOW` touches, so it reports
+ *     `NOT_SELECT_OR_WITH` (#698). It can't read a query passed as a string either, such
+ *     as `query_to_xml('SELECT …')` (#702). A
+ *     `tenantGuardrail` your generator returns adds findings to that check
+ *     (`form: "generator"`), never replaces it.
  *   - The sensitive-identifier check runs on your SQL too, unless
  *     `sensitiveGuardrailMode` is `"off"`.
  */

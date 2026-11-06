@@ -447,6 +447,15 @@ describe("validateTenantGuardrails — MySQL comments are read the way MySQL rea
     expect(rules(sql, POSTGRES_DIALECT)).toEqual([]);
   });
 
+  // #698: the statement's first keyword is read with the same lexer, so a body MySQL runs
+  // can't hide a non-query in front of a scoped query.
+  it("a `/*! … */` executable comment can't hide a non-query in front of a query", () => {
+    const sql = "/*! DO SLEEP(1) */ SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(rules(sql, MYSQL_DIALECT)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql, POSTGRES_DIALECT)).toEqual([]);
+  });
+
   it("a predicate only inside a `/*! … */` executable comment doesn't count: an older server skips it", () => {
     const sql = "SELECT * FROM orders WHERE status = 'paid' /*!99999 AND agency_id = :tenant_agency_ids */";
     expect(rules(sql, MYSQL_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE"]);
@@ -476,6 +485,90 @@ describe("validateTenantGuardrails — parenthesized set-operation operands are 
     ["a parenthesized operand inside a scalar subquery", `SELECT (SELECT 1 UNION (${scoped})) AS x, o.* FROM orders o`],
   ])("rejects %s", (_label, sql) => {
     expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+});
+
+// #698 review: a server can start a statement without a `;` (T-SQL), and a comment or a
+// string setting can hide where one starts, so the rule reads every way a server splits them.
+describe("validateTenantGuardrails — every statement is a query, however the server splits them (#698)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
+  const scoped = "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids";
+
+  it.each([POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT])("refuses DO and CALL under $id", (dialect) => {
+    expect(rules("DO SLEEP(0)", dialect)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules("CALL refresh_orders()", dialect)).toEqual(["NOT_SELECT_OR_WITH"]);
+  });
+
+  it("doesn't run under a global scope, which reads every row by design", () => {
+    expect(validateTenantGuardrails("DO SLEEP(0)", warnPolicy, globalScope).warnings).toEqual([]);
+  });
+
+  // T-SQL needs no `;` between statements: SQL Server runs `SELECT 1 EXEC(...)` as two.
+  it.each([
+    `${scoped} EXEC('SELECT * FROM orders')`,
+    `${scoped} EXEC refresh_orders`,
+    `WITH o AS (${scoped}) SELECT id FROM o DECLARE @x int`,
+  ])("refuses a T-SQL statement that follows a query with no `;`: %s", (sql) => {
+    expect(rules(sql, SQLSERVER_DIALECT)).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // A word T-SQL denies starts a statement only after a complete expression; inside one (a
+  // MySQL `IF()`, a column or alias named `open`, `FOR UPDATE`, a subquery) it doesn't.
+  it.each([
+    "SELECT id, IF(id > 5, 'a', 'b') AS size FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT id, open FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT o.close AS open FROM orders o WHERE o.agency_id = :tenant_agency_ids",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND id IN (SELECT open FROM t)",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids FOR UPDATE",
+  ])("passes a query with a T-SQL statement word inside an expression: %s", (sql) => {
+    for (const dialect of [undefined, POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT]) {
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual([]);
+    }
+  });
+
+  // A value such as NULL is a complete expression, so a verb after it starts a statement.
+  it("refuses a T-SQL verb after a keyword that ends an expression", () => {
+    expect(rules(`${scoped} AND note IS NULL EXEC refresh_orders`, SQLSERVER_DIALECT)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // MySQL skips a `/*!NNNNN … */` body on a server older than NNNNN, so the `;` and the
+  // statement after it are code under that reading.
+  it("refuses a statement that a versioned MySQL comment hides", () => {
+    const sql = `${scoped} /*!99999 'x */ ; DO SLEEP(0) -- '*/`;
+    expect(rules(sql, MYSQL_DIALECT)).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // Under NO_BACKSLASH_ESCAPES, `'a\'` ends the literal and `--1` isn't a comment, so the
+  // `;` starts a statement. A custom dialect's server may run either string setting.
+  it("refuses, for a custom dialect, a statement only one string setting splits off", () => {
+    const sql = `${scoped} AND note = 'a\\' --1 ; PREPARE s FROM 'SELECT 1'`;
+    expect(rules(sql)).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql, { ...MYSQL_DIALECT, backslashEscapes: false })).toContain("NOT_SELECT_OR_WITH");
+    expect(rules(sql, MYSQL_DIALECT)).not.toContain("NOT_SELECT_OR_WITH");
+  });
+
+  // Standard strings end `'a\'` at the second quote, so `; DO …` is a statement; with
+  // backslash escapes (MySQL's default) the whole tail is one literal.
+  it("reads a `;` inside a literal the way each server does", () => {
+    const sql = `SELECT 'a\\'; DO SLEEP(1); --'`;
+    expect(rules(sql, POSTGRES_DIALECT)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql, MYSQL_DIALECT)).toEqual([]);
+    for (const dialect of [undefined, POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT]) {
+      expect(rules(`SELECT 'x;y' AS note, id FROM orders WHERE agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+    }
+  });
+
+  // `[a;b]` is a quoted name on SQL Server but a `;` between two tokens on Postgres or
+  // MySQL; a custom dialect's statement must be a query under every reading, so it's refused.
+  it("refuses `[a;b]` for a custom dialect, and accepts it on SQL Server", () => {
+    const sql = "SELECT [a;b] FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(rules(sql)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql, SQLSERVER_DIALECT)).toEqual([]);
   });
 });
 

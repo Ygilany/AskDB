@@ -1420,6 +1420,87 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
   });
 
+  // #698: read-only validation is a custom dialect's own job (ADR 0010), tenant enforcement
+  // isn't. The check reads a `DO` body as a dollar-quoted string, so it saw no scoped table
+  // and passed. Under a tenant policy every statement must be a query the check can read.
+  const scopedSelect = "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids";
+  const nonQueries: Array<[string, string, string]> = [
+    ["a DO block", "DO $$ BEGIN RAISE EXCEPTION '%', (SELECT string_agg(id::text, ',') FROM orders); END $$", "DO"],
+    ["CALL", "CALL refresh_orders()", "CALL"],
+    ["EXPLAIN of a scoped query", `EXPLAIN ${scopedSelect}`, "EXPLAIN"],
+    ["SHOW", "SHOW search_path", "SHOW"],
+    ["a DO block behind a leading comment", "/* note */ DO $$ BEGIN PERFORM 1 FROM orders; END $$", "DO"],
+    ["a DO block after a scoped query", `${scopedSelect}; DO $$ BEGIN PERFORM 1 FROM orders; END $$`, "DO"],
+    ["a statement a versioned MySQL comment hides", `SELECT 1 /*!99999 , 'x */ --1 ; PREPARE s FROM "SELECT * FROM orders" ; EXECUTE s -- '*/`, "PREPARE"],
+  ];
+  const warnSchema = () => {
+    const base = loadSchema(multiTenantDir);
+    return { ...base, tenantPolicy: { ...base.tenantPolicy!, enforcement: "warn" as const } };
+  };
+
+  it.each(nonQueries)("strict: refuses %s from a custom dialect (NOT_SELECT_OR_WITH)", async (_label, sql, keyword) => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    const warnings = (error as TenantGuardrailError).warnings;
+    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(warnings[0]!.message).toContain(keyword);
+  });
+
+  // T-SQL needs no `;`: SQL Server runs a query followed by `EXEC …` as two statements. The
+  // predicate check also flags the query, so this asserts the rule is among the warnings.
+  it("strict: refuses a T-SQL EXEC after a query with no `;` from a custom dialect", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql: `${scopedSelect} EXEC refresh_orders` }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    expect((error as TenantGuardrailError).warnings.map((w) => w.rule)).toContain("NOT_SELECT_OR_WITH");
+  });
+
+  it.each(nonQueries)("warn: returns %s from a custom dialect with a NOT_SELECT_OR_WITH warning", async (_label, sql) => {
+    const result = await ask({
+      question: "q",
+      schema: warnSchema(),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    });
+
+    expect(result.tenantGuardrail?.passed).toBe(false);
+    expect(result.tenantGuardrail?.warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+  });
+
+  it.each([
+    ["a parenthesized query", `(${scopedSelect})`],
+    ["WITH … SELECT", `WITH o AS (${scopedSelect}) SELECT id FROM o`],
+    ["a query behind a leading comment", `/* note */ ${scopedSelect}`],
+    ["a query with a trailing semicolon", `${scopedSelect};`],
+  ])("passes %s from a custom dialect", async (_label, sql) => {
+    const result = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    });
+    expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
   it("without a tenant policy, custom dialect output is unchanged", async () => {
     const dialect: AskDialect = { generate: async () => ({ sql: "DELETE FROM orders" }) };
     const result = await ask({ question: "q", schema: minimalSchema, model: fakeModel, dialect });
