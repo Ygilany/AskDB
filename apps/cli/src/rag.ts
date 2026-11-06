@@ -455,6 +455,8 @@ function resolveStoreConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig,
       opts.filePath ?? (configured.fileBasePath ? resolve(configured.fileBasePath) : join(schemaDir, "schema"));
     return { kind, basePath };
   }
+  // A store `@askdb/config` adds fails to compile here instead of falling through to pgvector.
+  kind satisfies "pgvector";
   return resolvePgvectorConfig(opts, configured);
 }
 

@@ -21,10 +21,6 @@ vi.mock("@inquirer/prompts", () => ({
   confirm: vi.fn().mockRejectedValue(new Error("unexpected prompt")),
 }));
 
-// ---------------------------------------------------------------------------
-// Fixture helpers
-// ---------------------------------------------------------------------------
-
 const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0", prismaSpec: "0.2.0" };
 
 /** A prompter that always accepts the default (like pressing Enter), recording every message asked. */
@@ -46,10 +42,6 @@ function createRecordingPrompter(): { prompter: InitPrompter; messages: string[]
   };
   return { prompter, messages };
 }
-
-// ---------------------------------------------------------------------------
-// resolveDefaultInitAnswers
-// ---------------------------------------------------------------------------
 
 describe("resolveDefaultInitAnswers", () => {
   it("non-interactive defaults: postgres/openai/file/no-execute", () => {
@@ -87,10 +79,6 @@ describe("resolveDefaultInitAnswers", () => {
     }
   });
 });
-
-// ---------------------------------------------------------------------------
-// runWizard — env var NAMES are defaulted, never prompted for
-// ---------------------------------------------------------------------------
 
 describe("runWizard", () => {
   it("never asks the user to name an env var — uses conventional defaults", async () => {
@@ -156,10 +144,6 @@ describe("runWizard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Option parser (indirectly via runInitCli error paths)
-// ---------------------------------------------------------------------------
-
 describe("option parser", () => {
   it("rejects invalid --database value", async () => {
     const writes: string[] = [];
@@ -201,10 +185,6 @@ describe("option parser", () => {
     expect(writes.join("")).toContain("--yes");
   });
 });
-
-// ---------------------------------------------------------------------------
-// runInitCli integration
-// ---------------------------------------------------------------------------
 
 describe("runInitCli --yes --skip-install", () => {
   it("writes config with default Postgres branch", async () => {
