@@ -535,6 +535,9 @@ describe("loadSchema — a bundle's tables must be an object of table markdown (
     { problem: "null", tables: null, reason: NOT_AN_OBJECT },
     { problem: "a string", tables: "orders.md", reason: NOT_AN_OBJECT },
     { problem: "an array", tables: ["---\nid: table:public.orders\n---\n"], reason: NOT_AN_OBJECT },
+    // These two loaded as a schema with no table files before #797.
+    { problem: "an empty string", tables: "", reason: NOT_AN_OBJECT },
+    { problem: "an empty array", tables: [], reason: NOT_AN_OBJECT },
     {
       problem: "an object with a non-string file",
       // gray-matter would take this object as an already-parsed file and keep its `data`.
