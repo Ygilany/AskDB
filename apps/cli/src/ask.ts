@@ -107,7 +107,7 @@ async function runAsk(opts: AskOptions): Promise<number> {
   const logger = createCliLogger(opts, runtime, logLevel);
 
   const mockSql = opts.mockSql ?? runtime.dev.mockSql;
-  const aiConfig = mockSql ? undefined : ai.resolveAiConfig(runtime.ai.aiEnv);
+  const aiConfig = mockSql ? undefined : ai.resolveAiConfigFromSection(runtime.ai.language);
   if (!mockSql && !aiConfig) {
     process.stderr.write(`${ai.keyMissingMessage("NL→SQL generation")}\n`);
     process.stderr.write("Tip: in tests, pass --mock-sql or set dev.mockSql in askdb.config to bypass live model calls.\n");

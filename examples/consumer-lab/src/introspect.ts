@@ -88,7 +88,6 @@ function projectConfig(introspection: Record<string, unknown>, form: ConfigForm)
   introspection: ${JSON.stringify(introspection)},
   rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: { memory: {} },
   },

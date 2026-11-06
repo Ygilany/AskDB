@@ -3,6 +3,7 @@ import {
   AiBaseUrlCredentialsError,
   BUILTIN_AI_PROVIDERS,
   anthropicProvider,
+  createAiRegistry,
   azureProvider,
   gatewayProvider,
   googleProvider,
@@ -57,6 +58,23 @@ describe("a model base URL with credentials", () => {
     },
   );
 
+  // A section is refused whether or not its connection has a key, as config load refuses one on
+  // any connection (ADR 0036).
+  it.each(BUILTIN_AI_PROVIDERS.map((row) => [row.provider, row] as const))(
+    "%s: resolving a section refuses one in its connection, naming connection.baseUrl",
+    async (_name, { provider }) => {
+      const registry = createAiRegistry();
+      for (const apiKey of ["k", undefined]) {
+        const connection = { apiKey, resourceName: "eastus", baseUrl: WITH_CREDENTIALS };
+        expectRefused(await failure(() => registry.resolveAiConfigFromSection({ provider, connection })), "connection.baseUrl");
+        expectRefused(
+          await failure(() => registry.createEmbeddingModelFromSection({ provider, connection, model: "e" })),
+          "connection.baseUrl",
+        );
+      }
+    },
+  );
+
   it("refuses a URL that doesn't parse but has an @, since it may still carry a password", async () => {
     const env = { OPENAI_API_KEY: "k", OPENAI_BASE_URL: "http://admin:S3 cret@proxy.example/v1" };
     expectRefused(await failure(() => openaiProvider.resolveConfig(env, { usage: "language" })), "OPENAI_BASE_URL");
@@ -75,6 +93,15 @@ describe("a model base URL with credentials", () => {
       process.env[variable] = WITH_CREDENTIALS;
       const config: AiConfig = { provider: adapter.provider, apiKey: "k", model: "m" };
       expectRefused(await failure(() => adapter.createLanguageModel(config)), variable);
+    });
+
+    it.each([
+      ["openai", "OPENAI_BASE_URL"],
+      ["anthropic", "ANTHROPIC_BASE_URL"],
+    ])("%s: building a model from a section with no base URL refuses a credentialed one, naming the variable", async (provider, variable) => {
+      process.env[variable] = WITH_CREDENTIALS;
+      const section = { provider, connection: { apiKey: "k" }, model: "m" };
+      expectRefused(await failure(() => createAiRegistry().createLanguageModelFromSection(section)), variable);
     });
 
     it("leaves it alone when the AiConfig sets its own baseURL, which the SDK uses instead", async () => {

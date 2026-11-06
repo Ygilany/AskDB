@@ -3,7 +3,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { azureProvider } from "@askdb/ai";
+import { azureProvider, createAiRegistry } from "@askdb/ai";
 import {
   getAskDbRuntimeConfig,
   resetAskDbRuntimeForTests,
@@ -819,8 +819,6 @@ describe("AskDB Studio server", () => {
           pgvector: {
             databaseUrl: "postgres://pgvector.test/askdb",
             table: "studio_rag_chunks",
-            // Ignored with the mock embedder (a load warning says so): its vectors are always 64 wide.
-            dimensions: 128,
             indexStrategy: "hnsw",
           },
         },
@@ -1543,8 +1541,8 @@ describe("AskDB Studio server", () => {
         expect(written.envVars.map((v: any) => v.name)).toContain("AZURE_RESOURCE_NAME");
         expect(readFileSync(join(projectDir, ".env.example"), "utf8")).toMatch(/^AZURE_RESOURCE_NAME=/m);
 
-        // Without a resource name (or endpoint) the adapter refuses to start.
-        const aiConfig = azureProvider.resolveConfig(getAskDbRuntimeConfig().ai.aiEnv, { usage: "language" });
+        // The scaffolded foundry connection reaches the adapter as its resource name.
+        const aiConfig = createAiRegistry([azureProvider]).resolveAiConfigFromSection(getAskDbRuntimeConfig().ai.language);
         expect(aiConfig?.providerOptions).toMatchObject({ resourceName: "my-foundry" });
       } finally {
         process.chdir(prevCwd);

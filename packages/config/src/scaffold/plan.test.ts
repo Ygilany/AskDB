@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ASKDB_AI_PROVIDERS, loadAskDbConfigProjectionSync, resetAskDbRuntimeForTests, type AskDbConfig } from "../index.js";
-import { linkWorkspacePackage } from "../test-utils.js";
+import { linkWorkspacePackage, resolvedRuntimeText } from "../test-utils.js";
 import { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold, type AskDbScaffoldAnswers } from "./index.js";
 
 const VERSIONS = { config: "1.2.3", prisma: "0.9.0" };
@@ -104,8 +104,8 @@ describe("planAskDbScaffold", () => {
     expect(ai.provider).toBe(answers.ai.provider);
     expect(Object.keys(ai.providerConfig ?? {})).toEqual([answers.ai.provider]);
     expect(rest).toEqual(expected);
-    const values = Object.values(projection.entries);
-    for (const { name } of plan.envVars) expect(values).toContain(`value-of-${name}`);
+    const resolved = resolvedRuntimeText(projection.config);
+    for (const { name } of plan.envVars) expect(resolved).toContain(`"value-of-${name}"`);
   });
 
   // @askdb/core needs `ai` (a peer) and `zod`. Under Yarn Plug'n'Play a Prisma project must

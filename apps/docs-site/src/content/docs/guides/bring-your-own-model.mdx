@@ -30,7 +30,7 @@ If you're an agent implementing this integration: check whether the host app alr
 
 ## In your config (CLI, Studio, HTTP API)
 
-Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service call `createLanguageModelFromEnv` internally.
+Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service pass the config's `ai.language` section to `@askdb/ai`'s registry, which builds the model.
 
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
@@ -285,10 +285,25 @@ import { createAiRegistry } from "@askdb/ai";
 bootstrapAskDbEnv({ cwd: process.cwd() });
 const rt = getAskDbRuntimeConfig();
 const ai = createAiRegistry(); // every built-in provider; or createAiRegistry(["openai"])
-const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
+const model = await ai.createLanguageModelFromSection(rt.ai.language); // undefined without an API key
 ```
 
+`rt.ai.language` is the config's typed `ai.language` section: its provider, its connection's settings and its model. The registry maps it to the provider's settings, and `rt.ai.embedding` goes to `createEmbeddingModelFromSection` the same way.
+
 `@askdb/ai` declares `ai` as a peer dependency and the `@ai-sdk/*` provider packages as optional peers. Add `ai` and the provider package you use to your own `package.json` so you control their versions.
+
+## Without a config file
+
+To use `@askdb/ai`'s built-in providers in an app that has no `askdb.config.*`, pass the registry an env map, such as `process.env`, instead of a config section:
+
+```ts
+import { createAiRegistry } from "@askdb/ai";
+
+const ai = createAiRegistry();
+const model = await ai.createLanguageModelFromEnv(process.env); // undefined without an API key
+```
+
+`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` takes its settings only from the map you pass. Its one read of `process.env` is a check: with no base URL configured, it refuses an `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` with a username or password, which the provider SDK would read itself. The [`@askdb/ai` reference](/reference/packages/#env-map-precedence) lists the variables it reads from the map, in order. A config section and an env map that hold the same settings give the same model.
 
 ## Reasoning/latency effort
 
@@ -314,10 +329,11 @@ import { createAiRegistry } from "@askdb/ai";
 import { ask } from "@askdb/core";
 
 const ai = createAiRegistry(["openai"]);
-const config = ai.resolveAiConfig(rt.ai.aiEnv)!; // e.g. { provider: "openai", model: "o4-mini", ... }
+const config = ai.resolveAiConfigFromSection(rt.ai.language)!; // e.g. { provider: "openai", model: "o4-mini", ... }
 const model = await ai.createLanguageModel(config);
 
-// Provider-portable: "minimal" | "low" | "medium" | "high".
+// Provider-portable: "minimal" | "low" | "medium" | "high". To use the config's
+// ai.language.reasoning instead: resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql").
 // Returns undefined (nothing sent) when the model doesn't support reasoning tuning.
 const providerOptions = ai.resolveProviderOptions(config, { reasoningEffort: "low" });
 

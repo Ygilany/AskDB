@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.50
 
-Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
+Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
 
 ### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
 
@@ -36,9 +36,64 @@ Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/ht
 
 A model base URL with a username or password, such as `http://user:pass@proxy.example/v1`, now fails before any request ([#787](https://github.com/Ygilany/AskDB/issues/787), ADR 0036). Such a URL never worked: `fetch` refused it with an error that quoted the whole URL, credentials included, in `SqlGenerationError` and the `askdb.pipeline.failed` log.
 
-- **A config that sets one fails to load:** in any `ai.providerConfig.<provider>.baseUrl`, even on a connection no section uses, or in the deprecated `rag.embedderConfig.openai.baseUrl`. The `askdb.config:` error names the key.
-- **`@askdb/ai` throws the new `AiBaseUrlCredentialsError`** for one in a base URL env variable, an `AiConfig`'s `baseURL`, or the `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` the provider SDK would read from the environment. Its `setting` names where the URL came from.
+- **A config that sets one fails to load:** in any `ai.providerConfig.<provider>.baseUrl`, even on a connection no section uses. The `askdb.config:` error names the key.
+- **`@askdb/ai` throws the new `AiBaseUrlCredentialsError`** for one in a config section's `connection.baseUrl`, a base URL env variable, an `AiConfig`'s `baseURL`, or the `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` the provider SDK would read from the environment. Its `setting` names where the URL came from.
 - **Neither error repeats the URL.** Put the key in `apiKey`. For other credentials, such as a proxy's, build the model in code with the AI SDK provider's `headers` option (see [`ai.providerConfig`](/reference/config/#aiproviderconfig)).
+
+### Replace the removed config keys
+
+The config keys deprecated in beta.44 (`@askdb/config` 1.0.0-beta.13), and `rag.storeConfig.file.autoFlush` from beta.47, are removed ([#765](https://github.com/Ygilany/AskDB/issues/765)). A config that still sets one fails to load. The `askdb.config:` error names each such key and its replacement, and never repeats a value. A key counts as set whatever its value, so `model: env("OPENAI_MODEL")` on a connection fails even when the variable is unset. Each key, before and after:
+
+| Before | After |
+| --- | --- |
+| `ai: { reasoning: { effort: "low" } }` | `ai: { language: { reasoning: { effort: "low" } } }` |
+| `providerConfig: { openai: { apiKey, model: "gpt-4o" } }` | `providerConfig: { openai: { apiKey } }, language: { model: "gpt-4o" }`. A `model` on a connection only embeddings use goes to `ai.embedding.model`. |
+| `providerConfig: { azure: { apiKey, resourceName, modelFamily: "gpt-5" } }` (or on `foundry`) | `providerConfig: { azure: { apiKey, resourceName } }, language: { modelFamily: "gpt-5" }` |
+| `provider: "mistral", providerConfig: { custom: { apiKey } }` | `provider: "mistral", providerConfig: { mistral: { apiKey } }`. A provider whose id is `custom` keeps `providerConfig.custom`. |
+| `rag: { embedder: "openai", … }` | `ai: { embedding: { provider: "openai", model: "text-embedding-3-small" } }, rag: { embedder: "ai", … }` |
+| `rag: { embedder: "ai-sdk", … }` | `ai: { embedding: { model: "text-embedding-3-small" } }, rag: { embedder: "ai", … }`. The embedding provider is `ai.provider` unless `ai.embedding.provider` sets another. |
+| `rag: { embedderConfig: { openai: { model, dimension: 1536 } } }` | `ai: { embedding: { model, dimensions: 1536 } }` |
+| `rag: { embedderConfig: { openai: { apiKey, baseUrl } } }` | The key and base URL on a connection of the embedding provider in `ai.providerConfig`. When they differ from its `"default"` connection, add a named one and set `ai.embedding.connection` to its name. |
+| `rag: { embedderConfig: {} }`, as earlier scaffolds wrote | Remove it. |
+| `storeConfig: { pgvector: { databaseUrl, dimensions: 1536 } }` with `rag.embedder: "ai"` | `ai: { embedding: { …, dimensions: 1536 } }`, `storeConfig: { pgvector: { databaseUrl } }` |
+| `storeConfig: { pgvector: { …, dimensions } }` with `rag.embedder: "mock"` | Remove it. The mock embedder's vectors are 64 wide unless `askdb rag --dimensions` asks for another width. |
+| `storeConfig: { file: { basePath, autoFlush: true } }` | `storeConfig: { file: { basePath } }`. The file store writes its files after every change. |
+
+Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `text-embedding-3-small`: set that model in `ai.embedding` to keep the same embeddings. An index keeps working when `ai.embedding` names the same provider, model and dimensions the old keys did. Otherwise Studio reports it as stale, and you rebuild it.
+
+### Read the typed `ai` sections instead of `rt.ai.aiEnv`
+
+`getAskDbRuntimeConfig().ai.aiEnv`, `ai.language.env` and `ai.embedding.env` are removed ([#711](https://github.com/Ygilany/AskDB/issues/711)). These env maps turned the `ai` block into the env names `@askdb/ai` read back. Pass the typed section to the `@askdb/ai` registry instead. `@askdb/client`'s `createAskDb` already does, so a host that only calls `createAskDb` changes nothing.
+
+| Before | After |
+| --- | --- |
+| `ai.resolveAiConfig(rt.ai.aiEnv)` | `ai.resolveAiConfigFromSection(rt.ai.language)` |
+| `ai.createLanguageModelFromEnv(rt.ai.aiEnv)` | `ai.createLanguageModelFromSection(rt.ai.language)` |
+| `ai.resolveEmbeddingConfig(rt.ai.embedding.env)` | `ai.resolveEmbeddingConfigFromSection(rt.ai.embedding)` |
+| `ai.createEmbeddingModelFromEnv(rt.ai.embedding.env, { dimensions: rt.ai.embedding.dimensions })` | `ai.createEmbeddingModelFromSection(rt.ai.embedding)`. It asks for `dimensions` when they're set. |
+| `resolveReasoningEffort(rt.ai.aiEnv, "nlToSql")` | `resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql")` |
+| `rt.ai.language.env.OPENAI_API_KEY` (any `rt.ai.language.env` key) | `rt.ai.language.connection.apiKey` (the matching connection setting) |
+| `rt.ai.embedding.env.OPENAI_API_KEY` (any `rt.ai.embedding.env` key) | `rt.ai.embedding.connection.apiKey` (the matching connection setting) |
+| `rt.ai.language.connection`, `rt.ai.embedding.connection` (the connection name) | `rt.ai.language.connection.name`, `rt.ai.embedding.connection.name` |
+
+- **`connection` is now an object:** the connection's `name` and its settings (`apiKey`, `apiKeySecondary`, `baseUrl`, `resourceName`, `apiVersion`), with unset ones left out. The config's `secondaryApiKey` is `apiKeySecondary` here. `rt.ai.language` also gains `reasoning`.
+- **The flat map holds no AI keys.** `rt.flat`, `flattenAskDbConfig()` and `defineConfig().entries` no longer carry `ASKDB_AI_PROVIDER`, `OPENAI_API_KEY`, the reasoning keys or any other AI key. A child process that took its AI settings from `mergeAskDbFlatIntoEnvMap()` needs them another way, for example by loading the same `askdb.config.*`.
+- **`rt.rag.embedder` is removed**, with its type `AskDbRuntimeRagEmbedderConfig`. It held the OpenAI embedder's key, base URL and model, and nothing in AskDB read it. It's now `undefined`, so reading `rt.rag.embedder.apiKey` throws, and TypeScript reports the missing field. Read `rt.ai.embedding` instead: `connection.apiKey`, `connection.baseUrl` and `model`, for whichever provider `ai.embedding` names. `rt.ai.embedding` is `undefined` unless `rag.embedder` is `"ai"`.
+- **If you pass `registry` to `createAskDb`**, build it with `@askdb/ai` 0.1.0-beta.11 or newer: the client calls the new section methods. With an older one, the first `ask()` that needs the config's model throws `ModelNotConfiguredError`, which names the older `@askdb/ai`.
+- **Without a config file**, nothing changes: `resolveAiConfig(env)` and the `*FromEnv` methods read an env map as before. [Env map precedence](/reference/packages/#env-map-precedence) lists the variables.
+
+### Replace the removed `@askdb/config` exports
+
+| Removed | Use instead |
+| --- | --- |
+| `DEFAULT_OPENAI_CHAT_MODEL`, `DEFAULT_ANTHROPIC_CHAT_MODEL`, `DEFAULT_GOOGLE_CHAT_MODEL`, `DEFAULT_GATEWAY_CHAT_MODEL` | `DEFAULT_OPENAI_LANGUAGE_MODEL`, `DEFAULT_ANTHROPIC_LANGUAGE_MODEL`, `DEFAULT_GOOGLE_LANGUAGE_MODEL`, `DEFAULT_GATEWAY_LANGUAGE_MODEL` |
+| `DEFAULT_RAG_EMBEDDING_MODEL` | Set `ai.embedding.model`: AskDB has no default embedding model. |
+| `defaultRagEmbeddingDimensions()` | None: AskDB learns the width from the model (`detectEmbeddingDimensions` in `@askdb/rag`). |
+| `OpenaiConfig`, `AzureConfig`, `FoundryConfig`, `AnthropicConfig`, `GoogleConfig`, `GatewayConfig` | `OpenaiConnection`, `AzureConnection`, `FoundryConnection`, `AnthropicConnection`, `GoogleConnection`, `GatewayConnection` |
+| `OpenaiAiConfig`, `AzureAiConfig`, `FoundryAiConfig`, `AnthropicAiConfig`, `GoogleAiConfig`, `GatewayAiConfig` | `AskDbAiConfig` |
+| `OpenaiRagEmbedderConfig` | `AskDbAiEmbeddingConfig` (`ai.embedding`) and a connection type |
+
+`ASKDB_RAG_EMBEDDERS` is now `["mock", "ai"]`, and the `AskDbRagEmbedder` type narrows to match.
 
 ### Handle introspection that finds no tables
 
@@ -64,6 +119,9 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 
 ### Other changes you may notice in beta.50
 
+- **A connection's `secondaryApiKey` is used on every provider** when the connection has no `apiKey`. Before, only Azure and Foundry read it; the connection types still declare it only there.
+- **An `ai.language` or `ai.embedding` provider that no registered adapter handles** now fails with the message that says how to register it, as `createLanguageModel` already did, instead of `Unknown ASKDB_AI_PROVIDER`.
+- **`getAskDbRuntimeConfig().deprecations` is empty**, since no config key is deprecated now. It stays for the next deprecation.
 - **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
 
 ## 1.0.0-beta.49
@@ -565,7 +623,7 @@ rag: {
 },
 ```
 
-A config in the old shape still loads. Each old key is translated at load and reported once as a Node `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED`, naming its new location. The old keys are removed at 1.0. These old-shape configs now fail to load, with an error that says what to change:
+A config in the old shape still loaded in this release. Each old key was translated at load and reported once as a Node `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED`, naming its new location, until [beta.50 removed them](#replace-the-removed-config-keys). These old-shape configs failed to load, with an error that said what to change:
 
 - **A `rag.embedderConfig.openai.apiKey` or `.baseUrl`** whose embedding model comes from a provider other than `openai`, `azure`, `foundry` or `gateway`. Before, Studio sent that key to the language model's provider.
 - **`rag.embedder: "ai-sdk"` with no embedding model**, on a provider other than `openai`, `azure` or `foundry`. Set `ai.embedding.model`.
@@ -573,7 +631,7 @@ A config in the old shape still loads. Each old key is translated at load and re
 - **Two different widths** in `rag.embedderConfig.openai.dimension` and `rag.storeConfig.pgvector.dimensions`.
 - **An old key next to its replacement**: `ai.reasoning` with `ai.language.reasoning`, `ai.providerConfig.custom` with `ai.providerConfig.<provider id>`, or `rag.embedderConfig` with `ai.embedding`.
 
-With `rag.embedder: "ai"`, `ai.embedding.model` is required: AskDB no longer picks an embedding model for you. [Deprecated keys](/reference/config/#deprecated-keys) maps every old key to its replacement.
+With `rag.embedder: "ai"`, `ai.embedding.model` is required: AskDB no longer picks an embedding model for you. [Replace the removed config keys](#replace-the-removed-config-keys) maps every old key to its replacement.
 
 ### Handle a config without a `rag` block
 
@@ -655,11 +713,11 @@ This wrapper works on Postgres and SQLite only. [Cap the rows a query returns](/
 | --- | --- | --- |
 | `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` and `@ai-sdk/<provider>` | 1.0.0-beta.45 |
 | `@askdb/connectors` | `@askdb/introspect` and `@askdb/introspect/kit` | 1.0.0-beta.45 |
-| The old `ai` and `rag` config keys | `ai.language`, `ai.embedding` and connections, as [Deprecated keys](/reference/config/#deprecated-keys) maps | 1.0 |
-| `OpenaiConfig`, `AzureConfig` and the other `<Provider>Config` types | `OpenaiConnection`, `AzureConnection`, … | 1.0 |
-| `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0 |
-| `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0 |
-| `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | [`DEFAULT_*_LANGUAGE_MODEL`](/reference/packages/#askdbconfig) | 1.0 |
+| The old `ai` and `rag` config keys | `ai.language`, `ai.embedding` and connections, as [Replace the removed config keys](#replace-the-removed-config-keys) maps | 1.0.0-beta.50 |
+| `OpenaiConfig`, `AzureConfig` and the other `<Provider>Config` types | `OpenaiConnection`, `AzureConnection`, … | 1.0.0-beta.50 |
+| `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0.0-beta.50 |
+| `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0.0-beta.50 |
+| `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | [`DEFAULT_*_LANGUAGE_MODEL`](/reference/packages/#askdbconfig) | 1.0.0-beta.50 |
 | `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warns with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model` | 1.0 |
 | `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0 |
 | The `askdb-rag` binary | `askdb rag` | 1.0 |
@@ -667,7 +725,7 @@ This wrapper works on Postgres and SQLite only. [Cap the rows a query returns](/
 
 ## Check the upgrade
 
-1. **Look for deprecation warnings.** Run your app or an `askdb` command once. Each `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED` or `ASKDB_AI_DEFAULT_EMBEDDING_MODEL` names the setting to move. `getAskDbRuntimeConfig().deprecations` lists the same messages.
+1. **Load your config and look for deprecation warnings.** Run your app or an `askdb` command once. A config that sets a removed key fails to load and names each key's replacement. Each `DeprecationWarning` with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL` names the setting to move.
 2. **Ask one question on each path** that calls `ask()` or `bind()`, with the tenant scopes you use in production.
 3. **If you use RAG**, run `askdb rag query` against the new index, or check that Studio no longer marks the index as stale.
 

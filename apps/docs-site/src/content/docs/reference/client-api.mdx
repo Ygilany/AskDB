@@ -39,7 +39,7 @@ Install the AI SDK package for the provider your config selects, for example `@a
 | --- | --- | --- | --- |
 | `config` | `AskDbRuntimeConfig` | yes | Runtime config snapshot from `getAskDbRuntimeConfig()`. Call `bootstrapAskDbEnv()` at startup first. |
 | `providers` | `AiProviderAdapters` | no | Which providers the client can build models for. Default: every provider built into `@askdb/ai` (`openai`, `anthropic`, `google`, `azure`/`foundry`, `gateway`). Pass built-in names to restrict the set (`["openai"]`) or `AiProviderAdapter` objects to add custom providers; both can be mixed. |
-| `registry` | `AiRegistry` | no | Prebuilt registry from `createAiRegistry(...)` — advanced alternative to `providers` (e.g. to share one registry across clients). Pass at most one of `providers` or `registry`: passing both throws an `Error` from `createAskDb()`. |
+| `registry` | `AiRegistry` | no | Prebuilt registry from `createAiRegistry(...)` — advanced alternative to `providers` (e.g. to share one registry across clients). Pass at most one of `providers` or `registry`: passing both throws an `Error` from `createAskDb()`. Build it with the `@askdb/ai` version `@askdb/client` depends on: one from an older `@askdb/ai` has no section methods. |
 | `schema` | `SchemaSource` | no | Default schema source. Falls back to `host.schemaJson`, then `host.schemaPath`, from `askdb.config.ts`. With none of the three, the first call throws [`SchemaNotConfiguredError`](#errors). |
 | `dialect` | `BuiltInDialectId` | no | Default dialect override. Falls back to `dialect` in `askdb.config.ts`, then `schema.provider`, then `"postgres"` when the schema records no provider. |
 | `unknownDialect` | `"throw" \| "fallback-postgres"` | no | What to do when no dialect is set and `schema.provider` isn't a built-in dialect id. Default `"throw"`: `ask()` throws [`DialectNotSupportedError`](#errors). `"fallback-postgres"` uses `"postgres"` and reports it in `DialectResolution.note`. |
@@ -184,7 +184,7 @@ type AskDbClient = {
 | `SchemaNotConfiguredError` | No schema to load: no per-call `schema`, no `createAskDb({ schema })`, and neither `host.schemaJson` nor `host.schemaPath` in `askdb.config.ts`. | — |
 | `SchemaLoadError` | Loading a `{ path }` or `{ json }` schema source fails: the path doesn't exist, the JSON is invalid, or `loadSchema()` throws `SchemaParseError`. | `source`: which source failed, such as `host.schemaPath (./my-app.schema)` or `request`. `cause`: the original error. |
 | `DialectNotSupportedError` | No dialect is set, the schema's `provider` isn't a built-in dialect id, and `unknownDialect` is `"throw"` (the default). | `provider`: the schema's `provider`. |
-| `ModelNotConfiguredError` | The call needs the registry's model, and the config's `ai` block doesn't resolve to one, for example because the API key is missing. | — |
+| `ModelNotConfiguredError` | The call needs the registry's model, and the config's `ai` block doesn't resolve to one, for example because the API key is missing. Also thrown when the `registry` you passed comes from an `@askdb/ai` older than the one `@askdb/client` depends on. | — |
 
 `createAskDb()` itself throws a plain `Error` when you pass both `providers` and `registry`.
 

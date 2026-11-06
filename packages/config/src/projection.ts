@@ -45,8 +45,9 @@ export function defineConfig<const T extends AskDbConfig>(config: T): AskDbEnvPr
 
 /**
  * Flattens a nested {@link AskDbConfig} into the canonical env keys of the runtime snapshot
- * (`AskDbEnvProjection.entries`), for example to build a child process's env. Most optional keys are
- * written only when the config sets them, so defaults such as the HTTP port stay out of the env;
+ * (`AskDbEnvProjection.entries`), for example to build a child process's env. It writes no AI keys:
+ * the `ai` block reaches `@askdb/ai` as typed sections (`getAskDbRuntimeConfig().ai`). Most optional
+ * keys are written only when the config sets them, so defaults such as the HTTP port stay out of the env;
  * `ASKDB_RAG_EMBEDDER`, `ASKDB_INTROSPECT_OUT` and, with the pgvector store,
  * `ASKDB_PGVECTOR_INDEX_STRATEGY` and the mock embedder's `ASKDB_RAG_EMBEDDER_DIMENSIONS` are always
  * written. Throws the same `askdb.config: …` errors as `defineConfig`.
