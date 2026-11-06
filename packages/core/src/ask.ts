@@ -559,11 +559,6 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   return result;
 }
 
-/**
- * A custom generator's `tenantGuardrail`, as tenant findings: its warnings, and one
- * `UNPROVABLE_SCOPE` finding for a failure it reported without any, so it is never
- * dropped. They add to `ask()`'s own check; they never replace it.
- */
 function dropParameterizeExtras(result: AskPipelineResult): void {
   delete result.unboundSql;
   delete result.params;

@@ -91,6 +91,16 @@ const rows: Row[] = [
     tenantPassed: false,
   },
   {
+    name: "generate logs a tenant pass",
+    path: "generate",
+    schema: strictSchema,
+    forms: { sql: scoped },
+    outcome: "allow",
+    findings: [],
+    logs: [E.TenantGuardrailPassed],
+    tenantPassed: true,
+  },
+  {
     name: "rebind refuses a tenant warn, and logs nothing",
     path: "rebind",
     schema: warnSchema,

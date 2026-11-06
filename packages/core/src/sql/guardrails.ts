@@ -115,7 +115,7 @@ export function enforceGuardrails(input: EnforceInput): Enforced {
     throwIfDenied(verdict, modes, point);
   } catch (e) {
     logger?.error(
-      { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: (e as Error).message },
+      { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: e instanceof Error ? e.message : String(e) },
       "nl-to-sql generate failed",
     );
     throw e;
@@ -213,7 +213,8 @@ function evaluateGuardrails(
 
 /**
  * A custom `AskDialect`'s reported tenant result as findings, so `decide` rules on it under
- * the policy's mode. A failure it reports without details becomes one `UNPROVABLE_SCOPE`.
+ * the policy's mode. A failure it reports without details becomes one `UNPROVABLE_SCOPE`,
+ * so it is never dropped. They add to the step's own tenant check; they never replace it.
  */
 function generatorFindings(reported: TenantGuardrailResult | undefined): GuardrailFinding[] {
   if (!reported) return [];
