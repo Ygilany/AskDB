@@ -20,9 +20,9 @@ import {
   type QueryResult,
   type VectorStore,
 } from "@askdb/rag";
+import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { labelled, showable } from "./error-values.js";
-import { createCliLogger } from "./logger.js";
-import { readCliVersion } from "./version.js";
+import { createCliLogger, loggingFlags } from "./logger.js";
 
 // Every built-in provider is registered and loads its @ai-sdk/* package only when first used,
 // so ai.embedding alone selects the provider.
@@ -66,7 +66,15 @@ function isChunkType(value: string): value is ChunkType {
 const DEFAULT_MOCK_DIMENSIONS = 64;
 const DEFAULT_PGVECTOR_TABLE = "askdb_rag_chunks";
 
+const RAG_COMMANDS = ["index", "query", "setup-store"] as const;
+type RagCommand = (typeof RAG_COMMANDS)[number];
+
+function isRagCommand(value: string): value is RagCommand {
+  return (RAG_COMMANDS as readonly string[]).includes(value);
+}
+
 type CliOptions = {
+  command?: RagCommand;
   schemaDir?: string;
   store?: CliStoreKind;
   embedder?: CliEmbedder;
@@ -87,29 +95,51 @@ type CliOptions = {
 };
 
 export async function runRagCli(argv: readonly string[]): Promise<number> {
-  try {
-    if (argv.includes("--version") || argv.includes("-V")) {
-      process.stdout.write(`${readCliVersion()}\n`);
-      return 0;
-    }
-    if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
-      printHelp();
-      return 0;
-    }
-    const cmd = argv[0]!;
-    if (cmd !== "index" && cmd !== "query" && cmd !== "setup-store") {
-      throw new Error(`${labelled("Unknown command", cmd)} (expected 'index', 'query', or 'setup-store')`);
-    }
-    const opts = parseOptions(argv.slice(1));
-    const runtimeConfig = getAskDbRuntimeConfig();
-    if (cmd === "setup-store") return await runSetupStore(opts, runtimeConfig);
-    const logger = createCliLogger(opts, runtimeConfig);
-    if (cmd === "index") return await runIndex(opts, logger, runtimeConfig);
-    return await runQuery(opts, logger, runtimeConfig);
-  } catch (e) {
-    process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
-    return 1;
-  }
+  // With no arguments `askdb rag` prints its help, so it works without a config.
+  return runCommand(ragCommand(), argv.length === 0 ? ["--help"] : argv);
+}
+
+/** `askdb rag <command> [schema-dir]`. Every command reads askdb.config. */
+export function ragCommand(): CommandSpec<CliOptions> {
+  return {
+    name: "rag",
+    summary: "Chunk, embed, and query a schema artifact directory",
+    usage: RAG_USAGE,
+    notes: ragNotes(),
+    flags: RAG_FLAGS,
+    positional(opts, value, index) {
+      if (index === 0) {
+        if (!isRagCommand(value)) {
+          throw new Error(`${labelled("Unknown command", value)} (expected 'index', 'query', or 'setup-store')`);
+        }
+        opts.command = value;
+        return;
+      }
+      if (index > 1) {
+        // Not repeated: a stray value can be a secret, such as a connection string without its flag.
+        throw new Error(
+          "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.",
+        );
+      }
+      // Failing on it as a path would print it, password included.
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+        throw new Error("The [schema-dir] argument looks like a connection string; pass a connection string with --pg-url.");
+      }
+      opts.schemaDir = value;
+    },
+    initial: () => ({}),
+    check(opts) {
+      if (!opts.command) throw new Error("Missing command (expected 'index', 'query', or 'setup-store')");
+    },
+    needsConfig: () => true,
+    async run(opts) {
+      const runtimeConfig = getAskDbRuntimeConfig();
+      if (opts.command === "setup-store") return runSetupStore(opts, runtimeConfig);
+      const logger = createCliLogger(opts, runtimeConfig);
+      if (opts.command === "index") return runIndex(opts, logger, runtimeConfig);
+      return runQuery(opts, logger, runtimeConfig);
+    },
+  };
 }
 
 async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: AskDbRuntimeConfig): Promise<number> {
@@ -560,177 +590,144 @@ async function closeStore(store: CliStore): Promise<void> {
   if (typeof store.close === "function") await store.close();
 }
 
-function parseOptions(argv: readonly string[]): CliOptions {
-  const opts: CliOptions = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
-    if (!arg.startsWith("-")) {
-      if (opts.schemaDir !== undefined) {
-        // Not repeated: a stray value can be a secret, such as a connection string without its flag.
-        throw new Error(
-          "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.",
-        );
-      }
-      // Failing on it as a path would print it, password included.
-      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(arg)) {
-        throw new Error("The [schema-dir] argument looks like a connection string; pass a connection string with --pg-url.");
-      }
-      opts.schemaDir = arg;
-      continue;
-    }
-    // `--flag=value` works like `--flag value`. Errors repeat a value only when it's `showable`.
-    const eq = arg.indexOf("=");
-    const flag = eq === -1 ? arg : arg.slice(0, eq);
-    const inline = eq === -1 ? undefined : arg.slice(eq + 1);
-    const value = (): string => {
-      if (inline === undefined) return readValue(argv, ++i, flag);
-      if (!inline) throw new Error(`${flag} requires a value.`);
-      return inline;
-    };
-    const set = (): true => {
-      if (inline !== undefined) throw new Error(`${flag} takes no value.`);
-      return true;
-    };
-    switch (flag) {
-      case "--store": {
-        const raw = value();
-        if (!isCliStore(raw)) {
-          throw new Error(`${labelled("Unknown store", raw)} (expected 'memory', 'file', or 'pgvector').`);
-        }
-        opts.store = raw;
-        break;
-      }
-      case "--embedder": {
-        const raw = value();
-        if (!isCliEmbedder(raw)) {
-          throw new Error(
-            `${labelled("Unknown embedder", raw)} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`,
-          );
-        }
-        opts.embedder = raw;
-        break;
-      }
-      case "--embedder-model": {
-        // Trimmed as the registry trims it, so the embedder id names the model that embeds.
-        const model = value().trim();
-        if (!model) throw new Error(`${flag} requires a value.`);
-        opts.embedderModel = model;
-        break;
-      }
-      case "--api-key":
-        // Secrets on argv leak through shell history and the process list.
-        throw new Error("--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.");
-      case "--question":
-        opts.question = value();
-        break;
-      case "-k":
-      case "--k": {
-        const raw = value();
-        const n = Number(raw);
-        if (!Number.isInteger(n) || n <= 0) {
-          throw new Error(`-k must be a positive integer${showable(raw) ? ` (got ${raw})` : ""}.`);
-        }
-        opts.k = n;
-        break;
-      }
-      case "--pg-url":
-        opts.pgUrl = value();
-        break;
-      case "--pg-table":
-        opts.pgTable = value();
-        break;
-      case "--dimensions": {
-        const raw = value();
-        const n = Number(raw);
-        if (!Number.isInteger(n) || n <= 0) {
-          throw new Error(`--dimensions must be a positive integer${showable(raw) ? ` (got ${raw})` : ""}.`);
-        }
-        opts.dimensions = n;
-        break;
-      }
-      case "--force":
-        opts.force = set();
-        break;
-      case "--types": {
-        // A misspelt type would match nothing and look like an empty index.
-        const types: ChunkType[] = [];
-        for (const type of value().split(",").map((s) => s.trim()).filter(Boolean)) {
-          if (!isChunkType(type)) {
-            throw new Error(`${labelled("Unknown --types value", type)} (expected ${Object.keys(CHUNK_TYPES).join(", ")}).`);
-          }
-          types.push(type);
-        }
-        opts.filterTypes = types;
-        break;
-      }
-      case "--file-path":
-        opts.filePath = value();
-        break;
-      case "-v":
-      case "--verbose":
-        opts.verbose = set();
-        break;
-      case "--log-level":
-        opts.logLevel = value();
-        break;
-      case "--log-file":
-        opts.logFile = value();
-        break;
-      case "--log-stdout":
-        opts.logStdout = set();
-        break;
-      case "--correlation-id":
-        opts.correlationId = value();
-        break;
-      default:
-        throw new Error(`Unknown option: ${flag}`);
-    }
+/** A positive integer, for `-k` and `--dimensions`. */
+function positiveInteger(flag: string, raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`${flag} must be a positive integer${showable(raw) ? ` (got ${raw})` : ""}.`);
   }
-  return opts;
+  return n;
 }
 
-function readValue(argv: readonly string[], index: number, flag: string): string {
-  const value = argv[index];
-  if (!value || (value.startsWith("--") && value !== flag)) {
-    throw new Error(`${flag} requires a value.`);
-  }
-  return value;
-}
+/** Every flag `askdb rag` accepts, for the parser and the help. */
+const RAG_FLAGS: readonly Flag<CliOptions>[] = [
+  {
+    names: ["--store"],
+    value: "<memory|file|pgvector>",
+    help: "Vector store. Default: rag.store.",
+    apply(opts, raw) {
+      if (!isCliStore(raw)) throw new Error(`${labelled("Unknown store", raw)} (expected 'memory', 'file', or 'pgvector').`);
+      opts.store = raw;
+    },
+  },
+  {
+    names: ["--embedder"],
+    value: "<mock|ai>",
+    help: "Embedder. Default: rag.embedder.",
+    apply(opts, raw) {
+      if (!isCliEmbedder(raw)) {
+        throw new Error(`${labelled("Unknown embedder", raw)} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`);
+      }
+      opts.embedder = raw;
+    },
+  },
+  {
+    names: ["--embedder-model"],
+    value: "<id>",
+    help: "Model for the ai embedder. Default: ai.embedding.model.",
+    apply(opts, raw) {
+      // Trimmed as the registry trims it, so the embedder id names the model that embeds.
+      const model = raw.trim();
+      if (!model) throw new Error("--embedder-model requires a value.");
+      opts.embedderModel = model;
+    },
+  },
+  {
+    names: ["--dimensions"],
+    value: "<n>",
+    help: "Vector width. Required by setup-store; index and query default to ai.embedding.dimensions, else the model's own.",
+    apply: (opts, raw) => (opts.dimensions = positiveInteger("--dimensions", raw)),
+  },
+  {
+    names: ["--force"],
+    help: "index: re-embed every chunk, even ones the store already holds.",
+    apply: (opts) => (opts.force = true),
+  },
+  {
+    names: ["--question"],
+    value: "<text>",
+    help: "query: the text to search for (required).",
+    apply: (opts, value) => (opts.question = value),
+  },
+  {
+    names: ["-k", "--k"],
+    value: "<n>",
+    help: "query: how many chunks to return. Default: 8.",
+    apply: (opts, raw) => (opts.k = positiveInteger("-k", raw)),
+  },
+  {
+    names: ["--types"],
+    value: "<list>",
+    help: "query: only these chunk types, comma-separated.",
+    apply(opts, raw) {
+      // A misspelt type would match nothing and look like an empty index.
+      const types: ChunkType[] = [];
+      for (const type of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+        if (!isChunkType(type)) {
+          throw new Error(`${labelled("Unknown --types value", type)} (expected ${Object.keys(CHUNK_TYPES).join(", ")}).`);
+        }
+        types.push(type);
+      }
+      opts.filterTypes = types;
+    },
+  },
+  {
+    names: ["--file-path"],
+    value: "<path>",
+    help: "File store base path. Default: rag.storeConfig.file.basePath, else <schema-dir>/schema.",
+    apply: (opts, value) => (opts.filePath = value),
+  },
+  {
+    names: ["--pg-url"],
+    value: "<conn>",
+    help: "pgvector connection string. Default: rag.storeConfig.pgvector.databaseUrl.",
+    apply: (opts, value) => (opts.pgUrl = value),
+  },
+  {
+    names: ["--pg-table"],
+    value: "<name>",
+    help: `pgvector table. Default: rag.storeConfig.pgvector.table, else ${DEFAULT_PGVECTOR_TABLE}.`,
+    apply: (opts, value) => (opts.pgTable = value),
+  },
+  {
+    names: ["--api-key"],
+    value: "<key>",
+    help: "Removed: set the key on a connection in ai.providerConfig in askdb.config.*.",
+    // Secrets on argv leak through shell history and the process list.
+    apply: () => {
+      throw new Error("--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.");
+    },
+  },
+  ...loggingFlags<CliOptions>(),
+];
 
-function printHelp(): void {
-  process.stdout.write(
-    [
-      "askdb rag - Chunk, embed, and query a schema artifact directory.",
-      "",
-      "Usage:",
-      "  askdb rag index [schema-dir]   [--store memory|file|pgvector] [--embedder mock|ai] [--embedder-model <id>] [--dimensions <n>] [--force]",
-      "  askdb rag query [schema-dir]   --question \"...\" [-k 8] [--types <list>] [--store file|pgvector] [--embedder mock|ai] [--embedder-model <id>] [--dimensions <n>]",
-      "  askdb rag setup-store          --dimensions <n> [--pg-url <conn>] [--pg-table askdb_rag_chunks]",
-      "",
-      "Flags override askdb.config.*: [schema-dir] defaults to introspection.outputDir, --store to rag.store,",
-      "--pg-url, --pg-table and --file-path to rag.storeConfig, and --embedder to rag.embedder.",
-      "",
-      "Commands:",
-      "  index        Chunk and embed a schema directory into the store. Only chunks the store",
-      "               doesn't already hold (same id + content hash) are embedded; --force re-embeds everything.",
-      "  query        Run a similarity query against an indexed store. Use the same embedder/dimensions as `index`.",
-      `               --types takes a comma-separated list of: ${Object.keys(CHUNK_TYPES).join(", ")}.`,
-      "  setup-store  Create the pgvector extension, table, and indexes at --dimensions, the vector width of",
-      "               your embedding model. Idempotent — safe to re-run.",
-      "",
-      "Stores:",
-      "  memory     in-memory cosine, lives only for one process. Useful for `index` dry runs (writes no schema.lock.json); `query` can't use it.",
-      "  file       persisted as <schema-dir>/schema.embeddings.{bin,json}, or <path>.embeddings.{bin,json} with --file-path <path>.",
-      "  pgvector   --pg-url <conn> [--pg-table askdb_rag_chunks]",
-      "",
-      "Embedders:",
-      "  mock       deterministic lexical hash, 64 dimensions unless --dimensions. CI-safe.",
-      "  ai         the ai.embedding model from askdb.config.* (needs rag.embedder: \"ai\"). --embedder-model",
-      "             overrides its model; --dimensions requests a width.",
-      "",
-      "Logging matches `askdb`:",
-      "  --log-level <level> --log-file <path> --log-stdout --correlation-id <id> -v/--verbose",
-      "",
-    ].join("\n"),
-  );
+const RAG_USAGE = [
+  "askdb rag index [schema-dir]   [--store memory|file|pgvector] [--embedder mock|ai] [--embedder-model <id>] [--dimensions <n>] [--force]",
+  "askdb rag query [schema-dir]   --question \"...\" [-k 8] [--types <list>] [--store file|pgvector] [--embedder mock|ai] [--embedder-model <id>] [--dimensions <n>]",
+  "askdb rag setup-store          --dimensions <n> [--pg-url <conn>] [--pg-table askdb_rag_chunks]",
+];
+
+function ragNotes(): string[] {
+  return [
+    "Flags override askdb.config.*: [schema-dir] defaults to introspection.outputDir, --store to rag.store,",
+    "--pg-url, --pg-table and --file-path to rag.storeConfig, and --embedder to rag.embedder.",
+    "",
+    "Commands:",
+    "  index        Chunk and embed a schema directory into the store. Only chunks the store",
+    "               doesn't already hold (same id + content hash) are embedded; --force re-embeds everything.",
+    "  query        Run a similarity query against an indexed store. Use the same embedder/dimensions as `index`.",
+    `               --types takes a comma-separated list of: ${Object.keys(CHUNK_TYPES).join(", ")}.`,
+    "  setup-store  Create the pgvector extension, table, and indexes at --dimensions, the vector width of",
+    "               your embedding model. Idempotent — safe to re-run.",
+    "",
+    "Stores:",
+    "  memory     in-memory cosine, lives only for one process. Useful for `index` dry runs (writes no schema.lock.json); `query` can't use it.",
+    "  file       persisted as <schema-dir>/schema.embeddings.{bin,json}, or <path>.embeddings.{bin,json} with --file-path <path>.",
+    "  pgvector   --pg-url <conn> [--pg-table askdb_rag_chunks]",
+    "",
+    "Embedders:",
+    "  mock       deterministic lexical hash, 64 dimensions unless --dimensions. CI-safe.",
+    "  ai         the ai.embedding model from askdb.config.* (needs rag.embedder: \"ai\"). --embedder-model",
+    "             overrides its model; --dimensions requests a width.",
+  ];
 }

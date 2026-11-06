@@ -110,7 +110,7 @@ The full result and option types are in the [@askdb/core API reference](/referen
 
 ## Advanced: call `ask()` directly
 
-`createAskDb` is a convenience layer over `@askdb/core`'s pure `ask()` — not a replacement. Drop down to `ask()` when you construct the model yourself, serve multiple schemas from one process, or want zero dependency on `@askdb/config` / `@askdb/ai`.
+`createAskDb` is a convenience layer over `@askdb/core`'s pure `ask()` — not a replacement. Drop down to `ask()` when you construct the model yourself, or want zero dependency on `@askdb/config` / `@askdb/ai`. (The client serves several schemas too: pass `schema` per call.)
 
 <InstallTabs pkgs="@askdb/core ai @ai-sdk/openai pg" />
 

@@ -252,7 +252,19 @@ export type SensitiveScopeIssue =
   /** A table source that is not a relation name (table function, `VALUES`, …). */
   | "OPAQUE_TABLE_SOURCE"
   /** A string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned. */
-  | "UNTERMINATED_TOKEN";
+  | "UNTERMINATED_TOKEN"
+  /**
+   * A Postgres Unicode-escaped name (`U&"p\0061ssword"`), which Postgres decodes and the check
+   * matches as written, so it can't tell which column it names. Raised whenever the SQL may be
+   * read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect (#707, #692).
+   */
+  | "UNICODE_ESCAPED_IDENTIFIER"
+  /**
+   * An `E'…'` string continued on a later line, which Postgres reads with backslash escapes and
+   * the check doesn't, so a column after it could be hidden. Raised whenever the SQL may be read
+   * as Postgres (#707, #703).
+   */
+  | "STRING_CONTINUATION";
 
 /** Conservative-failure report attached when scope resolution was incomplete. */
 export type SensitiveScopeReport = {

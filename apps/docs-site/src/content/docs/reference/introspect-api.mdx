@@ -1,0 +1,384 @@
+---
+title: "Introspection API reference"
+description: "API reference for @askdb/introspect, its engine kit, the engine packages (@askdb/postgres, @askdb/mysql, @askdb/sqlite, @askdb/sqlserver) and @askdb/prisma."
+---
+
+<p class="doc-eyebrow">Reference · Introspection</p>
+
+<p class="doc-lede">These packages read a database, or a Prisma schema file, and write the schema artifact. The <code>askdb</code> CLI and Studio are built on them. Import them to introspect from your own code, or to add an engine.</p>
+
+`@askdb/introspect`, the four engine packages and `@askdb/prisma` are in AskDB's 1.0 set ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)): they go to 1.0.0, and after that a breaking change to them needs a major version. To install them, see the [package reference](/reference/packages/#introspection).
+
+```ts
+import { introspect } from "@askdb/introspect";
+import { createPostgresCatalogQueryRunner, createPostgresConnector } from "@askdb/postgres";
+
+const result = await introspect(
+  { mode: "live", runner: createPostgresCatalogQueryRunner(process.env.DATABASE_URL!) },
+  { outDir: "./my-app.schema", schemaId: "my-app" },
+  { connector: createPostgresConnector() },
+);
+
+console.log(result.render?.schemaJsonPath, result.warnings);
+```
+
+## `@askdb/introspect`
+
+The engine-agnostic contract: the `introspect()` orchestrator, the schema-artifact writer, the connector registry, and the types every connector shares. It exports no error classes: its functions throw `Error`.
+
+### `introspect(input, renderOptions, options)`
+
+```ts
+function introspect<TInput>(
+  input: TInput,
+  renderOptions: RenderOptions | undefined,
+  options: IntrospectOptions<TInput>, // { connector: Connector<TInput> }
+): Promise<IntrospectResult>;
+```
+
+Runs `options.connector.describe(input)`. The connector's package owns the shape of `input`, such as `PostgresIntrospectionInput`. There is no default connector.
+
+- With `renderOptions`, it writes the artifact's `schema.json` through `renderToSchemaV2()` and returns the result with `render: RenderResult`. The render's warnings are added to the connector's.
+- With `renderOptions` set to `undefined`, it writes nothing and returns the connector's `IntrospectionResult` as is.
+- When `renderOptions.provider` is unset, the connector's detected `provider` is written to `schema.json`.
+
+`IntrospectResult` is `IntrospectionResult & { render?: RenderResult }`.
+
+### Writing the artifact
+
+| Function | Description |
+| --- | --- |
+| `renderToSchemaV2(schema, options)` | Writes `<outDir>/schema.json` from a `SqlSchema` and returns a `RenderResult`. It creates `outDir` if it's missing, and writes through `@askdb/core`'s `saveSchemaFile()`, which refuses a `schema.json` that is a symbolic link and renames a temporary file into place. It writes only `schema.json`. |
+| `renderSchemaV2Body(schema, options)` | The same output without writing: returns `{ json, body, warnings }` (a `RenderBodyResult`), where `body` is the exact file contents. `askdb introspect --out`, `--print` and `--diff` all use it. |
+| `isSchemaV2Json(value)` | `true` when a parsed `schema.json` passes the check the merge applies first: `version` 2, a schema id, and each table's `id`, `name` and `schema` and each column's `id`, `name`, `type` and `nullable`, with optional boolean `sensitive` flags. It never throws. |
+| `toV2SchemaJson(schema, schemaId, provider?)` | Builds the Schema v2 document without writing it. Views become tables. Every `sensitive` flag is `false`. |
+| `compactPostgresType(dataType, udtName)` | Shortens Postgres type names the way the artifact stores them (`timestamp with time zone` → `timestamptz`, `character varying(80)` → `varchar(80)`). Other strings pass through. `udtName` is unused. |
+
+The output is deterministic: tables sorted by schema and name, columns in their ordinal order, and `JSON.stringify(json, null, 2)` plus a newline, so the same catalog gives the same bytes.
+
+**`RenderOptions`:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `outDir` | `string` | Output directory, such as `"my-app.schema/"`. |
+| `schemaId` | `string` | The artifact's `schemaId`. |
+| `provider` | `string` | Dialect id to record in `schema.json`, so hosts pick the SQL dialect from it. |
+| `existingArtifactDir` | `string` | Merge with the `schema.json` already in this directory: `sensitive` flags set there are kept, and a column the old file lacks gets a `new_column` warning. Each id in `tables/*.md` that the new schema no longer has gets an `orphan_id` warning. The markdown files are read, never changed. |
+
+`RenderBodyOptions` is `RenderOptions` without `outDir`. `RenderResult` is `{ schemaJsonPath, warnings }`, with the absolute path of the written file.
+
+### Connector registry
+
+The registry lets a config-driven host pick an engine by id. Each engine package exports a `ConnectorProviderAdapter`: `postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider` and `prismaConnectorProvider`.
+
+```ts
+import { createConnectorRegistry } from "@askdb/introspect";
+import { postgresConnectorProvider } from "@askdb/postgres";
+
+const registry = createConnectorRegistry([
+  postgresConnectorProvider,
+  { provider: "prisma", load: async () => (await import("@askdb/prisma")).prismaConnectorProvider },
+]);
+```
+
+`createConnectorRegistry(adapters)` takes an array of entries, or an object keyed by provider id (an `undefined` value is skipped). An entry is an adapter or a lazy entry. It throws when an object key differs from its entry's `provider`, and when a provider id appears twice. It returns a `ConnectorRegistry`:
+
+| Method | Description |
+| --- | --- |
+| `hasProvider(provider)` | `true` for a registered provider, lazy entries included, without loading them. |
+| `providers()` | The registered ids, in registration order, lazy entries included. |
+| `load(provider)` | The provider's adapter, importing a lazy entry on the first call. Concurrent calls share one import, and a failed one is retried on the next call. Rejects for an unregistered provider, with the entry's own `load()` error, or when the loaded adapter's `provider` differs from the entry's. |
+| `createConnector(config)` | The adapter's `createConnector(config)`: a `ConnectorResult`. |
+| `getTemplates(provider)` | The engine's catalog SQL bundle, or `undefined` when the provider isn't registered or has none. |
+| `resolveConnection(provider, request)` | The adapter's `resolveConnection`, plus `sourceLabel`. Blank explicit values count as absent. An adapter without the hook gets `explicit` back unchanged. |
+| `connectionLabel(provider, connection)` | A label that is safe to show or log, built with `formatConnectionLabel` from the adapter's `connectionLabelParts`. A provider that isn't registered, has no hook, or whose hook throws or returns `undefined` gets `configured <provider> connection`. |
+
+`createConnector`, `getTemplates`, `resolveConnection` and `connectionLabel` throw ``Connector provider "<id>" is not loaded yet. Call `await registry.load("<id>")` first.`` for a lazy entry that hasn't been loaded.
+
+**Registry types:**
+
+| Type | Description |
+| --- | --- |
+| `ConnectorProviderAdapter` | `{ provider, createConnector(config), getTemplates?(), resolveConnection?(request), connectionLabelParts?(connection) }`. `connectionLabelParts` returns the parts of a connection that are safe to display (`ConnectionLabelParts`), parsed by the engine's own rules, or `undefined`. The adapter never builds label text itself. |
+| `LazyConnectorProviderAdapter` | `{ provider, load(): Promise<ConnectorProviderAdapter> }`, for an engine package the host may not have installed. The CLI and Studio register `@askdb/prisma` this way. `load()` errors reach the caller unchanged, so give a missing package its install hint there. |
+| `ConnectorProviderEntry`, `ConnectorProviderAdapters` | An adapter or a lazy entry; and what `createConnectorRegistry` takes (an array of entries, or an object keyed by id). |
+| `ConnectorProviderId`, `BuiltInConnectorProvider` | A provider id is any string, so a third-party engine registers its own. `BuiltInConnectorProvider` is the union of the first-party ids. |
+| `ConnectorConfig` | What `createConnector` takes: `provider`, `url` (a URL, or the file path for SQLite), `fromExport` (Postgres only), `schemaPath` (Prisma only), `filters`, `schemaId`. Only the Prisma adapter passes `schemaId` on; the artifact's id comes from `RenderOptions.schemaId`. |
+| `ConnectorResult` | `{ connector, input, mode }`, where `mode` is informational (`"live"`, `"from-export"`, `"prisma-schema"`). |
+| `ConnectorConnection` | `{ url?, fromExport?, schemaPath? }`: the source fields of `ConnectorConfig`. |
+| `ConnectorConnectionRequest` | `{ explicit?, runtime, surface? }`. `explicit` values (such as CLI flags) win over `runtime`. `surface` is `"cli"`, `"studio"` or another string: with `"cli"`, errors name `askdb introspect` flags, and otherwise they name config keys. |
+| `ConnectorRuntimeConfig` | `{ introspection, structured? }`, typed structurally so engine packages don't depend on `@askdb/config`. Pass `getAskDbRuntimeConfig()` as is. |
+| `ConnectorConnectionResult` | What an adapter's `resolveConnection` returns: `{ ok: true, connection }` or `{ ok: false, error }`. The error is shown to users, so it must never echo a connection string. |
+| `ConnectorConnectionResolution` | What `registry.resolveConnection` returns: the same, with `sourceLabel` on success. |
+
+**Registry values:**
+
+| Export | Description |
+| --- | --- |
+| `BUILT_IN_CONNECTOR_PROVIDERS` | The first-party ids: `["postgres", "prisma", "mysql", "sqlite", "sqlserver"]`. |
+| `connectorProviderMissingMessage(provider)` | The error text for an unregistered provider. For a built-in id it says to install `@askdb/<id>`. |
+| `connectorPackageMissingMessage({ provider, packageName, allowBuilds? })` | The CLI's and Studio's error text for a registered engine whose package isn't installed: an install command and the one-off `npx -p askdb -p <package>` form. With `allowBuilds` (dependencies whose install scripts pnpm must approve), it gives `npm install <package>`, or on pnpm 10.4 or later `pnpm add --allow-build=<dependency> <package>`. It names the `askdb` binary, so a third-party host writes its own message. |
+
+### Connector contract
+
+```ts
+interface Connector<TInput = unknown> {
+  describe(input: TInput): Promise<IntrospectionResult>;
+  templates?(): SqlTemplateBundle; // engines that read schema files, like Prisma, have none
+}
+
+type IntrospectionFilters = {
+  schemas?: string[];        // include list; the default depends on the engine
+  excludeSchemas?: string[]; // added to the engine's own system-schema list
+  tables?: string[];         // globs matched against "<schema>.<name>"
+};
+
+type IntrospectionResult = {
+  schema: SqlSchema;
+  warnings: IntrospectionWarning[];
+  isEmpty: boolean;
+  viewDefinitions: Record<string, string>; // keyed by "table:<schema>.<view>"
+  provider?: string; // the dialect id the connector detected, e.g. "postgres"
+};
+
+type CatalogQueryRunner = (sql: string, params?: ReadonlyArray<unknown>) => Promise<CatalogQueryResult>;
+type CatalogQueryResult = { columns: string[]; rows: unknown[][] };
+
+type SqlTemplate = { name: string; sql: string; columns: readonly string[] };
+type SqlTemplateBundle = { engine: string; version: number; templates: readonly SqlTemplate[] };
+```
+
+A `CatalogQueryRunner` runs the connector's own catalog SQL, never generated SQL. Pass your own to use a driver or connection pool the engine package doesn't load itself.
+
+`IntrospectionWarning` is a union on `code`:
+
+| `code` | Fields | Meaning |
+| --- | --- | --- |
+| `orphan_id` | `id`, `file` | An id in an existing `tables/*.md` that the new schema doesn't have. |
+| `new_column` | `id`, `tableId` | A column the existing `schema.json` didn't have. |
+| `unsupported_type` | `column`, `type` | A column type the connector can't map. |
+| `view_with_array_columns` | `view`, `columns` | A view with array columns. |
+| `ambiguous_filter` | `filter` | A `tables` pattern that matched nothing. |
+| `cross_database_fk` | `table`, `constraint`, `referencedDatabase`, `referencedTable` | A foreign key into a database that wasn't introspected. The relationship is left out. |
+
+### Schema types
+
+The connector's output, which `renderToSchemaV2()` turns into the artifact. Not everything here reaches `schema.json`: comments, defaults, indexes, unique and check constraints, enums and sequences are captured but not written yet.
+
+```ts
+type SqlSchema = { schemaId: string; schemas: SqlNamespace[] };
+type SqlNamespace = { name: string; tables: SqlTable[]; views: SqlView[]; enums: SqlEnum[]; sequences: SqlSequence[] };
+type SqlTable = {
+  id: string; // "table:<schema>.<name>"
+  schema: string; name: string; comment?: string;
+  columns: SqlColumn[];
+  primaryKey?: { columns: string[] };
+  foreignKeys: SqlForeignKey[]; uniqueConstraints: SqlUnique[]; indexes: SqlIndex[]; checkConstraints: SqlCheck[];
+  rowLevelSecurity?: { enabled: boolean };
+};
+type SqlColumn = {
+  id: string; // "table:<schema>.<name>#<column>"
+  name: string; ordinalPosition: number;
+  dataType: string; udtName: string;
+  nullable: boolean; primaryKey: boolean;
+  defaultExpression?: string; comment?: string;
+};
+type SqlForeignKey = {
+  name: string; columns: string[];
+  references: { schema: string; table: string; columns: string[] };
+  onDelete?: SqlForeignKeyAction; onUpdate?: SqlForeignKeyAction;
+};
+type SqlForeignKeyAction = "no action" | "restrict" | "cascade" | "set null" | "set default";
+type SqlUnique = { name: string; columns: string[] };
+type SqlIndex = { name: string; columns: string[]; expressions?: string[]; unique: boolean; method: string };
+type SqlCheck = { name: string; expression: string };
+type SqlEnum = { schema: string; name: string; values: string[] };
+type SqlSequence = {
+  schema: string; name: string; dataType: string; startValue: string; increment: string;
+  minValue?: string; maxValue?: string; cycle: boolean;
+};
+type SqlView = { schema: string; name: string; definition: string; columns: SqlColumn[] };
+```
+
+## `@askdb/introspect/kit`
+
+Shared building blocks for engine packages, first-party and third-party. Catalog SQL, row shapes and dialect rules stay in each engine package; the kit holds the mechanical code every engine would otherwise copy. Import it when you write a connector for a new engine.
+
+```ts
+import { compileTableFilters, createOptionalDriverLoader, makeTableId } from "@askdb/introspect/kit";
+```
+
+### Driver loading
+
+| Export | Description |
+| --- | --- |
+| `createOptionalDriverLoader(spec)` | A lazy, cached loader for an optional driver peer. Call it once at module scope. It returns an `OptionalDriverLoader`. |
+| `OptionalDriverSpec<T>` | `{ packageName, specifier?, importDriver, missingMessage }`. `importDriver` must be a literal `() => import("pg").catch(rethrowDriverImportError)` written in your engine package, so bundlers see the optional dependency there. `specifier` defaults to `packageName`; set it for a subpath entry point such as `"mysql2/promise"`. |
+| `OptionalDriverLoader<T>` | `{ load(options?) }`. `load` tries the engine package's own import first, then resolves the driver from `resolveFrom` (default `process.cwd()`). Results are cached per `resolveFrom`, and a failure clears the cache so a later call retries. It rejects with an `AskDbError` whose message is `missingMessage` when the driver resolves from nowhere, with one naming the failure when the driver is installed but fails to load, and with one saying to restart the process when the driver is on disk but Node can't resolve it. |
+| `DriverLoadOptions` | `{ resolveFrom? }`: the directory to resolve the driver from when the engine package can't see it. Default `process.cwd()`. |
+| `isDriverInstalled(packageName, options?)` | `true` when `packageName` resolves from `resolveFrom`. A synchronous check that doesn't load the driver. |
+| `missingDriverMessage({ engine, packageName })` | The first-party engines' install hint for a missing driver. It names the `askdb` binary, so a third-party engine writes its own `missingMessage`. |
+| `rethrowDriverImportError(error)` | Rethrows `error` unchanged. Chain it on your driver's `import()`: that is how bundlers such as esbuild tell an optional dependency from a required one. |
+
+### Filters and ids
+
+| Export | Description |
+| --- | --- |
+| `compileTableFilters(patterns)` | A `GlobMatcher`, `(qualifiedName: string) => boolean`, that is `true` when any pattern matches a `"<schema>.<name>"`. No patterns match everything. `*` matches any run of characters, dots included, and `?` matches one character. Matching is whole-string and case-sensitive. Braces and character classes aren't supported. |
+| `ambiguousFilterWarnings(patterns, qualifiedNames)` | One `ambiguous_filter` warning for each pattern that matched none of `qualifiedNames`, in pattern order. |
+| `makeTableId(schema, table)` | `table:<schema>.<table>`, such as `table:public.users`. Engines without Postgres-style schemas use `public`: SQLite always, and MySQL for the connection's own database. |
+| `makeColumnId(schema, table, column)` | `table:<schema>.<table>#<column>`, such as `table:public.users#email`. |
+
+### Catalog rows
+
+| Export | Description |
+| --- | --- |
+| `rowsToRecords(result, options?)` | One record per row of a `CatalogQueryResult`, keyed by column name. With `RowsToRecordsOptions.expectedColumns`, only those columns are copied, and a result missing one throws an `Error`, prefixed with `source` when set. Zero rows give `[]`. |
+| `groupBy(rows, key)` | A `Map` of rows by key, keeping first-seen key order and row order. |
+| `buildOrderedGroups(rows, key, position, build)` | Groups rows by key, orders each group by `position`, and builds one named object per group (`build` may return `undefined` to drop it), sorted by name. |
+| `byName(a, b)` | A comparator: `localeCompare` on `.name`. |
+| `sortedUnique(values)` | Deduplicates strings and sorts them with `localeCompare`. |
+| `mapFkAction(rule)` | Maps a referential action (`CASCADE`, `SET NULL`, …, case-insensitive) to a `SqlForeignKeyAction`, or `undefined`. |
+
+### Live connector providers
+
+`defineLiveConnectorProvider(spec)` builds the `ConnectorProviderAdapter` for an engine that introspects a live database through a `CatalogQueryRunner` only, with no export bundle or schema file. `@askdb/mysql`, `@askdb/sqlite` and `@askdb/sqlserver` use it.
+
+**`LiveConnectorProviderSpec`:**
+
+| Field | Description |
+| --- | --- |
+| `provider` | The provider id. |
+| `displayName` | Engine name for error messages, such as `"MySQL"`. |
+| `runtimeKey` | The key in `runtime.introspection` that holds the configured connection, such as `"mysqlDatabaseUrl"`. An explicit `url` always wins. |
+| `connectionNoun` | What `config.url` holds, for the missing-URL error: `"a connection URL"`, `"a file path"`. |
+| `fromExportUnsupported` | Error for an export bundle. Default ``--from-export is not supported for --engine <provider>.`` |
+| `missingConnection` | `{ cli, config }`: the errors when no connection is set. `cli` names `askdb introspect` flags; `config` names `askdb.config.ts` keys. |
+| `createConnector()` | Returns the engine's `Connector<LiveCatalogInput>`. |
+| `createRunner(url)` | Returns the engine's `CatalogQueryRunner` for a connection. |
+| `connectionLabelParts(url)` | The display-safe parts of a connection string, or `undefined`. |
+
+`LiveCatalogInput` is `{ mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters }`. The adapter's `createConnector` throws when `config.url` is empty.
+
+`runtimeIntrospectionString(runtime, key)` returns `runtime.introspection[key]` when it's a non-empty string, else `undefined`.
+
+### Connection labels
+
+| Export | Description |
+| --- | --- |
+| `ConnectionLabelParts` | `{ host?, port?, database? }` (all strings) or `{ file }`. |
+| `formatConnectionLabel(engine, parts)` | `<engine>://host[:port][/database]`, or the file path. When `parts` is `undefined`, isn't a plain object, or has a part that fails its allowlist, it returns `configured <engine> connection`. It never throws, and never copies anything but the parsed parts, so no user name, password or query string reaches a label. |
+| `parseConnectionUrl(input, schemes)` | Parses `scheme://[user[:password]@]host[:port][/database][?query]` into label parts, for engines whose driver has no parser to reuse. Pass `schemes` in lower case. It returns `undefined` for another scheme, whitespace, control characters or `#`, an `@` after the authority, or a path with more than one segment. User info and the query string are never returned. The built-in engines don't use it (see below). |
+
+The built-in engines parse with their drivers' own rules instead: Postgres takes its parts from `pg-connection-string` and SQL Server's ADO.NET strings from `@tediousjs/connection-string`; MySQL reads a `mysql://` URL with the mapping `mysql2` applies; SQL Server's `mssql://` and Prisma-style `sqlserver://` URLs go through `@askdb/sqlserver`'s own parser; SQLite labels the file path. So `postgres://app:S3cret@db:5432/app` becomes `postgres://db:5432/app`.
+
+## Engine packages
+
+Each engine package exports the same set of pieces:
+
+- A connector (`create<Engine>Connector()`) and its input type, plus `describe<Engine>(input)`, which runs the catalog queries directly. A `describe*` input's `schemaId` defaults to `"introspected"`.
+- A catalog query runner built on the engine's driver: `create<Engine>CatalogQueryRunner(connectionString, options?)`. The driver is an optional peer, loaded on the runner's first call, not when you create the runner. When it's missing, the call rejects with an `AskDbError`: ``The built-in <Engine> catalog query runner requires the optional `<driver>` peer dependency. …``. A failing query rejects with an `AskDbError` such as `PostgreSQL catalog query failed: <message>`. Each call opens its own connection and closes it.
+- `load<Driver>Driver(options?)`, which resolves the driver the same way (for hosts that need the driver directly), and `is<Driver>DriverInstalled(options?)`, a synchronous check. `options` is the kit's `DriverLoadOptions`.
+- Its connector provider adapter, for the registry.
+- Type re-exports of `CatalogQueryResult` and `CatalogQueryRunner` from `@askdb/introspect`.
+- Re-exports of its dialect from `@askdb/core`, listed by name below. The dialect specs live in `@askdb/core`, and `ask()` needs only the dialect id. See [`DialectSpec`](/reference/core-api/#dialectspec).
+
+Every live connector sets `IntrospectionResult.provider` to its dialect id (`"postgres"`, `"mysql"`, `"sqlite"`, `"sqlserver"`).
+
+### `@askdb/postgres`
+
+Driver: `pg` (optional peer, `>=8`).
+
+| Export | Description |
+| --- | --- |
+| `createPostgresConnector()` | A `Connector<PostgresIntrospectionInput>` for live introspection and export bundles. `templates()` returns `POSTGRES_TEMPLATE_BUNDLE`. |
+| `PostgresIntrospectionInput` | `{ mode: "live"; runner; filters? }` or `{ mode: "from-export"; bundlePath; filters? }`. |
+| `describePostgres(input)` | Runs the 12 catalog templates through `input.runner`: `DescribePostgresInput` (`{ runner, filters?, schemaId? }`). Default: every schema except `information_schema`, `pg_catalog`, `pg_toast*` and `pg_temp_*`. |
+| `describePostgresFromExport(input)` | Reads an export bundle, synchronously: `DescribePostgresExportInput` (`{ bundlePath, filters?, schemaId? }`). See [Export bundles](#export-bundles). |
+| `POSTGRES_TEMPLATE_BUNDLE` | The catalog SQL suite as a `SqlTemplateBundle` (`engine: "postgres"`). Run it yourself to build an export bundle where AskDB can't connect (ADR 0031). |
+| `POSTGRES_TEMPLATES`, `POSTGRES_TEMPLATE_VERSION` | The 12 templates, and the suite version (`1`), which a bundle's `manifest.json` must match. |
+| `PostgresSqlTemplateName` | `"schemas"`, `"tables"`, `"columns"`, `"primary_keys"`, `"foreign_keys"`, `"unique_constraints"`, `"check_constraints"`, `"indexes"`, `"enums"`, `"sequences"`, `"views"`, `"comments"`. |
+| `createPostgresCatalogQueryRunner(connectionString, options?)` | Runs each catalog query inside a `BEGIN READ ONLY` transaction on a fresh pool. TLS settings come from the connection string. |
+| `loadPgDriver(options?)`, `isPgDriverInstalled(options?)` | Load or check `pg`. |
+| `postgresConnectorProvider` | The connector provider. An export bundle (`fromExport`) wins over `url`. Without either, it falls back to `introspection.providerConfig.postgres.databaseUrl`. |
+| `POSTGRES_DIALECT`, `postgresDialect`, `PostgresDialect` | Re-exports from `@askdb/core`: the dialect, a compatibility alias of it, and `DialectSpec` under another name. |
+
+#### Export bundles
+
+A bundle is a directory with a `manifest.json` (`{ "engine": "postgres", "version": 1, "files"?: { "<template>": "<file>" } }`) and one result per template: the file `files` names, else `<template>.csv`, else `<template>.json`. All 12 templates are required. Rows from system schemas are dropped, and the same filters apply as for a live database. A missing file, another engine or version, or an unknown template throws an `Error` that starts `@askdb/postgres:`.
+
+### `@askdb/mysql`
+
+Driver: `mysql2` (optional peer, `>=3`). MariaDB uses the same package and the `mysql` provider id.
+
+| Export | Description |
+| --- | --- |
+| `createMysqlConnector()` | A `Connector<MysqlIntrospectionInput>`, live only, with no templates. |
+| `MysqlIntrospectionInput` | `{ mode: "live"; runner; filters? }`. |
+| `describeMysql(input)` | `DescribeMysqlInput` (`{ runner, filters?, schemaId? }`). Without `filters.schemas`, it reads the connection's database and files its tables under `public`. With `filters.schemas`, each listed database becomes its own namespace, and `excludeSchemas` removes entries from the list. A foreign key into a database that wasn't read gives a `cross_database_fk` warning. When the connection has no database selected and no list is given, it throws an `AskDbError` asking for the database name in the URL. |
+| `createMysqlCatalogQueryRunner(connectionString, options?)` | Takes a `mysql://user:password@host:port/database` URL and opens one connection per query, with no transaction. |
+| `loadMysql2Driver(options?)`, `isMysql2DriverInstalled(options?)` | Load `mysql2/promise`, or check `mysql2`. |
+| `mysqlConnectorProvider` | The connector provider, built with `defineLiveConnectorProvider`. Falls back to `introspection.providerConfig.mysql.databaseUrl`. |
+| `MYSQL_DIALECT`, `MARIADB_DIALECT`, `MysqlDialect` | Re-exports from `@askdb/core`. |
+
+### `@askdb/sqlite`
+
+Driver: `better-sqlite3` (optional peer, `>=12`).
+
+| Export | Description |
+| --- | --- |
+| `createSqliteConnector()` | A `Connector<SqliteIntrospectionInput>`, live only. |
+| `SqliteIntrospectionInput` | `{ mode: "live"; runner; filters? }`. |
+| `describeSqlite(input)` | `DescribeSqliteInput` (`{ runner, filters?, schemaId? }`). Files every table under `public`. Only `filters.tables` applies, and `sqlite_` internal objects are skipped. Needs SQLite 3.16 or later. |
+| `createSqliteCatalogQueryRunner(filename, options?)` | Opens the file read-only on each query, and the file must exist: a missing file rejects with `better-sqlite3`'s own error. A relative path resolves against the process's working directory. `:memory:` doesn't work: `better-sqlite3` can't open an in-memory database read-only. |
+| `loadBetterSqlite3Driver(options?)`, `isBetterSqlite3DriverInstalled(options?)`, `Bs3Namespace` | Load or check `better-sqlite3`. `Bs3Namespace` is the loaded module, whose `default` is the constructor. |
+| `sqliteConnectorProvider` | The connector provider, built with `defineLiveConnectorProvider`. `url` holds the file path, and it falls back to `introspection.providerConfig.sqlite.file`. |
+| `SQLITE_DIALECT`, `SqliteDialect` | Re-exports from `@askdb/core`. |
+
+### `@askdb/sqlserver`
+
+Driver: `mssql` (optional peer, `>=12`).
+
+| Export | Description |
+| --- | --- |
+| `createSqlServerConnector()` | A `Connector<SqlServerIntrospectionInput>`, live only. |
+| `SqlServerIntrospectionInput` | `{ mode: "live"; runner; filters? }`. |
+| `describeSqlServer(input)` | `DescribeSqlServerInput` (`{ runner, filters?, schemaId? }`). Default: every schema except `sys`, `INFORMATION_SCHEMA`, `guest` and the `db_*` role schemas. |
+| `createSqlServerCatalogQueryRunner(connectionString, options?)` | Accepts an ADO.NET string (`Server=host,1433;Database=db;User Id=u;Password=p;`), an `mssql://user:pass@host:1433/database` URL, or a Prisma-style `sqlserver://host:1433;database=db;user=u;password=p`. Opens a pool per query; a connection failure rejects with the driver's own error. AskDB sets no TLS options of its own, so the driver's defaults apply unless the string sets `encrypt` or `trustServerCertificate`. |
+| `resolveConnectionInput(connectionString)` | The conversion the runner applies: a URL becomes an `MssqlConfigInput` (`{ server, port?, database?, user?, password?, options?: { encrypt?, trustServerCertificate? } }`), and an ADO.NET string comes back with spaced keys such as `Trust Server Certificate` normalized. A URL without a host throws an `AskDbError`. |
+| `loadMssqlDriver(options?)`, `isMssqlDriverInstalled(options?)` | Load or check `mssql`. |
+| `sqlServerConnectorProvider` | The connector provider, built with `defineLiveConnectorProvider`. Falls back to `introspection.providerConfig.sqlserver.databaseUrl`. |
+| `SQLSERVER_DIALECT`, `SqlServerDialect` | Re-exports from `@askdb/core`. |
+
+[Switch engines](/guides/switch-engines/) covers the SQL Server connection formats and TLS settings in practice.
+
+## `@askdb/prisma`
+
+A file-only connector: it reads `.prisma` files and never connects to a database. Before parsing, it drops the `url` and `directUrl` lines from each `datasource` block, so their environment variables don't need to be set. It loads `@prisma/internals` (a dependency, not a peer) on the first describe, so registering the adapter costs nothing until a Prisma schema is read. It re-exports no dialect: pass `ask()` the dialect id.
+
+| Export | Description |
+| --- | --- |
+| `createPrismaConnector()` | A `Connector<PrismaIntrospectionInput>`, with no templates. |
+| `PrismaIntrospectionInput` | `{ schemaPath?, schemaId?, filters? }`. `schemaPath` is a `.prisma` file or a directory searched for `.prisma` files. Without it, `discoverPrismaSchemaPath()` finds one. |
+| `describePrismaSchema(input)` | Reads the schema and returns an `IntrospectionResult` whose `provider` comes from the first datasource (see below). Schema filters apply to each model's `@@schema` (default `public`), and table globs to `<schema>.<table>` with the `@@map` name. |
+| `discoverPrismaSchemaPath(cwd?)` | Looks in `cwd` (default `process.cwd()`) for `prisma/schema.prisma`, then `schema.prisma`, then a `prisma/` directory with `.prisma` files. Throws when there is none. |
+| `PrismaSchemaProvider` | The supported `datasource.provider` values: `"postgresql" \| "mysql" \| "sqlite" \| "sqlserver" \| "cockroachdb"`. |
+| `prismaConnectorProvider` | The connector provider. It takes `schemaPath` (an explicit one wins over `introspection.providerConfig.prisma.schemaPath`) and rejects `url` and `fromExport`. |
+
+| `datasource.provider` | `provider` in the result |
+| --- | --- |
+| `postgresql` | `"postgres"` |
+| `mysql` | `"mysql"` |
+| `sqlite` | `"sqlite"` |
+| `sqlserver` | `"sqlserver"` |
+| `cockroachdb` | `"cockroachdb"` |
+
+Any other provider throws ``@askdb/prisma: unsupported Prisma datasource provider '<provider>'. …``.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>Install and configure each engine, from the CLI and from code.</span></a>
+  <a href="/guides/integrations/prisma/"><strong>Prisma</strong><span>Introspect from a <code>.prisma</code> file.</span></a>
+  <a href="/reference/packages/"><strong>Package reference</strong><span>What each package is for, and how to install it.</span></a>
+</div>

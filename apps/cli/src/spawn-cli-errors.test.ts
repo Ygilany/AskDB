@@ -131,7 +131,7 @@ describe("cli spawn: rich errors", () => {
     );
 
     expect(exec.status).toBe(1);
-    expect(exec.stderr).toContain("unknown option '--execute'");
+    expect(exec.stderr).toBe("Unknown option: --execute\n");
   });
 
   it("names --mock-sql and dev.mockSql, not an environment variable, when no AI key is configured (#281)", () => {
