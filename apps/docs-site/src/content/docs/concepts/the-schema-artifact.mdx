@@ -113,7 +113,7 @@ The bundle carries `schema.json`, every `tables/*.md`, `concepts.md`, and `tenan
 
 Each table records its database namespace in `schema`, and every table needs one. `provider` records the engine that introspection read. When your config doesn't set `dialect`, AskDB's config-driven entry points pick the SQL dialect from `provider` (see [Configuration](/reference/config/)).
 
-`askdb introspect` writes `schema.json`, and you can also edit it by hand, for example to mark a column sensitive or to un-mark one. When you introspect again into the same directory, AskDB rebuilds `schema.json` from the database and keeps only the `sensitive` flags from the existing file, matched by table and column ID. Every other hand edit to `schema.json` is overwritten.
+`askdb introspect` writes `schema.json`, and you can also edit it by hand, for example to un-mark a column it marks sensitive. To mark a table or column sensitive, use front-matter instead (see [The enrichment layer](#the-enrichment-layer)). Front-matter rejects a key it doesn't know, but `schema.json` ignores one: a misspelled `"sensitve": true` there loads without an error or a warning and marks nothing. When you introspect again into the same directory, AskDB rebuilds `schema.json` from the database and keeps only the `sensitive` flags from the existing file, matched by table and column ID. Every other hand edit to `schema.json` is overwritten.
 
 ## The enrichment layer
 
@@ -164,7 +164,7 @@ Every table, column, and concept has a stable ID. The markdown files refer to ta
 Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition, and doesn't map the old ID to the new one. Renaming a table changes the ID of every column in it too.
 
 <Aside type="caution" title="A rename drops sensitivity marks">
-After a rename, a `tables/*.md` entry that names the old ID stops applying: `loadSchema()` ignores it and reports an `orphaned_table_id` or `orphaned_column_id` warning. A `sensitive: true` on the old ID doesn't carry over either, from `schema.json` or from front-matter. Move your markdown entries and sensitivity marks to the new ID before you ship the schema.
+After a rename, a `tables/*.md` entry that names the old ID stops applying: `loadSchema()` ignores it and reports an `orphaned_table_id` or `orphaned_column_id` warning. A `sensitive: true` on the old ID doesn't carry over either, from `schema.json` or from front-matter. In `schema.json`, re-introspection removes the old ID together with its flag and doesn't warn about the lost flag, so look for removed `"sensitive": true` lines in the diff of `schema.json` (for example `git diff schema.json`). Move your markdown entries and sensitivity marks to the new ID before you ship the schema.
 </Aside>
 
 ## Why this matters
