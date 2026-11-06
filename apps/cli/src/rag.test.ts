@@ -653,30 +653,16 @@ describe("askdb rag", () => {
     });
 
     it.each([
-      ["openai", 'askdb rag: --embedder "openai" is deprecated; use --embedder ai with ai.embedding: { provider: "openai", model }.'],
-      ["ai-sdk", 'askdb rag: --embedder "ai-sdk" is deprecated; use --embedder ai.'],
-    ])("--embedder %s is a deprecated alias of ai", async (alias, warning) => {
-      const server = await startEmbeddingServer();
-      installRuntime(aiEmbeddingConfig(server.baseUrl));
+      ["openai", '--embedder openai was removed: use --embedder ai, with rag.embedder: "ai" and ai.embedding: { provider: "openai", model } in askdb.config.*.'],
+      ["ai-sdk", '--embedder ai-sdk was removed: use --embedder ai, with rag.embedder: "ai" and ai.embedding in askdb.config.*.'],
+    ])("--embedder %s fails, naming its replacement", async (value, message) => {
+      // A config the ai embedder could run with, so the run fails on the flag alone.
+      installRuntime(aiEmbeddingConfig("http://127.0.0.1:9"));
       const schemaDir = copyFixture();
 
-      expect(await runRagCli(["index", schemaDir, "--embedder", alias])).toBe(0);
-      expect(stderr.join("")).toBe(`${warning}\n`);
-      expect(readLock(schemaDir)).toMatchObject({ embedderId: "ai-sdk:openai:text-embedding-3-small:4" });
-    });
-
-    it("--embedder openai refuses an ai.embedding on another provider", async () => {
-      installRuntime({
-        ...BASE_CONFIG,
-        ai: {
-          ...BASE_CONFIG.ai,
-          providerConfig: { openai: { apiKey: "test-key" }, google: { apiKey: "google-key" } },
-          embedding: { provider: "google", model: "gemini-embedding-001" },
-        },
-        rag: { embedder: "ai", store: "file", storeConfig: { file: {} } },
-      });
-      expect(await runRagCli(["index", copyFixture(), "--embedder", "openai"])).toBe(1);
-      expect(stderr.join("")).toMatch(/--embedder openai embeds with OpenAI, but ai\.embedding\.provider is "google"; use --embedder ai\./);
+      expect(await runRagCli(["index", schemaDir, "--embedder", value])).toBe(1);
+      expect(stderr.join("")).toBe(`${message}\n`);
+      expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
     });
   });
 

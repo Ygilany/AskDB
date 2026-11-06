@@ -54,7 +54,7 @@ const ENV_SPEC: BuiltinProviderEnvSpec = {
   embeddingModelVars: ["<PROVIDER>_EMBEDDING_MODEL"], // only if embeddings exist
   baseURLVars: ["<PROVIDER>_BASE_URL"],
   defaultModel: "<defaultModel>",
-  // no defaultEmbeddingModel: it's deprecated, and embedding models have no defaults (configs set ai.embedding.model)
+  // embedding models have no default: configs set ai.embedding.model, env maps ASKDB_AI_EMBEDDING_MODEL
 };
 
 const CONFIG_HINT =

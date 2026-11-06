@@ -6,6 +6,8 @@ Accepted (2026-10-02, maintainer decision). Implemented by #435, which also fixe
 
 > **Amendment (2026-11, #711 candidate 7, #765):** Two decisions below change. The old keys aren't translated any more: each fails to load, with an error naming it and its replacement, since `@askdb/config` 1.0.0-beta.19 (#765, before `1.0.0-rc.1` freezes the API). And no section has an env view: `rt.ai.language.env`, `rt.ai.embedding.env` and `rt.ai.aiEnv` are gone. Each section carries its connection's typed settings (`connection: { name, apiKey, apiKeySecondary, baseUrl, resourceName, apiVersion }`) and goes to `@askdb/ai`'s `*FromSection` methods as it is (ADR 0006's 2026-11 amendment). A section still receives its own connection only, so the #345 guarantee holds without the per-section env maps.
 
+> **Amendment (2026-11, #651):** `@askdb/ai`'s `defaultEmbeddingModel` is removed, not only deprecated: an env map with an API key and no embedding model now fails as the section path does, so no layer picks an embedding model.
+
 ## Context
 
 `askdb.config` configured embeddings in the `rag` block. Its one branch, `rag.embedderConfig.openai`, was required by both the `openai` and `ai-sdk` embedders, and an unset model meant `text-embedding-3-small` whatever the provider. The layers under the config were already provider-neutral: `@askdb/rag` takes any AI SDK embedding model, and `@askdb/ai` treats embedding as one use of a provider (`AiUsage = "language" | "embedding"`). Every built-in adapter except Anthropic's builds embedding models; Anthropic has no embeddings API, so its adapter throws. The mismatch caused #345. With `ai.provider: "google"` and `rag.embedder: "ai-sdk"`, Studio sent the key from the OpenAI branch to Google and asked Google for an OpenAI model.

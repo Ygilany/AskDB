@@ -23,7 +23,6 @@ const ENV_SPEC: BuiltinProviderEnvSpec = {
   ],
   baseURLVars: ["AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_BASE_URL"],
   defaultModel: "gpt-4o-mini",
-  defaultEmbeddingModel: "text-embedding-3-small",
 };
 
 const ALIASES = ["azure-openai", "foundry"];
