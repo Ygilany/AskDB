@@ -95,8 +95,8 @@ const rebound = bindPreparedQuery(stored, { state_name: "Utah" }, { schema, tena
 
 `loadSchema()` now checks every ID in `tenant-policy.md` against `schema.json`, and a policy with `enforcement: strict` must match it ([#332](https://github.com/Ygilany/AskDB/issues/332), ADR 0023). It throws `SchemaParseError` when the policy names a column or foreign key that `schema.json` doesn't have, has a cycle in `hierarchy` or `parent`, or names a root in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare. Before, the policy loaded, and only Studio's Tenancy page showed the problems. The error names `tenant-policy.md` and each ID: update the policy to match `schema.json`. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
 
-- **Every caller gets the same error:** `@askdb/client` wraps it in `SchemaLoadError`, with the `SchemaParseError` as its `cause`. The HTTP API answers 400 `schema_parse_error`. Studio can't open the workspace until you fix the file ([#640](https://github.com/Ygilany/AskDB/issues/640)).
-- **Under `enforcement: warn`,** the policy still loads, with the problems in `schema.tenantPolicy.warnings`. `ask()` now logs them once per loaded schema as `askdb.tenant.policy_warnings`.
+- **Every caller gets the same underlying error:** `loadSchema()` throws the `SchemaParseError`, `@askdb/client` wraps it in `SchemaLoadError` as its `cause`, and the HTTP API answers 400 `schema_parse_error`. Studio can't open the workspace until you fix the file ([#640](https://github.com/Ygilany/AskDB/issues/640)).
+- **Under `enforcement: warn`,** the policy still loads, with the problems in `schema.tenantPolicy.warnings`. `ask()` now logs them once per loaded schema as `askdb.tenant.policy_warnings`, through the `logger` you pass to it.
 - **A table that `schema.json` doesn't have** stays a warning in both modes. Its policy entry now reports only the table, not each of its columns.
 
 ## 1.0.0-beta.45
