@@ -226,12 +226,15 @@ async function runWithOutput(
 ): Promise<IntrospectResult> {
   const connector = runConfig.connector;
   const input = runConfig.input;
+  // Named by the error an empty render throws (ADR 0037).
+  const filters = buildFilters(opts);
 
   if (opts.print) {
     const result = await introspect(input, undefined, { connector });
     const rendered = renderSchemaV2Body(result.schema, {
       schemaId,
       provider: result.provider,
+      filters,
     });
     process.stdout.write(rendered.body);
     return { ...result, warnings: [...result.warnings, ...rendered.warnings] };
@@ -250,6 +253,7 @@ async function runWithOutput(
       schemaId,
       provider: result.provider,
       existingArtifactDir: hasExisting && isValidSchemaFile(existingPath) ? opts.diff : undefined,
+      filters,
     });
     const existing = hasExisting ? readFileSync(existingPath, "utf8") : "";
     const changed = rendered.body !== existing && !sameJson(existing, rendered.json);
@@ -266,6 +270,7 @@ async function runWithOutput(
       outDir,
       schemaId,
       existingArtifactDir: existsSync(join(outDir, "schema.json")) ? outDir : undefined,
+      filters,
     },
     { connector },
   );

@@ -182,6 +182,10 @@ export default defineConfig({
               ],
             },
             {
+              label: "Formats and rules",
+              items: [{ label: "Schema artifact format", slug: "reference/schema-artifact-format" }],
+            },
+            {
               label: "Packages and releases",
               items: [{ label: "Packages", slug: "reference/packages" }],
             },
