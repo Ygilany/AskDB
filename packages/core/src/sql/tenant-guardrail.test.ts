@@ -594,6 +594,20 @@ describe("validateTenantGuardrails — a call the tenant check can't read throug
     }
   });
 
+  // `docs/contracts/tenant-policy.md` lists every function the rule refuses. They're typed out
+  // here, so a misspelled or dropped entry in the check's own list fails a test.
+  it.each([
+    "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema", "cursor_to_xml", "ts_stat", "ts_rewrite",
+    "crosstab", "crosstab2", "crosstab3", "crosstab4",
+    "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
+    "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
+    "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
+    "dblink_fetch", "dblink_get_result", "openquery", "openrowset", "opendatasource",
+    "set_config",
+  ])("refuses a call to %s, as the contract lists", (name) => {
+    expect(rules(`SELECT ${name}('x') AS v`)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
   // Postgres resolves each of these to `query_to_xml`. It doesn't care how the name is
   // qualified or cased, or what comment sits before the `(`. It decodes a `U&"…"` name,
   // which the check doesn't, so it refuses every `U&` name called as a function.
