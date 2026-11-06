@@ -30,7 +30,7 @@ If you're an agent implementing this integration: check whether the host app alr
 
 ## In your config (CLI, Studio, HTTP API)
 
-Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service call `createLanguageModelFromEnv` internally.
+Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service pass the config's `ai.language` section to `@askdb/ai`'s registry, which builds the model.
 
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
@@ -303,7 +303,7 @@ const ai = createAiRegistry();
 const model = await ai.createLanguageModelFromEnv(process.env); // undefined without an API key
 ```
 
-`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` reads only the map you pass, never `process.env` on its own. The [`@askdb/ai` reference](/reference/packages/#env-map-precedence) lists the variables it reads, in order. A config section and an env map that hold the same settings give the same model.
+`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` takes its settings only from the map you pass. Its one read of `process.env` is a check: with no base URL configured, it refuses an `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` with a username or password, which the provider SDK would read itself. The [`@askdb/ai` reference](/reference/packages/#env-map-precedence) lists the variables it reads from the map, in order. A config section and an env map that hold the same settings give the same model.
 
 ## Reasoning/latency effort
 

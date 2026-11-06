@@ -1512,7 +1512,7 @@ describe("AskDB Studio server", () => {
         expect(written.envVars.map((v: any) => v.name)).toContain("AZURE_RESOURCE_NAME");
         expect(readFileSync(join(projectDir, ".env.example"), "utf8")).toMatch(/^AZURE_RESOURCE_NAME=/m);
 
-        // Without a resource name (or endpoint) the adapter refuses to start.
+        // The scaffolded foundry connection reaches the adapter as its resource name.
         const aiConfig = createAiRegistry([azureProvider]).resolveAiConfigFromSection(getAskDbRuntimeConfig().ai.language);
         expect(aiConfig?.providerOptions).toMatchObject({ resourceName: "my-foundry" });
       } finally {

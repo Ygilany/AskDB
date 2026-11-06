@@ -16,7 +16,7 @@ export type AskDbRuntimeAiConnection = {
   /** The connection's `name`, `"default"` when unnamed. */
   name: string;
   apiKey?: string;
-  /** The connection's `secondaryApiKey` (Azure and Foundry). */
+  /** The connection's `secondaryApiKey`, on any provider (the connection types declare it on Azure and Foundry). */
   apiKeySecondary?: string;
   baseUrl?: string;
   resourceName?: string;
@@ -64,8 +64,9 @@ export type AskDbRuntimeAiConfig = {
 };
 
 /**
- * OpenAI embedder settings for the `askdb-rag` CLI. Filled from `ai.embedding` when its provider
- * is `openai`; otherwise only from the OpenAI language connection.
+ * OpenAI embedder settings, from `ai.embedding`'s connection when its provider is `openai`, else
+ * from the OpenAI language connection; never another provider's. No first-party code reads them:
+ * `askdb rag` and Studio use `ai.embedding`.
  */
 export type AskDbRuntimeRagEmbedderConfig = {
   apiKey: string | undefined;

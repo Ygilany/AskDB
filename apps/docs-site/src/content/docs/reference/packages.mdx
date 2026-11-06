@@ -72,6 +72,7 @@ AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsof
 | `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)`, `registry.createLanguageModelFromEnv(env)` / `registry.createEmbeddingModelFromEnv(env)` | The same from an env map, for an app without a config file. See [Env map precedence](#env-map-precedence). |
 | `resolveReasoningEffortFromSection(reasoning, purpose, override?)` | The reasoning effort for `"nlToSql"` or `"enrichment"` calls from `ai.language.reasoning`: `override`, then the purpose's own effort, then `effort`. `resolveReasoningEffort(env, purpose, override?)` reads the same from an env map. |
 | `AiLanguageSection`, `AiEmbeddingSection`, `AiConnectionSection`, `AiReasoningSection` | The section types. `@askdb/config`'s `ai.language` and `ai.embedding` fit them as they are; `@askdb/ai` doesn't depend on `@askdb/config`. |
+| `AiProviderAdapter.resolveConfigFromSection(section, { usage })`, `AiModelSection` | The optional adapter method that maps a section (`AiModelSection`: `provider`, `connection`, `model`, `modelFamily`) to the adapter's `AiConfig`, as `resolveConfig` maps an env map. Every built-in provider implements it. A custom adapter without it gets the section through the universal `ASKDB_AI_*` keys, passed to its `resolveConfig`. |
 | `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
 | `withEmbeddingProviderOptions` | Wraps an embedding model so `dimensions`/`user` reach the provider; an optional mapper renames them to the provider's own settings (e.g. Gemini's `outputDimensionality`). Shared across adapters. |
 | `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
@@ -153,7 +154,7 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | --- | --- |
 | `defineConfig(config)` | Type-safe config builder. |
 | `bootstrapAskDbEnv(options)` | Load `.env` + `askdb.config.*` and install the runtime snapshot. |
-| `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). |
+| `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). Its `ai.language` and `ai.embedding` sections go to `@askdb/ai`'s `*FromSection` methods as they are; each section's `connection` is an `AskDbRuntimeAiConnection` (`name`, `apiKey`, `apiKeySecondary`, `baseUrl`, `resourceName`, `apiVersion`). |
 | `isAskDbRuntimeInitialized()` | `true` once the runtime snapshot is installed, so code can bootstrap only when its host hasn't. |
 | `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
 | `env`, `requiredEnv` | Typed env-var accessors. |

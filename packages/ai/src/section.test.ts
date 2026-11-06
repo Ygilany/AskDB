@@ -136,12 +136,30 @@ describe("resolveEmbeddingConfigFromSection", () => {
   });
 
   // The embedding model is baked into an index, so the section path never falls back to the
-  // provider's deprecated default (ADR 0016).
-  it.each(["openai", "azure", "gateway"])("%s: requires a model instead of picking one", (provider) => {
+  // provider's deprecated default (ADR 0016), a custom adapter's included.
+  it.each([
+    ["openai", registry],
+    ["azure", registry],
+    ["gateway", registry],
+    [
+      "a custom adapter that only reads env",
+      createAiRegistry([
+        {
+          provider: "mistral",
+          resolveConfig: (env, options) =>
+            resolveBaseConfig("mistral", env, { apiKeyVars: [], defaultEmbeddingModel: "mistral-embed" }, options),
+          createLanguageModel: vi.fn(),
+          createEmbeddingModel: vi.fn(),
+        },
+      ]),
+    ],
+  ] as const)("%s: requires a model instead of picking one", (name, ai) => {
+    const provider = name.startsWith("a custom") ? "mistral" : name;
     const connection = { apiKey: "k", resourceName: "eastus" };
-    expect(() => registry.resolveEmbeddingConfigFromSection({ provider, connection })).toThrow(
+    expect(() => ai.resolveEmbeddingConfigFromSection({ provider, connection })).toThrow(
       /no embedding model configured\. Set ai\.embedding\.model/,
     );
+    expect(ai.resolveEmbeddingConfigFromSection({ provider, connection: {} })).toBeUndefined();
   });
 });
 

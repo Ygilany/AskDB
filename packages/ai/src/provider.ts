@@ -141,7 +141,8 @@ export type ProviderEnvSpec = {
  * A base URL with a username or password throws {@link AiBaseUrlCredentialsError}, naming the
  * variable it came from: `fetch` would refuse it and quote the whole URL in its error.
  *
- * **Important:** `@askdb/ai` never reads `process.env` for this: the host passes the map. A host
+ * **Important:** these settings come only from the map the host passes, never from `process.env`
+ * (whose one read in `@askdb/ai` is `baseURLOption`'s credential check, ADR 0036). A host
  * with an `askdb.config` file passes its typed section to the registry's `*FromSection` methods
  * instead; the env map is for hosts without one.
  */
@@ -201,13 +202,7 @@ export function resolveBaseConfigFromSection(
   if (!apiKey) return undefined;
 
   const model = nonBlank(section.model) ?? (options.usage === "language" ? spec.defaultModel : undefined);
-  if (!model) {
-    throw new Error(
-      options.usage === "embedding"
-        ? `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.*.`
-        : `${provider}: no language model configured. Set ai.language.model in askdb.config.*.`,
-    );
-  }
+  if (!model) throw sectionWithoutModel(provider, options.usage);
   return {
     provider,
     apiKey,
@@ -222,6 +217,24 @@ export function resolveBaseConfigFromSection(
  */
 export function refuseSectionBaseUrlCredentials(section: AiModelSection): void {
   refuseBaseUrlCredentials(nonBlank(section.connection.baseUrl), SECTION_BASE_URL_SETTING);
+}
+
+function sectionWithoutModel(provider: string, usage: AiUsage): Error {
+  return new Error(
+    usage === "embedding"
+      ? `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.*.`
+      : `${provider}: no language model configured. Set ai.language.model in askdb.config.*.`,
+  );
+}
+
+/**
+ * Throws when an embedding section has an API key but no model, whatever its adapter: no layer
+ * picks an embedding model (ADR 0016), so a custom adapter's deprecated default doesn't either.
+ */
+export function refuseSectionWithoutEmbeddingModel(section: AiModelSection): void {
+  const { connection } = section;
+  const hasKey = (nonBlank(connection.apiKey) ?? nonBlank(connection.apiKeySecondary)) !== undefined;
+  if (hasKey && nonBlank(section.model) === undefined) throw sectionWithoutModel(section.provider, "embedding");
 }
 
 /** A string trimmed, or `undefined` when it's unset or blank. */

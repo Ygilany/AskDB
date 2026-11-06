@@ -9,7 +9,11 @@ import type {
   AiRegistry,
   AiUsage,
 } from "./provider.js";
-import { normalizeProvider, refuseSectionBaseUrlCredentials } from "./provider.js";
+import {
+  normalizeProvider,
+  refuseSectionBaseUrlCredentials,
+  refuseSectionWithoutEmbeddingModel,
+} from "./provider.js";
 import {
   BUILTIN_AI_PROVIDERS,
   BUILTIN_AI_PROVIDER_NAMES,
@@ -78,6 +82,7 @@ export function createAiRegistry(adapters?: AiProviderAdapters): AiRegistry {
   function resolveFromSection(section: AiModelSection, usage: AiUsage): AiConfig | undefined {
     const adapter = adapterFor(section.provider);
     refuseSectionBaseUrlCredentials(section);
+    if (usage === "embedding") refuseSectionWithoutEmbeddingModel(section);
     if (adapter.resolveConfigFromSection) return adapter.resolveConfigFromSection(section, { usage });
     return adapter.resolveConfig(universalEnv(section, usage), { usage });
   }

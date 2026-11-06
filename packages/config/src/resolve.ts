@@ -324,7 +324,7 @@ function refuseRemovedKeys(config: AskDbConfig): void {
       key: "rag.storeConfig.pgvector.dimensions",
       fix:
         "move it to ai.embedding.dimensions " +
-        `(with rag.embedder: "mock" the vectors are always ${DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS} wide, so remove it).`,
+        `(with rag.embedder: "mock" the vectors are ${DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS} wide unless askdb rag --dimensions asks for another width, so remove it).`,
     });
   }
   if (hasKey(rag?.storeConfig?.file, "autoFlush")) {
@@ -674,14 +674,15 @@ function resolveRag(rag: NormalizedAskDbConfig["rag"], ai: ResolvedAskDbConfig["
       );
     }
     setFlat(flat, "ASKDB_PGVECTOR_URL", url);
-    // The mock embedder's vectors are always 64 wide. With `ai.embedding`, the dimensions written
+    // The mock embedder's vectors are 64 wide by default. With `ai.embedding`, the dimensions written
     // above are only a size to request: unset, the model's own width applies, learned at index time.
     if (!embedding) setFlat(flat, "ASKDB_RAG_EMBEDDER_DIMENSIONS", DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS);
     setFlat(flat, "ASKDB_PGVECTOR_INDEX_STRATEGY", pgvectorIndexStrategy(pgvector.indexStrategy));
   }
 
-  // The RAG CLI's OpenAI embedder never reads another provider's key or base URL: it uses the
-  // embedding connection when that is OpenAI's, else only the OpenAI language connection.
+  // `rt.rag.embedder` holds OpenAI settings only, never another provider's key or base URL: the
+  // embedding connection when that is OpenAI's, else the OpenAI language connection. No first-party
+  // code reads it (`askdb rag` and Studio use `ai.embedding`); it stays for hosts that do.
   const openaiEmbedding = embedding?.provider === "openai" ? embedding : undefined;
   const source = openaiEmbedding ?? (ai.language.provider === "openai" ? ai.language : undefined);
   return {

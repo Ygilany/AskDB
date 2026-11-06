@@ -47,7 +47,7 @@ The config keys deprecated in beta.44 (`@askdb/config` 1.0.0-beta.13), and `rag.
 | `rag: { embedderConfig: { openai: { apiKey, baseUrl } } }` | The key and base URL on a connection of the embedding provider in `ai.providerConfig`. When they differ from its `"default"` connection, add a named one and set `ai.embedding.connection` to its name. |
 | `rag: { embedderConfig: {} }`, as earlier scaffolds wrote | Remove it. |
 | `storeConfig: { pgvector: { databaseUrl, dimensions: 1536 } }` with `rag.embedder: "ai"` | `ai: { embedding: { …, dimensions: 1536 } }`, `storeConfig: { pgvector: { databaseUrl } }` |
-| `storeConfig: { pgvector: { …, dimensions } }` with `rag.embedder: "mock"` | Remove it. The mock embedder's vectors are always 64 wide. |
+| `storeConfig: { pgvector: { …, dimensions } }` with `rag.embedder: "mock"` | Remove it. The mock embedder's vectors are 64 wide unless `askdb rag --dimensions` asks for another width. |
 | `storeConfig: { file: { basePath, autoFlush: true } }` | `storeConfig: { file: { basePath } }`. The file store writes its files after every change. |
 
 Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `text-embedding-3-small`: set that model in `ai.embedding` to keep the same embeddings. An index keeps working when `ai.embedding` names the same provider, model and dimensions the old keys did. Otherwise Studio reports it as stale, and you rebuild it.
@@ -63,7 +63,8 @@ Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `t
 | `ai.resolveEmbeddingConfig(rt.ai.embedding.env)` | `ai.resolveEmbeddingConfigFromSection(rt.ai.embedding)` |
 | `ai.createEmbeddingModelFromEnv(rt.ai.embedding.env, { dimensions: rt.ai.embedding.dimensions })` | `ai.createEmbeddingModelFromSection(rt.ai.embedding)`. It asks for `dimensions` when they're set. |
 | `resolveReasoningEffort(rt.ai.aiEnv, "nlToSql")` | `resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql")` |
-| `rt.ai.language.env.OPENAI_API_KEY`, `rt.rag.embedder.apiKey` | `rt.ai.language.connection.apiKey` (`rt.rag.embedder` still works) |
+| `rt.ai.language.env.OPENAI_API_KEY` (any `rt.ai.language.env` key) | `rt.ai.language.connection.apiKey` (the matching connection setting) |
+| `rt.ai.embedding.env.OPENAI_API_KEY` (any `rt.ai.embedding.env` key) | `rt.ai.embedding.connection.apiKey` (the matching connection setting) |
 | `rt.ai.language.connection`, `rt.ai.embedding.connection` (the connection name) | `rt.ai.language.connection.name`, `rt.ai.embedding.connection.name` |
 
 - **`connection` is now an object:** the connection's `name` and its settings (`apiKey`, `apiKeySecondary`, `baseUrl`, `resourceName`, `apiVersion`), with unset ones left out. The config's `secondaryApiKey` is `apiKeySecondary` here. `rt.ai.language` also gains `reasoning`.

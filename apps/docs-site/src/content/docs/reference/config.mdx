@@ -239,7 +239,7 @@ The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock",
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `embedder` | `"mock" \| "ai"` | Required | `"mock"` is a deterministic lexical embedder that needs no key, and its vectors are always 64 wide. `"ai"` is the [`ai.embedding`](#aiembedding) model. |
+| `embedder` | `"mock" \| "ai"` | Required | `"mock"` is a deterministic lexical embedder that needs no key. Its vectors are 64 wide unless `askdb rag --dimensions` asks for another width. `"ai"` is the [`ai.embedding`](#aiembedding) model. |
 | `store` | `"file" \| "memory" \| "pgvector"` | Required | The vector store. |
 | `storeConfig` | object | Required | The selected store's options, below. The `file` and `pgvector` stores need their branch, even an empty one (`storeConfig: { file: {} }`). The type requires `storeConfig` with `memory` too, but a JavaScript config can leave it out. |
 
@@ -253,7 +253,7 @@ The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock",
 | `pgvector.table` | `string` | `askdb_rag_chunks` | The table that holds the chunks and their vectors. |
 | `pgvector.indexStrategy` | `"hnsw" \| "ivfflat" \| "none"` | `"hnsw"` | The index `askdb rag setup-store`, `askdb rag index` and Studio create. `"none"` means sequential scans. With `store: "pgvector"`, another value fails to load. |
 
-With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. With `embedder: "mock"`, the table is 64 wide. The file store writes its files after every change.
+With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. With `embedder: "mock"`, the table is 64 wide unless `askdb rag --dimensions` asks for another width. The file store writes its files after every change.
 
 ## `modes` and `host`
 
