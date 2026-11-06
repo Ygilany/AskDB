@@ -1,5 +1,24 @@
 # @askdb/http-api
 
+## 1.0.0-beta.47
+
+### Patch Changes
+
+- f4e60a9: `createAskDbLogger()` opens each `logFile` path once per process and shares it across loggers, instead of opening it again for every logger (#693). Hosts build a logger per request, so the HTTP API server leaked one file descriptor per `POST /ask` with `logging.logFile` set, until it ran out of descriptors and stopped serving. The file now stays open for the life of the process. Rotate it with `copytruncate`, or restart the process after a rotate. The configuration and core API references and the upgrade guide say so.
+- 32a7bc8: `@askdb/http-api` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: responses, log levels and log entries are the same as before.
+- Updated dependencies [946dee4]
+- Updated dependencies [f183629]
+- Updated dependencies [3d9bc33]
+- Updated dependencies [f4e60a9]
+- Updated dependencies [80c7ddf]
+- Updated dependencies [0a94c6f]
+- Updated dependencies [4f322db]
+- Updated dependencies [4365d4c]
+  - @askdb/ai@0.1.0-beta.10
+  - @askdb/client@1.0.0-beta.10
+  - @askdb/config@1.0.0-beta.16
+  - @askdb/core@1.0.0-beta.47
+
 ## 1.0.0-beta.46
 
 ### Patch Changes

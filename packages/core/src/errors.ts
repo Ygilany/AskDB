@@ -27,6 +27,12 @@ export type SqlValidationRuleCode =
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
   /**
+   * Postgres family: an `E'…'` string continued on a later line (`E'a'`, a newline, `'b'`).
+   * Postgres reads the continuation with backslash escapes and the checks don't, so they could
+   * read code as a string; refused at the boundary (#703).
+   */
+  | "SQL_STRING_CONTINUATION"
+  /**
    * Postgres family: a Unicode-escaped identifier (`U&"set\005fconfig"`). Its escapes can spell
    * a name the other checks look for, such as a denylisted function, so it is refused (#692).
    */
@@ -182,7 +188,14 @@ export type TenantGuardrailRuleCode =
    * is read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not under
    * a `global` scope (#704, #692).
    */
-  | "UNICODE_ESCAPED_IDENTIFIER";
+  | "UNICODE_ESCAPED_IDENTIFIER"
+  /**
+   * An `E'…'` string continued on a later line, which Postgres reads with backslash escapes and
+   * the tenant check doesn't, so a table or call after it could be hidden. Reported for the
+   * whole SQL, with `tableId: ""`, whenever the SQL may be read as Postgres: postgres,
+   * cockroachdb, a custom `AskDialect`, or no dialect; not under a `global` scope (#703).
+   */
+  | "STRING_CONTINUATION";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;

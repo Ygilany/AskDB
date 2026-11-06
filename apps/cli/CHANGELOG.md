@@ -1,5 +1,30 @@
 # askdb
 
+## 1.0.0-beta.47
+
+### Patch Changes
+
+- Updated dependencies [946dee4]
+- Updated dependencies [f183629]
+- Updated dependencies [3d9bc33]
+- Updated dependencies [f4e60a9]
+- Updated dependencies [80c7ddf]
+- Updated dependencies [0a94c6f]
+- Updated dependencies [4f322db]
+- Updated dependencies [4365d4c]
+  - @askdb/ai@0.1.0-beta.10
+  - @askdb/client@1.0.0-beta.10
+  - @askdb/config@1.0.0-beta.16
+  - @askdb/core@1.0.0-beta.47
+  - @askdb/studio@0.2.0-beta.40
+  - @askdb/enrich@0.2.0-beta.18
+  - @askdb/introspect@0.3.0-beta.21
+  - @askdb/mysql@0.1.0-beta.22
+  - @askdb/postgres@0.2.0-beta.23
+  - @askdb/rag@0.2.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.22
+  - @askdb/sqlserver@0.1.0-beta.23
+
 ## 1.0.0-beta.46
 
 ### Minor Changes

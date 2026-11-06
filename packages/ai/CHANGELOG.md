@@ -1,5 +1,11 @@
 # @askdb/ai
 
+## 0.1.0-beta.10
+
+### Patch Changes
+
+- 946dee4: `@askdb/ai` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: env var precedence, the Azure connection options, registry setup hints and provider-name matching all work as before.
+
 ## 0.1.0-beta.9
 
 ### Minor Changes

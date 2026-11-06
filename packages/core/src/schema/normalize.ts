@@ -64,10 +64,9 @@ function columnLine(
   ]
     .filter(Boolean)
     .join(" ");
-  const base = `  - ${c.name} ${c.type}${flags ? ` (${flags})` : ""}`;
-  const sensitive = Boolean(tableSensitive || c.sensitive);
-  const listedSensitive = sensitive;
-  const line = sensitive ? `${base} (sensitive)` : base;
+  const base = `  - ${c.name} ${c.type} (${flags})`;
+  const listedSensitive = Boolean(tableSensitive || c.sensitive);
+  const line = listedSensitive ? `${base} (sensitive)` : base;
   return { line, listedSensitive };
 }
 

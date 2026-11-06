@@ -43,8 +43,7 @@ async function runMysqlCatalogQuery(
   params: ReadonlyArray<unknown> | undefined,
   options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await mysql2Loader.load(options);
-  const mysql = (mod as unknown as { default?: typeof mod }).default ?? mod;
+  const mysql = await loadMysql2Driver(options);
   const connection = await mysql.createConnection(connectionString);
   try {
     // information_schema is read-only by construction; we still force-disable
