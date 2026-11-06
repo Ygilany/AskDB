@@ -19,6 +19,31 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.48
+
+Not published yet: these changes ship with `@askdb/core` 1.0.0-beta.48.
+
+### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
+
+On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
+
+- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
+- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
+- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
+
+### Handle the new `SensitiveScopeIssue` members
+
+The sensitive check now fails closed on two Postgres forms it can't read, with the new `SensitiveScopeIssue` members `UNICODE_ESCAPED_IDENTIFIER` (a name such as `U&"p\0061ssword"`) and `STRING_CONTINUATION` (an `E'…'` string continued on a later line) ([#707](https://github.com/Ygilany/AskDB/issues/707), ADR 0012). They apply whenever the SQL may be read as Postgres, a custom `AskDialect` included, and come back in `sensitiveGuardrail.unresolvedScope` with `passed: false`. With `sensitiveGuardrailMode: "strict"`, `ask()` and `validateSensitiveReferences()` throw `SensitiveReferenceError`.
+
+- **A `switch` over every `SensitiveScopeIssue`** needs cases for both.
+- **Built-in dialects reject the same SQL earlier** in the read-only check (`SQL_UNICODE_ESCAPED_IDENTIFIER`, `SQL_STRING_CONTINUATION`), so this mainly changes a custom `AskDialect` and direct calls.
+
+### Other changes you may notice in beta.48
+
+- **The tenant check reads a dialect id that is no built-in engine and sets `backslashEscapes: true` both ways** when it looks for `U&"…"` names ([#703](https://github.com/Ygilany/AskDB/issues/703)): with and without backslash escapes, reporting a name either reading finds.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
@@ -41,7 +66,7 @@ A `global` tenant scope whose `reason` is missing, isn't a string, or is blank n
 
 On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped identifier such as `U&"set\005fconfig"`, and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_UNICODE_ESCAPED_IDENTIFIER` ([#692](https://github.com/Ygilany/AskDB/issues/692), ADR 0012). Postgres decodes the escapes, which could spell a blocked function, such as `set_config`, a scoped table (`U&"\006Frders"` reads `orders`) or a sensitive column, and the checks didn't decode them.
 
-- **The tenant check refuses the same names,** in any position, with the new `TenantGuardrailRuleCode` `UNICODE_ESCAPED_IDENTIFIER` and `tableId: ""` ([#704](https://github.com/Ygilany/AskDB/issues/704)). It applies whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws or warns. For a dialect id that is no built-in engine and sets `backslashEscapes: true`, it reads the SQL both with and without backslash escapes and reports a name either reading finds.
+- **The tenant check refuses the same names,** in any position, with the new `TenantGuardrailRuleCode` `UNICODE_ESCAPED_IDENTIFIER` and `tableId: ""` ([#704](https://github.com/Ygilany/AskDB/issues/704)). It applies whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws or warns.
 - **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
 - **If you store SQL with a `U&"…"` name and rebind it,** the rebind now rejects it. Write the name in plain double quotes (`"注文数"`) instead.
 
@@ -62,23 +87,6 @@ With a tenant policy and any scope but `global`, the tenant check now refuses a 
 - **A pivot the model writes with `crosstab`** is refused under a tenant policy, because the check can't read the query `crosstab` runs. Re-ask the question: a pivot written with `CASE` or `FILTER` passes, with the tenant predicate in its `WHERE` clause.
 - **A column, alias or parameter named like one of these functions** (`crosstab`, `set_config`) is refused too, because the check matches a listed name anywhere in the SQL. If your schema has such a column, every query that names it is refused under a tenant policy: rename the column, or expose it through a view under another name.
 - **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `UNCHECKABLE_FUNCTION`.
-
-### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
-
-On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
-
-- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
-- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
-- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
-
-See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
-
-### Handle the new `SensitiveScopeIssue` members
-
-The sensitive check now fails closed on two Postgres forms it can't read, with the new `SensitiveScopeIssue` members `UNICODE_ESCAPED_IDENTIFIER` (a name such as `U&"p\0061ssword"`) and `STRING_CONTINUATION` (an `E'…'` string continued on a later line) ([#707](https://github.com/Ygilany/AskDB/issues/707), ADR 0012). They apply whenever the SQL may be read as Postgres, a custom `AskDialect` included, and come back in `sensitiveGuardrail.unresolvedScope` with `passed: false`. With `sensitiveGuardrailMode: "strict"`, `ask()` and `validateSensitiveReferences()` throw `SensitiveReferenceError`.
-
-- **A `switch` over every `SensitiveScopeIssue`** needs cases for both.
-- **Built-in dialects reject the same SQL earlier** in the read-only check (`SQL_UNICODE_ESCAPED_IDENTIFIER`, `SQL_STRING_CONTINUATION`), so this mainly changes a custom `AskDialect` and direct calls.
 
 ### Other changes you may notice in beta.47
 
