@@ -72,22 +72,41 @@ describe("createMentionMatcher", () => {
 
   it("costs about the same for 30 sensitive tables whether each has 1 column or 30", () => {
     // 30 tables of `{ table, column }` names; texts that name none. The cost must follow the number
-    // of tables, not of columns: one alternative per name made 900 names about 30 times slower than 30.
+    // of tables, not of columns. One alternative per name made 900 names about 700 times slower than
+    // 30 (over 3,000 times on Node 22); grouping by table without the first pass, about 4 to 18 times.
     const names = (columns: number) =>
       Array.from({ length: 30 * columns }, (_, i) => ({ table: `t${i % 30}`, column: `col_${Math.floor(i / 30)}` }));
-    const texts = Array.from({ length: 20_000 }, (_, i) => `the t${i % 30} order total for region ${i}`);
-    const fastest = (matcher: ReturnType<typeof createMentionMatcher>) => {
-      let best = Number.POSITIVE_INFINITY;
-      for (let run = 0; run < 3; run++) {
-        const started = performance.now();
+    const texts = Array.from({ length: 30 }, (_, i) => `the t${i} order total for region ${i}`);
+    type Matcher = ReturnType<typeof createMentionMatcher>;
+    // One sample: the cost per text of passes over `texts` that last at least 2 ms.
+    const costPerText = (matcher: Matcher) => {
+      let checked = 0;
+      let elapsed = 0;
+      const started = performance.now();
+      do {
         for (const text of texts) if (matcher.mentionsAny(text)) throw new Error(`unexpected mention in ${text}`);
-        best = Math.min(best, performance.now() - started);
-      }
-      return best;
+        checked += texts.length;
+        elapsed = performance.now() - started;
+      } while (elapsed < 2);
+      return elapsed / checked;
     };
-    const oneColumnEach = fastest(createMentionMatcher(names(1)));
-    const thirtyColumnsEach = fastest(createMentionMatcher(names(30)));
-    expect(thirtyColumnsEach / oneColumnEach).toBeLessThan(5);
+    // A loaded runner stalls some samples. Many short samples, in rounds that alternate which
+    // matcher goes first, keep a stall from landing on one matcher only, and each one's fastest
+    // sample is one that no stall touched (#657).
+    const oneColumnEach = createMentionMatcher(names(1));
+    const thirtyColumnsEach = createMentionMatcher(names(30));
+    let fastestOne = Number.POSITIVE_INFINITY;
+    let fastestThirty = Number.POSITIVE_INFINITY;
+    for (let round = 0; round < 31; round++) {
+      if (round % 2 === 0) {
+        fastestOne = Math.min(fastestOne, costPerText(oneColumnEach));
+        fastestThirty = Math.min(fastestThirty, costPerText(thirtyColumnsEach));
+      } else {
+        fastestThirty = Math.min(fastestThirty, costPerText(thirtyColumnsEach));
+        fastestOne = Math.min(fastestOne, costPerText(oneColumnEach));
+      }
+    }
+    expect(fastestThirty / fastestOne).toBeLessThan(2);
   });
 
   it("mentions nothing for an empty list or empty names", () => {
