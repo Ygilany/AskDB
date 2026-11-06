@@ -1,0 +1,130 @@
+---
+title: "Connect to SQL Server"
+description: "Point AskDB at a SQL Server database: write the connection string, introspect, fix the self-signed certificate error, and connect your own mssql pool."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">Engine setup</p>
+
+<p class="doc-lede">Connect AskDB to a SQL Server database and introspect it. You write one connection string, run <code>askdb introspect</code>, and fix the certificate error a development server usually gives. Then you connect your own <code>mssql</code> pool to run the SQL AskDB returns.</p>
+
+## Before you start
+
+- AskDB in your project, with a config for SQL Server. In a new project, `npx askdb init --database sqlserver` writes `askdb.config.ts` and installs the `mssql` driver. To add SQL Server to an existing project, see [Switch engines](/guides/switch-engines/#1-install-the-new-engine-package).
+- A SQL Server login that can read the database's catalog. Introspection only reads, so a read-only login is enough.
+
+## 1. Write the connection string
+
+AskDB reads a SQL Server connection string in any of three formats:
+
+| Format | Example |
+| --- | --- |
+| `mssql://` URL | `mssql://user:pass@localhost:1433/MyDb` |
+| Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=user;password=pass` |
+| ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=user;Password=pass;` |
+
+Put it in `.env` as `DATABASE_URL`. The config that `askdb init` writes reads it from there:
+
+```ts title="askdb.config.ts"
+introspection: {
+  provider: "sqlserver",
+  providerConfig: {
+    sqlserver: {
+      databaseUrl: env("DATABASE_URL"),
+    },
+  },
+  outputDir: "./askdb",
+},
+```
+
+If a value contains `;`, wrap it in curly braces, as Prisma does: `password={Pass:Word;}` is the password `Pass:Word;`. The [`@askdb/sqlserver` reference](/reference/introspect-api/#askdbsqlserver) has the full rules for braces.
+
+## 2. Introspect
+
+Read the database's structure:
+
+```bash
+npx askdb introspect
+```
+
+It prints nothing when it succeeds, and writes `askdb/schema.json`. To try a connection string without editing `.env`, pass it for one run: `npx askdb introspect --url "<connection string>"`.
+
+Each table is listed under its SQL Server schema, such as `dbo.orders`. By default AskDB reads every schema except the system ones (`sys`, `INFORMATION_SCHEMA`, `guest` and the `db_*` role schemas). To read only some, set `introspection.schemas`, such as `schemas: ["dbo", "sales"]`.
+
+If introspection fails with `self-signed certificate`, go to step 3.
+
+## 3. Fix the self-signed certificate error
+
+SQL Server encrypts connections by default, and a development server usually has a self-signed certificate. Node.js rejects it:
+
+```
+Failed to connect to localhost:1433 - self-signed certificate
+```
+
+On Node 24 and newer, the message goes on: `; if the root CA is installed locally, try running Node.js with --use-system-ca`.
+
+**In development**, trust the server's certificate. Add the option for your format:
+
+```
+# mssql:// URL
+mssql://user:pass@localhost:1433/MyDb?trustServerCertificate=true
+
+# Prisma sqlserver://
+sqlserver://localhost:1433;database=MyDb;user=user;password=pass;trustServerCertificate=true
+
+# ADO.NET
+Server=localhost,1433;Database=MyDb;User Id=user;Password=pass;TrustServerCertificate=True;
+```
+
+AskDB also reads the key with spaces, `Trust Server Certificate=True`, which VS Code's mssql extension and the `.env.example` from `askdb init` write.
+
+<Aside type="caution">Trusting the certificate turns off the check that you're talking to the server you expect. Use it only in development.</Aside>
+
+**In production**, keep the check and give Node.js the certificate authority (CA) that signed the server's certificate:
+
+```bash
+NODE_EXTRA_CA_CERTS=/path/to/ca.pem npx askdb introspect
+```
+
+If that CA is already in your operating system's trust store, tell Node.js to use the store instead:
+
+```bash
+NODE_OPTIONS=--use-system-ca npx askdb introspect
+```
+
+## 4. Connect your own pool
+
+AskDB returns SQL and never runs it. Your app runs it, usually through the `mssql` driver, and the driver reads fewer connection strings than AskDB does:
+
+- It reads an ADO.NET string or a config object. It doesn't read `mssql://` or `sqlserver://` URLs.
+- It reads `TrustServerCertificate=True` only without spaces. With spaces, it ignores the key, and the certificate error comes back.
+
+A config object avoids both:
+
+```ts
+import mssql from "mssql";
+
+const pool = await mssql.connect({
+  server: "localhost",
+  port: 1433,
+  database: "MyDb",
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  options: { trustServerCertificate: true }, // development only, as in step 3
+});
+
+const { recordset } = await pool.request().query(sql);
+```
+
+To share one `DATABASE_URL` between AskDB and your pool, write it in ADO.NET form with `TrustServerCertificate=True`. Both read that form.
+
+Give this pool a read-only login too. [Run safely in production](/guides/run-safely-in-prod/) covers the database role, timeouts and row limits.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>What changes when you move to SQL Server from another engine.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The database role and limits for the pool that runs AskDB's SQL.</span></a>
+  <a href="/reference/introspect-api/#askdbsqlserver"><strong>@askdb/sqlserver reference</strong><span>The connection formats, the brace rules, and the catalog runner.</span></a>
+</div>

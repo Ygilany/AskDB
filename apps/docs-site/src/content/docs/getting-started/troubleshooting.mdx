@@ -214,25 +214,7 @@ See [Configuration — Studio execute](/reference/config/#studio-execute-configu
 
 ### `self-signed certificate` / TLS error on connection
 
-SQL Server enables TLS by default. Local and dev instances typically use a self-signed certificate, which Node.js rejects:
-
-```
-Error: self-signed certificate — try running Node.js with --use-system-ca
-```
-
-Add `trustServerCertificate=true` to the connection URL:
-
-```
-# mssql driver URL format
-mssql://sa:pass@localhost:1433/MyDb?trustServerCertificate=true
-
-# sqlserver introspection URL format
-sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;trustServerCertificate=true
-```
-
-<Aside type="caution">
-Only use `trustServerCertificate=true` in development. In production, configure a valid certificate.
-</Aside>
+A development SQL Server usually has a self-signed certificate, which Node.js rejects. [Connect to SQL Server](/guides/connect-to-sql-server/#3-fix-the-self-signed-certificate-error) has the fix for each connection-string format, and for production.
 
 ---
 
