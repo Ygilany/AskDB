@@ -1,4 +1,4 @@
-# ADR 0034 — The 1.0 set releases as one version
+# ADR 0035 — The 1.0 set releases as one version
 
 ## Status
 

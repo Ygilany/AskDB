@@ -18,7 +18,7 @@ For the package-level architecture, diagrams, dependency boundaries, install pro
 
 ### Published packages
 
-AskDB ships as a set of focused npm packages. Each one has a single responsibility and is consumable on its own. Today every package publishes `-rc.N` prereleases: the 12 packages marked 1.0.0 in the **At 1.0** column share one version on the `1.0.0-rc` line ([ADR 0034](adrs/0034-the-1-0-set-releases-as-one-version.md)), and the three `0.x` packages are on `0.2.0-rc`. The **At 1.0** column is the maintainer's 2026-11-05 decision (#354).
+AskDB ships as a set of focused npm packages. Each one has a single responsibility and is consumable on its own. Today every package publishes `-rc.N` prereleases: the 12 packages marked 1.0.0 in the **At 1.0** column share one version on the `1.0.0-rc` line ([ADR 0035](adrs/0035-the-1-0-set-releases-as-one-version.md)), and the three `0.x` packages are on `0.2.0-rc`. The **At 1.0** column is the maintainer's 2026-11-05 decision (#354).
 
 | Package | Role | At 1.0 |
 |---|---|---|
