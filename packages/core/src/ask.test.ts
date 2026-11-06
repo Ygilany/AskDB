@@ -2552,3 +2552,52 @@ describe("ask — a CockroachDB b'…' byte string with a backslash (#730)", () 
     });
   });
 });
+
+describe("ask — a rendered tenant literal can't change how the SQL reads (GHSA-wjgj-mf9h-6g68)", () => {
+  // The model reply reads as plain tokens with the placeholder in place: `E` is an alias,
+  // `:tenant_agency_ids` a placeholder, `'x'` a closed string, and `agency_id = :tenant_agency_ids`
+  // is the tenant predicate. In sql-only mode the placeholder renders to a quoted literal, so the
+  // select item becomes `E'…'` followed on the next line by `'x'`, which Postgres and CockroachDB
+  // read as one continued escape string. ask() re-checks the rendered sql and refuses it.
+  const reply = [
+    "```sql",
+    "SELECT E:tenant_agency_ids",
+    "'x' AS c FROM orders WHERE agency_id = :tenant_agency_ids",
+    "```",
+  ].join("\n");
+
+  it.each(["postgres", "cockroachdb"] as const)(
+    "%s sql-only: a reply whose rendered tenant literal continues a string is refused",
+    async (dialect) => {
+      const generateText = vi.fn(async () => ({ text: reply }));
+      const rejection = ask({
+        question: "count",
+        schema: loadSchema(multiTenantDir),
+        model: fakeModel,
+        dialect,
+        tenantScope: agencyScope,
+        tenantSqlMode: "sql-only",
+        deps: { generateText },
+      });
+      await expect(rejection).rejects.toBeInstanceOf(SqlValidationError);
+      await expect(rejection).rejects.toMatchObject({ rule: "SQL_STRING_CONTINUATION" });
+    },
+  );
+
+  it("sql-only: a scoped reply with no such trick is still returned, inlined", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
+    }));
+    const result = await ask({
+      question: "count",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '42'");
+    expect(result.verdict.outcome).toBe("allow");
+  });
+});

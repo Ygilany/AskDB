@@ -33,6 +33,7 @@ import {
   type TenantIdsByRoot,
 } from "./sql/tenant-scope-expand.js";
 import { validateTenantScope } from "./sql/tenant-scope-validate.js";
+import { validateSelectSql } from "./sql/validate.js";
 import { logTenantPolicyWarningsOnce } from "./sql/tenant-policy-warnings.js";
 import {
   type SensitiveGuardrailMode,
@@ -512,6 +513,19 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     // alone. `unboundSql` runs with the combined `params` (handled below). The mode
     // governs `sql` only: `unboundSql` always binds the tenant IDs, as the rebind does.
     const resolved = resolveTenantSql(result.sql, tenant.policy, tenant.scope, tenantMode, 1, dialectSpec);
+    // The checks read the statement with its placeholders in place; check it again as
+    // returned, as bindPreparedQuery() does, so rendering can't change how it reads.
+    if (dialectSpec) {
+      try {
+        validateSelectSql(dialectSpec, resolved.sql);
+      } catch (e) {
+        logger?.error(
+          { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: e instanceof Error ? e.message : String(e) },
+          "nl-to-sql generate failed",
+        );
+        throw e;
+      }
+    }
     result.sql = resolved.sql;
     if (resolved.bindings.length > 0) result.tenantBindings = resolved.bindings;
     if (resolved.mode === "sql-params" && resolved.params.length > 0) {
