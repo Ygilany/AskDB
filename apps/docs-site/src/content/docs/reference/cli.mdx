@@ -86,7 +86,7 @@ Commands that don't read the config work in any directory, including one with no
 
 ### `askdb init`
 
-Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, and with pnpm 10.4 or later it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`). Older pnpm has no `--allow-build`, so it installs without it.
+Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, plus `ai` and `zod` at the ranges `@askdb/core` uses, which Yarn Plug'n'Play needs in the project. With pnpm 10.4 or later it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`). Older pnpm has no `--allow-build`, so it installs without it.
 
 `init` installs into the current directory if it has a `package.json`, or else into the nearest directory above it that has one. It picks the package manager from the first of these that names one:
 
@@ -95,7 +95,7 @@ Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup
 3. The tool that ran `init`: `pnpm dlx`, `yarn dlx`, `npx` or `bunx` (from `npm_config_user_agent`).
 4. npm.
 
-`init` doesn't install at a workspace root, or when it finds no `package.json`. Then, or when the install fails, it prints the command to run yourself, for the package manager it picked and with the `@prisma/engines` approval when it applies, for example `pnpm add --allow-build=@prisma/engines @askdb/config@<version> @askdb/prisma@<version>`.
+`init` doesn't install at a workspace root, or when it finds no `package.json`. Then, or when the install fails, it prints the command to run yourself, for the package manager it picked and with the `@prisma/engines` approval when it applies, for example `pnpm add --allow-build=@prisma/engines @askdb/config@<version> @askdb/prisma@<version> ai@<range> zod@<range>`.
 
 ```bash
 npx askdb@latest init          # wizard in a terminal
@@ -149,7 +149,9 @@ Experimental, like the `studio` block they write: a minor release of `askdb` may
 | `--studio-execute` | Enable Studio execute (query playground): writes a `studio.execute` block with `enabled: true`. Off by default. |
 | `--no-studio-execute` | Disable Studio execute (default). |
 
-`init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env`; it writes an `.env.example` (unless one exists) listing every variable the config reads. For `azure` and `foundry` that includes `AZURE_RESOURCE_NAME`, the subdomain of your `https://<name>.openai.azure.com` endpoint.
+`init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env`; it writes an `.env.example` (unless one exists) listing every variable the config reads, database variables first. Each variable is an empty `NAME=` line under a `#` comment that says what it's for, and for a connection URL, its format. For `azure` and `foundry` the list includes `AZURE_RESOURCE_NAME`, the subdomain of your `https://<name>.openai.azure.com` endpoint. Studio's [guided setup](/studio/#guided-setup) writes the same files for the same answers.
+
+`init` checks the env var names and paths you pass before it writes anything. A name for `--connection-env`, `--ai-key-env`, `--ai-model-env` or `--pgvector-env` must use uppercase letters, digits and underscores, and not start with a digit (`DATABASE_URL`, `_PRIVATE_URL`). A path for `--sqlite-file`, `--prisma-schema` or `--schema-out` must not contain control characters, such as a newline. Otherwise `init` exits 1 with an error that names the flag, for example `--connection-env must be an environment variable name like DATABASE_URL: …`.
 
 ### `askdb introspect`
 

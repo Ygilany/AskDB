@@ -22,7 +22,7 @@ For the CLI and Studio, install `@askdb/prisma` in your project next to `askdb`.
 
 <InstallTabs pkgs="askdb @askdb/prisma" />
 
-`npx askdb@latest init --database prisma` installs it for you. `askdb` also finds the copy in your project when it runs from elsewhere, as `npx askdb` does. To run the CLI without installing anything, name both packages in the one-off command: `npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`.
+`npx askdb@latest init --database prisma` installs it for you, with `ai` and `zod`. If you install `@askdb/prisma` yourself with Yarn Plug'n'Play, add `ai` and `zod` too: `@askdb/prisma` loads `@askdb/core`, which can only load them from your project. `askdb` also finds the copy in your project when it runs from elsewhere, as `npx askdb` does. To run the CLI without installing anything, name both packages in the one-off command: `npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`.
 
 Without it, `askdb introspect --engine prisma` exits 1 and names the package to install, and Studio shows the same message instead of resyncing.
 
