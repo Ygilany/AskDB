@@ -223,10 +223,9 @@ export type AskPipelineOptions = {
    * markers (`$N` for Postgres/CockroachDB, `?` for MySQL/MariaDB/SQLite, `@pN` for
    * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
    * with the two arrays concatenated. A custom `AskDialect` has no default: with a
-   * tenant scope it must set this
-   * (`"sql-params"` gives `$N` markers), or `ask()` throws `TenantScopeError`
-   * (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it does on every dialect for
-   * a value that is neither `"sql-params"` nor `"sql-only"`.
+   * tenant scope it must set this (`"sql-params"` gives `$N` markers), or `ask()` throws
+   * `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it does on
+   * every dialect for a value that is neither `"sql-params"` nor `"sql-only"`.
    * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
    * parameters (a tool that takes one SQL string); `unboundSql` still binds them, in
    * every mode. It throws `TenantScopeError`
@@ -354,14 +353,14 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     tenantPolicy && options.tenantScope
       ? await expandTenantScope(tenantPolicy, options.tenantScope, options.resolveTenantDescendants)
       : options.tenantScope;
-  // AskDB picks driver markers only for an engine it knows. For any other dialect, the `$N`
+  // AskDB picks driver markers only for an engine it knows. For a custom AskDialect, the `$N`
   // the default would emit can be a money constant (SQL Server: `agency_id = $1` runs and
   // matches agency 1), so the host chooses the mode, before any retrieval or model call
   // (ADR 0024). A mode that isn't one of the two is refused on every dialect.
   const tenant = tenantPolicy
     ? tenantRendering(tenantPolicy, tenantScope, options.tenantSqlMode, "ask()")
     : undefined;
-  if (tenantPolicy && options.tenantSqlMode == null && !knowsTenantMarkers(options.dialect)) {
+  if (tenantPolicy && options.tenantSqlMode == null && isCustomAskDialect(options.dialect)) {
     throw new TenantScopeError(
       "A custom AskDialect needs an explicit " +
         "tenantSqlMode with a tenant scope: AskDB can't tell which parameter markers its driver takes. " +
@@ -530,12 +529,12 @@ function assertBuiltInSpecId(dialect: AskDialectInput): void {
 }
 
 /**
- * Whether AskDB knows the driver markers for `dialect`: a built-in id or a `DialectSpec`, which
- * {@link assertBuiltInSpecId} has held to a built-in id. An unknown string id isn't refused here:
- * `ask()` throws `UnknownDialectError` for it.
+ * Whether `dialect` is a custom `AskDialect`, whose driver markers AskDB can't know. A string id
+ * or a `DialectSpec` ({@link assertBuiltInSpecId} holds its id to a built-in one) names an engine
+ * AskDB knows; an unknown string id is refused later, by {@link resolveDialect}.
  */
-function knowsTenantMarkers(dialect: AskDialectInput): boolean {
-  return typeof dialect === "string" || !isAskDialect(dialect);
+function isCustomAskDialect(dialect: AskDialectInput): boolean {
+  return typeof dialect !== "string" && isAskDialect(dialect);
 }
 
 /** Return the DialectSpec when the input is a built-in id or spec; undefined for custom AskDialect. */

@@ -29,7 +29,7 @@ const { sql } = await ask({
 | `question` | `string` | yes | — | The natural-language question. |
 | `schema` | `AnyNormalizedSchema` | yes | — | Loaded schema from `loadSchema()` or `loadSchemaFromJson()`. |
 | `model` | `AskDbLanguageModel` | yes | — | An AI SDK `LanguageModel` instance (e.g. `openai("gpt-4o-mini")`). |
-| `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, `DialectSpec`, or custom `AskDialect`. See [Dialects](#dialects). |
+| `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, a `DialectSpec` under a built-in id, or a custom `AskDialect`. See [Dialects](#dialects). |
 | `mode` | `AskDbModeV1` | no | `"schema_only"` | Trust boundary. See [Modes](#modes). |
 | `explain` | `boolean` | no | `false` | When `true`, populates `result.explain` with heuristic guardrail metadata. |
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, withholds sensitive columns from the NL→SQL prompt, along with any describable text that names one (a description, alias, enum value, common query language, or retrieved chunk text). A sensitive table stays as a one-line placeholder with its name. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |

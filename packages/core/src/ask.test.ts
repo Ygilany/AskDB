@@ -567,8 +567,9 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     );
   });
 
-  // ask() refuses a spec under another id (#717), but generateSelectSql() takes one, and its
-  // validator then reads the SQL every engine's way, the SQL Server reading included.
+  // ask() refuses a spec under another id (#717), but generateSelectSql() still takes one. Its SQL
+  // may be read every engine's way, SQL Server's included, so the prompt carries SQL Server's
+  // non-ASCII rule. (prompt-identifiers.test.ts covers the validator's reading.)
   it("on an id that is no built-in engine, generateSelectSql() says to quote non-ASCII names and qualify a quoted column alone in parentheses", async () => {
     const generateText = vi.fn(async () => ({ text: "```sql\nSELECT 1\n```" }));
     const redshift = { ...POSTGRES_DIALECT, id: "redshift" as DialectSpec["id"] };
