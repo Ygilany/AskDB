@@ -1,6 +1,6 @@
 ---
 title: "Switch engines"
-description: "All four engines — Postgres, MySQL, SQLite, SQL Server — are first-class. Here's what changes when you move between them and what doesn't."
+description: "Postgres, MySQL, MariaDB, SQLite and SQL Server are first-class. Here's what changes when you move between them and what doesn't."
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
@@ -20,24 +20,25 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 ## What changes
 
 - The engine package you install.
-- The `dialect` value you pass to `ask()`.
-- Engine-specific SQL features the validator allows (LIMIT vs TOP, parameter syntax, JSON path syntax).
+- The dialect. A direct `ask()` call passes it; the CLI and `@askdb/client` infer it from the schema artifact (see [step 3](#3-update-the-dialect-value-in-ask-calls)).
+- The dialect's prompt brief, which tells the model the engine's SQL (`ILIKE` and `::type` on Postgres, `TOP` on SQL Server), and the read-only check's rules for the engine (extra forbidden keywords and blocked functions).
 - How the prompt `ask()` sends quotes names. A schema, table or column whose name is one of the engine's reserved words is listed quoted the engine's way, so the model copies it quoted: `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server, `"order"` on SQLite. On Postgres, which folds unquoted names to lowercase, a name with capitals is quoted too, so a Prisma table `Post` is listed as `public."Post"`. Where tables are listed with their schema, the prompt also tells the model that when it quotes a qualified name, it quotes each part separately (`"billing"."order"`, not `"billing.order"`).
 - The driver your app uses to execute (`pg`, `mysql2`, `better-sqlite3`, `mssql`).
 - How the CLI introspects the database (connection-string format and catalog queries differ per engine).
 
 ## The matrix
 
-| Engine | Adapter package | `dialect` value | Suggested driver |
+| Engine | Engine package | `dialect` value | Suggested driver |
 | --- | --- | --- | --- |
 | PostgreSQL | `@askdb/postgres` | `"postgres"` | `pg` |
 | MySQL | `@askdb/mysql` | `"mysql"` | `mysql2` |
+| MariaDB | `@askdb/mysql` | `"mariadb"` | `mysql2` |
 | SQLite | `@askdb/sqlite` | `"sqlite"` | `better-sqlite3` |
 | SQL Server | `@askdb/sqlserver` | `"sqlserver"` | `mssql` |
 
 ## Step by step
 
-### 1. Install the new adapter
+### 1. Install the new engine package
 
 <Tabs syncKey="engine">
   <TabItem label="PostgreSQL">
@@ -78,7 +79,7 @@ If you plan to run live introspection, also add the driver:
   </TabItem>
 </Tabs>
 
-You can keep the old adapter installed during a transition. Each adapter is self-contained. Database drivers are optional peers used only by live introspection or by your own execution layer.
+You can keep the old engine package installed during a transition. Each engine package is self-contained. Database drivers are optional peers used only by live introspection or by your own execution layer.
 
 ### 2. Introspect the new database (if the schema differs)
 
@@ -179,13 +180,13 @@ pnpm dlx -p askdb -p mysql2 askdb introspect --engine mysql --url "$MYSQL_URL"
 npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
 ```
 
-If the logical schema is identical and you are only swapping the adapter package, the existing artifact is already valid — skip this step and go straight to step 3.
+If the logical schema is identical and you are only swapping the engine package, the existing artifact is already valid — skip this step and go straight to step 3.
 
 ### 3. Update the `dialect` value in `ask()` calls
 
-The schema artifact records which engine it was introspected from. The CLI (`askdb ask`) and `askdb.config.ts` use that information to infer the dialect automatically — no manual update needed for those entry points.
+The schema artifact records which engine it was introspected from. The CLI (`askdb ask`) and `@askdb/client` use it to infer the dialect, so those entry points need no update. A `dialect` set in `askdb.config.ts` takes precedence over the artifact's engine: remove it, or change it, when you switch.
 
-This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `mysql`, `sqlite`, `sqlserver`) and records it, so `askdb ask` still knows the dialect without a live database.
+This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `cockroachdb`, `mysql`, `sqlite`, `sqlserver`) and records it, so `askdb ask` still knows the dialect without a live database.
 
 When using `@askdb/client`, the dialect resolves from the schema artifact's recorded provider automatically — the same inference the CLI uses. No code change needed after a dialect switch if the new artifact declares the correct provider.
 
@@ -309,7 +310,7 @@ node --use-system-ca $(which askdb) introspect
 
 ## On dialect parity
 
-Postgres is the reference dialect — features ship there first and the other engines follow. For most analytical questions, the four engines this guide covers generate equivalent SQL; for engine-specific features (JSON operators, window function syntax, regex variations), behavior follows what each engine supports natively.
+Postgres is the reference dialect — features ship there first and the other engines follow. For most analytical questions, the engines this guide covers generate equivalent SQL; for engine-specific features (JSON operators, window function syntax, regex variations), behavior follows what each engine supports natively.
 
 If you hit a dialect difference that surprises you, that's a bug — file it on [the project issues](https://github.com/Ygilany/AskDB/issues).
 

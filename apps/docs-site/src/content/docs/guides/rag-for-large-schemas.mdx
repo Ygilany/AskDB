@@ -13,7 +13,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 A rule of thumb: if your schema artifact has more than ~30 tables, or if rendered DDL routinely exceeds 8K tokens, you'll save money and improve generation quality by retrieving instead of stuffing.
 
-The retrieval trigger is configurable. By default `ask()` uses retrieval when a retriever is supplied <em>and</em> the schema's chunk count exceeds 30.
+When you pass a retriever, `ask()` retrieves on every call. To let a small schema skip retrieval, also pass `totalSchemaChunkCount`: at or below `retrievalThresholdChunks` (30 by default), `ask()` sends the whole schema instead. See [Wire retrieval into `ask()`](#wire-retrieval-into-ask).
 
 ## Install
 
@@ -139,17 +139,15 @@ Pass the retriever to `ask()`. AskDB calls it with the question and substitutes 
 If you just ran `buildSchemaIndex` in the same process, pass its returned `retriever` directly. To retrieve in a separate process (the common production shape), rebuild one from the store:
 
 ```ts
-import { createAskDb } from "@askdb/client";
 import { createRetriever } from "@askdb/rag";
 
 // askdb initialized at startup — see Embed in a Node app.
 const retriever = createRetriever({ store, embedder });
 
-const { sql } = await askdb.ask(question, {
-  retriever,
-  retrievalThresholdChunks: 30, // default
-});
+const { sql } = await askdb.ask(question, { retriever });
 ```
+
+With only a retriever, `ask()` retrieves on every call. To let a small schema skip retrieval, also pass `totalSchemaChunkCount`, the `stats.chunksTotal` that `buildSchemaIndex` returns. At or below `retrievalThresholdChunks` (30 by default), `ask()` then sends the whole schema instead.
 
 ## Sensitive fields and embeddings
 
