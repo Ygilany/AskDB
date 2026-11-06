@@ -31,7 +31,7 @@ If your server reads strings differently, the list above holds only once the dia
 
 ### What integrators should do
 
-Load schema directories and bundles only from sources you trust, and keep `httpApi.allowSchemaOverride` off unless every caller that can reach `POST /ask` is trusted: an override is a schema artifact the server parses. Run `@askdb/core` 1.0.0-beta.48 or later ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)).
+Load schema directories and bundles only from sources you trust, and keep `httpApi.allowSchemaOverride` off unless every caller that can reach `POST /ask` is trusted: an override is a schema artifact the server parses. Upgrade every AskDB package you install to a release that depends on `@askdb/core` 1.0.0-beta.48 or later ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)): `askdb` and `@askdb/http-api` 1.0.0-beta.48, `@askdb/studio` 0.2.0-beta.41, `@askdb/enrich` 0.2.0-beta.19, `@askdb/rag` 0.2.0-beta.28, and `@askdb/core` itself if your app lists it (`@askdb/client` uses your app's `@askdb/core`). These packages pin their `@askdb/core` exactly, so upgrading `@askdb/core` alone can leave an older copy under them: check with `npm ls @askdb/core` or `pnpm why @askdb/core` that only 1.0.0-beta.48 or later remains.
 
 Treat generated SQL as untrusted. Execute it with a least-privilege, read-only database role; enforce tenant isolation in the database (for example, Postgres row-level security); set statement timeouts and row limits; and log every question and generated statement. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely).
 
