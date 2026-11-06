@@ -162,7 +162,16 @@ export type TenantGuardrailRuleCode =
    * `AskDialect` included; not under a `global` scope, where the tenant check doesn't run
    * (#698).
    */
-  | "NOT_SELECT_OR_WITH";
+  | "NOT_SELECT_OR_WITH"
+  /**
+   * The SQL calls a function whose reads the tenant check can't see: one that runs a query
+   * passed as a string (`query_to_xml`, `crosstab`), reads a table named in a string
+   * (`table_to_xml`), runs SQL over another connection (`dblink`, `OPENQUERY`), or sets a
+   * value row-level security may read (`set_config`), or any `U&"…"` name called as a
+   * function. Reported for the whole SQL, with `tableId: ""`, under every dialect, a custom
+   * `AskDialect` included; not under a `global` scope (#702).
+   */
+  | "UNCHECKABLE_FUNCTION";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;

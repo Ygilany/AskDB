@@ -114,6 +114,19 @@ export function tenantRuleWarnings(
     );
   }
 
+  // Nor can they see what a query reaches through a call that runs SQL or reads a table named
+  // in a string they blank, runs SQL over another connection, or sets what row-level security
+  // reads. The read-only check allows some of these as reads, and a custom AskDialect skips
+  // it, so the tenant check refuses them under every dialect (#702).
+  const call = uncheckableCall(sql, dialect);
+  if (call !== undefined) {
+    warnings.push(
+      warn("UNCHECKABLE_FUNCTION", "",
+        `The SQL calls ${call}(), which reads or scopes rows the tenant check can't see. Under a tenant ` +
+        "policy, query the tables directly (pivot with CASE or FILTER, not crosstab)."),
+    );
+  }
+
   const views = codeViews(sql, dialect);
 
   // Check the roots this scope covers: a query on the root table itself is scoped by its tenant ID column.
@@ -399,6 +412,64 @@ function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["
     }
   }
   return undefined;
+}
+
+/**
+ * Functions whose reads the tenant check can't see, lowercase (#702). Fixed here, not taken
+ * from a `DialectSpec`, so a spec that overrides `blockedFunctions` can't shrink it; and the
+ * read-only check allows the plain reads among them (`table_to_xml`, `crosstab`).
+ */
+const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
+  // Run a query passed as a string. `crosstab*` come from Postgres's `tablefunc` extension.
+  "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema", "cursor_to_xml", "ts_stat",
+  "ts_rewrite", "crosstab", "crosstab2", "crosstab3", "crosstab4",
+  // Read a table, a schema or the database named in a string (`connectby` from `tablefunc`).
+  "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
+  "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
+  // Run SQL over another connection: Postgres's `dblink` extension, SQL Server's rowset functions.
+  "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
+  "dblink_fetch", "dblink_get_result", "openquery", "openrowset", "opendatasource",
+  // Set a value row-level security may read.
+  "set_config",
+]);
+
+/**
+ * The first call in `sql` to a function in {@link UNCHECKABLE_FUNCTIONS} (its name, lowercase)
+ * or to a `U&"…"` name (as written), or undefined. A call is a name, bare, quoted or qualified,
+ * then `(`, with any comments between. Postgres decodes a `U&"…"` name, optionally followed by
+ * `UESCAPE '<c>'`; the check doesn't, so it counts every such call. Read under every reading
+ * from {@link statementReadings}, so a call any of them sees counts.
+ */
+function uncheckableCall(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of statementReadings(dialect)) {
+    const tokens = lexSql(sql, profile).filter((t) => t.kind !== "comment");
+    for (let i = 1; i < tokens.length; i++) {
+      if (tokens[i]!.kind !== "punct" || tokens[i]!.text !== "(") continue;
+      let k = i - 1;
+      if (tokens[k]!.kind === "string" && tokens[k - 1]?.kind === "word" && tokens[k - 1]!.lower === "uescape") k -= 2;
+      const name = tokens[k];
+      if (!name) continue;
+      if (isUnicodeEscapedName(tokens, k)) return `U&${name.text}`;
+      const called = nameOf(name);
+      if (called !== undefined && UNCHECKABLE_FUNCTIONS.has(called)) return called;
+    }
+  }
+  return undefined;
+}
+
+/** A name token's name, lowercase: a word, a quoted identifier, or a `"…"` string, which some servers read as a name. */
+function nameOf(token: SqlToken): string | undefined {
+  if (token.kind === "word" || token.kind === "quoted_identifier") return token.lower;
+  if (token.kind === "string" && token.quote === '"') return token.text.slice(1, -1).toLowerCase();
+  return undefined;
+}
+
+/** Whether `tokens[k]` is the quoted part of a Postgres `U&"…"` name: `U`, `&` and the quote, with nothing between. */
+function isUnicodeEscapedName(tokens: readonly SqlToken[], k: number): boolean {
+  const [u, amp, quoted] = [tokens[k - 2], tokens[k - 1], tokens[k]!];
+  if (quoted.kind !== "quoted_identifier" && !(quoted.kind === "string" && quoted.quote === '"')) return false;
+  return amp?.kind === "punct" && amp.text === "&" && amp.end === quoted.start &&
+    u?.kind === "word" && u.lower === "u" && u.end === amp.start;
 }
 
 function warn(

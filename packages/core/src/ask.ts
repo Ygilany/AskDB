@@ -131,8 +131,10 @@ export type AskDialectGenerateResult = {
  *     statement you return must start with `SELECT` or `WITH`, however an engine may
  *     split it (at a `;`, or on SQL Server at a verb such as `EXEC`): the check can't
  *     read what a `DO` block, `CALL`, `EXPLAIN` or `SHOW` touches, so it reports
- *     `NOT_SELECT_OR_WITH` (#698). It can't read a query passed as a string either, such
- *     as `query_to_xml('SELECT …')` (#702). A
+ *     `NOT_SELECT_OR_WITH` (#698). Nor can it see what a call reads when the call runs a
+ *     query or reads a table named in a string, runs SQL over another connection, or sets
+ *     what row-level security reads (`query_to_xml`, `table_to_xml`, `dblink`, `OPENQUERY`,
+ *     `set_config`), so it reports `UNCHECKABLE_FUNCTION` (#702). A
  *     `tenantGuardrail` your generator returns adds findings to that check
  *     (`form: "generator"`), never replaces it.
  *   - The sensitive-identifier check runs on your SQL too, unless
