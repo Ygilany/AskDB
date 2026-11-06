@@ -33,7 +33,7 @@ The site follows ASD-STE100 (Simplified Technical English) about 80% of the way.
 
 **Soften:**
 
-- **Sentence length is a target, not a cap.** Aim for about 20 words in a step and 25 in a description. A longer sentence is fine when splitting it would separate a condition from its result. Past about 35 words, split it or use a list.
+- **Sentence length is a target, not a cap.** Aim for about 20 words in a step and 25 in a description. A longer sentence is fine when splitting it would separate a condition from its result.
 - **Write for flow.** Contractions ("don't", "it's"), connecting words ("so", "but", "then", "because") and varied sentence openings are fine.
 - **Common phrasal verbs are fine:** "set up", "log in", "look up", "fall back".
 - **Warmth depends on the page type.** Tutorials and explanation pages may be warmer and more discursive than reference pages (see [Voice](#voice)).
@@ -64,7 +64,7 @@ Model wiring has two first-party paths: `@askdb/ai`'s built-in providers (`creat
 
 | Sidebar section | Diátaxis type | Folder |
 |---|---|---|
-| Start | Tutorial (Quickstart), plus orientation (Overview, Install, Studio) | root |
+| Start | Tutorial (Quickstart), plus orientation pages, each of one type: Overview (explanation), Install (how-to), Studio (a tutorial-style tour of its views) | root |
 | Guides | How-to guides | `guides/`, `guides/integrations/` |
 | Concepts | Explanation | `concepts/` |
 | Reference | Reference | `reference/` |
