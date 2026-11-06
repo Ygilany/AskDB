@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnectorRegistry, type CatalogQueryRunner, type ConnectorConnectionRequest } from "@askdb/introspect";
 import type { PostgresIntrospectionInput } from "./index.js";
 import { postgresConnectorProvider } from "./provider.js";
@@ -84,13 +84,16 @@ describe("postgresConnectorProvider.createConnector", () => {
 describe("postgresConnectorProvider.createConnector schemaId", () => {
   // An empty catalog in each mode: a runner that returns no rows, and an export bundle of empty files.
   const emptyCatalog: CatalogQueryRunner = async () => ({ columns: [], rows: [] });
-  const bundleDir = mkdtempSync(join(tmpdir(), "askdb-pg-schema-id-"));
-  const files = Object.fromEntries(POSTGRES_TEMPLATES.map((tpl) => [tpl.name, `${tpl.name}.json`]));
-  for (const file of Object.values(files)) writeFileSync(join(bundleDir, file), "[]");
-  writeFileSync(
-    join(bundleDir, "manifest.json"),
-    JSON.stringify({ engine: "postgres", version: POSTGRES_TEMPLATE_VERSION, files }),
-  );
+  let bundleDir: string;
+  beforeAll(() => {
+    bundleDir = mkdtempSync(join(tmpdir(), "askdb-pg-schema-id-"));
+    const files = Object.fromEntries(POSTGRES_TEMPLATES.map((tpl) => [tpl.name, `${tpl.name}.json`]));
+    for (const file of Object.values(files)) writeFileSync(join(bundleDir, file), "[]");
+    writeFileSync(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify({ engine: "postgres", version: POSTGRES_TEMPLATE_VERSION, files }),
+    );
+  });
   afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
 
   it.each([
