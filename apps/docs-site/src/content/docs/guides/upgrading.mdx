@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.50
 
-Not published yet: these changes ship with `askdb` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
+Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
 
 ### Take credentials out of a model base URL
 
@@ -40,6 +40,10 @@ Introspection now refuses to write an artifact with no tables ([#337](https://gi
 - **Studio answers `422`** with the reason when its introspection or resync finds nothing, and keeps the artifact on disk.
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-) for the likely causes.
+
+### Fix a bundle without a `tables` object, which now fails to load
+
+A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a string or an array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: add `"tables": {}`, or rebuild it with `askdb bundle`.
 
 ## 1.0.0-beta.49
 

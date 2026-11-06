@@ -316,6 +316,7 @@ function loadFromDirectory(dir: string, schemaJsonPath?: string): NormalizedSche
 
 function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSchemaV2 {
   const physical = parsePhysicalLayer(bundle.physical, filePath);
+  assertBundledTables(bundle.tables, filePath);
   // Errors name the bundled file and the bundle that holds it: the user has the
   // bundle on disk, not a tenant-policy.md or concepts.md.
   return loadFromFiles(bundle, physical, (file) => `${file} (in ${filePath})`, filePath);
@@ -428,6 +429,33 @@ function addTableMarkdown(
     );
   }
   tableMarkdowns[id] = loaded;
+}
+
+/**
+ * A bundle's `tables` must map each `tables/` file name to its markdown. `askdb bundle`
+ * always writes it (`{}` when there are no table files), so anything else is a
+ * hand-made or damaged bundle. It's refused rather than loaded without its tables,
+ * which would drop every `sensitive: true` they set.
+ */
+function assertBundledTables(tables: unknown, bundlePath: string): void {
+  const dir = SCHEMA_DIRECTORY_FILES.tables;
+  if (tables === undefined) {
+    throw new SchemaParseError(
+      `Invalid bundle at ${bundlePath}: \`${dir}\` is missing; a bundle carries every ${dir}/*.md as an object keyed by file name ({} when there are none).`,
+    );
+  }
+  if (typeof tables !== "object" || tables === null || Array.isArray(tables)) {
+    throw new SchemaParseError(
+      `Invalid bundle at ${bundlePath}: \`${dir}\` must be an object keyed by ${dir}/*.md file name, with each file's raw markdown as the value.`,
+    );
+  }
+  for (const [filename, content] of Object.entries(tables)) {
+    if (typeof content !== "string") {
+      throw new SchemaParseError(
+        `Invalid bundle at ${bundlePath}: \`${dir}\` entry ${filename} must be the raw ${dir}/${filename} content (a string).`,
+      );
+    }
+  }
 }
 
 /** Read an optional bundled markdown file: `undefined` only when the key is absent. */
