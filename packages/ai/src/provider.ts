@@ -96,12 +96,15 @@ export function resolveBaseConfig(
   spec: ProviderEnvSpec,
   options: ResolveConfigOptions,
 ): AiConfig | undefined {
-  const apiKey = first(env, [
-    "ASKDB_AI_API_KEY",
-    ...spec.apiKeyVars,
-    ...(spec.apiKeySecondaryVars ?? []),
-    "ASKDB_AI_API_KEY_SECONDARY",
-  ]);
+  // The universal key is read on its own, before `spec` is touched, so it still
+  // resolves for an untyped custom spec with no `apiKeyVars`.
+  const apiKey =
+    first(env, ["ASKDB_AI_API_KEY"]) ||
+    first(env, [
+      ...spec.apiKeyVars,
+      ...(spec.apiKeySecondaryVars ?? []),
+      "ASKDB_AI_API_KEY_SECONDARY",
+    ]);
   if (!apiKey) return undefined;
 
   const model = resolveModel(provider, env, spec, options);
@@ -162,6 +165,11 @@ function resolveModel(
     );
   }
   return model;
+}
+
+/** Provider names and aliases match case-insensitively, ignoring surrounding whitespace. */
+export function normalizeProvider(provider: string): string {
+  return provider.toLowerCase().trim();
 }
 
 function first(env: AiEnv, vars: readonly string[]): string | undefined {

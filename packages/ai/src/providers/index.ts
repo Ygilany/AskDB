@@ -3,6 +3,7 @@ import { azureBuiltin } from "./azure.js";
 import { gatewayBuiltin } from "./gateway.js";
 import { googleBuiltin } from "./google.js";
 import { openaiBuiltin } from "./openai.js";
+import { normalizeProvider } from "../provider.js";
 import type { BuiltinAiProvider } from "./types.js";
 
 /**
@@ -28,11 +29,6 @@ export const BUILTIN_AI_PROVIDERS: readonly BuiltinAiProvider[] = [
 export const BUILTIN_AI_PROVIDER_NAMES: readonly string[] = BUILTIN_AI_PROVIDERS.map(
   (row) => row.provider,
 );
-
-/** Provider names and aliases match case-insensitively, ignoring surrounding whitespace. */
-export function normalizeProvider(provider: string): string {
-  return provider.toLowerCase().trim();
-}
 
 /**
  * Looks up a built-in provider by canonical name or alias (case-insensitive,

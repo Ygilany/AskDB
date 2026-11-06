@@ -7,11 +7,11 @@ import type {
   AiProviderSelector,
   AiRegistry,
 } from "./provider.js";
+import { normalizeProvider } from "./provider.js";
 import {
   BUILTIN_AI_PROVIDERS,
   BUILTIN_AI_PROVIDER_NAMES,
   findBuiltinAiProvider,
-  normalizeProvider,
 } from "./providers/index.js";
 
 /**
