@@ -71,7 +71,7 @@ The schema and model caches are **per-client-instance**. For multi-tenant server
 
 ## `reload()`
 
-Drops the cached schema and model so the next `ask()` re-resolves them from config:
+Drops the cached schema, model and AI config, so the next call resolves them again from the config snapshot the client was created with. To pick up a changed `askdb.config.*`, create a new client.
 
 ```ts
 askdb.reload();

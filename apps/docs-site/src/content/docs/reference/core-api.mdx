@@ -639,7 +639,7 @@ const adminScope: TenantScope = {
 
 ## Errors
 
-Every error `@askdb/core` throws on purpose is an `AskDbError` or one of its subclasses, so `instanceof AskDbError` catches them all. Each class sets `name` to its class name. `@askdb/client` adds four more; see [@askdb/client API → Errors](/reference/client-api/#errors). The [Troubleshooting](/getting-started/troubleshooting/) page has fixes for the common codes.
+`@askdb/core`'s errors are `AskDbError` or one of its subclasses, so `instanceof AskDbError` catches them, except the few plain `Error`s listed after the table. Each class sets `name` to its class name. `@askdb/client` adds four more; see [@askdb/client API → Errors](/reference/client-api/#errors). The [Troubleshooting](/getting-started/troubleshooting/) page has fixes for the common codes.
 
 | Class | Thrown by | Fields |
 | --- | --- | --- |

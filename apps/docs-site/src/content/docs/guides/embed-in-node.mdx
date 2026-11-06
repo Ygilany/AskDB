@@ -58,7 +58,7 @@ export async function askQuestion(question: string) {
 }
 ```
 
-`./my-app.schema` is a **directory**, not a file — `<name>.schema/` is AskDB's convention for the introspected-and-enriched artifact. The schema loads once at startup and stays in memory; call `askdb.reload()` if the artifact changes while the process runs.
+`./my-app.schema` is a **directory**, not a file — `<name>.schema/` is AskDB's convention for the introspected-and-enriched artifact. The schema loads on the first `ask()` and stays in memory on the client; call `askdb.reload()` if the artifact changes while the process runs.
 
 <Aside type="note">
 This example uses `pg` to run the SQL, but the driver is your choice — AskDB never opens a connection. If you already use an ORM or query builder (Prisma, Drizzle, Sequelize, Knex, …), skip `pg` entirely and pass the returned `sql` string to your existing client, e.g. `prisma.$queryRawUnsafe(sql)` or `db.execute(sql)`.
