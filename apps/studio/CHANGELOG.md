@@ -1,5 +1,43 @@
 # @askdb/studio
 
+## 0.2.0-beta.42
+
+### Minor Changes
+
+- ee12e92: Studio's guided setup writes its files from the scaffold planner in `@askdb/config/scaffold`, which `askdb init` shares (#711), so for the same answers the two write the same files. The config loads as before. What changes:
+  
+  - **`.env.example` has `init`'s layout:** a `# purpose` comment above each empty `NAME=`, database variables first. Studio wrote `NAME= # purpose`, which Docker's `--env-file` reads as the value, and wrote each connection URL's format as its value.
+  - **The config's `rag.storeConfig` spans several lines**, as `init`'s does.
+  - **The variables setup lists come in `init`'s order and say what each is for**, such as `postgres connection URL, for introspection and Studio execute`.
+  - **An env var name may start with `_`**, as in `init`.
+  - **A Prisma project also gets `ai` and `zod`** when it doesn't have them (#760), which Yarn Plug'n'Play needs to load `@askdb/prisma`.
+  - **Errors for a bad answer** name the request field and say what's wrong, without repeating the value.
+
+### Patch Changes
+
+- 4437394: Security fix ([GHSA-wjgj-mf9h-6g68](https://github.com/Ygilany/AskDB/security/advisories/GHSA-wjgj-mf9h-6g68)). With `tenantSqlMode: "sql-only"` on the built-in `postgres` or `cockroachdb` dialect, `ask()` could return SQL whose tenant scoping no longer held once the tenant IDs were inlined, because it did not re-check the rendered statement. `ask()` now runs the read-only check on the `sql` it returns, as `bindPreparedQuery()` already does, and refuses a statement that reads differently once rendered. The default `tenantSqlMode: "sql-params"`, which binds tenant IDs as driver parameters, was never affected.
+- 0e5d542: Studio's guided setup picks the package manager as `askdb init` does (#750): with no lockfile, from `package.json`'s `packageManager` or `devEngines.packageManager` field, then the tool that started Studio (`pnpm dlx`, `npx`, …), before falling back to npm. In a project that `pnpm init` started, setup used npm, which refuses it (`EBADDEVENGINES`). The execute-driver **Install** button still uses only the lockfile in the project's directory.
+- Updated dependencies [150a293]
+- Updated dependencies [0e5d542]
+- Updated dependencies [4a83b61]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [82c2f94]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [4437394]
+- Updated dependencies [a8cef1b]
+  - @askdb/config@1.0.0-beta.18
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/introspect@0.3.0-beta.23
+  - @askdb/postgres@0.2.0-beta.25
+  - @askdb/mysql@0.1.0-beta.24
+  - @askdb/sqlite@0.1.0-beta.24
+  - @askdb/sqlserver@0.1.0-beta.25
+  - @askdb/enrich@0.2.0-beta.20
+  - @askdb/rag@0.2.0-beta.29
+
 ## 0.2.0-beta.41
 
 ### Patch Changes
