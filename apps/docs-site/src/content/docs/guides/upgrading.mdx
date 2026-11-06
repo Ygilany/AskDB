@@ -117,12 +117,20 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **For any other engine,** implement `AskDialect` and call `validateSelectSql` on its SQL yourself.
 - **With a tenant policy,** such a spec used to get `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). It now gets `UnknownDialectError` first.
 
+### Set `dialect` for a schema whose engine AskDB doesn't ship, when you serve it over HTTP
+
+`askdb-http` no longer generates PostgreSQL for a schema whose `provider` has no AskDB dialect ([#720](https://github.com/Ygilany/AskDB/issues/720)). It refuses the request instead, as `askdb ask` does. Checking SQL for one engine under another engine's rules can pass SQL the real engine reads differently.
+
+- **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse. The server then uses that dialect for every schema it serves, a request `schemaJson` included, whatever its `provider` says.
+- **For a `schemaJson` the request sends,** while `dialect` isn't set, it answers `400 bad_request`. Send a schema whose `provider` is a built-in dialect id.
+
 ### Other changes you may notice in beta.50
 
 - **A connection's `secondaryApiKey` is used on every provider** when the connection has no `apiKey`. Before, only Azure and Foundry read it; the connection types still declare it only there.
 - **An `ai.language` or `ai.embedding` provider that no registered adapter handles** now fails with the message that says how to register it, as `createLanguageModel` already did, instead of `Unknown ASKDB_AI_PROVIDER`.
 - **`getAskDbRuntimeConfig().deprecations` is empty**, since no config key is deprecated now. It stays for the next deprecation.
 - **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
+- **A schema with a tenant policy** gets `500 tenant_scope_not_configured` from `askdb-http`, not `500 internal_error` ([#716](https://github.com/Ygilany/AskDB/issues/716)). The server still can't set a tenant scope, so it still returns no SQL and never calls the model. If your client matched `internal_error` for this case, match the new code.
 
 ## 1.0.0-beta.49
 
