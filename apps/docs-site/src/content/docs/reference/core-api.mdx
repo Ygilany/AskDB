@@ -29,12 +29,12 @@ const { sql } = await ask({
 | `question` | `string` | yes | — | The natural-language question. |
 | `schema` | `AnyNormalizedSchema` | yes | — | Loaded schema from `loadSchema()` or `loadSchemaFromJson()`. |
 | `model` | `AskDbLanguageModel` | yes | — | An AI SDK `LanguageModel` instance (e.g. `openai("gpt-4o-mini")`). |
-| `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, `DialectSpec`, or custom `AskDialect`. See [Dialects](#dialects). |
+| `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, a `DialectSpec` under a built-in id, or a custom `AskDialect`. See [Dialects](#dialects). |
 | `mode` | `AskDbModeV1` | no | `"schema_only"` | Trust boundary. See [Modes](#modes). |
 | `explain` | `boolean` | no | `false` | When `true`, populates `result.explain` with heuristic guardrail metadata. |
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, withholds sensitive columns from the NL→SQL prompt, along with any describable text that names one (a description, alias, enum value, common query language, or retrieved chunk text). A sensitive table stays as a one-line placeholder with its name. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
-| `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-params"` | `"sql-params"` replaces the tenant placeholders with the dialect's driver markers (`$N` Postgres/CockroachDB, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. `"sql-only"` inlines them in `sql` as escaped literals, for a tool that takes one SQL string, and refuses a tenant ID that isn't printable ASCII or contains a backslash. A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default: with a tenant scope it must set this (`$N` markers in `"sql-params"`), or `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). With a tenant policy, any value other than these two throws the same error, on every dialect. See [Executing the result](#executing-the-result). |
+| `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-params"` | `"sql-params"` replaces the tenant placeholders with the dialect's driver markers (`$N` Postgres/CockroachDB, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. `"sql-only"` inlines them in `sql` as escaped literals, for a tool that takes one SQL string, and refuses a tenant ID that isn't printable ASCII or contains a backslash. A custom `AskDialect` has no default: with a tenant scope it must set this (`$N` markers in `"sql-params"`), or `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). With a tenant policy, any value other than these two throws the same error, on every dialect. See [Executing the result](#executing-the-result). |
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => TenantIdsByRoot \| Promise<TenantIdsByRoot>`, where `TenantIdsByRoot` is `Record<rootTableId, string[]>`. Returns the subtree's IDs grouped by tenant root: the seeds and same-table descendants under `tenantRoot`, each descendant root's IDs under that root, e.g. `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. `ask()` unions the seeds in and binds each root's IDs to its own placeholder (a `multi_root` scope). Without it, or when it returns a flat array or an invalid result, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
 | `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` reports them in `result.verdict` and `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. Any other value refuses a sensitive reference, as `"strict"` does. See [Guardrail verdict](#guardrail-verdict) and [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
@@ -425,7 +425,7 @@ dialect: "postgres"  // or "mysql" | "sqlite" | "sqlserver" | "cockroachdb" | "m
 
 ### `DialectSpec`
 
-Customize how one of the built-in dialects prompts and validates — for example, a PostgreSQL-compatible warehouse that needs extra guidance in the prompt or extra forbidden keywords. `id` must be one of the six built-in ids (the spec describes a variant of that engine family, not a brand-new engine — for that, use [`AskDialect`](#askdialect)).
+Customize how one of the built-in dialects prompts and validates — for example, a PostgreSQL-compatible warehouse that needs extra guidance in the prompt or extra forbidden keywords. `id` must be one of the six built-in ids (the spec describes a variant of that engine family, not a brand-new engine — for that, use [`AskDialect`](#askdialect)). `ask()` throws `UnknownDialectError` for a spec under any other `id`: spread the built-in spec and keep its `id`, as in `{ ...MYSQL_DIALECT, displayName: "TiDB", promptBrief: "…" }`.
 
 ```ts
 import { type DialectSpec } from "@askdb/core";
@@ -492,7 +492,7 @@ It must return `AskDialectGenerateResult`:
 
 A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the returned `sql` (and its `sql-unbound` block), with the `:tenant_<root>_ids` placeholders still in place, and then substitutes them, whatever the dialect. With any scope but `global`, that check also requires every statement to start with `SELECT` or `WITH`, so a `DO` block, `CALL`, `EXPLAIN` or `SHOW` is a tenant finding (`NOT_SELECT_OR_WITH`), even though `ask()` doesn't run the read-only check on your SQL. It also refuses a function whose reads it can't see, wherever the SQL names it, such as `query_to_xml('SELECT …')`, `table_to_xml('orders', …)` or `OPENQUERY` (`UNCHECKABLE_FUNCTION`), because the read-only check that blocks some of them doesn't run on your SQL. With a tenant scope, a custom `AskDialect` must set `tenantSqlMode`, because AskDB can't know its driver's markers (see [`ask()` options](#options)). Under `strict`, SQL that fails the tenant check throws `TenantGuardrailError`; passing it doesn't prove the SQL is scoped. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate. The sensitive-identifier check runs on a custom dialect's SQL too, unless `sensitiveGuardrailMode` is `"off"`.
 
-Passing an unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
+Passing an unknown string dialect id, or a `DialectSpec` whose `id` isn't one of the six built-in ids, throws `UnknownDialectError`, which extends `AskDbError`. `ask()` refuses such a spec before any tenant check, retrieval or model call.
 
 ---
 
@@ -562,7 +562,7 @@ These types are needed when your schema has a tenant policy. See the [multi-tena
 const DEFAULT_TENANT_SQL_MODE: TenantSqlOutputMode; // "sql-params"
 ```
 
-The mode `ask()` and `resolveTenantSql()` use when you don't pass one. It doesn't apply to `ask()` with a tenant scope and a custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in: those must set `tenantSqlMode`. A host that reports or forwards the mode, such as a UI that shows which mode a query ran in, imports it rather than hard-coding the string:
+The mode `ask()` and `resolveTenantSql()` use when you don't pass one. It doesn't apply to `ask()` with a tenant scope and a custom `AskDialect`: those must set `tenantSqlMode`. A host that reports or forwards the mode, such as a UI that shows which mode a query ran in, imports it rather than hard-coding the string:
 
 ```ts
 import { DEFAULT_TENANT_SQL_MODE } from "@askdb/core";
@@ -651,7 +651,7 @@ const adminScope: TenantScope = {
 | --- | --- | --- |
 | `AskDbError` | The base class. Thrown as is by `parseAskDbModeV1()` for an unknown mode, and by `ask()` and `generateSelectSql()` with a built-in dialect or `DialectSpec` for an empty question or a schema with no tables. | `message`, `cause?` |
 | `SchemaParseError` | `loadSchema()`, `loadSchemaFromJson()`, `readSchemaDirectory()` and the markdown parsers: a file that can't be read or parsed, a name in the wrong case, a standalone JSON file in a schema directory, an invalid tenant policy, or, under `enforcement: strict`, a tenant policy that names IDs `schema.json` doesn't have. See [`loadSchema(path)`](#loadschemapath). | `cause?` |
-| `UnknownDialectError` | `ask()` with a string `dialect` that isn't a built-in id. | `dialectId` |
+| `UnknownDialectError` | `ask()` with a string `dialect` that isn't a built-in id, or a `DialectSpec` whose `id` isn't one. | `dialectId` |
 | `SqlGenerationError` | `ask()` and `generateSelectSql()` with a built-in dialect or `DialectSpec`, when the model call fails or is aborted. Its message is `Model call failed: ` followed by the failure's message. When that message gives no reason, as for a refused connection, AskDB adds the code and address of each error under it, such as `ECONNREFUSED 127.0.0.1:11434`, or the error's name when it has no code. | `cause`: the AI SDK's error or the abort reason. |
 | `SqlValidationError` | `validateSelectSql()`, and a `deny` from the read-only check in `ask()`, `generateSelectSql()` and `bindPreparedQuery()`. | `rule`, `hint?`, `verdict?` |
 | `TenantScopeError` | `ask()`, `bindPreparedQuery()`, `expandTenantScope()`, `validateTenantScope()`, `resolveTenantSql()` and `buildTenantPromptBlock()`: a missing or invalid scope, or tenant IDs that can't be bound. | `reason` |
@@ -698,7 +698,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `UNRESOLVED_TENANT_PLACEHOLDER` | The SQL has a `:tenant_<root>_ids` placeholder the scope has no IDs for, including any placeholder under a `global` scope. |
 | `UNSUPPORTED_TENANT_PREDICATE` | A scope with several IDs meets a tenant predicate with no list form, such as `<=`. |
 | `UNESCAPABLE_TENANT_ID` | A tenant ID that isn't printable ASCII (U+0020 to U+007E), or that contains a backslash, would be inlined as a literal: in `"sql-only"` mode, by `ask()`, `resolveTenantSql()` or `bindPreparedQuery()`. |
-| `TENANT_SQL_MODE_REQUIRED` | `ask()` has a tenant scope, no `tenantSqlMode`, and a custom `AskDialect` or a `DialectSpec` whose `id` isn't built in. Also a `tenantSqlMode` other than `"sql-params"` or `"sql-only"`, on every dialect, in `ask()` (with a tenant scope), `bindPreparedQuery()` and `resolveTenantSql()`. |
+| `TENANT_SQL_MODE_REQUIRED` | `ask()` has a tenant scope, no `tenantSqlMode`, and a custom `AskDialect`. Also a `tenantSqlMode` other than `"sql-params"` or `"sql-only"`, on every dialect, in `ask()` (with a tenant scope), `bindPreparedQuery()` and `resolveTenantSql()`. |
 
 ### `TenantGuardrailError` rules
 

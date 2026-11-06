@@ -21,7 +21,7 @@ import type { NormalizedSchema } from "./schema/types.js";
 import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
 import { loadSchema, loadSchemaFromJson } from "./schema/v2/loader.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
-import { POSTGRES_DIALECT, SQLITE_DIALECT, type DialectSpec } from "./sql/dialect-spec.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT, SQLITE_DIALECT, type DialectSpec } from "./sql/dialect-spec.js";
 import type { TenantScope } from "./schema/v2/tenant-policy.js";
 
 const minimalSchema: NormalizedSchema = {
@@ -616,13 +616,23 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
 
   // The SQL Server check rejects a name that isn't plain ASCII unquoted, and a quoted column alone
   // in parentheses after a name, where SQL Server could read a lock hint (#319).
-  it.each([
-    ["sqlserver", "sqlserver", "`AS [注文数]`", "`SUM(o.[金額])`"],
-    ["an id that is no built-in engine", { ...POSTGRES_DIALECT, id: "redshift" as DialectSpec["id"] }, '`AS "注文数"`', '`SUM(o."金額")`'],
-  ] as const)("on %s, says to quote non-ASCII names and qualify a quoted column alone in parentheses", async (_name, dialect, alias, call) => {
-    const prompt = await promptFor(dialect, schemaOf("billing"));
+  it("on sqlserver, says to quote non-ASCII names and qualify a quoted column alone in parentheses", async () => {
+    const prompt = await promptFor("sqlserver", schemaOf("billing"));
     expect(prompt).toContain(
-      `- Quote every name that isn't plain ASCII, aliases included (${alias}), and qualify a quoted column that is the only thing inside parentheses: ${call}.`,
+      "- Quote every name that isn't plain ASCII, aliases included (`AS [注文数]`), and qualify a quoted column that is the only thing inside parentheses: `SUM(o.[金額])`.",
+    );
+  });
+
+  // ask() refuses a spec under another id (#717), but generateSelectSql() still takes one. Its SQL
+  // may be read every engine's way, SQL Server's included, so the prompt carries SQL Server's
+  // non-ASCII rule. (prompt-identifiers.test.ts covers the validator's reading.)
+  it("on an id that is no built-in engine, generateSelectSql() says to quote non-ASCII names and qualify a quoted column alone in parentheses", async () => {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT 1\n```" }));
+    const redshift = { ...POSTGRES_DIALECT, id: "redshift" as DialectSpec["id"] };
+    await generateSelectSql(redshift, "q", schemaOf("billing"), fakeModel, { generateText: generateText as never });
+    const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+    expect(prompt).toContain(
+      '- Quote every name that isn\'t plain ASCII, aliases included (`AS "注文数"`), and qualify a quoted column that is the only thing inside parentheses: `SUM(o."金額")`.',
     );
   });
 
@@ -1835,6 +1845,22 @@ describe("ask — unknown dialect id", () => {
     await expect(run).rejects.toBeInstanceOf(UnknownDialectError);
     await expect(run).rejects.toBeInstanceOf(AskDbError);
     await expect(run).rejects.toMatchObject({ dialectId: "oracle" });
+  });
+
+  // A DialectSpec keeps a built-in id: core lexes, quotes and binds SQL by id, and a new engine
+  // implements AskDialect (ADR 0029, #717). With a tenant policy, see tenant-placeholders.test.ts.
+  it("refuses a built-in spec spread with a new id, before any model call", async () => {
+    const generateText = vi.fn();
+    const run = ask({
+      question: "q",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: { ...MYSQL_DIALECT, id: "tidb" } as never,
+      deps: { generateText },
+    });
+    await expect(run).rejects.toBeInstanceOf(UnknownDialectError);
+    await expect(run).rejects.toMatchObject({ dialectId: "tidb" });
+    expect(generateText).not.toHaveBeenCalled();
   });
 });
 

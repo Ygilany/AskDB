@@ -38,7 +38,7 @@ The `@askdb/client` package provides `createAskDb()`, a config-aware facade that
 ## Design decisions
 
 - **BYO model** — `ask()` accepts `AskDbLanguageModel` (`@askdb/core`'s alias for the AI SDK `LanguageModel`); no provider is bundled into core. Consumers supply their own model instance. Provider construction helpers (`createAiRegistry` and its `resolveAiConfig`) and the built-in provider adapters live in `@askdb/ai`. See [ADR 0006](../adrs/0006-ai-provider-integration-strategy.md) and its Option E amendment.
-- **Dialect as a string, spec, or adapter** — `dialect` accepts a built-in string ID (`"postgres"`, `"mysql"`, etc.), a `DialectSpec` descriptor object, or a full custom `AskDialect` adapter. The string path is the normal case; `@askdb/postgres` is for introspection connectors, not needed for `ask()`. See [ADR 0002](../adrs/0002-integration-package-layout.md).
+- **Dialect as a string, spec, or adapter** — `dialect` accepts a built-in string ID (`"postgres"`, `"mysql"`, etc.), a `DialectSpec` descriptor object under a built-in `id`, or a full custom `AskDialect` adapter. The string path is the normal case; `@askdb/postgres` is for introspection connectors, not needed for `ask()`. See [ADR 0002](../adrs/0002-integration-package-layout.md).
 - **SQL-only output** — `ask()` returns checked SQL; execution belongs to the host application. `@askdb/core` does not manage database connections.
 - **Schema precheck** — before calling the model, `assertNlToSqlInputs` rejects an empty schema or a blank question with a structured error. It doesn't reject unknown tables or columns: a table the question names (`from X` / `join X`) that isn't among the schema's tracked tables becomes an ambiguity note in the prompt. The notes name no schema table, so they can't name one the prompt's DDL leaves out (#677).
 - **Structured logging throughout** — all pipeline stages emit structured events with a stable `correlationId`. See [`modes-and-observability.md`](./modes-and-observability.md) and [ADR 0001](../adrs/0001-structured-logging-pino.md).
@@ -56,7 +56,7 @@ SQL is split into tokens by one shared, dialect-aware lexer (`packages/core/src/
 | SQL Server | `'…'`, `N'…'` | `[…]` (`]]` escape), `"…"` | `--`, nested `/* */` |
 | SQLite | `'…'` | `"…"`, `` `…` ``, `[…]` | `--`, `/* */` |
 
-A `DialectSpec` whose `id` is not a built-in family must pass under every built-in lexer and every built-in denylist.
+A `DialectSpec` whose `id` is not a built-in family must pass under every built-in lexer and every built-in denylist when you call `validateSelectSql()` with it; `ask()` refuses such a spec with `UnknownDialectError` (#717).
 
 Checks, in order — the first failure throws `SqlValidationError` with `rule`:
 
