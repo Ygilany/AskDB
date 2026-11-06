@@ -12,6 +12,7 @@ import {
   type InitDepSpecs,
   type InitPrompter,
 } from "./init.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 // Only buildInquirerPrompter imports this; the runWizard tests pass their own prompter.
 vi.mock("@inquirer/prompts", () => ({
@@ -407,6 +408,12 @@ describe("init helpers", () => {
     expect(s.configSpec.length).toBeGreaterThan(0);
   });
 
+  // The introspect command's missing-package hint keeps its own copy of the approvals.
+  it("approves the same Prisma build in the introspect hint as the scaffold planner does", () => {
+    const plan = planInitScaffold(resolveDefaultInitAnswers({ database: "prisma" }), FAKE_SPECS);
+    expect(PRISMA_BUILD_APPROVALS).toEqual(plan.install.allowBuilds);
+  });
+
   it("resolveInitDepSpecs pins @askdb/prisma to the version this CLI was built with", () => {
     const prismaPkg = JSON.parse(readFileSync(join(import.meta.dirname, "../../../packages/prisma/package.json"), "utf8"));
     expect(resolveInitDepSpecs().prismaSpec).toBe(prismaPkg.version);
@@ -452,7 +459,7 @@ describe("runInitCli install", () => {
     rmSync(project, { recursive: true, force: true });
   });
 
-  /** What a Prisma project installs: `ai` and `zod` too, at `@askdb/core`'s ranges, for Yarn Plug'n'Play (#760). */
+  /** What a Prisma project installs: `ai` (the newest major `@askdb/core` accepts) and `zod` too, for Yarn Plug'n'Play (#760). */
   function prismaPackages(): string[] {
     const { prismaSpec, configSpec } = resolveInitDepSpecs();
     return [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`, "ai@^7.0.51", "zod@^4.6.7"];
@@ -477,6 +484,21 @@ describe("runInitCli install", () => {
     expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, prismaPackages(), allowBuilds);
     const command = ["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...prismaPackages()].join(" ");
     expect(stderr.join("")).toContain(`  ${command}\n`);
+  });
+
+  // A project that already lists `ai` or `zod` keeps its range: `init` doesn't move `ai@^6` to 7.
+  it("installs ai and zod for a Prisma project only when its package.json doesn't list them", async () => {
+    enterProject({
+      "package.json": JSON.stringify({ name: "app", private: true, dependencies: { ai: "^6.0.0" }, devDependencies: { zod: "^3.25.76" } }),
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+    });
+    const installer = vi.fn().mockReturnValue(true);
+
+    const code = await runInitCli(["--yes", "--database", "prisma", "--path", join(project, "askdb.config.ts")], installer);
+
+    expect(code).toBe(0);
+    const { configSpec, prismaSpec } = resolveInitDepSpecs();
+    expect(installer).toHaveBeenCalledWith("pnpm", project, [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`], ["@prisma/engines"]);
   });
 
   // #750: `pnpm init` writes devEngines.packageManager and no lockfile, and npm refuses to

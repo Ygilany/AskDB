@@ -165,21 +165,21 @@ type CheckedAnswers = {
 
 /** The answers the chosen engine, store and execute provider read, each checked. Others are ignored. */
 function checkAnswers(answers: AskDbScaffoldAnswers): CheckedAnswers {
-  const database = oneOf("database", answers.database, ASKDB_INTROSPECTION_PROVIDERS);
+  const database = checkOneOf("database", answers.database, ASKDB_INTROSPECTION_PROVIDERS);
   const introspection =
     ENGINES[database].connection === "schema"
-      ? { schemaPath: answers.prismaSchemaPath === undefined ? undefined : path("prismaSchemaPath", answers.prismaSchemaPath) }
+      ? { schemaPath: answers.prismaSchemaPath === undefined ? undefined : checkPath("prismaSchemaPath", answers.prismaSchemaPath) }
       : connection(database, answers, "");
-  const schemaOut = path("schemaOut", answers.schemaOut);
+  const schemaOut = checkPath("schemaOut", answers.schemaOut);
   const ai = answers.ai as Partial<AskDbAiConfigScaffoldInput> | undefined;
-  const provider = oneOf("ai.provider", ai?.provider, ASKDB_AI_PROVIDERS);
-  const keyEnv = envName("ai.keyEnv", ai?.keyEnv);
-  const modelEnv = ai?.modelEnv === undefined ? undefined : envName("ai.modelEnv", ai.modelEnv);
-  const store = oneOf("rag.store", answers.rag?.store, ASKDB_RAG_STORES);
-  const pgvectorEnv = store === "pgvector" ? envName("rag.pgvectorEnv", answers.rag.pgvectorEnv) : undefined;
+  const provider = checkOneOf("ai.provider", ai?.provider, ASKDB_AI_PROVIDERS);
+  const keyEnv = checkEnvName("ai.keyEnv", ai?.keyEnv);
+  const modelEnv = ai?.modelEnv === undefined ? undefined : checkEnvName("ai.modelEnv", ai.modelEnv);
+  const store = checkOneOf("rag.store", answers.rag?.store, ASKDB_RAG_STORES);
+  const pgvectorEnv = store === "pgvector" ? checkEnvName("rag.pgvectorEnv", answers.rag.pgvectorEnv) : undefined;
   let execute: CheckedAnswers["execute"];
   if (answers.studioExecute) {
-    const executeProvider = oneOf("studioExecute.provider", answers.studioExecute.provider, ASKDB_STUDIO_EXECUTE_PROVIDERS);
+    const executeProvider = checkOneOf("studioExecute.provider", answers.studioExecute.provider, ASKDB_STUDIO_EXECUTE_PROVIDERS);
     execute = { provider: executeProvider, connection: connection(executeProvider, answers.studioExecute, "studioExecute.") };
   }
   return {
@@ -199,8 +199,8 @@ function connection(
   prefix: string,
 ): Connection {
   return ENGINES[engine].connection === "url"
-    ? { urlEnv: envName(`${prefix}connectionEnv`, answers.connectionEnv) }
-    : { file: scaffoldValue(`${prefix}sqliteFile`, answers.sqliteFile) };
+    ? { urlEnv: checkEnvName(`${prefix}connectionEnv`, answers.connectionEnv) }
+    : { file: checkScaffoldValue(`${prefix}sqliteFile`, answers.sqliteFile) };
 }
 
 function renderConfig(a: CheckedAnswers, aiSource: string): string {
@@ -293,13 +293,13 @@ const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
 // C0 controls, DEL, and the JS line and paragraph separators: never part of a project path.
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f\u2028\u2029]/;
 
-function required(field: string, value: unknown): string {
+function checkRequired(field: string, value: unknown): string {
   if (typeof value !== "string" || value === "") throw new AskDbScaffoldInputError(field, "is required.");
   return value;
 }
 
-function envName(field: string, value: unknown): string {
-  const name = required(field, value);
+function checkEnvName(field: string, value: unknown): string {
+  const name = checkRequired(field, value);
   if (!ENV_NAME_PATTERN.test(name)) {
     throw new AskDbScaffoldInputError(
       field,
@@ -309,23 +309,23 @@ function envName(field: string, value: unknown): string {
   return name;
 }
 
-function path(field: string, value: unknown): string {
-  const text = required(field, value);
+function checkPath(field: string, value: unknown): string {
+  const text = checkRequired(field, value);
   if (CONTROL_CHAR_PATTERN.test(text)) {
     throw new AskDbScaffoldInputError(field, "must not contain control characters, such as a newline.");
   }
   return text;
 }
 
-function scaffoldValue(field: string, value: ScaffoldValue | undefined): ScaffoldValue {
+function checkScaffoldValue(field: string, value: ScaffoldValue | undefined): ScaffoldValue {
   if (value !== null && typeof value === "object") {
-    if ("env" in value) return { env: envName(field, value.env) };
-    if ("path" in value) return { path: path(field, value.path) };
+    if ("env" in value) return { env: checkEnvName(field, value.env) };
+    if ("path" in value) return { path: checkPath(field, value.path) };
   }
   throw new AskDbScaffoldInputError(field, "is required: a path or an env var name.");
 }
 
-function oneOf<T extends string>(field: string, value: unknown, allowed: readonly T[]): T {
+function checkOneOf<T extends string>(field: string, value: unknown, allowed: readonly T[]): T {
   if ((allowed as readonly unknown[]).includes(value)) return value as T;
   const expected = `one of: ${allowed.join(", ")}.`;
   throw new AskDbScaffoldInputError(field, value === undefined ? `is required, ${expected}` : `must be ${expected}`);

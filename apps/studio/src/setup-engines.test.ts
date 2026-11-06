@@ -8,6 +8,7 @@ import {
   EXECUTE_PROVIDERS,
   RAG_STORES,
 } from "./web/views/setup/types.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 // The browser bundle keeps its own copy of the engine lists (it can't import the planner).
 // The planner's engine table is keyed by `ASKDB_INTROSPECTION_PROVIDERS`, and it accepts the
@@ -48,4 +49,9 @@ describe("Studio setup wizard engines", () => {
       expect(plan.envVars.some((v) => v.name === "WIZARD_URL")).toBe(EXECUTE_CONNECTION_ENV_DEFAULTS[provider] !== "");
     },
   );
+
+  // The introspection plan's missing-package hint keeps its own copy of the approvals.
+  it("approves the same Prisma build in the introspection hint as the scaffold planner does", () => {
+    expect(PRISMA_BUILD_APPROVALS).toEqual(planAskDbScaffold({ ...base, database: "prisma" }, VERSIONS).install.allowBuilds);
+  });
 });

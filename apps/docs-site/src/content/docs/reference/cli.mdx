@@ -86,7 +86,7 @@ Commands that don't read the config work in any directory, including one with no
 
 ### `askdb init`
 
-Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, plus `ai` and `zod` at the ranges `@askdb/core` uses, which Yarn Plug'n'Play needs in the project. With pnpm 10.4 or later it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`). Older pnpm has no `--allow-build`, so it installs without it.
+Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, plus `ai` and `zod`, which Yarn Plug'n'Play needs in the project: `ai` at the newest major `@askdb/core` accepts, and `zod` at core's range. It installs those, and a database driver, only when your `package.json` doesn't list them yet, so a range you chose, such as `ai@^6`, stays. With pnpm 10.4 or later it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`). Older pnpm has no `--allow-build`, so it installs without it.
 
 `init` installs into the current directory if it has a `package.json`, or else into the nearest directory above it that has one. It picks the package manager from the first of these that names one:
 

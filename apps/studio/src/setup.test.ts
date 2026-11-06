@@ -1,10 +1,62 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
-import type { SetupConfigInput } from "./setup.js";
+import { resetAskDbRuntimeForTests } from "@askdb/config";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SetupError, setSetupInstallerForTests, writeSetupConfig, type SetupConfigInput } from "./setup.js";
+
+// The planner in @askdb/config/scaffold owns the files (plan.test.ts). Studio owns its
+// defaults, its relative-only path rule, and naming its own request fields in a 400.
+describe("writeSetupConfig answers", () => {
+  const dirs: string[] = [];
+  beforeEach(() => {
+    // Never run a real install; returning false also skips loading the config.
+    setSetupInstallerForTests(() => false);
+  });
+  afterEach(() => {
+    setSetupInstallerForTests(undefined);
+    resetAskDbRuntimeForTests();
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  function projectDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), "askdb-setup-answers-"));
+    dirs.push(dir);
+    return dir;
+  }
+
+  it.each([
+    ["aiKeyEnv", { database: "postgres", aiProvider: "openai", aiKeyEnv: "sk-this-looks-like-a-secret" }],
+    ["studioExecuteConnectionEnv", { database: "postgres", aiProvider: "openai", studioExecute: true, studioExecuteConnectionEnv: "exec-url" }],
+    ["studioExecuteProvider", { database: "prisma", aiProvider: "openai", studioExecute: true }],
+    ["prismaSchema", { database: "prisma", aiProvider: "openai", prismaSchema: "./schema\n.prisma" }],
+    ["schemaOut", { database: "postgres", aiProvider: "openai", schemaOut: "/srv/askdb" }],
+    ["sqliteFile", { database: "sqlite", aiProvider: "openai", sqliteFile: "../outside.db" }],
+  ] satisfies [string, SetupConfigInput][])("rejects a bad %s with a 400 that names it, and writes nothing", (field, input) => {
+    const dir = projectDir();
+    let error: unknown;
+    try {
+      writeSetupConfig(dir, input);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(SetupError);
+    expect((error as SetupError).status).toBe(400);
+    expect((error as SetupError).message).toMatch(new RegExp(`^\`${field}\` `));
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it("fills in Studio's defaults: the provider's key variable, ./data.db and ./askdb", () => {
+    const dir = projectDir();
+    const { envVars } = writeSetupConfig(dir, { database: "sqlite", aiProvider: "anthropic", studioExecute: true });
+
+    const source = readFileSync(join(dir, "askdb.config.ts"), "utf8");
+    expect(source.match(/file: "\.\/data\.db"/g)).toHaveLength(2);
+    expect(source).toContain('outputDir: "./askdb"');
+    expect(envVars.map((v) => v.name)).toEqual(["ANTHROPIC_API_KEY"]);
+  });
+});
 
 // @askdb/prisma is an optional peer of Studio and askdb (#259): a Prisma project installs
 // it, and pnpm 11 must approve its @prisma/engines build or the install exits 1.

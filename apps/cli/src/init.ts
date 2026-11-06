@@ -692,7 +692,8 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
     process.stdout.write(`  RAG store:     ${answers.ragStore}\n`);
     process.stdout.write(`  Studio execute: ${answers.studioExecute.enabled ? `enabled (${answers.studioExecute.provider})` : "disabled"}\n`);
     if (!opts.skipInstall) {
-      process.stdout.write(`  Packages:      ${plan.install.packages.map(packageNameOf).join(", ")}\n`);
+      const packages = packagesToInstall(plan, findNearestPackageJsonDir(process.cwd()));
+      process.stdout.write(`  Packages:      ${packages.map(packageNameOf).join(", ")}\n`);
     }
     process.stdout.write(`  Env vars:      ${plan.envVars.map((v) => v.name).join(", ")}\n`);
     process.stdout.write('                 (defaults — rename via `env("...")` in askdb.config.ts if you\'d like)\n');
@@ -722,6 +723,37 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
 function packageNameOf(spec: string): string {
   const at = spec.indexOf("@", 1);
   return at === -1 ? spec : spec.slice(0, at);
+}
+
+/**
+ * The plan's packages to install in `pkgRoot`. AskDB's own packages always install, at the
+ * versions this CLI pins. Any other package (a driver, or `ai` and `zod` for Prisma) installs
+ * only when the project's `package.json` doesn't list it yet, so `init` never moves a range
+ * the project already chose, such as `ai@^6`. With no project, or at a workspace root, where
+ * `init` only prints the command for another package, every package is listed.
+ */
+function packagesToInstall(plan: AskDbScaffoldPlan, pkgRoot: string | undefined): string[] {
+  const listed = pkgRoot && !isLikelyWorkspaceRoot(pkgRoot) ? listedDependencies(pkgRoot) : new Set<string>();
+  return plan.install.packages.filter((spec) => {
+    const name = packageNameOf(spec);
+    return name.startsWith("@askdb/") || !listed.has(name);
+  });
+}
+
+/** Every package `dir/package.json` lists as a dependency of any kind. */
+function listedDependencies(dir: string): Set<string> {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as Record<string, unknown>;
+    const fields = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+    return new Set(
+      fields.flatMap((field) => {
+        const deps = pkg[field];
+        return deps !== null && typeof deps === "object" ? Object.keys(deps) : [];
+      }),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 function optsToOverrides(opts: InitOptions): InitAnswerOverrides {
@@ -769,7 +801,8 @@ async function finishInit(
 
   if (!opts.skipInstall) {
     const pkgRoot = findNearestPackageJsonDir(process.cwd());
-    const { packages, allowBuilds } = plan.install;
+    const packages = packagesToInstall(plan, pkgRoot);
+    const { allowBuilds } = plan.install;
 
     // The manager comes from the project's lockfile or package.json, else from whoever
     // ran init (`pnpm dlx`, `npx`, …); with no package.json, from the current directory.
