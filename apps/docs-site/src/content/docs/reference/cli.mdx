@@ -76,7 +76,7 @@ To introspect a Prisma schema file, also install `@askdb/prisma`, in the same pl
 | `-h, --help` | Print usage. `init`, `ask`, `introspect`, `studio`, and `rag` also take `--help` for their own flags (for example `askdb ask --help`). |
 | `-V, --version` | Print the installed `askdb` version. |
 
-Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, `introspect --help`, `introspect templates`, `rag --help`, `rag --version`, and [`studio`](#askdb-studio).
+Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, `introspect --help`, `introspect --version`, `introspect templates`, `ask --version`, `rag` with no subcommand (it prints help), `rag --help`, `rag --version`, and [`studio`](#askdb-studio).
 
 `ask`, `introspect`, and the `rag` commands need `askdb.config.*` (or `.config/askdb.*`) in the current directory. Without one they print ``No askdb.config.* or .config/askdb.* found in <cwd>. Run `npx askdb init` to create one.`` and exit `1`.
 
@@ -106,8 +106,8 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` |
-| `--connection-env <name>` | Env var name for the connection URL. |
+| `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` (default `postgres`) |
+| `--connection-env <name>` | Env var name for the connection URL (default `DATABASE_URL`). |
 | `--sqlite-file <path-or-env>` | SQLite file path, or an env var name (`UPPER_SNAKE_CASE`, e.g. `SQLITE_FILE`) to read the path from. Anything else, such as `data.db` or `../db/app.db`, is written as a literal path. |
 | `--prisma-schema <path>` | Path to `schema.prisma`. |
 | `--schema-out <dir>` | Schema output directory (default `./askdb`). |
@@ -116,11 +116,13 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` |
+| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` (default `openai`) |
 | `--ai-key-env <name>` | Env var name for the API key. |
 | `--ai-model-env <name>` | Env var name for the model override. The generated config reads it into `ai.language.model`. |
 
 **RAG flags**
+
+Experimental, like the `rag` block they write: a minor release of `askdb` may change them ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 | Flag | Description |
 | --- | --- |
@@ -128,6 +130,8 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | `--pgvector-env <name>` | Env var name for the pgvector connection URL. |
 
 **Studio flags**
+
+Experimental, like the `studio` block they write: a minor release of `askdb` may change them ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 | Flag | Description |
 | --- | --- |
@@ -155,7 +159,7 @@ askdb introspect \
 | `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. The directory holds a `manifest.json` and the result of each query that [`askdb introspect templates`](#askdb-introspect-templates) prints. |
 | `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. If `schema.json` there is a symbolic link, the command fails instead of writing to the file the link points at; replace the link with a regular file. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. Default: the name of the `--out` or `--diff` directory without a `.schema` suffix (`./my-app.schema` gives `my-app`), else `introspected`. |
-| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. |
+| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. Without either, Postgres and SQL Server read every non-system schema, and MySQL and MariaDB read the database in the connection URL. |
 | `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
 | `--tables <list>` | Comma-separated table patterns to include, matched against `<schema>.<table>`: `*` matches any run of characters, including dots, and `?` matches one character. Write `public.orders` or `*.orders`, not `orders`, which matches no table. A pattern that matches nothing emits an `askdb.introspect.warning` log event (see `-v`). Repeatable — values accumulate. |
 | `--print` | Print the introspection result without writing. |
@@ -186,6 +190,8 @@ Prints the SQL queries that `--from-export` reads the results of, each headed by
 
 ### `askdb enrich`
 
+Experimental: a minor release of `askdb` may change this command ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
+
 Alias of [`askdb studio`](#askdb-studio): opens Studio for authoring per-table descriptions, aliases, concepts, and sensitive markers. It takes the same flags as `askdb studio`: `-s, --schema`, `--port` and `--host`.
 
 ```bash
@@ -193,6 +199,8 @@ askdb enrich --schema ./my-app.schema --port 5600
 ```
 
 ### `askdb studio`
+
+Experimental: Studio stays 0.x, so a minor release of `askdb` may change this command ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 Launches Studio — the browser-based authoring UI — pointed at your schema artifact.
 
@@ -205,6 +213,7 @@ askdb studio --schema ./my-app.schema
 | `-s, --schema <path>` | Path to the schema artifact. |
 | `--port <n>` | Override the listen port (default `5556`; or set `studio.listen.port` in config). |
 | `--host <host>` | Override the bind host (default `127.0.0.1`; or set `studio.listen.host` in config). |
+| `-V, --version` | Print the installed `@askdb/studio` version. |
 
 Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio schema browsing, enrichment, and SQL generation do not require a database driver; the optional Playground execute path requires the matching driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). `askdb init --studio-execute` installs the correct driver automatically.
 
@@ -213,6 +222,14 @@ Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio sc
 If `askdb.config.*` exists but fails to load (a syntax error, or its dependencies aren't installed yet), Studio prints a warning with the load error and starts without the config. The setup wizard never overwrites an existing config file; fix it and restart Studio.
 
 ### `askdb bundle`
+
+Experimental: a minor release of `askdb` may change this command ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
+
+```
+askdb bundle <schema-dir> --out <bundle.json>
+```
+
+Both arguments are required, in this order. Without them, `bundle` prints that usage line and exits `1`.
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
@@ -270,11 +287,13 @@ You never pass a SQL dialect. It resolves from `dialect` in `askdb.config.ts` wh
 | --- | --- |
 | `-v, --verbose` | Emit structured JSON log events (level `info`) to stderr. |
 | `--log-level <level>` | `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`. Default reads `logging.level` from `askdb.config.ts`. |
-| `--log-file <path>` | Append structured JSON logs to a file. |
-| `--log-stdout` | Mirror structured JSON logs to stdout. |
-| `--correlation-id <id>` | Tag every log event with a correlation ID of your choosing. |
+| `--log-file <path>` | Append structured JSON logs to a file. Default reads `logging.logFile`. |
+| `--log-stdout` | Mirror structured JSON logs to stdout. Default reads `logging.logStdout`. |
+| `--correlation-id <id>` | Tag every log event with a correlation ID of your choosing. Default reads `logging.correlationId`, else a new UUID. |
 
 ## `askdb rag`
+
+Experimental: `@askdb/rag` stays 0.x, so a minor release of `askdb` may change these commands ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-large-schemas/), with three commands: `setup-store`, `index`, and `query`.
 
