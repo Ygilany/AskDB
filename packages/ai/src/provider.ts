@@ -1,14 +1,16 @@
 import type { EmbeddingModel, LanguageModel } from "ai";
 import type { ReasoningSettings } from "./reasoning.js";
 
-/**
- * AI provider selector. AskDB is BYO-LanguageModel at the function level
- * (see `ask()`), but the bundled apps (CLI, HTTP API, Studio) all need
- * to construct one from environment variables. This module owns the adapter
- * contract and the universal AskDB precedence rules; each provider adapter
- * (built in under `./providers/`, or supplied by the host) owns its native env
- * vars, aliases, defaults, and connection options.
+/*
+ * AskDB is BYO-LanguageModel at the function level (see `ask()`), but the
+ * bundled apps (CLI, HTTP API, Studio) all need to construct one from
+ * environment variables. This module owns the adapter contract and the
+ * universal AskDB precedence rules; each provider adapter (built in under
+ * `./providers/`, or supplied by the host) owns its native env vars, aliases,
+ * defaults, and connection options.
  */
+
+/** An `ASKDB_AI_PROVIDER` / `ai.provider` value: a provider name or one of its aliases. */
 export type AiProvider = string;
 
 export type AiConfig = {
@@ -94,17 +96,16 @@ export function resolveBaseConfig(
   spec: ProviderEnvSpec,
   options: ResolveConfigOptions,
 ): AiConfig | undefined {
-  const apiKey =
-    first(env, ["ASKDB_AI_API_KEY"]) ||
-    first(env, spec.apiKeyVars) ||
-    first(env, spec.apiKeySecondaryVars ?? []) ||
-    first(env, ["ASKDB_AI_API_KEY_SECONDARY"]) ||
-    undefined;
+  const apiKey = first(env, [
+    "ASKDB_AI_API_KEY",
+    ...spec.apiKeyVars,
+    ...(spec.apiKeySecondaryVars ?? []),
+    "ASKDB_AI_API_KEY_SECONDARY",
+  ]);
   if (!apiKey) return undefined;
 
   const model = resolveModel(provider, env, spec, options);
-  const baseURL =
-    first(env, ["ASKDB_AI_BASE_URL"]) || first(env, spec.baseURLVars ?? []) || undefined;
+  const baseURL = first(env, ["ASKDB_AI_BASE_URL", ...(spec.baseURLVars ?? [])]);
 
   return {
     provider,
@@ -136,20 +137,19 @@ function resolveModel(
   let model: string | undefined;
   if (options.usage === "embedding") {
     model =
-      first(env, options.modelEnvVar ? [options.modelEnvVar] : []) ||
-      first(env, ["ASKDB_AI_EMBEDDING_MODEL"]) ||
-      first(env, ["ASKDB_EMBEDDING_MODEL"]) ||
-      first(env, spec.embeddingModelVars ?? []) ||
-      options.modelDefault;
+      first(env, [
+        ...(options.modelEnvVar ? [options.modelEnvVar] : []),
+        "ASKDB_AI_EMBEDDING_MODEL",
+        "ASKDB_EMBEDDING_MODEL",
+        ...(spec.embeddingModelVars ?? []),
+      ]) || options.modelDefault;
     if (!model && spec.defaultEmbeddingModel) {
       model = spec.defaultEmbeddingModel;
       warnDefaultEmbeddingModel(provider, model);
     }
   } else {
     model =
-      first(env, ["ASKDB_AI_MODEL"]) ||
-      first(env, ["ASKDB_MODEL"]) ||
-      first(env, spec.modelVars ?? []) ||
+      first(env, ["ASKDB_AI_MODEL", "ASKDB_MODEL", ...(spec.modelVars ?? [])]) ||
       options.modelDefault ||
       spec.defaultModel;
   }
