@@ -1,5 +1,33 @@
 # @askdb/studio
 
+## 0.2.0-beta.41
+
+### Patch Changes
+
+- c28c967: Depend on `zod` (`^4.6.7`, the same range as `@askdb/core`), the peer that `ai` and the `@ai-sdk/*` packages require, so Yarn Plug'n'Play can resolve it (#748). `yarn dlx askdb` crashed at startup because these packages install `ai` without providing its `zod`. npm and pnpm already installed `zod` through `@askdb/core`, so they install nothing new.
+- Updated dependencies [63d45cc]
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+- Updated dependencies [1c31e95]
+- Updated dependencies [31f90a3]
+- Updated dependencies [ca4af5b]
+- Updated dependencies [31f90a3]
+- Updated dependencies [31f90a3]
+- Updated dependencies [c28c967]
+  - @askdb/config@1.0.0-beta.17
+  - @askdb/core@1.0.0-beta.48
+  - @askdb/introspect@0.3.0-beta.22
+  - @askdb/mysql@0.1.0-beta.23
+  - @askdb/postgres@0.2.0-beta.24
+  - @askdb/sqlite@0.1.0-beta.23
+  - @askdb/sqlserver@0.1.0-beta.24
+  - @askdb/enrich@0.2.0-beta.19
+  - @askdb/rag@0.2.0-beta.28
+
 ## 0.2.0-beta.40
 
 ### Patch Changes
