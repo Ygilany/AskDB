@@ -31,13 +31,14 @@
  * `sql-params` cases need `tenant-driver-markers`, and the hierarchy cases
  * `subtree-resolver` (`src/capabilities.ts`).
  */
-import { TenantGuardrailError, TenantScopeError } from "@askdb/core";
+import { bindPreparedQuery, loadSchema, TenantGuardrailError, TenantScopeError } from "@askdb/core";
+import mysql from "mysql2/promise";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { askRaw, settle, type AskExtras, type AskResult, type Settled } from "../src/ask.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
-import { normalizeRows } from "../src/fixture.js";
+import { connectionUrl, normalizeRows } from "../src/fixture.js";
 import { executeReadOnly } from "../src/host/execute.js";
 import { cassetteSql, loadQuestions, type Question } from "../src/model/catalog.js";
 import { expectCassetteSql } from "./support/cassette-sql.js";
@@ -179,6 +180,57 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
         await expectScopedRows(dialect, id, mode, result, [FLAT]);
       },
     );
+  });
+
+  /**
+   * Pin for the fail-closed guarantee of #731 (Round 6 Q11 A on #743). Contract: `unboundSql`
+   * runs with `params`, which holds the tenant IDs in either `tenantSqlMode`
+   * (`reference/core-api.mdx`, "Executing the result"). A host still on the pre-#743 `sql-only`
+   * pattern runs `unboundSql` with its business values alone. On every engine, with the drivers
+   * AskDB documents and installs (`pg`, `mysql2` `query` and `execute`, `mssql`,
+   * `better-sqlite3`), that short array must fail at the driver, never return rows, so a
+   * business value can't slide into a tenant marker. The same holds for `bindPreparedQuery()`'s
+   * `unboundSql`. (`node:sqlite`, which AskDB doesn't document, doesn't check the number of
+   * values it binds; `core-api.mdx` says so.)
+   * Catches: tenant markers renumbered before the business markers on `$N` or `@pN` engines, so
+   * a short array binds a business value to the tenant predicate, or a driver upgrade that pads
+   * a short array instead of refusing it.
+   * Not covered elsewhere: core's tests check the SQL text, never what a driver does with a
+   * short array; `tenant-ids` runs only the full pair.
+   */
+  describe("tenant-unbound-business-only", () => {
+    /** The business values alone, in marker order: what a host had before #743. */
+    const businessOnly = (bindings: readonly { indices: readonly number[] }[], params: readonly unknown[]) =>
+      bindings.flatMap((b) => b.indices).sort((a, b) => a - b).map((i) => params[i]);
+
+    async function expectDriverRefuses(sql: string, params: readonly unknown[], what: string): Promise<void> {
+      await expect(executeReadOnly(dialect, sql, { params }), `${what} ran with business values only`).rejects.toThrow();
+      if (dialect === "mysql" || dialect === "mariadb") {
+        // The lab's runner uses `query`; hosts also use `execute` (server-side prepared statements).
+        const conn = await mysql.createConnection(connectionUrl(dialect, "reader"));
+        try {
+          await expect(conn.execute(sql, [...params]), `${what} via execute, business values only`).rejects.toThrow();
+        } finally {
+          await conn.end();
+        }
+      }
+    }
+
+    it.for(MODES)("tenant-unbound-business-only: in %s mode, unboundSql with business values only fails at the driver", async (mode, ctx) => {
+      await needsTenantCapabilities(ctx, dialect, mode, PARAMETERIZED);
+      await needsCapability(ctx, "tenant-unbound-binds-ids");
+      const tenantScope = idsScope(dialect, [FLAT]);
+      const result = await ask(dialect, PARAMETERIZED, { tenantScope, tenantSqlMode: mode });
+      expect(result.unboundSql, "ask() dropped unboundSql for a parameterized, tenant-scoped reply").toBeDefined();
+      // The full pair runs and is scoped, so a refusal below is the short array, not the statement.
+      expect(await run(dialect, PARAMETERIZED, result.unboundSql!, result.params)).toEqual(expected(PARAMETERIZED, [FLAT]));
+      await expectDriverRefuses(result.unboundSql!, businessOnly(result.parameters!, result.params!), "ask()'s unboundSql");
+
+      const values = Object.fromEntries(result.parameters!.map((p) => [p.name, p.value]));
+      const bound = bindPreparedQuery(result.preparedQuery!, values, { schema: loadSchema(artifact(dialect)), tenantScope, tenantSqlMode: mode });
+      expect(await run(dialect, PARAMETERIZED, bound.unboundSql, bound.params)).toEqual(expected(PARAMETERIZED, [FLAT]));
+      await expectDriverRefuses(bound.unboundSql, businessOnly(bound.bindings, bound.params), "bindPreparedQuery()'s unboundSql");
+    });
   });
 
   /**

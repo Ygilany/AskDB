@@ -36,7 +36,7 @@ Released with `@askdb/core` 1.0.0-beta.48. Other packages that got a new version
 +result.params     // ["open", "42"]
 ```
 
-If you run `unboundSql` with `params`, you need no change: the pair still returns the same rows. If you run `unboundSql` with your own array of business values, switch to `params` before you upgrade, and check every place that runs `unboundSql`. With your array, the values no longer line up with the markers: the tenant markers come first in source order on `?` dialects, so your first business value can land on a tenant marker. Some drivers report the missing parameter, but others, such as `node:sqlite`, bind it as `NULL` and run the query, which can return another tenant's rows. If you need one SQL string with the IDs inlined, use `sql`.
+If you run `unboundSql` with `params`, you need no change: the pair still returns the same rows. If you run `unboundSql` with your own array of business values, switch to `params` before you upgrade, and check every place that runs `unboundSql`. With your array, the values no longer line up with the markers: the tenant markers come first in source order on `?` dialects, so your first business value can land on a tenant marker. The drivers AskDB documents (`pg`, `mysql2`, `mssql`, `better-sqlite3`) refuse the short array, so the query fails. `node:sqlite` doesn't check the number of values it binds: it binds them in order and the rest as `NULL`, which can return another tenant's rows. Always pass `params` as returned. If you need one SQL string with the IDs inlined, use `sql`.
 
 ## 1.0.0-beta.47
 
