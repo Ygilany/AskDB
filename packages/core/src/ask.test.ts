@@ -1200,6 +1200,8 @@ describe("ask — tenant policy warnings", () => {
         schema,
         model: fakeModel,
         dialect: cannedDialect,
+        // A custom dialect with a tenant scope must name its mode (ADR 0024).
+        tenantSqlMode: "sql-params",
         tenantScope: agencyScope,
         logger,
       });
