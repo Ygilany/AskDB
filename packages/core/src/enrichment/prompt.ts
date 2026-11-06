@@ -1,7 +1,6 @@
 import { SensitiveEnrichmentTargetError } from "../errors.js";
 import { formatSchemaV2ForNlToSql } from "../schema/v2/format.js";
-import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
-import type { V2Column, V2Table } from "../schema/v2/physical.js";
+import type { NormalizedSchemaV2, NormalizedV2Column, NormalizedV2Table } from "../schema/v2/normalized.js";
 import type { EnrichmentContext, EnrichmentPromptOptions, EnrichmentTarget } from "./types.js";
 
 export const ENRICHMENT_SYSTEM_PROMPT = `You enrich AskDB Schema v2 describable metadata.
@@ -26,7 +25,9 @@ export function buildEnrichmentUserPrompt(
   const omit = options.omitSensitiveIdentifiersFromPrompt === true;
   if (omit && "columnId" in target) {
     const column = findColumn(target.table, target.columnId);
-    if (column.sensitive === true || target.table.sensitive === true) {
+    // `loadSchema()` marks every column of a sensitive table sensitive; a table built by hand
+    // may flag only the table.
+    if (column.sensitive || target.table.sensitive) {
       throw new SensitiveEnrichmentTargetError();
     }
   }
@@ -75,7 +76,7 @@ function targetInstruction(target: EnrichmentTarget): string {
  * lists a sensitive table's columns as sensitive, or only its name under omission. The copy
  * carries no describable text.
  */
-function tableForPrompt(table: V2Table, schemaId: string, omit: boolean): string {
+function tableForPrompt(table: NormalizedV2Table, schemaId: string, omit: boolean): string {
   const physical: NormalizedSchemaV2 = {
     schemaId,
     warnings: [],
@@ -84,14 +85,14 @@ function tableForPrompt(table: V2Table, schemaId: string, omit: boolean): string
         id: table.id,
         name: table.name,
         schema: table.schema,
-        sensitive: table.sensitive === true,
-        columns: table.columns.map((column: V2Column) => ({
+        sensitive: table.sensitive,
+        columns: table.columns.map((column) => ({
           id: column.id,
           name: column.name,
           type: column.type,
           nullable: column.nullable,
-          primaryKey: column.primaryKey === true,
-          sensitive: column.sensitive === true,
+          primaryKey: column.primaryKey,
+          sensitive: column.sensitive,
         })),
       },
     ],
@@ -99,12 +100,12 @@ function tableForPrompt(table: V2Table, schemaId: string, omit: boolean): string
   return formatSchemaV2ForNlToSql(physical, { omitSensitiveIdentifiersFromPrompt: omit }).ddl;
 }
 
-function findColumn(table: V2Table, columnId: string): V2Column {
+function findColumn(table: NormalizedV2Table, columnId: string): NormalizedV2Column {
   const col = table.columns.find((c) => c.id === columnId);
   if (!col) throw new Error(`Column not found: ${columnId} in ${qualifiedName(table)}`);
   return col;
 }
 
-function qualifiedName(t: V2Table): string {
+function qualifiedName(t: NormalizedV2Table): string {
   return `${t.schema}.${t.name}`;
 }
