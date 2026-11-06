@@ -8,7 +8,7 @@ import {
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { startsDashComment } from "./lexer.js";
+import { ENGINE_LEXER_PROFILES, lexerProfileFor, lexSql, startsDashComment } from "./lexer.js";
 
 export type TenantGuardrailResult = {
   passed: boolean;
@@ -98,6 +98,20 @@ export function tenantRuleWarnings(
   if (scope.access.kind === "global") return [];
 
   const warnings: TenantGuardrailWarning[] = [];
+
+  // The per-table checks below read queries. A statement that isn't one (a `DO` block, `CALL`,
+  // `EXPLAIN`, `SHOW`) can touch tables they never see, a `DO` body as a dollar-quoted string,
+  // so it is refused here, under every dialect: read-only validation may be a custom
+  // AskDialect's job (ADR 0010), tenant enforcement isn't (#698).
+  const keyword = nonQueryKeyword(sql, dialect);
+  if (keyword !== undefined) {
+    warnings.push(
+      warn("NOT_SELECT_OR_WITH", "",
+        `A statement starts with ${keyword}, not SELECT or WITH. The tenant check can only read a query's ` +
+        "tenant predicates, so under a tenant policy it refuses any other statement."),
+    );
+  }
+
   const views = codeViews(sql, dialect);
 
   // Check the roots this scope covers: a query on the root table itself is scoped by its tenant ID column.
@@ -307,6 +321,33 @@ function scopeRootIds(scope: TenantScope): string[] {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The first keyword of the first statement in `sql` that doesn't start with `SELECT` or
+ * `WITH`, upper-cased, or undefined when every statement does. Statements end at each `;`,
+ * and a statement's first keyword is read past comments and `(` with the shared lexer: under
+ * the dialect's profile when it names a built-in engine, otherwise under every engine's
+ * profile, so a statement any engine reads as a non-query counts. The MySQL profile lexes a
+ * `/*! … *\/` body as code, so an executable comment can't hide a keyword either.
+ */
+function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  const known = dialect?.id !== undefined ? lexerProfileFor(dialect) : undefined;
+  for (const profile of known ? [known] : ENGINE_LEXER_PROFILES) {
+    let statementStart = true;
+    for (const token of lexSql(sql, profile)) {
+      if (token.kind === "comment") continue;
+      if (token.kind === "punct" && token.text === ";") {
+        statementStart = true;
+        continue;
+      }
+      if (!statementStart || (token.kind === "punct" && token.text === "(")) continue;
+      statementStart = false;
+      if (token.kind === "word" && (token.lower === "select" || token.lower === "with")) continue;
+      return token.text.slice(0, 40).toUpperCase();
+    }
+  }
+  return undefined;
+}
 
 function warn(
   rule: TenantGuardrailRuleCode,

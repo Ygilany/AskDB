@@ -153,7 +153,13 @@ export type TenantGuardrailRuleCode =
   | "INCOMPATIBLE_JOIN_SCOPES"
   | "UNKNOWN_TABLE_REFERENCED"
   | "CROSS_TENANT_WITHOUT_GLOBAL"
-  | "UNPROVABLE_SCOPE";
+  | "UNPROVABLE_SCOPE"
+  /**
+   * A statement doesn't start with `SELECT` or `WITH` (a `DO` block, `CALL`, `EXPLAIN`,
+   * `SHOW`, …), so the tenant check can't read what it touches. Reported for the whole SQL,
+   * with `tableId: ""`, under every dialect, a custom `AskDialect` included (#698).
+   */
+  | "NOT_SELECT_OR_WITH";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;

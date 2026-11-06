@@ -447,6 +447,15 @@ describe("validateTenantGuardrails — MySQL comments are read the way MySQL rea
     expect(rules(sql, POSTGRES_DIALECT)).toEqual([]);
   });
 
+  // #698: the statement's first keyword is read with the same lexer, so a body MySQL runs
+  // can't hide a non-query in front of a scoped query.
+  it("a `/*! … */` executable comment can't hide a non-query in front of a query", () => {
+    const sql = "/*! DO SLEEP(1) */ SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(rules(sql, MYSQL_DIALECT)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql)).toEqual(["NOT_SELECT_OR_WITH"]);
+    expect(rules(sql, POSTGRES_DIALECT)).toEqual([]);
+  });
+
   it("a predicate only inside a `/*! … */` executable comment doesn't count: an older server skips it", () => {
     const sql = "SELECT * FROM orders WHERE status = 'paid' /*!99999 AND agency_id = :tenant_agency_ids */";
     expect(rules(sql, MYSQL_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE"]);
