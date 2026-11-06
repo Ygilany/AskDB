@@ -110,7 +110,7 @@ const ENGINES: Record<AskDbIntrospectionProvider, EngineFacts> = {
   sqlserver: {
     connection: "url",
     urlFormat:
-      "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
+      "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;TrustServerCertificate=True;Authentication=SqlPassword;",
     driver: "mssql",
   },
   sqlite: { connection: "file", driver: "better-sqlite3" },
