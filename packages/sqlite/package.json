@@ -52,6 +52,7 @@
     "@askdb/introspect": "workspace:*"
   },
   "peerDependencies": {
+    "ai": "^6.0.0 || ^7.0.51",
     "better-sqlite3": ">=12"
   },
   "peerDependenciesMeta": {

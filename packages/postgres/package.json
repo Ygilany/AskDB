@@ -55,6 +55,7 @@
     "pg-connection-string": "^2.14.1"
   },
   "peerDependencies": {
+    "ai": "^6.0.0 || ^7.0.51",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {

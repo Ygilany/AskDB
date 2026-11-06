@@ -54,6 +54,7 @@
     "@tediousjs/connection-string": "^1.1.0"
   },
   "peerDependencies": {
+    "ai": "^6.0.0 || ^7.0.51",
     "mssql": ">=12"
   },
   "peerDependenciesMeta": {
