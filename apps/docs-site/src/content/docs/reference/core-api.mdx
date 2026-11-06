@@ -689,8 +689,8 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `SUBTREE_NOT_RESOLVABLE` | A `subtree` scope can't be expanded: no `resolveTenantDescendants`, or it returned something other than IDs per root in the subtree. Also an unexpanded `subtree` passed to `bindPreparedQuery()`, `resolveTenantSql()` or `buildTenantPromptBlock()`. |
 | `UNRESOLVED_TENANT_PLACEHOLDER` | The SQL has a `:tenant_<root>_ids` placeholder the scope has no IDs for, including any placeholder under a `global` scope. |
 | `UNSUPPORTED_TENANT_PREDICATE` | A scope with several IDs meets a tenant predicate with no list form, such as `<=`. |
-| `UNESCAPABLE_TENANT_ID` | A tenant ID that isn't printable ASCII (U+0020 to U+007E), or that contains a backslash, would be inlined as a literal: in `"sql-only"` mode, or in the `sql` that `bindPreparedQuery()` returns. |
-| `TENANT_SQL_MODE_REQUIRED` | `ask()` has a tenant scope, no `tenantSqlMode`, and a custom `AskDialect` or a `DialectSpec` whose `id` isn't built in. Also a `tenantSqlMode` other than `"sql-params"` or `"sql-only"`, on every dialect. |
+| `UNESCAPABLE_TENANT_ID` | A tenant ID that isn't printable ASCII (U+0020 to U+007E), or that contains a backslash, would be inlined as a literal: in `"sql-only"` mode, by `ask()`, `resolveTenantSql()` or `bindPreparedQuery()`. |
+| `TENANT_SQL_MODE_REQUIRED` | `ask()` has a tenant scope, no `tenantSqlMode`, and a custom `AskDialect` or a `DialectSpec` whose `id` isn't built in. Also a `tenantSqlMode` other than `"sql-params"` or `"sql-only"`, on every dialect, in `ask()` (with a tenant scope), `bindPreparedQuery()` and `resolveTenantSql()`. |
 
 ### `TenantGuardrailError` rules
 
