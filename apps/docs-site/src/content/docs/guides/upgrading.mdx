@@ -19,6 +19,18 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.47
+
+Released with `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Return only queries from a custom `AskDialect` under a tenant policy
+
+With a tenant policy and any scope but `global`, the tenant check now refuses a statement that doesn't start with `SELECT` or `WITH`, under every dialect ([#698](https://github.com/Ygilany/AskDB/issues/698)). Before, a custom `AskDialect` could return a `DO` block, `CALL`, `EXPLAIN` or `SHOW`, and the check passed it: it reads a `DO` body as a dollar-quoted string, so it saw no tenant-scoped table, and the block could read every tenant's rows. Now `ask()` throws `TenantGuardrailError` under `enforcement: strict`, and returns a `NOT_SELECT_OR_WITH` warning in `tenantGuardrail` under `warn`. Each statement after a `;` counts too, and on SQL Server each one a verb such as `EXEC` starts with no `;`. A leading comment or parenthesis doesn't hide the first keyword. The same check runs when you rebind a stored template with `bindPreparedQuery()` or `askdb.bind()`, so a template with such a statement is refused there too (under `warn`, unless you pass `acceptWarnings: ["tenant"]`).
+
+- **If your custom `AskDialect` returns queries,** you have nothing to change. Built-in dialect ids and `DialectSpec`s already reject other statements in the read-only check (`SQL_NOT_SELECT_OR_WITH`).
+- **If it returns another statement on purpose** for a schema with a tenant policy, `ask()` no longer returns it under `strict`. Generate a `SELECT` or `WITH` query instead.
+- **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `NOT_SELECT_OR_WITH`.
+
 ## 1.0.0-beta.46
 
 Released with `@askdb/client` 1.0.0-beta.9, `@askdb/config` 1.0.0-beta.15, `@askdb/enrich` 0.2.0-beta.17, `@askdb/introspect` 0.3.0-beta.20, `@askdb/mysql` 0.1.0-beta.21, `@askdb/prisma` 0.2.0-beta.20, `@askdb/sqlite` 0.1.0-beta.21, `@askdb/sqlserver` 0.1.0-beta.22 and `@askdb/studio` 0.2.0-beta.39. Other packages that got a new version list what changed in their CHANGELOG.
@@ -171,14 +183,6 @@ Every AskDB write into a schema directory now refuses symbolic links ([#617](htt
 - **Studio** refuses a linked `playground-history.json` the same way. It leaves a linked `.gitignore` as it is.
 - **Writing `schema.json` needs write access to the output directory,** because AskDB writes a temporary file there and renames it over the target. A hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's permission bits and group where it can, but not an access control list. Only root can give a file to another user, so on macOS and Linux a save by anyone other than the file's owner makes the saver its owner. On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; run the command again.
 - **If you match `@askdb/enrich`'s table-save error,** it now reads `Refusing to write tables/orders.md outside the schema directory: …`.
-
-### Return only queries from a custom `AskDialect` under a tenant policy
-
-With a tenant policy and any scope but `global`, the tenant check now refuses a statement that doesn't start with `SELECT` or `WITH`, under every dialect ([#698](https://github.com/Ygilany/AskDB/issues/698)). Before, a custom `AskDialect` could return a `DO` block, `CALL`, `EXPLAIN` or `SHOW`, and the check passed it: it reads a `DO` body as a dollar-quoted string, so it saw no tenant-scoped table, and the block could read every tenant's rows. Now `ask()` throws `TenantGuardrailError` under `enforcement: strict`, and returns a `NOT_SELECT_OR_WITH` warning in `tenantGuardrail` under `warn`. Each statement after a `;` counts too, and on SQL Server each one a verb such as `EXEC` starts with no `;`. A leading comment or parenthesis doesn't hide the first keyword. The same check runs when you rebind a stored template with `bindPreparedQuery()` or `askdb.bind()`, so a template with such a statement is refused there too (under `warn`, unless you pass `acceptWarnings: ["tenant"]`).
-
-- **If your custom `AskDialect` returns queries,** you have nothing to change. Built-in dialect ids and `DialectSpec`s already reject other statements in the read-only check (`SQL_NOT_SELECT_OR_WITH`).
-- **If it returns another statement on purpose** for a schema with a tenant policy, `ask()` no longer returns it under `strict`. Generate a `SELECT` or `WITH` query instead.
-- **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `NOT_SELECT_OR_WITH`.
 
 ### Other changes you may notice in beta.46
 
