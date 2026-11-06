@@ -145,7 +145,7 @@ export type AskDbRuntimeStudioConfig = {
     /**
      * Resolved execute provider. Falls back to the active introspection provider when it
      * is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`), then defaults to
-     * `"postgres"` for backward compatibility.
+     * `"postgres"`.
      */
     provider: AskDbStudioExecuteProvider;
     /** Connection URL used by the Studio playground query runner for network databases. */

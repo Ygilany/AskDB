@@ -1,6 +1,7 @@
 /**
  * Read `process.env[name]`. Returns `undefined` when missing or blank (after trim).
- * Use in `askdb.config.*` for every env-backed value; {@link flattenAskDbConfig} supplies defaults.
+ * Use in `askdb.config.*` for every env-backed value; an unset value takes AskDB's default when the
+ * config is resolved (see `getAskDbRuntimeConfig`).
  */
 export function env(name: string): string | undefined {
   const raw = process.env[name];
