@@ -18,6 +18,25 @@ import { loadSchema, loadSchemaFromJson } from "@askdb/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runBundleCli } from "./bundle.js";
 
+/**
+ * When set, the directory read hands back what it read with one table file replaced, as if the
+ * file changed between the bundler's read and its check: the only way to reach the check's
+ * fallback, where the directory on disk loads but the bundle doesn't.
+ */
+const changedBetweenReads = vi.hoisted(() => ({ table: undefined as string | undefined }));
+
+vi.mock("@askdb/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@askdb/core")>();
+  return {
+    ...actual,
+    readSchemaDirectory: (dir: string) => {
+      const bundle = actual.readSchemaDirectory(dir);
+      const { table } = changedBetweenReads;
+      return table === undefined ? bundle : { ...bundle, tables: { ...bundle.tables, "orders.md": table } };
+    },
+  };
+});
+
 const fixtures = join(import.meta.dirname, "../../../fixtures/schemas");
 
 let stdout = "";
@@ -38,6 +57,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  changedBetweenReads.table = undefined;
   vi.restoreAllMocks();
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -99,6 +119,20 @@ describe("askdb bundle refuses a directory the loader refuses", () => {
 
     expect(await runBundleCli([dir, "--out", out])).toBe(1);
     expect(readFileSync(out, "utf8")).toBe("the previous bundle\n");
+  });
+});
+
+describe("askdb bundle when a file changes between the read and the check", () => {
+  it("still exits 1 and writes nothing when the directory loads but the bundle doesn't", async () => {
+    const { dir, out } = copyFixture("orders-users.schema");
+    changedBetweenReads.table = NON_YAML_TABLE;
+    expect(() => loadSchema(dir)).not.toThrow();
+
+    expect(await runBundleCli([dir, "--out", out])).toBe(1);
+    // The bundle's own error: the file on disk loads, so the loader can only name the bundled copy.
+    expect(stderr).toMatch(/^askdb bundle: Malformed table front-matter YAML in tables\/orders\.md \(in <inline JSON>\): /);
+    expect(stdout).toBe("");
+    expect(existsSync(out)).toBe(false);
   });
 });
 
