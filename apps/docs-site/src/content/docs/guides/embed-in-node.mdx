@@ -211,7 +211,7 @@ pool?.on("error", (err) => console.error({ err }, "idle database client error"))
 const ROW_CAP = 1000;
 
 // Runs one generated statement in a read-only transaction and reads at most
-// ROW_CAP rows, as in the docs' "Run safely in production" guide (Row limits).
+// ROW_CAP rows, as in the docs' "Cap the rows a query returns" guide.
 async function runCapped(db: pg.Pool, sql: string, params: unknown[] = []) {
   const client = await db.connect();
   const onError = () => undefined;

@@ -136,6 +136,7 @@ export default defineConfig({
               label: "Run in production",
               items: [
                 { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
+                { label: "Cap the rows a query returns", slug: "guides/cap-the-rows-a-query-returns" },
                 { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
               ],
             },
