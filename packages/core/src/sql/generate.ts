@@ -13,6 +13,7 @@ import {
   parseParameterManifest,
   type ParameterManifest,
 } from "./parameter-manifest.js";
+import { failureMessage } from "./failure-reason.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
 import { enforceGuardrails } from "./guardrails.js";
@@ -209,8 +210,7 @@ async function runGenerateSelectSql(
         };
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      throw new SqlGenerationError(`Model call failed: ${message}`, e);
+      throw new SqlGenerationError(`Model call failed: ${failureMessage(e)}`, e);
     }
     // The read-only check is a guardrail finding, decided by the caller; here the SQL is
     // only normalized (trailing `;` removed) when it passes.
@@ -246,12 +246,11 @@ async function runGenerateSelectSql(
 }
 
 function logGenerateFailed(logger: AskDbLogger | undefined, e: unknown): void {
-  const msg = e instanceof Error ? e.message : String(e);
   logger?.error(
     {
       event: AskDbLogEvent.PipelineFailed,
       phase: "generate",
-      errMessage: msg,
+      errMessage: failureMessage(e),
     },
     "nl-to-sql generate failed",
   );
