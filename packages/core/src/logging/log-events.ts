@@ -1,6 +1,6 @@
 /**
  * Stable `event` field values for structured logs (JSON lines).
- * See Phase 2 spec: observability / correlation ID contract.
+ * `log-contract.ts` lists the fields and events every log keeps.
  */
 export const AskDbLogEvent = {
   RunStart: "askdb.run.start",

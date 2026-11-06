@@ -1,9 +1,3 @@
-/**
- * Minimal chunk-shaped payload that `@askdb/core` understands. The full
- * `ChunkPayload` from `@askdb/rag` is assignable to this — splitting the
- * shape this way avoids `@askdb/core` taking a hard dependency on
- * `@askdb/rag` while keeping the retrieval seam in `ask()`.
- */
 export type RetrievedChunkType =
   | "table"
   | "column"
@@ -13,6 +7,12 @@ export type RetrievedChunkType =
   | "relationship"
   | "tenant-policy";
 
+/**
+ * Minimal chunk-shaped payload that `@askdb/core` understands. The full
+ * `ChunkPayload` from `@askdb/rag` is assignable to this — splitting the
+ * shape this way avoids `@askdb/core` taking a hard dependency on
+ * `@askdb/rag` while keeping the retrieval seam in `ask()`.
+ */
 export type RetrievedChunk = {
   id: string;
   type: RetrievedChunkType;
