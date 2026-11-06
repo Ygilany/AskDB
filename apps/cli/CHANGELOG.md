@@ -1,5 +1,69 @@
 # askdb
 
+## 1.0.0-beta.49
+
+### Minor Changes
+
+- 2cd28cb: `askdb init` writes its files from the scaffold planner in `@askdb/config/scaffold`, which Studio's guided setup shares (#711). `askdb.config.ts` doesn't change. `init` now rejects some flag values it accepted, so this is a minor:
+  
+  - **An invalid env var name fails.** `--connection-env`, `--ai-key-env`, `--ai-model-env` and `--pgvector-env` take a name of uppercase letters, digits and underscores that doesn't start with a digit (`DATABASE_URL`, `_PRIVATE_URL`). Anything else, such as `my-url` or `database_url`, used to land in the config as `env("my-url")` and now fails.
+  - **A path with a control character fails.** `--sqlite-file`, `--prisma-schema` and `--schema-out` reject a newline, a tab, NUL, DEL, U+2028 or U+2029. (`--sqlite-file` still reads a value that isn't an env var name as a path, as before.)
+  - Either way, `init` exits 1 before it writes anything, with an error that names the flag, such as `--connection-env must be an environment variable name like DATABASE_URL: …`.
+  
+  Other changes:
+  
+  - **`.env.example` leaves every value empty.** Each variable is an empty `NAME=` line under a `# purpose` comment, database variables first. A connection URL's format moves from its value (`DATABASE_URL=postgresql://<USERNAME>:…`) into that comment, and a variable that introspection and Studio execute share says so.
+  - **`--database prisma` also installs `ai` and `zod`** (#760): `ai` at the newest major `@askdb/core` accepts, and `zod` at core's range. Under Yarn Plug'n'Play, `askdb introspect --engine prisma` failed without them (`@askdb/core tried to access ai`).
+  - **`init` installs a package other than AskDB's own only when `package.json` doesn't list it yet.** A project on `ai@^6` keeps it, and a driver you already list isn't re-added at its latest version.
+
+### Patch Changes
+
+- c29dcad: `askdb` tidies its internals before 1.0 (#712). Commands, flags, help text, output, exit codes, log events and the files `askdb init` writes are unchanged.
+- 1dcfc28: `askdb ask` and `askdb init` no longer print an empty error detail for an error that has no message of its own (#781). Three places printed `error.message`, which is empty for one: the `errMessage` of `askdb ask`'s `askdb.run.error` log event, the `Details:` line when `askdb ask` can't load the schema, and `askdb init`'s `Failed to write config:` line. They now print what `askdb introspect` prints since #749: each inner error's message for an `AggregateError`, else the error's `code`, else its name.
+- eef1321: `askdb init --connection-env <name> --studio-execute` now points Studio execute at the same env var as introspection, as the interactive wizard already did (#777). Before, the non-interactive path wrote `studio.execute.databaseUrl: env("DATABASE_URL")` whatever `--connection-env` named. With `--database prisma`, execute still targets Postgres and reads `DATABASE_URL`.
+- 0e5d542: `askdb init` installs with the right package manager, on Windows too:
+  
+  - **A new pnpm project installs with pnpm** (#750). With no lockfile, `init` fell back to npm, which refuses a project that `pnpm init` started (`EBADDEVENGINES`). It now reads `package.json`'s `packageManager` or `devEngines.packageManager` field, then the tool that ran it (`pnpm dlx`, `yarn dlx`, `npx`, `bunx`), before falling back to npm. An existing lockfile still wins.
+  - **The install runs on Windows** (#668). `init` spawned `pnpm.CMD`, `yarn.cmd` or `npm.cmd` without a shell, which Node refuses since its CVE-2024-27980 fix, so the install always failed. It now spawns the package manager as Studio does: allowlisted arguments, the bare command name, and a shell on Windows.
+  - **The command `init` prints when it doesn't install names the package manager it picked**, with the `@prisma/engines` build approval on pnpm 10.4 or later. At a workspace root, or with no `package.json`, it printed `npm install --save …`.
+- b030324: Every `askdb` command parses, documents and checks its flags the same way (#711). Each command's flags live in one table that both the parser and its `--help` read, so the help can't leave out a flag the command takes. `askdb` no longer depends on `commander`. Visible changes:
+  
+  - **`askdb help <command>` prints exactly what `askdb <command> --help` prints.** `askdb init --help` now lists `--interactive`, `-f` and `-y`, which it accepted but didn't document.
+  - **Every command but `studio` and `enrich` takes `--flag=value`**, `askdb init` and `askdb bundle` included. Short flags combine as `askdb ask` took them under `commander` (`-qtext`, `-vq text`), now in every command (`askdb init -fy`).
+  - **`askdb init` errors stop repeating values that could be secrets.** An unknown option, a stray argument or an invalid value is repeated only when it looks like a name or a number, as in the other commands.
+  - **`askdb ask`'s usage errors read like the other commands'**: `Unknown option: --x` instead of `error: unknown option '--x'`, and `Missing --question <text>.` for a missing question. The exit code is still `1`.
+  - **`askdb --help`, `askdb ask --help` and `askdb rag --help` use the shared layout**, with every flag listed under `Options:`.
+  - **`askdb rag` with flags but no command says `Missing command (expected 'index', 'query', or 'setup-store')`** instead of `Unknown command: --flag`. `askdb rag` with no arguments still prints its help.
+  - **`askdb introspect templates` works wherever the flags put `templates`**, such as `askdb introspect --engine postgres templates`.
+  - **`askdb bundle --help` prints its help on stdout and exits `0`.** Without both `<schema-dir>` and `--out`, `bundle` still prints its usage line on stderr and exits `1`, and its flags may now come in any order.
+  - **A failed connection prints why** (#749). When a driver gives up on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, `askdb introspect` printed an empty line. It now prints each address's error on its own line.
+  - **`--log-stdout` into a reader that stops early no longer hangs.** `askdb rag index --log-stdout | head` waited forever on the unwritten log lines; `askdb` now exits once its output settles.
+- 4437394: Security fix ([GHSA-wjgj-mf9h-6g68](https://github.com/Ygilany/AskDB/security/advisories/GHSA-wjgj-mf9h-6g68)). With `tenantSqlMode: "sql-only"` on the built-in `postgres` or `cockroachdb` dialect, `ask()` could return SQL whose tenant scoping no longer held once the tenant IDs were inlined, because it did not re-check the rendered statement. `ask()` now runs the read-only check on the `sql` it returns, as `bindPreparedQuery()` already does, and refuses a statement that reads differently once rendered. The default `tenantSqlMode: "sql-params"`, which binds tenant IDs as driver parameters, was never affected.
+- Updated dependencies [150a293]
+- Updated dependencies [0e5d542]
+- Updated dependencies [4a83b61]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [82c2f94]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [4437394]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [0e5d542]
+- Updated dependencies [ee12e92]
+  - @askdb/config@1.0.0-beta.18
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/introspect@0.3.0-beta.23
+  - @askdb/postgres@0.2.0-beta.25
+  - @askdb/mysql@0.1.0-beta.24
+  - @askdb/sqlite@0.1.0-beta.24
+  - @askdb/sqlserver@0.1.0-beta.25
+  - @askdb/studio@0.2.0-beta.42
+  - @askdb/client@1.0.0-beta.11
+  - @askdb/enrich@0.2.0-beta.20
+  - @askdb/rag@0.2.0-beta.29
+
 ## 1.0.0-beta.48
 
 ### Minor Changes

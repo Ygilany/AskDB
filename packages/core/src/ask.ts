@@ -18,7 +18,7 @@ import {
 } from "./sql/dialect-spec.js";
 import { generateSelectSqlForAsk } from "./sql/generate.js";
 import { enforceGuardrails } from "./sql/guardrails.js";
-import { renderTemplate, renderTenantSql, tenantRendering, writePreparedQuery } from "./sql/checked-statement.js";
+import { assertRenderedSql, renderTemplate, renderTenantSql, tenantRendering, writePreparedQuery } from "./sql/checked-statement.js";
 import type { DEFAULT_TENANT_SQL_MODE, TenantSqlOutputMode, TenantBinding } from "./sql/tenant-placeholders.js";
 import {
   expandTenantScope,
@@ -475,6 +475,19 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // mode governs `sql` only: `unboundSql` always binds the tenant IDs, as the rebind does.
   if (tenant) {
     const rendered = renderTenantSql(result.sql, dialectSpec, tenant);
+    // Re-check the rendered `sql`, as bindPreparedQuery() does: rendering a tenant literal
+    // must not change how the statement reads (GHSA-wjgj-mf9h-6g68).
+    if (dialectSpec) {
+      try {
+        assertRenderedSql(rendered.sql, dialectSpec);
+      } catch (e) {
+        logger?.error(
+          { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: e instanceof Error ? e.message : String(e) },
+          "nl-to-sql generate failed",
+        );
+        throw e;
+      }
+    }
     result.sql = rendered.sql;
     if (rendered.tenantBindings.length > 0) result.tenantBindings = rendered.tenantBindings;
     if (rendered.tenantParams) result.tenantParams = rendered.tenantParams;

@@ -1,5 +1,22 @@
 # @askdb/http-api
 
+## 1.0.0-beta.49
+
+### Patch Changes
+
+- 4437394: Security fix ([GHSA-wjgj-mf9h-6g68](https://github.com/Ygilany/AskDB/security/advisories/GHSA-wjgj-mf9h-6g68)). With `tenantSqlMode: "sql-only"` on the built-in `postgres` or `cockroachdb` dialect, `ask()` could return SQL whose tenant scoping no longer held once the tenant IDs were inlined, because it did not re-check the rendered statement. `ask()` now runs the read-only check on the `sql` it returns, as `bindPreparedQuery()` already does, and refuses a statement that reads differently once rendered. The default `tenantSqlMode: "sql-params"`, which binds tenant IDs as driver parameters, was never affected.
+- Updated dependencies [150a293]
+- Updated dependencies [0e5d542]
+- Updated dependencies [4a83b61]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [4437394]
+  - @askdb/config@1.0.0-beta.18
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/client@1.0.0-beta.11
+
 ## 1.0.0-beta.48
 
 ### Minor Changes
