@@ -128,6 +128,14 @@ await suggestEnrichment(buildSuggestionTarget(schema, source), buildSuggestionCo
 - **A table you build by hand** must set `sensitive` on the table, and `sensitive` and `primaryKey` on every column. Mark sensitive each column that `tables/*.md` marks, and every column of a sensitive table, as `loadSchema()` does.
 - **`loadSchemaFromJson()` of a bare `schema.json`** typechecks too, but has no front-matter flags. Load the schema directory or a bundle with `loadSchema()` instead.
 
+### Return only queries from a custom `AskDialect` under a tenant policy
+
+With a tenant policy, the tenant check now refuses a statement that doesn't start with `SELECT` or `WITH`, under every dialect ([#698](https://github.com/Ygilany/AskDB/issues/698)). Before, a custom `AskDialect` could return a `DO` block, `CALL`, `EXPLAIN` or `SHOW`, and the check passed it: it reads a `DO` body as a dollar-quoted string, so it saw no tenant-scoped table, and the block could read every tenant's rows. Now `ask()` throws `TenantGuardrailError` under `enforcement: strict`, and returns a `NOT_SELECT_OR_WITH` warning in `tenantGuardrail` under `warn`. Each statement after a `;` counts too, and a leading comment or parenthesis doesn't hide the first keyword.
+
+- **If your custom `AskDialect` returns queries,** you have nothing to change. Built-in dialect ids and `DialectSpec`s already reject other statements in the read-only check (`SQL_NOT_SELECT_OR_WITH`).
+- **If it returns another statement on purpose** for a schema with a tenant policy, `ask()` no longer returns it under `strict`. Generate a `SELECT` or `WITH` query instead.
+- **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `NOT_SELECT_OR_WITH`.
+
 ## 1.0.0-beta.45
 
 Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/config` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.
