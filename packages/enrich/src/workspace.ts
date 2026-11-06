@@ -185,9 +185,11 @@ export function saveConcepts(
 
 /**
  * Save `tenant-policy.md` to the schema directory. The policy is checked first with
- * the core loader's own rules, against the workspace's tables and columns: a policy
- * that `loadSchema` would reject throws `SchemaParseError` and nothing is written,
- * since every later load of the directory would fail until the file is fixed by hand.
+ * the core loader's own rules, against the tables and columns in `schema.json` on disk:
+ * a policy that `loadSchema` would reject throws `SchemaParseError` and nothing is
+ * written, since every later load of the directory would fail until the file is fixed
+ * by hand. The check reads disk, not `workspace.physical`, because a re-introspection
+ * can change `schema.json` while a strict policy keeps the workspace from reloading.
  */
 export function saveTenantPolicy(
   workspace: Workspace,
@@ -196,7 +198,8 @@ export function saveTenantPolicy(
 ): void {
   const filePath = join(workspace.schemaDir, "tenant-policy.md");
   const md = writeTenantPolicyMarkdown(frontmatter, body);
-  const { tables } = workspace.physical;
+  const schemaJsonPath = join(workspace.schemaDir, "schema.json");
+  const { tables } = parsePhysical(readFileSync(schemaJsonPath, "utf8"), schemaJsonPath);
   normalizeTenantPolicy(
     parseTenantPolicyMarkdown(md, filePath),
     new Set(tables.map((table) => table.id)),
