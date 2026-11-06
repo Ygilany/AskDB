@@ -9,6 +9,23 @@ import {
   type ParsedTableMarkdown,
 } from "./describable.js";
 
+function refuseNonYaml(): never {
+  throw new Error("front-matter must be YAML");
+}
+
+/**
+ * gray-matter's options for every schema markdown file. Schema files can come from an
+ * untrusted bundle or directory, and gray-matter picks a front-matter engine from the text
+ * after the opening `---`: `---js` (any case, or `javascript`) runs the block through `eval`,
+ * `---json` reads JSON, and `---coffee` names an engine it doesn't ship. Every engine but
+ * YAML refuses here. Passing an options object also keeps gray-matter from caching the
+ * input: its cache holds every input for the life of the process, and an input that failed
+ * to parse stays there as an empty entry, so a second parse would skip the YAML error (#742).
+ */
+const FRONT_MATTER_OPTIONS = {
+  engines: { javascript: refuseNonYaml, json: refuseNonYaml, coffee: refuseNonYaml },
+};
+
 /**
  * Split YAML front-matter from a markdown body. gray-matter throws a raw
  * `YAMLException` on malformed YAML; rethrow it as a `SchemaParseError` naming
@@ -20,10 +37,11 @@ function readFrontMatter(
   filePath?: string,
 ): { data: Record<string, unknown>; content: string } {
   try {
-    // Any options object, even an empty one, keeps gray-matter from caching the input: its
-    // cache holds every input for the life of the process, and an input that failed to parse
-    // stays there as an empty entry, so a second parse would skip the YAML error (#742).
-    const file = matter(content, {});
+    const file = matter(content, FRONT_MATTER_OPTIONS);
+    // Any other tag after `---` (a name gray-matter looks up on its engine table, such as
+    // `constructor`) isn't YAML either. gray-matter sets `language` to `yaml` when there is none.
+    const language = (file.language ?? "yaml").toLowerCase();
+    if (language !== "yaml" && language !== "yml") refuseNonYaml();
     return { data: file.data, content: file.content };
   } catch (e) {
     const loc = filePath ? ` in ${filePath}` : "";

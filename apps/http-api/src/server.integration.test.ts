@@ -5,7 +5,8 @@ import {
   type AskDbLogLevel,
   type AskDbModeV1,
 } from "@askdb/config";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readSchemaDirectory } from "@askdb/core";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -385,6 +386,26 @@ describe("http-api", () => {
       expect(json.sql).toBe("select 1");
     } finally {
       await app.close();
+    }
+  });
+
+  it("runs nothing from a schemaJson override whose table file has `---js` front-matter", async () => {
+    installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true } });
+    const dir = mkdtempSync(join(tmpdir(), "askdb-front-matter-"));
+    const marker = join(dir, "marker");
+    const bundle = readSchemaDirectory(schemaPath.pathname);
+    const table = Object.keys(bundle.tables)[0]!;
+    const hostile = `---js\n(require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran"), {})\n---\nBody.\n`;
+    const schemaJson = JSON.stringify({ ...bundle, tables: { ...bundle.tables, [table]: hostile } });
+    const app = await startApp();
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson });
+      expect(status).toBe(400);
+      expect(json.error?.code).toBe("schema_parse_error");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
