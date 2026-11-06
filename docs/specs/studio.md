@@ -105,7 +105,7 @@ These guards narrow the blast radius. They don't replace a read-only database ro
 - `@askdb/studio` depends on `@askdb/enrich` for all workspace logic (package assertion).
 - API contract tests: each endpoint returns the documented shape. Error responses are `{ "error": { "message": "…" } }` with no typed code, so callers tell them apart by status (#380).
 - Schema editing: `POST /api/tables/:tableId` saves draft and reloads workspace from disk; reloading Studio shows saved values.
-- AI suggestion: `POST /api/suggest` returns candidates; missing AI config returns a typed config error, not a 500.
+- AI suggestion: `POST /api/suggest` returns candidates; missing AI config returns `400` with a message naming the missing setting, not a 500.
 - RAG: `POST /api/rag/index` builds index with mock or configured embedder; `POST /api/rag/query` returns scored chunks.
 - Ask: `POST /api/ask` returns SQL and warnings; works with `ASKDB_MOCK_SQL` without a live model.
 - Request guard: spoofed `Host` → `403`; cross-origin POST → `403`; `text/plain` POST → `415`/`403`; missing or wrong token → `403`; served `index.html` contains the token.
