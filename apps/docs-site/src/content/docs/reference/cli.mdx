@@ -73,10 +73,12 @@ To introspect a Prisma schema file, also install `@askdb/prisma`, in the same pl
 
 | Flag | Description |
 | --- | --- |
-| `-h, --help` | Print usage. `init`, `ask`, `introspect`, `studio`, and `rag` also take `--help` for their own flags (for example `askdb ask --help`). |
+| `-h, --help` | Print usage and the list of commands. Every command also takes `--help` for its own flags (for example `askdb ask --help`), and `askdb help <command>` prints the same text. |
 | `-V, --version` | Print the installed `askdb` version. |
 
-Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, `introspect --help`, `introspect --version`, `introspect templates`, `ask --version`, `rag` with no subcommand (it prints help), `rag --help`, `rag --version`, and [`studio`](#askdb-studio).
+Every command except `studio` takes a flag's value as `--flag value` or `--flag=value`, and prints its help on stdout and exits `0` for `--help` (or `-h`), wherever it appears on the line.
+
+Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, any command's `--help` and `--version`, `introspect templates`, `rag` with no subcommand (it prints help), and [`studio`](#askdb-studio).
 
 `ask`, `introspect`, and the `rag` commands need `askdb.config.*` (or `.config/askdb.*`) in the current directory. Without one they print ``No askdb.config.* or .config/askdb.* found in <cwd>. Run `npx askdb init` to create one.`` and exit `1`.
 
@@ -229,7 +231,7 @@ Experimental: a minor release of `askdb` may change this command ([ADR 0030](htt
 askdb bundle <schema-dir> --out <bundle.json>
 ```
 
-Both arguments are required, in this order. Without them, `bundle` prints that usage line and exits `1`.
+Both are required. Without either, `bundle` prints that usage line on stderr and exits `1`. `askdb bundle --help` prints its help on stdout and exits `0`.
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
@@ -301,7 +303,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 
 ### Config and flags
 
-`askdb rag --help` and `askdb rag --version` work without a config. The commands read `askdb.config.*`, and a flag overrides the setting it falls back to. A flag takes its value as `--flag value` or `--flag=value`.
+`askdb rag --help` and `askdb rag --version` work without a config. The commands read `askdb.config.*`, and a flag overrides the setting it falls back to.
 
 | Flag | Falls back to |
 | --- | --- |
@@ -399,9 +401,9 @@ Stdout is one JSON object: `question`, `k`, and `results`, best match first. Eac
 | `0` | Success, including `--help` and `--version`. |
 | `1` | Any error: invalid arguments, a missing or broken config, IO, generation, or a guardrail. |
 
-Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command, and `askdb bundle` without both of its arguments (`--help` included), print their usage to stderr and exit `1`.
+Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command prints its usage to stderr and exits `1`.
 
-Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging).
+Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line, with any password in a URL masked.
 
 An unexpected error, such as a config file that fails to load, prints its message and the hint `Set ASKDB_DEBUG=1 to print the stack trace.` Set `ASKDB_DEBUG` to `1` or `true` to add the stack trace. Any other value, including `0`, leaves it off, and the `DEBUG` variable used by the `debug` package has no effect.
 
