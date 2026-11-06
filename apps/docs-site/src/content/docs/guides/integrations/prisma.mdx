@@ -80,7 +80,7 @@ await introspect(
 
 ## Supported providers
 
-`@askdb/prisma` supports any Prisma relational provider. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
+`@askdb/prisma` supports the five Prisma providers below; any other `datasource.provider` throws. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
 
 | Prisma provider | `dialect` id | Engine package (live introspection) |
 | --- | --- | --- |
