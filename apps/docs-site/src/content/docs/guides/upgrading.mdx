@@ -31,6 +31,12 @@ Released with `@askdb/config` 1.0.0-beta.16. Other packages that got a new versi
 | --- | --- | --- |
 | `@askdb/config` | `DEFAULT_RAG_FILE_BASE_PATH` | Your own path. With `rag.storeConfig.file.basePath` unset, the CLI and Studio use `<schema dir>/schema`, as before. |
 
+### Remove the error codes nothing threw
+
+Four codes are gone from `@askdb/core`'s error-code types, because none of AskDB's own checks reported them ([#682](https://github.com/Ygilany/AskDB/issues/682), ADR 0033): `INCOMPATIBLE_JOIN_SCOPES` and `CROSS_TENANT_WITHOUT_GLOBAL` from `TenantGuardrailRuleCode`, and `INVALID_NAME` and `RESERVED_NAME` from `QueryParameterRejectionReason`. Only code that names them breaks, and TypeScript reports where: delete those `case` branches and comparisons. A custom `AskDialect` that reported one of the two tenant rules in `tenantGuardrail.warnings` reports `MISSING_TENANT_PREDICATE` (a table read without its tenant predicate) or `UNPROVABLE_SCOPE` instead.
+
+A `global` tenant scope whose `reason` is missing, isn't a string, or is blank now throws `TenantScopeError` with `GLOBAL_WITHOUT_REASON`, not `INVALID_SCOPE_SHAPE`. A blank `reason`, such as `"  "`, passed before. Give every `global` scope a `reason` that says why it sees every tenant, and match `GLOBAL_WITHOUT_REASON` where you handled `INVALID_SCOPE_SHAPE` for it.
+
 ### Other changes you may notice in beta.47
 
 - **`httpApi.listen.port`** is checked when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). A value that isn't an integer from 0 to 65535, or a string holding one, fails with `askdb.config: invalid httpApi.listen.port`, in every tool that loads the config. Before, the HTTP server passed such a value straight to `listen()`. A value that reads as `NaN`, such as `Number(env("PORT"))` with `PORT` unset, now counts as unset: the server uses port 3000 instead of failing to start.
@@ -188,12 +194,6 @@ Every AskDB write into a schema directory now refuses symbolic links ([#617](htt
 - **Studio** refuses a linked `playground-history.json` the same way. It leaves a linked `.gitignore` as it is.
 - **Writing `schema.json` needs write access to the output directory,** because AskDB writes a temporary file there and renames it over the target. A hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's permission bits and group where it can, but not an access control list. Only root can give a file to another user, so on macOS and Linux a save by anyone other than the file's owner makes the saver its owner. On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; run the command again.
 - **If you match `@askdb/enrich`'s table-save error,** it now reads `Refusing to write tables/orders.md outside the schema directory: …`.
-
-### Remove the error codes nothing threw
-
-Four codes are gone from `@askdb/core`'s error-code types, because none of AskDB's own checks reported them ([#682](https://github.com/Ygilany/AskDB/issues/682), ADR 0033): `INCOMPATIBLE_JOIN_SCOPES` and `CROSS_TENANT_WITHOUT_GLOBAL` from `TenantGuardrailRuleCode`, and `INVALID_NAME` and `RESERVED_NAME` from `QueryParameterRejectionReason`. Only code that names them breaks, and TypeScript reports where: delete those `case` branches and comparisons. A custom `AskDialect` that reported one of the two tenant rules in `tenantGuardrail.warnings` reports `MISSING_TENANT_PREDICATE` (a table read without its tenant predicate) or `UNPROVABLE_SCOPE` instead.
-
-A `global` tenant scope whose `reason` is missing, isn't a string, or is blank now throws `TenantScopeError` with `GLOBAL_WITHOUT_REASON`, not `INVALID_SCOPE_SHAPE`. A blank `reason`, such as `"  "`, passed before. Give every `global` scope a `reason` that says why it sees every tenant, and match `GLOBAL_WITHOUT_REASON` where you handled `INVALID_SCOPE_SHAPE` for it.
 
 ### Other changes you may notice in beta.46
 

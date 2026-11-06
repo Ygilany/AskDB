@@ -31,6 +31,6 @@ A host that switches on these unions writes branches that can't run, and the typ
 
 ## Consequences
 
-- A host that names a removed code fails to compile after it upgrades, and so does a custom `AskDialect` that reports one of the two tenant rules in `tenantGuardrail.warnings`. The beta.46 upgrade entry says what to use instead.
+- A host that names a removed code fails to compile after it upgrades, and so does a custom `AskDialect` that reports one of the two tenant rules in `tenantGuardrail.warnings`. The beta.47 upgrade entry says what to use instead.
 - A host that passed a blank `global` reason now gets `TenantScopeError` with `GLOBAL_WITHOUT_REASON`.
 - After 1.0, adding a code is a minor and removing one is a major. A new code lands with its reference row, because `test:errors` fails without it.
