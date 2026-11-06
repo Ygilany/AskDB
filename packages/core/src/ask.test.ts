@@ -1839,6 +1839,8 @@ describe("ask — sensitive-identifier guardrail", () => {
     // `\'`, so u.password is code; the check matched neither (#707).
     ["a U& name", String.raw`SELECT U&"p\0061ssword" FROM users`, "UNICODE_ESCAPED_IDENTIFIER"],
     ["a continued E'…' string", "SELECT E'a'\n'\\'' AS x, u.password FROM users u --'", "STRING_CONTINUATION"],
+    // CockroachDB reads the b'…' string with backslash escapes, so u.password is code (#730).
+    ["a b'…' string with a backslash", String.raw`SELECT b'\'' AS x, u.password FROM users u --'`, "ESCAPED_BYTE_STRING"],
   ])("strict mode rejects %s from a custom dialect, which no read-only check covers (#707)", async (_label, sql, issue) => {
     const error = await ask({
       question: "credentials",
@@ -2519,6 +2521,34 @@ describe("ask — an E'…' string continued on a later line (#703)", () => {
     await expect(rejection).rejects.toThrow(TenantGuardrailError);
     await expect(rejection).rejects.toMatchObject({
       warnings: expect.arrayContaining([expect.objectContaining({ rule: "STRING_CONTINUATION", tableId: "" })]),
+    });
+  });
+});
+
+describe("ask — a CockroachDB b'…' byte string with a backslash (#730)", () => {
+  // CockroachDB reads the bytes `'` and then an unscoped read of orders; every check used to pass it.
+  const bypass = String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`;
+
+  it("built-in cockroachdb: the read-only check refuses it", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "cockroachdb",
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + bypass + "\n```" })) as never },
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SqlValidationError);
+    expect((error as SqlValidationError).rule).toBe("SQL_ESCAPED_BYTE_STRING");
+  });
+
+  it("custom AskDialect: the tenant check refuses it under strict enforcement", async () => {
+    const dialect: AskDialect = { generate: async () => ({ sql: bypass }) };
+    const rejection = ask({ question: "q", schema: loadSchema(multiTenantDir), model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({
+      warnings: expect.arrayContaining([expect.objectContaining({ rule: "ESCAPED_BYTE_STRING", tableId: "" })]),
     });
   });
 });

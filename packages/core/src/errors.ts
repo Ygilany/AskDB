@@ -33,6 +33,12 @@ export type SqlValidationRuleCode =
    */
   | "SQL_STRING_CONTINUATION"
   /**
+   * Postgres family: a `b'…'` byte string (lower-case `b`) that holds a backslash or is continued
+   * on a later line. CockroachDB reads it with backslash escapes and the checks don't, so they
+   * could read code as a string; refused at the boundary (#730).
+   */
+  | "SQL_ESCAPED_BYTE_STRING"
+  /**
    * Postgres family: a Unicode-escaped identifier (`U&"set\005fconfig"`). Its escapes can spell
    * a name the other checks look for, such as a denylisted function, so it is refused (#692).
    */
@@ -195,7 +201,15 @@ export type TenantGuardrailRuleCode =
    * whole SQL, with `tableId: ""`, whenever the SQL may be read as Postgres: postgres,
    * cockroachdb, a custom `AskDialect`, or no dialect; not under a `global` scope (#703).
    */
-  | "STRING_CONTINUATION";
+  | "STRING_CONTINUATION"
+  /**
+   * A `b'…'` byte string (lower-case `b`) that holds a backslash or is continued on a later line,
+   * which CockroachDB reads with backslash escapes and the tenant check doesn't, so a table or
+   * call after it could be hidden. Reported for the whole SQL, with `tableId: ""`, whenever the
+   * SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not
+   * under a `global` scope (#730).
+   */
+  | "ESCAPED_BYTE_STRING";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;
@@ -264,7 +278,13 @@ export type SensitiveScopeIssue =
    * the check doesn't, so a column after it could be hidden. Raised whenever the SQL may be read
    * as Postgres (#707, #703).
    */
-  | "STRING_CONTINUATION";
+  | "STRING_CONTINUATION"
+  /**
+   * A `b'…'` byte string (lower-case `b`) that holds a backslash or is continued on a later line,
+   * which CockroachDB reads with backslash escapes and the check doesn't, so a column after it
+   * could be hidden. Raised whenever the SQL may be read as Postgres (#730).
+   */
+  | "ESCAPED_BYTE_STRING";
 
 /** Conservative-failure report attached when scope resolution was incomplete. */
 export type SensitiveScopeReport = {
