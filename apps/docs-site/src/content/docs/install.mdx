@@ -11,10 +11,12 @@ import InstallTabs from "../../components/InstallTabs.astro";
 
 Upgrading from an earlier beta? [Upgrade AskDB](/guides/upgrading/) lists what to change for each release.
 
+On the day an AskDB version is published, `pnpm dlx askdb@latest` and `yarn dlx askdb@latest` still install the previous one. pnpm 11 and later, and Yarn 4.18, skip versions less than a day old by default (pnpm's `minimumReleaseAge`, Yarn's `npmMinimalAgeGate`). npm installs the new version at once.
+
 ## What to install — by use case
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect a database, enrich, and ask from the CLI.</span></a>
+  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> and your database's driver (<code>pg</code>, <code>mysql2</code>, <code>better-sqlite3</code> or <code>mssql</code>) are enough to introspect, enrich, and ask from the CLI. <code>askdb init</code> installs the driver for you.</span></a>
   <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/client</code> + <code>@askdb/core</code> + <code>@askdb/config</code> + <code>ai</code> + an AI SDK provider package such as <code>@ai-sdk/openai</code>.</span></a>
   <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>

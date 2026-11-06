@@ -179,6 +179,7 @@ AskDB checks the model's SQL before it binds the tenant IDs, while the `:tenant_
 - **No literal IDs.** `agency_id = 2` doesn't satisfy the rule, even when 2 is in the caller's scope: AskDB binds the IDs. Each `UNION` branch that reads a scoped table needs its own predicate.
 - **Root tables too.** A query on the root table itself (`agencies`) needs the predicate on its tenant ID column.
 - **Plain names.** On Postgres, a Unicode-escaped name such as `U&"\006Frders"` (which reads `orders`) is refused as `UNICODE_ESCAPED_IDENTIFIER`, whatever the predicates, because the check can't tell what it names. Write names unquoted or in plain double quotes. See [`TenantGuardrailError`](/getting-started/troubleshooting/#tenantguardrailerror).
+- **No continued `E'…'` strings.** On Postgres, an `E'…'` string continued on a later line is refused as `STRING_CONTINUATION`, whatever the predicates: Postgres reads the continuation with backslash escapes, so a table after it could be hidden from the check. Join the parts with `||`.
 
 It's a heuristic over the SQL's tokens, not a parser. Within one query it doesn't tie each predicate to a specific table reference, so an unfiltered reference next to a filtered one can still pass. Use it as defense in depth, together with database-side row-level security and a read-only role: see [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/) and [Run safely in production](/guides/run-safely-in-prod/). The full rules are in [`docs/contracts/tenant-policy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#guardrail-validation).
 
@@ -316,7 +317,7 @@ resolveTenantDescendants: (tenantRoot, seedIds) => ({
 | Mode | When to use |
 | --- | --- |
 | `sql-params` (default for built-in dialects) | Tenant values bound through your dialect's driver markers — `$1` (Postgres, CockroachDB), `?` (MySQL, MariaDB, SQLite), `@p0` (SQL Server). The tenant IDs never enter the SQL text. |
-| `sql-only` | Tenant values inlined as escaped literals, for a tool that takes one SQL string, or for SQL you read directly. A tenant ID must be printable ASCII without a backslash, or it's refused (`UNESCAPABLE_TENANT_ID`): any other literal can read differently under the server's string settings or connection charset. |
+| `sql-only` | Tenant values inlined in `sql` as escaped literals (`unboundSql` still binds them), for a tool that takes one SQL string, or for SQL you read directly. A tenant ID must be printable ASCII without a backslash, or it's refused (`UNESCAPABLE_TENANT_ID`): any other literal can read differently under the server's string settings or connection charset. |
 
 A custom `AskDialect`, or a `DialectSpec` whose `id` isn't a built-in dialect, has no default mode, because AskDB doesn't know which driver it targets: with a tenant scope, `ask()` throws `TENANT_SQL_MODE_REQUIRED` until you set `tenantSqlMode`. `"sql-params"` gives `$N` markers; if your driver uses `?` or `@p0` markers (on SQL Server, `$1` is a money constant), set `"sql-only"`. A value other than these two throws the same error, on every dialect.
 

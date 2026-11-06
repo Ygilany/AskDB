@@ -1,5 +1,30 @@
 # @askdb/introspect
 
+## 0.3.0-beta.22
+
+### Patch Changes
+
+- 1c31e95: `@askdb/introspect` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: rendered Schema v2 artifacts, IDs and driver-load errors are the same as before.
+- c28c967: Declare `ai` as a peer, with the range `@askdb/core` requires (`^6.0.0 || ^7.0.51`), so Yarn Plug'n'Play passes your app's `ai` through to `@askdb/core` (#748). Before, core inside these packages couldn't reach `ai` under Plug'n'Play, and `yarn dlx askdb` crashed at startup. Core already required `ai` when it loads, so npm and pnpm install nothing new, and a host that already meets core's `ai` range meets this one.
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+  - @askdb/core@1.0.0-beta.48
+
+## 0.3.0-beta.21
+
+### Patch Changes
+
+- Updated dependencies [f4e60a9]
+- Updated dependencies [80c7ddf]
+- Updated dependencies [0a94c6f]
+- Updated dependencies [4f322db]
+- Updated dependencies [4365d4c]
+  - @askdb/core@1.0.0-beta.47
+
 ## 0.3.0-beta.20
 
 ### Minor Changes

@@ -1,6 +1,7 @@
 import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import astroD2 from "astro-d2";
 import starlightLlmsTxt from "starlight-llms-txt";
 
 const base = process.env.ASTRO_BASE ?? "/";
@@ -45,6 +46,11 @@ export default defineConfig({
     processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
   },
   integrations: [
+    // Diagrams: ```d2 fences (or `src` files under src/assets/diagrams/d2/) render to inline SVG
+    // at build time through D2's WebAssembly build, so CI and the Pages deploy need no D2 binary.
+    // D2's own dark theme is off: src/styles/custom.css maps D2's palette classes to Starlight's
+    // color variables, so a diagram follows the site's theme toggle.
+    astroD2({ experimental: { useD2js: true }, inline: true, pad: 16, theme: { dark: false } }),
     starlight({
       head: [
         {
@@ -148,6 +154,7 @@ export default defineConfig({
             { label: "@askdb/core API", slug: "reference/core-api" },
             { label: "@askdb/client API", slug: "reference/client-api" },
             { label: "@askdb/rag API", slug: "reference/rag-api" },
+            { label: "Introspection API", slug: "reference/introspect-api" },
           ],
         },
       ],

@@ -19,6 +19,89 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.49
+
+Not published yet: these changes ship with `askdb` 1.0.0-beta.49, `@askdb/config` 1.0.0-beta.18, `@askdb/core` 1.0.0-beta.49 and `@askdb/studio` 0.2.0-beta.42.
+
+### Handle the new `SensitiveScopeIssue` members
+
+The sensitive check now fails closed on two Postgres forms it can't read, with the new `SensitiveScopeIssue` members `UNICODE_ESCAPED_IDENTIFIER` (a name such as `U&"p\0061ssword"`) and `STRING_CONTINUATION` (an `E'…'` string continued on a later line) ([#707](https://github.com/Ygilany/AskDB/issues/707), ADR 0012). They apply whenever the SQL may be read as Postgres, a custom `AskDialect` included, and come back in `sensitiveGuardrail.unresolvedScope` with `passed: false`. With `sensitiveGuardrailMode: "strict"`, `ask()` and `validateSensitiveReferences()` throw `SensitiveReferenceError`.
+
+- **A `switch` over every `SensitiveScopeIssue`** needs cases for both.
+- **Built-in dialects reject the same SQL earlier** in the read-only check (`SQL_UNICODE_ESCAPED_IDENTIFIER`, `SQL_STRING_CONTINUATION`), so this mainly changes a custom `AskDialect` and direct calls.
+
+### Other changes you may notice in beta.49
+
+- **`askdb init` and Studio's guided setup install with pnpm in a new pnpm project** ([#750](https://github.com/Ygilany/AskDB/issues/750)). With no lockfile, both used npm, which refuses a project that `pnpm init` started (`EBADDEVENGINES`). They now read `package.json`'s `packageManager` field, then `devEngines.packageManager`, then the tool that ran them (`pnpm dlx`, `yarn dlx`, `npx`, `bunx`), before falling back to npm. A project with a lockfile installs with that lockfile's manager, as before. See [`askdb init`](/reference/cli/#askdb-init) for the order.
+- **`askdb init` installs on Windows** ([#668](https://github.com/Ygilany/AskDB/issues/668)). Its install always failed there, because Node refuses to run a package manager's `.cmd` shim without a shell.
+- **The install command `askdb init` prints names the package manager it picked.** At a workspace root, or with no `package.json`, it printed `npm install --save …`. It now prints that manager's command, with `--allow-build=@prisma/engines` for a Prisma project on pnpm 10.4 or later. A script that matched the old text needs updating.
+- **`@askdb/config/scaffold` is experimental** ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). It now also exports the package-manager helpers `askdb init` and Studio share. A minor release of `@askdb/config` may change it. Your own `askdb.config.ts` never imports it.
+
+## 1.0.0-beta.48
+
+Released with `@askdb/client` 1.0.0-beta.11, `@askdb/config` 1.0.0-beta.17 and `@askdb/core` 1.0.0-beta.48. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Fix config values of the wrong type, which now fail to load
+
+`@askdb/config` now checks each setting once, when the config loads, and builds every runtime value from your config alone ([#711](https://github.com/Ygilany/AskDB/issues/711)). A value of the wrong type fails to load in every tool that loads the config, with an error that names the file and the config key.
+
+**A boolean setting must be `true` or `false`.** `logging.logStdout` and `modes.omitSensitiveFromPrompt` now fail on any other value, as `studio.execute.enabled`, `studio.execute.useIntrospectionConnection` and `httpApi.allowSchemaOverride` already did. A string here was read wrong before, without a warning:
+
+| In your config | Before | Now |
+| --- | --- | --- |
+| `logging: { logStdout: "true" }` | Loaded, and didn't copy the logs to stdout: only `true` turned it on. | Fails: `AskDB config at /app/askdb.config.ts: logging.logStdout must be a boolean (got "true").` |
+| `modes: { omitSensitiveFromPrompt: "false" }` | Loaded, and silently turned omission **on**: any non-empty string counted as `true`. | Fails: `AskDB config at /app/askdb.config.ts: modes.omitSensitiveFromPrompt must be a boolean (got "false").` |
+
+To read one from the environment, compare the string: `omitSensitiveFromPrompt: env("OMIT_SENSITIVE") === "true"`.
+
+**A string setting must be a string, or `null` for unset**, such as `logging.logFile`, `host.schemaPath` or a `databaseUrl`. Any other value fails, `false` and `0` included. Before, AskDB ignored `false` or `0` for a few keys, such as `logging.logFile` and `dev.mockSql`, and stopped the load with a `TypeError` that named no key for the rest. Write `undefined` or `null` to leave a string setting unset.
+
+Code that reads or installs the runtime config may need a change too:
+
+- **`getAskDbRuntimeConfig().logging.level` is `AskDbLogLevel | undefined`, and `modes.askdbMode` is `AskDbModeV1 | undefined`,** not `string`. Code that builds an `AskDbRuntimeConfig` by hand with a `string`, for example in a test, no longer typechecks. Type the value with the union, or cast one you know is valid:
+
+  ```ts
+  import type { AskDbLogLevel, AskDbModeV1 } from "@askdb/config";
+
+  const level: AskDbLogLevel = "debug"; // was: const level: string = "debug"
+  const modes = { askdbMode: mode as AskDbModeV1, omitSensitiveFromPrompt: false };
+  ```
+
+- **`setAskDbRuntimeForTests()` takes an `AskDbConfig`,** the object you write in `askdb.config.ts`, and installs it as `bootstrapAskDbEnv()` installs a loaded file. Replace `setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) })` with `setAskDbRuntimeForTests(structured)`. If a test put a setting only in `flat`, set it in the config instead, such as `dev: { mockSql }` in place of `ASKDB_MOCK_SQL`.
+- **`createAskDb()` reads the default schema from `host.schemaJson`, then `host.schemaPath`, and nowhere else.** A runtime config built by hand with `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `ai.aiEnv` and no `host` block now throws `SchemaNotConfiguredError`: set `structured.host` instead. A config loaded from a file works as before.
+
+### Run `unboundSql` with the tenant IDs in `params` under `"sql-only"`
+
+`tenantSqlMode` now governs `sql` only ([#731](https://github.com/Ygilany/AskDB/issues/731)). Under `"sql-only"`, `ask()` used to inline the tenant IDs into `unboundSql` and leave them out of `params`, while `bindPreparedQuery()` and `askdb.bind()` bound them. Now `ask()` binds them too: `unboundSql` holds driver markers for the tenant IDs, and `params` holds their values, as in `"sql-params"` mode. `sql` is unchanged, with the IDs inlined as literals.
+
+```diff
+ // ask({ …, tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } }, tenantSqlMode: "sql-only" })
+ result.sql        // SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'   (unchanged)
+-result.unboundSql // SELECT * FROM orders WHERE agency_id = '42' AND status = $1
+-result.params     // ["open"]
++result.unboundSql // SELECT * FROM orders WHERE agency_id = $2 AND status = $1
++result.params     // ["open", "42"]
+```
+
+If you run `unboundSql` with `params`, you need no change: the pair still returns the same rows. If you run `unboundSql` with your own array of business values, switch to `params` before you upgrade, and check every place that runs `unboundSql`. With your array, the values no longer line up with the markers: the tenant markers come first in source order on `?` dialects, so your first business value can land on a tenant marker. The drivers AskDB documents (`pg`, `mysql2`, `mssql`, `better-sqlite3`) refuse the short array, so the query fails. `node:sqlite` doesn't check the number of values it binds: it binds them in order and the rest as `NULL`, which can return another tenant's rows. Always pass `params` as returned. If you need one SQL string with the IDs inlined, use `sql`.
+
+### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
+
+On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
+
+- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
+- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
+- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
+
+### Other changes you may notice in beta.48
+
+- **A malformed schema markdown file reports the same error on every load** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, when one process loaded the same malformed front-matter YAML in `tables/*.md`, `concepts.md` or `tenant-policy.md` a second time, it reported `Invalid <kind> front-matter` (missing fields) instead of `Malformed <kind> front-matter YAML`. Loading failed both times. `@askdb/core` also no longer keeps every schema markdown file it reads or writes in memory for the life of the process, so a server that accepts per-request schemas (`httpApi.allowSchemaOverride`) no longer grows with each new one.
+- **A schema markdown body that starts with a `---` horizontal rule survives a save** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, `writeTableMarkdown()`, `writeConceptsMarkdown()` and `writeTenantPolicyMarkdown()`, and the Studio saves that use them, read the rule as front-matter: the body was emptied, and the file then failed to load.
+- **Schema markdown front-matter accepts YAML only.** A `tables/*.md`, `concepts.md` or `tenant-policy.md` file whose front-matter isn't YAML now fails to load with `SchemaParseError` (`Malformed <kind> front-matter YAML`). Front-matter that opens with a plain `---`, as Studio and `@askdb/enrich` write it, loads as before.
+- **The tenant check reads a dialect id that is no built-in engine and sets `backslashEscapes: true` both ways** when it looks for `U&"…"` names ([#703](https://github.com/Ygilany/AskDB/issues/703)): with and without backslash escapes, reporting a name either reading finds.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.

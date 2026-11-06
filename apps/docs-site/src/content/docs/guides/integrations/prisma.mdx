@@ -30,7 +30,7 @@ Without it, `askdb introspect --engine prisma` exits 1 and names the package to 
 `@askdb/prisma` depends on Prisma, whose `@prisma/engines` package has an install script. pnpm 11 doesn't run it until you approve it, and `pnpm add` exits 1 with `ERR_PNPM_IGNORED_BUILDS`. Approve it in the same command:
 
 ```bash
-pnpm add --allow-build=@prisma/engines @askdb/prisma
+pnpm add --allow-build=@prisma/engines @askdb/prisma ai
 ```
 
 This writes `allowBuilds` with `'@prisma/engines': true` to your `pnpm-workspace.yaml`. You can also run `pnpm approve-builds` after the install. A project that already uses Prisma has usually approved it. `askdb init` and Studio's guided setup approve it when they install `@askdb/prisma` with pnpm 10.4 or later, the first pnpm with `--allow-build`.
@@ -80,7 +80,7 @@ await introspect(
 
 ## Supported providers
 
-`@askdb/prisma` supports any Prisma relational provider. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
+`@askdb/prisma` supports the five Prisma providers below; any other `datasource.provider` throws. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
 
 | Prisma provider | `dialect` id | Engine package (live introspection) |
 | --- | --- | --- |
@@ -99,6 +99,6 @@ MongoDB is not supported — AskDB targets relational engines.
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Quickstart</strong><span>The full introspect → enrich → ask flow.</span></a>
+  <a href="/quickstart/"><strong>Quickstart</strong><span>A sample database, end to end: introspect, ask, and run the SQL AskDB returns.</span></a>
   <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>How to pair @askdb/prisma with each runtime engine.</span></a>
 </div>

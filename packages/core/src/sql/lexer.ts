@@ -514,7 +514,11 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       i += 2;
       continue;
     }
-    if (ch === ":" && next !== undefined && WORD_START.test(next)) {
+    // On an engine with `E'…'` strings, `:E'` is `:` then an escape string (a JSON_OBJECT key's
+    // `:`, an array slice's), never a `:name` placeholder, which a quote can't follow (#703).
+    const escapeStringAfterColon =
+      profile.escapeStrings && (next === "e" || next === "E") && sql[i + 2] === "'";
+    if (ch === ":" && next !== undefined && WORD_START.test(next) && !escapeStringAfterColon) {
       let j = i + 1;
       while (j < n && isWordChar(sql[j]!)) j++;
       push("parameter", i, j);
@@ -541,6 +545,47 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   if (executableOpener !== -1) tokens[executableOpener]!.unterminated = true;
 
   return tokens;
+}
+
+/**
+ * The lexer profiles under which a dialect's SQL may be read as Postgres, for the checks that
+ * refuse what only that reading can hold (#703): the dialect's own profile when it is on the
+ * Postgres lexer (postgres, cockroachdb); for a dialect that is no built-in engine, or none,
+ * `POSTGRES_LEXER`, plus a copy with backslash escapes when the dialect sets `backslashEscapes`,
+ * since its server may read strings either way; none for any other built-in engine.
+ */
+export function postgresReadingProfiles(
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
+): SqlLexerProfile[] {
+  const known = dialect === undefined ? undefined : lexerProfileFor(dialect);
+  if (known !== undefined) return known.id === "postgres" ? [known] : [];
+  return dialect?.backslashEscapes === true
+    ? [POSTGRES_LEXER, { ...POSTGRES_LEXER, backslashEscapes: true }]
+    : [POSTGRES_LEXER];
+}
+
+/**
+ * A Postgres `E'…'` string continued on a later line: the string, then a gap that contains a
+ * newline and holds only whitespace and comments, then a bare `'…'` string. Postgres joins the
+ * two and keeps the escape mode, so it reads the second one with backslash escapes, which this
+ * lexer doesn't: where `\'` ends one reading's string, the other's goes on. AskDB doesn't model
+ * the continuation. The read-only check and the tenant check refuse it at this boundary, where
+ * both readings still agree (#703, ADR 0012). Postgres allows only whitespace and `--` comments
+ * in the gap; a `/* … *\/` comment there is refused too. Returns the `E'…'` token; callers
+ * report its position, not its text, which may hold a value from the question.
+ */
+export function findEscapeStringContinuation(sql: string, tokens: readonly SqlToken[]): SqlToken | undefined {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "string" || !/^[eE]'/.test(t.text)) continue;
+    let j = i + 1;
+    while (tokens[j]?.kind === "comment") j++;
+    const next = tokens[j];
+    if (next?.kind === "string" && next.text.startsWith("'") && /[\n\r]/.test(sql.slice(t.end, next.start))) {
+      return t;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -571,6 +616,35 @@ export function findUnicodeEscapedIdentifier(tokens: readonly SqlToken[]): strin
     }
   }
   return undefined;
+}
+
+/** The forms only a Postgres reading can hold, as {@link findPostgresOnlyForms} finds them. */
+export type PostgresOnlyForms = {
+  /** The first `U&"…"` name, as written ({@link findUnicodeEscapedIdentifier}). */
+  unicodeEscapedIdentifier: string | undefined;
+  /** The `E'…'` token of the first continued escape string ({@link findEscapeStringContinuation}). */
+  escapeStringContinuation: SqlToken | undefined;
+};
+
+/**
+ * The forms only a Postgres reading of `sql` can hold, under each reading
+ * {@link postgresReadingProfiles} gives for `dialect`: a `U&"…"` name and an `E'…'` string
+ * continued on a later line. The checks match names as written and don't model the
+ * continuation, so the tenant check and the sensitive check refuse both forms through this one
+ * function (#703, #704, #707, ADR 0012). Each field holds the first match across the readings;
+ * both are `undefined` when the SQL can't be read as Postgres.
+ */
+export function findPostgresOnlyForms(
+  sql: string,
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
+): PostgresOnlyForms {
+  const forms: PostgresOnlyForms = { unicodeEscapedIdentifier: undefined, escapeStringContinuation: undefined };
+  for (const profile of postgresReadingProfiles(dialect)) {
+    const tokens = lexSql(sql, profile);
+    forms.unicodeEscapedIdentifier ??= findUnicodeEscapedIdentifier(tokens);
+    forms.escapeStringContinuation ??= findEscapeStringContinuation(sql, tokens);
+  }
+  return forms;
 }
 
 /** True when any token ran off the end of the input. */

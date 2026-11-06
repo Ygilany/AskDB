@@ -169,7 +169,7 @@ SQL Server accepts three URL formats — see [SQL Server connection strings](#sq
   </TabItem>
 </Tabs>
 
-`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
+On Postgres and SQL Server, `introspection.schemas` lists schemas (the default is every non-system schema). On MySQL and MariaDB it lists databases, as above. SQLite has a single namespace and ignores it. `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
 
 The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
 
@@ -186,7 +186,7 @@ If the logical schema is identical and you are only swapping the engine package,
 
 The schema artifact records which engine it was introspected from. The CLI (`askdb ask`) and `@askdb/client` use it to infer the dialect, so those entry points need no update. A `dialect` set in `askdb.config.ts` takes precedence over the artifact's engine: remove it, or change it, when you switch.
 
-This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `cockroachdb`, `mysql`, `sqlite`, `sqlserver`) and records it, so `askdb ask` still knows the dialect without a live database.
+This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `mysql`, `sqlite`, `sqlserver`, `cockroachdb`) and records it, so `askdb ask` still knows the dialect without a live database.
 
 When using `@askdb/client` with no `dialect` in the config, the dialect resolves from the schema artifact's recorded provider, the same inference the CLI uses. No code change is needed after a dialect switch if the new artifact declares the correct provider.
 

@@ -1,8 +1,12 @@
+import { defineConfig } from "./projection.js";
 import type { AskDbConfig } from "./types.js";
 
 export type AskDbRuntimeStore = {
   readonly structured: AskDbConfig;
-  /** Canonical string map from {@link flattenAskDbConfig} (same keys as former merged `process.env`). */
+  /**
+   * Canonical string map from {@link flattenAskDbConfig}. Written for copies of `@askdb/config`
+   * that still read it; this copy resolves every value from `structured` and never reads it back.
+   */
   readonly flat: Readonly<Record<string, string>>;
 };
 
@@ -43,11 +47,6 @@ export function getAskDbRuntimeStore(): AskDbRuntimeStore {
   return stored;
 }
 
-/** Build an env-shaped map for `@askdb/core` from the flattened runtime snapshot (not `process.env`). */
-export function flatToAiEnv(flat: Readonly<Record<string, string>>): Record<string, string | undefined> {
-  return { ...flat };
-}
-
 /**
  * Merge AskDB flat keys into a base env map (e.g. for spawning child processes).
  * Does not read `process.env` itself.
@@ -65,9 +64,13 @@ export function mergeAskDbFlatIntoEnvMap(
   return out;
 }
 
-/** @internal Tests only — replaces the runtime store without loading from disk. */
-export function setAskDbRuntimeForTests(data: AskDbRuntimeStore): void {
-  setAskDbRuntime(data);
+/**
+ * @internal Tests only — installs `config` as `bootstrapAskDbEnv()` installs a loaded file,
+ * without reading the disk. Throws the same `askdb.config: …` errors as `defineConfig`.
+ */
+export function setAskDbRuntimeForTests(config: AskDbConfig): void {
+  const { config: structured, entries } = defineConfig(config);
+  setAskDbRuntime({ structured, flat: { ...entries } });
 }
 
 /** @internal Tests only. */

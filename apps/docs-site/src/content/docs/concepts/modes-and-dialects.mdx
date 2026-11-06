@@ -11,16 +11,19 @@ description: "How AskDB adapts to your SQL engine and the trust model you choose
 
 A dialect is a `DialectSpec` built into `@askdb/core`. Six ship with the core package: `postgres`, `cockroachdb`, `mysql`, `mariadb`, `sqlite` and `sqlserver`. Core owns them so that generating SQL needs no engine package and no database driver. A dialect tells the pipeline how to:
 
-- Construct identifiers and quoting for this engine.
-- Format dialect-specific clauses (LIMIT vs TOP, dollar parameters vs question marks, JSON path syntax).
-- Validate what counts as a read-only `SELECT` on this engine.
+- Brief the model on the engine's SQL: a short paragraph in the prompt on functions, casts and matching (for example `ILIKE` and `::type` on Postgres, `TOP` on SQL Server).
+- Quote table and column names in the prompt the way the engine does, including names that are reserved words.
+- Bind parameters with the engine's driver markers (`$1` on Postgres, `?` on MySQL and SQLite, `@p1` on SQL Server).
+- Check that the SQL is a read-only `SELECT` under the engine's rules: its extra forbidden keywords, blocked functions and string escaping.
 
 The per-engine packages add introspection for their engine and re-export its dialect constant; `ask()` itself needs only the dialect id. The CLI resolves the id automatically: `dialect` in `askdb.config.ts` → the provider recorded in the schema artifact (for Prisma artifacts, the `datasource.provider` from your `.prisma` file) → `postgres`.
 
 | Engine | Engine package (introspection) | Status |
 | --- | --- | --- |
 | PostgreSQL | `@askdb/postgres` | Reference dialect. |
+| CockroachDB | none | `cockroachdb` dialect. No live introspection; an artifact from a Prisma schema with `provider = "cockroachdb"` records it. |
 | MySQL | `@askdb/mysql` | First-class dialect and introspection. |
+| MariaDB | `@askdb/mysql` | `mariadb` dialect; `@askdb/mysql` introspects MariaDB too. |
 | SQLite | `@askdb/sqlite` | First-class dialect; works with embedded files. |
 | SQL Server | `@askdb/sqlserver` | T-SQL dialect and introspection. |
 
@@ -86,5 +89,5 @@ For most teams:
 <div class="home-path-grid">
   <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What the validator checks regardless of mode.</span></a>
   <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What the model sees and what stays in your stack.</span></a>
-  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>Move between Postgres, MySQL, SQLite, and SQL Server.</span></a>
+  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>Move between Postgres, MySQL, MariaDB, SQLite and SQL Server.</span></a>
 </div>

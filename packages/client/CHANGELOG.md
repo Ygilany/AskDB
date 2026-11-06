@@ -1,5 +1,19 @@
 # @askdb/client
 
+## 1.0.0-beta.11
+
+### Minor Changes
+
+- 63d45cc: `createAskDb()` reads its default schema from `host.schemaJson`, then `host.schemaPath`, and no longer falls back to `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `config.ai.aiEnv` (#711). `@askdb/config` writes those keys only from `host.*`, so the fallback mattered only for a runtime config built by hand: set `structured.host` there instead. `SchemaLoadError.source` names `host.schemaJson` or `host.schemaPath (<path>)`.
+
+## 1.0.0-beta.10
+
+### Patch Changes
+
+- f183629: `@askdb/client` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: schema loading, its error labels and dialect resolution work as before.
+- Updated dependencies [946dee4]
+  - @askdb/ai@0.1.0-beta.10
+
 ## 1.0.0-beta.9
 
 ### Patch Changes

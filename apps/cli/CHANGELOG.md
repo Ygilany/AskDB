@@ -1,5 +1,66 @@
 # askdb
 
+## 1.0.0-beta.48
+
+### Minor Changes
+
+- 63d45cc: The HTTP API server and the CLI use `logging.level` as `@askdb/config` resolves it, without checking it again (#711). Behavior is unchanged: the config already refuses a level that isn't one of `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` when it loads.
+
+### Patch Changes
+
+- c28c967: Depend on `zod` (`^4.6.7`, the same range as `@askdb/core`), the peer that `ai` and the `@ai-sdk/*` packages require, so Yarn Plug'n'Play can resolve it (#748). `yarn dlx askdb` crashed at startup because these packages install `ai` without providing its `zod`. npm and pnpm already installed `zod` through `@askdb/core`, so they install nothing new.
+- Updated dependencies [63d45cc]
+- Updated dependencies [63d45cc]
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+- Updated dependencies [1c31e95]
+- Updated dependencies [31f90a3]
+- Updated dependencies [ca4af5b]
+- Updated dependencies [31f90a3]
+- Updated dependencies [31f90a3]
+- Updated dependencies [c28c967]
+- Updated dependencies [c28c967]
+  - @askdb/client@1.0.0-beta.11
+  - @askdb/config@1.0.0-beta.17
+  - @askdb/core@1.0.0-beta.48
+  - @askdb/introspect@0.3.0-beta.22
+  - @askdb/mysql@0.1.0-beta.23
+  - @askdb/postgres@0.2.0-beta.24
+  - @askdb/sqlite@0.1.0-beta.23
+  - @askdb/sqlserver@0.1.0-beta.24
+  - @askdb/enrich@0.2.0-beta.19
+  - @askdb/studio@0.2.0-beta.41
+  - @askdb/rag@0.2.0-beta.28
+
+## 1.0.0-beta.47
+
+### Patch Changes
+
+- Updated dependencies [946dee4]
+- Updated dependencies [f183629]
+- Updated dependencies [3d9bc33]
+- Updated dependencies [f4e60a9]
+- Updated dependencies [80c7ddf]
+- Updated dependencies [0a94c6f]
+- Updated dependencies [4f322db]
+- Updated dependencies [4365d4c]
+  - @askdb/ai@0.1.0-beta.10
+  - @askdb/client@1.0.0-beta.10
+  - @askdb/config@1.0.0-beta.16
+  - @askdb/core@1.0.0-beta.47
+  - @askdb/studio@0.2.0-beta.40
+  - @askdb/enrich@0.2.0-beta.18
+  - @askdb/introspect@0.3.0-beta.21
+  - @askdb/mysql@0.1.0-beta.22
+  - @askdb/postgres@0.2.0-beta.23
+  - @askdb/rag@0.2.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.22
+  - @askdb/sqlserver@0.1.0-beta.23
+
 ## 1.0.0-beta.46
 
 ### Minor Changes

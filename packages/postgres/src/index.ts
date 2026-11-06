@@ -1,7 +1,7 @@
 /**
  * `@askdb/postgres` — Postgres integration for AskDB.
  *
- * Bundles three pieces:
+ * Bundles four pieces:
  *   1. **Dialect re-export** — `postgresDialect` re-exports `POSTGRES_DIALECT`
  *      from `@askdb/core` so existing callers continue to work. The NL→SQL
  *      pipeline (prompt, generate, validate) lives in `@askdb/core` and is

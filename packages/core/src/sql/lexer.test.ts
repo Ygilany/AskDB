@@ -5,11 +5,12 @@ import {
   POSTGRES_LEXER,
   SQLITE_LEXER,
   SQLSERVER_LEXER,
+  findPostgresOnlyForms,
   lexSql,
   lexerProfileFor,
   type SqlLexerProfile,
 } from "./lexer.js";
-import { MYSQL_DIALECT, POSTGRES_DIALECT } from "./dialect-spec.js";
+import { COCKROACHDB_DIALECT, MYSQL_DIALECT, POSTGRES_DIALECT, type DialectSpec } from "./dialect-spec.js";
 
 const kinds = (sql: string, profile: SqlLexerProfile): string[] =>
   lexSql(sql, profile).map((t) => `${t.kind}:${t.text}${t.unterminated ? "!" : ""}`);
@@ -104,6 +105,23 @@ describe("lexSql", () => {
   });
 });
 
+describe("lexSql — a `:` before an E'…' string (#703)", () => {
+  it("reads `:E'…'` as `:` and an escape string, not a `:E` placeholder", () => {
+    // A JSON_OBJECT key's or an array slice's `:`; the E-string's \\' doesn't end it.
+    expect(kinds(String.raw`'k':E'a\'b'`, POSTGRES_LEXER)).toEqual(["string:'k'", "punct::", String.raw`string:E'a\'b'`]);
+    expect(kinds("[1:e'2']", POSTGRES_LEXER)).toEqual(["punct:[", "number:1", "punct::", "string:e'2'", "punct:]"]);
+  });
+
+  it("keeps placeholders, and `:E` where there are no E-strings", () => {
+    expect(kinds(":tenant_agency_ids :e1 :E", POSTGRES_LEXER)).toEqual([
+      "parameter::tenant_agency_ids",
+      "parameter::e1",
+      "parameter::E",
+    ]);
+    expect(kinds(":E'a'", MYSQL_LEXER)).toEqual(["parameter::E", "string:'a'"]);
+  });
+});
+
 describe("lexerProfileFor", () => {
   it("maps dialect families and honours backslashEscapes", () => {
     expect(lexerProfileFor(POSTGRES_DIALECT)).toBe(POSTGRES_LEXER);
@@ -111,5 +129,34 @@ describe("lexerProfileFor", () => {
     expect(lexerProfileFor({ ...MYSQL_DIALECT, backslashEscapes: false })?.backslashEscapes).toBe(false);
     expect(lexerProfileFor({ ...MYSQL_DIALECT, backslashEscapes: undefined })?.backslashEscapes).toBe(true);
     expect(lexerProfileFor({ id: "unknown" } as never)).toBeUndefined();
+  });
+});
+
+describe("findPostgresOnlyForms", () => {
+  const custom = (backslashEscapes?: boolean) =>
+    ({ id: "custom-engine", ...(backslashEscapes === undefined ? {} : { backslashEscapes }) }) as unknown as DialectSpec;
+  const name = String.raw`SELECT U&"p\0061ssword" FROM t`;
+  const continued = "SELECT E'a'\n'b'";
+  // The U& name is code only without backslash escapes, where the ' after \ ends the string (plainOnly),
+  // or only with them, where \' is a quote inside it (escapesOnly).
+  const plainOnly = String.raw`SELECT 'a\' , U&"x" --'`;
+  const escapesOnly = String.raw`SELECT 'a\'' , U&"x" --'`;
+
+  it.each<[string, Pick<DialectSpec, "id" | "backslashEscapes"> | undefined, string, string | undefined, string | undefined]>([
+    ["postgres: a U& name", POSTGRES_DIALECT, name, String.raw`U&"p\0061ssword"`, undefined],
+    ["postgres: a continued E-string", POSTGRES_DIALECT, continued, undefined, "E'a'"],
+    ["cockroachdb", COCKROACHDB_DIALECT, name, String.raw`U&"p\0061ssword"`, undefined],
+    ["a custom id", custom(), continued, undefined, "E'a'"],
+    ["no dialect", undefined, name, String.raw`U&"p\0061ssword"`, undefined],
+    ["mysql, which has neither form", MYSQL_DIALECT, `${name}; ${continued}`, undefined, undefined],
+    ["a custom id with backslashEscapes: the plain reading", custom(true), plainOnly, 'U&"x"', undefined],
+    ["a custom id with backslashEscapes: the escapes reading", custom(true), escapesOnly, 'U&"x"', undefined],
+    ["postgres with backslashEscapes reads only with escapes", { ...POSTGRES_DIALECT, backslashEscapes: true }, plainOnly, undefined, undefined],
+  ])("%s", (_label, dialect, sql, unicodeEscapedIdentifier, continuation) => {
+    const forms = findPostgresOnlyForms(sql, dialect);
+    expect({ name: forms.unicodeEscapedIdentifier, continuation: forms.escapeStringContinuation?.text }).toEqual({
+      name: unicodeEscapedIdentifier,
+      continuation,
+    });
   });
 });

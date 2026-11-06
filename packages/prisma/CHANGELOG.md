@@ -1,5 +1,21 @@
 # @askdb/prisma
 
+## 0.2.0-beta.22
+
+### Patch Changes
+
+- 31f90a3: `@askdb/prisma` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: schema reading, enum and schema filtering, and `Unsupported(…)` field detection work as before.
+- c28c967: Declare `ai` as a peer, with the range `@askdb/core` requires (`^6.0.0 || ^7.0.51`), so Yarn Plug'n'Play passes your app's `ai` through to `@askdb/core` (#748). Before, core inside these packages couldn't reach `ai` under Plug'n'Play, and `yarn dlx askdb` crashed at startup. Core already required `ai` when it loads, so npm and pnpm install nothing new, and a host that already meets core's `ai` range meets this one.
+- Updated dependencies [1c31e95]
+- Updated dependencies [c28c967]
+  - @askdb/introspect@0.3.0-beta.22
+
+## 0.2.0-beta.21
+
+### Patch Changes
+
+- @askdb/introspect@0.3.0-beta.21
+
 ## 0.2.0-beta.20
 
 ### Patch Changes

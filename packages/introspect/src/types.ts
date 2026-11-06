@@ -16,7 +16,7 @@ export type SqlNamespace = {
 };
 
 export type SqlTable = {
-  /** "table:<schema>.<name>" (or "table:<name>" in public per Schema v2 ID conventions). */
+  /** "table:<schema>.<name>"; the schema is always included, `public` too (Schema v2 ID conventions). */
   id: string;
   schema: string;
   name: string;
@@ -57,7 +57,7 @@ export type SqlForeignKeyAction =
 
 export type SqlForeignKey = {
   name: string;
-  /** Preserves pg_constraint.conkey order — multi-column FK fix. */
+  /** In the constraint's declared column order (pg_constraint.conkey), so multi-column FKs pair up correctly. */
   columns: string[];
   references: {
     schema: string;
@@ -212,7 +212,7 @@ export type CatalogQueryRunner = (
 
 /**
  * Engine-agnostic introspection connector. Each integration package (`@askdb/postgres`,
- * a future `@askdb/mysql`, `@askdb/prisma`, ...) exports its own connector and its own
+ * `@askdb/mysql`, `@askdb/prisma`, ...) exports its own connector and its own
  * input shape; the introspect orchestrator just hands the input through.
  *
  * `templates()` is optional — integrations like Prisma that read schema files do not have

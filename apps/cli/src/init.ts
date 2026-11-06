@@ -5,7 +5,20 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBuiltinAiProviderSetup, listBuiltinAiProviderSetups } from "@askdb/ai";
 import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "@askdb/config";
-import { renderAskDbAiConfigScaffold, type AskDbScaffoldEnvVar } from "@askdb/config/scaffold";
+import {
+  detectPackageManager,
+  findNearestPackageJsonDir,
+  formatInstallCommand,
+  isLikelyWorkspaceRoot,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+  renderAskDbAiConfigScaffold,
+  supportedBuildApprovals,
+  type AskDbScaffoldEnvVar,
+  type PackageManager,
+} from "@askdb/config/scaffold";
+import { runCommand, type CommandSpec, type Flag } from "./command.js";
+import { showable } from "./error-values.js";
 import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
@@ -62,7 +75,7 @@ export type InitPrompter = {
  * scaffold. Derived from `@askdb/ai`'s `BUILTIN_AI_PROVIDERS` so it cannot drift.
  */
 const AI_PROVIDER_SETUPS = listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS);
-/** Every id `--ai-provider` accepts; `cli.ts` builds its help text from this list too. */
+/** Every id `--ai-provider` accepts; its help line lists them. */
 export const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
 
 function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: string } {
@@ -366,51 +379,10 @@ export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs):
 }
 
 // ---------------------------------------------------------------------------
-// Package manager detection
+// Dependency versions
 // ---------------------------------------------------------------------------
 
 const require = createRequire(import.meta.url);
-
-/** Walk upward from `startDir` to find a directory containing `package.json`. */
-export function findNearestPackageJsonDir(startDir: string): string | undefined {
-  let dir = resolve(startDir);
-  for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-  return undefined;
-}
-
-/** Monorepo / workspace root — avoid mutating root `package.json` from `askdb init`. */
-export function isLikelyWorkspaceRoot(packageDir: string): boolean {
-  if (existsSync(join(packageDir, "pnpm-workspace.yaml")) || existsSync(join(packageDir, "pnpm-workspace.yml"))) {
-    return true;
-  }
-  try {
-    const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as { workspaces?: unknown };
-    return pkg.workspaces !== undefined && pkg.workspaces !== null;
-  } catch {
-    return false;
-  }
-}
-
-export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
-
-export function detectPackageManager(packageDir: string): PackageManager {
-  let dir = packageDir;
-  for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
-    if (existsSync(join(dir, "bun.lockb")) || existsSync(join(dir, "bun.lock"))) return "bun";
-    if (existsSync(join(dir, "yarn.lock"))) return "yarn";
-    if (existsSync(join(dir, "package-lock.json"))) return "npm";
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return "npm";
-}
 
 /**
  * The versions `askdb init` installs: `@askdb/config` and `@askdb/prisma` at the versions
@@ -451,53 +423,9 @@ type InstallFn = (pm: PackageManager, packageDir: string, packages: string[], al
 
 function defaultInstaller(pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]): boolean {
   const env = { ...process.env, CI: process.env.CI ?? "true" };
-  const win = process.platform === "win32";
-  const cmd = win ? { pnpm: "pnpm.CMD", yarn: "yarn.cmd", bun: "bun.exe", npm: "npm.cmd" }[pm] : pm;
-  const r = spawnSync(cmd, installArgs(pm, packages, allowBuilds), { cwd: packageDir, stdio: "inherit", env, shell: false });
+  const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages, allowBuilds));
+  const r = spawnSync(command, args, { cwd: packageDir, stdio: "inherit", env, shell });
   return r.status === 0;
-}
-
-function formatManualInstallCommand(pm: PackageManager, packages: string[], allowBuilds: string[]): string {
-  return [pm, ...installArgs(pm, packages, allowBuilds)].join(" ");
-}
-
-/**
- * The build approvals to pass `pm` in `packageDir`: `allowBuilds`, or none for a pnpm older
- * than 10.4.0, whose `add` rejects `--allow-build` (pnpm 9 runs install scripts, and 10.0 to
- * 10.3 skip unapproved ones without failing). A pnpm whose version can't be read keeps them.
- * Studio's setup applies the same rule (`apps/studio/src/package-manager.ts`).
- */
-function supportedBuildApprovals(pm: PackageManager, packageDir: string, allowBuilds: string[]): string[] {
-  if (pm !== "pnpm" || allowBuilds.length === 0) return allowBuilds;
-  const version = spawnSync("pnpm", ["--version"], {
-    cwd: packageDir,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    // Windows runs pnpm through its `.cmd` shim, which needs a shell; the arguments are fixed.
-    shell: process.platform === "win32",
-    timeout: 15_000,
-  });
-  const match = version.status === 0 ? /^(\d+)\.(\d+)\./.exec(version.stdout.trim()) : null;
-  if (!match) return allowBuilds;
-  const [major, minor] = [Number(match[1]), Number(match[2])];
-  return major > 10 || (major === 10 && minor >= 4) ? allowBuilds : [];
-}
-
-/**
- * The add command's arguments. Build approvals apply to pnpm only: npm and Yarn run install
- * scripts, and Bun skips untrusted ones without failing. Mirrors Studio's
- * `packageManagerAddArgs` (`apps/studio/src/package-manager.ts`); change both together.
- */
-function installArgs(pm: PackageManager, packages: string[], allowBuilds: string[]): string[] {
-  switch (pm) {
-    case "pnpm":
-      return ["add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...packages];
-    case "yarn":
-    case "bun":
-      return ["add", ...packages];
-    default:
-      return ["install", "--save", ...packages];
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -528,134 +456,151 @@ type InitOptions = {
 const VALID_DATABASES = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
 const VALID_RAG_STORES = ["file", "memory", "pgvector"] as const;
 
-function parseOptions(argv: readonly string[]): InitOptions {
-  const opts: InitOptions = {
-    force: false,
-    path: DEFAULT_CONFIG_PATH,
-    skipInstall: false,
-    yes: false,
-    interactive: undefined,
-    noInteractive: false,
+/** A flag that takes one of `allowed`; the error repeats a bad value only when it's `showable`. */
+function oneOf<T extends string>(flag: string, allowed: readonly T[], value: string): T {
+  if ((allowed as readonly string[]).includes(value)) return value as T;
+  const got = showable(value) ? ` "${value}"` : "";
+  throw new Error(`${flag}: invalid value${got}. Allowed: ${allowed.join(", ")}.`);
+}
+
+/** Every flag `askdb init` accepts, for the parser and the help. */
+const INIT_FLAGS: readonly Flag<InitOptions>[] = [
+  { names: ["-y", "--yes"], help: "Accept defaults without prompts.", apply: (opts) => (opts.yes = true) },
+  {
+    names: ["--interactive"],
+    help: "Force wizard mode; errors if stdin/stdout are not TTYs.",
+    apply: (opts) => (opts.interactive = true),
+  },
+  { names: ["--no-interactive"], help: "Never prompt; use defaults or flags.", apply: (opts) => (opts.noInteractive = true) },
+  {
+    names: ["--path"],
+    value: "<file>",
+    help: `Write the config to this path. Default: ${DEFAULT_CONFIG_PATH}.`,
+    apply: (opts, value) => (opts.path = value),
+  },
+  { names: ["-f", "--force"], help: "Overwrite an existing file.", apply: (opts) => (opts.force = true) },
+  {
+    names: ["--skip-install"],
+    help: "Only write the file; do not install packages.",
+    apply: (opts) => (opts.skipInstall = true),
+  },
+  {
+    names: ["--database"],
+    value: "<db>",
+    group: "Database options",
+    help: `${VALID_DATABASES.join("|")} (default: postgres)`,
+    apply: (opts, value) => (opts.database = oneOf("--database", VALID_DATABASES, value)),
+  },
+  {
+    names: ["--connection-env"],
+    value: "<name>",
+    group: "Database options",
+    help: "Env var name for connection URL",
+    apply: (opts, value) => (opts.connectionEnv = value),
+  },
+  {
+    names: ["--sqlite-file"],
+    value: "<path-or-env>",
+    group: "Database options",
+    help: "SQLite file path, or an UPPER_SNAKE_CASE env var name",
+    apply: (opts, value) => (opts.sqliteFile = value),
+  },
+  {
+    names: ["--prisma-schema"],
+    value: "<path>",
+    group: "Database options",
+    help: "Path to schema.prisma",
+    apply: (opts, value) => (opts.prismaSchema = value),
+  },
+  {
+    names: ["--schema-out"],
+    value: "<dir>",
+    group: "Database options",
+    help: "Schema output directory (default: ./askdb)",
+    apply: (opts, value) => (opts.schemaOut = value),
+  },
+  {
+    names: ["--ai-provider"],
+    value: "<name>",
+    group: "AI options",
+    help: `${VALID_AI_PROVIDERS.join("|")} (default: openai)`,
+    apply: (opts, value) => (opts.aiProvider = oneOf("--ai-provider", VALID_AI_PROVIDERS, value)),
+  },
+  {
+    names: ["--ai-key-env"],
+    value: "<name>",
+    group: "AI options",
+    help: "Env var name for API key",
+    apply: (opts, value) => (opts.aiKeyEnv = value),
+  },
+  {
+    names: ["--ai-model-env"],
+    value: "<name>",
+    group: "AI options",
+    help: "Env var name for model override",
+    apply: (opts, value) => (opts.aiModelEnv = value),
+  },
+  {
+    names: ["--rag-store"],
+    value: "<name>",
+    group: "RAG options",
+    help: `${VALID_RAG_STORES.join("|")} (default: file)`,
+    apply: (opts, value) => (opts.ragStore = oneOf("--rag-store", VALID_RAG_STORES, value)),
+  },
+  {
+    names: ["--pgvector-env"],
+    value: "<name>",
+    group: "RAG options",
+    help: "Env var name for pgvector URL",
+    apply: (opts, value) => (opts.pgvectorEnv = value),
+  },
+  {
+    names: ["--studio-execute"],
+    group: "Studio options",
+    help: "Enable Studio execute (default: off)",
+    apply: (opts) => (opts.studioExecute = true),
+  },
+  {
+    names: ["--no-studio-execute"],
+    group: "Studio options",
+    help: "Disable Studio execute",
+    apply: (opts) => (opts.studioExecute = false),
+  },
+];
+
+/** `askdb init`, installing packages with `installer`. It never reads askdb.config. */
+export function initCommand(installer: InstallFn = defaultInstaller): CommandSpec<InitOptions> {
+  return {
+    name: "init",
+    summary: "Create askdb.config.ts tailored to your database and AI provider",
+    usage: [
+      "askdb init                    Start wizard in a TTY, or use defaults in CI",
+      "askdb init --yes              Accept defaults without prompts",
+      "askdb init --no-interactive   Same as --yes",
+      "askdb init --force            Overwrite an existing askdb.config.ts",
+      "askdb init --path <file>      Write config to a custom file path",
+      "askdb init --skip-install     Only write the file; do not install packages",
+    ],
+    flags: INIT_FLAGS,
+    initial: () => ({
+      force: false,
+      path: DEFAULT_CONFIG_PATH,
+      skipInstall: false,
+      yes: false,
+      interactive: undefined,
+      noInteractive: false,
+    }),
+    check(opts) {
+      if (opts.yes && opts.interactive) {
+        throw new Error("--yes and --interactive cannot be used together.");
+      }
+      if (opts.interactive && opts.noInteractive) {
+        throw new Error("--interactive and --no-interactive cannot be used together.");
+      }
+    },
+    needsConfig: () => false,
+    run: (opts) => runInit(opts, installer),
   };
-
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i]!;
-    switch (arg) {
-      case "--force":
-      case "-f":
-        opts.force = true;
-        break;
-      case "--skip-install":
-        opts.skipInstall = true;
-        break;
-      case "--yes":
-      case "-y":
-        opts.yes = true;
-        break;
-      case "--interactive":
-        opts.interactive = true;
-        break;
-      case "--no-interactive":
-        opts.noInteractive = true;
-        break;
-      case "--studio-execute":
-        opts.studioExecute = true;
-        break;
-      case "--no-studio-execute":
-        opts.studioExecute = false;
-        break;
-      case "--path": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.path = value;
-        break;
-      }
-      case "--database": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        if (!VALID_DATABASES.includes(value as InitAnswers["database"])) {
-          throw new Error(`${arg}: invalid value "${value}". Allowed: ${VALID_DATABASES.join(", ")}.`);
-        }
-        opts.database = value as InitAnswers["database"];
-        break;
-      }
-      case "--connection-env": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.connectionEnv = value;
-        break;
-      }
-      case "--sqlite-file": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.sqliteFile = value;
-        break;
-      }
-      case "--prisma-schema": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.prismaSchema = value;
-        break;
-      }
-      case "--schema-out": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.schemaOut = value;
-        break;
-      }
-      case "--ai-provider": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        if (!VALID_AI_PROVIDERS.includes(value as InitAnswers["aiProvider"])) {
-          throw new Error(`${arg}: invalid value "${value}". Allowed: ${VALID_AI_PROVIDERS.join(", ")}.`);
-        }
-        opts.aiProvider = value as InitAnswers["aiProvider"];
-        break;
-      }
-      case "--ai-key-env": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.aiKeyEnv = value;
-        break;
-      }
-      case "--ai-model-env": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.aiModelEnv = value;
-        break;
-      }
-      case "--rag-store": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        if (!VALID_RAG_STORES.includes(value as InitAnswers["ragStore"])) {
-          throw new Error(`${arg}: invalid value "${value}". Allowed: ${VALID_RAG_STORES.join(", ")}.`);
-        }
-        opts.ragStore = value as InitAnswers["ragStore"];
-        break;
-      }
-      case "--pgvector-env": {
-        const value = argv[++i];
-        if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value.`);
-        opts.pgvectorEnv = value;
-        break;
-      }
-      case "--help":
-      case "-h":
-        opts.path = "--help";
-        return opts;
-      default:
-        throw new Error(`Unknown option: ${arg}`);
-    }
-  }
-
-  // Conflict checks
-  if (opts.yes && opts.interactive) {
-    throw new Error("--yes and --interactive cannot be used together.");
-  }
-  if (opts.interactive && opts.noInteractive) {
-    throw new Error("--interactive and --no-interactive cannot be used together.");
-  }
-  return opts;
 }
 
 // ---------------------------------------------------------------------------
@@ -924,26 +869,11 @@ function printNextSteps(answers: InitAnswers): void {
 // Main entry point
 // ---------------------------------------------------------------------------
 
-export async function runInitCli(
-  argv: readonly string[],
-  _installer?: InstallFn,
-): Promise<number> {
-  const installer = _installer ?? defaultInstaller;
+export async function runInitCli(argv: readonly string[], installer?: InstallFn): Promise<number> {
+  return runCommand(initCommand(installer), argv);
+}
 
-  let opts: InitOptions;
-  try {
-    opts = parseOptions(argv);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    process.stderr.write(`${msg}\n`);
-    return 1;
-  }
-
-  if (opts.path === "--help") {
-    printHelp();
-    return 0;
-  }
-
+async function runInit(opts: InitOptions, installer: InstallFn): Promise<number> {
   const configTarget = resolve(process.cwd(), opts.path);
 
   if (existsSync(configTarget) && !opts.force) {
@@ -1075,28 +1005,33 @@ async function finishInit(
     const specs = resolveInitDepSpecs();
     const plan = buildInitInstallPlan(answers, specs);
 
+    // The manager comes from the project's lockfile or package.json, else from whoever
+    // ran init (`pnpm dlx`, `npx`, …); with no package.json, from the current directory.
+    const pmDir = pkgRoot ?? process.cwd();
+    const pm = detectPackageManager(pmDir);
+    const approvedBuilds = supportedBuildApprovals(pm, pmDir, plan.allowBuilds);
+    const installCommand = formatInstallCommand(pm, plan.packages, approvedBuilds);
+
     if (!pkgRoot) {
       process.stdout.write(
         "\nNo package.json found in this directory or any parent directory.\n" +
           "Install the template imports yourself (from a project with a package.json):\n" +
-          `  npm install --save ${plan.packages.join(" ")}\n\n`,
+          `  ${installCommand}\n\n`,
       );
     } else if (isLikelyWorkspaceRoot(pkgRoot)) {
       process.stdout.write(
         "\nSkipped automatic dependency install (workspace / monorepo root).\n" +
           "Add these to the package that will load this config (or run `askdb init` from that package directory):\n" +
-          `  npm install --save ${plan.packages.join(" ")}\n\n`,
+          `  ${installCommand}\n\n`,
       );
     } else {
-      const pm = detectPackageManager(pkgRoot);
-      const approvedBuilds = supportedBuildApprovals(pm, pkgRoot, plan.allowBuilds);
       process.stdout.write(`\nInstalling dependencies with ${pm} in ${pkgRoot} …\n`);
       const ok = installer(pm, pkgRoot, plan.packages, approvedBuilds);
       if (!ok) {
         process.stderr.write(
           "Dependency install failed. The config file was written, but packages are not installed yet.\n" +
             `  cd ${pkgRoot}\n` +
-            `  ${formatManualInstallCommand(pm, plan.packages, approvedBuilds)}\n`,
+            `  ${installCommand}\n`,
         );
         return 1;
       }
@@ -1106,41 +1041,4 @@ async function finishInit(
 
   printNextSteps(answers);
   return 0;
-}
-
-function printHelp(): void {
-  process.stdout.write(
-    [
-      "askdb init - Create askdb.config.ts tailored to your database and AI provider",
-      "",
-      "Usage:",
-      "  askdb init                    Start wizard in a TTY, or use defaults in CI",
-      "  askdb init --yes              Accept defaults without prompts",
-      "  askdb init --no-interactive   Same as --yes",
-      "  askdb init --force            Overwrite an existing askdb.config.ts",
-      "  askdb init --path <file>      Write config to a custom file path",
-      "  askdb init --skip-install     Only write the file; do not install packages",
-      "",
-      "Database options:",
-      "  --database <db>               postgres|mysql|sqlite|sqlserver|prisma (default: postgres)",
-      "  --connection-env <name>       Env var name for connection URL",
-      "  --sqlite-file <path-or-env>   SQLite file path, or an UPPER_SNAKE_CASE env var name",
-      "  --prisma-schema <path>        Path to schema.prisma",
-      "  --schema-out <dir>            Schema output directory (default: ./askdb)",
-      "",
-      "AI options:",
-      `  --ai-provider <name>          ${VALID_AI_PROVIDERS.join("|")} (default: openai)`,
-      "  --ai-key-env <name>           Env var name for API key",
-      "  --ai-model-env <name>         Env var name for model override",
-      "",
-      "RAG options:",
-      "  --rag-store <name>            file|memory|pgvector (default: file)",
-      "  --pgvector-env <name>         Env var name for pgvector URL",
-      "",
-      "Studio options:",
-      "  --studio-execute              Enable Studio execute (default: off)",
-      "  --no-studio-execute           Disable Studio execute",
-      "",
-    ].join("\n"),
-  );
 }

@@ -15,7 +15,6 @@ import {
 import {
   ASKDB_MODES_V1,
   AskDbLogEvent,
-  type AskDbLogLevel,
   type AskDbModeV1,
   SensitiveReferenceError,
   SqlGenerationError,
@@ -36,7 +35,7 @@ export type AskDbHttpServerOptions = {
   port?: number;
   /** Bind address. Precedence: this option → `httpApi.listen.host` config → 127.0.0.1. */
   host?: string;
-  /** Server-default schema artifact path. Precedence: this option → `host.schemaPath` config → `ASKDB_SCHEMA_PATH` env. */
+  /** Server-default schema artifact path. Precedence: this option → `host.schemaJson`, then `host.schemaPath`, in config. */
   schemaPath?: string;
   /** Default: 1 MiB */
   maxBodyBytes?: number;
@@ -49,22 +48,6 @@ class RequestBodyTooLargeError extends Error {
     super(`request body exceeds ${limitBytes} bytes`);
     this.name = "RequestBodyTooLargeError";
   }
-}
-
-function resolveAskDbLogLevelFromRt(rt: ReturnType<typeof getAskDbRuntimeConfig>): AskDbLogLevel {
-  const env = rt.logging.level?.toLowerCase();
-  if (
-    env === "trace" ||
-    env === "debug" ||
-    env === "info" ||
-    env === "warn" ||
-    env === "error" ||
-    env === "fatal" ||
-    env === "silent"
-  ) {
-    return env;
-  }
-  return "info";
 }
 
 async function readJsonBody<T>(req: IncomingMessage, maxBodyBytes: number): Promise<T> {
@@ -152,8 +135,9 @@ function causeMessage(e: unknown): string | undefined {
  * Map an error from `askdb.ask()` to an HTTP status + client-safe body. Classification is by
  * error type only. Messages from the model provider are never returned to the client (they
  * can echo request details or credential fragments); unknown errors get a generic message.
+ *
+ * @internal Exported for unit tests; not re-exported from the package entry point.
  */
-/** @internal Exported for unit tests; not re-exported from the package entry point. */
 export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: number }): MappedError {
   if (isErrorOf(e, SqlGenerationError)) {
     return {
@@ -277,7 +261,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
 
     const logger = createAskDbLogger({
       correlationId,
-      level: resolveAskDbLogLevelFromRt(rt),
+      level: rt.logging.level ?? "info",
       logFile: rt.logging.logFile,
       logStdout: rt.logging.logStdout,
     });
@@ -329,8 +313,9 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       return;
     }
 
-    // Strictly boolean (`null` counts as absent): `Boolean(...)` used to read a string or
-    // number as `true`, and ignoring one would silently send sensitive identifiers to the model.
+    // Strictly boolean (`null` counts as absent): a string or number is refused rather than
+    // ignored, because ignoring `omitSensitiveFromPrompt` would silently send sensitive
+    // identifiers to the model.
     for (const field of ["omitSensitiveFromPrompt", "explain"] as const) {
       const value: unknown = body[field];
       if (value !== undefined && value !== null && typeof value !== "boolean") {
@@ -358,14 +343,10 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
     }
 
-    // Build the facade once per server instance (lazily on first request so
-    // it captures the stable runtime config).
     if (!askdb) {
       askdb = createAskDb({
         config: rt,
         registry: ai,
-        // When the caller supplied a schemaPath option, it takes precedence
-        // over host.schemaPath / ASKDB_SCHEMA_PATH in config.
         schema: optionSchemaPath ? { path: optionSchemaPath } : undefined,
         unknownDialect: "fallback-postgres",
       });
@@ -401,6 +382,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       return;
     } catch (e) {
       const mapped = mapAskError(e, { timedOut: abortSignal.aborted, timeoutMs });
+      const cause = causeMessage(e);
       // Always log the full error server-side; the client only sees `mapped.error`.
       logger.error(
         {
@@ -409,7 +391,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
           code: mapped.error.code,
           errName: e instanceof Error ? e.name : typeof e,
           errMessage: e instanceof Error ? e.message : String(e),
-          ...(causeMessage(e) !== undefined ? { causeMessage: causeMessage(e) } : {}),
+          ...(cause !== undefined ? { causeMessage: cause } : {}),
           ...(mapped.status >= 500 && e instanceof Error && e.stack ? { errStack: e.stack } : {}),
         },
         "askdb http run error",

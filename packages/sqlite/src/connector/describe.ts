@@ -208,7 +208,6 @@ function foldSqliteResult(input: FoldInput): IntrospectionResult {
     // so sort by it to get the composite-PK order right.
     const pkColumns = cols
       .filter((c) => c.pk > 0)
-      .slice()
       .sort((a, b) => a.pk - b.pk)
       .map((c) => c.column_name);
     const pkSet = new Set(pkColumns);

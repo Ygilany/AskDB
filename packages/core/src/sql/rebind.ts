@@ -13,8 +13,7 @@ import {
   type RenderedQuery,
 } from "./bind.js";
 import { BUILT_IN_DIALECTS, isBuiltInDialectId, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
-import { decide, throwIfDenied } from "./guardrail-decide.js";
-import { evaluateGuardrails, guardrailPlan } from "./guardrails.js";
+import { enforceGuardrails } from "./guardrails.js";
 import type { SensitiveGuardrailMode } from "./sensitive-guardrail.js";
 import {
   assertTenantSqlMode,
@@ -141,24 +140,15 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
       throw unexpandedSubtreeError(scope.access.tenantRoot, "bindPreparedQuery()");
     }
   }
-  const { checks, modes } = guardrailPlan("rebind", {
+  const { verdict } = enforceGuardrails({
+    path: "rebind",
+    forms: { template: prepared.namedSql },
     dialect: spec,
     schema,
-    tenantPolicy: policy,
+    ...(policy && scope ? { tenant: { policy, scope } } : {}),
     sensitiveGuardrailMode: guardrails.sensitiveGuardrailMode,
     acceptWarnings: guardrails.acceptWarnings,
   });
-  const findings = evaluateGuardrails(
-    {
-      forms: { template: prepared.namedSql },
-      dialect: spec,
-      schema,
-      ...(policy && scope ? { tenant: { policy, scope } } : {}),
-    },
-    checks,
-  );
-  const verdict = decide(findings, modes, "rebind");
-  throwIfDenied(verdict, modes, "rebind");
 
   // A placeholder nothing can render: any one without a policy, or one in another casing.
   // Refused after the decision, as `ask()` refuses it in tenant substitution, so a `deny`

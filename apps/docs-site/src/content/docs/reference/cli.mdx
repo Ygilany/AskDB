@@ -73,10 +73,12 @@ To introspect a Prisma schema file, also install `@askdb/prisma`, in the same pl
 
 | Flag | Description |
 | --- | --- |
-| `-h, --help` | Print usage. `init`, `ask`, `introspect`, `studio`, and `rag` also take `--help` for their own flags (for example `askdb ask --help`). |
+| `-h, --help` | Print usage and the list of commands. Every command also takes `--help` for its own flags (for example `askdb ask --help`), and `askdb help <command>` prints the same text. |
 | `-V, --version` | Print the installed `askdb` version. |
 
-Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, `introspect --help`, `introspect templates`, `rag --help`, `rag --version`, and [`studio`](#askdb-studio).
+Every command except `studio` and its alias `enrich` takes a flag's value as `--flag value` or `--flag=value`, and prints its help on stdout and exits `0` for `--help` (or `-h`), wherever it appears on the line.
+
+Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, any command's `--help` and `--version`, `introspect templates`, `rag` with no arguments (it prints help), and [`studio`](#askdb-studio).
 
 `ask`, `introspect`, and the `rag` commands need `askdb.config.*` (or `.config/askdb.*`) in the current directory. Without one they print ``No askdb.config.* or .config/askdb.* found in <cwd>. Run `npx askdb init` to create one.`` and exit `1`.
 
@@ -85,6 +87,15 @@ Commands that don't read the config work in any directory, including one with no
 ### `askdb init`
 
 Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, and with pnpm 10.4 or later it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`). Older pnpm has no `--allow-build`, so it installs without it.
+
+`init` installs into the current directory if it has a `package.json`, or else into the nearest directory above it that has one. It picks the package manager from the first of these that names one:
+
+1. A lockfile in that directory or a parent: `pnpm-lock.yaml`, `bun.lock` or `bun.lockb`, `yarn.lock`, then `package-lock.json`. An existing lockfile always wins.
+2. The nearest `package.json` that declares a manager: its `packageManager` field (`pnpm@11.28.10`), then `devEngines.packageManager` (`pnpm init` writes it).
+3. The tool that ran `init`: `pnpm dlx`, `yarn dlx`, `npx` or `bunx` (from `npm_config_user_agent`).
+4. npm.
+
+`init` doesn't install at a workspace root, or when it finds no `package.json`. Then, or when the install fails, it prints the command to run yourself, for the package manager it picked and with the `@prisma/engines` approval when it applies, for example `pnpm add --allow-build=@prisma/engines @askdb/config@<version> @askdb/prisma@<version>`.
 
 ```bash
 npx askdb@latest init          # wizard in a terminal
@@ -106,8 +117,8 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` |
-| `--connection-env <name>` | Env var name for the connection URL. |
+| `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` (default `postgres`) |
+| `--connection-env <name>` | Env var name for the connection URL (default `DATABASE_URL`; not used with `sqlite`, which reads `--sqlite-file`). |
 | `--sqlite-file <path-or-env>` | SQLite file path, or an env var name (`UPPER_SNAKE_CASE`, e.g. `SQLITE_FILE`) to read the path from. Anything else, such as `data.db` or `../db/app.db`, is written as a literal path. |
 | `--prisma-schema <path>` | Path to `schema.prisma`. |
 | `--schema-out <dir>` | Schema output directory (default `./askdb`). |
@@ -116,11 +127,13 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` |
+| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` (default `openai`) |
 | `--ai-key-env <name>` | Env var name for the API key. |
 | `--ai-model-env <name>` | Env var name for the model override. The generated config reads it into `ai.language.model`. |
 
 **RAG flags**
+
+Experimental, like the `rag` block they write: a minor release of `askdb` may change them ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 | Flag | Description |
 | --- | --- |
@@ -128,6 +141,8 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | `--pgvector-env <name>` | Env var name for the pgvector connection URL. |
 
 **Studio flags**
+
+Experimental, like the `studio` block they write: a minor release of `askdb` may change them ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 | Flag | Description |
 | --- | --- |
@@ -155,7 +170,7 @@ askdb introspect \
 | `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. The directory holds a `manifest.json` and the result of each query that [`askdb introspect templates`](#askdb-introspect-templates) prints. |
 | `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. If `schema.json` there is a symbolic link, the command fails instead of writing to the file the link points at; replace the link with a regular file. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. Default: the name of the `--out` or `--diff` directory without a `.schema` suffix (`./my-app.schema` gives `my-app`), else `introspected`. |
-| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. |
+| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. Without either, Postgres and SQL Server read every non-system schema, and MySQL and MariaDB read the database in the connection URL. |
 | `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
 | `--tables <list>` | Comma-separated table patterns to include, matched against `<schema>.<table>`: `*` matches any run of characters, including dots, and `?` matches one character. Write `public.orders` or `*.orders`, not `orders`, which matches no table. A pattern that matches nothing emits an `askdb.introspect.warning` log event (see `-v`). Repeatable — values accumulate. |
 | `--print` | Print the introspection result without writing. |
@@ -186,6 +201,8 @@ Prints the SQL queries that `--from-export` reads the results of, each headed by
 
 ### `askdb enrich`
 
+Experimental: a minor release of `askdb` may change this command ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
+
 Alias of [`askdb studio`](#askdb-studio): opens Studio for authoring per-table descriptions, aliases, concepts, and sensitive markers. It takes the same flags as `askdb studio`: `-s, --schema`, `--port` and `--host`.
 
 ```bash
@@ -193,6 +210,8 @@ askdb enrich --schema ./my-app.schema --port 5600
 ```
 
 ### `askdb studio`
+
+Experimental: Studio stays 0.x, so a minor release of `askdb` may change this command ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 Launches Studio — the browser-based authoring UI — pointed at your schema artifact.
 
@@ -205,6 +224,7 @@ askdb studio --schema ./my-app.schema
 | `-s, --schema <path>` | Path to the schema artifact. |
 | `--port <n>` | Override the listen port (default `5556`; or set `studio.listen.port` in config). |
 | `--host <host>` | Override the bind host (default `127.0.0.1`; or set `studio.listen.host` in config). |
+| `-V, --version` | Print the installed `@askdb/studio` version. |
 
 Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio schema browsing, enrichment, and SQL generation do not require a database driver; the optional Playground execute path requires the matching driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). `askdb init --studio-execute` installs the correct driver automatically.
 
@@ -213,6 +233,14 @@ Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio sc
 If `askdb.config.*` exists but fails to load (a syntax error, or its dependencies aren't installed yet), Studio prints a warning with the load error and starts without the config. The setup wizard never overwrites an existing config file; fix it and restart Studio.
 
 ### `askdb bundle`
+
+Experimental: a minor release of `askdb` may change this command ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
+
+```
+askdb bundle <schema-dir> --out <bundle.json>
+```
+
+Both are required. Without either, `bundle` prints that usage line on stderr and exits `1`. `askdb bundle --help` prints its help on stdout and exits `0`.
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
@@ -270,11 +298,13 @@ You never pass a SQL dialect. It resolves from `dialect` in `askdb.config.ts` wh
 | --- | --- |
 | `-v, --verbose` | Emit structured JSON log events (level `info`) to stderr. |
 | `--log-level <level>` | `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`. Default reads `logging.level` from `askdb.config.ts`. |
-| `--log-file <path>` | Append structured JSON logs to a file. |
-| `--log-stdout` | Mirror structured JSON logs to stdout. |
-| `--correlation-id <id>` | Tag every log event with a correlation ID of your choosing. |
+| `--log-file <path>` | Append structured JSON logs to a file. Default reads `logging.logFile`. |
+| `--log-stdout` | Mirror structured JSON logs to stdout. Default reads `logging.logStdout`. |
+| `--correlation-id <id>` | Tag every log event with a correlation ID of your choosing. Default reads `logging.correlationId`, else a new UUID. |
 
 ## `askdb rag`
+
+Experimental: `@askdb/rag` stays 0.x, so a minor release of `askdb` may change these commands ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-large-schemas/), with three commands: `setup-store`, `index`, and `query`.
 
@@ -282,7 +312,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 
 ### Config and flags
 
-`askdb rag --help` and `askdb rag --version` work without a config. The commands read `askdb.config.*`, and a flag overrides the setting it falls back to. A flag takes its value as `--flag value` or `--flag=value`.
+`askdb rag --help` and `askdb rag --version` work without a config. The commands read `askdb.config.*`, and a flag overrides the setting it falls back to.
 
 | Flag | Falls back to |
 | --- | --- |
@@ -380,9 +410,9 @@ Stdout is one JSON object: `question`, `k`, and `results`, best match first. Eac
 | `0` | Success, including `--help` and `--version`. |
 | `1` | Any error: invalid arguments, a missing or broken config, IO, generation, or a guardrail. |
 
-Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command, and `askdb bundle` without both of its arguments (`--help` included), print their usage to stderr and exit `1`.
+Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command prints its usage to stderr and exits `1`.
 
-Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging).
+Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line.
 
 An unexpected error, such as a config file that fails to load, prints its message and the hint `Set ASKDB_DEBUG=1 to print the stack trace.` Set `ASKDB_DEBUG` to `1` or `true` to add the stack trace. Any other value, including `0`, leaves it off, and the `DEBUG` variable used by the `debug` package has no effect.
 

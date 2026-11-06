@@ -18,16 +18,8 @@ import {
   isBuiltInDialectId,
 } from "./sql/dialect-spec.js";
 import { generateSelectSqlForAsk } from "./sql/generate.js";
-import {
-  decide,
-  sensitiveGuardrailResult,
-  tenantFindings,
-  tenantGuardrailResult,
-  throwIfDenied,
-} from "./sql/guardrail-decide.js";
-import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./sql/guardrails.js";
+import { enforceGuardrails } from "./sql/guardrails.js";
 import { bindTenantIntoUnboundSql } from "./sql/rebind.js";
-import type { TenantGuardrailResult } from "./sql/tenant-guardrail.js";
 import {
   assertTenantSqlMode,
   DEFAULT_TENANT_SQL_MODE,
@@ -49,7 +41,6 @@ import {
 import {
   TenantScopeError,
   UnknownDialectError,
-  type GuardrailFinding,
   type GuardrailVerdict,
 } from "./errors.js";
 import {
@@ -236,7 +227,7 @@ export type AskPipelineOptions = {
    */
   tenantScope?: TenantScope;
   /**
-   * SQL output mode for tenant placeholders. Default `"sql-params"`
+   * SQL output mode for tenant placeholders in `sql`. Default `"sql-params"`
    * ({@link DEFAULT_TENANT_SQL_MODE}) replaces them with the dialect's driver
    * markers (`$N` for Postgres/CockroachDB, `?` for MySQL/MariaDB/SQLite, `@pN` for
    * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
@@ -246,7 +237,8 @@ export type AskPipelineOptions = {
    * (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it does on every dialect for
    * a value that is neither `"sql-params"` nor `"sql-only"`.
    * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
-   * parameters (a tool that takes one SQL string); it throws `TenantScopeError`
+   * parameters (a tool that takes one SQL string); `unboundSql` still binds them, in
+   * every mode. It throws `TenantScopeError`
    * (`UNESCAPABLE_TENANT_ID`) for a tenant ID that isn't printable ASCII or that
    * contains a backslash.
    */
@@ -297,14 +289,14 @@ export type AskPipelineResult = {
    */
   sql: string;
   /**
-   * Driver markers for every value (business and, in `"sql-params"` mode, tenant).
+   * Driver markers for every value, business and tenant, whatever `tenantSqlMode` is.
    * Execute with `params` — never with `tenantParams`.
    */
   unboundSql?: string;
   /**
    * Values for `unboundSql`, in driver-marker order (array slots on
-   * Postgres/CockroachDB listBinding). In `"sql-params"` mode this already
-   * includes the tenant values — for `?` dialects interleaved in source order,
+   * Postgres/CockroachDB listBinding). With a tenant scope this already
+   * includes the tenant values, in either `tenantSqlMode` — for `?` dialects interleaved in source order,
    * otherwise after the business values. Do not concatenate `tenantParams`.
    */
   params?: QueryParamSlot[];
@@ -418,55 +410,29 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // The guardrails run on the model's forms before AskDB renders them (ADR 0010): its
   // bound `sql` and its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders
   // still in place. Rendering below only swaps placeholders for literals or driver
-  // markers, so one check covers every tenantSqlMode, dialect and output form. A custom
-  // AskDialect (no DialectSpec) gets no read-only check: it may target non-SELECT SQL.
+  // markers, so one check covers every tenantSqlMode, dialect and output form. A deny
+  // throws here, after logging pipeline.failed.
   const tenant = tenantPolicy && tenantScope ? { policy: tenantPolicy, scope: tenantScope } : undefined;
-  const { checks, modes } = guardrailPlan("ask", {
+  const enforced = enforceGuardrails({
+    path: "ask",
+    forms: {
+      sql: generated.sql,
+      ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
+    },
     dialect: dialectSpec,
     schema: options.schema,
-    tenantPolicy: tenant?.policy,
+    ...(tenant ? { tenant } : {}),
     sensitiveGuardrailMode: options.sensitiveGuardrailMode,
+    generatorTenantGuardrail: generated.tenantGuardrail,
+    logger,
   });
-  const runSensitive = checks.includes("sensitive");
-  const findings = evaluateGuardrails(
-    {
-      forms: {
-        sql: generated.sql,
-        ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
-      },
-      dialect: dialectSpec,
-      schema: options.schema,
-      ...(tenant ? { tenant } : {}),
-    },
-    checks,
-  );
-  if (tenant) findings.push(...generatorFindings(generated.tenantGuardrail));
-  const verdict = decide(findings, modes, "return");
-  logGuardrailVerdict(logger, verdict, { tenantPolicy, sensitiveChecked: runSensitive });
-  try {
-    throwIfDenied(verdict, modes, "return");
-  } catch (e) {
-    // A denied run ends in pipeline.failed, as generateSelectSql() logs it (and as a
-    // read-only failure was logged when that check ran inside generation).
-    logger?.error(
-      { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: (e as Error).message },
-      "nl-to-sql generate failed",
-    );
-    throw e;
-  }
 
   // result.sql is always the model's bound SQL (possibly with tenant literals/
   // markers applied below). Never overwrite it with a re-bound version.
-  const result: AskPipelineResult = { sql: generated.sql, verdict };
+  const result: AskPipelineResult = { sql: generated.sql, verdict: enforced.verdict };
   if (generated.explain !== undefined) result.explain = generated.explain;
-  if (tenant) {
-    result.tenantGuardrail = tenantGuardrailResult(findings);
-  } else if (generated.tenantGuardrail !== undefined) {
-    // Without a tenant policy there is no mode to decide with: pass through what a
-    // custom dialect reported.
-    result.tenantGuardrail = generated.tenantGuardrail;
-  }
-  if (runSensitive) result.sensitiveGuardrail = sensitiveGuardrailResult(findings);
+  if (enforced.tenantGuardrail !== undefined) result.tenantGuardrail = enforced.tenantGuardrail;
+  if (enforced.sensitiveGuardrail !== undefined) result.sensitiveGuardrail = enforced.sensitiveGuardrail;
   if (generated.usage !== undefined) result.usage = generated.usage;
 
   // Reuse artifacts: bind the template's business values with the mechanical renderer,
@@ -543,7 +509,8 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     const tenantMode = options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
     // `sql` carries business values as inlined literals, so its only markers are
     // tenant markers, numbered from the first slot: `sql` runs with `tenantParams`
-    // alone. `unboundSql` runs with the combined `params` (handled below).
+    // alone. `unboundSql` runs with the combined `params` (handled below). The mode
+    // governs `sql` only: `unboundSql` always binds the tenant IDs, as the rebind does.
     const resolved = resolveTenantSql(result.sql, tenant.policy, tenant.scope, tenantMode, 1, dialectSpec);
     result.sql = resolved.sql;
     if (resolved.bindings.length > 0) result.tenantBindings = resolved.bindings;
@@ -552,66 +519,35 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     }
 
     if (result.preparedQuery && result.unboundSql !== undefined && result.params && result.parameters) {
-      if (tenantMode === "sql-only") {
-        result.unboundSql = resolveTenantSql(
-          result.unboundSql,
-          tenant.policy,
-          tenant.scope,
-          "sql-only",
-          1,
+      const rendered = bindTenantIntoUnboundSql(
+        { unboundSql: result.unboundSql, params: result.params, bindings: result.parameters },
+        {
+          namedSql: result.preparedQuery.namedSql,
+          tenantPolicy: tenant.policy,
+          tenantScope: tenant.scope,
           dialectSpec,
-        ).sql;
+        },
+      );
+      if (rendered) {
+        result.unboundSql = rendered.unboundSql;
+        result.params = rendered.params;
+        result.parameters = rendered.bindings;
       } else {
-        const rendered = bindTenantIntoUnboundSql(
-          { unboundSql: result.unboundSql, params: result.params, bindings: result.parameters },
+        dropParameterizeExtras(result);
+        logger?.debug?.(
           {
-            namedSql: result.preparedQuery.namedSql,
-            tenantPolicy: tenant.policy,
-            tenantScope: tenant.scope,
-            dialectSpec,
+            event: AskDbLogEvent.PipelineParameterized,
+            parameterCount: 0,
+            listParameterCount: 0,
+            reason: "tenant_param_alignment",
           },
+          "parameterize extras dropped",
         );
-        if (rendered) {
-          result.unboundSql = rendered.unboundSql;
-          result.params = rendered.params;
-          result.parameters = rendered.bindings;
-        } else {
-          dropParameterizeExtras(result);
-          logger?.debug?.(
-            {
-              event: AskDbLogEvent.PipelineParameterized,
-              parameterCount: 0,
-              listParameterCount: 0,
-              reason: "tenant_param_alignment",
-            },
-            "parameterize extras dropped",
-          );
-        }
       }
     }
   }
 
   return result;
-}
-
-/**
- * A custom generator's `tenantGuardrail`, as tenant findings: its warnings, and one
- * `UNPROVABLE_SCOPE` finding for a failure it reported without any, so it is never
- * dropped. They add to `ask()`'s own check; they never replace it.
- */
-function generatorFindings(reported: TenantGuardrailResult | undefined): GuardrailFinding[] {
-  if (!reported) return [];
-  const findings = tenantFindings(reported.warnings ?? [], "generator");
-  if (reported.passed === false && findings.length === 0) {
-    findings.push({
-      check: "tenant",
-      form: "generator",
-      rule: "UNPROVABLE_SCOPE",
-      tableId: "",
-      message: "The custom SQL generator reported a failed tenant guardrail without details.",
-    });
-  }
-  return findings;
 }
 
 function dropParameterizeExtras(result: AskPipelineResult): void {

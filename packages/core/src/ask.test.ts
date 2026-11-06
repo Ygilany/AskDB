@@ -765,10 +765,11 @@ describe("ask — parameterize", () => {
     expect(result.sql).toBe(
       "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = '42'",
     );
+    // The mode governs `sql` only: `unboundSql` binds the tenant IDs too (#731).
     expect(result.unboundSql).toBe(
-      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = '42'",
+      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = $2",
     );
-    expect(result.params).toEqual(["paid"]);
+    expect(result.params).toEqual(["paid", "42"]);
     expect(result.tenantParams).toBeUndefined();
     expect(result.tenantBindings).toHaveLength(1);
     expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
@@ -1000,7 +1001,7 @@ describe("ask — a model's trailing semicolon is kept (#477)", () => {
       dialect: "postgres" as const,
       mode: "sql-only" as const,
       sql: "status = 'paid' AND agency_id IN ('42', '99');",
-      unbound: "status = $1 AND agency_id IN ('42', '99');",
+      unbound: "status = $1 AND agency_id IN ($2, $3);",
     },
     {
       dialect: "postgres" as const,
@@ -1013,6 +1014,18 @@ describe("ask — a model's trailing semicolon is kept (#477)", () => {
       mode: "sql-params" as const,
       sql: "status = 'paid' AND agency_id IN (?, ?);",
       unbound: "status = ? AND agency_id IN (?, ?);",
+    },
+    {
+      dialect: "mysql" as const,
+      mode: "sql-only" as const,
+      sql: "status = 'paid' AND agency_id IN ('42', '99');",
+      unbound: "status = ? AND agency_id IN (?, ?);",
+    },
+    {
+      dialect: "sqlserver" as const,
+      mode: "sql-only" as const,
+      sql: "status = 'paid' AND agency_id IN ('42', '99');",
+      unbound: "status = @p0 AND agency_id IN (@p1, @p2);",
     },
   ])("$dialect $mode: the tenant guardrail passes and substitutes a placeholder right before it", async (c) => {
     const result = await ask({
@@ -1301,7 +1314,10 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
       deps: { generateText },
     });
     expect(result.sql).toBe("SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'");
-    expect(result.unboundSql).toBe("SELECT * FROM orders WHERE agency_id = '42' AND status = $1");
+    // tenantSqlMode governs `sql` only: `unboundSql` binds the tenant IDs, as the rebind does (#731).
+    expect(result.unboundSql).toBe("SELECT * FROM orders WHERE agency_id = $2 AND status = $1");
+    expect(result.params).toEqual(["open", "42"]);
+    expect(result.tenantParams).toBeUndefined();
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
     const guardrailEvents = info.mock.calls.filter((c) =>
       [AskDbLogEvent.TenantGuardrailPassed, AskDbLogEvent.TenantGuardrailFailed].includes(
@@ -1816,6 +1832,23 @@ describe("ask — sensitive-identifier guardrail", () => {
       sensitiveColumnCount: 1,
       sensitiveColumns: ["users.password"],
     });
+  });
+
+  it.each([
+    // Postgres reads U&"p\0061ssword" as password, and the continued E'…' string ends after
+    // `\'`, so u.password is code; the check matched neither (#707).
+    ["a U& name", String.raw`SELECT U&"p\0061ssword" FROM users`, "UNICODE_ESCAPED_IDENTIFIER"],
+    ["a continued E'…' string", "SELECT E'a'\n'\\'' AS x, u.password FROM users u --'", "STRING_CONTINUATION"],
+  ])("strict mode rejects %s from a custom dialect, which no read-only check covers (#707)", async (_label, sql, issue) => {
+    const error = await ask({
+      question: "credentials",
+      schema: sensitiveSchema,
+      model: fakeModel,
+      dialect: dialectReturning(sql),
+      sensitiveGuardrailMode: "strict",
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SensitiveReferenceError);
+    expect((error as SensitiveReferenceError).unresolvedScope?.issues).toContain(issue);
   });
 
   it("does not flag a benign query against another table", async () => {
@@ -2459,5 +2492,33 @@ describe("ask — text that names a sensitive column, with omission on (#374)", 
       expect.objectContaining({ event: AskDbLogEvent.PipelineRetrievalUsed, mentionDroppedCount: 7 }),
       expect.any(String),
     );
+  });
+});
+
+describe("ask — an E'…' string continued on a later line (#703)", () => {
+  // Postgres reads `a'` and then an unscoped read of orders; both checks used to pass it.
+  const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
+
+  it("built-in postgres: the read-only check refuses it", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + bypass + "\n```" })) as never },
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SqlValidationError);
+    expect((error as SqlValidationError).rule).toBe("SQL_STRING_CONTINUATION");
+  });
+
+  it("custom AskDialect: the tenant check refuses it under strict enforcement", async () => {
+    const dialect: AskDialect = { generate: async () => ({ sql: bypass }) };
+    const rejection = ask({ question: "q", schema: loadSchema(multiTenantDir), model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({
+      warnings: expect.arrayContaining([expect.objectContaining({ rule: "STRING_CONTINUATION", tableId: "" })]),
+    });
   });
 });

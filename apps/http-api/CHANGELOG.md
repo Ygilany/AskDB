@@ -1,5 +1,45 @@
 # @askdb/http-api
 
+## 1.0.0-beta.48
+
+### Minor Changes
+
+- 63d45cc: The HTTP API server and the CLI use `logging.level` as `@askdb/config` resolves it, without checking it again (#711). Behavior is unchanged: the config already refuses a level that isn't one of `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` when it loads.
+
+### Patch Changes
+
+- c28c967: Depend on `zod` (`^4.6.7`, the same range as `@askdb/core`), the peer that `ai` and the `@ai-sdk/*` packages require, so Yarn Plug'n'Play can resolve it (#748). `yarn dlx askdb` crashed at startup because these packages install `ai` without providing its `zod`. npm and pnpm already installed `zod` through `@askdb/core`, so they install nothing new.
+- Updated dependencies [63d45cc]
+- Updated dependencies [63d45cc]
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+  - @askdb/client@1.0.0-beta.11
+  - @askdb/config@1.0.0-beta.17
+  - @askdb/core@1.0.0-beta.48
+
+## 1.0.0-beta.47
+
+### Patch Changes
+
+- f4e60a9: `createAskDbLogger()` opens each `logFile` path once per process and shares it across loggers, instead of opening it again for every logger (#693). Hosts build a logger per request, so the HTTP API server leaked one file descriptor per `POST /ask` with `logging.logFile` set, until it ran out of descriptors and stopped serving. The file now stays open for the life of the process. Rotate it with `copytruncate`, or restart the process after a rotate. The configuration and core API references and the upgrade guide say so.
+- 32a7bc8: `@askdb/http-api` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: responses, log levels and log entries are the same as before.
+- Updated dependencies [946dee4]
+- Updated dependencies [f183629]
+- Updated dependencies [3d9bc33]
+- Updated dependencies [f4e60a9]
+- Updated dependencies [80c7ddf]
+- Updated dependencies [0a94c6f]
+- Updated dependencies [4f322db]
+- Updated dependencies [4365d4c]
+  - @askdb/ai@0.1.0-beta.10
+  - @askdb/client@1.0.0-beta.10
+  - @askdb/config@1.0.0-beta.16
+  - @askdb/core@1.0.0-beta.47
+
 ## 1.0.0-beta.46
 
 ### Patch Changes
