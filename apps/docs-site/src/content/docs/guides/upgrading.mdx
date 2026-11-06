@@ -128,6 +128,10 @@ await suggestEnrichment(buildSuggestionTarget(schema, source), buildSuggestionCo
 - **A table you build by hand** must set `sensitive` on the table, and `sensitive` and `primaryKey` on every column. Mark sensitive each column that `tables/*.md` marks, and every column of a sensitive table, as `loadSchema()` does.
 - **`loadSchemaFromJson()` of a bare `schema.json`** typechecks too, but has no front-matter flags. Load the schema directory or a bundle with `loadSchema()` instead.
 
+### Other changes you may notice in beta.46
+
+- **A log file stays open for the life of the process** ([#693](https://github.com/Ygilany/AskDB/issues/693)). `createAskDbLogger()` opens each `logFile` path once and shares it across loggers, so the HTTP API server no longer leaks a file descriptor on every `POST /ask` when `logging.logFile` is set. After a rename or delete, logs keep going to the old file: rotate it with `copytruncate`, or restart the process after a rotate.
+
 ## 1.0.0-beta.45
 
 Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/config` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.

@@ -531,7 +531,7 @@ Returns an `AskDbLogger` that emits structured JSON for each pipeline stage. Pas
 | --- | --- | --- | --- | --- |
 | `correlationId` | `string` | yes | — | Attached to every log line. Pass the request id. |
 | `level` | `AskDbLogLevel` | no | `"silent"` | Pino log level. `"silent"` suppresses all output. |
-| `logFile` | `string` | no | — | Append JSON logs to this path. Parent directories are created automatically. |
+| `logFile` | `string` | no | — | Append JSON logs to this path. Parent directories are created automatically. Loggers with the same path share one open file, which stays open for the life of the process: rotate it with `copytruncate`, or restart the process after a rotate. |
 | `logStdout` | `boolean` | no | `false` | Duplicate logs to stdout in addition to stderr/file. |
 
 **`AskDbLogLevel`:** `"fatal"` | `"error"` | `"warn"` | `"info"` | `"debug"` | `"trace"` | `"silent"`
