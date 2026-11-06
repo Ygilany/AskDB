@@ -77,7 +77,7 @@ sqlserver://localhost:1433;database=MyDb;user=user;password=pass;trustServerCert
 Server=localhost,1433;Database=MyDb;User Id=user;Password=pass;TrustServerCertificate=True;
 ```
 
-AskDB also reads the key with spaces, `Trust Server Certificate=True`, which VS Code's mssql extension and the `.env.example` from `askdb init` write.
+AskDB also reads the key with spaces, `Trust Server Certificate=True`, which VS Code's mssql extension writes. The `.env.example` from `askdb init` writes it without spaces, the form your own `mssql` pool reads too.
 
 <Aside type="caution">Trusting the certificate turns off the check that you're talking to the server you expect. Use it only in development.</Aside>
 
