@@ -10,21 +10,6 @@ publicHoistPattern:
   - "*turbo*"
 # Transitive-dependency pins we carry ahead of upstream.
 #
-# deepmerge-ts: `@prisma/config` (via `@prisma/internals`, a runtime dependency of
-# `@askdb/prisma`) pins exactly 7.1.5, which is vulnerable to CVE-2026-40345 /
-# GHSA-ggr8-5vv4-36mx — `deepmerge()` exhausts the stack on self-referential object
-# graphs. v8 adds cycle detection. `@prisma/config` only uses the `deepmerge` named
-# export as c12's merger for `prisma.config.ts`, and v8's sole behavioural break for
-# plain objects is deep-merging `Map` values, which config objects do not contain.
-# Drop this once Prisma ships a release depending on deepmerge-ts >= 8.
-#
-# nanoid: reached only through `postcss` (via `vite`, itself via `vitest` and
-# `astro`), so it is devDependency-only and never ships. `postcss@8.5.25` already
-# allows `^3.3.16`; the lockfile was simply pinned at 3.3.17, which is vulnerable to
-# GHSA-2v37-7h3g-55p8 (predictable `nanoid()` output under a non-crypto fallback).
-# `pnpm update` will not move a transitive-only dependency, so pin it here. Drop this
-# once postcss raises its own floor past 3.3.18.
-#
 # brace-expansion: reached only through `minimatch@10` (via eslint and
 # typescript-eslint in `apps/studio`), so it is devDependency-only and never ships.
 # `minimatch` already allows `^5.0.8`; the lockfile was pinned at 5.0.9, which is
@@ -33,21 +18,13 @@ publicHoistPattern:
 # 5.0.12 fixes all three. Drop this once minimatch raises its own floor past 5.0.12.
 overrides:
   brace-expansion: ^5.0.12
-  deepmerge-ts: ^8.0.2
-  nanoid: ^3.3.18
   # Security advisories (GHSA-*) — drop once upstream releases a version with the fix.
-  # proxy-addr: GHSA-jqcg-44mw-7w3h (critical) — IP spoofing via IPv4-mapped IPv6 trust subnet.
-  #   Only in examples/express-server (not published). Patched in 2.0.8.
-  proxy-addr: ^2.0.8
   # postcss-selector-parser: GHSA-xh2x-qr4w-9w2m (moderate) — quadratic complexity in flat selector parsing.
   #   Only in apps/docs-site (dev only, not published). Patched in 7.1.6.
   postcss-selector-parser: ^7.1.6
   # source-map-js: GHSA-vh95-rmgr-6w4m (high) — event-loop DoS via indexed source-map section offsets.
   #   Transitive via tailwindcss/vite/postcss (dev only, not published). Patched in 1.2.2.
   source-map-js: ^1.2.2
-  # http-cache-semantics: GHSA-ch52-4w7c-c8xp (high) — max-stale handling discloses cross-user cached responses.
-  #   Only in apps/docs-site via astro (dev only, not published). Patched in 4.3.0.
-  http-cache-semantics: ^4.3.0
   # @azure/msal-node: GHSA-xcx6-jx8p-x3h5 (high) — authorization-code flow may disclose parameters to an attacker-controlled endpoint.
   #   Reached through `@azure/identity` under tedious (via mssql, an optional peer of @askdb/sqlserver and Studio that hosts install themselves)
   #   and under astro's unstorage (apps/docs-site only, dev only, not published).
