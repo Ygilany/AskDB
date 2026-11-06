@@ -1,5 +1,20 @@
 # @askdb/client
 
+## 1.0.0-beta.9
+
+### Patch Changes
+
+- 0f4246c: `askdb.bind()` takes `dialect`, which it passes to `bindPreparedQuery()`. Pass the `DialectSpec` you gave `askdb.ask()` when its `preparedQuery.dialectRules` is `"host"`, or, for a template stored without `dialectRules`, the spec `ask()` ran with, or its built-in id if it ran with the built-in rules (#660).
+- 96f36ef: `askdb.bind()` takes `tenantSqlMode`, which it passes to `bindPreparedQuery()`. By default the rebound `sql` holds tenant markers and the IDs are in `tenantParams`, as in `askdb.ask()` (#664). If you rebind with a `tenantScope` and run `rebound.sql`, pass `rebound.tenantParams` with it, run `rebound.unboundSql` with `rebound.params`, or set `tenantSqlMode: "sql-only"` to keep the IDs inlined.
+- 02387ec: The `@askdb/core`, `@askdb/client` and CLI reference pages now match source (#287). The core and client pages each have an Errors section that lists every error class, its fields, and every rule and reason code. A new `test:errors` check fails the docs-site tests when a class or code in `errors.ts` is missing from its page. The client page names `AskDbClient` and `DialectResolution`, adds `reasoningEffort` and `sensitiveGuardrailMode`, and says what the client caches. The CLI page drops exit code `2`, which no command uses, and adds `askdb introspect templates`, the `askdb ask` output format, glob matching for `--tables`, and the `rag index` and `rag query` output. The `@askdb/client` README says that `reload()` resolves again from the config snapshot the client was created with, so a changed config needs a new client.
+- 4d6a315: **Breaking: tenant IDs are driver parameters by default** (`tenantSqlMode: "sql-params"`, #231, ADR 0024).
+  
+  **What a host must change:** if you pass `tenantScope` to `ask()` (or `askdb.ask()` in `@askdb/client`, which forwards to it) without `tenantSqlMode`, `result.sql` now holds the dialect's driver markers (`$1`, `?` or `@p0`) where the tenant IDs used to be inlined, and the IDs are in `result.tenantParams`. Run `result.sql` with `result.tenantParams`, or `result.unboundSql` with `result.params` (which already holds the tenant IDs); never concatenate the two arrays. To keep the old output, set `tenantSqlMode: "sql-only"`. Running the new `sql` without its params fails at the driver (Postgres: "there is no parameter $1"; better-sqlite3: "Too few parameter values"; MySQL: a syntax error). It never returns other tenants' rows.
+  
+  **A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` now throws `TenantScopeError` with the new reason `TENANT_SQL_MODE_REQUIRED`, before any retrieval or model call. AskDB can't know which parameter markers such a dialect's driver takes, and the `$N` markers it would emit are money constants on SQL Server, where `agency_id = $1` runs and matches agency 1. Set `tenantSqlMode: "sql-params"` if your driver binds `$1`-style markers, or `"sql-only"` to keep the IDs inlined. On any dialect, `ask()` with a tenant scope and `resolveTenantSql()` now throw the same reason for a `tenantSqlMode` that is neither of the two (for example `"sql_only"`) instead of treating it as `"sql-params"`.
+  
+  `resolveTenantSql()` defaults to `"sql-params"` too. The default is exported as `DEFAULT_TENANT_SQL_MODE`; import it rather than hard-code the mode. Studio's Playground now starts in `sql-params`, and Studio reports that default when a request names no mode.
+
 ## 1.0.0-beta.8
 
 ### Minor Changes

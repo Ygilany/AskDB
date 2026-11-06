@@ -1,5 +1,80 @@
 # askdb
 
+## 1.0.0-beta.46
+
+### Minor Changes
+
+- 76dc3a3: `@askdb/prisma` is now an optional peer of `askdb` and `@askdb/studio`, not a dependency. `pnpm add askdb` no longer installs Prisma, so it exits 0 on pnpm 11, which refused to run the unapproved `@prisma/engines` install script and exited 1 (#259). The CLI and Studio import `@askdb/prisma` only for Prisma introspection (#339), so `askdb --help` and every other command load no Prisma module.
+  
+  **Breaking** for Prisma users: install `@askdb/prisma` next to `askdb` (`npm i @askdb/prisma`). On pnpm 11, approve its `@prisma/engines` build in the same command, `pnpm add --allow-build=@prisma/engines @askdb/prisma`, or run `pnpm approve-builds` afterwards. Without the package, `askdb introspect --engine prisma` exits 1 naming it, and Studio shows the same message instead of resyncing. `askdb` looks for `@askdb/prisma` in its own install, then in the project it runs in, so `npx askdb introspect` uses the project's copy.
+  
+  `askdb init --database prisma` now installs `@askdb/prisma` at the version of the `askdb` running it. Studio's guided setup installs it within Studio's peer range, so a newer `askdb` hosting Studio still gets a version its own range accepts. With pnpm 10.4 or later both approve the `@prisma/engines` build (older pnpm has no `--allow-build`). `@askdb/prisma`'s README says to install it next to `askdb`.
+  
+  Studio's guided setup now checks for installed packages on disk rather than through Node's resolver (under Yarn Plug'n'Play, which has no `node_modules`, it still asks the resolver). On Node 24 and later, a failed lookup could last until Studio exited, so the introspection step couldn't load a driver or `@askdb/prisma` that setup had just installed.
+
+### Patch Changes
+
+- 9ef4a6f: `askdb ask` and `askdb introspect` help, errors and the package README name the `askdb.config` keys that control each setting (`modes.askdbMode`, `dev.mockSql`, `logging.correlationId`, `introspection.outputDir`, `introspection.providerConfig.<engine>.databaseUrl`) instead of `ASKDB_*` and `DATABASE_URL` variables that AskDB never reads from the environment (#281). `askdb introspect --help` now lists every flag it accepts, including `--print`, `--diff`, `--engine`, `-v` and `--log-stdout`: the help and the parser are built from one flag table, and `--engine` lists the engines of the registry in use. `askdb introspect` also takes `--flag=value` like `--flag value`, as `askdb rag` does, and its argument errors no longer repeat a value, so a connection string passed as `--url=…` or as a stray argument stays out of the error.
+- 2234954: `askdb.config.mjs` and a plain `export default { … }` config now load, as the docs say (#264, #265). `bootstrapAskDbEnv()`, and so the `askdb` CLI, Studio and the HTTP API, loads every documented extension synchronously, `.mjs` included; the file can't use top-level `await`. A plain object goes through the same normalizing, checks and deprecation warnings as `defineConfig({ … })`, which stays the typed helper and still returns the projection.
+  
+  A config without its `ai` or `introspection` block now fails to load with an error that names the file and the missing block (`AskDB config at <path>: the config has no ai block; …`), instead of a bare `TypeError` (#626). Every `askdb.config: …` error raised while a file loads now names that file the same way; calling `defineConfig` directly keeps the `askdb.config:` prefix. A file with no default export, a default export that isn't a plain object (`null`, a string, a Promise), and top-level `await` each fail with an error that names the file and says what to change, instead of a misleading or bare one.
+- f3decbb: Every AskDB write into a schema directory now refuses symbolic links (#617, ADR 0028).
+  
+  - New `@askdb/core` export: `saveSchemaFile(schemaDir, relativePath, content)` writes one file inside a schema directory; `content` is a string (written as UTF-8) or a `Uint8Array`. It refuses a symbolic link at the file or at a directory between it and the schema directory (such as `tables/`), and a `relativePath` with an empty, `.` or `..` part or a NUL byte. It writes a temp file next to the target, with the target's permission bits, group and, where allowed, owner, and renames it over the target, so a hard link is replaced instead of written through and the write is atomic. A read-only target is refused with `EACCES`. The schema directory itself may be a symbolic link. This is the helper `@askdb/enrich`'s saves used since #372, moved to core so every writer shares it.
+  - `@askdb/introspect`: `renderToSchemaV2()`, and so `introspect()` with render options, writes `schema.json` through `saveSchemaFile()`. A `schema.json` that is a symbolic link now throws `Refusing to write schema.json outside the schema directory: "schema.json" is a symbolic link`. Before, the write went to the file the link pointed at.
+  - `askdb`: `askdb introspect --out` fails the same way on a linked `schema.json`.
+  - `@askdb/studio`: Playground history (`playground-history.json`, saved on every generate and on delete) and the `.gitignore` entry Studio adds for it are written through `saveSchemaFile()`, and so is `schema.json` on **Resync schema**. A linked history file fails the request with the refusal message. A linked `.gitignore` is left as it is and the history still saves, as with any `.gitignore` failure before. A dangling link at `.gitignore` no longer creates the file it names. The `.gitignore` update keeps the existing file's bytes, so a non-UTF-8 file name in it survives.
+  - `@askdb/enrich`: `saveTable()`, `saveConcepts()` and `saveTenantPolicy()` call core's `saveSchemaFile()`; the behavior is unchanged. The refusal for a table now reads `Refusing to write tables/orders.md outside the schema directory: …` instead of `Refusing to write table markdown outside tables/: …`. The check on a table filename keeps its message.
+  
+  **Upgrade notes:**
+  
+  - `renderToSchemaV2()`, `introspect()` with render options, and `askdb introspect --out` throw when `schema.json` in the output directory is a symbolic link. Replace the link with a regular file.
+  - Writing `schema.json` now needs write access to the output directory for the temp file, and a hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's mode bits, owner and group, but not an access control list (#659). On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; running again usually works.
+- 7ca1940: A tenant policy that doesn't match `schema.json` now fails the load under `enforcement: strict`, and is reported under `warn` (ADR 0023, #332).
+  
+  `loadSchema()` and `loadSchemaFromJson()` check every ID in `tenant-policy.md` against `schema.json`. Under `strict`, an orphaned column or foreign key ID, a hierarchy cycle, or a root named in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare throws `SchemaParseError` naming the file and the IDs. `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save) refuses the same policy. Under `warn` these load in `schema.tenantPolicy.warnings`, as before. A root, scoped, polymorphic or global table that `schema.json` doesn't have stays a warning in both modes, and an entry for a removed table now reports only the table, not each of its columns. Cycle detection now follows every parent edge, so a cycle through a root that also has another parent is found wherever its edges appear in `hierarchy`.
+  
+  `ask()` logs the new `AskDbLogEvent.TenantPolicyWarnings` (`askdb.tenant.policy_warnings`) once per loaded schema when its policy has warnings, with `enforcement`, `warningCount` and `warnings`. It logs at `warn` level through the new optional `AskDbLogger.warn`, which `createAskDbLogger()` implements, and falls back to `info` for a logger without it. New export: `formatTenantPolicyWarning(warning)`, one line per problem.
+  
+  `@askdb/enrich`'s `saveTenantPolicy()` checks the policy against `schema.json` on disk rather than the workspace in memory, so Studio can save a corrected policy after a re-introspection left its workspace stale.
+  
+  `askdb introspect --out` checks an existing `tenant-policy.md` against the `schema.json` it just wrote and prints what no longer matches on stderr. The exit code stays 0.
+  
+  **Upgrade notes (breaking):** a strict policy that loads today with an orphaned column or foreign key, a cycle or an undeclared root now throws `SchemaParseError` from `loadSchema()`, `createAskDb()` and the HTTP API (400 `schema_parse_error`). Studio can't open that workspace until the file is fixed. Update `tenant-policy.md` to match `schema.json`; the error lists every ID to change.
+- Updated dependencies [47eef72]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [2234954]
+- Updated dependencies [9ef4a6f]
+- Updated dependencies [d82125c]
+- Updated dependencies [b40309d]
+- Updated dependencies [f3decbb]
+- Updated dependencies [7ca1940]
+- Updated dependencies [02387ec]
+- Updated dependencies [76dc3a3]
+- Updated dependencies [234eec0]
+- Updated dependencies [76dc3a3]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [cdab7d7]
+- Updated dependencies [ed7f35c]
+- Updated dependencies [9ef4a6f]
+- Updated dependencies [0868651]
+- Updated dependencies [4d6a315]
+- Updated dependencies [4d6a315]
+- Updated dependencies [8fbc115]
+  - @askdb/core@1.0.0-beta.46
+  - @askdb/client@1.0.0-beta.9
+  - @askdb/config@1.0.0-beta.15
+  - @askdb/mysql@0.1.0-beta.21
+  - @askdb/sqlite@0.1.0-beta.21
+  - @askdb/sqlserver@0.1.0-beta.22
+  - @askdb/introspect@0.3.0-beta.20
+  - @askdb/enrich@0.2.0-beta.17
+  - @askdb/studio@0.2.0-beta.39
+  - @askdb/postgres@0.2.0-beta.22
+  - @askdb/rag@0.2.0-beta.26
+
 ## 1.0.0-beta.45
 
 ### Minor Changes
