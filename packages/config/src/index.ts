@@ -20,7 +20,7 @@ export type {
   AskDbRuntimeModesConfig,
   AskDbRuntimeNlToSqlConfig,
   AskDbRuntimeStudioConfig,
-} from "./runtime-config.js";
+} from "./runtime-types.js";
 export {
   isAskDbRuntimeInitialized,
   mergeAskDbFlatIntoEnvMap,
@@ -85,7 +85,7 @@ export type {
   MemoryStoreConfig,
   PgvectorStoreConfig,
 } from "./types.js";
-export { flattenAskDbConfig } from "./flatten.js";
+export { flattenAskDbConfig } from "./projection.js";
 export {
   ASKDB_MODES_V1,
   ASKDB_LOG_LEVELS,

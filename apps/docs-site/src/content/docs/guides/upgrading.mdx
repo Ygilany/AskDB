@@ -55,6 +55,35 @@ On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validate
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
 
+### Fix config values of the wrong type, which now fail to load
+
+`@askdb/config` now checks each setting once, when the config loads, and builds every runtime value from your config alone ([#711](https://github.com/Ygilany/AskDB/issues/711)). A value of the wrong type fails to load in every tool that loads the config, with an error that names the file and the config key.
+
+**A boolean setting must be `true` or `false`.** `logging.logStdout` and `modes.omitSensitiveFromPrompt` now fail on any other value, as `studio.execute.enabled`, `studio.execute.useIntrospectionConnection` and `httpApi.allowSchemaOverride` already did. A string here was read wrong before, without a warning:
+
+| In your config | Before | Now |
+| --- | --- | --- |
+| `logging: { logStdout: "true" }` | Loaded, and didn't copy the logs to stdout: only `true` turned it on. | Fails: `AskDB config at /app/askdb.config.ts: logging.logStdout must be a boolean (got "true").` |
+| `modes: { omitSensitiveFromPrompt: "false" }` | Loaded, and silently turned omission **on**: any non-empty string counted as `true`. | Fails: `AskDB config at /app/askdb.config.ts: modes.omitSensitiveFromPrompt must be a boolean (got "false").` |
+
+To read one from the environment, compare the string: `omitSensitiveFromPrompt: env("OMIT_SENSITIVE") === "true"`.
+
+**A string setting must be a string, or `null` for unset**, such as `logging.logFile`, `host.schemaPath` or a `databaseUrl`. Any other value fails, `false` and `0` included. Before, AskDB ignored `false` or `0` for a few keys, such as `logging.logFile` and `dev.mockSql`, and stopped the load with a `TypeError` that named no key for the rest. Write `undefined` or `null` to leave a string setting unset.
+
+Code that reads or installs the runtime config may need a change too:
+
+- **`getAskDbRuntimeConfig().logging.level` is `AskDbLogLevel | undefined`, and `modes.askdbMode` is `AskDbModeV1 | undefined`,** not `string`. Code that builds an `AskDbRuntimeConfig` by hand with a `string`, for example in a test, no longer typechecks. Type the value with the union, or cast one you know is valid:
+
+  ```ts
+  import type { AskDbLogLevel, AskDbModeV1 } from "@askdb/config";
+
+  const level: AskDbLogLevel = "debug"; // was: const level: string = "debug"
+  const modes = { askdbMode: mode as AskDbModeV1, omitSensitiveFromPrompt: false };
+  ```
+
+- **`setAskDbRuntimeForTests()` takes an `AskDbConfig`,** the object you write in `askdb.config.ts`, and installs it as `bootstrapAskDbEnv()` installs a loaded file. Replace `setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) })` with `setAskDbRuntimeForTests(structured)`. If a test put a setting only in `flat`, set it in the config instead, such as `dev: { mockSql }` in place of `ASKDB_MOCK_SQL`.
+- **`createAskDb()` reads the default schema from `host.schemaJson`, then `host.schemaPath`, and nowhere else.** A runtime config built by hand with `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `ai.aiEnv` and no `host` block now throws `SchemaNotConfiguredError`: set `structured.host` instead. A config loaded from a file works as before.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
