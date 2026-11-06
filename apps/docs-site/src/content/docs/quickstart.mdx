@@ -21,11 +21,11 @@ import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
 
 You need:
 
-- Node.js 22.23.4 or newer, with npm or Yarn 4. Run `node --version` to check.
+- Node.js 22.23.4 or newer, with npm, pnpm or Yarn 4. Run `node --version` to check.
 - An OpenAI API key. You can switch to another model provider later: see [Bring your own model](/guides/bring-your-own-model/).
 - macOS 11 or newer, Windows, or Linux with glibc 2.34 or newer, on x64 or arm64. The SQLite driver ships prebuilt binaries for these.
 
-<Aside type="note">Where npm and Yarn commands differ, each step has a tab for both. To use Yarn, run `corepack enable` first. Node 25 and newer don't include Corepack, so there, run `npm install -g corepack` before it. In a new project, pnpm can't run this tutorial yet ([#750](https://github.com/Ygilany/AskDB/issues/750)). On an older Linux, see [If SQLite won't install](#if-sqlite-wont-install-use-postgres-in-docker).</Aside>
+<Aside type="note">Where npm, pnpm and Yarn commands differ, each step has a tab for each. To use pnpm or Yarn, run `corepack enable` first. Node 25 and newer don't include Corepack, so there, run `npm install -g corepack` before it. On an older Linux, see [If SQLite won't install](#if-sqlite-wont-install-use-postgres-in-docker).</Aside>
 
 ## 1. Create a sample database
 
@@ -38,6 +38,15 @@ First, make a folder for the project and set it up as a package:
 mkdir askdb-shop
 cd askdb-shop
 npm init -y
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+mkdir askdb-shop
+cd askdb-shop
+pnpm init
 ```
 
   </TabItem>
@@ -112,6 +121,13 @@ npm install --save-dev askdb
 ```
 
   </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm add --save-dev askdb
+```
+
+  </TabItem>
   <TabItem label="yarn">
 
 ```bash
@@ -128,6 +144,13 @@ Then let `askdb init` write the config for our database:
 
 ```bash
 npx askdb init --yes --database sqlite --sqlite-file ./shop.db
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm exec askdb init --yes --database sqlite --sqlite-file ./shop.db
 ```
 
   </TabItem>
@@ -157,6 +180,23 @@ Installed: @askdb/config, better-sqlite3.
 ```
 
   </TabItem>
+  <TabItem label="pnpm">
+
+```
+Wrote:
+  - …/askdb-shop/askdb.config.ts
+  - …/askdb-shop/.env.example
+
+Installing dependencies with pnpm in …/askdb-shop …
+…
+dependencies:
++ @askdb/config 1.0.0-beta.18
++ better-sqlite3 13.0.3
+…
+Installed: @askdb/config, better-sqlite3.
+```
+
+  </TabItem>
   <TabItem label="yarn">
 
 ```
@@ -176,8 +216,6 @@ The `YN0004` warning is safe to ignore here. Yarn skipped the SQLite driver's bu
 
   </TabItem>
 </Tabs>
-
-<Aside type="caution">On Windows, `askdb init` can't install the packages yet ([#668](https://github.com/Ygilany/AskDB/issues/668)). It still writes the config, then prints the install command and exits with an error. Run that command, then go on to step 3.</Aside>
 
 Open `askdb.config.ts`:
 
@@ -248,6 +286,13 @@ npx askdb introspect
 ```
 
   </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm exec askdb introspect
+```
+
+  </TabItem>
   <TabItem label="yarn">
 
 ```bash
@@ -270,6 +315,13 @@ Ask the question in plain English:
 
 ```bash
 npx askdb ask --question "How much has each customer spent in total, highest first?"
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm exec askdb ask --question "How much has each customer spent in total, highest first?"
 ```
 
   </TabItem>
