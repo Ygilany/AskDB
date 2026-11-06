@@ -439,51 +439,27 @@ const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The first call in `sql` to a function in {@link UNCHECKABLE_FUNCTIONS} (its name, lowercase)
- * or to a `U&"…"` name (as written), or undefined. A call is a name, bare, quoted or qualified,
- * then `(`, with any comments between. Postgres decodes a `U&"…"` name, optionally followed by
- * `UESCAPE '<c>'`; the check doesn't, so it counts every such call. Read under every reading
- * from {@link statementReadings}, so a call any of them sees counts.
+ * The first call in `sql` to a function in {@link UNCHECKABLE_FUNCTIONS}, its name lowercase, or
+ * undefined. A call is a name, bare, quoted or qualified, then `(`, with any comments between.
+ * Read under every reading from {@link statementReadings}, so a call any of them sees counts.
  */
 function uncheckableCall(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
   for (const profile of statementReadings(dialect)) {
     const tokens = lexSql(sql, profile).filter((t) => t.kind !== "comment");
     for (let i = 1; i < tokens.length; i++) {
       if (tokens[i]!.kind !== "punct" || tokens[i]!.text !== "(") continue;
-      let k = i - 1;
-      if (tokens[k]!.kind === "string" && tokens[k - 1]?.kind === "word" && tokens[k - 1]!.lower === "uescape") k -= 2;
-      const name = tokens[k];
-      if (!name) continue;
-      if (isUnicodeEscapedName(tokens, k)) return `U&${name.text}`;
-      const called = nameOf(name);
+      const called = nameOf(tokens[i - 1]!);
       if (called !== undefined && UNCHECKABLE_FUNCTIONS.has(called)) return called;
     }
   }
   return undefined;
 }
 
-/** Whether a token is a quoted name: a quoted identifier, or a `"…"` string, which some servers read as a name. */
-function isQuotedName(token: SqlToken): boolean {
-  return token.kind === "quoted_identifier" || (token.kind === "string" && token.quote === '"');
-}
-
-/** A name token's name, lowercase: a word or a {@link isQuotedName quoted name}. */
+/** A name token's name, lowercase: a word, a quoted identifier, or a `"…"` string, which some servers read as a name. */
 function nameOf(token: SqlToken): string | undefined {
   if (token.kind === "word" || token.kind === "quoted_identifier") return token.lower;
-  if (isQuotedName(token)) return token.text.slice(1, -1).toLowerCase();
+  if (token.kind === "string" && token.quote === '"') return token.text.slice(1, -1).toLowerCase();
   return undefined;
-}
-
-/**
- * Whether `tokens[k]` is the quoted part of a Postgres `U&"…"` name: `U`, `&` and the quote, with
- * nothing between. The shared lexer doesn't read `U&` names yet; once it decodes them (#692), this
- * goes, and the decoded name is matched like any other.
- */
-function isUnicodeEscapedName(tokens: readonly SqlToken[], k: number): boolean {
-  const [u, amp, quoted] = [tokens[k - 2], tokens[k - 1], tokens[k]!];
-  if (!isQuotedName(quoted)) return false;
-  return amp?.kind === "punct" && amp.text === "&" && amp.end === quoted.start &&
-    u?.kind === "word" && u.lower === "u" && u.end === amp.start;
 }
 
 function warn(

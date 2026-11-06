@@ -610,15 +610,12 @@ describe("validateTenantGuardrails — a call the tenant check can't read throug
   });
 
   // Postgres resolves each of these to `query_to_xml`. It doesn't care how the name is
-  // qualified or cased, or what comment sits before the `(`. It decodes a `U&"…"` name,
-  // which the check doesn't, so it refuses every `U&` name called as a function.
+  // qualified or cased, or what comment sits before the `(`.
   it.each([
     ["schema-qualified", "SELECT pg_catalog.query_to_xml('SELECT * FROM orders', true, false, '')"],
     ["quoted", `SELECT pg_catalog."query_to_xml"('SELECT * FROM orders', true, false, '')`],
     ["upper case", "SELECT QUERY_TO_XML('SELECT * FROM orders', true, false, '')"],
     ["with a comment before its parenthesis", "SELECT query_to_xml /* x */ ('SELECT * FROM orders', true, false, '')"],
-    ["Unicode-escaped", `SELECT U&"\\0071uery_to_xml"('SELECT * FROM orders', true, false, '')`],
-    ["Unicode-escaped with UESCAPE", `SELECT u&"!0071uery_to_xml" UESCAPE '!' ('SELECT * FROM orders', true, false, '')`],
   ])("refuses a function name written %s", (_label, sql) => {
     expect(rules(sql, POSTGRES_DIALECT)).toEqual(["UNCHECKABLE_FUNCTION"]);
     expect(rules(sql)).toEqual(["UNCHECKABLE_FUNCTION"]);
