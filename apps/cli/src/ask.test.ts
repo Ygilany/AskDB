@@ -57,7 +57,10 @@ describe("askdb ask", () => {
     expect(await runAskCli(["--question=Which users?", "--mock-sql=SELECT id FROM users", "--explain"])).toBe(0);
     const [sql, explain] = stdout.split("-- explain --\n");
     expect(sql).toBe("-- sql --\nSELECT id FROM users\n");
-    expect(JSON.parse(explain!)).toEqual(expect.any(Object));
+    expect(JSON.parse(explain!)).toMatchObject({
+      statementKind: "select",
+      checksVerified: expect.arrayContaining(["single_statement", "leading_select_or_with"]),
+    });
   });
 
   it("refuses SQL that writes, naming the rule on stderr, and exits 1", async () => {

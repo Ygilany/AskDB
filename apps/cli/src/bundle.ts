@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { errorMessage } from "./cli-error.js";
 import { runCommand, type CommandSpec } from "./command.js";
 
 const USAGE = "askdb bundle <schema-dir> --out <bundle.json>";
@@ -38,8 +39,7 @@ export function bundleCommand(): CommandSpec<BundleOptions> {
         const bundle = bundleSchemaDirectory(resolve(opts.schemaDir!));
         writeFileSync(outPath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`askdb bundle: ${message}\n`);
+        process.stderr.write(`askdb bundle: ${errorMessage(error)}\n`);
         return 1;
       }
       process.stdout.write(`Wrote ${outPath}\n`);

@@ -1,6 +1,6 @@
 import { askCommand, runAskCli } from "./ask.js";
 import { bundleCommand, runBundleCli } from "./bundle.js";
-import { formatOptionSections, GENERAL_OPTION_LINES } from "./command.js";
+import { formatOptionSections, GENERAL_OPTION_LINES, HELP_FLAGS, VERSION_FLAGS } from "./command.js";
 import { labelled } from "./error-values.js";
 import { initCommand, runInitCli } from "./init.js";
 import { introspectCommand, runIntrospectCli } from "./introspect.js";
@@ -53,11 +53,11 @@ export async function runCli(argv: readonly string[]): Promise<number> {
     process.stderr.write(formatTopLevelHelp());
     return 1;
   }
-  if (first === "--help" || first === "-h" || (first === "help" && rest.length === 0)) {
+  if (HELP_FLAGS.includes(first) || (first === "help" && rest.length === 0)) {
     process.stdout.write(formatTopLevelHelp());
     return 0;
   }
-  if (first === "--version" || first === "-V") {
+  if (VERSION_FLAGS.includes(first)) {
     process.stdout.write(`${readCliVersion()}\n`);
     return 0;
   }

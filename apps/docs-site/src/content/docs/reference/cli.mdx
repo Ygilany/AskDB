@@ -76,9 +76,9 @@ To introspect a Prisma schema file, also install `@askdb/prisma`, in the same pl
 | `-h, --help` | Print usage and the list of commands. Every command also takes `--help` for its own flags (for example `askdb ask --help`), and `askdb help <command>` prints the same text. |
 | `-V, --version` | Print the installed `askdb` version. |
 
-Every command except `studio` takes a flag's value as `--flag value` or `--flag=value`, and prints its help on stdout and exits `0` for `--help` (or `-h`), wherever it appears on the line.
+Every command except `studio` and its alias `enrich` takes a flag's value as `--flag value` or `--flag=value`, and prints its help on stdout and exits `0` for `--help` (or `-h`), wherever it appears on the line.
 
-Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, any command's `--help` and `--version`, `introspect templates`, `rag` with no subcommand (it prints help), and [`studio`](#askdb-studio).
+Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, any command's `--help` and `--version`, `introspect templates`, `rag` with no arguments (it prints help), and [`studio`](#askdb-studio).
 
 `ask`, `introspect`, and the `rag` commands need `askdb.config.*` (or `.config/askdb.*`) in the current directory. Without one they print ``No askdb.config.* or .config/askdb.* found in <cwd>. Run `npx askdb init` to create one.`` and exit `1`.
 
@@ -403,7 +403,7 @@ Stdout is one JSON object: `question`, `k`, and `results`, best match first. Eac
 
 Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command prints its usage to stderr and exits `1`.
 
-Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line, with any password in a URL masked.
+Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line.
 
 An unexpected error, such as a config file that fails to load, prints its message and the hint `Set ASKDB_DEBUG=1 to print the stack trace.` Set `ASKDB_DEBUG` to `1` or `true` to add the stack trace. Any other value, including `0`, leaves it off, and the `DEBUG` variable used by the `debug` package has no effect.
 

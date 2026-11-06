@@ -21,6 +21,8 @@ function drain(): Promise<unknown> {
   );
 }
 
+const EXIT_GRACE_MS = 250;
+
 // Each command loads askdb.config itself, only on the path that reads it. An error that escapes a
 // command, such as a missing or broken config, lands here.
 let exitCode: number;
@@ -36,4 +38,8 @@ try {
   exitCode = 1;
 }
 await drain();
-process.exit(exitCode);
+// Exit once the event loop is empty, so a logger's own pending writes (`--log-stdout` into a reader
+// that closed early) settle instead of making the exit hook retry them forever. A command that
+// leaves a handle open, such as Studio's sockets after it stops, is cut off after a grace period.
+process.exitCode = exitCode;
+setTimeout(() => process.exit(), EXIT_GRACE_MS).unref();

@@ -41,8 +41,9 @@ export type CommandSpec<O> = {
   run(opts: O): Promise<number>;
 };
 
-const HELP_FLAGS = ["--help", "-h"];
-const VERSION_FLAGS = ["--version", "-V"];
+/** The spellings every command, and `askdb` itself, takes for its help and its version. */
+export const HELP_FLAGS: readonly string[] = ["--help", "-h"];
+export const VERSION_FLAGS: readonly string[] = ["--version", "-V"];
 
 /** The help and version lines every command takes. `askdb --help` lists them too. */
 export const GENERAL_OPTION_LINES: readonly OptionLine[] = [
@@ -106,21 +107,46 @@ function parseArgs<O>(spec: CommandSpec<O>, argv: readonly string[]): O {
     const name = eq === -1 ? arg : arg.slice(0, eq);
     const inline = eq === -1 ? undefined : arg.slice(eq + 1);
     const flag = byName.get(name);
-    if (!flag) throw new Error(labelled("Unknown option", name));
-    if (!flag.value) {
-      if (inline !== undefined) throw new Error(`${name} takes no value.`);
-      flag.apply(opts, "");
+    if (flag) {
+      if (!flag.value) {
+        if (inline !== undefined) throw new Error(`${name} takes no value.`);
+        flag.apply(opts, "");
+      } else if (inline !== undefined) {
+        if (!inline) throw new Error(`${name} requires a value.`);
+        flag.apply(opts, inline);
+      } else {
+        flag.apply(opts, readValue(argv, ++i, name));
+      }
       continue;
     }
-    const value = inline ?? argv[++i];
-    if (!value || (inline === undefined && value.startsWith("--"))) throw new Error(`${name} requires a value.`);
-    flag.apply(opts, value);
+    if (arg.startsWith("--") || arg.length < 3) throw new Error(labelled("Unknown option", name));
+    // Short flags together, as commander took them: `-fy` is `-f -y`, `-qtext` is `-q text`, and
+    // `-vq text` ends with the flag that takes a value.
+    for (let j = 1; j < arg.length; j += 1) {
+      const short = `-${arg[j]}`;
+      const cluster = byName.get(short);
+      if (!cluster) throw new Error(labelled("Unknown option", short));
+      if (!cluster.value) {
+        cluster.apply(opts, "");
+        continue;
+      }
+      const rest = arg.slice(j + 1);
+      cluster.apply(opts, rest || readValue(argv, ++i, short));
+      break;
+    }
   }
   return opts;
 }
 
+/** The argument after a flag that takes a value; another flag there means the value is missing. */
+function readValue(argv: readonly string[], index: number, name: string): string {
+  const value = argv[index];
+  if (!value || value.startsWith("--")) throw new Error(`${name} requires a value.`);
+  return value;
+}
+
 /** What `askdb <name> --help` and `askdb help <name>` print. */
-export function formatHelp<O>(spec: CommandSpec<O>): string {
+function formatHelp<O>(spec: CommandSpec<O>): string {
   const sections = new Map<string, OptionLine[]>([["Options", []]]);
   for (const flag of spec.flags) {
     const group = flag.group ?? "Options";

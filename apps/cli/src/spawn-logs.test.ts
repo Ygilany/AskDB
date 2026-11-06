@@ -161,3 +161,22 @@ describe("cli spawn: askdb rag logs", () => {
   });
 });
 
+
+// `head` stops reading after its first bytes, so the rest of the --log-stdout lines meet a closed pipe.
+describe("cli spawn: a reader that closes stdout early", () => {
+  it("`askdb ask --log-stdout | head -c 10` exits instead of hanging on the unwritten log lines", () => {
+    const repoRoot = join(import.meta.dirname, "../../..");
+    const cli = join(repoRoot, "apps/cli/dist/cli.js");
+    const schema = join(repoRoot, "fixtures/schemas/orders-users.schema");
+    const exec = spawnSync(
+      "bash",
+      [
+        "-c",
+        `set -o pipefail; node "${cli}" ask --schema "${schema}" -q x --mock-sql "SELECT id FROM users" --log-stdout | head -c 10 >/dev/null`,
+      ],
+      { cwd: repoRoot, encoding: "utf8", timeout: 15_000 },
+    );
+    expect(exec.error, "timed out").toBeUndefined();
+    expect(exec.status, exec.stderr).toBe(0);
+  });
+});

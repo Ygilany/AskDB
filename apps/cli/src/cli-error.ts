@@ -1,21 +1,17 @@
 import { AskDbError, SqlValidationError } from "@askdb/core";
 import { MissingAskDbConfigError } from "./project-config.js";
 
-/** `scheme://user:password@` → `scheme://user:***@`, for text a driver wrote. */
-function maskCredentials(text: string): string {
-  return text.replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:/@]*):[^\s@/]*@/gi, "$1:***@");
-}
-
 /**
  * A thrown value as one or more lines, never blank. An error with an empty message, such as the
  * `AggregateError` a driver throws when `localhost` refuses on both ::1 and 127.0.0.1, gives each
- * inner error's message once (credentials masked), else its `code`, else its name.
+ * inner error's message once (a socket error names the address, not the connection string), else
+ * its `code`, else its name.
  */
 export function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
   if (error.message) return error.message;
   if (error instanceof AggregateError && error.errors.length > 0) {
-    const lines = new Set(error.errors.map((inner) => maskCredentials(errorMessage(inner))));
+    const lines = new Set(error.errors.map((inner) => errorMessage(inner)));
     return [...lines].join("\n");
   }
   const code = (error as { code?: unknown }).code;

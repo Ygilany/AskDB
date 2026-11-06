@@ -243,7 +243,8 @@ describe("askdb introspect — CLI-owned errors with the built-in registry", () 
 
   it("keeps the `introspect templates` message naming postgres for the built-in registry", async () => {
     installRuntime();
-    expect(await runIntrospectCli(["templates", "--engine", "prisma"])).toBe(1);
+    // `templates` is the first positional, wherever the flags put it.
+    expect(await runIntrospectCli(["--engine", "prisma", "templates"])).toBe(1);
     expect(stderr).toContain(
       "Engine 'prisma' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.",
     );

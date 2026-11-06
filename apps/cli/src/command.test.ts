@@ -43,7 +43,7 @@ function toyCommand(overrides: Partial<CommandSpec<Toy>> = {}): CommandSpec<Toy>
     usage: ["askdb toy"],
     flags: [
       { names: ["-n", "--name"], value: "<name>", help: "A value.", apply: (opts, value) => (opts.name = value) },
-      { names: ["--on"], help: "A switch.", apply: (opts) => (opts.on = true) },
+      { names: ["-o", "--on"], help: "A switch.", apply: (opts) => (opts.on = true) },
       { names: ["--tag"], value: "<tag>", help: "Repeatable.", apply: (opts, value) => opts.tags.push(value) },
     ],
     initial: () => ({ tags: [] }),
@@ -66,6 +66,9 @@ describe("runCommand parses every command's flags the same way", () => {
     ["a switch", ["--on"], { on: true }],
     ["a repeated flag, accumulating when it collects", ["--tag", "a", "--tag=b"], { tags: ["a", "b"] }],
     ["a repeated flag, last one winning otherwise", ["--name", "a", "--name", "b"], { name: "b" }],
+    ["a short flag with its value attached", ["-na"], { name: "a" }],
+    ["short flags together, the last taking the next argument", ["-on", "a"], { on: true, name: "a" }],
+    ["short flags together, the last with its value attached", ["-ona"], { on: true, name: "a" }],
   ])("takes %s", async (_case, argv, expected) => {
     const toy = toyCommand();
     expect(await runCommand(toy, argv)).toBe(0);
@@ -79,6 +82,7 @@ describe("runCommand parses every command's flags the same way", () => {
     ["an empty value", ["--name="], "--name requires a value."],
     ["a flag where the value should be", ["--name", "--on"], "--name requires a value."],
     ["an unknown option", ["--nope"], "Unknown option: --nope"],
+    ["an unknown short flag among others", ["-ox"], "Unknown option: -x"],
     ["an unknown --flag=value, without its value", [`--nope=${SECRET_URL}`], "Unknown option: --nope"],
     ["an unknown option that isn't showable", [`--${SECRET_URL}`], "Unknown option"],
     [

@@ -348,6 +348,7 @@ describe("askdb rag", () => {
 
   it.each<[string, string[], string]>([
     ["an unknown command", ["idnex"], "Unknown command: idnex (expected 'index', 'query', or 'setup-store')"],
+    ["flags without a command", ["--store", "file"], "Missing command (expected 'index', 'query', or 'setup-store')"],
     [
       "an unknown --log-level",
       ["index", "./schema", "--log-level", "loud"],
