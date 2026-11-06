@@ -1,9 +1,8 @@
 /**
  * Provider-portable reasoning/latency effort for AskDB model calls.
  *
- * `undefined` means "use the provider/model's own default" — no
- * `providerOptions` are computed or sent, which preserves AskDB's current
- * behavior for callers that never opt in.
+ * `undefined` means "use the provider/model's own default": no
+ * `providerOptions` are computed or sent.
  *
  * Each provider adapter (built in or custom) maps this portable value to its provider's native
  * knob (OpenAI `reasoningEffort`, Google `thinkingConfig`, Anthropic extended
@@ -21,7 +20,7 @@ export function isReasoningEffort(value: string): value is ReasoningEffort {
 export type AiCallPurpose = "nlToSql" | "enrichment";
 
 export type ReasoningSettings = {
-  /** Portable reasoning/latency effort. `undefined` preserves current (no `providerOptions`) behavior. */
+  /** Portable reasoning/latency effort. `undefined` sends no `providerOptions` (provider/model default). */
   reasoningEffort?: ReasoningEffort;
 };
 
