@@ -33,10 +33,9 @@ export type ConnectorConfig = {
   schemaPath?: string;
   filters?: IntrospectionFilters;
   /**
-   * Schema ID for the resulting `SqlSchema`. Only the Prisma adapter passes it
-   * on; the other built-in adapters ignore it, and every built-in connector
-   * falls back to `"introspected"`. The artifact's ID comes from
-   * `RenderOptions.schemaId`, not from this.
+   * `schemaId` of the `SqlSchema` the connector returns. Every built-in adapter
+   * passes it on; without it, the connector uses `"introspected"`. The
+   * artifact's `schema.json` takes its ID from `RenderOptions.schemaId`.
    */
   schemaId?: string;
 };
