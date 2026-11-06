@@ -170,6 +170,29 @@ function toConnection(raw: RawConnection, name: string): NormalizedAiConnection 
   return connection;
 }
 
+/**
+ * Refuses a model base URL with a user name or password. `fetch` refuses it as well, and its error
+ * quotes the whole URL, credentials included, so the error here names `key` and never the URL. A
+ * value that doesn't parse counts when it holds an `@`. (`@askdb/ai` checks what reaches it the
+ * same way, with `AiBaseUrlCredentialsError`.)
+ */
+function refuseBaseUrlCredentials(url: string | undefined, key: string): void {
+  if (url === undefined) return;
+  let credentials: boolean;
+  try {
+    const parsed = new URL(url);
+    credentials = parsed.username !== "" || parsed.password !== "";
+  } catch {
+    credentials = url.includes("@");
+  }
+  if (credentials) {
+    throw new Error(
+      `askdb.config: ${key} contains a username or password, which AskDB won't send in a URL. Put the key in apiKey; ` +
+        `to send other credentials, such as a proxy's, build the model in code with the AI SDK provider's headers option.`,
+    );
+  }
+}
+
 function readConnections(config: AskDbConfig): Map<string, ProviderConnections> {
   const table = new Map<string, ProviderConnections>();
   for (const [provider, value] of Object.entries(config.ai.providerConfig ?? {})) {
@@ -185,9 +208,11 @@ function readConnections(config: AskDbConfig): Map<string, ProviderConnections> 
           `askdb.config: ${label} has more than one connection named "${name}"; connection names must be unique within a provider.`,
         );
       }
+      const connection = toConnection(raw, name);
+      refuseBaseUrlCredentials(connection.baseUrl, isList ? `${label}.baseUrl (connection "${name}")` : `${label}.baseUrl`);
       entries.push({
         raw,
-        connection: toConnection(raw, name),
+        connection,
         label: isList ? `${label} connection "${name}"` : label,
       });
     }
@@ -337,6 +362,7 @@ function translateLegacyEmbedder(
 
   const apiKey = nonBlank(legacyOpenai.apiKey);
   const baseUrl = nonBlank(legacyOpenai.baseUrl);
+  refuseBaseUrlCredentials(baseUrl, "rag.embedderConfig.openai.baseUrl");
   if (apiKey !== undefined || baseUrl !== undefined) {
     if (!LEGACY_RAG_KEY_PROVIDERS.has(provider)) {
       throw new Error(

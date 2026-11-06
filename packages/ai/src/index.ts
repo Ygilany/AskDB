@@ -13,6 +13,7 @@ export {
   type CreateEmbeddingModelOptions,
 } from "./provider.js";
 export { createAiRegistry, aiKeyMissingMessage, aiProviderMissingMessage } from "./registry.js";
+export { AiBaseUrlCredentialsError } from "./base-url.js";
 export {
   BUILTIN_AI_PROVIDERS,
   getBuiltinAiProviderSetup,

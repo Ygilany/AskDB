@@ -137,6 +137,8 @@ Keyed by provider id. Each value is one connection, or a list of connections whe
 
 Every connection also takes `name`, which defaults to `"default"` and must be unique within its provider. A list needs a `"default"` entry unless every section that uses the provider sets `connection`.
 
+A `baseUrl` can't hold a username or password: a config that sets one fails to load, with an error that names the key and doesn't repeat the URL. `fetch` refuses such a URL anyway. Put the key in `apiKey`. To send other credentials, such as a proxy's, build the model in your own code with the AI SDK provider's `headers` option and pass it to `ask()` as `model` (see [Bring your own model](/guides/bring-your-own-model/)). The `askdb` CLI, Studio and the HTTP server can't send extra headers.
+
 ### `ai.language`
 
 | Field | Type | Default | Notes |

@@ -1,6 +1,7 @@
 import { createGateway } from "ai";
 import { withEmbeddingProviderOptions } from "../embedding.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { baseURLOption } from "../base-url.js";
 import { anthropicProvider } from "./anthropic.js";
 import { googleProvider } from "./google.js";
 import { openaiProvider } from "./openai.js";
@@ -47,7 +48,7 @@ function splitModelId(model: string): [upstream: string, upstreamModel: string] 
 function createProvider(config: AiConfig) {
   return createGateway({
     apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...baseURLOption(config),
   });
 }
 
