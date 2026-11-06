@@ -46,28 +46,50 @@ The `USING` expression keeps the policy closed:
 - **Unset matches nothing.** `current_setting(…, true)` returns `NULL` when the setting was never set in the session, instead of raising an error. A pooled connection that ran an earlier request holds `''` instead, and `NULLIF` turns that into `NULL`. `= ANY (NULL)` is never true, so a query with no tenant set gets no rows, not every row.
 - **A bad value fails loudly.** A setting such as `1,x`, which doesn't parse as the column's type, raises an error instead of matching.
 
-With a [`subtree` scope](/guides/multi-tenancy/#hierarchical-scope-subtree), the IDs come per tenant root. Use one setting per root, such as `app.agency_ids` and `app.client_ids`, read by the policies on that root's tables. Fill them from the same per-root IDs your `resolveTenantDescendants` callback returns, resolved once per request and used in both places.
+With a [`subtree` scope](/guides/multi-tenancy/#hierarchical-scope-subtree), the IDs come per tenant root. Use one setting per root, such as `app.agency_ids` and `app.client_ids`, read by the policies on that root's tables. Expand the scope once per request with `expandTenantScope()` from `@askdb/core`, the same expansion `ask()` runs, and use the result in both places:
+
+```ts
+import { expandTenantScope, loadSchema } from "@askdb/core";
+
+const schema = loadSchema("./my-app.schema"); // once, at startup
+
+const tenantScope = await expandTenantScope(schema.tenantPolicy!, subtreeScope, resolveTenantDescendants);
+const result = await askdb.ask(question, { tenantScope });
+// tenantScope.access is now a multi_root scope: one { tenantRoot, ids } entry per root,
+// with the seed IDs included. Set each root's setting from its entry's ids.
+```
+
+A root the resolver returned no IDs for keeps an empty entry, so its setting is empty and its tables return no rows.
 
 Enabling row-level security affects every role that doesn't own the table or bypass it. A role with no policy of its own sees no rows. If your application reads these tables as another such role, give that role a policy before you enable row-level security in production.
 
 ## Stop the query from changing its tenant
 
-A policy keyed on a setting holds only while the SQL it guards can't change that setting. By default every role can call `set_config()`, so one generated `SELECT` can set its own tenant IDs before it reads. This is documented Postgres behavior, not an AskDB bug, and AskDB's function denylist already rejects `set_config`. That check is a lint, so close the gap in the database: revoke `set_config` from `PUBLIC`, then grant it back to the roles that need it.
+A policy keyed on a setting holds only while the SQL it guards can't change that setting. By default every role can change it in two ways from a single statement:
+
+- **`set_config()`.** One generated `SELECT` can call it to set its own tenant IDs before it reads.
+- **A `DO` block.** PL/pgSQL code in a `DO` statement can run `SET LOCAL`, read every tenant's rows, and return them in an error or notice message.
+
+This is documented Postgres behavior, not an AskDB bug. AskDB's checks already reject both, since `set_config` is on the function denylist and `DO` doesn't start with `SELECT` or `WITH`, but those checks are a lint. Close the gap in the database: revoke both from `PUBLIC`, then grant them back to the roles that need them.
 
 ```sql
 REVOKE EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) FROM PUBLIC;
+REVOKE USAGE ON LANGUAGE plpgsql FROM PUBLIC;
 
--- Grant it back to each role that calls set_config() itself. Never to askdb_reader.
+-- Grant them back to each role that needs them. Never to askdb_reader.
 GRANT EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) TO app_admin;
+GRANT USAGE ON LANGUAGE plpgsql TO app_admin;
 ```
 
-Your application sets the tenant with a `SET LOCAL` statement instead, which needs no privilege on `set_config`. Generated SQL can't run that statement as long as you run the SQL as a single statement: see [Run each query in its own transaction](#run-each-query-in-its-own-transaction).
+Without `USAGE` on PL/pgSQL, a role can't run a `DO` block or create a PL/pgSQL function, but it can still call the functions that exist. If you installed another procedural language that runs `DO` blocks, such as PL/Perl, revoke its `USAGE` from `PUBLIC` too.
 
-<Aside type="caution" title="The revoke applies to the whole database">
-Every role in the database loses `set_config()` except the ones you grant it back to, so check what calls it before you revoke it. For example, `pg_dump` run as a non-superuser fails with `permission denied for function set_config`, and so do functions you wrote for PostgREST or Supabase that set response headers with `set_config()`. Grant it back to each of those roles. The role that runs AskDB's SQL must never get it back.
+Your application sets the tenant with a `SET LOCAL` statement instead, which needs neither privilege. Generated SQL can't run that statement as long as you run the SQL as a single statement: see [Run each query in its own transaction](#run-each-query-in-its-own-transaction).
+
+<Aside type="caution" title="The revokes apply to the whole database">
+Every role in the database loses `set_config()` and PL/pgSQL except the ones you grant them back to, so check what uses them before you revoke them. For example, `pg_dump` run as a non-superuser fails with `permission denied for function set_config`, and so do functions you wrote for PostgREST or Supabase that set response headers with `set_config()`. A migration role that creates PL/pgSQL functions or runs `DO` blocks fails with `permission denied for language plpgsql`. Grant each privilege back to the roles that need it. The role that runs AskDB's SQL must never get either one back.
 </Aside>
 
-Run the `REVOKE` as a superuser or as the owner of `set_config`. Run by any other role, Postgres prints `WARNING: no privileges could be revoked for "set_config"` and changes nothing. On a managed service you may not have such a role. Checks 5 and 6 in [Check that it works](#check-that-it-works) show whether the revoke took effect.
+Run the `REVOKE` statements as a superuser, or as the owner of `set_config` and of the language. Run by any other role, Postgres prints a warning such as `WARNING: no privileges could be revoked for "set_config"` and changes nothing. On a managed service you may not have such a role. Checks 5 and 6 in [Check that it works](#check-that-it-works) show whether the revokes took effect.
 
 ## Close the bypasses
 
@@ -77,7 +99,8 @@ Some roles and objects skip row-level security. Each of these returns every tena
 - **Superusers and `BYPASSRLS` roles.** They skip row-level security even under `FORCE`. Never run AskDB's SQL as one.
 - **Views.** A view reads its tables with its owner's rights, so a view the table owner created skips the policies. Make each view the role can read run as the caller: `ALTER VIEW document_counts SET (security_invoker = true);`.
 - **Materialized views.** They hold a copy their owner read, with every tenant's rows, and take no `security_invoker`. Don't grant them to `askdb_reader`.
-- **`SECURITY DEFINER` functions.** They run with their owner's rights, and new functions are executable by `PUBLIC`. Revoke `EXECUTE` on them from `PUBLIC` or from `askdb_reader`.
+- **Foreign tables.** Postgres doesn't support row-level security on a foreign table, so the remote server decides what it returns. Don't grant them to `askdb_reader`.
+- **`SECURITY DEFINER` functions.** They run with their owner's rights, and new functions are executable by `PUBLIC`. Revoke `EXECUTE` on them from `PUBLIC`, and grant it to the roles that call them. A revoke from `askdb_reader` alone changes nothing, because the role keeps the `PUBLIC` grant. To keep functions created later from being executable by `PUBLIC`, run `ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;` as the role that creates them. Check 7 lists the ones `askdb_reader` can still call.
 - **Tables without row-level security.** A table you grant to `askdb_reader` without enabling row-level security returns every row. Enable it, or don't grant the table.
 
 ## Run each query in its own transaction
@@ -128,7 +151,7 @@ export async function askForOrganizations(question: string, organizationIds: str
 
 - **Set the IDs you authorized.** The setting and `tenantScope` take the same IDs, from your own authorization. Don't read them from `result.tenantBindings`: it lists only the placeholders the model wrote, so a query that left out the filter would set no tenant.
 - **Quote the value.** `SET` can't take a bind parameter, so `escapeLiteral` quotes it. Never put an ID into the statement unquoted.
-- **Run one statement.** node-postgres sends a query with no parameters through the simple protocol, which runs every statement in the string. A query that reads only global tables has no tenant parameters, so a stacked `SET LOCAL app.organization_ids = '…'; SELECT …` would reset the tenant. `queryMode: "extended"` (node-postgres 8.12 or later) makes Postgres refuse it with `cannot insert multiple commands into a prepared statement`. AskDB's single-statement check rejects a stacked statement first, but that check is a lint too. `@types/pg` doesn't list `queryMode`, which is why the query is cast to `QueryConfig`.
+- **Run one statement.** node-postgres sends a query with no parameters through the simple protocol, which runs every statement in the string. A query that reads only global tables has no tenant parameters, so a stacked `SET LOCAL app.organization_ids = '…'; SELECT …` would reset the tenant. `queryMode: "extended"` (node-postgres 8.12 or later) makes Postgres refuse it with `cannot insert multiple commands into a prepared statement`. AskDB's single-statement check rejects a stacked statement first, but that check is a lint too. `@types/pg` doesn't list `queryMode`, which is why the query is cast to `QueryConfig`. One statement can still be a `DO` block, which the PL/pgSQL revoke in [Stop the query from changing its tenant](#stop-the-query-from-changing-its-tenant) blocks.
 
 ## Check that it works
 
@@ -140,14 +163,14 @@ Run these checks against a real database before you rely on the setup, and again
    SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'askdb_reader';
    ```
 
-2. **Every relation the role can read is protected.** Every table (`relkind` `r` or `p`) must have `relrowsecurity` set to `true`, unless your tenant policy lists it under `globalTables`. Every view (`v`) must have `security_invoker=true` in `reloptions`. No materialized view (`m`) may appear:
+2. **Every relation the role can read is protected.** Every table (`relkind` `r` or `p`) must have `relrowsecurity` set to `true`, unless your tenant policy lists it under `globalTables`. Every view (`v`) must have `security_invoker=true` in `reloptions`. No materialized view (`m`) or foreign table (`f`) may appear. The query also lists a table the role can read only some columns of:
 
    ```sql
    SELECT c.oid::regclass AS relation, c.relkind, c.relrowsecurity, c.reloptions
    FROM pg_class c
-   WHERE c.relkind IN ('r', 'p', 'v', 'm')
+   WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
      AND c.relnamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
-     AND has_table_privilege('askdb_reader', c.oid, 'SELECT')
+     AND has_any_column_privilege('askdb_reader', c.oid, 'SELECT')
    ORDER BY 1;
    ```
 
@@ -166,7 +189,7 @@ Run these checks against a real database before you rely on the setup, and again
    SELECT count(*) FROM documents;
    ```
 
-5. **The query can't change its tenant.** As `askdb_reader`, this must fail with `permission denied for function set_config`. If it returns rows for organizations 2 and 3, the revoke didn't take effect:
+5. **The query can't change its tenant.** As `askdb_reader`, the first transaction must fail with `permission denied for function set_config`. If it returns rows for organizations 2 and 3, the revoke didn't take effect. The second must fail with `permission denied for language plpgsql`:
 
    ```sql
    BEGIN READ ONLY;
@@ -175,9 +198,14 @@ Run these checks against a real database before you rely on the setup, and again
    FROM (SELECT set_config('app.organization_ids', '1,2,3', true)) AS s
    CROSS JOIN LATERAL (SELECT organization_id FROM documents OFFSET 0) AS d;
    ROLLBACK;
+
+   BEGIN READ ONLY;
+   SET LOCAL app.organization_ids = '1';
+   DO $$ BEGIN SET LOCAL app.organization_ids = '1,2,3'; END $$;
+   ROLLBACK;
    ```
 
-6. **Only the roles that need `set_config` can call it.** `askdb_reader` must not be in the list. Superusers always are:
+6. **Only the roles that need them can change the setting.** The first query lists the roles that can call `set_config`: `askdb_reader` must not be in it, and superusers always are. The second lists the languages with `DO` blocks that `askdb_reader` can use, and must return no rows:
 
    ```sql
    SELECT rolname
@@ -185,6 +213,22 @@ Run these checks against a real database before you rely on the setup, and again
    WHERE has_function_privilege(oid, 'pg_catalog.set_config(text, text, boolean)', 'EXECUTE')
      AND rolname NOT LIKE 'pg\_%'
    ORDER BY rolname;
+
+   SELECT lanname
+   FROM pg_language
+   WHERE laninline <> 0
+     AND has_language_privilege('askdb_reader', oid, 'USAGE');
+   ```
+
+7. **No `SECURITY DEFINER` function reads around the policies.** This lists the functions that run with their owner's rights and that `askdb_reader` can call. Revoke `EXECUTE` from `PUBLIC` on each one that can read a tenant table:
+
+   ```sql
+   SELECT p.oid::regprocedure AS function_name, pg_get_userbyid(p.proowner) AS owner
+   FROM pg_proc p
+   WHERE p.prosecdef
+     AND has_function_privilege('askdb_reader', p.oid, 'EXECUTE')
+     AND p.pronamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
+   ORDER BY 1;
    ```
 
 ## Other engines

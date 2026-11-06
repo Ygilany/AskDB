@@ -31,7 +31,7 @@ Three layers can keep a query to the caller's tenants. Only the database holds w
 
 | Layer | What it does | Holds when the SQL is wrong? |
 | --- | --- | --- |
-| **The database** | Row-level security, per-tenant views, or per-tenant roles return only the caller's rows. | Yes. It doesn't depend on the SQL. |
+| **The database** | Row-level security, per-tenant views, or per-tenant roles return only the caller's rows. | Yes, once it's set up and checked as in the guide below. It doesn't depend on the SQL. |
 | **Your application** | Adds or checks the tenant filter itself before it runs the query. | Only as far as your code covers every shape of query. |
 | **AskDB's policy and check** | The prompt tells the model to filter by tenant, and the check rejects or flags SQL that looks unscoped. | No. It's a lint over the SQL's tokens, not a boundary. |
 
