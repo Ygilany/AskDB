@@ -1,0 +1,205 @@
+---
+title: "Enforce tenancy in the database"
+description: "Make Postgres the tenant boundary for the SQL AskDB generates: row-level security keyed on a per-request setting, set with SET LOCAL in the transaction that runs the query."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">Tenant isolation</p>
+
+<p class="doc-lede">AskDB's tenant check is a lint. It catches a model that forgot the tenant filter, but it can't prove a query is scoped. This guide makes Postgres the tenant boundary instead: row-level security keeps every query to the caller's tenants, whatever SQL arrives.</p>
+
+## Before you start
+
+- **A tenant policy and a scope.** Your schema artifact has a tenant policy, and every `ask()` call passes a `tenantScope`. See [Multi-tenancy](/guides/multi-tenancy/), and [What enforces isolation](/guides/multi-tenancy/#what-enforces-isolation) for how this guide fits with AskDB's check.
+- **A read-only role for generated SQL.** Here it's `askdb_reader`, set up as in [Database role](/guides/run-safely-in-prod/#database-role). It must not own the tenant tables, be a superuser, or have `BYPASSRLS`: Postgres skips row-level security for all three.
+- **PostgreSQL 15 or later** if the role reads views, for `security_invoker`. The examples were tested on PostgreSQL 17.
+
+The examples use the tables from the multi-tenancy guide, with integer IDs: `organizations` (the tenant root), `documents` with an `organization_id` column, and `comments`, which reaches its organization through `document_id`.
+
+Keep `enforcement: strict` in your tenant policy. AskDB's check still stops most unscoped queries before they reach the database, so a model mistake shows up as an error you can log, and the database makes the mistakes that get past it harmless.
+
+## Add a policy to each tenant table
+
+Enable row-level security on every root and scoped table in your tenant policy. Then add a policy that reads the request's tenant IDs from a setting, here `app.organization_ids`:
+
+```sql
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_read ON organizations FOR SELECT TO askdb_reader
+  USING (id = ANY (string_to_array(NULLIF(current_setting('app.organization_ids', true), ''), ',')::integer[]));
+
+CREATE POLICY tenant_read ON documents FOR SELECT TO askdb_reader
+  USING (organization_id = ANY (string_to_array(NULLIF(current_setting('app.organization_ids', true), ''), ',')::integer[]));
+
+-- comments has no organization_id: a comment belongs to its document's organization.
+-- The subquery reads documents under documents' own policy.
+CREATE POLICY tenant_read ON comments FOR SELECT TO askdb_reader
+  USING (EXISTS (SELECT 1 FROM documents d WHERE d.id = comments.document_id));
+```
+
+The `USING` expression keeps the policy closed:
+
+- **Several IDs.** The setting holds a comma-separated list, so a user who sees 40 organizations gets one setting with 40 IDs. Cast the list to your ID column's type: `integer[]`, `bigint[]` or `uuid[]`. For text IDs, leave out the cast, and refuse an ID that contains a comma before you set it.
+- **Unset matches nothing.** `current_setting(…, true)` returns `NULL` when the setting was never set in the session, instead of raising an error. A pooled connection that ran an earlier request holds `''` instead, and `NULLIF` turns that into `NULL`. `= ANY (NULL)` is never true, so a query with no tenant set gets no rows, not every row.
+- **A bad value fails loudly.** A setting such as `1,x`, which doesn't parse as the column's type, raises an error instead of matching.
+
+With a [`subtree` scope](/guides/multi-tenancy/#hierarchical-scope-subtree), the IDs come per tenant root. Use one setting per root, such as `app.agency_ids` and `app.client_ids`, read by the policies on that root's tables. Fill them from the same per-root IDs your `resolveTenantDescendants` callback returns, resolved once per request and used in both places.
+
+Enabling row-level security affects every role that doesn't own the table or bypass it. A role with no policy of its own sees no rows. If your application reads these tables as another such role, give that role a policy before you enable row-level security in production.
+
+## Stop the query from changing its tenant
+
+A policy keyed on a setting holds only while the SQL it guards can't change that setting. By default every role can call `set_config()`, so one generated `SELECT` can set its own tenant IDs before it reads. This is documented Postgres behavior, not an AskDB bug, and AskDB's function denylist already rejects `set_config`. That check is a lint, so close the gap in the database: revoke `set_config` from `PUBLIC`, then grant it back to the roles that need it.
+
+```sql
+REVOKE EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) FROM PUBLIC;
+
+-- Grant it back to each role that calls set_config() itself. Never to askdb_reader.
+GRANT EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) TO app_admin;
+```
+
+Your application sets the tenant with a `SET LOCAL` statement instead, which needs no privilege on `set_config`. Generated SQL can't run that statement as long as you run the SQL as a single statement: see [Run each query in its own transaction](#run-each-query-in-its-own-transaction).
+
+<Aside type="caution" title="The revoke applies to the whole database">
+Every role in the database loses `set_config()` except the ones you grant it back to, so check what calls it before you revoke it. For example, `pg_dump` run as a non-superuser fails with `permission denied for function set_config`, and so do functions you wrote for PostgREST or Supabase that set response headers with `set_config()`. Grant it back to each of those roles. The role that runs AskDB's SQL must never get it back.
+</Aside>
+
+Run the `REVOKE` as a superuser or as the owner of `set_config`. Run by any other role, Postgres prints `WARNING: no privileges could be revoked for "set_config"` and changes nothing. On a managed service you may not have such a role. Checks 5 and 6 in [Check that it works](#check-that-it-works) show whether the revoke took effect.
+
+## Close the bypasses
+
+Some roles and objects skip row-level security. Each of these returns every tenant's rows, with no error:
+
+- **The table owner.** Postgres doesn't apply a table's policies to its owner. Run AskDB's SQL as a role that doesn't own the tables. If some code must read them as the owner, `ALTER TABLE documents FORCE ROW LEVEL SECURITY;` applies the policies to the owner too. Under `FORCE`, an owner with no policy of its own sees no rows, so check what else connects as the owner before you turn it on.
+- **Superusers and `BYPASSRLS` roles.** They skip row-level security even under `FORCE`. Never run AskDB's SQL as one.
+- **Views.** A view reads its tables with its owner's rights, so a view the table owner created skips the policies. Make each view the role can read run as the caller: `ALTER VIEW document_counts SET (security_invoker = true);`.
+- **Materialized views.** They hold a copy their owner read, with every tenant's rows, and take no `security_invoker`. Don't grant them to `askdb_reader`.
+- **`SECURITY DEFINER` functions.** They run with their owner's rights, and new functions are executable by `PUBLIC`. Revoke `EXECUTE` on them from `PUBLIC` or from `askdb_reader`.
+- **Tables without row-level security.** A table you grant to `askdb_reader` without enabling row-level security returns every row. Enable it, or don't grant the table.
+
+## Run each query in its own transaction
+
+For each request, open a read-only transaction, set the tenant IDs with `SET LOCAL`, run the generated SQL, and roll back:
+
+```sql
+BEGIN READ ONLY;
+SET LOCAL app.organization_ids = '1,3';
+-- run the SQL AskDB generated here
+ROLLBACK;
+```
+
+Use `SET LOCAL`, never `SET`. `SET LOCAL` lasts until the transaction ends, so the next request on a pooled connection starts with no tenant and sees no rows. A plain `SET` lasts for the whole session: the connection goes back to the pool still set to this request's tenants, and the next request that doesn't set its own reads their rows.
+
+In node-postgres, with `askdb` created by `createAskDb()` as in [Embed in a Node app](/guides/embed-in-node/):
+
+```ts
+import { Pool, type QueryConfig } from "pg";
+
+// Connects as askdb_reader.
+const pool = new Pool({ connectionString: process.env.ASKDB_READER_URL, statement_timeout: 5000 });
+
+// organizationIds: the organizations your application authorized for this user.
+export async function askForOrganizations(question: string, organizationIds: string[]) {
+  const result = await askdb.ask(question, {
+    tenantScope: {
+      access: { kind: "ids", tenantRoot: "table:public.organizations", ids: organizationIds },
+    },
+  });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN READ ONLY");
+    // SET takes no bind parameters, so quote the value.
+    await client.query(`SET LOCAL app.organization_ids = ${client.escapeLiteral(organizationIds.join(","))}`);
+    // The extended protocol accepts exactly one statement, even with no parameters.
+    const query = { text: result.sql, values: result.tenantParams, queryMode: "extended" } as QueryConfig;
+    const { rows } = await client.query(query);
+    return rows;
+  } finally {
+    // ROLLBACK ends the transaction and clears the setting. If it fails, close the connection.
+    const ended = await client.query("ROLLBACK").then(() => true, () => false);
+    client.release(!ended);
+  }
+}
+```
+
+- **Set the IDs you authorized.** The setting and `tenantScope` take the same IDs, from your own authorization. Don't read them from `result.tenantBindings`: it lists only the placeholders the model wrote, so a query that left out the filter would set no tenant.
+- **Quote the value.** `SET` can't take a bind parameter, so `escapeLiteral` quotes it. Never put an ID into the statement unquoted.
+- **Run one statement.** node-postgres sends a query with no parameters through the simple protocol, which runs every statement in the string. A query that reads only global tables has no tenant parameters, so a stacked `SET LOCAL app.organization_ids = '…'; SELECT …` would reset the tenant. `queryMode: "extended"` (node-postgres 8.12 or later) makes Postgres refuse it with `cannot insert multiple commands into a prepared statement`. AskDB's single-statement check rejects a stacked statement first, but that check is a lint too. `@types/pg` doesn't list `queryMode`, which is why the query is cast to `QueryConfig`.
+
+## Check that it works
+
+Run these checks against a real database before you rely on the setup, and again after a schema change. A policy that is enabled but doesn't apply looks the same as one that works until you test it.
+
+1. **The role can't skip the policies.** Both columns must be `false`:
+
+   ```sql
+   SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'askdb_reader';
+   ```
+
+2. **Every relation the role can read is protected.** Every table (`relkind` `r` or `p`) must have `relrowsecurity` set to `true`, unless your tenant policy lists it under `globalTables`. Every view (`v`) must have `security_invoker=true` in `reloptions`. No materialized view (`m`) may appear:
+
+   ```sql
+   SELECT c.oid::regclass AS relation, c.relkind, c.relrowsecurity, c.reloptions
+   FROM pg_class c
+   WHERE c.relkind IN ('r', 'p', 'v', 'm')
+     AND c.relnamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
+     AND has_table_privilege('askdb_reader', c.oid, 'SELECT')
+   ORDER BY 1;
+   ```
+
+3. **A tenant sees only its own rows.** Connect as `askdb_reader` and run a query with no tenant filter. Only organization 1 may appear. Repeat it for each tenant table:
+
+   ```sql
+   BEGIN READ ONLY;
+   SET LOCAL app.organization_ids = '1';
+   SELECT organization_id, count(*) FROM documents GROUP BY organization_id;
+   ROLLBACK;
+   ```
+
+4. **No tenant sees nothing.** As `askdb_reader`, on a connection that hasn't set the tenant, this must return `0`:
+
+   ```sql
+   SELECT count(*) FROM documents;
+   ```
+
+5. **The query can't change its tenant.** As `askdb_reader`, this must fail with `permission denied for function set_config`. If it returns rows for organizations 2 and 3, the revoke didn't take effect:
+
+   ```sql
+   BEGIN READ ONLY;
+   SET LOCAL app.organization_ids = '1';
+   SELECT d.organization_id
+   FROM (SELECT set_config('app.organization_ids', '1,2,3', true)) AS s
+   CROSS JOIN LATERAL (SELECT organization_id FROM documents OFFSET 0) AS d;
+   ROLLBACK;
+   ```
+
+6. **Only the roles that need `set_config` can call it.** `askdb_reader` must not be in the list. Superusers always are:
+
+   ```sql
+   SELECT rolname
+   FROM pg_roles
+   WHERE has_function_privilege(oid, 'pg_catalog.set_config(text, text, boolean)', 'EXECUTE')
+     AND rolname NOT LIKE 'pg\_%'
+   ORDER BY rolname;
+   ```
+
+## Other engines
+
+This recipe is for Postgres. On every engine, AskDB's tenant check stays a lint, so the database or your application must keep each query to its tenants. The other engines AskDB supports haven't been tested with a recipe like this one:
+
+- **CockroachDB** has row-level security from v25.2, with `FORCE ROW LEVEL SECURITY` for table owners. Its docs pass the tenant in `application_name` rather than a custom setting, and list features that skip the policies. See [Row-level security](https://www.cockroachlabs.com/docs/stable/row-level-security).
+- **SQL Server and Azure SQL** have row-level security from SQL Server 2016: a security policy with a filter predicate function, which can read a tenant ID your application sets with `sp_set_session_context` and `@read_only = 1`. Microsoft warns that crafted queries can infer filtered rows from errors, which matters for generated SQL. See [Row-level security](https://learn.microsoft.com/en-us/sql/relational-databases/security/row-level-security).
+- **MySQL and MariaDB** document no row-level security policies. A view can't read a system or user variable, so a view can't take the tenant per request ([MySQL](https://dev.mysql.com/doc/refman/8.4/en/create-view.html), [MariaDB](https://mariadb.com/docs/server/server-usage/views/create-view)). Give each tenant its own database, or its own account that can read only that tenant's views.
+- **SQLite** has no users or grants ([omitted features](https://www.sqlite.org/omitted.html)). Give each tenant its own database file. Its [authorizer](https://www.sqlite.org/c3ref/set_authorizer.html) works on tables and columns, not rows.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Declare the tenant policy and pass a scope to every call.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The read-only role, timeouts, and audit logging around this transaction.</span></a>
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB's checks catch, and what they don't.</span></a>
+</div>
