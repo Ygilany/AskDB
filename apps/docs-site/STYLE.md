@@ -103,12 +103,12 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 ## Diagrams
 
 - Put a diagram's source in `src/assets/diagrams/d2/<name>.d2` and show it with a `d2` fence: ```` ```d2 src="../../assets/diagrams/d2/<name>.d2" ```` (the `src` path is relative to the page). A short diagram can go in the fence body instead.
-- Wrap the fence in `<figure style="--d2-width: 334px">` and set the value to the diagram's natural width: the third number of the outer `viewBox` in the built page (`viewBox="0 0 334 619"` is 334 wide). Without it, the diagram stretches to fill the content column. Don't use the fence's `width` or `title` attributes: `astro-d2` ignores both with D2's WebAssembly build.
+- Wrap the fence in `<figure style="--d2-width: 334px">` and set the value to the diagram's natural width: the third number of the outer `viewBox` in the built page (`viewBox="0 0 334 619"` is 334 wide). Without it, the diagram stretches to fill the content column. Don't use the fence's `width` or `title` attributes: `astro-d2` ignores both with D2's WebAssembly build ([astro-d2#69](https://github.com/HiDeoo/astro-d2/issues/69)).
 - End the figure with a `<figcaption>` that says what the diagram shows. It is the diagram's text alternative. Leave a blank line before and after the fence, or MDX doesn't render it.
-- Keep the natural width at 720 px (the content column) or less. A flow of four or more steps reads better top to bottom (`direction: down`): the text then stays full size on a phone.
+- Keep the natural width at 720 px or less, the content column at its widest. With the table of contents showing, the column is narrower (632 px in a 1280 px window), so a wider diagram scales down. A flow of four or more steps reads better top to bottom (`direction: down`): the text then stays full size on a phone.
 - Use D2's default palette only. `custom.css` maps it to the site's colors, so the diagram follows the light and dark toggle. A hard-coded color (`style.fill: "#…"`) does not follow it.
 - Use the same words in node labels as on the page: command names, package names and terms from "Terminology".
-- Keep labels to plain text. D2's own stylesheet doesn't reach the page (`custom.css` explains why and stands in for the parts a diagram needs), so labels render in the site font, and Markdown labels and sketch mode lose their styling.
+- Keep labels to plain text. D2's own stylesheet doesn't reach the page ([astro#18652](https://github.com/withastro/astro/issues/18652); `custom.css` stands in for the parts a diagram needs), so labels render in the site font, and Markdown labels and sketch mode lose their styling.
 - The older diagrams in `src/assets/diagrams/*.svg` are hand-drawn. Redraw one in D2 when its page changes.
 
 ## Code samples

@@ -20,7 +20,10 @@ function readFrontMatter(
   filePath?: string,
 ): { data: Record<string, unknown>; content: string } {
   try {
-    const file = matter(content);
+    // Any options object, even an empty one, keeps gray-matter from caching the input: its
+    // cache holds every input for the life of the process, and an input that failed to parse
+    // stays there as an empty entry, so a second parse would skip the YAML error (#742).
+    const file = matter(content, {});
     return { data: file.data, content: file.content };
   } catch (e) {
     const loc = filePath ? ` in ${filePath}` : "";
