@@ -37,10 +37,10 @@ describe("mapAskError — guardrail_violation", () => {
       status: 422,
       error: { code: "guardrail_violation", rule: "SENSITIVE_TABLE_REFERENCED" },
     });
-    const tenant = foreignCopy("TenantGuardrailError", { warnings: [{ rule: "CROSS_TENANT_WITHOUT_GLOBAL" }] });
+    const tenant = foreignCopy("TenantGuardrailError", { warnings: [{ rule: "MISSING_TENANT_PREDICATE" }] });
     expect(mapAskError(tenant, ctx)).toMatchObject({
       status: 422,
-      error: { code: "guardrail_violation", rule: "CROSS_TENANT_WITHOUT_GLOBAL" },
+      error: { code: "guardrail_violation", rule: "MISSING_TENANT_PREDICATE" },
     });
   });
 

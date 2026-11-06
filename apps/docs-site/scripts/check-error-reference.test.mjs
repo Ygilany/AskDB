@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { missingFromPage } from "./check-error-reference.mjs";
+import { missingFromPage, staleOnPage } from "./check-error-reference.mjs";
 
 // The shapes errors.ts uses: comments inside and around unions, classes on any base, and object
 // types that aren't code lists. A `/*` inside a line comment or a string, before undocumented
@@ -52,4 +52,24 @@ test("missingFromPage throws for an export it can't classify, instead of skippin
     assert.throws(() => missingFromPage(`export class AError extends Error {}\n${line}`, "`AError`"), /extend the parser/, line);
   }
   assert.throws(() => missingFromPage("const x = 1;", ""), /no exported error class or code/);
+});
+
+test("staleOnPage reports Errors-table rows that the source no longer declares", () => {
+  const page = [
+    "## Options",
+    "| `RULE_GONE` | outside the Errors section, so not checked |",
+    "## Errors",
+    "| Class | Thrown by |",
+    "| `BaseError` | … |",
+    "| `RemovedError` | … |",
+    "### `RuleCode` rules",
+    "| `RULE_ONE` | … |",
+    "| `RULE_GONE` | … |",
+    "Prose naming `ALSO_GONE` isn't a table row.",
+    "## Read next",
+    "| `AFTER_ERRORS` | … |",
+  ].join("\n");
+
+  assert.deepEqual(staleOnPage(source, page), ["RemovedError", "RULE_GONE"]);
+  assert.throws(() => staleOnPage(source, "## Options\n"), /no `## Errors` section/);
 });

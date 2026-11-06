@@ -369,7 +369,7 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 |---|---|
 | Tenant policy exists, no `tenantScope` passed | Fail closed. Query rejected before prompt generation. |
 | `tenantScope.access` references unknown tenant root | Rejected. |
-| `global` scope without `reason` | Rejected. |
+| `global` scope whose `reason` is missing, not a string, or blank | Rejected (`GLOBAL_WITHOUT_REASON`), before the shape check. |
 | `subtree` scope with no `resolveTenantDescendants`, or a resolver returning a flat array, a key outside the subtree's roots, an invalid ID list, or no IDs | Rejected before prompt generation (`SUBTREE_NOT_RESOLVABLE`). |
 | Unexpanded `subtree` scope passed directly to `resolveTenantSql()` or `buildTenantPromptBlock()` | Rejected (`SUBTREE_NOT_RESOLVABLE`). |
 | Two roots that derive the same `:tenant_<name>_ids` placeholder | Rejected with `SchemaParseError` naming both roots: when the policy loads, by `validateTenantScope()` (so by `ask()`) and by `resolveTenantSql()` for a policy built in code or changed after validation, and by Studio's policy save (400, nothing written). |
