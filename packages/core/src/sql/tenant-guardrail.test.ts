@@ -616,6 +616,9 @@ describe("validateTenantGuardrails — a call the tenant check can't read throug
     ["quoted", `SELECT pg_catalog."query_to_xml"('SELECT * FROM orders', true, false, '')`],
     ["upper case", "SELECT QUERY_TO_XML('SELECT * FROM orders', true, false, '')"],
     ["with a comment before its parenthesis", "SELECT query_to_xml /* x */ ('SELECT * FROM orders', true, false, '')"],
+    // The lexer reads `:set_config` as a placeholder; Postgres reads `:` and then the call.
+    ["after a colon in an array slice (set_config)", "SELECT (ARRAY[1, 2])[1:set_config('a', 'b', true)::int] AS v"],
+    ["after a colon in an array slice (crosstab)", "SELECT (ARRAY[1, 2])[1:crosstab('x')] AS v"],
   ])("refuses a function name written %s", (_label, sql) => {
     expect(rules(sql, POSTGRES_DIALECT)).toEqual(["UNCHECKABLE_FUNCTION"]);
     expect(rules(sql)).toEqual(["UNCHECKABLE_FUNCTION"]);
