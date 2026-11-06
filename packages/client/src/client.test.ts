@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { AiConfig, AiProviderAdapter, AiRegistry } from "@askdb/ai";
+import { AiBaseUrlCredentialsError, createAiRegistry, type AiConfig, type AiProviderAdapter, type AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import type { AnyNormalizedSchema, AskDbLogger, AskDbModeV1, AskDialect } from "@askdb/core";
 import {
@@ -807,5 +807,26 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     expect(bound.sql).toBe(
       "SELECT count(*) FROM orders WHERE agency_id IN ('1', '2') AND status = 'open'",
     );
+  });
+});
+
+// #787: a runtime config a host builds itself skips the config file's check, so @askdb/ai refuses
+// a base URL with credentials before any request is made. fetch would quote the URL in its error,
+// which core logs as askdb.pipeline.failed.
+describe("createAskDb with a model base URL that carries credentials", () => {
+  it("rejects before any request, and neither the error nor the log repeats the URL", async () => {
+    const lines: unknown[] = [];
+    const logger: AskDbLogger = { info: (context) => void lines.push(context), error: (context) => void lines.push(context) };
+    const askdb = createAskDb({
+      config: makeConfig({ aiEnv: { OPENAI_API_KEY: "sk-test", OPENAI_BASE_URL: "http://admin:S3cret@proxy.example/v1" } }),
+      registry: createAiRegistry(),
+      schema: { schema: loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema },
+    });
+
+    const error = await askdb.ask("count users", { logger }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AiBaseUrlCredentialsError);
+    expect((error as AiBaseUrlCredentialsError).setting).toBe("OPENAI_BASE_URL");
+    expect(`${(error as Error).message}${JSON.stringify(lines)}`).not.toMatch(/S3cret|admin/);
   });
 });
