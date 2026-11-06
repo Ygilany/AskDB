@@ -4,6 +4,7 @@ import {
   ENGINE_LEXER_PROFILES,
   GENERIC_LEXER,
   lexSql,
+  findUnicodeEscapedIdentifier,
   lexerProfileFor,
   type SqlLexerProfile,
   type SqlToken,
@@ -359,29 +360,6 @@ function isPunct(t: SqlToken | undefined, text: string): boolean {
 
 function isAdjacentPunct(t: SqlToken, next: SqlToken | undefined, text: string): boolean {
   return isPunct(next, text) && next!.start === t.end;
-}
-
-/**
- * A Postgres Unicode-escaped identifier, as `U&"…"` (either case) with no space between the
- * parts: the form Postgres's scanner reads as one identifier. With a space, `U& "x"` is the
- * `&` operator, and `U&'…'` is a string, which names nothing.
- */
-function findUnicodeEscapedIdentifier(tokens: readonly SqlToken[]): string | undefined {
-  for (let i = 0; i + 2 < tokens.length; i++) {
-    const u = tokens[i]!;
-    const amp = tokens[i + 1]!;
-    const name = tokens[i + 2]!;
-    if (
-      u.kind === "word" &&
-      u.lower === "u" &&
-      isAdjacentPunct(u, amp, "&") &&
-      name.kind === "quoted_identifier" &&
-      name.start === amp.end
-    ) {
-      return `${u.text}&${name.text}`;
-    }
-  }
-  return undefined;
 }
 
 /** First significant token, skipping leading `(` so `(SELECT …) UNION (SELECT …)` passes. */

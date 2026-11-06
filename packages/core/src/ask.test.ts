@@ -1360,6 +1360,15 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     ).rejects.toThrow(TenantGuardrailError);
   });
 
+  it("strict: rejects a scoped table written as a U& name, which the read-only check doesn't see here (#704)", async () => {
+    const schema = loadSchema(multiTenantDir);
+    // A custom AskDialect skips validateSelectSql, so only the tenant check stands in the way.
+    const dialect: AskDialect = { generate: async () => ({ sql: 'SELECT id FROM U&"\\006Frders"' }) };
+    const rejection = ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "UNICODE_ESCAPED_IDENTIFIER", tableId: "" }] });
+  });
+
   it("does not trust a custom dialect's self-reported passing guardrail", async () => {
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = {

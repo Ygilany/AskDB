@@ -702,6 +702,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `MISSING_TENANT_PREDICATE` | Reads a tenant-scoped table, or a root table the scope covers, with no tenant predicate that filters it. See [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires). |
 | `MISSING_TYPE_DISCRIMINATOR` | Reads a polymorphic table without its type column compared with the mapping key of the root whose placeholder filters its ID column, ANDed into the same clause (`owner_type = 'agency' AND owner_id = :tenant_agency_ids`). |
 | `UNKNOWN_TABLE_REFERENCED` | Reads a table that `tenant-policy.md` doesn't classify. |
+| `UNICODE_ESCAPED_IDENTIFIER` | Uses a Postgres Unicode-escaped name, such as `U&"\006Frders"`, as a table, column or function. Postgres decodes it, so the check can't tell what it reads. Reported with `tableId: ""` when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect` or no dialect. |
 | `UNPROVABLE_SCOPE` | Reported for a custom `AskDialect` whose `tenantGuardrail` has `passed: false` and no warnings. |
 | `INCOMPATIBLE_JOIN_SCOPES` | Declared, but no check reports it. |
 | `CROSS_TENANT_WITHOUT_GLOBAL` | Declared, but no check reports it. |

@@ -19,6 +19,20 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.47
+
+Released with `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Handle `SQL_UNICODE_ESCAPED_IDENTIFIER` for Unicode-escaped names
+
+On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped identifier such as `U&"set\005fconfig"`, and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_UNICODE_ESCAPED_IDENTIFIER` ([#692](https://github.com/Ygilany/AskDB/issues/692), ADR 0012). Postgres decodes the escapes, which could spell a blocked function, such as `set_config`, a scoped table (`U&"\006Frders"` reads `orders`) or a sensitive column, and the checks didn't decode them.
+
+- **The tenant check refuses the same names,** in any position, with the new `TenantGuardrailRuleCode` `UNICODE_ESCAPED_IDENTIFIER` and `tableId: ""` ([#704](https://github.com/Ygilany/AskDB/issues/704)). It applies whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws or warns.
+- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
+- **If you store SQL with a `U&"…"` name and rebind it,** the rebind now rejects it. Write the name in plain double quotes (`"注文数"`) instead.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_unicode_escaped_identifier) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
+
 ## 1.0.0-beta.46
 
 Released with `@askdb/client` 1.0.0-beta.9, `@askdb/config` 1.0.0-beta.15, `@askdb/enrich` 0.2.0-beta.17, `@askdb/introspect` 0.3.0-beta.20, `@askdb/mysql` 0.1.0-beta.21, `@askdb/prisma` 0.2.0-beta.20, `@askdb/sqlite` 0.1.0-beta.21, `@askdb/sqlserver` 0.1.0-beta.22 and `@askdb/studio` 0.2.0-beta.39. Other packages that got a new version list what changed in their CHANGELOG.
@@ -163,15 +177,6 @@ See the [Prisma guide](/guides/integrations/prisma/).
 - **A `switch` over every `SqlValidationRuleCode`** needs a case for `SQL_LOCKING_READ`.
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_locking_read) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
-
-### Handle `SQL_UNICODE_ESCAPED_IDENTIFIER` for Unicode-escaped names
-
-On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped identifier such as `U&"set\005fconfig"`, and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_UNICODE_ESCAPED_IDENTIFIER` ([#692](https://github.com/Ygilany/AskDB/issues/692), ADR 0012). The escapes could spell a blocked function, such as `set_config`, or a sensitive column, and the other checks didn't decode them.
-
-- **A `switch` over every `SqlValidationRuleCode`** needs a case for `SQL_UNICODE_ESCAPED_IDENTIFIER`.
-- **If you store SQL with a `U&"…"` name and rebind it,** the rebind now rejects it. Write the name in plain double quotes (`"注文数"`) instead.
-
-See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_unicode_escaped_identifier) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
 
 ### Replace a symbolic link at `schema.json`
 

@@ -370,6 +370,8 @@ describe("validateSelectSql — Unicode-escaped identifiers (#692)", () => {
     ["the six-digit escape", `SELECT U&"set\\+00005Fconfig"('app.agency_id', '2', true)`],
     ["another blocked function", `SELECT U&"pg\\005fsleep"(10)`],
     ["a column name, not a call", `SELECT U&"s\\0073n" FROM people.person`],
+    // #704: Postgres reads it as orders, and it returned both tenants' rows.
+    ["a table name", `SELECT id FROM U&"\\006Frders"`],
   ])("rejects %s", (_label, sql) => {
     expectRule(sql, "SQL_UNICODE_ESCAPED_IDENTIFIER");
   });

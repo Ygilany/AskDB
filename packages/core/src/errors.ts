@@ -158,7 +158,15 @@ export type TenantGuardrailRuleCode =
   | "INCOMPATIBLE_JOIN_SCOPES"
   | "UNKNOWN_TABLE_REFERENCED"
   | "CROSS_TENANT_WITHOUT_GLOBAL"
-  | "UNPROVABLE_SCOPE";
+  | "UNPROVABLE_SCOPE"
+  /**
+   * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a
+   * function. Postgres decodes it, and the tenant check matches names as written, so it can't
+   * tell what the name reads. Reported for the whole SQL, with `tableId: ""`, whenever the SQL
+   * is read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not under
+   * a `global` scope (#704, #692).
+   */
+  | "UNICODE_ESCAPED_IDENTIFIER";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;
