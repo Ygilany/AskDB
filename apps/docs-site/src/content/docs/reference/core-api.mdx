@@ -295,7 +295,7 @@ const schema = loadSchema("./my-app.schema"); // synchronous
 
 Autodetects and loads a v2 schema artifact. Accepts:
 - A **schema directory** (`<name>.schema/`) — the output of `askdb introspect`
-- A **bundled JSON file** (`*.bundle.json` or any JSON with `bundled: true`) — the output of `askdb bundle`
+- A **bundled JSON file** (any JSON object with a `bundled` key, whatever the file's name) — the output of `askdb bundle`
 - A direct path to a `schema.json` file, matched in any case (`Schema.json` works too). This loads the enclosing directory, so sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md` apply just as they do for the directory path.
 - Any other JSON file, loaded as the physical layer only. If its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, in any case, `loadSchema()` throws `SchemaParseError` instead, because loading the file alone would ignore them: a copy such as `prod-schema.json` would load without its tenant policy. Pass the directory, or pass the file's content to `loadSchemaFromJson()` to load only the physical layer.
 
