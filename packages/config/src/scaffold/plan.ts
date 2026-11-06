@@ -110,11 +110,12 @@ const ENGINES: Record<AskDbIntrospectionProvider, EngineFacts> = {
   sqlserver: {
     connection: "url",
     urlFormat:
-      "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;TrustServerCertificate=True;Authentication=SqlPassword;",
-    // The key without spaces is the one `mssql` reads too, so a host's own pool trusts the
-    // certificate exactly as AskDB does: say when that is safe.
+      "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Authentication=SqlPassword;",
+    // The hint is copied into production too, so it keeps the certificate check: trusting the
+    // certificate is an opt-in for development. The key is named without spaces, the one form
+    // both AskDB and a host's own `mssql` pool read (#803).
     urlNote:
-      "TrustServerCertificate=True skips the certificate check, for a development server with a self-signed certificate. Remove it for a server with a CA-signed certificate.",
+      "For a development server with a self-signed certificate (such as the SQL Server Docker image), add TrustServerCertificate=True; to this URL. Leave it out for a server with a CA-signed certificate.",
     driver: "mssql",
   },
   sqlite: { connection: "file", driver: "better-sqlite3" },
