@@ -692,13 +692,68 @@ describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () =
     }
   });
 
-  it("reads strings with the dialect's backslash setting", () => {
-    // With backslash escapes off, 'a\' ends after the backslash and the U& name is code. With them
-    // on, \' is an escaped quote and the name sits inside the string.
-    const sql = String.raw`SELECT 'a\' AS x, U&"\006Frders" AS y, 'b\' AS z FROM agencies WHERE id = :tenant_agency_ids`;
+  it("reads an unknown dialect with backslash escapes both ways", () => {
+    // With escapes on, 'a\'' is one string and the U& name after it is code; with them off,
+    // 'a\' ends early and the name sits inside the next string. The setting adds the escapes-on
+    // reading to the plain one, so the name is reported (postgresReadingProfiles, #703).
+    const sql = String.raw`SELECT 'a\'' AS z, U&"\006Frders" AS y FROM agencies WHERE id = :tenant_agency_ids`;
     const custom = (backslashEscapes: boolean) =>
       ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
-    expect(findings(sql, custom(false))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
-    expect(findings(sql, custom(true))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, custom(false))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    // And the plain reading still runs with the setting on: here only it sees the name as code.
+    expect(findings(String.raw`SELECT 'x\' AS a, U&"\006Frders" AS y`, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+});
+
+describe("validateTenantGuardrails — string continued after E'…' (#703)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  // Postgres reads `a'` and then an unscoped read of orders; the check saw three strings.
+  const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
+
+  it.each([
+    ["an unscoped read after the pair", bypass],
+    ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'\\'' AS x, o.* FROM orders o --'"],
+    ["a JSON_OBJECT key's `:` before the E", "SELECT JSON_OBJECT('k':E'a'\n'\\'' || (SELECT count(*) FROM orders o)::text --'\n) AS x FROM agencies WHERE id = :tenant_agency_ids"],
+  ])("reports %s under every reading that includes Postgres", (_label, sql) => {
+    const customWithEscapes = { ...customDialect, backslashEscapes: true } as unknown as DialectSpec;
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect, customWithEscapes]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("STRING_CONTINUATION:");
+    }
+  });
+
+  it("refuses it under strict enforcement", () => {
+    expect(() => validateTenantGuardrails(bypass, policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it("reads an unknown dialect with backslash escapes both ways", () => {
+    // With escapes on, 'a\'' is one string and the E'…' pair after it is code; with them off,
+    // 'a\' ends early and the pair sits inside the next string. Only one reading sees the pair.
+    const sql = String.raw`SELECT 'a\'' AS z, E'b'` + "\n'c' AS y";
+    const custom = (backslashEscapes: boolean) =>
+      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
+    expect(findings(sql, custom(true))).toContain("STRING_CONTINUATION:");
+    expect(findings(sql, custom(false))).not.toContain("STRING_CONTINUATION:");
+    // And the plain reading still runs with the setting on: here only it sees the pair as code.
+    expect(findings(String.raw`SELECT 'x\' AS a, E'b'` + "\n'c' AS y", custom(true))).toContain("STRING_CONTINUATION:");
+  });
+
+  it("names the string's position, not its text", () => {
+    const [warning] = validateTenantGuardrails("SELECT E'Jane Doe'\n'x' AS a", warnPolicy, agencyScope, {
+      dialect: POSTGRES_DIALECT,
+    }).warnings;
+    expect(warning?.message).toContain("offset 7");
+    expect(warning?.message).not.toContain("Jane");
+  });
+
+  it("leaves strings that keep the same reading alone", () => {
+    const scoped = "FROM agencies WHERE id = :tenant_agency_ids";
+    expect(findings(`SELECT 'a'\n'b' AS x ${scoped}`, POSTGRES_DIALECT)).toEqual([]);
+    expect(findings(`SELECT E'a' || 'b' AS x ${scoped}`, POSTGRES_DIALECT)).toEqual([]);
+    // MySQL reads E as a column and has no escape-string prefix.
+    expect(findings(`SELECT E 'a'\n, 'b' AS x ${scoped}`, MYSQL_DIALECT)).toEqual([]);
   });
 });
