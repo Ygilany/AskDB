@@ -58,8 +58,8 @@ describe("validateTenantScope", () => {
     ["an empty reason", { reason: "" }],
     ["a blank reason", { reason: "  \t " }],
     ["a reason that isn't a string", { reason: 42 }],
-  ])("rejects a global scope with %s as GLOBAL_WITHOUT_REASON", (_label, reason) => {
-    const scope = { access: { kind: "global", ...reason } } as unknown as TenantScope;
+  ])("rejects a global scope with %s as GLOBAL_WITHOUT_REASON", (_label, fields) => {
+    const scope = { access: { kind: "global", ...fields } } as unknown as TenantScope;
     let error: unknown;
     try {
       validateTenantScope(policy, scope);
