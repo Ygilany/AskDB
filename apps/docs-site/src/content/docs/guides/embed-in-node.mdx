@@ -97,7 +97,7 @@ await pool.query(result.unboundSql!, result.params);
 
 // A new value, no model call: re-checked under the client's schema and this scope.
 const rebound = await askdb.bind(result.preparedQuery!, { state_name: "Utah" }, { tenantScope });
-await pool.query(rebound.sql);
+await pool.query(rebound.sql, rebound.tenantParams ?? []);
 
 if (result.usage) {
   console.log(`Tokens — prompt: ${result.usage.promptTokens}, completion: ${result.usage.completionTokens}`);
