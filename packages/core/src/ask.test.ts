@@ -765,10 +765,11 @@ describe("ask — parameterize", () => {
     expect(result.sql).toBe(
       "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = '42'",
     );
+    // The mode governs `sql` only: `unboundSql` binds the tenant IDs too (#731).
     expect(result.unboundSql).toBe(
-      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = '42'",
+      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = $2",
     );
-    expect(result.params).toEqual(["paid"]);
+    expect(result.params).toEqual(["paid", "42"]);
     expect(result.tenantParams).toBeUndefined();
     expect(result.tenantBindings).toHaveLength(1);
     expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
@@ -1000,7 +1001,7 @@ describe("ask — a model's trailing semicolon is kept (#477)", () => {
       dialect: "postgres" as const,
       mode: "sql-only" as const,
       sql: "status = 'paid' AND agency_id IN ('42', '99');",
-      unbound: "status = $1 AND agency_id IN ('42', '99');",
+      unbound: "status = $1 AND agency_id IN ($2, $3);",
     },
     {
       dialect: "postgres" as const,
@@ -1012,6 +1013,12 @@ describe("ask — a model's trailing semicolon is kept (#477)", () => {
       dialect: "mysql" as const,
       mode: "sql-params" as const,
       sql: "status = 'paid' AND agency_id IN (?, ?);",
+      unbound: "status = ? AND agency_id IN (?, ?);",
+    },
+    {
+      dialect: "mysql" as const,
+      mode: "sql-only" as const,
+      sql: "status = 'paid' AND agency_id IN ('42', '99');",
       unbound: "status = ? AND agency_id IN (?, ?);",
     },
   ])("$dialect $mode: the tenant guardrail passes and substitutes a placeholder right before it", async (c) => {
@@ -1301,7 +1308,10 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
       deps: { generateText },
     });
     expect(result.sql).toBe("SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'");
-    expect(result.unboundSql).toBe("SELECT * FROM orders WHERE agency_id = '42' AND status = $1");
+    // tenantSqlMode governs `sql` only: `unboundSql` binds the tenant IDs, as the rebind does (#731).
+    expect(result.unboundSql).toBe("SELECT * FROM orders WHERE agency_id = $2 AND status = $1");
+    expect(result.params).toEqual(["open", "42"]);
+    expect(result.tenantParams).toBeUndefined();
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
     const guardrailEvents = info.mock.calls.filter((c) =>
       [AskDbLogEvent.TenantGuardrailPassed, AskDbLogEvent.TenantGuardrailFailed].includes(

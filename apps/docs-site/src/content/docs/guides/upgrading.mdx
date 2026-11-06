@@ -19,6 +19,25 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.48
+
+Released with `@askdb/core` 1.0.0-beta.48. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Run `unboundSql` with the tenant IDs in `params` under `"sql-only"`
+
+`tenantSqlMode` now governs `sql` only ([#731](https://github.com/Ygilany/AskDB/issues/731)). Under `"sql-only"`, `ask()` used to inline the tenant IDs into `unboundSql` and leave them out of `params`, while `bindPreparedQuery()` and `askdb.bind()` bound them. Now `ask()` binds them too: `unboundSql` holds driver markers for the tenant IDs, and `params` holds their values, as in `"sql-params"` mode. `sql` is unchanged, with the IDs inlined as literals.
+
+```diff
+ // ask({ …, tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } }, tenantSqlMode: "sql-only" })
+ result.sql        // SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'   (unchanged)
+-result.unboundSql // SELECT * FROM orders WHERE agency_id = '42' AND status = $1
+-result.params     // ["open"]
++result.unboundSql // SELECT * FROM orders WHERE agency_id = $2 AND status = $1
++result.params     // ["open", "42"]
+```
+
+If you run `unboundSql` with `params`, you need no change: the pair still returns the same rows. If you run `unboundSql` with your own array of business values, use `params` instead, or the driver reports a missing parameter. If you need one SQL string with the IDs inlined, use `sql`.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
