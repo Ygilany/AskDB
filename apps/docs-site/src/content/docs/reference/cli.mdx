@@ -201,7 +201,7 @@ Prisma introspection needs `@askdb/prisma` the same way: in the project running 
 askdb introspect templates --engine postgres > askdb-templates.sql
 ```
 
-Prints the SQL queries that `--from-export` reads the results of, each headed by a `-- <name>` comment. Run them against the database yourself, for example where `askdb` can't connect, and save each result in the bundle directory. Only `postgres` has templates; another engine exits `1` and names the engines that do. It reads no config, so it works in any directory, and `--engine` defaults to `postgres` rather than `introspection.provider`.
+Prints the SQL queries that `--from-export` reads the results of, each headed by a `-- <name>` comment. Run them against the database yourself, for example where `askdb` can't connect, and save each result in the bundle directory. Each query takes two `text[]` parameters, `$1` (schemas to include) and `$2` (schemas to skip), where `NULL` means no filter: replace them before you run the queries in `psql`. [Introspect without a connection](/guides/introspect-without-a-connection/) walks through it. Only `postgres` has templates; another engine exits `1` and names the engines that do. It reads no config, so it works in any directory, and `--engine` defaults to `postgres` rather than `introspection.provider`.
 
 ### `askdb enrich`
 

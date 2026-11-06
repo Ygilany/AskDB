@@ -308,7 +308,9 @@ Driver: `pg` (optional peer, `>=8`).
 
 #### Export bundles
 
-A bundle is a directory with a `manifest.json` (`{ "engine": "postgres", "version": 1, "files"?: { "<template>": "<file>" } }`) and one result per template: the file `files` names, else `<template>.csv`, else `<template>.json`. All 12 templates are required. Rows from system schemas are dropped, and the same filters apply as for a live database. A missing file, another engine or version, or an unknown template throws an `Error` that starts `@askdb/postgres:`.
+A bundle is a directory with a `manifest.json` (`{ "engine": "postgres", "version": 1, "files"?: { "<template>": "<file>" } }`) and one result per template: the file `files` names, else `<template>.csv`, else `<template>.json`. All 12 templates are required. Rows from system schemas are dropped, and the same filters apply as for a live database.
+
+A CSV file needs a header row whose column names match the template's, in order. An empty field or `\N` is null, and a boolean column takes `t`, `f`, `true`, `false`, `1` or `0`, in any case. `psql --csv` writes files in this form. A JSON file is an array of row objects, each with every column of its template. A missing file, another engine or version, or an unknown template throws an `Error` that starts `@askdb/postgres:`.
 
 ### `@askdb/mysql`
 

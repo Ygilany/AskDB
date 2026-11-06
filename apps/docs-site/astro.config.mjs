@@ -125,6 +125,7 @@ export default defineConfig({
               items: [
                 { label: "Embed in a Node app", slug: "guides/embed-in-node" },
                 { label: "Author your schema", slug: "guides/author-your-schema" },
+                { label: "Introspect without a connection", slug: "guides/introspect-without-a-connection" },
                 { label: "Bring your own model", slug: "guides/bring-your-own-model" },
                 { label: "Switch engines", slug: "guides/switch-engines" },
                 { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
