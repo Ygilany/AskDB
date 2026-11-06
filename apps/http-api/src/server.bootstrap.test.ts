@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -18,8 +18,12 @@ const scratchDirs: string[] = [];
  * A project directory with an `askdb.config.ts` whose mock model answers `mockSql`.
  * `ownConfigCopy` installs a separate copy of `@askdb/config` for the host, as when the host's
  * version differs from the one `@askdb/http-api` depends on; otherwise both share one copy.
+ * `logging` is the config's `logging` block (silent by default).
  */
-function makeProject(mockSql: string, { ownConfigCopy = false } = {}): string {
+function makeProject(
+  mockSql: string,
+  { ownConfigCopy = false, logging = { level: "silent" } as Record<string, unknown> } = {},
+): string {
   const dir = mkdtempSync(join(tmpdir(), "askdb-http-host-"));
   scratchDirs.push(dir);
   // So `import "@askdb/config"` resolves, in askdb.config.ts and in the host script.
@@ -43,7 +47,7 @@ export default defineConfig({
   rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
   host: { schemaPath: ${JSON.stringify(schemaDir)} },
   dev: { mockSql: ${JSON.stringify(mockSql)} },
-  logging: { level: "silent" },
+  logging: ${JSON.stringify(logging)},
 });
 `,
   );
@@ -148,5 +152,50 @@ bootstrapAskDbEnv({ cwd: ${JSON.stringify(hostProject)} });`,
 
     expect(reply.thrown).toMatch(/^Failed to load \.env: /);
     expect(reply.exitCode).toBeUndefined();
+  });
+});
+
+describe("createAskDbHttpServer logging", () => {
+  afterEach(() => {
+    for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps one log file open across requests, and logs each request with its correlation ID", () => {
+    // A relative logFile resolves against the host's working directory, the project.
+    const project = makeProject("select 1", { logging: { level: "info", logFile: "logs/askdb.log" } });
+    // Malformed JSON is rejected with 400 before the pipeline runs, and each rejection is logged.
+    const script = `
+import { readdirSync } from "node:fs";
+import { createAskDbHttpServer } from ${JSON.stringify(entry)};
+const app = createAskDbHttpServer({ port: 0 });
+await app.listen();
+const { port } = app.server.address();
+const post = (id) =>
+  fetch(\`http://127.0.0.1:\${port}/ask\`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-correlation-id": id },
+    body: "{",
+  }).then((res) => res.text());
+await post("req-0");
+const before = readdirSync("/dev/fd").length;
+for (let i = 1; i <= 40; i++) await post(\`req-\${i}\`);
+const after = readdirSync("/dev/fd").length;
+await app.close();
+process.stdout.write(JSON.stringify({ opened: after - before }));
+`;
+    const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: project,
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    if (run.status !== 0) throw new Error(`host exited ${run.status}: ${run.stderr}`);
+    const { opened } = JSON.parse(run.stdout) as { opened: number };
+
+    expect(opened).toBeLessThan(5);
+    const ids = readFileSync(join(project, "logs/askdb.log"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => (JSON.parse(line) as { correlationId: string }).correlationId);
+    expect(ids).toEqual(Array.from({ length: 41 }, (_, i) => `req-${i}`));
   });
 });

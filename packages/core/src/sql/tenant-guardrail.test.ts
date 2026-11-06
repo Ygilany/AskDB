@@ -571,3 +571,44 @@ describe("validateTenantGuardrails — every statement is a query, however the s
     expect(rules(sql, SQLSERVER_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+
+  // Postgres reads U&"\006Frders" as orders: on Postgres 17 it returned both tenants' rows.
+  it.each([
+    ["a scoped table", `SELECT id FROM U&"\\006Frders"`],
+    ["a scoped table with UESCAPE", `SELECT id FROM U&"!006Frders" UESCAPE '!'`],
+    ["a function call", `SELECT * FROM U&"\\0071uery_to_xml"('SELECT * FROM orders', true, false, '')`],
+    ["a name right after a slice's `:`", `SELECT (ARRAY[1,2,3])[1:U&"\\006Frders"] AS x`],
+  ])("reports %s under every reading that includes Postgres", (_label, sql) => {
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    }
+  });
+
+  it("refuses it under strict enforcement", () => {
+    expect(() => validateTenantGuardrails(`SELECT id FROM U&"\\006Frders"`, policy, agencyScope)).toThrow(TenantGuardrailError);
+  });
+
+  it("leaves engines without U& names alone", () => {
+    // MySQL reads "\006Frders" as a string, and `u & 'x'` with a space is an operator on Postgres.
+    expect(findings(`SELECT u&"x" AS a FROM agencies WHERE id = :tenant_agency_ids`, MYSQL_DIALECT)).toEqual([]);
+    for (const operator of [`u & "x"`, `u& "x"`, `u &"x"`]) {
+      expect(findings(`SELECT ${operator} AS a FROM agencies WHERE id = :tenant_agency_ids`, POSTGRES_DIALECT)).toEqual([]);
+    }
+  });
+
+  it("reads strings with the dialect's backslash setting", () => {
+    // With backslash escapes off, 'a\' ends after the backslash and the U& name is code. With them
+    // on, \' is an escaped quote and the name sits inside the string.
+    const sql = String.raw`SELECT 'a\' AS x, U&"\006Frders" AS y, 'b\' AS z FROM agencies WHERE id = :tenant_agency_ids`;
+    const custom = (backslashEscapes: boolean) =>
+      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
+    expect(findings(sql, custom(false))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, custom(true))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+});

@@ -8,7 +8,7 @@ import {
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { ENGINE_LEXER_PROFILES, lexerProfileFor, lexSql, startsDashComment, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { ENGINE_LEXER_PROFILES, POSTGRES_LEXER, findUnicodeEscapedIdentifier, lexerProfileFor, lexSql, startsDashComment, type SqlLexerProfile, type SqlToken } from "./lexer.js";
 import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
 import { denylistFor } from "./validate.js";
 
@@ -111,6 +111,17 @@ export function tenantRuleWarnings(
       warn("NOT_SELECT_OR_WITH", "",
         `A statement starts with ${keyword}, not SELECT or WITH. The tenant check can only read a query's ` +
         "tenant predicates, so under a tenant policy it refuses any other statement."),
+    );
+  }
+
+  // The checks below match names as written. Postgres decodes a U&"…" name, so they can't tell
+  // which table, column or function it is: refuse it rather than decode it (#704, #692).
+  const escaped = unicodeEscapedName(sql, dialect);
+  if (escaped !== undefined) {
+    warnings.push(
+      warn("UNICODE_ESCAPED_IDENTIFIER", "",
+        `The SQL uses the Unicode-escaped name ${escaped}, which the tenant check can't read. ` +
+        'Write the name in plain double quotes ("orders") or unquoted.'),
     );
   }
 
@@ -399,6 +410,22 @@ function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["
     }
   }
   return undefined;
+}
+
+/**
+ * The first Postgres `U&"…"` name in `sql`, as written, when the SQL may be read as Postgres:
+ * a dialect on the Postgres lexer (postgres, cockroachdb), a dialect that is no built-in engine,
+ * or none. An unknown dialect's `backslashEscapes` is honored, as on the read-only check.
+ */
+function unicodeEscapedName(
+  sql: string,
+  dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+): string | undefined {
+  // The same gate the read-only check uses: a built-in engine on another lexer reads no U& names.
+  const known = dialect === undefined ? undefined : lexerProfileFor(dialect);
+  if (known !== undefined && known.id !== "postgres") return undefined;
+  const profile = known ?? (dialect?.backslashEscapes === true ? { ...POSTGRES_LEXER, backslashEscapes: true } : POSTGRES_LEXER);
+  return findUnicodeEscapedIdentifier(lexSql(sql, profile));
 }
 
 function warn(
