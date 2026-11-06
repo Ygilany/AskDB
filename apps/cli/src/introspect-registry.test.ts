@@ -189,6 +189,31 @@ describe("askdb introspect — injected connector registry", () => {
     expect(loadGamma).not.toHaveBeenCalled();
   });
 
+  // `localhost` resolves to ::1 and 127.0.0.1, so a refused connection rejects with an
+  // AggregateError whose own message is empty (#749).
+  it("prints each attempt's error when the connection fails with an empty AggregateError", async () => {
+    installRuntime();
+    const { adapter } = acmeAdapter();
+    const refused = new AggregateError(
+      [
+        Object.assign(new Error("connect ECONNREFUSED ::1:5432"), { code: "ECONNREFUSED" }),
+        Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" }),
+      ],
+      "",
+    );
+    const failing: ConnectorProviderAdapter = {
+      ...adapter,
+      createConnector: () => ({ mode: "live", input: {}, connector: { describe: async () => Promise.reject(refused) } }),
+    };
+
+    const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://u:secret@localhost/db", "--print"], {
+      connectorRegistry: createConnectorRegistry([failing]),
+    });
+
+    expect(code).toBe(1);
+    expect(stderr).toBe("connect ECONNREFUSED ::1:5432\nconnect ECONNREFUSED 127.0.0.1:5432\n");
+  });
+
   it("lists the registered engines when --engine is unknown", async () => {
     installRuntime();
     const code = await runIntrospectCli(["--engine", "nope", "--print"], {

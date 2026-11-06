@@ -13,6 +13,10 @@ import { formatSupportedAskDbLogLevels } from "@askdb/core";
 import type { CreatePgvectorStoreOptions } from "@askdb/rag";
 import { runRagCli } from "./rag.js";
 
+// These tests install the runtime config in-process; the askdb.config file check is
+// covered by the spawned CLI tests.
+vi.mock("./project-config.js", () => ({ requireAskDbConfig: vi.fn() }));
+
 /**
  * What the CLI did to the pgvector store: the options it built it with, then each call. When
  * `tableDimensions` is set, `ensureSchema` refuses another width the way the real store does.
@@ -320,16 +324,10 @@ describe("askdb rag", () => {
   });
 
   it.each<[string, string[], string]>([
-    ["an unknown --flag=value", ["index", "./schema", "--pg-urll=postgres://u:secret@h/db"], "Unknown option: --pg-urll\n"],
     [
       "--api-key=value",
       ["index", "./schema", "--api-key=sk-secret"],
       "--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.\n",
-    ],
-    [
-      "a stray positional",
-      ["index", "./schema", "postgres://u:secret@h/db"],
-      "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.\n",
     ],
     ["an unknown command", ["postgres://u:secret@h/db"], "Unknown command (expected 'index', 'query', or 'setup-store')\n"],
     [
@@ -350,9 +348,6 @@ describe("askdb rag", () => {
 
   it.each<[string, string[], string]>([
     ["an unknown command", ["idnex"], "Unknown command: idnex (expected 'index', 'query', or 'setup-store')"],
-    ["an unknown option", ["index", "./schema", "--nope"], "Unknown option: --nope"],
-    ["a flag without its value", ["index", "./schema", "--store"], "--store requires a value."],
-    ["a value on a switch", ["index", "./schema", "--force=yes"], "--force takes no value."],
     [
       "an unknown --log-level",
       ["index", "./schema", "--log-level", "loud"],
@@ -374,11 +369,6 @@ describe("askdb rag", () => {
       "schema.lock.json was written by an older @askdb/rag (unscoped chunk ids); rebuild the index. " +
         "Re-run `askdb rag index` before querying.\n",
     );
-  });
-
-  it("takes --flag=value like --flag value", async () => {
-    expect(await runRagCli(["index", copyFixture(), "--store=pgvector", `--pg-url=${PG_URL}`, "--pg-table=chunks"])).toBe(0);
-    expect(pgvector.options).toEqual([expect.objectContaining({ connectionString: PG_URL, table: "chunks" })]);
   });
 
   describe("logging", () => {

@@ -36,11 +36,10 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
   });
 
   it.each([
-    [["--help"], "Usage: askdb"],
-    [["-h"], "Usage: askdb"],
-    [["help", "ask"], "Usage: askdb ask"],
-    // Unlike `help ask`, this parses `ask` itself, so it fails if config loads before commander's help check.
-    [["ask", "--help"], "Usage: askdb ask"],
+    [["--help"], "askdb help <command>"],
+    [["-h"], "askdb help <command>"],
+    [["help", "ask"], "askdb ask - "],
+    [["ask", "--help"], "askdb ask - "],
     [["introspect", "--help"], "askdb introspect - Schema introspection"],
     [["introspect", "templates", "--engine", "postgres"], "-- schemas"],
     [["studio", "--help"], "askdb-studio - Local browser UI"],

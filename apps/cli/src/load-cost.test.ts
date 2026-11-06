@@ -38,7 +38,7 @@ it("`askdb --help` resolves no @askdb/prisma or @prisma/* module", () => {
   });
 
   expect(run.status, run.stderr).toBe(0);
-  expect(run.stdout).toContain("Usage: askdb");
+  expect(run.stdout).toContain("askdb help <command>");
   const line = run.stderr.split("\n").find((l) => l.startsWith("PRISMA_MODULES "));
   expect(JSON.parse(line!.slice("PRISMA_MODULES ".length))).toEqual([]);
 });
