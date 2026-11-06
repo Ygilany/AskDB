@@ -236,7 +236,7 @@ The parser recognizes these H2 headings by whole-heading match after trimming, i
 | `Business context` | `@askdb/rag` only (background) | Long-form context. |
 | `Column notes` | `@askdb/rag` only (per-column appendix) | Items of the form ``- `column_name`: note`` extend the column chunk; `-` or `—` may replace the colon. They match the column's **name**, not its id. |
 
-The **first paragraph** after the file's first heading (by convention `# Table: <name>`) is the table's primary description: its lines are joined with spaces, and it ends at a blank line or the next heading. Both the NL→SQL prompt and the chunker use it, even when no H2 is present.
+The **first paragraph** of the body, after an optional leading heading (by convention `# Table: <name>`; any line starting with `#` counts), is the table's primary description: its lines are joined with spaces, and it ends at a blank line or the next heading. Both the NL→SQL prompt and the chunker use it, even when no H2 is present.
 
 ---
 
