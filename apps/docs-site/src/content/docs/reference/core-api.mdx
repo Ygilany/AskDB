@@ -155,7 +155,7 @@ Tenant IDs come from `tenantScope`, never from `values`. Each `:tenant_<root>_id
 
 Every check uses the bind-time inputs, so a template refused today may have bound yesterday: a tightened policy, or a scope other than the one it was produced under, applies at the next rebind. It throws:
 
-- `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`) without the third argument or its `schema`; (`DIALECT_SPEC_REQUIRED`) without `dialect` for a `"host"` template or one stored without `dialectRules`; (`DIALECT_UNSUPPORTED`) for a `dialect` whose `id` isn't the template's; (`TENANT_VALUE_SUPPLIED`) for a `:tenant_*` key in `values`; (`TENANT_PARAM_ALIGNMENT`) when the tenant markers can't be lined up with the business params; and the existing reasons for a wrong, missing or misplaced business value.
+- `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`) without the third argument or its `schema`; (`DIALECT_SPEC_REQUIRED`) without `dialect` for a `"host"` template or one stored without `dialectRules`; (`DIALECT_UNSUPPORTED`) for a `dialect` whose `id` isn't the template's; (`TENANT_VALUE_SUPPLIED`) for a `:tenant_*` key in `values`; (`TENANT_PARAM_ALIGNMENT`) when the tenant markers can't be lined up with the business params; (`INVALID_DECLARATION`) for a parameter declaring a `type` or `cardinality` AskDB doesn't support; and the existing reasons for a wrong, missing or misplaced business value.
 - `TenantScopeError`: as in `ask()` for a missing or invalid scope; `SUBTREE_NOT_RESOLVABLE` for an unexpanded `subtree`; `UNRESOLVED_TENANT_PLACEHOLDER` for a placeholder the scope has no IDs for. That includes a template scoped through another root, any placeholder under a `global` scope, and any placeholder when the schema has no tenant policy. `UNESCAPABLE_TENANT_ID` in `"sql-only"` mode for a tenant ID that isn't printable ASCII or contains a backslash. `TENANT_SQL_MODE_REQUIRED` for a `tenantSqlMode` that is neither mode.
 - `SqlValidationError`, `TenantGuardrailError` or `SensitiveReferenceError` for a `deny` verdict (see [Guardrail verdict](#guardrail-verdict)). A refused tenant warning throws `TenantGuardrailError` with a message naming `acceptWarnings`.
 
@@ -737,6 +737,7 @@ The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrail
 | `TENANT_VALUE_SUPPLIED` | `values` has a `:tenant_*` key. Tenant IDs come from `tenantScope` only. |
 | `TENANT_PARAM_ALIGNMENT` | The tenant markers in `unboundSql` can't be lined up with the business parameters. |
 | `DIALECT_SPEC_REQUIRED` | No `guardrails.dialect` for a template with `dialectRules: "host"`, or one stored without `dialectRules`. |
+| `INVALID_DECLARATION` | A parameter in the template declares a `type` other than `string`, `number`, `boolean`, `date` or `datetime`, or a `cardinality` other than `one` or `many`. Checked before any value; regenerate the template. |
 
 ---
 

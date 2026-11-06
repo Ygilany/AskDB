@@ -2,6 +2,7 @@ import { QueryParameterError, TenantScopeError, type GuardrailVerdict } from "..
 import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { TenantScope } from "../schema/v2/tenant-policy.js";
 import {
+  assertParameterDeclarations,
   isTenantPlaceholderName,
   type PreparedQuery,
   type QueryParameterBinding,
@@ -121,6 +122,8 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw new QueryParameterError(`Unknown dialect '${prepared.dialect}'.`, "DIALECT_UNSUPPORTED");
   }
+  // Before any value is read: a broken template is reported as one even when a value is missing too.
+  assertParameterDeclarations(prepared.parameters);
   const spec = readPreparedQueryDialect(prepared, guardrails.dialect);
   const { schema } = guardrails;
   const policy = "schemaId" in schema ? schema.tenantPolicy : undefined;

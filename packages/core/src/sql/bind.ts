@@ -332,6 +332,31 @@ function nextMarker(style: MarkerStyle, counters: { dollar: number; atp: number 
 // renderPreparedQuery
 // ---------------------------------------------------------------------------
 
+const PARAMETER_TYPES: readonly string[] = ["string", "number", "boolean", "date", "datetime"] satisfies QueryParameterType[];
+const CARDINALITIES: readonly string[] = ["one", "many"] satisfies PreparedQuery["parameters"][number]["cardinality"][];
+
+/**
+ * Refuses a declaration whose `type` or `cardinality` AskDB doesn't support. A stored template is
+ * data and can hold anything; an unknown `type` would otherwise reach the renderer and fail there
+ * as a `TypeError`, and an unknown `cardinality` would bind as `"one"`. Runs before any value is read.
+ */
+export function assertParameterDeclarations(parameters: PreparedQuery["parameters"]): void {
+  for (const p of parameters) {
+    if (!PARAMETER_TYPES.includes(p.type)) {
+      throw paramError(
+        "INVALID_DECLARATION",
+        `Parameter '${p.name}' declares a type AskDB doesn't support; expected string, number, boolean, date or datetime. Regenerate the template.`,
+      );
+    }
+    if (!CARDINALITIES.includes(p.cardinality)) {
+      throw paramError(
+        "INVALID_DECLARATION",
+        `Parameter '${p.name}' declares a cardinality AskDB doesn't support; expected one or many. Regenerate the template.`,
+      );
+    }
+  }
+}
+
 function paramError(reason: QueryParameterRejectionReason, message: string): QueryParameterError {
   return new QueryParameterError(message, reason);
 }
@@ -428,6 +453,7 @@ export function renderPreparedQuery(
   if (!isBuiltInDialectId(prepared.dialect)) {
     throw paramError("DIALECT_UNSUPPORTED", `Unknown dialect '${prepared.dialect}'.`);
   }
+  assertParameterDeclarations(prepared.parameters);
   const spec = options.dialect;
   const listBinding = listBindingOf(spec);
   const style = markerStyleForDialect(prepared.dialect);
