@@ -156,8 +156,11 @@ export type TenantGuardrailRuleCode =
   | "UNPROVABLE_SCOPE"
   /**
    * A statement doesn't start with `SELECT` or `WITH` (a `DO` block, `CALL`, `EXPLAIN`,
-   * `SHOW`, …), so the tenant check can't read what it touches. Reported for the whole SQL,
-   * with `tableId: ""`, under every dialect, a custom `AskDialect` included (#698).
+   * `SHOW`, …), so the tenant check can't read what it touches. A statement ends at each
+   * `;`, and on SQL Server also at a statement verb such as `EXEC` with no `;` before it.
+   * Reported for the whole SQL, with `tableId: ""`, under every dialect, a custom
+   * `AskDialect` included; not under a `global` scope, where the tenant check doesn't run
+   * (#698).
    */
   | "NOT_SELECT_OR_WITH";
 

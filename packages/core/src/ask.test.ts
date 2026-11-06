@@ -1422,6 +1422,7 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     ["SHOW", "SHOW search_path", "SHOW"],
     ["a DO block behind a leading comment", "/* note */ DO $$ BEGIN PERFORM 1 FROM orders; END $$", "DO"],
     ["a DO block after a scoped query", `${scopedSelect}; DO $$ BEGIN PERFORM 1 FROM orders; END $$`, "DO"],
+    ["a statement a versioned MySQL comment hides", `SELECT 1 /*!99999 , 'x */ --1 ; PREPARE s FROM "SELECT * FROM orders" ; EXECUTE s -- '*/`, "PREPARE"],
   ];
   const warnSchema = () => {
     const base = loadSchema(multiTenantDir);
@@ -1442,6 +1443,22 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     const warnings = (error as TenantGuardrailError).warnings;
     expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
     expect(warnings[0]!.message).toContain(keyword);
+  });
+
+  // T-SQL needs no `;`: SQL Server runs a query followed by `EXEC …` as two statements. The
+  // predicate check also flags the query, so this asserts the rule is among the warnings.
+  it("strict: refuses a T-SQL EXEC after a query with no `;` from a custom dialect", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql: `${scopedSelect} EXEC refresh_orders` }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    expect((error as TenantGuardrailError).warnings.map((w) => w.rule)).toContain("NOT_SELECT_OR_WITH");
   });
 
   it.each(nonQueries)("warn: returns %s from a custom dialect with a NOT_SELECT_OR_WITH warning", async (_label, sql) => {

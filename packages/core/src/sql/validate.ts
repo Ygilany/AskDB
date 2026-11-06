@@ -246,9 +246,10 @@ export function checkedAsTsql(dialect: Pick<DialectSpec, "id" | "backslashEscape
 
 /**
  * The `SQL_FORBIDDEN_KEYWORD` denylist: the shared list and the spec's `extraForbiddenKeywords`,
- * plus every built-in spec's for an id that is no built-in engine family.
+ * plus every built-in spec's for an id that is no built-in engine family. The tenant check reads
+ * SQL Server's as the verbs that start a T-SQL statement with no `;` before it.
  */
-function denylistFor(dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">): Set<string> {
+export function denylistFor(dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">): Set<string> {
   const keywords = new Set([...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])].map((w) => w.toLowerCase()));
   if (!lexerProfileFor(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
   return keywords;

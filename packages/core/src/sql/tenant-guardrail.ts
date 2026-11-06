@@ -6,9 +6,10 @@ import {
   type ScopedTable,
   type PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
-import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { isBuiltInDialectId, SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { ENGINE_LEXER_PROFILES, lexerProfileFor, lexSql, startsDashComment } from "./lexer.js";
+import { ENGINE_LEXER_PROFILES, lexerProfileFor, lexSql, startsDashComment, type SqlLexerProfile } from "./lexer.js";
+import { denylistFor } from "./validate.js";
 
 export type TenantGuardrailResult = {
   passed: boolean;
@@ -323,27 +324,61 @@ function scopeRootIds(scope: TenantScope): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * The first keyword of the first statement in `sql` that doesn't start with `SELECT` or
- * `WITH`, upper-cased, or undefined when every statement does. Statements end at each `;`,
- * and a statement's first keyword is read past comments and `(` with the shared lexer: under
- * the dialect's profile when it names a built-in engine, otherwise under every engine's
- * profile, so a statement any engine reads as a non-query counts. The MySQL profile lexes a
- * `/*! … *\/` body as code, so an executable comment can't hide a keyword either.
+ * Words that start a T-SQL statement with no `;` before it (`SELECT 1 EXEC(...)` is two
+ * statements): the words the read-only check denies on SQL Server, lowercase.
+ */
+const TSQL_STATEMENT_WORDS: ReadonlySet<string> = denylistFor(SQLSERVER_DIALECT);
+
+/**
+ * Every way a server may lex `sql` into statements: the dialect's profile when it names a
+ * built-in engine, otherwise every engine's, and for Postgres and MySQL both string settings
+ * (a backslash ends a literal under one and escapes the quote under the other). A MySQL
+ * profile is read with its `/*!NNNNN … *\/` bodies as code and as comments, since a server
+ * older than NNNNN skips them.
+ */
+function statementReadings(dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): SqlLexerProfile[] {
+  const known = dialect?.id !== undefined ? lexerProfileFor(dialect) : undefined;
+  const profiles = known
+    ? [known]
+    : ENGINE_LEXER_PROFILES.flatMap((p) =>
+        p.id === "postgres" || p.id === "mysql" ? [p, { ...p, backslashEscapes: !p.backslashEscapes }] : [p],
+      );
+  return profiles.flatMap((p) => (p.executableComments ? [p, { ...p, executableComments: false }] : [p]));
+}
+
+/**
+ * The leading token of the first statement in `sql` that isn't a query, upper-cased (a
+ * keyword, or the token's own text when it isn't a word), or undefined when every statement
+ * starts with `SELECT` or `WITH`. A statement ends at each `;`, and under the SQL Server
+ * reading also at a top-level word from {@link TSQL_STATEMENT_WORDS}. Its first token is read
+ * past comments and `(` with the shared lexer, under every reading from
+ * {@link statementReadings}, so a statement any of them reads as a non-query counts.
  */
 function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
-  const known = dialect?.id !== undefined ? lexerProfileFor(dialect) : undefined;
-  for (const profile of known ? [known] : ENGINE_LEXER_PROFILES) {
+  for (const profile of statementReadings(dialect)) {
+    const tsql = profile.id === "sqlserver";
     let statementStart = true;
+    let depth = 0;
     for (const token of lexSql(sql, profile)) {
       if (token.kind === "comment") continue;
       if (token.kind === "punct" && token.text === ";") {
         statementStart = true;
+        depth = 0;
         continue;
       }
-      if (!statementStart || (token.kind === "punct" && token.text === "(")) continue;
-      statementStart = false;
-      if (token.kind === "word" && (token.lower === "select" || token.lower === "with")) continue;
-      return token.text.slice(0, 40).toUpperCase();
+      if (token.kind === "punct" && token.text === "(") {
+        depth++;
+        continue;
+      }
+      if (token.kind === "punct" && token.text === ")") depth = Math.max(0, depth - 1);
+      if (statementStart) {
+        statementStart = false;
+        if (token.kind === "word" && (token.lower === "select" || token.lower === "with")) continue;
+        return token.text.slice(0, 40).toUpperCase();
+      }
+      if (tsql && depth === 0 && token.kind === "word" && TSQL_STATEMENT_WORDS.has(token.lower)) {
+        return token.text.toUpperCase();
+      }
     }
   }
   return undefined;
