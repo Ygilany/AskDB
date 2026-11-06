@@ -483,6 +483,7 @@ describe("generateSelectSql — a model call that fails before giving a reason",
       "Model call failed: Cannot connect to API: TypeError",
     ],
     ["a message that already gives its reason, unchanged", () => new Error("Rate limit reached: retry in 20s"), "Model call failed: Rate limit reached: retry in 20s"],
+    ["an error whose message isn't a string, as before", () => Object.assign(new Error(), { message: null }), "Model call failed: null"],
   ])("names the reason for %s, in the error and in the pipeline.failed log", async (_name, makeError, expected) => {
     const { thrown, logged } = await failWith(makeError());
     expect(thrown).toBeInstanceOf(SqlGenerationError);

@@ -246,11 +246,13 @@ async function runGenerateSelectSql(
 }
 
 function logGenerateFailed(logger: AskDbLogger | undefined, e: unknown): void {
+  // A failed model call arrives as the SqlGenerationError above, whose message already names the reason.
+  const msg = e instanceof Error ? e.message : String(e);
   logger?.error(
     {
       event: AskDbLogEvent.PipelineFailed,
       phase: "generate",
-      errMessage: failureMessage(e),
+      errMessage: msg,
     },
     "nl-to-sql generate failed",
   );
