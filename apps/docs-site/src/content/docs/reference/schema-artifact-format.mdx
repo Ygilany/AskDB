@@ -334,6 +334,7 @@ A bundle is one JSON file that holds a whole artifact. Loading it gives the same
 
 - `loadSchema()` and `loadSchemaFromJson()` treat any JSON object with a `bundled` key as a bundle.
 - The keys of `tables` are file names without `tables/`. The markdown is kept as raw text.
+- `tables` is required, `{}` when the artifact has no table files. A bundle without it, or whose `tables` isn't an object of strings, throws `SchemaParseError` naming `tables` and the bundle.
 - An error in a bundled file names the file and the bundle, such as `tables/orders.md (in /srv/prod.bundle.json)`.
 
 [`askdb bundle`](/reference/cli/#askdb-bundle) writes a bundle, and so do `readSchemaDirectory()` in `@askdb/core` and `bundleSchemaDirectory()` in `@askdb/enrich`. They check the file names and `schema.json` as `loadSchema()` does, but they don't parse the markdown files. A front-matter error in a bundled file shows up when the bundle is loaded.

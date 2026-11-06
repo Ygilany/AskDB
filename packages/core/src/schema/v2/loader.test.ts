@@ -515,6 +515,48 @@ describe("loadSchema — bundles treat optional files exactly like the directory
   });
 });
 
+describe("loadSchema — a bundle's tables must be an object of table markdown (#797)", () => {
+  /** A bundle with the fixture's physical layer and `tables` as given; `undefined` leaves the key out. */
+  const bundleWithTables = (tables: unknown) =>
+    JSON.stringify({
+      bundled: true,
+      physical: JSON.parse(readFileSync(v2SchemaJson, "utf8")) as unknown,
+      ...(tables === undefined ? {} : { tables }),
+    });
+  const NOT_AN_OBJECT =
+    "`tables` must be an object keyed by tables/*.md file name, with each file's raw markdown as the value.";
+
+  it.each([
+    {
+      problem: "missing",
+      tables: undefined,
+      reason: "`tables` is missing; a bundle carries every tables/*.md as an object keyed by file name ({} when there are none).",
+    },
+    { problem: "null", tables: null, reason: NOT_AN_OBJECT },
+    { problem: "a string", tables: "orders.md", reason: NOT_AN_OBJECT },
+    { problem: "an array", tables: ["---\nid: table:public.orders\n---\n"], reason: NOT_AN_OBJECT },
+    // These two loaded as a schema with no table files before #797.
+    { problem: "an empty string", tables: "", reason: NOT_AN_OBJECT },
+    { problem: "an empty array", tables: [], reason: NOT_AN_OBJECT },
+    {
+      problem: "an object with a non-string file",
+      // gray-matter would take this object as an already-parsed file and keep its `data`.
+      tables: { "orders.md": { content: "---\n---\n", data: { id: "table:public.orders", aliases: ["x"] } } },
+      reason: "`tables` entry orders.md must be the raw tables/orders.md content (a string).",
+    },
+  ])("a bundle whose tables is $problem throws SchemaParseError naming tables and the bundle", ({ tables, reason }) => {
+    const inline = thrownBy(() => loadSchemaFromJson(bundleWithTables(tables)));
+    expect(inline).toBeInstanceOf(SchemaParseError);
+    expect((inline as SchemaParseError).message).toBe(`Invalid bundle at <inline JSON>: ${reason}`);
+
+    const bundlePath = join(makeTempDir(), "prod.bundle.json");
+    writeFileSync(bundlePath, bundleWithTables(tables));
+    const fromFile = thrownBy(() => loadSchema(bundlePath));
+    expect(fromFile).toBeInstanceOf(SchemaParseError);
+    expect((fromFile as SchemaParseError).message).toBe(`Invalid bundle at ${bundlePath}: ${reason}`);
+  });
+});
+
 describe("readSchemaDirectory", () => {
   const ORDERS_USERS_TENANT_POLICY = [
     "---",

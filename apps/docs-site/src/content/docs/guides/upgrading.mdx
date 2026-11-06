@@ -50,6 +50,10 @@ Introspection now refuses to write an artifact with no tables ([#337](https://gi
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-) for the likely causes.
 
+### Fix a bundle without a `tables` object, which now fails to load
+
+A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a non-empty string or array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. A `tables` of `[]`, `""`, `0` or `true` loaded as a schema with no table files, and now throws as well. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: set `"tables": {}`, or rebuild it with `askdb bundle`.
+
 ### Other changes you may notice in beta.50
 
 - **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
