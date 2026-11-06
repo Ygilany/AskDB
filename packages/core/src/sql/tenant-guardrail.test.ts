@@ -701,6 +701,8 @@ describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () =
       ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
     expect(findings(sql, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
     expect(findings(sql, custom(false))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    // And the plain reading still runs with the setting on: here only it sees the name as code.
+    expect(findings(String.raw`SELECT 'x\' AS a, U&"\006Frders" AS y`, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
   });
 });
 
@@ -735,6 +737,8 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
       ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
     expect(findings(sql, custom(true))).toContain("STRING_CONTINUATION:");
     expect(findings(sql, custom(false))).not.toContain("STRING_CONTINUATION:");
+    // And the plain reading still runs with the setting on: here only it sees the pair as code.
+    expect(findings(String.raw`SELECT 'x\' AS a, E'b'` + "\n'c' AS y", custom(true))).toContain("STRING_CONTINUATION:");
   });
 
   it("names the string's position, not its text", () => {
