@@ -5,6 +5,7 @@ import {
   parseConceptsMarkdown,
   parseTableMarkdown,
   loadSchema,
+  loadSchemaFromJson,
   normalizeTenantPolicy,
   readSchemaDirectory,
   parseTenantPolicyMarkdown,
@@ -282,13 +283,25 @@ function parsePhysical(raw: string, filePath: string): V2SchemaJson {
 }
 
 /**
- * Bundle a schema directory into the single-file form `askdb bundle` writes. Core's
- * `readSchemaDirectory()` does the read, so the bundle carries exactly the files
- * `loadSchema()` reads, and a directory the loader refuses (a wrong-case
- * `Tenant-Policy.md`, an unreadable optional file) is refused here too.
+ * Bundle a schema directory into the single-file form `askdb bundle` writes, and check that the
+ * bundle loads. Core's `readSchemaDirectory()` does the read, so the bundle carries exactly the
+ * files `loadSchema()` reads; core's loader then parses the bundle. So a directory the loader
+ * refuses throws its `SchemaParseError` here, and a bundle this returns always loads: a wrong-case
+ * `Tenant-Policy.md`, an unreadable optional file, front-matter that isn't YAML, a tenant policy
+ * that doesn't parse or doesn't fit `schema.json`, or two table files with the same `id` (#796).
  */
 export function bundleSchemaDirectory(schemaDir: string): CoreBundledSchemaV2 {
-  return readSchemaDirectory(schemaDir);
+  const bundle = readSchemaDirectory(schemaDir);
+  try {
+    loadSchemaFromJson(JSON.stringify(bundle));
+  } catch (bundleError) {
+    // The loader names a file in a bundle it's handed `… (in <inline JSON>)`. Loading the
+    // directory throws the same error naming the file on disk. If a file changed after the read
+    // and the directory now loads, the bundle still doesn't, so its own error is thrown.
+    loadSchema(schemaDir);
+    throw bundleError;
+  }
+  return bundle;
 }
 
 /**

@@ -33,15 +33,12 @@ export function bundleCommand(): CommandSpec<BundleOptions> {
     },
     needsConfig: () => false,
     async run(opts) {
-      const [{ bundleSchemaDirectory }, { loadSchema }] = await Promise.all([import("@askdb/enrich"), import("@askdb/core")]);
-      const schemaDir = resolve(opts.schemaDir!);
+      const { bundleSchemaDirectory } = await import("@askdb/enrich");
       const outPath = resolve(opts.out!);
       try {
-        const bundle = bundleSchemaDirectory(schemaDir);
-        // The bundler copies the markdown files without parsing them. The loader `ask()` uses
-        // parses them, so checking the directory with it before writing anything means a bundle
-        // this command writes always loads (#796).
-        loadSchema(schemaDir);
+        // Throws the loader's error for a directory `loadSchema()` refuses, before anything is
+        // written, so a bundle this command writes always loads (#796).
+        const bundle = bundleSchemaDirectory(resolve(opts.schemaDir!));
         writeFileSync(outPath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
       } catch (error) {
         process.stderr.write(`askdb bundle: ${errorMessage(error)}\n`);
