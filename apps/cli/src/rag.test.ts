@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  flattenAskDbConfig,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
   type AskDbConfig,
@@ -86,7 +85,7 @@ function aiEmbeddingConfig(
 }
 
 function installRuntime(structured: AskDbConfig = BASE_CONFIG): void {
-  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  setAskDbRuntimeForTests(structured);
 }
 
 const tempDirs: string[] = [];

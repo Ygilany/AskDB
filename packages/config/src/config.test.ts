@@ -18,6 +18,7 @@ import {
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
 } from "./index.js";
+import type { AskDbRuntimeConfig } from "./index.js";
 import { renderAskDbAiConfigScaffold } from "./scaffold/index.js";
 import type { AskDbConfig } from "./types.js";
 
@@ -414,7 +415,7 @@ describe("optional rag block (#226)", () => {
   afterEach(() => resetAskDbRuntimeForTests());
 
   function runtimeFor(config: AskDbConfig) {
-    setAskDbRuntimeForTests({ structured: config, flat: flattenAskDbConfig(config) });
+    setAskDbRuntimeForTests(config);
     return getAskDbRuntimeConfig();
   }
 
@@ -582,7 +583,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
   afterEach(() => resetAskDbRuntimeForTests());
 
   function runtimeFor(config: AskDbConfig) {
-    setAskDbRuntimeForTests({ structured: config, flat: flattenAskDbConfig(config) });
+    setAskDbRuntimeForTests(config);
     return getAskDbRuntimeConfig();
   }
 
@@ -842,8 +843,8 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-small",
       });
       expect(rt.ai.language).toMatchObject({ provider: "anthropic", connection: "default", model: "claude-sonnet-4-6" });
-      expect(rt.flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBe("medium");
-      expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBe("1536");
+      expect(rt.ai.language.env.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBe("medium");
+      expect(rt.ai.embedding?.dimensions).toBe(1536);
       expect(rt.deprecations).toEqual([]);
     });
 
@@ -923,7 +924,6 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
     ])("loads pgvector with %s and no width set: the width comes from the model when the index is built", (_case, ai, rag) => {
       const rt = runtimeFor(config(ai, rag));
       expect(rt.ai.embedding?.dimensions).toBeUndefined();
-      expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBeUndefined();
     });
 
     it.each<[string, AskDbConfig["rag"]]>([
@@ -1063,7 +1063,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           storeConfig: { pgvector: { databaseUrl: "postgres://pg-secret@db/rag", dimensions: 1536 } },
         },
       } satisfies AskDbConfig;
-      const { deprecations, entries } = defineConfig(legacy);
+      const { deprecations } = defineConfig(legacy);
       for (const key of [
         "ai.providerConfig.azure.model",
         "ai.providerConfig.azure.modelFamily",
@@ -1081,14 +1081,15 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         expect(deprecations?.join("\n")).not.toContain(secret);
       }
       // The legacy keys still drive the same settings.
-      expect(entries.AZURE_OPENAI_DEPLOYMENT).toBe("askdb-reporting");
-      expect(entries.ASKDB_AI_AZURE_MODEL_FAMILY).toBe("gpt-5");
-      expect(entries.ASKDB_AI_REASONING_EFFORT).toBe("low");
+      const { language } = runtimeFor(legacy).ai;
+      expect(language.model).toBe("askdb-reporting");
+      expect(language.modelFamily).toBe("gpt-5");
+      expect(language.env.ASKDB_AI_REASONING_EFFORT).toBe("low");
     });
 
     it("prefers ai.language.model over a legacy provider model, and says the legacy one is ignored", () => {
-      const { deprecations, entries } = defineConfig(config({ ...OPENAI_AI, language: { model: "gpt-5" } }));
-      expect(entries.OPENAI_MODEL).toBe("gpt-5");
+      const { deprecations } = defineConfig(config({ ...OPENAI_AI, language: { model: "gpt-5" } }));
+      expect(runtimeFor(config({ ...OPENAI_AI, language: { model: "gpt-5" } })).ai.language.model).toBe("gpt-5");
       expect(deprecations).toEqual([
         "askdb.config: ai.providerConfig.openai.model is deprecated and ignored because ai.language.model is set; remove it.",
       ]);
@@ -1294,163 +1295,22 @@ ${scaffold.source}
 
 });
 
-describe("getAskDbRuntimeConfig — introspection branches", () => {
+describe("getAskDbRuntimeConfig — introspection", () => {
   afterEach(() => resetAskDbRuntimeForTests());
 
-  function installRuntime(intro: AskDbConfig["introspection"], flat: Record<string, string>): void {
-    const structured = minimalConfig({ introspection: intro });
-    setAskDbRuntimeForTests({ structured, flat });
-  }
-
-  it("resolves postgresDatabaseUrl from the structured branch first", () => {
-    installRuntime(
-      {
-        provider: "postgres",
-        providerConfig: { postgres: { databaseUrl: "postgres://structured/host" } },
-        outputDir: "./askdb/",
-      },
-      { ASKDB_INTROSPECT_POSTGRES_URL: "postgres://flat/host" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.provider).toBe("postgres");
-    expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://structured/host");
-    expect(rt.introspection.mysqlDatabaseUrl).toBeUndefined();
-    expect(rt.introspection.sqliteFile).toBeUndefined();
-    expect(rt.introspection.sqlserverDatabaseUrl).toBeUndefined();
-  });
-
-  it("falls back to ASKDB_INTROSPECT_POSTGRES_URL when the structured field is blank", () => {
-    installRuntime(
-      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-      { ASKDB_INTROSPECT_POSTGRES_URL: "postgres://flat/host" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://flat/host");
-  });
-
-  it("resolves outputDir from the flattened runtime snapshot", () => {
-    installRuntime(
-      { provider: "postgres", providerConfig: { postgres: {} } },
-      { ASKDB_INTROSPECT_OUT: "./configured-schema/" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.outputDir).toBe("./configured-schema/");
-  });
-
-  it("defaults outputDir when config does not provide one", () => {
-    installRuntime(
-      { provider: "postgres", providerConfig: { postgres: {} } },
-      {},
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.outputDir).toBe("./askdb/");
-  });
-
-  it("falls back to structured outputDir when tests install runtime without a flat projection", () => {
-    installRuntime(
-      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./structured-schema/" },
-      {},
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.outputDir).toBe("./structured-schema/");
-  });
-
-  it("resolves mysqlDatabaseUrl from the structured branch first", () => {
-    installRuntime(
-      {
-        provider: "mysql",
-        providerConfig: { mysql: { databaseUrl: "mysql://structured/host" } },
-        outputDir: "./askdb/",
-      },
-      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.provider).toBe("mysql");
-    expect(rt.introspection.postgresDatabaseUrl).toBeUndefined();
-    expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://structured/host");
-    expect(rt.introspection.sqliteFile).toBeUndefined();
-    expect(rt.introspection.sqlserverDatabaseUrl).toBeUndefined();
-  });
-
-  it("falls back to ASKDB_INTROSPECT_MYSQL_URL when the structured field is blank", () => {
-    installRuntime(
-      { provider: "mysql", providerConfig: { mysql: {} }, outputDir: "./askdb/" },
-      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://flat/host");
-  });
-
-  it("returns undefined mysqlDatabaseUrl when neither structured nor env key is set", () => {
-    installRuntime(
-      { provider: "mysql", providerConfig: { mysql: {} }, outputDir: "./askdb/" },
-      {},
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.mysqlDatabaseUrl).toBeUndefined();
-  });
-
-  it("resolves sqliteFile from the structured branch", () => {
-    installRuntime(
-      {
-        provider: "sqlite",
-        providerConfig: { sqlite: { file: "./data/app.db" } },
-        outputDir: "./askdb/",
-      },
-      {},
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.sqliteFile).toBe("./data/app.db");
-  });
-
-  it("returns undefined sqliteFile when neither structured nor env key is set", () => {
-    installRuntime(
-      { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
-      {},
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.sqliteFile).toBeUndefined();
-  });
-
-  it("falls back to ASKDB_INTROSPECT_SQLITE_FILE when the structured field is blank", () => {
-    installRuntime(
-      { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
-      { ASKDB_INTROSPECT_SQLITE_FILE: "/var/db/app.db" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.sqliteFile).toBe("/var/db/app.db");
-  });
-
-  it("resolves sqlserverDatabaseUrl from the structured branch", () => {
-    installRuntime(
-      {
-        provider: "sqlserver",
-        providerConfig: { sqlserver: { databaseUrl: "Server=structured;Database=app;" } },
-        outputDir: "./askdb/",
-      },
-      {},
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.sqlserverDatabaseUrl).toBe("Server=structured;Database=app;");
-  });
-
-  it("falls back to ASKDB_INTROSPECT_SQLSERVER_URL when the structured field is blank", () => {
-    installRuntime(
-      { provider: "sqlserver", providerConfig: { sqlserver: {} }, outputDir: "./askdb/" },
-      { ASKDB_INTROSPECT_SQLSERVER_URL: "Server=flat;Database=app;" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.sqlserverDatabaseUrl).toBe("Server=flat;Database=app;");
-  });
-
-  it("leaves non-active engine fields undefined", () => {
-    installRuntime(
-      {
-        provider: "postgres",
-        providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } },
-        outputDir: "./askdb/",
-      },
-      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://nope/db" },
+  it("resolves only the active engine's connection", () => {
+    setAskDbRuntimeForTests(
+      minimalConfig({
+        introspection: {
+          provider: "postgres",
+          providerConfig: {
+            postgres: { databaseUrl: "postgres://localhost/db" },
+            mysql: { databaseUrl: "mysql://nope/db" },
+            sqlite: { file: "./nope.db" },
+            sqlserver: { databaseUrl: "Server=nope;Database=app;" },
+          },
+        },
+      }),
     );
     const rt = getAskDbRuntimeConfig();
     expect(rt.introspection.provider).toBe("postgres");
@@ -1467,11 +1327,8 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
   function installStudio(
     studio: AskDbConfig["studio"],
     intro: AskDbConfig["introspection"] = { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-    flatExtra: Record<string, string> = {},
   ): void {
-    const structured = minimalConfig({ introspection: intro, studio });
-    const flat = { ...flattenAskDbConfig(structured), ...flatExtra };
-    setAskDbRuntimeForTests({ structured, flat });
+    setAskDbRuntimeForTests(minimalConfig({ introspection: intro, studio }));
   }
 
   it("uses explicit studio.execute.provider when set", () => {
@@ -1533,64 +1390,23 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
     expect(rt.studio.execute.provider).toBe("sqlite");
     expect(rt.studio.execute.file).toBe("./data/app.db");
   });
-
-  it("reads ASKDB_STUDIO_EXECUTE_PROVIDER from env", () => {
-    installStudio(
-      undefined,
-      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-      { ASKDB_STUDIO_EXECUTE_PROVIDER: "mysql", ASKDB_STUDIO_DATABASE_URL: "mysql://env/db" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.studio.execute.provider).toBe("mysql");
-    expect(rt.studio.execute.databaseUrl).toBe("mysql://env/db");
-  });
-
-  it("reads ASKDB_STUDIO_SQLITE_FILE from env when provider is sqlite", () => {
-    installStudio(
-      undefined,
-      { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
-      { ASKDB_STUDIO_SQLITE_FILE: "./env-file.db" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.studio.execute.provider).toBe("sqlite");
-    expect(rt.studio.execute.file).toBe("./env-file.db");
-  });
-
-  it("preserves backward-compatible postgres databaseUrl via ASKDB_STUDIO_DATABASE_URL", () => {
-    installStudio(
-      undefined,
-      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-      { ASKDB_STUDIO_DATABASE_URL: "postgres://legacy/db" },
-    );
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.studio.execute.provider).toBe("postgres");
-    expect(rt.studio.execute.databaseUrl).toBe("postgres://legacy/db");
-  });
 });
 
 describe("getAskDbRuntimeConfig — studio execute safety defaults", () => {
   afterEach(() => resetAskDbRuntimeForTests());
 
-  function install(studio: AskDbConfig["studio"], flatExtra: Record<string, string> = {}): void {
-    const structured = minimalConfig({
-      introspection: {
-        provider: "postgres",
-        providerConfig: { postgres: { databaseUrl: "postgres://introspect/db" } },
-        outputDir: "./askdb/",
-      },
-      studio,
-    });
-    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), ...flatExtra } });
+  function install(studio: AskDbConfig["studio"]): void {
+    setAskDbRuntimeForTests(
+      minimalConfig({
+        introspection: {
+          provider: "postgres",
+          providerConfig: { postgres: { databaseUrl: "postgres://introspect/db" } },
+          outputDir: "./askdb/",
+        },
+        studio,
+      }),
+    );
   }
-
-  it("is disabled by default with 30s timeout and 500-row cap", () => {
-    install(undefined);
-    const exec = getAskDbRuntimeConfig().studio.execute;
-    expect(exec.enabled).toBe(false);
-    expect(exec.useIntrospectionConnection).toBe(false);
-    expect(exec.timeoutMs).toBe(30_000);
-    expect(exec.maxRows).toBe(500);
-  });
 
   it("does not reuse introspection credentials unless useIntrospectionConnection is on", () => {
     install({ execute: { enabled: true } });
@@ -1620,27 +1436,6 @@ describe("getAskDbRuntimeConfig — studio execute safety defaults", () => {
     expect(flat.ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION).toBe("false");
     expect(flat.ASKDB_STUDIO_EXECUTE_TIMEOUT_MS).toBe("5000");
     expect(flat.ASKDB_STUDIO_EXECUTE_MAX_ROWS).toBe("25");
-  });
-
-  it("reads the canonical flat keys", () => {
-    install(undefined, {
-      ASKDB_STUDIO_EXECUTE_ENABLED: "true",
-      ASKDB_STUDIO_EXECUTE_TIMEOUT_MS: "1000",
-      ASKDB_STUDIO_EXECUTE_MAX_ROWS: "10",
-    });
-    const exec = getAskDbRuntimeConfig().studio.execute;
-    expect(exec.enabled).toBe(true);
-    expect(exec.timeoutMs).toBe(1000);
-    expect(exec.maxRows).toBe(10);
-  });
-
-  it("rejects non-positive-integer timeoutMs / maxRows", () => {
-    expect(() =>
-      flattenAskDbConfig(minimalConfig({ studio: { execute: { timeoutMs: 0 } } })),
-    ).toThrow(/studio\.execute\.timeoutMs/);
-    expect(() =>
-      flattenAskDbConfig(minimalConfig({ studio: { execute: { maxRows: 1.5 } } })),
-    ).toThrow(/studio\.execute\.maxRows/);
   });
 });
 
@@ -1682,7 +1477,7 @@ describe("bootstrapAskDbEnv", () => {
     expect(isAskDbRuntimeInitialized()).toBe(true);
     const rt = getAskDbRuntimeConfig();
     expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("dog");
-    expect(rt.ai.aiEnv.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/db");
+    expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://localhost/db");
     delete process.env.MY_AI;
     delete process.env.MY_DB;
   });
@@ -1712,7 +1507,7 @@ describe("bootstrapAskDbEnv", () => {
       const rt = getAskDbRuntimeConfig();
       expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe(`key-${ext}`);
       expect(rt.introspection.postgresDatabaseUrl).toBe(`postgres://localhost/${ext}`);
-      expect(rt.flat.ASKDB_INTROSPECT_OUT).toBe("./askdb/");
+      expect(rt.introspection.outputDir).toBe("./askdb/");
     },
   );
 
@@ -1740,7 +1535,7 @@ describe("bootstrapAskDbEnv", () => {
         [message, { type: "DeprecationWarning", code: "ASKDB_CONFIG_DEPRECATED" }],
       ]);
       expect(getAskDbRuntimeConfig().deprecations).toEqual([message]);
-      expect(getAskDbRuntimeConfig().flat.ASKDB_AI_REASONING_EFFORT).toBe("low");
+      expect(getAskDbRuntimeConfig().ai.language.env.ASKDB_AI_REASONING_EFFORT).toBe("low");
     } finally {
       emitWarning.mockRestore();
     }
@@ -1751,80 +1546,34 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
   afterEach(() => resetAskDbRuntimeForTests());
 
   function install(httpApi: AskDbConfig["httpApi"]): void {
-    const structured = minimalConfig(httpApi ? { httpApi } : {});
-    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+    setAskDbRuntimeForTests(minimalConfig(httpApi ? { httpApi } : {}));
   }
-
-  it("defaults allowSchemaOverride to false and requestTimeoutMs to 60000", () => {
-    install(undefined);
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.httpApi.allowSchemaOverride).toBe(false);
-    expect(rt.httpApi.requestTimeoutMs).toBe(60_000);
-  });
-
-  it("reads allowSchemaOverride and requestTimeoutMs from the structured config", () => {
-    install({ allowSchemaOverride: true, requestTimeoutMs: 1500 });
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.httpApi.allowSchemaOverride).toBe(true);
-    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
-    expect(rt.flat["ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE"]).toBe("true");
-    expect(rt.flat["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe("1500");
-  });
-
-  // A JavaScript config isn't type-checked, and the string "false" is truthy.
-  it("rejects a non-boolean allowSchemaOverride at flatten time", () => {
-    for (const allowSchemaOverride of ["false", "true", 1, 0]) {
-      expect(() =>
-        flattenAskDbConfig(minimalConfig({ httpApi: { allowSchemaOverride } as unknown as AskDbConfig["httpApi"] })),
-      ).toThrow(/httpApi\.allowSchemaOverride must be a boolean/);
-    }
-  });
-
-  it("keeps schema overrides off for a non-boolean structured allowSchemaOverride that skipped flattening", () => {
-    const structured = minimalConfig({ httpApi: { allowSchemaOverride: "false" } as unknown as AskDbConfig["httpApi"] });
-    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(minimalConfig({})) });
-    expect(getAskDbRuntimeConfig().httpApi.allowSchemaOverride).toBe(false);
-  });
-
-  it("rejects a non-positive requestTimeoutMs at flatten time", () => {
-    expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 0 } }))).toThrow(
-      /httpApi\.requestTimeoutMs/,
-    );
-  });
 
   // A JavaScript config isn't type-checked; these used to throw a bare TypeError from `.trim()`.
   it("rejects a requestTimeoutMs that is neither a number nor a string with an error naming the key", () => {
     for (const requestTimeoutMs of [true, null, {}]) {
       expect(() =>
-        flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs } as unknown as AskDbConfig["httpApi"] })),
+        defineConfig(minimalConfig({ httpApi: { requestTimeoutMs } as unknown as AskDbConfig["httpApi"] })),
       ).toThrow(/askdb\.config: invalid httpApi\.requestTimeoutMs/);
     }
   });
 
   // Node timers cap at 2^31 - 1 ms: a larger AbortSignal.timeout() fires after ~1 ms
   // (or throws ERR_OUT_OF_RANGE past 2^32 - 1), so every request would fail.
-  it("accepts requestTimeoutMs up to the Node timer maximum and rejects anything larger at flatten time", () => {
-    expect(flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 2_147_483_647 } }))["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe(
-      "2147483647",
-    );
+  it("accepts requestTimeoutMs up to the Node timer maximum and rejects anything larger at load", () => {
+    install({ requestTimeoutMs: 2_147_483_647 });
+    expect(getAskDbRuntimeConfig().httpApi.requestTimeoutMs).toBe(2_147_483_647);
     for (const requestTimeoutMs of [2_147_483_648, 3e9, 5e9]) {
-      expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs } }))).toThrow(
+      expect(() => defineConfig(minimalConfig({ httpApi: { requestTimeoutMs } }))).toThrow(
         /httpApi\.requestTimeoutMs.*at most 2147483647/,
       );
     }
   });
 
-  it("defaults listen to port 3000 on 127.0.0.1", () => {
-    install(undefined);
-    expect(getAskDbRuntimeConfig().httpApi.listen).toEqual({ port: 3000, host: "127.0.0.1" });
-  });
-
   // `Number(env("PORT"))` with PORT unset is NaN, which used to reach listen() (#676).
   it("treats a NaN listen.port as unset", () => {
     install({ listen: { port: Number(env("ASKDB_TEST_PORT_676_NEVER_SET")) } });
-    const rt = getAskDbRuntimeConfig();
-    expect(rt.httpApi.listen.port).toBe(3000);
-    expect(rt.flat["PORT"]).toBeUndefined();
+    expect(getAskDbRuntimeConfig().httpApi.listen.port).toBe(3000);
   });
 
   it("accepts a listen.port from 0 to 65535, or a string holding one", () => {
@@ -1836,9 +1585,7 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
       [" 4000 ", 4000],
     ] as const) {
       install({ listen: { port } as unknown as NonNullable<AskDbConfig["httpApi"]>["listen"] });
-      const rt = getAskDbRuntimeConfig();
-      expect(rt.httpApi.listen.port).toBe(expected);
-      expect(rt.flat["PORT"]).toBe(String(expected));
+      expect(getAskDbRuntimeConfig().httpApi.listen.port).toBe(expected);
     }
   });
 
@@ -1848,32 +1595,197 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
       expect(() => defineConfig(minimalConfig({ httpApi }))).toThrow(/askdb\.config: invalid httpApi\.listen\.port/);
     }
   });
+});
 
-  it("reads allowSchemaOverride and requestTimeoutMs from the flat keys when the structured config leaves them out", () => {
-    const structured = minimalConfig({});
-    setAskDbRuntimeForTests({
-      structured,
-      flat: { ...flattenAskDbConfig(structured), ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE: "true", ASKDB_HTTP_REQUEST_TIMEOUT_MS: "1500" },
+// A child process's env is built from the flat map (`mergeAskDbFlatIntoEnvMap`), so a key the
+// config doesn't set must not appear there with its default: `PORT=3000` would reach every child.
+describe("flattenAskDbConfig — optional keys", () => {
+  const OPTIONAL_KEYS = [
+    "PORT",
+    "HOST",
+    "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE",
+    "ASKDB_HTTP_REQUEST_TIMEOUT_MS",
+    "ASKDB_STUDIO_EXECUTE_PROVIDER",
+    "ASKDB_STUDIO_EXECUTE_ENABLED",
+    "ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION",
+    "ASKDB_STUDIO_EXECUTE_TIMEOUT_MS",
+    "ASKDB_STUDIO_EXECUTE_MAX_ROWS",
+    "ASKDB_LOG_STDOUT",
+    "ASKDB_OMIT_SENSITIVE_FROM_PROMPT",
+  ];
+
+  it.each([
+    ["unset", minimalConfig()],
+    [
+      "set to undefined or NaN, as an unset env() read gives",
+      minimalConfig({
+        httpApi: { listen: { port: Number(env("ASKDB_TEST_PORT_711_NEVER_SET")), host: env("ASKDB_TEST_HOST_711_NEVER_SET") } },
+        studio: { execute: { provider: undefined, enabled: undefined, timeoutMs: undefined } },
+      }),
+    ],
+  ])("writes none of them when they are %s", (_name, config) => {
+    const flat = flattenAskDbConfig(config);
+    expect(OPTIONAL_KEYS.filter((key) => key in flat)).toEqual([]);
+  });
+
+  it("writes each one the config sets, with its resolved value", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        httpApi: { listen: { port: " 8080 " as unknown as number, host: " 0.0.0.0 " }, allowSchemaOverride: true, requestTimeoutMs: 1500 },
+        studio: { execute: { provider: "mysql", enabled: false, useIntrospectionConnection: true, timeoutMs: 1000, maxRows: 25 } },
+        logging: { logStdout: true },
+        modes: { omitSensitiveFromPrompt: true },
+      }),
+    );
+    expect(Object.fromEntries(OPTIONAL_KEYS.map((key) => [key, flat[key]]))).toEqual({
+      PORT: "8080",
+      HOST: "0.0.0.0",
+      ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE: "true",
+      ASKDB_HTTP_REQUEST_TIMEOUT_MS: "1500",
+      ASKDB_STUDIO_EXECUTE_PROVIDER: "mysql",
+      ASKDB_STUDIO_EXECUTE_ENABLED: "false",
+      ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION: "true",
+      ASKDB_STUDIO_EXECUTE_TIMEOUT_MS: "1000",
+      ASKDB_STUDIO_EXECUTE_MAX_ROWS: "25",
+      ASKDB_LOG_STDOUT: "true",
+      ASKDB_OMIT_SENSITIVE_FROM_PROMPT: "true",
     });
+  });
+});
+
+describe("getAskDbRuntimeConfig — each setting resolves once, from the authored config (#711)", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  type Setting = {
+    /** The config key, as load errors name it. */
+    key: string;
+    /** The config with this setting at `value`; `undefined` is what an unset `env()` read gives. */
+    config: (value: unknown) => AskDbConfig;
+    read: (rt: AskDbRuntimeConfig) => unknown;
+    valid: readonly [authored: unknown, resolved: unknown];
+    /** A value of the wrong type or outside the key's values. Omitted for keys AskDB doesn't check. */
+    wrong?: unknown;
+    /** The runtime value when the setting is unset. */
+    unset: unknown;
+  };
+
+  const withLogging = (field: string) => (value: unknown) => minimalConfig({ logging: { [field]: value } as never });
+  const withModes = (field: string) => (value: unknown) => minimalConfig({ modes: { [field]: value } as never });
+  const withIntrospection =
+    (provider: AskDbConfig["introspection"]["provider"], field: string) => (value: unknown) =>
+      minimalConfig({ introspection: { provider, providerConfig: { [provider]: { [field]: value } } } as never });
+  const withExecute = (field: string, extra: object = {}) => (value: unknown) =>
+    minimalConfig({ studio: { execute: { ...extra, [field]: value } } as never });
+  const withHttpApi = (field: string) => (value: unknown) => minimalConfig({ httpApi: { [field]: value } as never });
+  const withListen = (field: string) => (value: unknown) =>
+    minimalConfig({ httpApi: { listen: { [field]: value } } as never });
+
+  const SETTINGS: Setting[] = [
+    { key: "logging.level", config: withLogging("level"), read: (rt) => rt.logging.level, valid: ["debug", "debug"], wrong: "verbose", unset: undefined },
+    { key: "logging.correlationId", config: withLogging("correlationId"), read: (rt) => rt.logging.correlationId, valid: [" run-1 ", "run-1"], wrong: 7, unset: undefined },
+    { key: "logging.logFile", config: withLogging("logFile"), read: (rt) => rt.logging.logFile, valid: ["./askdb.log", "./askdb.log"], wrong: true, unset: undefined },
+    { key: "logging.logStdout", config: withLogging("logStdout"), read: (rt) => rt.logging.logStdout, valid: [true, true], wrong: "true", unset: false },
+    { key: "modes.askdbMode", config: withModes("askdbMode"), read: (rt) => rt.modes.askdbMode, valid: ["bounded_results", "bounded_results"], wrong: "results", unset: undefined },
+    // The string "false" is truthy: before #711 it turned omission on without a word.
+    { key: "modes.omitSensitiveFromPrompt", config: withModes("omitSensitiveFromPrompt"), read: (rt) => rt.modes.omitSensitiveFromPrompt, valid: [true, true], wrong: "false", unset: false },
+    { key: "dev.mockSql", config: (value) => minimalConfig({ dev: { mockSql: value } as never }), read: (rt) => rt.dev.mockSql, valid: ["select 1", "select 1"], wrong: 1, unset: undefined },
+    { key: "dialect", config: (value) => minimalConfig({ dialect: value as never }), read: (rt) => rt.nlToSql.dialect, valid: ["mysql", "mysql"], unset: undefined },
+    {
+      key: "introspection.outputDir",
+      config: (value) => minimalConfig({ introspection: { provider: "postgres", outputDir: value } as never }),
+      read: (rt) => rt.introspection.outputDir,
+      valid: ["./schema/", "./schema/"],
+      wrong: 1,
+      unset: "./askdb/",
+    },
+    {
+      key: "introspection.schemas",
+      config: (value) => minimalConfig({ introspection: { provider: "postgres", schemas: value } as never }),
+      read: (rt) => rt.introspection.schemas,
+      valid: [[" public ", "sales"], ["public", "sales"]],
+      wrong: "public",
+      unset: undefined,
+    },
+    { key: "introspection.providerConfig.postgres.databaseUrl", config: withIntrospection("postgres", "databaseUrl"), read: (rt) => rt.introspection.postgresDatabaseUrl, valid: [" postgres://h/db ", "postgres://h/db"], wrong: 1, unset: undefined },
+    { key: "introspection.providerConfig.mysql.databaseUrl", config: withIntrospection("mysql", "databaseUrl"), read: (rt) => rt.introspection.mysqlDatabaseUrl, valid: ["mysql://h/db", "mysql://h/db"], wrong: 1, unset: undefined },
+    { key: "introspection.providerConfig.sqlite.file", config: withIntrospection("sqlite", "file"), read: (rt) => rt.introspection.sqliteFile, valid: ["./app.db", "./app.db"], wrong: 1, unset: undefined },
+    { key: "introspection.providerConfig.sqlserver.databaseUrl", config: withIntrospection("sqlserver", "databaseUrl"), read: (rt) => rt.introspection.sqlserverDatabaseUrl, valid: ["Server=h;Database=app;", "Server=h;Database=app;"], wrong: 1, unset: undefined },
+    { key: "introspection.providerConfig.prisma.schemaPath", config: withIntrospection("prisma", "schemaPath"), read: (rt) => rt.introspection.prismaSchemaPath, valid: ["./prisma/schema.prisma", "./prisma/schema.prisma"], wrong: 1, unset: undefined },
+    {
+      key: "rag.store",
+      // Unset is a config without a rag block.
+      config: (value) =>
+        minimalConfig({ rag: value === undefined ? undefined : ({ embedder: "mock", store: value, storeConfig: { file: {} } } as never) }),
+      read: (rt) => rt.rag.store,
+      valid: ["file", "file"],
+      wrong: "redis",
+      unset: "memory",
+    },
+    { key: "httpApi.listen.port", config: withListen("port"), read: (rt) => rt.httpApi.listen.port, valid: ["8080", 8080], wrong: "abc", unset: 3000 },
+    { key: "httpApi.listen.host", config: withListen("host"), read: (rt) => rt.httpApi.listen.host, valid: [" 0.0.0.0 ", "0.0.0.0"], wrong: 1, unset: "127.0.0.1" },
+    { key: "httpApi.allowSchemaOverride", config: withHttpApi("allowSchemaOverride"), read: (rt) => rt.httpApi.allowSchemaOverride, valid: [true, true], wrong: "false", unset: false },
+    { key: "httpApi.requestTimeoutMs", config: withHttpApi("requestTimeoutMs"), read: (rt) => rt.httpApi.requestTimeoutMs, valid: ["1500", 1500], wrong: 0, unset: 60_000 },
+    { key: "studio.execute.enabled", config: withExecute("enabled"), read: (rt) => rt.studio.execute.enabled, valid: [true, true], wrong: "true", unset: false },
+    { key: "studio.execute.useIntrospectionConnection", config: withExecute("useIntrospectionConnection"), read: (rt) => rt.studio.execute.useIntrospectionConnection, valid: [true, true], wrong: 1, unset: false },
+    { key: "studio.execute.timeoutMs", config: withExecute("timeoutMs"), read: (rt) => rt.studio.execute.timeoutMs, valid: ["1000", 1000], wrong: 0, unset: 30_000 },
+    { key: "studio.execute.maxRows", config: withExecute("maxRows"), read: (rt) => rt.studio.execute.maxRows, valid: [25, 25], wrong: 1.5, unset: 500 },
+    // An unknown provider falls back like an unset one; only the type is checked.
+    { key: "studio.execute.provider", config: withExecute("provider"), read: (rt) => rt.studio.execute.provider, valid: ["mysql", "mysql"], wrong: 3, unset: "postgres" },
+    { key: "studio.execute.databaseUrl", config: withExecute("databaseUrl"), read: (rt) => rt.studio.execute.databaseUrl, valid: [" postgres://ro/db ", "postgres://ro/db"], wrong: 1, unset: undefined },
+    { key: "studio.execute.file", config: withExecute("file", { provider: "sqlite" }), read: (rt) => rt.studio.execute.file, valid: ["./ro.db", "./ro.db"], wrong: 1, unset: undefined },
+  ];
+
+  const runtimeFor = (config: AskDbConfig): AskDbRuntimeConfig => {
+    setAskDbRuntimeForTests(config);
+    return getAskDbRuntimeConfig();
+  };
+
+  it.each(SETTINGS.map((s) => [s.key, s] as const))("resolves a valid %s", (_key, s) => {
+    expect(s.read(runtimeFor(s.config(s.valid[0])))).toEqual(s.valid[1]);
+  });
+
+  it.each(SETTINGS.map((s) => [s.key, s] as const))("defaults an unset %s", (_key, s) => {
+    expect(s.read(runtimeFor(s.config(undefined)))).toEqual(s.unset);
+  });
+
+  it.each(SETTINGS.filter((s) => "wrong" in s).map((s) => [s.key, s] as const))(
+    "refuses a wrong %s at load, naming the config key",
+    (key, s) => {
+      let message = "";
+      try {
+        defineConfig(s.config(s.wrong));
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message.startsWith("askdb.config: ")).toBe(true);
+      expect(message).toContain(key);
+      expect(message).not.toMatch(/\b(ASKDB_[A-Z_]+|PORT|HOST)\b/);
+    },
+  );
+
+  // ADR 0005: every copy of @askdb/config in a process shares the store, and an older copy's
+  // flat map can say something its structured config doesn't. This copy reads only `structured`.
+  it("resolves a store another copy installed from its structured config, never from its flat map", () => {
+    const structured = minimalConfig({ dev: { mockSql: "select 1" }, httpApi: { listen: { port: 8080 } } });
+    (globalThis as Record<symbol, unknown>)[Symbol.for("askdb.runtimeStore")] = {
+      structured,
+      flat: {
+        OPENAI_API_KEY: "flat-key",
+        ASKDB_MOCK_SQL: "select 2",
+        PORT: "9000",
+        ASKDB_LOG_LEVEL: "debug",
+        ASKDB_OMIT_SENSITIVE_FROM_PROMPT: "true",
+      },
+    };
     const rt = getAskDbRuntimeConfig();
-    expect(rt.httpApi.allowSchemaOverride).toBe(true);
-    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
-  });
-
-  it("reads the port from the flat PORT key when the structured config leaves it out, and rejects a bad one", () => {
-    const structured = minimalConfig({});
-    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), PORT: "9000" } });
-    expect(getAskDbRuntimeConfig().httpApi.listen.port).toBe(9000);
-    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), PORT: "abc" } });
-    expect(() => getAskDbRuntimeConfig()).toThrow(/askdb\.config: invalid PORT "abc"/);
-  });
-
-  it("rejects an out-of-range ASKDB_HTTP_REQUEST_TIMEOUT_MS in the flat fallback", () => {
-    const structured = minimalConfig({});
-    setAskDbRuntimeForTests({
-      structured,
-      flat: { ...flattenAskDbConfig(structured), ASKDB_HTTP_REQUEST_TIMEOUT_MS: "3000000000" },
-    });
-    expect(() => getAskDbRuntimeConfig()).toThrow(/ASKDB_HTTP_REQUEST_TIMEOUT_MS.*at most 2147483647/);
+    expect(rt.dev.mockSql).toBe("select 1");
+    expect(rt.httpApi.listen.port).toBe(8080);
+    expect(rt.logging.level).toBeUndefined();
+    expect(rt.modes.omitSensitiveFromPrompt).toBe(false);
+    expect(rt.ai.language.env.OPENAI_API_KEY).toBe("k");
+    // The env maps are this copy's projection of `structured` too.
+    expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("k");
+    expect(rt.flat).toMatchObject({ ASKDB_MOCK_SQL: "select 1", PORT: "8080" });
+    expect(rt.flat.ASKDB_LOG_LEVEL).toBeUndefined();
   });
 });

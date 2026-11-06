@@ -20,7 +20,7 @@ export type {
   AskDbRuntimeModesConfig,
   AskDbRuntimeNlToSqlConfig,
   AskDbRuntimeStudioConfig,
-} from "./runtime-config.js";
+} from "./runtime-types.js";
 export {
   isAskDbRuntimeInitialized,
   mergeAskDbFlatIntoEnvMap,

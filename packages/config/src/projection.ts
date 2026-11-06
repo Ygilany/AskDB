@@ -1,6 +1,6 @@
 import type { AskDbConfig } from "./types.js";
-import { flattenNormalizedAskDbConfig } from "./flatten.js";
-import { normalizeAskDbConfig } from "./normalize.js";
+import { flattenResolvedAskDbConfig } from "./flatten.js";
+import { resolveAskDbConfig } from "./resolve.js";
 
 export const ASKDB_ENV_PROJECTION = Symbol.for("askdb.envProjection");
 
@@ -34,11 +34,11 @@ export type AskDbEnvProjection = {
  * Throws an `askdb.config: …` error for a config that can't load.
  */
 export function defineConfig<const T extends AskDbConfig>(config: T): AskDbEnvProjection {
-  const { config: normalized, deprecations } = normalizeAskDbConfig(config);
+  const { resolved, deprecations } = resolveAskDbConfig(config);
   return {
     [ASKDB_ENV_PROJECTION]: true,
     config,
-    entries: flattenNormalizedAskDbConfig(normalized),
+    entries: flattenResolvedAskDbConfig(resolved, config),
     deprecations,
   };
 }
