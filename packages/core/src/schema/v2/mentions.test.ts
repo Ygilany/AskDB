@@ -73,7 +73,7 @@ describe("createMentionMatcher", () => {
   it("costs about the same for 30 sensitive tables whether each has 1 column or 30", () => {
     // 30 tables of `{ table, column }` names; texts that name none. The cost must follow the number
     // of tables, not of columns. One alternative per name made 900 names about 700 times slower than
-    // 30 (over 3,000 times on Node 22); grouping by table without the first pass, about 4 to 18 times.
+    // 30 (over 3,000 times on Node 22); grouping by table without the first pass, about 4 to 20 times.
     const names = (columns: number) =>
       Array.from({ length: 30 * columns }, (_, i) => ({ table: `t${i % 30}`, column: `col_${Math.floor(i / 30)}` }));
     const texts = Array.from({ length: 30 }, (_, i) => `the t${i} order total for region ${i}`);
@@ -90,23 +90,17 @@ describe("createMentionMatcher", () => {
       } while (elapsed < 2);
       return elapsed / checked;
     };
-    // A loaded runner stalls some samples. Many short samples, in rounds that alternate which
-    // matcher goes first, keep a stall from landing on one matcher only, and each one's fastest
-    // sample is one that no stall touched (#657).
-    const oneColumnEach = createMentionMatcher(names(1));
-    const thirtyColumnsEach = createMentionMatcher(names(30));
-    let fastestOne = Number.POSITIVE_INFINITY;
-    let fastestThirty = Number.POSITIVE_INFINITY;
+    // A loaded runner stalls some samples. Rounds that alternate which matcher goes first keep a
+    // slow stretch from landing on one matcher only, and with many short samples, a stall that
+    // touches only some of them leaves each matcher's fastest sample untouched (#657).
+    const matchers = { one: createMentionMatcher(names(1)), thirty: createMentionMatcher(names(30)) };
+    const fastest = { one: Number.POSITIVE_INFINITY, thirty: Number.POSITIVE_INFINITY };
     for (let round = 0; round < 31; round++) {
-      if (round % 2 === 0) {
-        fastestOne = Math.min(fastestOne, costPerText(oneColumnEach));
-        fastestThirty = Math.min(fastestThirty, costPerText(thirtyColumnsEach));
-      } else {
-        fastestThirty = Math.min(fastestThirty, costPerText(thirtyColumnsEach));
-        fastestOne = Math.min(fastestOne, costPerText(oneColumnEach));
+      for (const which of round % 2 === 0 ? (["one", "thirty"] as const) : (["thirty", "one"] as const)) {
+        fastest[which] = Math.min(fastest[which], costPerText(matchers[which]));
       }
     }
-    expect(fastestThirty / fastestOne).toBeLessThan(2);
+    expect(fastest.thirty / fastest.one).toBeLessThan(2);
   });
 
   it("mentions nothing for an empty list or empty names", () => {
