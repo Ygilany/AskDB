@@ -22,8 +22,20 @@ AskDB doesn't execute queries, and it doesn't rewrite them to add a tenant filte
 Your application supplies the tenant scope per call and is responsible for authorizing it.
 
 <Aside type="caution" title="Enforce tenancy in your database">
-The tenant check is heuristic and does not parse SQL. It rejects the common ways a filter fails to filter, such as `WHERE organization_id = :tenant_organization_ids OR 1=1`, a literal tenant ID, or `SELECT organization_id FROM documents` with no filter. But within one query it doesn't tie a predicate to a particular table reference, so an unfiltered reference next to a filtered one can still pass. In production, enforce tenant isolation in the database, for example with Postgres row-level security or per-tenant views, and treat AskDB's check as an early warning. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
+The tenant check is heuristic and does not parse SQL. It rejects the common ways a filter fails to filter, such as `WHERE organization_id = :tenant_organization_ids OR 1=1`, a literal tenant ID, or `SELECT organization_id FROM documents` with no filter. But within one query it doesn't tie a predicate to a particular table reference, so an unfiltered reference next to a filtered one can still pass. In production, enforce tenant isolation in the database, for example with Postgres row-level security or per-tenant views, and treat AskDB's check as an early warning. See [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
 </Aside>
+
+## What enforces isolation
+
+Three layers can keep a query to the caller's tenants. Only the database holds whatever SQL arrives:
+
+| Layer | What it does | Holds when the SQL is wrong? |
+| --- | --- | --- |
+| **The database** | Row-level security, per-tenant views, or per-tenant roles return only the caller's rows. | Yes, once it's set up and checked as in the guide below. It doesn't depend on the SQL. |
+| **Your application** | Adds or checks the tenant filter itself before it runs the query. | Only as far as your code covers every shape of query. |
+| **AskDB's policy and check** | The prompt tells the model to filter by tenant, and the check rejects or flags SQL that looks unscoped. | No. It's a lint over the SQL's tokens, not a boundary. |
+
+AskDB's layer alone isn't enough to isolate tenants that don't trust each other. It still earns its place: the model writes the filter, so queries return the right rows and can use your tenant indexes, and `enforcement: strict` stops the common mistakes before anything runs. The database makes a mistake that gets past the check harmless. To set that up on Postgres, follow [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
 
 ## Tenant policy concepts
 
@@ -165,7 +177,7 @@ AskDB checks the model's SQL before it binds the tenant IDs, while the `:tenant_
 - **No literal IDs.** `agency_id = 2` doesn't satisfy the rule, even when 2 is in the caller's scope: AskDB binds the IDs. Each `UNION` branch that reads a scoped table needs its own predicate.
 - **Root tables too.** A query on the root table itself (`agencies`) needs the predicate on its tenant ID column.
 
-It's a heuristic over the SQL's tokens, not a parser. Within one query it doesn't tie each predicate to a specific table reference, so an unfiltered reference next to a filtered one can still pass. Use it as defense in depth, together with database-side row-level security and a read-only role: see [Run safely in production](/guides/run-safely-in-prod/). The full rules are in [`docs/contracts/tenant-policy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#guardrail-validation).
+It's a heuristic over the SQL's tokens, not a parser. Within one query it doesn't tie each predicate to a specific table reference, so an unfiltered reference next to a filtered one can still pass. Use it as defense in depth, together with database-side row-level security and a read-only role: see [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/) and [Run safely in production](/guides/run-safely-in-prod/). The full rules are in [`docs/contracts/tenant-policy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#guardrail-validation).
 
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
@@ -331,7 +343,7 @@ SELECT COUNT(*) FROM documents
 WHERE organization_id = $1 AND created_at >= NOW() - INTERVAL '1 month';
 ```
 
-The tenant predicate comes from the model, not from AskDB. AskDB checks the predicate's shape and binds the values, but the check is heuristic, and a model steered by an unusual question can still write SQL that gets past it. That's why the database should be the tenant boundary.
+The tenant predicate comes from the model, not from AskDB. AskDB checks the predicate's shape and binds the values, but the check is heuristic, and a model steered by an unusual question can still write SQL that gets past it. That's why the database should be the tenant boundary: see [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
 
 ## Without a policy
 
@@ -358,6 +370,7 @@ The Playground starts in `sql-params`, the library default. Switch to `sql-only`
 ## Read next
 
 <div class="home-path-grid">
+  <a href="/guides/enforce-tenancy-in-the-database/"><strong>Enforce tenancy in the database</strong><span>Make Postgres row-level security the tenant boundary for generated SQL.</span></a>
   <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>How tenant scoping fits with read-only roles, timeouts, and audit logging.</span></a>
   <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>Everything AskDB validates in addition to tenant filters.</span></a>
   <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Use Studio's Tenancy view to draft the policy.</span></a>
