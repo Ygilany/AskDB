@@ -243,6 +243,31 @@ describe("workspace", () => {
     expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
   });
 
+  // Studio keeps its workspace in memory. When a re-introspection renames a column and
+  // the strict policy then fails to load, that copy goes stale; the corrected policy must
+  // be checked against schema.json on disk, or Save refuses the fix (#647 review).
+  it("saveTenantPolicy checks the policy against schema.json on disk, not a stale workspace", () => {
+    const ws = loadWorkspace(schemaDir);
+    const schemaPath = join(schemaDir, "schema.json");
+    const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as {
+      tables: Array<{ id: string; columns: Array<{ id: string; name: string }> }>;
+    };
+    const idColumn = schema.tables
+      .find((table) => table.id === "table:public.users")!
+      .columns.find((column) => column.id === "table:public.users#id")!;
+    idColumn.id = "table:public.users#account_id";
+    idColumn.name = "account_id";
+    writeFileSync(schemaPath, JSON.stringify(schema));
+
+    const renamed = {
+      ...ACCOUNT_POLICY,
+      roots: [{ ...ACCOUNT_POLICY.roots[0]!, tenantIdColumn: "table:public.users#account_id" }],
+    };
+    saveTenantPolicy(ws, renamed, "");
+
+    expect(loadSchema(schemaDir).tenantPolicy?.roots[0]?.tenantIdColumn).toBe("table:public.users#account_id");
+  });
+
   it("surfaces new column ids and prunes orphaned column frontmatter", () => {
     const schemaPath = join(schemaDir, "schema.json");
     const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as {
