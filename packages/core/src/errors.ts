@@ -153,7 +153,12 @@ export type QueryParameterRejectionReason =
    * `bindPreparedQuery()` needs `guardrails.dialect`: the template was made under a host's
    * `DialectSpec` (`dialectRules: "host"`), or stored without `dialectRules`.
    */
-  | "DIALECT_SPEC_REQUIRED";
+  | "DIALECT_SPEC_REQUIRED"
+  /**
+   * A parameter in the stored template declares a `type` or `cardinality` AskDB doesn't support.
+   * The template is broken: regenerate it rather than passing another value.
+   */
+  | "INVALID_DECLARATION";
 
 export class QueryParameterError extends AskDbError {
   constructor(

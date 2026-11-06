@@ -119,6 +119,7 @@ export async function runStudioIntrospection(options: {
       outDir: options.outDir,
       schemaId,
       existingArtifactDir: options.hasExistingArtifact ? options.outDir : undefined,
+      filters: connectorConfig.filters,
     },
     { connector },
   );

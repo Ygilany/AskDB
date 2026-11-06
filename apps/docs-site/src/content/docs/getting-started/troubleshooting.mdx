@@ -73,6 +73,15 @@ A file AskDB writes in the schema directory is a symbolic link: `schema.json` (f
 
 Replace the link with a regular file that holds the content you want, then run the command or save again. The schema directory itself can be a symbolic link. A linked `.gitignore` doesn't stop Studio: it skips adding `playground-history.json` there and still saves the history, so add that line yourself.
 
+### `Introspection found no tables or views for schema "…"`
+
+`askdb introspect`, or Studio's introspection, found nothing to write after filters, so it wrote nothing and exited `1` (Studio answers `422`). An artifact with no tables can't be loaded, and an existing `schema.json` stays as it was. Check, in this order:
+
+1. **The connection names the right database.** A URL that points at an empty database gives this error, and so does a SQLite path to a file that exists but has no tables. A SQLite path to a file that doesn't exist fails earlier, with a different error.
+2. **The schema or database holds tables or views.** A Postgres schema with only enums or sequences counts as empty, because the artifact describes tables and views.
+3. **The filters match something.** The message names the `--schemas`, `--exclude-schemas` and `--tables` values (or `introspection.schemas`) it ran with. `--tables` patterns match `<schema>.<table>`, such as `public.orders*`.
+4. **The database user can read the catalog.** A role without access to the tables' metadata sees none.
+
 ### `SchemaParseError: Missing required field …`
 
 The schema artifact is from an older format. Re-run introspection to regenerate it:
