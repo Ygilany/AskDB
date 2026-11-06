@@ -1,0 +1,99 @@
+---
+title: "Enable Studio execute"
+description: "Let Studio's Playground run the SQL it generates against your database, under a read-only role, and show the rows."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
+
+<p class="doc-eyebrow">Studio</p>
+
+<p class="doc-lede">Let Studio's Playground run the SQL it generates against your database and show the rows. Execute is off by default. Turn it on with its own read-only connection, so a query Studio runs can't change your data.</p>
+
+## Before you start
+
+- Studio running against your schema artifact. The [Studio tour](/studio/) shows how to launch it.
+- Access to create a database role, or a connection string for a role that can only read.
+
+## 1. Make a read-only role
+
+Give Studio a role that can only read the tables you want to query. [Run safely in production](/guides/run-safely-in-prod/#database-role) shows the grants for each engine. Put that role's connection string in `.env`:
+
+```bash title=".env"
+STUDIO_READONLY_DATABASE_URL=postgres://studio_reader:<password>@localhost:5432/app
+```
+
+For SQLite, you need no role: Studio opens the file read-only.
+
+## 2. Turn on execute
+
+Add `studio.execute` to `askdb.config.ts`:
+
+```ts title="askdb.config.ts"
+export default defineConfig({
+  // ...
+  studio: {
+    execute: {
+      enabled: true,
+      databaseUrl: env("STUDIO_READONLY_DATABASE_URL"), // or `file: "./data.db"` for SQLite
+      // timeoutMs: 30000, // per-query timeout (default 30 s)
+      // maxRows: 500,     // row cap (default 500)
+    },
+  },
+});
+```
+
+Studio runs queries on the same engine as `introspection.provider`. If you introspect a Prisma schema, or want to run on another engine, set `provider` too: `"postgres"`, `"mysql"`, `"sqlite"` or `"sqlserver"`. Studio doesn't reuse your introspection connection unless you set `useIntrospectionConnection: true`. Give execute the connection of a role that only reads. [Configuration — Studio execute](/reference/config/#studio-execute-configuration) lists every field.
+
+If you chose **Studio execute** in `askdb init` or the setup wizard, `enabled: true` is already there, but `databaseUrl` reads the same variable as introspection (`DATABASE_URL` unless you named another). Point it at the read-only role's variable instead.
+
+## 3. Install the driver
+
+Studio needs the driver for its execute engine. If introspection already uses the same engine, the driver is installed:
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+    <InstallTabs pkgs="pg" />
+  </TabItem>
+  <TabItem label="MySQL">
+    <InstallTabs pkgs="mysql2" />
+  </TabItem>
+  <TabItem label="SQLite">
+    <InstallTabs pkgs="better-sqlite3" />
+  </TabItem>
+  <TabItem label="SQL Server">
+    <InstallTabs pkgs="mssql" />
+  </TabItem>
+</Tabs>
+
+You can also install it from the Playground in step 4: when the driver is missing, Studio shows an **Install** button for it, such as **Install pg**. It works only from the machine Studio runs on, and only in a project with a lockfile, which tells Studio the package manager. Otherwise it shows the command to run.
+
+For SQL Server, `databaseUrl` takes any of the three formats introspection reads, because Studio converts it before it reaches `mssql`: see [Write the connection string](/guides/connect-to-sql-server/#1-write-the-connection-string).
+
+## 4. Restart Studio and run a query
+
+Restart Studio, so it reads the new config. In the Playground:
+
+1. Ask a question and click **Generate SQL**.
+2. Check the line next to **Execute Query**: it names the engine, says the connection is configured, and says the driver is ready, for example **Postgres** · **URL configured** · **pg ready**.
+3. Click **Execute Query**.
+
+The rows appear under **Results**, with a line such as `25 rows · 6ms`. If the query returned more than `maxRows` rows, Studio shows the first `maxRows` and says the result was cut.
+
+## If it fails
+
+| What you see | Fix |
+| --- | --- |
+| No **Execute Query** button, and `Studio execute is off. To run generated SQL from the Playground, set studio.execute.enabled: true …` | Execute is still off, or Studio hasn't restarted since you changed the config. |
+| **no URL** (or **no file**) next to the button | `databaseUrl` (or `file`) is unset, or its variable is empty in `.env`. |
+| **pg missing** (or another driver) | Install the driver (step 3). |
+| `SQL rejected by the read-only guardrail (SQL_MULTI_STATEMENT): …` | AskDB's SQL checks refused the statement, before it reached the database. The rule in parentheses says why. |
+| `canceling statement due to statement timeout` (Postgres), or `Query timed out after … ms.` | The query ran longer than `timeoutMs`. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/studio/#execute-guards"><strong>Execute guards</strong><span>What Studio checks and limits on every query it runs, per engine.</span></a>
+  <a href="/studio/"><strong>Studio tour</strong><span>The Playground and the rest of Studio's views.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The database role, timeouts and row limits for your own app.</span></a>
+</div>

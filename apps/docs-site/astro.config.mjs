@@ -114,7 +114,7 @@ export default defineConfig({
             { label: "Overview", slug: "index" },
             { label: "Quickstart", slug: "quickstart" },
             { label: "Install", slug: "install" },
-            { label: "Studio", slug: "studio" },
+            { label: "Studio tour", slug: "studio" },
           ],
         },
         {
@@ -138,6 +138,7 @@ export default defineConfig({
                 { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
                 { label: "Cap the rows a query returns", slug: "guides/cap-the-rows-a-query-returns" },
                 { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
+                { label: "Enable Studio execute", slug: "guides/enable-studio-execute" },
               ],
             },
             {
@@ -182,6 +183,7 @@ export default defineConfig({
                 { label: "CLI", slug: "reference/cli" },
                 { label: "HTTP API", slug: "reference/http-api" },
                 { label: "Configuration", slug: "reference/config" },
+                { label: "Studio", slug: "reference/studio" },
               ],
             },
             {
