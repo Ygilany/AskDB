@@ -24,10 +24,6 @@ export function setAskDbRuntime(data: AskDbRuntimeStore): void {
   runtimeHolder[RUNTIME_STORE_KEY] = data;
 }
 
-export function clearAskDbRuntime(): void {
-  delete runtimeHolder[RUNTIME_STORE_KEY];
-}
-
 /**
  * `true` once `bootstrapAskDbEnv()` (or another installer) has set the runtime snapshot.
  * A host-facing factory can use it to bootstrap only when its host hasn't already done so.
@@ -75,5 +71,5 @@ export function setAskDbRuntimeForTests(config: AskDbConfig): void {
 
 /** @internal Tests only. */
 export function resetAskDbRuntimeForTests(): void {
-  clearAskDbRuntime();
+  delete runtimeHolder[RUNTIME_STORE_KEY];
 }

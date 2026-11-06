@@ -65,8 +65,9 @@ async function runSqliteCatalogQuery(
 
 /**
  * Build the built-in `better-sqlite3`-backed catalog query runner used by live
- * SQLite introspection. `filename` is a path to a `.db` / `.sqlite` file (or
- * `:memory:` for an empty DB; useful only in tests). The DB is opened readonly.
+ * SQLite introspection. `filename` is the path to an existing `.db` / `.sqlite`
+ * file, which each query opens read-only. A missing file, or `:memory:` (which
+ * `better-sqlite3` can't open read-only), throws on the first query.
  */
 export function createSqliteCatalogQueryRunner(
   filename: string,

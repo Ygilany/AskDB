@@ -24,7 +24,7 @@ export type CliLoggingFlags = {
  * --log-stdout asks for output, else silent.
  */
 export function resolveCliLogLevel(flags: CliLoggingFlags, runtimeConfig: AskDbRuntimeConfig): AskDbLogLevel {
-  if (flags.logLevel !== undefined && flags.logLevel !== "") {
+  if (flags.logLevel !== undefined) {
     const level = flags.logLevel.toLowerCase();
     if (!isSupportedAskDbLogLevel(level)) {
       throw new Error(

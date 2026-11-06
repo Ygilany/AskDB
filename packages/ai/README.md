@@ -86,6 +86,7 @@ await ask({ question, schema, dialect: "postgres", model, deps: { providerOption
 - registry methods such as `resolveAiConfig`, `resolveEmbeddingConfig`, `createLanguageModelFromEnv`, `createEmbeddingModelFromEnv`, and `resolveProviderOptions`
 - `aiKeyMissingMessage`
 - `aiProviderMissingMessage`
+- `AiBaseUrlCredentialsError`, thrown when a model base URL holds a username or password
 - `resolveReasoningEffort`, `isReasoningEffort`, `REASONING_EFFORTS`
 
 ## License

@@ -1,5 +1,25 @@
 # @askdb/core
 
+## 1.0.0-beta.49
+
+### Minor Changes
+
+- ca816cc: The checks refuse a `b'…'` byte string (lower-case `b`) that holds a backslash or is continued on a later line (#730, ADR 0012). CockroachDB reads `b'…'` with backslash escapes, and the checks read it without them, so under the `cockroachdb` dialect `SELECT b'\'' AS x, o.* FROM orders o --'` passed all three checks while CockroachDB ran an unscoped read of `orders`. The read-only check refuses it on Postgres, CockroachDB and a dialect id that is no built-in engine, as `SQL_ESCAPED_BYTE_STRING`. The tenant check (`ESCAPED_BYTE_STRING`, `tableId: ""`) and the sensitive check (the `SensitiveScopeIssue` `ESCAPED_BYTE_STRING`) also cover a custom `AskDialect`, which skips the read-only check, and a call with no dialect. The lexer also reads `:b'…'` (an array slice's `:`) as `:` and a byte string.
+  
+  **Upgrade notes:** a `switch` over `SqlValidationRuleCode`, `TenantGuardrailRuleCode` or `SensitiveScopeIssue` needs a case for the new member. Write bytes with escapes as a hex string cast to `bytea` (`'\x00'::bytea`), which Postgres and CockroachDB both read as bytes; a `b'…'` string with no backslash, and a `B'…'` bit string, still pass.
+  
+  The docs add the codes to the `core-api` error tables, Safety boundaries, Troubleshooting, the multi-tenancy guide, the upgrade guide, SECURITY.md and the tenant and sensitive-fields contracts.
+- 396ad23: The sensitive check fails closed on a Postgres Unicode-escaped name and on an `E'…'` string continued on a later line, with the new `SensitiveScopeIssue` members `UNICODE_ESCAPED_IDENTIFIER` and `STRING_CONTINUATION` (#707, ADR 0012). Under a custom `AskDialect`, which skips the read-only check, or a direct `validateSensitiveReferences()` call, `SELECT U&"p\0061ssword" FROM users` and a `u.password` read after a continued `E'…'` string passed: the check matched names as written, and Postgres reads both differently. The check now finds both forms the way the read-only and tenant checks do, whenever the SQL may be read as Postgres (Postgres, CockroachDB, a custom `AskDialect`, or no dialect), and reports them in `unresolvedScope` with `passed: false`, so `strict` mode throws `SensitiveReferenceError`.
+  
+  **Upgrade notes:** a `switch` that lists every `SensitiveScopeIssue` needs both new cases. Built-in dialects already reject the same SQL in the read-only check.
+  
+  The docs add both issues to the `core-api` scope table, Safety boundaries and the sensitive-fields contract.
+
+### Patch Changes
+
+- 29a0fc1: A model call that fails before giving a reason now names it (#786). A refused connection to the model's server reached `ask()` as the AI SDK's `Cannot connect to API: ` over a message-less `AggregateError`, so `SqlGenerationError`'s message and the `askdb.pipeline.failed` log's `errMessage` ended in a blank. When a failure's message is empty or ends at a colon, both now add the reason from the errors under it: each one's `code` with the `address` (or `hostname`) and `port` it names, such as `ECONNREFUSED 127.0.0.1:11434`, else its `name`. Their message text is never copied, so a URL or key quoted there doesn't reach the error or the log. A message that already gives its reason is unchanged.
+- 4437394: Security fix ([GHSA-wjgj-mf9h-6g68](https://github.com/Ygilany/AskDB/security/advisories/GHSA-wjgj-mf9h-6g68)). With `tenantSqlMode: "sql-only"` on the built-in `postgres` or `cockroachdb` dialect, `ask()` could return SQL whose tenant scoping no longer held once the tenant IDs were inlined, because it did not re-check the rendered statement. `ask()` now runs the read-only check on the `sql` it returns, as `bindPreparedQuery()` already does, and refuses a statement that reads differently once rendered. The default `tenantSqlMode: "sql-params"`, which binds tenant IDs as driver parameters, was never affected.
+
 ## 1.0.0-beta.48
 
 ### Minor Changes

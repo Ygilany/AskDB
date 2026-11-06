@@ -41,6 +41,7 @@ Create `packages/ai/src/providers/<provider>.ts`, following this template:
 
 ```ts
 import { withEmbeddingProviderOptions } from "../embedding.js";
+import { baseURLOption } from "../base-url.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
 import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
@@ -65,10 +66,13 @@ async function createProvider(config: AiConfig) {
   // `import()` itself: that is how esbuild and other bundlers tell an optional import from a
   // required one. Wrapping it as `() => import(...)` in a helper makes every host's bundle
   // fail unless this SDK is installed (the installable smoke test's esbuild step checks this).
+  // Refuses a base URL with a user name or password (ADR 0036). If the SDK reads a base URL
+  // variable of its own from process.env when none is passed, name it: baseURLOption(config, "<X>_BASE_URL").
+  const baseURL = baseURLOption(config);
   const { create<X> } = await import("<sdk>").catch(rethrowMissingPeer("<provider>", PEER_PACKAGE));
   return create<X>({
     apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...baseURL,
   });
 }
 

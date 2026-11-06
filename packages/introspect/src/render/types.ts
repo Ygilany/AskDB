@@ -13,9 +13,9 @@ export type RenderOptions = {
   provider?: string;
   /**
    * When present, ID-anchored merge runs against this directory's existing
-   * `schema.json`. Sensitive flags are preserved; the describable layer
-   * (`tables/*.md`, `concepts.md`) is read for orphan-warning detection only
-   * and is **never** modified.
+   * `schema.json`. Sensitive flags are preserved, and `tables/*.md` is read for
+   * orphan-warning detection only. The describable layer (`tables/*.md`,
+   * `concepts.md`) is **never** modified.
    */
   existingArtifactDir?: string;
 };

@@ -29,8 +29,9 @@ import type {
  * Clean writes and ID-anchored re-introspection merges write `schema.json`
  * only, through `saveSchemaFile()` from `@askdb/core`: a symbolic link at
  * `schema.json` is refused, and the file is replaced by a temp file renamed
- * over it (ADR 0028). The describable layer (`tables/*.md`, `concepts.md`) is
- * read only for orphan detection when `existingArtifactDir` is supplied.
+ * over it (ADR 0028). Of the describable layer (`tables/*.md`, `concepts.md`),
+ * only `tables/*.md` is read, for orphan detection, when `existingArtifactDir`
+ * is supplied. Neither is written.
  *
  * Determinism contract (requirements.md §5):
  *   - Schemas alphabetical at the source (the connector already produces

@@ -1,8 +1,9 @@
 /**
  * Module layering (ADR 0010, "Module layering"): `@askdb/core` has no runtime import
- * cycles, and the mechanical renderer `sql/bind.ts` stays below tenant substitution and
- * the guardrails, which the checked binder `sql/rebind.ts` sits above. Type-only imports
- * and re-exports are erased at build time and don't count; a barrel's re-exports do.
+ * cycles, and the mechanical renderer `sql/bind.ts` stays below tenant substitution, the
+ * guardrails and the shared renderer `sql/checked-statement.ts`, which the checked binder
+ * `sql/rebind.ts` sits above. Type-only imports and re-exports are erased at build time and
+ * don't count; a barrel's re-exports do.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -64,7 +65,13 @@ describe("@askdb/core module layering", () => {
       }
     };
     walk(join(src, "sql/bind.ts"));
-    const above = ["sql/tenant-placeholders.ts", "sql/guardrails.ts", "sql/guardrail-decide.ts", "sql/rebind.ts"];
+    const above = [
+      "sql/tenant-placeholders.ts",
+      "sql/guardrails.ts",
+      "sql/guardrail-decide.ts",
+      "sql/checked-statement.ts",
+      "sql/rebind.ts",
+    ];
     expect([...reachable].map(name).filter((file) => above.includes(file))).toEqual([]);
   });
 });
