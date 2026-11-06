@@ -31,6 +31,13 @@ With a tenant policy and any scope but `global`, the tenant check now refuses a 
 - **If it returns another statement on purpose** for a schema with a tenant policy and a scope other than `global`, `ask()` no longer returns it under `strict`. Generate a `SELECT` or `WITH` query instead.
 - **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `NOT_SELECT_OR_WITH`.
 
+### Expect `UNCHECKABLE_FUNCTION` for calls the tenant check can't read through
+
+With a tenant policy and any scope but `global`, the tenant check now refuses a call whose reads it can't see, under every dialect ([#702](https://github.com/Ygilany/AskDB/issues/702)). That is a function that runs a query passed as a string (`query_to_xml`, `ts_stat`, `crosstab`), reads a table named in a string (`table_to_xml`, `schema_to_xml`, `connectby`), runs SQL over another connection (`dblink`, `OPENQUERY`), or sets a value row-level security may read (`set_config`), and any `U&"…"` name called as a function. Before, the check passed `SELECT table_to_xml('orders', true, false, '')` under the built-in Postgres dialect, and it read every tenant's orders. Now `ask()` throws `TenantGuardrailError` under `enforcement: strict`, and returns an `UNCHECKABLE_FUNCTION` warning under `warn`. `bindPreparedQuery()` and `askdb.bind()` refuse a stored template with such a call too.
+
+- **A pivot the model writes with `crosstab`** is refused under a tenant policy, because the check can't read the query `crosstab` runs. Re-ask the question: a pivot written with `CASE` or `FILTER` passes.
+- **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `UNCHECKABLE_FUNCTION`.
+
 ## 1.0.0-beta.46
 
 Released with `@askdb/client` 1.0.0-beta.9, `@askdb/config` 1.0.0-beta.15, `@askdb/enrich` 0.2.0-beta.17, `@askdb/introspect` 0.3.0-beta.20, `@askdb/mysql` 0.1.0-beta.21, `@askdb/prisma` 0.2.0-beta.20, `@askdb/sqlite` 0.1.0-beta.21, `@askdb/sqlserver` 0.1.0-beta.22 and `@askdb/studio` 0.2.0-beta.39. Other packages that got a new version list what changed in their CHANGELOG.
