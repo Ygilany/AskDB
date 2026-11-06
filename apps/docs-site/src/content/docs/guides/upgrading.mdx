@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.46
 
-Released with `@askdb/client` 1.0.0-beta.9, `@askdb/config` 1.0.0-beta.15, `@askdb/enrich` 0.2.0-beta.17, `@askdb/mysql` 0.1.0-beta.21, `@askdb/sqlite` 0.1.0-beta.21, `@askdb/sqlserver` 0.1.0-beta.22 and `@askdb/studio` 0.2.0-beta.39. Other packages that got a new version list what changed in their CHANGELOG.
+Released with `@askdb/client` 1.0.0-beta.9, `@askdb/config` 1.0.0-beta.15, `@askdb/enrich` 0.2.0-beta.17, `@askdb/introspect` 0.3.0-beta.20, `@askdb/mysql` 0.1.0-beta.21, `@askdb/prisma` 0.2.0-beta.20, `@askdb/sqlite` 0.1.0-beta.21, `@askdb/sqlserver` 0.1.0-beta.22 and `@askdb/studio` 0.2.0-beta.39. Other packages that got a new version list what changed in their CHANGELOG.
 
 ### Replace imports of removed exports
 
@@ -128,6 +128,50 @@ await suggestEnrichment(buildSuggestionTarget(schema, source), buildSuggestionCo
 - **A table you build by hand** must set `sensitive` on the table, and `sensitive` and `primaryKey` on every column. Mark sensitive each column that `tables/*.md` marks, and every column of a sensitive table, as `loadSchema()` does.
 - **`loadSchemaFromJson()` of a bare `schema.json`** typechecks too, but has no front-matter flags. Load the schema directory or a bundle with `loadSchema()` instead.
 
+### Rename schema files to their exact names
+
+`loadSchema()` now throws `SchemaParseError` when a schema directory holds a file whose name differs from the expected one only in case, such as `Tenant-Policy.md`, `Concepts.md`, `Tables/` or `tables/orders.MD` ([#608](https://github.com/Ygilany/AskDB/issues/608), ADR 0027). Before, Linux skipped those files: a `Tenant-Policy.md` loaded the schema with no tenant policy, so `ask()` didn't require a `tenantScope`, and nothing reported it. A `tables/*.MD` file was skipped on every OS, with every `sensitive: true` in it. The check now runs on every OS, so a directory that loaded on macOS or Windows with such a name throws there too.
+
+- **Rename each file the error names.** The error says what to do, for example `rename Tenant-Policy.md to tenant-policy.md`. When both spellings exist, which only Linux allows, it says to keep one.
+- **A listed optional file that can't be read now throws,** including a symbolic link whose target is missing. Before, it loaded as if the file were absent.
+- **A renamed copy of `schema.json`** beside a wrong-case `Tenant-Policy.md` now throws, as it already did beside `tenant-policy.md`.
+- **`askdb bundle` and `bundleSchemaDirectory()`** refuse the same directories, and their read errors are now `SchemaParseError`s instead of raw Node errors. Studio can't open such a workspace until you rename the file.
+- **A path you pass is still read as given,** so `loadSchema("<dir>/Schema.json")` loads as before.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#schemaparseerror-schema-directory--has-a-file-name-in-the-wrong-case).
+
+### Install `@askdb/prisma` to introspect a Prisma schema
+
+`askdb` and `@askdb/studio` no longer install `@askdb/prisma`: it's now an optional peer dependency ([#259](https://github.com/Ygilany/AskDB/issues/259)). So `pnpm add askdb` succeeds on pnpm 11, which refused Prisma's unapproved `@prisma/engines` build and exited 1. If you introspect a Prisma schema, install `@askdb/prisma` next to `askdb`:
+
+<InstallTabs pkgs="@askdb/prisma" />
+
+- **On pnpm 11,** approve the `@prisma/engines` build in the same command, `pnpm add --allow-build=@prisma/engines @askdb/prisma`, or run `pnpm approve-builds` afterwards.
+- **Without it,** `askdb introspect --engine prisma` exits 1 with a message that names the package, and Studio shows the same message instead of resyncing. `askdb` looks for `@askdb/prisma` in its own install, then in the project it runs in, so `npx askdb introspect` uses your project's copy.
+- **`askdb init --database prisma`** installs it for you.
+- **If you build your own connector registry,** `createConnectorRegistry()` also takes lazy entries (`{ provider, load }`) now, which the new `registry.load(provider)` imports. A registry of adapters works as before.
+
+See the [Prisma guide](/guides/integrations/prisma/).
+
+### Handle `SQL_LOCKING_READ` for locking reads
+
+`validateSelectSql`, and so `ask()`, `generateSelectSql()` and `bindPreparedQuery()`, now refuses locking reads on every engine, with the new rule code `SQL_LOCKING_READ` ([#319](https://github.com/Ygilany/AskDB/issues/319)). Before, `FOR SHARE`, `LOCK IN SHARE MODE` and SQL Server's `WITH (UPDLOCK)` passed, and your transaction then held their locks.
+
+- **`FOR UPDATE` and `FOR NO KEY UPDATE`** now throw `SQL_LOCKING_READ` instead of `SQL_FORBIDDEN_KEYWORD`. If your code matches the old rule code for them, match the new one.
+- **Newly refused:** `FOR SHARE`, `FOR KEY SHARE` and `LOCK IN SHARE MODE` on every engine, and the SQL Server table hints `UPDLOCK`, `XLOCK`, `HOLDLOCK`, `PAGLOCK`, `TABLOCK`, `TABLOCKX`, `ROWLOCK`, `SERIALIZABLE` and `REPEATABLEREAD`. `NOLOCK` and `READPAST` still pass.
+- **On SQL Server, an unquoted name must be printable ASCII and can't be one of those hint words.** Quote it (`[Größe]`, `[rowlock]`), and qualify it when it's the only thing inside parentheses (`COUNT(t.[Größe])`). The same applies to a dialect id that is no built-in engine. This narrows beta.45's plain-code rule, which let Unicode letters through.
+- **A `switch` over every `SqlValidationRuleCode`** needs a case for `SQL_LOCKING_READ`.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_locking_read) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
+
+### Replace a symbolic link at `schema.json`
+
+Every AskDB write into a schema directory now refuses symbolic links ([#617](https://github.com/Ygilany/AskDB/issues/617), ADR 0028). When `schema.json` is one, `askdb introspect --out`, `renderToSchemaV2()` and `introspect()` with render options throw `Refusing to write schema.json outside the schema directory: "schema.json" is a symbolic link`. Before, they wrote to the file the link pointed at. Replace the link with a regular file.
+
+- **Studio** refuses a linked `playground-history.json` the same way. It leaves a linked `.gitignore` as it is.
+- **Writing `schema.json` needs write access to the output directory,** because AskDB writes a temporary file there and renames it over the target. A hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's permission bits and group where it can, but not an access control list. Only root can give a file to another user, so on macOS and Linux a save by anyone other than the file's owner makes the saver its owner. On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; run the command again.
+- **If you match `@askdb/enrich`'s table-save error,** it now reads `Refusing to write tables/orders.md outside the schema directory: …`.
+
 ### Return only queries from a custom `AskDialect` under a tenant policy
 
 With a tenant policy, the tenant check now refuses a statement that doesn't start with `SELECT` or `WITH`, under every dialect ([#698](https://github.com/Ygilany/AskDB/issues/698)). Before, a custom `AskDialect` could return a `DO` block, `CALL`, `EXPLAIN` or `SHOW`, and the check passed it: it reads a `DO` body as a dollar-quoted string, so it saw no tenant-scoped table, and the block could read every tenant's rows. Now `ask()` throws `TenantGuardrailError` under `enforcement: strict`, and returns a `NOT_SELECT_OR_WITH` warning in `tenantGuardrail` under `warn`. Each statement after a `;` counts too, and a leading comment or parenthesis doesn't hide the first keyword.
@@ -135,6 +179,12 @@ With a tenant policy, the tenant check now refuses a statement that doesn't star
 - **If your custom `AskDialect` returns queries,** you have nothing to change. Built-in dialect ids and `DialectSpec`s already reject other statements in the read-only check (`SQL_NOT_SELECT_OR_WITH`).
 - **If it returns another statement on purpose** for a schema with a tenant policy, `ask()` no longer returns it under `strict`. Generate a `SELECT` or `WITH` query instead.
 - **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `NOT_SELECT_OR_WITH`.
+
+### Other changes you may notice in beta.46
+
+- **Config files:** `askdb.config.mjs` and a plain `export default { … }` now load, as the docs said ([#264](https://github.com/Ygilany/AskDB/issues/264), [#265](https://github.com/Ygilany/AskDB/issues/265)). A config with no `ai` or `introspection` block, no default export, or top-level `await` fails with an error that names the file and what to change, instead of a bare `TypeError`.
+- **Studio:** a `studio.listen.port` that is set but isn't an integer from 1 to 65535 now stops Studio with an error. Before, Studio bound port 5556 instead. A value that reads as `NaN`, such as `Number(env("STUDIO_PORT"))` with the variable unset, still counts as unset.
+- **`askdb introspect --out`** checks an existing `tenant-policy.md` against the `schema.json` it just wrote. On stderr, it prints what no longer matches, or, under `enforcement: strict`, that the schema no longer loads. The exit code stays 0, so read stderr. Under `strict`, fix `tenant-policy.md` before anything loads the new schema. Under `warn`, the schema loads, with the problems in `schema.tenantPolicy.warnings`.
 
 ## 1.0.0-beta.45
 
