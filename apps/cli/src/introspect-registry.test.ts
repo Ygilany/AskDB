@@ -1,5 +1,4 @@
 import {
-  flattenAskDbConfig,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
   type AskDbConfig,
@@ -36,7 +35,7 @@ function installRuntime(acme?: { databaseUrl: string }): void {
         introspection: { ...BASE_CONFIG.introspection, providerConfig: { ...BASE_CONFIG.introspection!.providerConfig, acme } },
       } as AskDbConfig)
     : BASE_CONFIG;
-  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  setAskDbRuntimeForTests(structured);
 }
 
 const acmeResult: IntrospectionResult = {

@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { azureProvider } from "@askdb/ai";
 import {
-  flattenAskDbConfig,
   getAskDbRuntimeConfig,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
@@ -54,16 +53,8 @@ function openaiEmbeddingConfig(embeddingBaseUrl: string): AskDbConfig {
   };
 }
 
-function installStudioRuntime(
-  flatExtra: Record<string, string> = {},
-  structured: AskDbConfig = STUDIO_TEST_BASE,
-  options?: { omitFlatKeys?: readonly string[] },
-): void {
-  let flat: Record<string, string> = { ...flattenAskDbConfig(structured), ...flatExtra };
-  for (const key of options?.omitFlatKeys ?? []) {
-    delete flat[key];
-  }
-  setAskDbRuntimeForTests({ structured, flat });
+function installStudioRuntime(structured: AskDbConfig = STUDIO_TEST_BASE): void {
+  setAskDbRuntimeForTests(structured);
 }
 
 describe("AskDB Studio server", () => {
@@ -97,7 +88,7 @@ describe("AskDB Studio server", () => {
     const model = createModelServer(options.reply);
     modelServers.push(model.server);
     const modelBaseUrl = await listen(model.server);
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       ai: {
         provider: "openai",
@@ -154,7 +145,7 @@ describe("AskDB Studio server", () => {
     expect(existsSync(usersMd)).toBe(true);
     expect(readFileSync(usersMd, "utf8")).toContain("Application users who can place orders.");
 
-    installStudioRuntime({ ASKDB_MOCK_SQL: "select count(*) from users" });
+    installStudioRuntime({ ...STUDIO_TEST_BASE, dev: { mockSql: "select count(*) from users" } });
     const generated = await postJson(`${baseUrl}/api/ask`, {
       question: "How many users are there?",
     });
@@ -392,7 +383,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("refuses to save a table through a symbolic link that points outside tables/", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const ordersMd = join(schemaDir, "tables", "orders.md");
     // A checkout can carry `tables/orders.md -> <anything>`; git stores symlinks.
@@ -613,7 +604,7 @@ describe("AskDB Studio server", () => {
 
   it("uses the in-memory store and the mock embedder when the config has no rag block (#226)", async () => {
     const { rag: _rag, ...noRag } = STUDIO_TEST_BASE;
-    installStudioRuntime({}, noRag);
+    installStudioRuntime(noRag);
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -631,7 +622,7 @@ describe("AskDB Studio server", () => {
   ])("reads the file store's base path from the runtime config: %s", async (_name, authored) => {
     const schemaDir = copyFixture();
     const basePath = authored ? join(schemaDir, "rag-index") : undefined;
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       rag: { embedder: "mock", store: "file", storeConfig: { file: basePath ? { basePath } : {} } },
     });
@@ -648,7 +639,7 @@ describe("AskDB Studio server", () => {
     const embeddingServer = createEmbeddingServer();
     embeddingServers.push(embeddingServer);
     const embeddingBaseUrl = await listen(embeddingServer);
-    installStudioRuntime({}, openaiEmbeddingConfig(embeddingBaseUrl));
+    installStudioRuntime(openaiEmbeddingConfig(embeddingBaseUrl));
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -682,7 +673,7 @@ describe("AskDB Studio server", () => {
   it.each(["azure", "foundry"] as const)(
     "uses the %s embedding deployment for Studio RAG under the adapter's canonical name",
     async (provider) => {
-      installStudioRuntime({}, {
+      installStudioRuntime({
         ...STUDIO_TEST_BASE,
         ai: {
           provider,
@@ -711,7 +702,7 @@ describe("AskDB Studio server", () => {
     const embeddingServer = createFailingEmbeddingServer();
     embeddingServers.push(embeddingServer);
     const embeddingBaseUrl = await listen(embeddingServer);
-    installStudioRuntime({}, openaiEmbeddingConfig(embeddingBaseUrl));
+    installStudioRuntime(openaiEmbeddingConfig(embeddingBaseUrl));
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -729,7 +720,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("answers sample SQL with no AI key with a 400 that names dev.mockSql, not an environment variable (#281)", async () => {
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       ai: { provider: "openai", providerConfig: { openai: {} }, language: { model: "gpt-4o-mini" } },
     });
@@ -762,14 +753,14 @@ describe("AskDB Studio server", () => {
     servers.push(server);
     const baseUrl = await listen(server);
 
-    installStudioRuntime({}, foundry("test-key"));
+    installStudioRuntime(foundry("test-key"));
     const failed = await postRaw(`${baseUrl}/api/rag/index`, {});
     expect(failed.status).toBe(502);
     expect(((await failed.json()) as { error: { message: string } }).error.message).toContain(
       "for ai.embedding (provider foundry, connection default, model embedding-deployment)",
     );
 
-    installStudioRuntime({}, foundry());
+    installStudioRuntime(foundry());
     const keyMissing = await postRaw(`${baseUrl}/api/rag/index`, {});
     expect(keyMissing.status).toBe(400);
     expect(((await keyMissing.json()) as { error: { message: string } }).error.message).toContain(
@@ -778,7 +769,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("embeds with the ai.embedding provider and model, not OpenAI's (#345)", async () => {
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       ai: {
         provider: "google",
@@ -835,7 +826,7 @@ describe("AskDB Studio server", () => {
         },
       },
     };
-    installStudioRuntime({}, pgvectorStructured);
+    installStudioRuntime(pgvectorStructured);
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -885,7 +876,7 @@ describe("AskDB Studio server", () => {
         closed += 1;
       },
     }));
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       ai: {
         provider: "openai",
@@ -963,7 +954,7 @@ describe("AskDB Studio server", () => {
       connectionKind: "url",
     },
   ] as const)("GET /api/execute/status reports $provider provider when introspection is $provider", async ({ introspection, ...expected }) => {
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       introspection,
       studio: { execute: { enabled: true, useIntrospectionConnection: true } },
@@ -978,7 +969,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("POST /api/execute/install-driver rejects unknown and inherited provider keys with 400", async () => {
-    installStudioRuntime({}, { ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } });
+    installStudioRuntime({ ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -992,7 +983,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("POST /api/execute/install-driver is refused while execute is disabled", async () => {
-    installStudioRuntime({});
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -1003,7 +994,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("POST /api/execute returns 403 while execute is disabled (the default)", async () => {
-    installStudioRuntime({});
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -1017,11 +1008,11 @@ describe("AskDB Studio server", () => {
   });
 
   it("POST /api/execute does not silently reuse the introspection connection", async () => {
-    // STUDIO_TEST_BASE's flat map carries an introspection Postgres URL.
-    installStudioRuntime(
-      { ASKDB_INTROSPECT_POSTGRES_URL: "postgres://introspect-only/db" },
-      { ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } },
-    );
+    installStudioRuntime({
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://introspect-only/db" } } },
+      studio: { execute: { enabled: true } },
+    });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -1038,11 +1029,11 @@ describe("AskDB Studio server", () => {
   });
 
   it("POST /api/execute returns ok:false when the connection is not configured", async () => {
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
       studio: { execute: { enabled: true } },
-    }, { omitFlatKeys: ["ASKDB_INTROSPECT_POSTGRES_URL", "ASKDB_STUDIO_DATABASE_URL"] });
+    });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -1056,7 +1047,7 @@ describe("AskDB Studio server", () => {
   it("POST /api/execute on SQL Server rejects a second statement written without ';' with 400", async () => {
     // Nothing listens on port 1: a request that got past validation would come back
     // as 200 with the driver's connection error.
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       studio: {
         execute: {
@@ -1090,7 +1081,7 @@ describe("AskDB Studio server", () => {
     }
 
     async function startSqliteServer(file: string, execute: { maxRows?: number } = {}) {
-      installStudioRuntime({}, {
+      installStudioRuntime({
         ...STUDIO_TEST_BASE,
         introspection: { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
         studio: { execute: { enabled: true, provider: "sqlite", file, ...execute } },
@@ -1345,7 +1336,7 @@ describe("AskDB Studio server", () => {
     ["prisma", "./prisma/schema.prisma", "./prisma/schema.prisma"],
     ["prisma", "file:schema.prisma?key=S3cret", "configured prisma connection"],
   ] as const)("GET /api/introspect/status labels %s %s as %s", async (engine, url, sourceLabel) => {
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       introspection: {
         provider: engine,
@@ -1368,7 +1359,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("GET /api/introspect/status names the config key, not a CLI flag, when the engine has no connection", async () => {
-    installStudioRuntime({}, {
+    installStudioRuntime({
       ...STUDIO_TEST_BASE,
       introspection: { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
     });
@@ -1394,7 +1385,7 @@ describe("AskDB Studio server", () => {
         outputDir: "./askdb/",
       },
     };
-    installStudioRuntime({}, prismaConfig);
+    installStudioRuntime(prismaConfig);
     const schemaDir = copyFixture();
     const usersMd = join(schemaDir, "tables", "users.md");
     expect(existsSync(usersMd)).toBe(true);

@@ -90,7 +90,7 @@ describe("@askdb/config agrees with @askdb/ai's built-in provider table", () => 
         { apiKey: "k", baseUrl: "https://proxy.example/v1", ...(azureLike ? { resourceName: "my-resource" } : {}) },
         { embedding: { model: "not-a-default-embedding-model", dimensions: 8 } },
       );
-      setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+      setAskDbRuntimeForTests(structured);
       const embedding = getAskDbRuntimeConfig().ai.embedding;
       expect(createAiRegistry().resolveEmbeddingConfig(embedding?.env ?? {})).toMatchObject({
         apiKey: "k",
