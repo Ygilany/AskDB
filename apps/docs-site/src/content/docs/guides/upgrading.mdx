@@ -62,6 +62,10 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **For any other engine,** implement `AskDialect` and call `validateSelectSql` on its SQL yourself.
 - **With a tenant policy,** such a spec used to get `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). It now gets `UnknownDialectError` first.
 
+### Other changes you may notice in beta.50
+
+- **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
+
 ## 1.0.0-beta.49
 
 Released with `askdb` 1.0.0-beta.49, `@askdb/config` 1.0.0-beta.18, `@askdb/core` 1.0.0-beta.49, `@askdb/http-api` 1.0.0-beta.49, `@askdb/studio` 0.2.0-beta.42, `@askdb/introspect` 0.3.0-beta.23, `@askdb/postgres` 0.2.0-beta.25, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.24, and `@askdb/sqlserver` 0.1.0-beta.25. Other packages that got a new version list what changed in their CHANGELOG.

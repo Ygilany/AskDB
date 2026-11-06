@@ -96,7 +96,7 @@ const CORE_ZOD = "zod@^4.6.7";
 
 /** How each engine's config block finds its database, and what a project installs for it. */
 type EngineFacts =
-  | { connection: "url"; urlFormat: string; driver: string }
+  | { connection: "url"; urlFormat: string; urlNote?: string; driver: string }
   | { connection: "file"; driver: string }
   | { connection: "schema"; packages: (versions: { prisma: string }) => string[]; allowBuilds: string[] };
 
@@ -110,7 +110,12 @@ const ENGINES: Record<AskDbIntrospectionProvider, EngineFacts> = {
   sqlserver: {
     connection: "url",
     urlFormat:
-      "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
+      "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Authentication=SqlPassword;",
+    // The hint is copied into production too, so it keeps the certificate check: trusting the
+    // certificate is an opt-in for development. The key is named without spaces, the one form
+    // both AskDB and a host's own `mssql` pool read (#803).
+    urlNote:
+      "For a development server with a self-signed certificate (such as the SQL Server Docker image), add TrustServerCertificate=True; to this URL. Leave it out for a server with a CA-signed certificate.",
     driver: "mssql",
   },
   sqlite: { connection: "file", driver: "better-sqlite3" },
@@ -255,7 +260,11 @@ function listEnvVars(a: CheckedAnswers, aiEnvVars: AskDbScaffoldEnvVar[]): EnvVa
   const urlUse = (engine: AskDbIntrospectionProvider, c: Connection, use: string, requiredForIntrospection = false) => {
     const facts = ENGINES[engine];
     if ("urlEnv" in c && facts.connection === "url") {
-      envVars.add(c.urlEnv, `${engine} connection URL`, use, { format: facts.urlFormat, requiredForIntrospection });
+      envVars.add(c.urlEnv, `${engine} connection URL`, use, {
+        format: facts.urlFormat,
+        note: facts.urlNote,
+        requiredForIntrospection,
+      });
     }
   };
   const fileUse = (c: Connection, use: string, requiredForIntrospection = false) => {
@@ -358,6 +367,8 @@ type EnvVarEntry = {
   /** What the variable holds, mapped to what it's used for (`introspection`, …). */
   subjects: Map<string, string[]>;
   format: string | undefined;
+  /** A second comment line under the format, such as when to keep a connection-string key. */
+  note: string | undefined;
   requiredForIntrospection: boolean;
 };
 
@@ -369,17 +380,22 @@ class EnvVarList {
     name: string,
     subject: string,
     use?: string,
-    { format, requiredForIntrospection = false }: { format?: string; requiredForIntrospection?: boolean } = {},
+    {
+      format,
+      note,
+      requiredForIntrospection = false,
+    }: { format?: string; note?: string; requiredForIntrospection?: boolean } = {},
   ): void {
     let entry = this.entries.get(name);
     if (!entry) {
-      entry = { subjects: new Map(), format, requiredForIntrospection: false };
+      entry = { subjects: new Map(), format, note, requiredForIntrospection: false };
       this.entries.set(name, entry);
     }
     const uses = entry.subjects.get(subject) ?? [];
     if (use && !uses.includes(use)) uses.push(use);
     entry.subjects.set(subject, uses);
     entry.format ??= format;
+    entry.note ??= note;
     entry.requiredForIntrospection ||= requiredForIntrospection;
   }
 
@@ -398,7 +414,9 @@ class EnvVarList {
       "",
     ];
     for (const [name, entry] of this.entries) {
-      lines.push(`# ${purpose(entry)}${entry.format ? `. Format: ${entry.format}` : ""}`, `${name}=`);
+      lines.push(`# ${purpose(entry)}${entry.format ? `. Format: ${entry.format}` : ""}`);
+      if (entry.note) lines.push(`# ${entry.note}`);
+      lines.push(`${name}=`);
     }
     lines.push("");
     return lines.join("\n");
