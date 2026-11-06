@@ -1,12 +1,12 @@
 import {
-  flattenAskDbConfig,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
   type AskDbConfig,
   type AskDbLogLevel,
   type AskDbModeV1,
 } from "@askdb/config";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readSchemaDirectory } from "@askdb/core";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,7 +68,7 @@ function installTestRuntime(opts: {
     ...(opts.modes ? { modes: opts.modes } : {}),
     ...(opts.httpApi ? { httpApi: opts.httpApi } : {}),
   };
-  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  setAskDbRuntimeForTests(structured);
 }
 
 /** Start an AskDB HTTP server on an ephemeral port; returns its base URL and a close fn. */
@@ -204,7 +204,7 @@ describe("http-api", () => {
     }
   });
 
-  it("prefers schemaPath option over configured ASKDB_SCHEMA_PATH", async () => {
+  it("prefers the schemaPath option over host.schemaPath", async () => {
     installTestRuntime({
       mockSql: "select 1",
       logLevel: "silent",
@@ -431,15 +431,35 @@ describe("http-api", () => {
     }
   });
 
+  it("refuses a schemaJson override whose table front-matter isn't YAML, and writes no file", async () => {
+    installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true } });
+    const dir = mkdtempSync(join(tmpdir(), "askdb-front-matter-"));
+    const marker = join(dir, "marker");
+    const bundle = readSchemaDirectory(schemaPath.pathname);
+    const table = Object.keys(bundle.tables)[0]!;
+    const hostile = `---js\n(require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran"), {})\n---\nBody.\n`;
+    const schemaJson = JSON.stringify({ ...bundle, tables: { ...bundle.tables, [table]: hostile } });
+    const app = await startApp();
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson });
+      expect(status).toBe(400);
+      expect(json.error?.code).toBe("schema_parse_error");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("missing AI key with no mock returns generation_not_configured", async () => {
-    // apiKey: "" is stripped by flattenAskDbConfig's set() helper, so aiEnv
+    // A blank apiKey resolves to no key, so aiEnv
     // has no OPENAI_API_KEY and createLanguageModelFromEnv returns undefined.
     const noKeyConfig: AskDbConfig = {
       ...BASE_CONFIG,
       ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } }, language: { model: "gpt-4o-mini" } },
       host: { schemaPath: schemaPath.pathname },
     };
-    setAskDbRuntimeForTests({ structured: noKeyConfig, flat: flattenAskDbConfig(noKeyConfig) });
+    setAskDbRuntimeForTests(noKeyConfig);
     const app = await startApp();
     try {
       const { status, json } = await postAsk(app.url, { question: "hi" });

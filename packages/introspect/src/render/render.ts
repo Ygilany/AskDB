@@ -7,6 +7,7 @@ import {
   type V2Table,
   type V2Column,
 } from "@askdb/core";
+import { makeColumnId, makeTableId } from "../kit/ids.js";
 import type {
   IntrospectionWarning,
   SqlColumn,
@@ -28,8 +29,9 @@ import type {
  * Clean writes and ID-anchored re-introspection merges write `schema.json`
  * only, through `saveSchemaFile()` from `@askdb/core`: a symbolic link at
  * `schema.json` is refused, and the file is replaced by a temp file renamed
- * over it (ADR 0028). The describable layer (`tables/*.md`, `concepts.md`) is
- * read only for orphan detection when `existingArtifactDir` is supplied.
+ * over it (ADR 0028). Of the describable layer (`tables/*.md`, `concepts.md`),
+ * only `tables/*.md` is read, for orphan detection, when `existingArtifactDir`
+ * is supplied. Neither is written.
  *
  * Determinism contract (requirements.md §5):
  *   - Schemas alphabetical at the source (the connector already produces
@@ -224,8 +226,7 @@ function appendOrphanWarning(
 }
 
 /**
- * Pure-function form of {@link renderToSchemaV2} — exposed so callers (and
- * M6's merge) can produce the V2 JSON without writing it to disk.
+ * Builds the V2 JSON for a catalog without writing it to disk.
  *
  * Pass `provider` (e.g. `"postgres"`, `"mysql"`) to persist the detected
  * dialect so hosts can auto-select it at `ask` time.
@@ -247,9 +248,7 @@ export function toV2SchemaJson(
   }
 
   tables.sort((a, b) => {
-    const aSchema = a.schema;
-    const bSchema = b.schema;
-    if (aSchema !== bSchema) return aSchema.localeCompare(bSchema);
+    if (a.schema !== b.schema) return a.schema.localeCompare(b.schema);
     return a.name.localeCompare(b.name);
   });
 
@@ -261,18 +260,20 @@ export function toV2SchemaJson(
   };
 }
 
-function toV2Table(table: SqlTable): V2Table {
-  const columns = table.columns
+function toV2Columns(columns: readonly SqlColumn[]): V2Column[] {
+  return columns
     .slice()
     .sort((a, b) => a.ordinalPosition - b.ordinalPosition)
     .map(toV2Column);
+}
 
+function toV2Table(table: SqlTable): V2Table {
   const v2Table: V2Table = {
     id: table.id,
     name: table.name,
     schema: table.schema,
     sensitive: false,
-    columns,
+    columns: toV2Columns(table.columns),
   };
 
   const relationships = buildRelationships(table);
@@ -284,22 +285,17 @@ function toV2Table(table: SqlTable): V2Table {
 }
 
 function toV2View(view: SqlView): V2Table {
-  const columns = view.columns
-    .slice()
-    .sort((a, b) => a.ordinalPosition - b.ordinalPosition)
-    .map(toV2Column);
-
   return {
-    id: `table:${view.schema}.${view.name}`,
+    id: makeTableId(view.schema, view.name),
     name: view.name,
     schema: view.schema,
     sensitive: false,
-    columns,
+    columns: toV2Columns(view.columns),
   };
 }
 
 function toV2Column(column: SqlColumn): V2Column {
-  // Field order matches the Phase 5 hand-authored fixtures:
+  // Field order matches the hand-authored fixtures:
   //   id, name, type, nullable, [primaryKey], sensitive.
   return {
     id: column.id,
@@ -335,7 +331,7 @@ function appendFkRelationships(
   for (let i = 0; i < len; i++) {
     acc.push({
       from: `${table.id}#${local[i]}`,
-      to: `table:${fk.references.schema}.${fk.references.table}#${referenced[i]}`,
+      to: makeColumnId(fk.references.schema, fk.references.table, referenced[i]),
     });
   }
 }

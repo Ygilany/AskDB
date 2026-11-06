@@ -2,6 +2,8 @@ import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
   ENGINE_LEXER_PROFILES,
+  findEscapeStringContinuation,
+  findEscapedByteString,
   findUnicodeEscapedIdentifier,
   GENERIC_LEXER,
   lexSql,
@@ -51,25 +53,30 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * Checks, in order (the first failure throws {@link SqlValidationError}):
  *
  * 1. `SQL_EMPTY` — nothing left after trimming.
- * 2. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block
+ * 2. `SQL_STRING_CONTINUATION` and then `SQL_ESCAPED_BYTE_STRING`, Postgres lexer only
+ *    (postgres, cockroachdb, and a dialect id that is no built-in engine) — an `E'…'` string
+ *    continued on a later line, which Postgres reads with backslash escapes, and a `b'…'` byte
+ *    string with a backslash or a continuation, which CockroachDB reads with them; past either,
+ *    the tokens may not be the server's, so they run first (#703, #730).
+ * 3. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block
  *    comment never closes. Fails closed rather than guessing where it ends.
- * 3. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
- * 4. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
- * 5. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
- * 6. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
+ * 4. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
+ * 5. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
+ * 6. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
+ * 7. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
  *    built-in engine) — a second statement written without `;`, which T-SQL doesn't
  *    need, or code SQL Server may split differently from the lexer (see `tsql-batch.ts`).
- * 7. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
+ * 8. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
  *    `FOR SHARE`, `FOR KEY SHARE` or `LOCK IN SHARE MODE` on every lexer, and on the SQL Server
  *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
  *    parentheses right after a name, at any depth and with trailing spaces, and any such name
  *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
- * 8. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
+ * 9. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
  *    dialect id that is no built-in engine) — a `U&"…"` identifier, whose escapes could spell
  *    a blocked function or a sensitive column that the later checks match by name (#692).
- * 9. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 10. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 10. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 11. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
@@ -115,6 +122,26 @@ function checkWithProfile(
   functions: ReadonlySet<string>,
 ): SqlToken[] {
   const tokens = lexSql(sql, profile);
+
+  // First: past these boundaries the tokens may not be the ones the server reads (#703, #730).
+  if (profile.id === "postgres") {
+    const continued = findEscapeStringContinuation(sql, tokens);
+    if (continued) {
+      throw validationError(
+        "SQL_STRING_CONTINUATION",
+        `An E'…' string continued on a later line is not allowed: generated SQL continues the E'…' string at offset ${continued.start}.`,
+        "Postgres joins E'…' with the next '…' across a newline and reads both with backslash escapes, so the check can't tell where the string ends. Write one literal, or join the parts with ||.",
+      );
+    }
+    const bytes = findEscapedByteString(sql, tokens);
+    if (bytes) {
+      throw validationError(
+        "SQL_ESCAPED_BYTE_STRING",
+        `A b'…' byte string with a backslash, or continued on a later line, is not allowed: generated SQL has one at offset ${bytes.start}.`,
+        "CockroachDB reads b'…' with backslash escapes, also across a continuation, so the check can't tell where the string ends. Write the bytes as a hex string cast to bytea ('\\x00'::bytea).",
+      );
+    }
+  }
 
   const open = tokens.find((t) => t.unterminated);
   if (open) {

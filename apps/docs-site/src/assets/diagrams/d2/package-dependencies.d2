@@ -1,0 +1,43 @@
+# AskDB's packages and what each depends on (dependencies and peers), top to bottom.
+# Each arrow points to a direct dependency. An arrow is left out when the package already reaches
+# that dependency through another arrow: askdb reaches the engine packages through Studio.
+# Dashed: optional peer. An optional peer isn't installed for its dependents, so each package that
+# declares one gets its own arrow (askdb and Studio both point at prisma).
+# Boxes drop the @askdb/ scope to fit the content column: "ai" is @askdb/ai. Not drawn: the AI SDK
+# package `ai`, the @ai-sdk/* providers and the database drivers.
+# Source of truth: the "Dependency direction" table in reference/packages.mdx.
+direction: down
+
+cli: "askdb (CLI)"
+studio: studio
+http: http-api
+client: client
+prisma: prisma
+engines: "engine\npackages"
+aicfg: "ai, config"
+rag: rag
+enrich: enrich
+introspect: introspect
+core: core
+
+cli -> studio
+cli -> client
+cli -> prisma: {style.stroke-dash: 4}
+studio -> prisma: {style.stroke-dash: 4}
+studio -> engines
+studio -> aicfg
+studio -> rag
+studio -> enrich
+http -> client
+client -> aicfg
+client -> core
+prisma -> introspect
+engines -> introspect
+rag -> core
+enrich -> core
+introspect -> core
+
+# Layout only, not dependencies: these invisible edges put rag and enrich a row lower,
+# so no row is wider than the 720 px content column.
+engines -> rag: {style.opacity: 0}
+engines -> enrich: {style.opacity: 0}

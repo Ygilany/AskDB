@@ -20,3 +20,6 @@ askdb-*/
 
 # Vitest JSON reporter output
 .vitest/
+
+# astro-d2 writes rendered diagrams here on every docs build
+apps/docs-site/public/d2/

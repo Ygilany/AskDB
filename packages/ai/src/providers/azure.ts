@@ -1,5 +1,6 @@
 import { withEmbeddingProviderOptions } from "../embedding.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { baseURLOption } from "../base-url.js";
 import { openaiReasoningEffort } from "./openai-reasoning.js";
 import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
@@ -101,6 +102,7 @@ export const azureProvider: AiProviderAdapter = {
 };
 
 async function createProvider(config: AiConfig) {
+  const baseURL = baseURLOption(config);
   const { createAzure } = await import("@ai-sdk/azure").catch(
     rethrowMissingPeer("azure", PEER_PACKAGE),
   );
@@ -109,7 +111,7 @@ async function createProvider(config: AiConfig) {
   return createAzure({
     apiKey: config.apiKey,
     ...(resourceName ? { resourceName } : {}),
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...baseURL,
     ...(apiVersion ? { apiVersion } : {}),
   });
 }

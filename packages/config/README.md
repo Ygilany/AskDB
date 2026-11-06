@@ -49,7 +49,7 @@ export default defineConfig({
 
 `defineConfig` types the object as `AskDbConfig`. A plain `export default { … }` loads too: the loader runs it through `defineConfig`, so it gets the same normalizing, checks and deprecation warnings. A config without its required `ai` or `introspection` block fails to load with an error that names the file and the block.
 
-Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names used in the **runtime flat map** (and in `aiEnv` for `@askdb/ai`). **Unset optional fields get defaults inside `flattenAskDbConfig`** (language model, introspection output dir, database URL fallbacks, the mock embedder's vector width, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
+Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` resolves the config once: it checks each setting, translates deprecated keys and fills in the defaults (language model, introspection output dir, HTTP API port and host, Studio execute limits, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`). A value of the wrong type fails to load with an error that names its config key: a boolean setting must be `true` or `false`, so the string `"false"` fails. `getAskDbRuntimeConfig()` returns the resolved settings, and the **runtime flat map** (and `aiEnv` for `@askdb/ai`) maps the same settings onto canonical environment variable names, in the same pass. `getAskDbRuntimeConfig()` never reads a setting back from a flat map.
 
 The `rag` block is optional. Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store, as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set. Setting `ai.embedding` without the block is an error, since nothing would use that model.
 
@@ -86,17 +86,28 @@ const embeddingModel = config.ai.embedding
 
 ## API
 
-- `getAskDbRuntimeConfig()` — **primary API for library packages**. Returns a typed `AskDbRuntimeConfig` from the bootstrapped snapshot (`structured`, `flat`-derived fields, `ai.aiEnv` for `@askdb/core`, the resolved `ai.language` and `ai.embedding` sections, `rag.store` and `rag.storeConfig` (the vector store, `"memory"` when `rag` is omitted), and `deprecations`, the config's deprecation messages).
+- `getAskDbRuntimeConfig()` — **primary API for library packages**. Returns a typed `AskDbRuntimeConfig` from the bootstrapped snapshot (`structured`, the settings resolved from it, `flat` and `ai.aiEnv` for `@askdb/ai`, the resolved `ai.language` and `ai.embedding` sections, `rag.store` and `rag.storeConfig` (the vector store, `"memory"` when `rag` is omitted), and `deprecations`, the config's deprecation messages).
 - `env(name)` / `requiredEnv(name)` — read `process.env` while authoring `askdb.config.*` only.
 - `isAskDbDebugEnabled()` — `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`. Binaries use it to print stack traces; it reads `process.env` directly so it works even when the config fails to load.
 - `defineConfig(config)` — returns an `AskDbEnvProjection` with `config` (structured) and `entries` (flattened canonical map).
-- `flattenAskDbConfig(config)` — nested config → flat canonical map (translates deprecated keys, applies defaults for optional values).
+- `flattenAskDbConfig(config)` — nested config → flat canonical map, for a child process's env. Resolves the config first, so it throws the same errors as `defineConfig`.
 - `bootstrapAskDbEnv(options?)` / `bootstrapAskDbRuntime` — load dotenv, load config, install the runtime snapshot.
 - `isAskDbRuntimeInitialized()` — `true` once the runtime snapshot is installed. Code that may run before or after its host's bootstrap uses it to call `bootstrapAskDbEnv()` only when needed, as `@askdb/http-api`'s `createAskDbHttpServer()` does. The snapshot is process-wide: every copy of `@askdb/config` in the process sees the same one.
 - `loadAskDbConfigProjection(cwd)` / `loadAskDbConfigProjectionSync(cwd)` — load projection without installing the singleton (advanced / tests).
 - `discoverAskDbConfigPath(cwd)` — returns the resolved config path, if any.
 - `mergeAskDbFlatIntoEnvMap(base, flat)` — merge AskDB flat entries into an env map for **child processes** (does not read `process.env` itself). Use `getAskDbRuntimeConfig().flat` as `flat` after bootstrap.
-- `setAskDbRuntimeForTests` / `resetAskDbRuntimeForTests` — test helpers for the runtime snapshot.
+- `setAskDbRuntimeForTests(config)` / `resetAskDbRuntimeForTests()` — test helpers: install an authored `AskDbConfig` as `bootstrapAskDbEnv()` installs a loaded file, without reading the disk, and remove it.
+
+## `@askdb/config/scaffold`
+
+Tooling for `askdb init` and AskDB Studio's setup wizard. It is experimental, like Studio: a minor release of `@askdb/config` may change it (ADR 0030). Your own `askdb.config.ts` never needs it.
+
+- `planAskDbScaffold(answers, versions)` — a new project's `askdb.config.ts` source, `.env.example`, the env vars the config reads, and the packages to install, from its answers (engine, connection variable or SQLite file, schema directory, `ai`, RAG store, Studio execute). Pure; it throws `AskDbScaffoldInputError`, with the answer's `field`, for an env var name that isn't uppercase POSIX (`^[A-Z_][A-Z0-9_]*$`), a control character in a path, an unknown id, or a missing answer. The caller supplies the defaults.
+- `isAskDbScaffoldEnvName(name)` — the planner's env var name rule: POSIX, uppercase (`^[A-Z_][A-Z0-9_]*$`).
+- `renderAskDbAiConfigScaffold(input)` — the `ai` block of a new `askdb.config.ts`, plus the env vars it reads.
+- `detectPackageManager(dir, env?)` — the package manager for `dir`: a lockfile in `dir` or a parent, then the nearest `package.json`'s `packageManager` or `devEngines.packageManager`, then `npm_config_user_agent`, then npm.
+- `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` — project and install-command helpers.
+- `packageManagerSpawnSpec(pm, args, platform?)` — how to spawn the package manager: allowlisted arguments, and `shell: true` on Windows, where package managers are `.cmd` shims.
 
 ## License
 

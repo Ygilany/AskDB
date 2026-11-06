@@ -42,7 +42,7 @@ it("reports a missing @askdb/prisma as the Prisma plan's error", () => {
       introspection: { provider: "prisma", providerConfig: { prisma: { schemaPath: "./schema.prisma" } } },
       rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
     };
-    config.setAskDbRuntimeForTests({ structured, flat: config.flattenAskDbConfig(structured) });
+    config.setAskDbRuntimeForTests(structured);
     const { resolveStudioIntrospectionPlan } = await import(${JSON.stringify(pathToFileURL(join(studioDir, "dist/introspection.js")).href)});
     console.log(JSON.stringify(await resolveStudioIntrospectionPlan()));
   `;

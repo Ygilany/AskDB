@@ -159,8 +159,9 @@ roots: [unclosed
 ---
 `;
     expect(() => parseTenantPolicyMarkdown(content, "x/tenant-policy.md")).toThrow(SchemaParseError);
+    // A second parse of the same input reports the same YAML error (#742).
     expect(() => parseTenantPolicyMarkdown(content, "x/tenant-policy.md")).toThrow(
-      /x\/tenant-policy\.md/,
+      /^Malformed tenant-policy front-matter YAML in x\/tenant-policy\.md: /,
     );
   });
 
@@ -176,6 +177,7 @@ unknownKey: bad
 ---
 `;
     expect(() => parseTenantPolicyMarkdown(content)).toThrow(SchemaParseError);
+    expect(() => parseTenantPolicyMarkdown(content)).toThrow(/^Invalid tenant-policy front-matter: /);
   });
 });
 

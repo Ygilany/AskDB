@@ -1,31 +1,68 @@
 import {
   ASKDB_AI_PROVIDERS,
+  ASKDB_LOG_LEVELS,
+  ASKDB_MODES_V1,
   ASKDB_RAG_EMBEDDERS,
+  ASKDB_RAG_STORES,
   ASKDB_REASONING_EFFORTS,
+  ASKDB_STUDIO_EXECUTE_PROVIDERS,
   type AskDbRagStore,
+  type AskDbStudioExecuteProvider,
 } from "./constants.js";
+import {
+  aiEmbeddingEnv,
+  aiLanguageEnv,
+  CONNECTION_FIELDS,
+  setEnvKey,
+  type ConnectionSettings,
+  type NormalizedAiConnection,
+} from "./ai-env.js";
 import {
   DEFAULT_ANTHROPIC_LANGUAGE_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_GATEWAY_LANGUAGE_MODEL,
   DEFAULT_GOOGLE_LANGUAGE_MODEL,
+  DEFAULT_HTTP_API_HOST,
+  DEFAULT_HTTP_API_PORT,
+  DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
+  DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_OPENAI_LANGUAGE_MODEL,
+  DEFAULT_PGVECTOR_INDEX_STRATEGY,
   DEFAULT_RAG_EMBEDDING_MODEL,
+  DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
+  DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
+  MAX_HTTP_API_REQUEST_TIMEOUT_MS,
   defaultRagEmbeddingDimensions,
-  parsePositiveInteger,
 } from "./defaults.js";
+import type {
+  AskDbRuntimeConfig,
+  AskDbRuntimeHttpApiConfig,
+  AskDbRuntimeIntrospectionConfig,
+  AskDbRuntimeLoggingConfig,
+  AskDbRuntimeModesConfig,
+  AskDbRuntimeAiConfig,
+  AskDbRuntimeRagConfig,
+  AskDbRuntimeStudioConfig,
+} from "./runtime-types.js";
 import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
 
-/** Every setting a built-in provider connection can carry, besides its name. */
-const CONNECTION_FIELDS = ["apiKey", "secondaryApiKey", "resourceName", "baseUrl", "apiVersion"] as const;
+/**
+ * The config resolver: the one place that checks, translates and defaults every `askdb.config`
+ * setting. Each setting's runtime value and its flat-map key come out of the same pass, so
+ * `defineConfig` and `getAskDbRuntimeConfig` agree, and `@askdb/config` never reads a setting
+ * back from a flat map.
+ */
 
-type ConnectionSettings = { [Field in (typeof CONNECTION_FIELDS)[number]]?: string };
+/**
+ * Every {@link AskDbRuntimeConfig} section, checked, translated and defaulted. Not `structured`,
+ * `flat`, `deprecations` or `ai.aiEnv`, which is built from `flat`.
+ */
+type ResolvedAskDbConfig = Omit<AskDbRuntimeConfig, "structured" | "flat" | "ai" | "deprecations"> & {
+  ai: Omit<AskDbRuntimeAiConfig, "aiEnv">;
+};
 
-/** A provider connection after normalization: its settings, trimmed, plus its name. */
-export type NormalizedAiConnection = ConnectionSettings & { name: string };
-
-export type NormalizedAiLanguageSection = {
+type NormalizedAiLanguageSection = {
   provider: string;
   connection: NormalizedAiConnection;
   /** `ai.language.model`, else the provider's default language model (none for a custom provider). */
@@ -34,7 +71,7 @@ export type NormalizedAiLanguageSection = {
   reasoning: AskDbAiReasoningConfig | undefined;
 };
 
-export type NormalizedAiEmbeddingSection = {
+type NormalizedAiEmbeddingSection = {
   provider: string;
   connection: NormalizedAiConnection;
   model: string;
@@ -43,7 +80,7 @@ export type NormalizedAiEmbeddingSection = {
 };
 
 /** {@link AskDbConfig} with every deprecated key translated and both AI sections resolved. */
-export type NormalizedAskDbConfig = Omit<AskDbConfig, "ai" | "rag"> & {
+type NormalizedAskDbConfig = Omit<AskDbConfig, "ai" | "rag"> & {
   ai: {
     language: NormalizedAiLanguageSection;
     /** Undefined unless `rag.embedder` is `"ai"` (after translating the deprecated embedders). */
@@ -84,8 +121,8 @@ function widthEarlierVersionsAssumed(model: string): number {
   return defaultRagEmbeddingDimensions(model);
 }
 
-export function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
-  return (allowed as readonly string[]).includes(value);
+function isMember<T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
+  return (allowed as readonly unknown[]).includes(value);
 }
 
 function isBuiltinProvider(provider: string): boolean {
@@ -133,6 +170,29 @@ function toConnection(raw: RawConnection, name: string): NormalizedAiConnection 
   return connection;
 }
 
+/**
+ * Refuses a model base URL with a user name or password. `fetch` refuses it as well, and its error
+ * quotes the whole URL, credentials included, so the error here names `key` and never the URL. A
+ * value that doesn't parse counts when it holds an `@`. (`@askdb/ai` checks what reaches it the
+ * same way, with `AiBaseUrlCredentialsError`.)
+ */
+function refuseBaseUrlCredentials(url: string | undefined, key: string): void {
+  if (url === undefined) return;
+  let credentials: boolean;
+  try {
+    const parsed = new URL(url);
+    credentials = parsed.username !== "" || parsed.password !== "";
+  } catch {
+    credentials = url.includes("@");
+  }
+  if (credentials) {
+    throw new Error(
+      `askdb.config: ${key} contains a username or password, which AskDB won't send in a URL. Put the key in apiKey; ` +
+        `to send other credentials, such as a proxy's, build the model in code with the AI SDK provider's headers option.`,
+    );
+  }
+}
+
 function readConnections(config: AskDbConfig): Map<string, ProviderConnections> {
   const table = new Map<string, ProviderConnections>();
   for (const [provider, value] of Object.entries(config.ai.providerConfig ?? {})) {
@@ -148,9 +208,11 @@ function readConnections(config: AskDbConfig): Map<string, ProviderConnections> 
           `askdb.config: ${label} has more than one connection named "${name}"; connection names must be unique within a provider.`,
         );
       }
+      const connection = toConnection(raw, name);
+      refuseBaseUrlCredentials(connection.baseUrl, isList ? `${label}.baseUrl (connection "${name}")` : `${label}.baseUrl`);
       entries.push({
         raw,
-        connection: toConnection(raw, name),
+        connection,
         label: isList ? `${label} connection "${name}"` : label,
       });
     }
@@ -216,7 +278,7 @@ function parseConfiguredDimensions(value: string | number | undefined, key: stri
   if (value === undefined || (typeof value === "string" && value.trim() === "")) return undefined;
   const parsed = parsePositiveInteger(value);
   if (parsed === undefined) {
-    throw new Error(`askdb.config: ${key} must be a positive integer (got ${JSON.stringify(value)}).`);
+    throw new Error(`askdb.config: ${key} must be a positive integer (got ${describeValue(value)}).`);
   }
   return parsed;
 }
@@ -300,6 +362,7 @@ function translateLegacyEmbedder(
 
   const apiKey = nonBlank(legacyOpenai.apiKey);
   const baseUrl = nonBlank(legacyOpenai.baseUrl);
+  refuseBaseUrlCredentials(baseUrl, "rag.embedderConfig.openai.baseUrl");
   if (apiKey !== undefined || baseUrl !== undefined) {
     if (!LEGACY_RAG_KEY_PROVIDERS.has(provider)) {
       throw new Error(
@@ -399,7 +462,7 @@ function translateLegacyLanguageField(
  * the old and new location, never a value). Throws `askdb.config: …` errors for a config that
  * can't load.
  */
-export function normalizeAskDbConfig(config: AskDbConfig): {
+function normalizeAskDbConfig(config: AskDbConfig): {
   config: NormalizedAskDbConfig;
   deprecations: string[];
 } {
@@ -616,6 +679,417 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
       ai: { language: languageSection, embedding },
       rag: { embedder: embedding ? "ai" : "mock", store: rag.store, storeConfig: rag.storeConfig },
     },
+    deprecations,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Reading one value. Each reader names the config key in its error, never a flat key.
+// ---------------------------------------------------------------------------
+
+/**
+ * A value for an error message: a string quoted, `null`, `undefined`, a number or a boolean as
+ * written, anything else by its type. An object or a function is never printed, since its text
+ * could hold a key or a connection string.
+ */
+function describeValue(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) return "an array";
+  return typeof value === "object" ? "an object" : `a ${typeof value}`;
+}
+
+/**
+ * A string key: trimmed, or `undefined` when unset (`undefined` or `null`) or blank. Any other
+ * value fails: hosts read some string keys from the structured config as written (`host.*`,
+ * `studio.listen.host`), so a wrong type must stop the load, not a later call.
+ */
+function readString(value: unknown, key: string): string | undefined {
+  if (typeof value === "string") return nonBlank(value);
+  if (value === undefined || value === null) return undefined;
+  throw new Error(`askdb.config: invalid ${key} ${describeValue(value)} (expected a string).`);
+}
+
+/**
+ * A boolean key must be `true`, `false` or unset. Anything else fails: the string `"false"` is
+ * truthy, so reading it as a flag would turn the setting on.
+ */
+function readBoolean(value: unknown, key: string): boolean | undefined {
+  if (value === undefined || typeof value === "boolean") return value;
+  throw new Error(`askdb.config: ${key} must be a boolean (got ${describeValue(value)}).`);
+}
+
+/** One of `allowed`, or `undefined` when unset (`undefined`, `null` or `""`). */
+function readMember<T extends readonly string[]>(value: unknown, allowed: T, key: string): T[number] | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (isMember(value, allowed)) return value;
+  throw new Error(`askdb.config: invalid ${key} ${describeValue(value)} (expected one of: ${allowed.join(", ")}).`);
+}
+
+/** A list of strings, each trimmed, blanks dropped; `undefined` when unset or empty. */
+function readStringList(value: unknown, key: string): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`askdb.config: invalid ${key} ${describeValue(value)} (expected an array of strings).`);
+  }
+  const list = (value as string[]).map((item) => item.trim()).filter(Boolean);
+  return list.length > 0 ? list : undefined;
+}
+
+/** A positive integer, or a string holding one; `undefined` for anything else. */
+function parsePositiveInteger(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const t = value.trim();
+  if (t === "") return undefined;
+  const n = Number(t);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/** A positive-integer key, as a number or a string holding one. */
+function readPositiveInteger(value: unknown, key: string): number | undefined {
+  if (value === undefined) return undefined;
+  const n = parsePositiveInteger(value);
+  if (n === undefined) {
+    throw new Error(`askdb.config: ${key} must be a positive integer (got ${describeValue(value)}).`);
+  }
+  return n;
+}
+
+/**
+ * `httpApi.requestTimeoutMs`: `undefined` when unset; otherwise a positive integer no larger than
+ * {@link MAX_HTTP_API_REQUEST_TIMEOUT_MS}, as a number or a string holding one.
+ */
+function readRequestTimeoutMs(value: unknown, key: string): number | undefined {
+  if (value === undefined) return undefined;
+  const n = parsePositiveInteger(value);
+  if (n === undefined || n > MAX_HTTP_API_REQUEST_TIMEOUT_MS) {
+    throw new Error(
+      `askdb.config: invalid ${key} ${describeValue(value)} (expected a positive integer number of milliseconds, at most ${MAX_HTTP_API_REQUEST_TIMEOUT_MS}).`,
+    );
+  }
+  return n;
+}
+
+/**
+ * `httpApi.listen.port`: `undefined` when unset or `NaN` (`Number(env("PORT"))` with `PORT`
+ * unset), as Studio does for `studio.listen.port`. Port `0` asks the OS for a free port. Anything
+ * but an integer from 0 to 65535, or a string holding one, fails.
+ */
+function readListenPort(value: unknown, key: string): number | undefined {
+  if (value === undefined || (typeof value === "number" && Number.isNaN(value))) return undefined;
+  const text = typeof value === "string" ? value.trim() : undefined;
+  // `Number("")` is 0, so a blank string is checked before it's converted.
+  const port = typeof value === "number" ? value : text ? Number(text) : NaN;
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`askdb.config: invalid ${key} ${describeValue(value)} (expected an integer from 0 to 65535).`);
+  }
+  return port;
+}
+
+const PGVECTOR_INDEX_STRATEGIES = ["ivfflat", "hnsw", "none"] as const;
+type PgvectorIndexStrategyId = (typeof PGVECTOR_INDEX_STRATEGIES)[number];
+
+/**
+ * `rag.storeConfig.pgvector.indexStrategy`, lowercased, or the default when unset or blank. A
+ * value that isn't a string counts as unset.
+ */
+function pgvectorIndexStrategy(raw: unknown): PgvectorIndexStrategyId {
+  if (typeof raw !== "string" || raw.trim() === "") return DEFAULT_PGVECTOR_INDEX_STRATEGY;
+  const v = raw.trim().toLowerCase();
+  if (isMember(v, PGVECTOR_INDEX_STRATEGIES)) return v;
+  throw new Error(
+    `askdb.config: invalid rag.storeConfig.pgvector.indexStrategy "${raw}" (expected one of: ${PGVECTOR_INDEX_STRATEGIES.join(", ")}).`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One resolver per section. Each one checks its settings, returns its runtime section and writes
+// its keys to the flat map. Most optional keys reach the flat map only when the config sets them,
+// so a child process's env built from the map gets no defaults (`PORT=3000`); the runtime config
+// applies those. Four keys are written with a default: `ASKDB_RAG_EMBEDDER` (`mock` without
+// `ai.embedding`), `ASKDB_INTROSPECT_OUT` (`./askdb/`), and with the pgvector store
+// `ASKDB_PGVECTOR_INDEX_STRATEGY` (`hnsw`) and, for the mock embedder, `ASKDB_RAG_EMBEDDER_DIMENSIONS`
+// (`64`).
+// ---------------------------------------------------------------------------
+
+/** The flat map under construction: canonical env keys to trimmed values. */
+type FlatMap = Record<string, string>;
+
+/** Writes `value` under `key` unless it's unset or blank. */
+function setFlat(flat: FlatMap, key: string, value: string | number | undefined): void {
+  setEnvKey(flat, key, value === undefined ? undefined : String(value));
+}
+
+function resolveIntrospection(intro: AskDbConfig["introspection"], flat: FlatMap): AskDbRuntimeIntrospectionConfig {
+  const { provider } = intro;
+  const engines = intro.providerConfig;
+  // Only the active engine's connection is read, so other branches stay `undefined`.
+  const connection = (engine: "postgres" | "mysql" | "sqlserver"): string | undefined =>
+    provider === engine
+      ? readString(engines?.[engine]?.databaseUrl, `introspection.providerConfig.${engine}.databaseUrl`)
+      : undefined;
+  const resolved: AskDbRuntimeIntrospectionConfig = {
+    provider,
+    postgresDatabaseUrl: connection("postgres"),
+    prismaSchemaPath:
+      provider === "prisma"
+        ? readString(engines?.prisma?.schemaPath, "introspection.providerConfig.prisma.schemaPath")
+        : undefined,
+    mysqlDatabaseUrl: connection("mysql"),
+    schemas: readStringList(intro.schemas, "introspection.schemas"),
+    sqliteFile: provider === "sqlite" ? readString(engines?.sqlite?.file, "introspection.providerConfig.sqlite.file") : undefined,
+    sqlserverDatabaseUrl: connection("sqlserver"),
+    outputDir: readString(intro.outputDir, "introspection.outputDir") ?? DEFAULT_INTROSPECT_OUTPUT_DIR,
+  };
+  setFlat(flat, "ASKDB_INTROSPECT_POSTGRES_URL", resolved.postgresDatabaseUrl);
+  setFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL", resolved.mysqlDatabaseUrl);
+  setFlat(flat, "ASKDB_INTROSPECT_SQLITE_FILE", resolved.sqliteFile);
+  setFlat(flat, "ASKDB_INTROSPECT_SQLSERVER_URL", resolved.sqlserverDatabaseUrl);
+  // The Prisma schema path has no flat key: @askdb/prisma reads `prismaSchemaPath`.
+  setFlat(flat, "ASKDB_INTROSPECT_OUT", resolved.outputDir);
+  setFlat(flat, "ASKDB_INTROSPECT_SCHEMAS", resolved.schemas?.join(","));
+  return resolved;
+}
+
+function resolveAi(ai: NormalizedAskDbConfig["ai"], flat: FlatMap): ResolvedAskDbConfig["ai"] {
+  const { language, embedding } = ai;
+  const languageEnv = aiLanguageEnv(language);
+  // The flat map carries the language section's env view; the embedding section's stays on its own.
+  Object.assign(flat, languageEnv);
+  return {
+    language: {
+      provider: language.provider,
+      connection: language.connection.name,
+      model: language.model,
+      env: languageEnv,
+      modelFamily: language.modelFamily,
+    },
+    embedding: embedding
+      ? {
+          provider: embedding.provider,
+          connection: embedding.connection.name,
+          model: embedding.model,
+          env: aiEmbeddingEnv(embedding),
+          dimensions: embedding.dimensions,
+        }
+      : undefined,
+  };
+}
+
+function resolveRag(rag: NormalizedAskDbConfig["rag"], ai: ResolvedAskDbConfig["ai"], flat: FlatMap): AskDbRuntimeRagConfig {
+  const { store, storeConfig } = rag;
+  const embedding = ai.embedding;
+  setFlat(flat, "ASKDB_RAG_EMBEDDER", embedding ? "ai" : "mock");
+  if (embedding) {
+    setFlat(flat, "ASKDB_RAG_EMBEDDER_MODEL", embedding.model);
+    setFlat(flat, "ASKDB_RAG_EMBEDDER_DIMENSIONS", embedding.dimensions);
+  }
+
+  if (!isMember(store, ASKDB_RAG_STORES)) {
+    throw new Error(`askdb.config: invalid rag.store ${describeValue(store)} (expected one of: ${ASKDB_RAG_STORES.join(", ")}).`);
+  }
+  if (store === "file") {
+    if (!storeConfig.file) throw new Error('askdb.config: rag.store is "file" but `rag.storeConfig.file` is missing.');
+    // Unset, the CLI and Studio use `<schema dir>/schema`.
+    setFlat(flat, "ASKDB_RAG_FILE_BASE_PATH", readString(storeConfig.file.basePath, "rag.storeConfig.file.basePath"));
+  } else if (store === "pgvector") {
+    const pgvector = storeConfig.pgvector;
+    if (!pgvector) throw new Error('askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector` is missing.');
+    const url = readString(pgvector.databaseUrl, "rag.storeConfig.pgvector.databaseUrl");
+    if (!url) {
+      throw new Error(
+        'askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector.databaseUrl` is missing; set it, for example `databaseUrl: env("PGVECTOR_URL")`.',
+      );
+    }
+    setFlat(flat, "ASKDB_PGVECTOR_URL", url);
+    // The mock embedder's vectors are always 64 wide. With `ai.embedding`, the dimensions written
+    // above are only a size to request: unset, the model's own width applies, learned at index time.
+    if (!embedding) setFlat(flat, "ASKDB_RAG_EMBEDDER_DIMENSIONS", DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS);
+    setFlat(flat, "ASKDB_PGVECTOR_INDEX_STRATEGY", pgvectorIndexStrategy(pgvector.indexStrategy));
+  }
+
+  // The RAG CLI's OpenAI embedder never reads another provider's key or base URL: it uses the
+  // embedding connection when that is OpenAI's, else only the OpenAI language connection.
+  const openaiEmbedding = embedding?.provider === "openai" ? embedding : undefined;
+  const source = openaiEmbedding ?? ai.language;
+  return {
+    embedder: {
+      apiKey: source.env.OPENAI_API_KEY,
+      baseURL: source.env.OPENAI_BASE_URL,
+      model: openaiEmbedding?.model,
+    },
+    store,
+    storeConfig,
+  };
+}
+
+function resolveLogging(logging: AskDbConfig["logging"], flat: FlatMap): AskDbRuntimeLoggingConfig {
+  const resolved: AskDbRuntimeLoggingConfig = {
+    level: readMember(logging?.level, ASKDB_LOG_LEVELS, "logging.level"),
+    correlationId: readString(logging?.correlationId, "logging.correlationId"),
+    logFile: readString(logging?.logFile, "logging.logFile"),
+    logStdout: readBoolean(logging?.logStdout, "logging.logStdout") ?? false,
+  };
+  setFlat(flat, "ASKDB_LOG_LEVEL", resolved.level);
+  setFlat(flat, "ASKDB_CORRELATION_ID", resolved.correlationId);
+  setFlat(flat, "ASKDB_LOG_FILE", resolved.logFile);
+  if (resolved.logStdout) setFlat(flat, "ASKDB_LOG_STDOUT", "true");
+  return resolved;
+}
+
+function resolveModes(modes: AskDbConfig["modes"], flat: FlatMap): AskDbRuntimeModesConfig {
+  const resolved: AskDbRuntimeModesConfig = {
+    askdbMode: readMember(modes?.askdbMode, ASKDB_MODES_V1, "modes.askdbMode"),
+    omitSensitiveFromPrompt: readBoolean(modes?.omitSensitiveFromPrompt, "modes.omitSensitiveFromPrompt") ?? false,
+  };
+  setFlat(flat, "ASKDB_MODE", resolved.askdbMode);
+  if (resolved.omitSensitiveFromPrompt) setFlat(flat, "ASKDB_OMIT_SENSITIVE_FROM_PROMPT", "true");
+  return resolved;
+}
+
+/** `host` has no runtime section: `createAskDb` reads `structured.host`. It's checked here all the same. */
+function resolveHost(host: AskDbConfig["host"], flat: FlatMap): void {
+  setFlat(flat, "ASKDB_SCHEMA_PATH", readString(host?.schemaPath, "host.schemaPath"));
+  setFlat(flat, "ASKDB_SCHEMA_JSON", readString(host?.schemaJson, "host.schemaJson"));
+}
+
+function resolveHttpApi(httpApi: AskDbConfig["httpApi"], flat: FlatMap): AskDbRuntimeHttpApiConfig {
+  const port = readListenPort(httpApi?.listen?.port, "httpApi.listen.port");
+  const host = readString(httpApi?.listen?.host, "httpApi.listen.host");
+  const allowSchemaOverride = readBoolean(httpApi?.allowSchemaOverride, "httpApi.allowSchemaOverride") ?? false;
+  const requestTimeoutMs = readRequestTimeoutMs(httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs");
+  setFlat(flat, "PORT", port);
+  setFlat(flat, "HOST", host);
+  if (allowSchemaOverride) setFlat(flat, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE", "true");
+  setFlat(flat, "ASKDB_HTTP_REQUEST_TIMEOUT_MS", requestTimeoutMs);
+  return {
+    listen: { port: port ?? DEFAULT_HTTP_API_PORT, host: host ?? DEFAULT_HTTP_API_HOST },
+    allowSchemaOverride,
+    requestTimeoutMs: requestTimeoutMs ?? DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
+  };
+}
+
+/** The introspection connection for `provider`, when introspection uses that engine. */
+function introspectionConnectionFor(
+  provider: AskDbStudioExecuteProvider,
+  introspection: AskDbRuntimeIntrospectionConfig,
+): string | undefined {
+  switch (provider) {
+    case "postgres":
+      return introspection.postgresDatabaseUrl;
+    case "mysql":
+      return introspection.mysqlDatabaseUrl;
+    case "sqlserver":
+      return introspection.sqlserverDatabaseUrl;
+    case "sqlite":
+      return introspection.sqliteFile;
+  }
+}
+
+function resolveStudio(
+  studio: AskDbConfig["studio"],
+  introspection: AskDbRuntimeIntrospectionConfig,
+  flat: FlatMap,
+): AskDbRuntimeStudioConfig {
+  // `listen` has no runtime section: Studio reads `structured.studio.listen` and checks the port
+  // when it starts, so only the host's type is checked here.
+  const listen = studio?.listen;
+  setFlat(flat, "ASKDB_STUDIO_HOST", readString(listen?.host, "studio.listen.host"));
+  if (listen?.port !== undefined && !Number.isNaN(listen.port)) setFlat(flat, "ASKDB_STUDIO_PORT", listen.port);
+
+  const execute = studio?.execute;
+  // An explicit provider, else the introspection provider when it's a live engine, else postgres.
+  // An unknown provider falls back the same way.
+  const configured = readString(execute?.provider, "studio.execute.provider");
+  const provider: AskDbStudioExecuteProvider = isMember(configured, ASKDB_STUDIO_EXECUTE_PROVIDERS)
+    ? configured
+    : isMember(introspection.provider, ASKDB_STUDIO_EXECUTE_PROVIDERS)
+      ? introspection.provider
+      : "postgres";
+  const enabled = readBoolean(execute?.enabled, "studio.execute.enabled");
+  const useIntrospectionConnection = readBoolean(
+    execute?.useIntrospectionConnection,
+    "studio.execute.useIntrospectionConnection",
+  );
+  const timeoutMs = readPositiveInteger(execute?.timeoutMs, "studio.execute.timeoutMs");
+  const maxRows = readPositiveInteger(execute?.maxRows, "studio.execute.maxRows");
+  const configuredUrl = readString(execute?.databaseUrl, "studio.execute.databaseUrl");
+  const configuredFile = readString(execute?.file, "studio.execute.file");
+
+  if (configured !== undefined) setFlat(flat, "ASKDB_STUDIO_EXECUTE_PROVIDER", provider);
+  setFlat(flat, "ASKDB_STUDIO_DATABASE_URL", configuredUrl);
+  setFlat(flat, "ASKDB_STUDIO_SQLITE_FILE", configuredFile);
+  if (enabled !== undefined) setFlat(flat, "ASKDB_STUDIO_EXECUTE_ENABLED", String(enabled));
+  if (useIntrospectionConnection !== undefined) {
+    setFlat(flat, "ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION", String(useIntrospectionConnection));
+  }
+  setFlat(flat, "ASKDB_STUDIO_EXECUTE_TIMEOUT_MS", timeoutMs);
+  setFlat(flat, "ASKDB_STUDIO_EXECUTE_MAX_ROWS", maxRows);
+
+  // The introspection connection is reused only when `useIntrospectionConnection` is on, so
+  // turning execute on never runs ad-hoc SQL with introspection credentials by accident.
+  const explicit = provider === "sqlite" ? configuredFile : configuredUrl;
+  const introspectionConnection = introspectionConnectionFor(provider, introspection);
+  const connection = explicit ?? (useIntrospectionConnection ? introspectionConnection : undefined);
+  return {
+    execute: {
+      provider,
+      databaseUrl: provider === "sqlite" ? undefined : connection,
+      file: provider === "sqlite" ? connection : undefined,
+      enabled: enabled ?? false,
+      useIntrospectionConnection: useIntrospectionConnection ?? false,
+      introspectionConnectionAvailable:
+        explicit === undefined && !useIntrospectionConnection && introspectionConnection !== undefined,
+      timeoutMs: timeoutMs ?? DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
+      maxRows: maxRows ?? DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
+    },
+  };
+}
+
+/** What {@link resolveAskDbConfig} returns. */
+export type AskDbConfigResolution = {
+  resolved: ResolvedAskDbConfig;
+  /** The flat map: each setting's canonical env key, written in the same pass that checks it. */
+  flat: Record<string, string>;
+  deprecations: string[];
+};
+
+/**
+ * Resolves every setting of an authored config: checks it, translates deprecated keys and fills in
+ * defaults, and writes its flat key. Pure: it reads no environment. Returns one deprecation
+ * message per legacy key in use. Throws `askdb.config: …` errors that name the config key for a
+ * config that can't load (the loader adds the file name).
+ */
+export function resolveAskDbConfig(config: AskDbConfig): AskDbConfigResolution {
+  const { config: normalized, deprecations } = normalizeAskDbConfig(config);
+  const flat: FlatMap = {};
+  const ai = resolveAi(normalized.ai, flat);
+  const introspection = resolveIntrospection(config.introspection, flat);
+  const rag = resolveRag(normalized.rag, ai, flat);
+  const logging = resolveLogging(config.logging, flat);
+  const modes = resolveModes(config.modes, flat);
+  resolveHost(config.host, flat);
+  const dev = { mockSql: readString(config.dev?.mockSql, "dev.mockSql") };
+  setFlat(flat, "ASKDB_MOCK_SQL", dev.mockSql);
+  const studio = resolveStudio(config.studio, introspection, flat);
+  const httpApi = resolveHttpApi(config.httpApi, flat);
+  return {
+    resolved: {
+      ai,
+      introspection,
+      rag,
+      logging,
+      httpApi,
+      dev,
+      modes,
+      // Passed through as written: loading doesn't check it.
+      nlToSql: { dialect: config.dialect },
+      studio,
+    },
+    flat,
     deprecations,
   };
 }

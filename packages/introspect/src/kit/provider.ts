@@ -2,11 +2,13 @@ import type { ConnectorProviderAdapter, ConnectorProviderId, ConnectorRuntimeCon
 import type { CatalogQueryRunner, Connector, IntrospectionFilters } from "../types.js";
 import type { ConnectionLabelParts } from "./label.js";
 
-/** Input shape of a live-only catalog connector: `{ mode: "live", runner, filters? }`. */
+/** Input shape of a live-only catalog connector: `{ mode: "live", runner, filters?, schemaId? }`. */
 export type LiveCatalogInput = {
   mode: "live";
   runner: CatalogQueryRunner;
   filters?: IntrospectionFilters;
+  /** `ConnectorConfig.schemaId`, for the connector to put in the `SqlSchema` it returns. */
+  schemaId?: string;
 };
 
 export type LiveConnectorProviderSpec = {
@@ -59,8 +61,9 @@ export function defineLiveConnectorProvider(spec: LiveConnectorProviderSpec): Co
         mode: "live",
         runner: spec.createRunner(config.url),
         filters: config.filters,
+        schemaId: config.schemaId,
       };
-      return { mode: "live", input, connector: spec.createConnector() as Connector<unknown> };
+      return { mode: "live", input, connector: spec.createConnector() };
     },
     resolveConnection({ explicit = {}, runtime, surface }) {
       const url = explicit.url ?? runtimeIntrospectionString(runtime, spec.runtimeKey);

@@ -1,5 +1,48 @@
 # @askdb/postgres
 
+## 0.2.0-beta.25
+
+### Patch Changes
+
+- 82c2f94: Every built-in connector adapter now passes `ConnectorConfig.schemaId` to its connector (#775). Only the Prisma adapter did, so `createConnector({ provider: "postgres" | "mysql" | "sqlite" | "sqlserver", schemaId })` returned a `SqlSchema` with `schemaId: "introspected"`. It now returns the ID you set, and `"introspected"` only when you set none. To carry it, `LiveCatalogInput`, `PostgresIntrospectionInput`, `MysqlIntrospectionInput`, `SqliteIntrospectionInput` and `SqlServerIntrospectionInput` gain an optional `schemaId`. `schema.json` is unchanged: it takes its ID from `RenderOptions.schemaId`.
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [82c2f94]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [4437394]
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/introspect@0.3.0-beta.23
+
+## 0.2.0-beta.24
+
+### Patch Changes
+
+- ca4af5b: `@askdb/postgres` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: live and export-bundle introspection, system-schema filtering and the `pg` driver loading work as before.
+- c28c967: Declare `ai` as a peer, with the range `@askdb/core` requires (`^6.0.0 || ^7.0.51`), so Yarn Plug'n'Play passes your app's `ai` through to `@askdb/core` (#748). Before, core inside these packages couldn't reach `ai` under Plug'n'Play, and `yarn dlx askdb` crashed at startup. Core already required `ai` when it loads, so npm and pnpm install nothing new, and a host that already meets core's `ai` range meets this one.
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+- Updated dependencies [1c31e95]
+- Updated dependencies [c28c967]
+  - @askdb/core@1.0.0-beta.48
+  - @askdb/introspect@0.3.0-beta.22
+
+## 0.2.0-beta.23
+
+### Patch Changes
+
+- Updated dependencies [f4e60a9]
+- Updated dependencies [80c7ddf]
+- Updated dependencies [0a94c6f]
+- Updated dependencies [4f322db]
+- Updated dependencies [4365d4c]
+  - @askdb/core@1.0.0-beta.47
+  - @askdb/introspect@0.3.0-beta.21
+
 ## 0.2.0-beta.22
 
 ### Patch Changes

@@ -11,15 +11,15 @@ import type { RetrievedResult } from "./types.js";
 /**
  * Build a focused DDL block for NL→SQL prompts from retrieved chunks.
  *
- * Layout (decided in implementation, per Phase 8 spec's "open choice"):
+ * Layout:
  *   1. Each table referenced by any retrieved chunk gets a TABLE block with
  *      its full column definitions (so the model has complete column lists).
- *   2. Column-chunk descriptions become inline `-- aliases / values / desc`
- *      annotations on the matching column line.
- *   3. CQL chunks land as a `-- common query language --` block under the
+ *      Each column line carries the schema's own `-- aliases / values / desc`
+ *      annotation; a retrieved column chunk only picks its table.
+ *   2. CQL chunks land as a `-- common query language --` block under the
  *      table.
- *   4. Concept and question chunks attach as system-context paragraphs at
- *      the bottom (before the question).
+ *   3. Relationship, concept, example-question and tenant-policy chunks follow
+ *      the tables, each kind as its own `-- … --` block, in that order.
  *
  * Sensitive identifiers retain their `(sensitive)` tagging exactly as
  * `formatSchemaV2ForNlToSql` does. With `omitSensitiveIdentifiersFromPrompt`,
@@ -67,11 +67,7 @@ export function synthesizeRetrievedDdl(args: {
   for (const r of results) {
     const p = r.payload;
     switch (p.type) {
-      case "table": {
-        const tid = p.refs[0];
-        if (tid) tableIds.add(tid);
-        break;
-      }
+      case "table":
       case "column": {
         const tid = p.refs[0];
         if (tid) tableIds.add(tid);

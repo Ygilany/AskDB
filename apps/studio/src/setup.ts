@@ -5,27 +5,32 @@ import { basename, delimiter, dirname, join, resolve, isAbsolute, relative } fro
 import { getBuiltinAiProviderSetup } from "@askdb/ai";
 import {
   ASKDB_AI_PROVIDERS,
+  ASKDB_STUDIO_EXECUTE_PROVIDERS,
   bootstrapAskDbEnv,
   discoverAskDbConfigPath,
   getAskDbRuntimeConfig,
   type AskDbAiProviderId,
 } from "@askdb/config";
-import { renderAskDbAiConfigScaffold } from "@askdb/config/scaffold";
 import {
+  AskDbScaffoldInputError,
+  detectPackageManager,
+  findNearestPackageJsonDir,
   formatInstallCommand,
-  lockfilePackageManager,
+  isLikelyWorkspaceRoot,
   packageManagerAddArgs,
   packageManagerSpawnSpec,
+  planAskDbScaffold,
   supportedBuildApprovals,
+  type AskDbScaffoldAnswers,
+  type AskDbScaffoldPlan,
   type PackageManager,
-} from "./package-manager.js";
-import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
+} from "@askdb/config/scaffold";
 
-export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
+export type SetupDatabase = AskDbScaffoldAnswers["database"];
 /** Any provider id with an `askdb.config.*` branch (`ASKDB_AI_PROVIDERS` in `@askdb/config`). */
 export type SetupAiProvider = AskDbAiProviderId;
-export type SetupRagStore = "file" | "memory" | "pgvector";
-export type SetupExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
+export type SetupRagStore = AskDbScaffoldAnswers["rag"]["store"];
+export type SetupExecuteProvider = NonNullable<AskDbScaffoldAnswers["studioExecute"]>["provider"];
 
 export type SetupConfigInput = {
   database: SetupDatabase;
@@ -63,82 +68,72 @@ function aiDefaults(provider: string): { keyEnv: string; modelEnv: string } | un
   return getBuiltinAiProviderSetup(provider);
 }
 
-const CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupDatabase, "sqlite" | "prisma">, string> = {
-  postgres: "DATABASE_URL",
-  mysql: "DATABASE_URL",
-  sqlserver: "DATABASE_URL",
+/** The connection URL variable every live engine defaults to, for introspection and Studio execute. */
+const DEFAULT_CONNECTION_ENV = "DATABASE_URL";
+
+/** The planner's name for each answer, mapped to this endpoint's field, for errors. */
+const SETUP_FIELDS: Record<string, keyof SetupConfigInput> = {
+  connectionEnv: "connectionEnv",
+  sqliteFile: "sqliteFile",
+  prismaSchemaPath: "prismaSchema",
+  schemaOut: "schemaOut",
+  "ai.provider": "aiProvider",
+  "ai.keyEnv": "aiKeyEnv",
+  "ai.modelEnv": "aiModelEnv",
+  "rag.store": "ragStore",
+  "rag.pgvectorEnv": "pgvectorEnv",
+  "studioExecute.provider": "studioExecuteProvider",
+  "studioExecute.connectionEnv": "studioExecuteConnectionEnv",
+  "studioExecute.sqliteFile": "studioExecuteSqliteFile",
 };
-
-const EXECUTE_CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupExecuteProvider, "sqlite">, string> = {
-  postgres: "DATABASE_URL",
-  mysql: "DATABASE_URL",
-  sqlserver: "DATABASE_URL",
-};
-
-const EXECUTE_PROVIDERS = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies readonly SetupExecuteProvider[];
-
-const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
-
-// C0 controls, DEL, and the JS line/paragraph separators — never legitimate in a project path.
-const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f\u2028\u2029]/;
 
 /**
- * Render a value as a TypeScript string literal for the generated
- * `askdb.config.ts`. Every interpolated value goes through this — the file is
- * later executed (via jiti) by Studio and the CLI, so a raw `"${value}"` would
- * let a quote in a path inject code.
+ * The request as the planner in `@askdb/config/scaffold` takes it, with Studio's defaults
+ * filled in. Paths must stay inside the project; SQLite files are always paths.
  */
-function tsString(value: string): string {
-  return JSON.stringify(value);
-}
-
-const DB_URL_PLACEHOLDER: Partial<Record<SetupDatabase | SetupExecuteProvider, string>> = {
-  postgres: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
-  mysql: "mysql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
-  sqlserver:
-    "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
-};
-
-/** Live-introspection driver per engine — mirrors `DB_DRIVER_PACKAGES` in `apps/cli/src/init.ts`. */
-const DB_DRIVER_PACKAGES: Partial<Record<SetupDatabase, string>> = {
-  postgres: "pg",
-  mysql: "mysql2",
-  sqlite: "better-sqlite3",
-  sqlserver: "mssql",
-};
-
-type EnvVarEntry = { name: string; purpose: string; requiredForIntrospection: boolean; exampleValue?: string };
-
-function pushEnvVar(envVars: EnvVarEntry[], entry: EnvVarEntry): void {
-  if (envVars.some((v) => v.name === entry.name)) return;
-  envVars.push(entry);
-}
-
-/** Mirrors `renderRagSection` in `apps/cli/src/init.ts` — keep the two in sync. */
-function renderRagSection(ragStore: SetupRagStore, pgvectorEnv: string | undefined): string {
-  switch (ragStore) {
-    case "file":
-      return `  rag: {
-    embedder: "mock",
-    store: "file",
-    storeConfig: { file: {} },
-  },`;
-    case "memory":
-      return `  rag: {
-    embedder: "mock",
-    store: "memory",
-    storeConfig: { memory: {} },
-  },`;
-    case "pgvector":
-      return `  rag: {
-    embedder: "mock",
-    store: "pgvector",
-    storeConfig: {
-      pgvector: {
-        databaseUrl: env(${tsString(pgvectorEnv ?? "ASKDB_PGVECTOR_URL")}),
-      },
+function scaffoldAnswers(input: SetupConfigInput): AskDbScaffoldAnswers {
+  const executeProvider =
+    input.studioExecuteProvider ??
+    ((ASKDB_STUDIO_EXECUTE_PROVIDERS as readonly string[]).includes(input.database)
+      ? (input.database as SetupExecuteProvider)
+      : undefined);
+  return {
+    database: input.database,
+    connectionEnv: trimmed(input.connectionEnv) ?? DEFAULT_CONNECTION_ENV,
+    sqliteFile: { path: relativePath(input.sqliteFile ?? "./data.db", "sqliteFile") },
+    ...(input.prismaSchema ? { prismaSchemaPath: relativePath(input.prismaSchema, "prismaSchema") } : {}),
+    schemaOut: relativePath(input.schemaOut ?? "./askdb", "schemaOut"),
+    ai: {
+      provider: input.aiProvider,
+      keyEnv: trimmed(input.aiKeyEnv) ?? aiDefaults(input.aiProvider)?.keyEnv ?? "",
+      ...(input.aiModelEnv ? { modelEnv: input.aiModelEnv.trim() } : {}),
     },
-  },`;
+    rag: { store: input.ragStore ?? "file", pgvectorEnv: trimmed(input.pgvectorEnv) ?? "ASKDB_PGVECTOR_URL" },
+    ...(input.studioExecute
+      ? {
+          studioExecute: {
+            provider: executeProvider as SetupExecuteProvider,
+            connectionEnv: trimmed(input.studioExecuteConnectionEnv) ?? DEFAULT_CONNECTION_ENV,
+            sqliteFile: {
+              path: relativePath(input.studioExecuteSqliteFile ?? input.sqliteFile ?? "./data.db", "studioExecuteSqliteFile"),
+            },
+          },
+        }
+      : {}),
+  };
+}
+
+function trimmed(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : value.trim();
+}
+
+/** The new project's files and installs, or a 400 that names the request field at fault. */
+function planSetup(input: SetupConfigInput): AskDbScaffoldPlan {
+  try {
+    return planAskDbScaffold(scaffoldAnswers(input), { config: resolveConfigSpec(), prisma: resolvePrismaSpec() });
+  } catch (error) {
+    if (!(error instanceof AskDbScaffoldInputError)) throw error;
+    throw new SetupError(400, `\`${SETUP_FIELDS[error.field] ?? error.field}\` ${error.reason}`);
   }
 }
 
@@ -146,7 +141,7 @@ export type SetupConfigResult = {
   configPath: string;
   envExamplePath: string | null;
   /** Env var names the user must fill in `.env` before introspecting / asking. */
-  envVars: EnvVarEntry[];
+  envVars: AskDbScaffoldPlan["envVars"];
   /** Packages installed into the project (null when nothing was needed). */
   installed: string[] | null;
   /** Set when automatic install wasn't possible — run this, then introspect. */
@@ -158,7 +153,7 @@ export type SetupConfigResult = {
 /**
  * Write `askdb.config.ts` (and `.env.example`) into `cwd`. Accepts env var
  * NAMES only — secret values never travel through this endpoint. Refuses to
- * overwrite an existing config. Templates mirror `askdb init`'s output.
+ * overwrite an existing config. The files come from the same planner as `askdb init`'s.
  */
 export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupConfigResult {
   const existing = discoverAskDbConfigPath(cwd);
@@ -166,170 +161,21 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
     throw new SetupError(409, `A config already exists at ${existing}. Edit it directly instead.`);
   }
 
-  const schemaOut = validateRelativePath(input.schemaOut ?? "./askdb", "schemaOut");
-  // `aiDefaults` only accepts ids listed in `ASKDB_AI_PROVIDERS`, so `constructor`/`__proto__`
-  // can't masquerade as a provider — the provider name is emitted as an object key in the
-  // generated config.
-  const providerDefaults = aiDefaults(input.aiProvider);
-  if (!providerDefaults) throw new SetupError(400, `Unknown AI provider: ${JSON.stringify(input.aiProvider)}`);
-  const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? providerDefaults.keyEnv, "aiKeyEnv");
-  const aiModelEnv = input.aiModelEnv ? validateEnvName(input.aiModelEnv, "aiModelEnv") : undefined;
-
-  // The `ai` block comes from `@askdb/config/scaffold`, shared with `askdb init`.
-  const aiScaffold = renderAskDbAiConfigScaffold({
-    provider: input.aiProvider,
-    keyEnv: aiKeyEnv,
-    ...(aiModelEnv ? { modelEnv: aiModelEnv } : {}),
-  });
-  const envVars: SetupConfigResult["envVars"] = aiScaffold.envVars.map((v) => ({
-    ...v,
-    requiredForIntrospection: false,
-  }));
-
-  let introspectionSection: string;
-  switch (input.database) {
-    case "postgres":
-    case "mysql":
-    case "sqlserver": {
-      const connectionEnv = validateEnvName(
-        input.connectionEnv ?? CONNECTION_ENV_DEFAULTS[input.database],
-        "connectionEnv",
-      );
-      envVars.push({
-        name: connectionEnv,
-        purpose: `${input.database} connection URL (introspection only)`,
-        requiredForIntrospection: true,
-        exampleValue: DB_URL_PLACEHOLDER[input.database],
-      });
-      introspectionSection = `  introspection: {
-    provider: ${tsString(input.database)},
-    providerConfig: {
-      ${input.database}: {
-        databaseUrl: env(${tsString(connectionEnv)}),
-      },
-    },
-    outputDir: ${tsString(schemaOut)},
-  },`;
-      break;
-    }
-    case "sqlite": {
-      const file = validateRelativePath(input.sqliteFile ?? "./data.db", "sqliteFile");
-      introspectionSection = `  introspection: {
-    provider: "sqlite",
-    providerConfig: {
-      sqlite: {
-        file: ${tsString(file)},
-      },
-    },
-    outputDir: ${tsString(schemaOut)},
-  },`;
-      break;
-    }
-    case "prisma": {
-      const schemaLine = input.prismaSchema
-        ? `\n        schemaPath: ${tsString(validateRelativePath(input.prismaSchema, "prismaSchema"))},`
-        : "";
-      introspectionSection = `  introspection: {
-    provider: "prisma",
-    providerConfig: {
-      prisma: {${schemaLine}
-      },
-    },
-    outputDir: ${tsString(schemaOut)},
-  },`;
-      break;
-    }
-    default:
-      throw new SetupError(400, `Unknown database: ${String(input.database)}`);
-  }
-
-  const ragStore = input.ragStore ?? "file";
-  let pgvectorEnv: string | undefined;
-  if (ragStore === "pgvector") {
-    pgvectorEnv = validateEnvName(input.pgvectorEnv ?? "ASKDB_PGVECTOR_URL", "pgvectorEnv");
-    pushEnvVar(envVars, {
-      name: pgvectorEnv,
-      purpose: "pgvector connection URL",
-      requiredForIntrospection: false,
-      exampleValue: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
-    });
-  }
-  const ragSection = renderRagSection(ragStore, pgvectorEnv);
-
-  let studioSection: string | null = null;
-  let studioExecuteProvider: SetupExecuteProvider | undefined;
-  if (input.studioExecute) {
-    studioExecuteProvider =
-      input.studioExecuteProvider ?? (input.database !== "prisma" ? input.database : undefined);
-    if (!studioExecuteProvider) {
-      throw new SetupError(400, "`studioExecuteProvider` is required when `studioExecute` is enabled and `database` is \"prisma\".");
-    }
-    if (!(EXECUTE_PROVIDERS as readonly string[]).includes(studioExecuteProvider)) {
-      throw new SetupError(400, `Unknown studioExecuteProvider: ${JSON.stringify(studioExecuteProvider)}`);
-    }
-    if (studioExecuteProvider === "sqlite") {
-      const file = validateRelativePath(input.studioExecuteSqliteFile ?? input.sqliteFile ?? "./data.db", "studioExecuteSqliteFile");
-      studioSection = `  studio: {
-    execute: {
-      enabled: true,
-      provider: "sqlite",
-      file: ${tsString(file)},
-    },
-  },`;
-    } else {
-      const execConnectionEnv = validateEnvName(
-        input.studioExecuteConnectionEnv ?? EXECUTE_CONNECTION_ENV_DEFAULTS[studioExecuteProvider],
-        "studioExecuteConnectionEnv",
-      );
-      pushEnvVar(envVars, {
-        name: execConnectionEnv,
-        purpose: `${studioExecuteProvider} connection URL (Studio execute)`,
-        requiredForIntrospection: false,
-        exampleValue: DB_URL_PLACEHOLDER[studioExecuteProvider],
-      });
-      studioSection = `  studio: {
-    execute: {
-      enabled: true,
-      provider: ${tsString(studioExecuteProvider)},
-      databaseUrl: env(${tsString(execConnectionEnv)}),
-    },
-  },`;
-    }
-  }
-
-  const sections = [aiScaffold.source, introspectionSection, ragSection, studioSection].filter(
-    (s): s is string => s !== null,
-  );
-
-  const config = `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
-
-export default defineConfig({
-${sections.join("\n")}
-} satisfies AskDbConfig);
-`;
+  const plan = planSetup(input);
 
   const configPath = join(cwd, "askdb.config.ts");
-  writeFileSync(configPath, config, "utf8");
+  writeFileSync(configPath, plan.configSource, "utf8");
 
   let envExamplePath: string | null = join(cwd, ".env.example");
   if (existsSync(envExamplePath)) {
     envExamplePath = null; // don't clobber an existing example file
   } else {
-    const example = [
-      "# AskDB environment — copy to .env and fill in real values.",
-      "# .env is read by Studio, the CLI, and the HTTP API; never commit it.",
-      ...envVars.map((v) =>
-        v.exampleValue ? `${v.name}=${v.exampleValue}` : `${v.name}= # ${v.purpose}`,
-      ),
-      "",
-    ].join("\n");
-    writeFileSync(envExamplePath, example, "utf8");
+    writeFileSync(envExamplePath, plan.envExample, "utf8");
   }
 
   // The config imports `@askdb/config`, so the project needs it (plus the
-  // live-introspection driver and, if enabled, the Studio execute driver)
-  // installed — same as `askdb init` does.
-  const deps = ensureProjectDependencies(cwd, input.database, studioExecuteProvider);
+  // live-introspection driver and, if enabled, the Studio execute driver).
+  const deps = ensureProjectDependencies(cwd, plan.install);
 
   // Install the runtime snapshot from the file we just wrote so the rest of
   // the server (and the introspection step) sees the new config immediately.
@@ -348,7 +194,7 @@ ${sections.join("\n")}
   return {
     configPath,
     envExamplePath,
-    envVars,
+    envVars: plan.envVars,
     installed: deps.installed,
     manualInstallCommand: deps.manualInstallCommand,
     packageJsonCreated: deps.packageJsonCreated,
@@ -362,42 +208,16 @@ type EnsureDepsResult = {
 };
 
 /**
- * Make sure the project can load the config we just wrote: `@askdb/config` +
- * `dotenv` must be resolvable from the project, and live engines need their
- * introspection driver. Mirrors `askdb init`'s install plan. Falls back to a
- * manual command when the project looks like a workspace root or the install
- * fails — never mutates a monorepo root implicitly.
+ * Make sure the project can load the config we just wrote: install the plan's packages
+ * it doesn't have yet. Falls back to a manual command when the project looks like a
+ * workspace root or the install fails — never mutates a monorepo root implicitly.
  */
-function ensureProjectDependencies(
-  cwd: string,
-  database: SetupDatabase,
-  studioExecuteProvider?: SetupExecuteProvider,
-): EnsureDepsResult {
-  const missing: string[] = [];
-  if (!isInstalledFor(cwd, "@askdb/config")) {
-    missing.push(`@askdb/config@${resolveConfigSpec()}`);
-  }
-  const allowBuilds: string[] = [];
-  // `@askdb/prisma` is an optional peer of Studio (#259). It depends on Prisma, whose
-  // `@prisma/engines` postinstall pnpm 11 refuses to run until it's approved, and then
-  // exits 1. A Prisma project approves it anyway, so the install does it here.
-  // `askdb init` does the same (`apps/cli/src/init.ts`).
-  if (database === "prisma" && !isInstalledFor(cwd, "@askdb/prisma")) {
-    missing.push(`@askdb/prisma@${resolvePrismaSpec()}`);
-    allowBuilds.push(...PRISMA_BUILD_APPROVALS);
-  }
-  const driversNeeded = new Set<string>();
-  if (DB_DRIVER_PACKAGES[database]) driversNeeded.add(database);
-  if (studioExecuteProvider && DB_DRIVER_PACKAGES[studioExecuteProvider]) driversNeeded.add(studioExecuteProvider);
-  for (const db of driversNeeded) {
-    const driver = DB_DRIVER_PACKAGES[db as SetupDatabase];
-    if (driver && !isInstalledFor(cwd, driver) && !missing.includes(driver)) {
-      missing.push(driver);
-    }
-  }
+function ensureProjectDependencies(cwd: string, install: AskDbScaffoldPlan["install"]): EnsureDepsResult {
+  const missing = install.packages.filter((spec) => !isInstalledFor(cwd, packageNameOf(spec)));
   if (missing.length === 0) {
     return { installed: null, manualInstallCommand: null, packageJsonCreated: false };
   }
+  const { allowBuilds } = install;
 
   let packageJsonCreated = false;
   const nearestPkgDir = findNearestPackageJsonDir(cwd);
@@ -504,34 +324,6 @@ function resolvePrismaSpec(): string {
   }
 }
 
-function findNearestPackageJsonDir(startDir: string): string | undefined {
-  let dir = resolve(startDir);
-  for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-  return undefined;
-}
-
-function isLikelyWorkspaceRoot(packageDir: string): boolean {
-  if (
-    existsSync(join(packageDir, "pnpm-workspace.yaml")) ||
-    existsSync(join(packageDir, "pnpm-workspace.yml"))
-  ) {
-    return true;
-  }
-  try {
-    const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
-      workspaces?: unknown;
-    };
-    return pkg.workspaces !== undefined && pkg.workspaces !== null;
-  } catch {
-    return false;
-  }
-}
-
 /** Runs the package manager's add command; `allowBuilds` are the pnpm build approvals it passes. */
 type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]) => boolean;
 
@@ -540,18 +332,6 @@ let setupInstallerForTests: SetupInstaller | undefined;
 /** @internal Tests only — replaces the real package-manager install. */
 export function setSetupInstallerForTests(installer: SetupInstaller | undefined): void {
   setupInstallerForTests = installer;
-}
-
-function detectPackageManager(packageDir: string): PackageManager {
-  let dir = packageDir;
-  for (let i = 0; i < 40; i += 1) {
-    const pm = lockfilePackageManager(dir);
-    if (pm) return pm;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return "npm";
 }
 
 function runInstall(pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]): boolean {
@@ -602,31 +382,22 @@ export function probeSetupState(cwd: string): SetupProbe {
   }
 }
 
-function validateEnvName(name: string, field: string): string {
-  const trimmed = name.trim();
-  if (!ENV_NAME_PATTERN.test(trimmed)) {
-    throw new SetupError(
-      400,
-      `\`${field}\` must be an environment variable NAME like DATABASE_URL (got: ${JSON.stringify(name)}). Values belong in .env, not here.`,
-    );
-  }
-  return trimmed;
-}
-
-function validateRelativePath(path: string, field: string): string {
-  const trimmed = path.trim();
-  if (
-    trimmed === "" ||
-    isAbsolute(trimmed) ||
-    relative(".", trimmed).startsWith("..") ||
-    CONTROL_CHAR_PATTERN.test(trimmed)
-  ) {
+/** Studio writes only inside the project: a path must be relative and stay below it. */
+function relativePath(path: string, field: string): string {
+  const trimmedPath = path.trim();
+  if (trimmedPath === "" || isAbsolute(trimmedPath) || relative(".", trimmedPath).startsWith("..")) {
     throw new SetupError(
       400,
       `\`${field}\` must be a relative path inside the project (got: ${JSON.stringify(path)}).`,
     );
   }
-  return trimmed;
+  return trimmedPath;
+}
+
+/** `@askdb/config` from `@askdb/config@1.0.0`, `pg` from `pg`. */
+function packageNameOf(spec: string): string {
+  const at = spec.indexOf("@", 1);
+  return at === -1 ? spec : spec.slice(0, at);
 }
 
 export class SetupError extends Error {

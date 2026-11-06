@@ -15,7 +15,6 @@ import {
 import {
   ASKDB_MODES_V1,
   AskDbLogEvent,
-  type AskDbLogLevel,
   type AskDbModeV1,
   SensitiveReferenceError,
   SqlGenerationError,
@@ -23,7 +22,6 @@ import {
   TenantGuardrailError,
   TenantScopeError,
   createAskDbLogger,
-  isSupportedAskDbLogLevel,
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -38,7 +36,7 @@ export type AskDbHttpServerOptions = {
   port?: number;
   /** Bind address. Precedence: this option → `httpApi.listen.host` config → 127.0.0.1. */
   host?: string;
-  /** Server-default schema artifact path. Precedence: this option → `host.schemaPath` config → `ASKDB_SCHEMA_PATH` env. */
+  /** Server-default schema artifact path. Precedence: this option → `host.schemaJson`, then `host.schemaPath`, in config. */
   schemaPath?: string;
   /** Default: 1 MiB */
   maxBodyBytes?: number;
@@ -51,11 +49,6 @@ class RequestBodyTooLargeError extends Error {
     super(`request body exceeds ${limitBytes} bytes`);
     this.name = "RequestBodyTooLargeError";
   }
-}
-
-function resolveAskDbLogLevelFromRt(rt: ReturnType<typeof getAskDbRuntimeConfig>): AskDbLogLevel {
-  const level = rt.logging.level?.toLowerCase();
-  return level !== undefined && isSupportedAskDbLogLevel(level) ? level : "info";
 }
 
 async function readJsonBody<T>(req: IncomingMessage, maxBodyBytes: number): Promise<T> {
@@ -297,7 +290,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
 
     const logger = createAskDbLogger({
       correlationId,
-      level: resolveAskDbLogLevelFromRt(rt),
+      level: rt.logging.level ?? "info",
       logFile: rt.logging.logFile,
       logStdout: rt.logging.logStdout,
     });

@@ -101,7 +101,7 @@ export type CreateAskDbOptions = {
    * to `providers`, e.g. to share one registry across several clients.
    */
   registry?: AiRegistry;
-  /** Default schema source. Falls back to config `host.schemaJson`/`host.schemaPath`/env. */
+  /** Default schema source. Falls back to config `host.schemaJson`, then `host.schemaPath`. */
   schema?: SchemaSource;
   /** Default dialect override. Falls back to config.dialect → schema.provider → "postgres". */
   dialect?: BuiltInDialectId;
@@ -180,21 +180,14 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       return cachedSchema;
     }
     const host = config.structured.host;
-    const env = config.ai.aiEnv;
-    const json = host?.schemaJson?.trim() || env["ASKDB_SCHEMA_JSON"]?.trim();
+    const json = host?.schemaJson?.trim();
     if (json) {
-      cachedSchema = loadFromSource(
-        { json },
-        host?.schemaJson?.trim() ? "host.schemaJson" : "ASKDB_SCHEMA_JSON",
-      );
+      cachedSchema = loadFromSource({ json }, "host.schemaJson");
       return cachedSchema;
     }
-    const path = host?.schemaPath?.trim() || env["ASKDB_SCHEMA_PATH"]?.trim();
+    const path = host?.schemaPath?.trim();
     if (path) {
-      cachedSchema = loadFromSource(
-        { path },
-        host?.schemaPath?.trim() ? `host.schemaPath (${path})` : `ASKDB_SCHEMA_PATH (${path})`,
-      );
+      cachedSchema = loadFromSource({ path }, `host.schemaPath (${path})`);
       return cachedSchema;
     }
     throw new SchemaNotConfiguredError(

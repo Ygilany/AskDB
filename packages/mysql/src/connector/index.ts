@@ -15,12 +15,14 @@ export type MysqlIntrospectionInput = {
   mode: "live";
   runner: CatalogQueryRunner;
   filters?: IntrospectionFilters;
+  /** `schemaId` of the resulting `SqlSchema`. Defaults to `"introspected"`. */
+  schemaId?: string;
 };
 
 export function createMysqlConnector(): Connector<MysqlIntrospectionInput> {
   return {
     async describe(input: MysqlIntrospectionInput): Promise<IntrospectionResult> {
-      return describeMysql({ runner: input.runner, filters: input.filters });
+      return describeMysql({ runner: input.runner, filters: input.filters, schemaId: input.schemaId });
     },
   };
 }

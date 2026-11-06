@@ -131,8 +131,8 @@ Each integration owns its own `TInput`. There is no shared discriminated union â
 
 ```ts
 export type PostgresIntrospectionInput =
-  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters }
-  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters };
+  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters; schemaId?: string }
+  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters; schemaId?: string };
 ```
 
 `@askdb/prisma` ships a file-path shape:

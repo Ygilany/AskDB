@@ -9,15 +9,6 @@ import type {
   AskDbStudioExecuteProvider,
 } from "./constants.js";
 
-/**
- * Authoring-time AskDB configuration: nested groups (`ai`, `introspection`, `rag`, …)
- * passed to {@link defineConfig} in `askdb.config.*`, then flattened to canonical env keys for the runtime snapshot.
- *
- * Use with TypeScript's `satisfies` operator to validate the object literal without widening it, e.g.
- * `defineConfig({ ... } satisfies AskDbConfig)` or `const cfg = { ... } satisfies AskDbConfig`.
- *
- */
-
 // ---------------------------------------------------------------------------
 // AI provider connections
 // ---------------------------------------------------------------------------
@@ -136,8 +127,8 @@ export type GatewayConfig = GatewayConnection;
 
 /**
  * Provider-portable reasoning/latency effort for AskDB model calls. Unset
- * (the default) preserves current behavior: no reasoning `providerOptions`
- * are sent, so the provider/model's own default applies.
+ * (the default), no reasoning `providerOptions` are sent, so the
+ * provider/model's own default applies.
  */
 export type AskDbAiReasoningConfig = {
   /** Global default applied to every AskDB model-call site unless overridden below. */
@@ -251,7 +242,7 @@ export type FileStoreConfig = {
   autoFlush?: boolean;
 };
 
-/** In-memory store has no env-backed options today. */
+/** The in-memory store has no options. */
 export type MemoryStoreConfig = Record<string, never>;
 
 export type PgvectorStoreConfig = {
@@ -298,7 +289,8 @@ export type IntrospectionProviderConfigs = {
   };
   sqlite?: {
     /**
-     * Path to a `.db` / `.sqlite` file (or `:memory:` for an empty DB). Required —
+     * Path to an existing `.db` / `.sqlite` file, which introspection opens
+     * read-only, so `:memory:` doesn't work. Required —
      * SQLite has no URL-shaped fallback because `DATABASE_URL` is typically a URL
      * for a network engine.
      */
@@ -424,7 +416,7 @@ export type AskDbIntrospectionConfig =
  * Root shape for `export default defineConfig({ ... })` in `askdb.config.*`.
  *
  * - **`ai`**: provider connections (`providerConfig`) plus the `language` and `embedding` model sections.
- * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — selecting `provider` determines which `providerConfig` branch is valid. Each branch holds the connection URL/path for that engine.
+ * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — `provider` picks which `providerConfig` branch is read. Each branch holds the connection URL/path for that engine.
  * - **`rag`** (optional): the embedder (`"mock"`, or `"ai"` for `ai.embedding`) and the vector store, flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths. Omitting it means the mock embedder and the in-memory store.
  * - **`logging` | `modes` | `host`**: optional operational defaults.
  */

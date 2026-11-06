@@ -1,5 +1,4 @@
 import {
-  flattenAskDbConfig,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
   type AskDbConfig,
@@ -36,7 +35,7 @@ function installRuntime(acme?: { databaseUrl: string }): void {
         introspection: { ...BASE_CONFIG.introspection, providerConfig: { ...BASE_CONFIG.introspection!.providerConfig, acme } },
       } as AskDbConfig)
     : BASE_CONFIG;
-  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  setAskDbRuntimeForTests(structured);
 }
 
 const acmeResult: IntrospectionResult = {
@@ -190,6 +189,31 @@ describe("askdb introspect — injected connector registry", () => {
     expect(loadGamma).not.toHaveBeenCalled();
   });
 
+  // `localhost` resolves to ::1 and 127.0.0.1, so a refused connection rejects with an
+  // AggregateError whose own message is empty (#749).
+  it("prints each attempt's error when the connection fails with an empty AggregateError", async () => {
+    installRuntime();
+    const { adapter } = acmeAdapter();
+    const refused = new AggregateError(
+      [
+        Object.assign(new Error("connect ECONNREFUSED ::1:5432"), { code: "ECONNREFUSED" }),
+        Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" }),
+      ],
+      "",
+    );
+    const failing: ConnectorProviderAdapter = {
+      ...adapter,
+      createConnector: () => ({ mode: "live", input: {}, connector: { describe: async () => Promise.reject(refused) } }),
+    };
+
+    const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://u:secret@localhost/db", "--print"], {
+      connectorRegistry: createConnectorRegistry([failing]),
+    });
+
+    expect(code).toBe(1);
+    expect(stderr).toBe("connect ECONNREFUSED ::1:5432\nconnect ECONNREFUSED 127.0.0.1:5432\n");
+  });
+
   it("lists the registered engines when --engine is unknown", async () => {
     installRuntime();
     const code = await runIntrospectCli(["--engine", "nope", "--print"], {
@@ -219,7 +243,8 @@ describe("askdb introspect — CLI-owned errors with the built-in registry", () 
 
   it("keeps the `introspect templates` message naming postgres for the built-in registry", async () => {
     installRuntime();
-    expect(await runIntrospectCli(["templates", "--engine", "prisma"])).toBe(1);
+    // `templates` is the first positional, wherever the flags put it.
+    expect(await runIntrospectCli(["--engine", "prisma", "templates"])).toBe(1);
     expect(stderr).toContain(
       "Engine 'prisma' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.",
     );

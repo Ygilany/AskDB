@@ -29,9 +29,9 @@ describe("defineLiveConnectorProvider", () => {
     );
 
     const filters = { tables: ["public.*"] };
-    const result = adapter.createConnector({ provider: "acme", url: "acme://h/db", filters });
+    const result = adapter.createConnector({ provider: "acme", url: "acme://h/db", filters, schemaId: "shop" });
     expect(runners).toEqual(["acme://h/db"]);
-    expect(result).toMatchObject({ mode: "live", connector, input: { mode: "live", filters } });
+    expect(result).toMatchObject({ mode: "live", connector, input: { mode: "live", filters, schemaId: "shop" } });
   });
 
   it("resolveConnection prefers --url, phrases missing config per surface, rejects --from-export, and labels the connection from the spec's connectionLabelParts", () => {

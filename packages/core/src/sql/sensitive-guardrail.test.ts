@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import { SensitiveReferenceError } from "../errors.js";
 import type { NormalizedSchema } from "../schema/types.js";
 import type { NormalizedSchemaV2, NormalizedV2Table } from "../schema/v2/normalized.js";
-import { MYSQL_DIALECT, POSTGRES_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT } from "./dialect-spec.js";
+import {
+  COCKROACHDB_DIALECT,
+  MYSQL_DIALECT,
+  POSTGRES_DIALECT,
+  SQLITE_DIALECT,
+  SQLSERVER_DIALECT,
+  type DialectSpec,
+} from "./dialect-spec.js";
 import { validateSensitiveReferences, schemaHasSensitiveIdentifiers } from "./sensitive-guardrail.js";
 
 // ---------------------------------------------------------------------------
@@ -739,5 +746,55 @@ describe("validateSensitiveReferences — columns whose names differ only in cas
       const result = validateSensitiveReferences('SELECT u."SSN" FROM public."User" u', schema, { dialect: POSTGRES_DIALECT });
       expect(result.references).toEqual([{ table: "User", schema: "public", column: "SSN", matchKind: "qualified" }]);
     }
+  });
+});
+
+describe("validateSensitiveReferences — what only the Postgres reading can hold (#707)", () => {
+  const custom = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const issues = (sql: string, dialect?: DialectSpec) =>
+    validateSensitiveReferences(sql, districtSchema, dialect ? { dialect } : undefined).unresolvedScope?.issues ?? [];
+
+  // Postgres reads U&"p\0061ssword" as password: the name match saw `p\0061ssword`.
+  it.each([
+    ["a column", String.raw`SELECT U&"p\0061ssword" FROM identity.users`],
+    ["a name right after a slice's `:`", String.raw`SELECT (ARRAY[1])[1:U&"p\0061ssword"] FROM identity.users`],
+  ])("fails closed on a U& name as %s", (_label, sql) => {
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, custom, undefined]) {
+      expect(issues(sql, dialect), String(dialect?.id)).toContain("UNICODE_ESCAPED_IDENTIFIER");
+    }
+  });
+
+  it("fails closed on an E'…' string continued on a later line", () => {
+    // Postgres reads `a'` and then `u.password`; the check saw three strings.
+    const sql = "SELECT E'a'\n'\\'' AS x, u.password FROM identity.users u --'";
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, custom, undefined]) {
+      expect(issues(sql, dialect), String(dialect?.id)).toContain("STRING_CONTINUATION");
+    }
+  });
+
+  it.each([
+    ["a b'…' string with a backslash", String.raw`SELECT b'\'' AS x, u.password FROM identity.users u --'`],
+    ["a continued b'…' string", "SELECT b'a'\n'\\'' AS x, u.password FROM identity.users u --'"],
+  ])("fails closed on %s, which CockroachDB reads with backslash escapes (#730)", (_label, sql) => {
+    // CockroachDB reads the bytes `'` and then `u.password`; the check saw one string.
+    for (const dialect of [COCKROACHDB_DIALECT, POSTGRES_DIALECT, custom, undefined]) {
+      expect(issues(sql, dialect), String(dialect?.id)).toContain("ESCAPED_BYTE_STRING");
+    }
+    expect(issues(sql, MYSQL_DIALECT)).not.toContain("ESCAPED_BYTE_STRING");
+  });
+
+  it("throws under strict mode", () => {
+    expect(() =>
+      validateSensitiveReferences(String.raw`SELECT U&"p\0061ssword" FROM identity.users`, districtSchema, {
+        dialect: POSTGRES_DIALECT,
+        mode: "strict",
+      }),
+    ).toThrow(SensitiveReferenceError);
+  });
+
+  it("leaves engines without these forms alone", () => {
+    // MySQL reads "…" as a string and has no E'…' strings.
+    expect(issues(`SELECT u&"x" AS a, E 'a'\n, 'b' AS b FROM identity.users`, MYSQL_DIALECT)).toEqual([]);
+    expect(issues(`SELECT u & "x" AS a, 'a'\n'b' AS b FROM identity.users`, POSTGRES_DIALECT)).toEqual([]);
   });
 });
