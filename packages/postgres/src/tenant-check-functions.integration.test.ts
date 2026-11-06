@@ -28,13 +28,14 @@ const CORE_FUNCTIONS = [
 ];
 
 /**
- * Functions from the `tablefunc` and `dblink` extensions. The fixture installs neither, so
- * `pg_proc` can't confirm these names, and the test skips them.
+ * Functions from the `tablefunc`, `dblink` and `xml2` extensions. The fixture installs none of
+ * them, so `pg_proc` can't confirm these names, and the test skips them.
  */
 const EXTENSION_FUNCTIONS = [
   "crosstab", "crosstab2", "crosstab3", "crosstab4", "connectby",
   "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
-  "dblink_fetch", "dblink_get_result",
+  "dblink_fetch", "dblink_get_result", "dblink_build_sql_insert", "dblink_build_sql_update",
+  "xpath_table",
 ];
 
 const here = dirname(fileURLToPath(import.meta.url));

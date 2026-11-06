@@ -602,7 +602,8 @@ describe("validateTenantGuardrails — a call the tenant check can't read throug
     "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
     "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
     "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
-    "dblink_fetch", "dblink_get_result", "openquery", "openrowset", "opendatasource",
+    "dblink_fetch", "dblink_get_result", "dblink_build_sql_insert", "dblink_build_sql_update", "xpath_table",
+    "openquery", "openrowset", "opendatasource",
     "set_config",
   ])("refuses a call to %s, as the contract lists", (name) => {
     expect(rules(`SELECT ${name}('x') AS v`)).toEqual(["UNCHECKABLE_FUNCTION"]);

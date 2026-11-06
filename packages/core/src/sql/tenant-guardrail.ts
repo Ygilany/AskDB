@@ -415,17 +415,22 @@ function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["
 }
 
 /**
- * Functions whose reads the tenant check can't see, lowercase (#702). Fixed here, not taken
- * from a `DialectSpec`, so a spec that overrides `blockedFunctions` can't shrink it; and the
- * read-only check allows the plain reads among them (`table_to_xml`, `crosstab`).
+ * Functions whose reads the tenant check can't see, lowercase (#702). A function belongs here when
+ * any role can call it once its engine or extension provides it, and it runs a query passed as a
+ * string, returns row data from a table, schema or database named in a string, runs SQL over
+ * another connection, or sets a value row-level security may read. Fixed here, not taken from a
+ * `DialectSpec`, so a spec that overrides `blockedFunctions` can't shrink it; and the read-only
+ * check allows the plain reads among them (`table_to_xml`, `crosstab`).
  */
 const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
   // Run a query passed as a string. `crosstab*` come from Postgres's `tablefunc` extension.
   "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema", "cursor_to_xml", "ts_stat",
   "ts_rewrite", "crosstab", "crosstab2", "crosstab3", "crosstab4",
-  // Read a table, a schema or the database named in a string (`connectby` from `tablefunc`).
+  // Return row data from a table, a schema or the database named in a string (`connectby` from
+  // `tablefunc`, `dblink_build_sql_*` from `dblink`, `xpath_table` from `xml2`).
   "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
   "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
+  "dblink_build_sql_insert", "dblink_build_sql_update", "xpath_table",
   // Run SQL over another connection: Postgres's `dblink` extension, SQL Server's rowset functions.
   "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
   "dblink_fetch", "dblink_get_result", "openquery", "openrowset", "opendatasource",
