@@ -13,7 +13,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 A rule of thumb: if your schema artifact has more than ~30 tables, or if rendered DDL routinely exceeds 8K tokens, you'll save money and improve generation quality by retrieving instead of stuffing.
 
-When you pass a retriever, `ask()` retrieves on every call. To let a small schema skip retrieval, also pass `totalSchemaChunkCount`: at or below `retrievalThresholdChunks` (30 by default), `ask()` sends the whole schema instead. See [Wire retrieval into `ask()`](#wire-retrieval-into-ask).
+When you pass a retriever, `ask()` retrieves on every call, unless you also pass the schema's chunk count: see [Wire retrieval into `ask()`](#wire-retrieval-into-ask).
 
 ## Install
 

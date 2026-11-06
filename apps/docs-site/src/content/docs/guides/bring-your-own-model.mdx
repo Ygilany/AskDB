@@ -14,7 +14,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 | | What you do | Best for |
 | --- | --- | --- |
-| **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio and the HTTP API resolve the model for you. In your own code, `createAskDb({ config })` from `@askdb/client` does the same: schema, model and dialect come from config. No model code. | CLI workflows, Studio, the bundled HTTP service, and the shortest embed (one schema, one model) |
+| **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio and the HTTP API resolve the model for you. In your own code, `createAskDb({ config })` from `@askdb/client` does the same: schema, model and dialect come from config. No model code. | CLI workflows, Studio, the bundled HTTP service, and embeds where `askdb.config.ts` owns provider and model selection |
 | **In your code** | Pass any Vercel AI SDK `LanguageModel` to `ask()`. Full control. | Embedding `@askdb/core` in your own service |
 
 Same providers, same keys — pick per surface. You can use both in one project (for example: Studio uses your config, your embedding service constructs the model directly).

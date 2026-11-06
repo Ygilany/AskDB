@@ -188,7 +188,7 @@ The schema artifact records which engine it was introspected from. The CLI (`ask
 
 This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `cockroachdb`, `mysql`, `sqlite`, `sqlserver`) and records it, so `askdb ask` still knows the dialect without a live database.
 
-When using `@askdb/client`, the dialect resolves from the schema artifact's recorded provider automatically — the same inference the CLI uses. No code change needed after a dialect switch if the new artifact declares the correct provider.
+When using `@askdb/client` with no `dialect` in the config, the dialect resolves from the schema artifact's recorded provider, the same inference the CLI uses. No code change is needed after a dialect switch if the new artifact declares the correct provider.
 
 To force a specific dialect (for example, if the artifact's provider doesn't match your target engine), pass it as a per-call override:
 
