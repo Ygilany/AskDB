@@ -54,6 +54,10 @@ See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-
 
 A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a non-empty string or array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. A `tables` of `[]`, `""`, `0` or `true` loaded as a schema with no table files, and now throws as well. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: set `"tables": {}`, or rebuild it with `askdb bundle`.
 
+### Other changes you may notice in beta.50
+
+- **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
+
 ## 1.0.0-beta.49
 
 Released with `askdb` 1.0.0-beta.49, `@askdb/config` 1.0.0-beta.18, `@askdb/core` 1.0.0-beta.49, `@askdb/http-api` 1.0.0-beta.49, `@askdb/studio` 0.2.0-beta.42, `@askdb/introspect` 0.3.0-beta.23, `@askdb/postgres` 0.2.0-beta.25, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.24, and `@askdb/sqlserver` 0.1.0-beta.25. Other packages that got a new version list what changed in their CHANGELOG.

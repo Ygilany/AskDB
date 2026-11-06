@@ -204,6 +204,62 @@ describe("ask — abortSignal", () => {
   });
 });
 
+describe("ask — the prompt hint names no table the prompt leaves out (#677)", () => {
+  // `tracked` comes from a table's markdown front-matter, not schema.json, so it's set on the
+  // loaded table, which is what ask() receives.
+  const table = (name: string, tracked?: boolean) => ({
+    id: `table:public.${name}`,
+    name,
+    schema: "public",
+    tracked,
+    columns: [{ id: `table:public.${name}#id`, name: "id", type: "integer", nullable: false, primaryKey: true }],
+  });
+  const schemaOf = (...tables: ReturnType<typeof table>[]) => {
+    const schema = loadSchemaFromJson(JSON.stringify({ version: 2, schemaId: "hint", tables: tables.map(({ tracked: _t, ...t }) => t) })) as NormalizedSchemaV2;
+    tables.forEach((t, i) => {
+      if (t.tracked !== undefined) schema.tables[i]!.tracked = t.tracked;
+    });
+    return schema;
+  };
+
+  async function promptFor(schema: NormalizedSchemaV2, extra: Partial<Parameters<typeof ask>[0]> = {}): Promise<string> {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM orders\n```" }));
+    // "from last month" reads as a table named `last`, so the hint fires.
+    await ask({
+      question: "show orders from last month",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      parameterize: false,
+      deps: { generateText: generateText as never },
+      ...extra,
+    });
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+
+  it("leaves an untracked table out of the prompt, hint included", async () => {
+    const prompt = await promptFor(schemaOf(table("orders"), table("hidden_payroll", false)));
+    expect(prompt).toContain('The question mentions table "last" which is not in the schema.');
+    expect(prompt).not.toContain("hidden_payroll");
+  });
+
+  it("names no table that retrieval left out", async () => {
+    const retriever = vi.fn(async () => [
+      {
+        id: "chunk:table:public.orders",
+        score: 1,
+        payload: { id: "chunk:table:public.orders", type: "table" as const, text: "# public.orders", schemaId: "hint", refs: ["table:public.orders"], sensitive: false },
+      },
+    ]);
+    const prompt = await promptFor(schemaOf(table("orders"), table("customers"), table("payroll")), { retriever, totalSchemaChunkCount: 100 });
+    expect(retriever).toHaveBeenCalledOnce();
+    expect(prompt).toContain("TABLE public.orders");
+    expect(prompt).toContain('The question mentions table "last" which is not in the schema.');
+    expect(prompt).not.toContain("customers");
+    expect(prompt).not.toContain("payroll");
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);
