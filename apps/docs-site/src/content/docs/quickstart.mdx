@@ -3,7 +3,7 @@ title: "Quickstart"
 description: "Create a small SQLite database, point AskDB at it, ask a question in plain English, and run the SQL that AskDB returns."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
 
 <p class="doc-eyebrow">From zero to first query</p>
 
@@ -21,21 +21,38 @@ import { Aside } from "@astrojs/starlight/components";
 
 You need:
 
-- Node.js 22.23.4 or newer, with npm. Run `node --version` to check.
+- Node.js 22.23.4 or newer, with npm or Yarn 4. Run `node --version` to check.
 - An OpenAI API key. You can switch to another model provider later: see [Bring your own model](/guides/bring-your-own-model/).
 - macOS 11 or newer, Windows, or Linux with glibc 2.34 or newer, on x64 or arm64. The SQLite driver ships prebuilt binaries for these.
 
-<Aside type="note">This tutorial uses npm. In a new project, pnpm and Yarn can't run it yet ([#750](https://github.com/Ygilany/AskDB/issues/750), [#748](https://github.com/Ygilany/AskDB/issues/748)). On an older Linux, see [If SQLite won't install](#if-sqlite-wont-install-use-postgres-in-docker).</Aside>
+<Aside type="note">Where npm and Yarn commands differ, each step has a tab for both. To use Yarn, run `corepack enable` first. Node 25 and newer don't include Corepack, so there, run `npm install -g corepack` before it. In a new project, pnpm can't run this tutorial yet ([#750](https://github.com/Ygilany/AskDB/issues/750)). On an older Linux, see [If SQLite won't install](#if-sqlite-wont-install-use-postgres-in-docker).</Aside>
 
 ## 1. Create a sample database
 
-First, make a folder for the project and set it up as an npm package:
+First, make a folder for the project and set it up as a package:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
 
 ```bash
 mkdir askdb-shop
 cd askdb-shop
 npm init -y
 ```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+mkdir askdb-shop
+cd askdb-shop
+yarn init -2
+```
+
+`yarn init -2` sets the project to use Yarn 4. It also starts a Git repository in the folder.
+
+  </TabItem>
+</Tabs>
 
 Now create `shop.sql` in that folder. It defines three tables and adds 4 customers, 3 products and 6 orders:
 
@@ -87,17 +104,46 @@ It prints `Created shop.db`, and a new `shop.db` file appears in the folder. Tha
 
 Install the AskDB CLI into the project:
 
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+
 ```bash
 npm install --save-dev askdb
 ```
 
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn add --dev askdb
+```
+
+  </TabItem>
+</Tabs>
+
 Then let `askdb init` write the config for our database:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
 
 ```bash
 npx askdb init --yes --database sqlite --sqlite-file ./shop.db
 ```
 
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn askdb init --yes --database sqlite --sqlite-file ./shop.db
+```
+
+  </TabItem>
+</Tabs>
+
 `--yes` skips the setup questions and picks OpenAI as the model provider. The output starts with the files it wrote and the packages it installed:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
 
 ```
 Wrote:
@@ -110,7 +156,28 @@ added 2 packages in 497ms
 Installed: @askdb/config, better-sqlite3.
 ```
 
-<Aside type="caution">On Windows, `askdb init` can't install the packages yet ([#668](https://github.com/Ygilany/AskDB/issues/668)). It still writes the config, then prints an `npm install` command and exits with an error. Run that command, then go on to step 3.</Aside>
+  </TabItem>
+  <TabItem label="yarn">
+
+```
+Wrote:
+  - …/askdb-shop/askdb.config.ts
+  - …/askdb-shop/.env.example
+
+Installing dependencies with yarn in …/askdb-shop …
+➤ YN0000: · Yarn 4.18.1
+…
+➤ YN0004: │ better-sqlite3@npm:13.0.3 lists build scripts, but all build scripts have been disabled.
+…
+Installed: @askdb/config, better-sqlite3.
+```
+
+The `YN0004` warning is safe to ignore here. Yarn skipped the SQLite driver's build script, and the driver doesn't need one on the systems in [Before you start](#before-you-start): it ships prebuilt binaries for them.
+
+  </TabItem>
+</Tabs>
+
+<Aside type="caution">On Windows, `askdb init` can't install the packages yet ([#668](https://github.com/Ygilany/AskDB/issues/668)). It still writes the config, then prints the install command and exits with an error. Run that command, then go on to step 3.</Aside>
 
 Open `askdb.config.ts`:
 
@@ -173,9 +240,22 @@ OPENAI_MODEL=
 
 Now let AskDB read the structure of our database:
 
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+
 ```bash
 npx askdb introspect
 ```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn askdb introspect
+```
+
+  </TabItem>
+</Tabs>
 
 It prints nothing when it succeeds. Look in the new `askdb` folder instead: `askdb/schema.json` is the **schema artifact**. It lists our three tables, their columns and types, and the two links from `orders` to `customers` and `products`.
 
@@ -185,9 +265,22 @@ The schema artifact is what AskDB gives the model. When we ask a question, AskDB
 
 Ask the question in plain English:
 
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+
 ```bash
 npx askdb ask --question "How much has each customer spent in total, highest first?"
 ```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn askdb ask --question "How much has each customer spent in total, highest first?"
+```
+
+  </TabItem>
+</Tabs>
 
 AskDB prints a `-- sql --` line, then the SQL. It should look something like this:
 
@@ -260,7 +353,7 @@ The SQLite driver, `better-sqlite3`, has prebuilt binaries only for the systems 
    ```
 
    If the second command can't connect, Postgres is still starting. Wait a few seconds and run it again.
-3. In step 2, run `npx askdb init --yes` without the `--database` and `--sqlite-file` flags. Postgres is the default.
+3. In step 2, run the `askdb init` command without the `--database` and `--sqlite-file` flags. Postgres is the default.
 4. In step 3, also set `DATABASE_URL` in `.env`:
 
    ```bash
