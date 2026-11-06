@@ -6,8 +6,8 @@
  * per-call configuration needed.
  *
  * POST /ask  { "question": "...", "execute": false }
- *   execute: false (default) — returns { requestId, sql }
- *   execute: true            — returns { requestId, sql, rows, truncated } (requires DATABASE_URL)
+ *   execute: false (default) — returns { correlationId, sql }
+ *   execute: true            — returns { correlationId, sql, rows, truncated } (requires DATABASE_URL)
  *
  * GET /health → { status: "ok" }
  *
@@ -69,21 +69,21 @@ async function runCapped(db: pg.Pool, sql: string, params: unknown[] = []) {
 }
 
 app.post("/ask", async (req: Request, res: Response) => {
-  const requestId = randomUUID();
+  const correlationId = randomUUID();
   const { question, execute } = (req.body ?? {}) as { question?: unknown; execute?: unknown };
 
   if (typeof question !== "string" || question.trim() === "") {
-    res.status(400).json({ requestId, error: "question is required and must be a non-empty string" });
+    res.status(400).json({ correlationId, error: "question is required and must be a non-empty string" });
     return;
   }
 
   if (execute !== undefined && typeof execute !== "boolean") {
-    res.status(400).json({ requestId, error: "execute must be a boolean when provided" });
+    res.status(400).json({ correlationId, error: "execute must be a boolean when provided" });
     return;
   }
 
   if (execute && !pool) {
-    res.status(500).json({ requestId, error: "DATABASE_URL is not configured" });
+    res.status(500).json({ correlationId, error: "DATABASE_URL is not configured" });
     return;
   }
 
@@ -92,26 +92,26 @@ app.post("/ask", async (req: Request, res: Response) => {
   try {
     result = await askdb.ask(question.trim());
   } catch (err) {
-    console.error({ requestId, question, err });
-    res.status(500).json({ requestId, error: "Could not generate SQL for this question. See the server log for this requestId." });
+    console.error({ correlationId, question, err });
+    res.status(500).json({ correlationId, error: "Could not generate SQL for this question. See the server log for this correlationId." });
     return;
   }
 
   // `sql` runs with `tenantParams` (none here: this server passes no tenant scope).
   const { sql, tenantParams } = result;
-  console.log({ requestId, question, sql, execute: execute === true });
+  console.log({ correlationId, question, sql, execute: execute === true });
 
   if (!execute) {
-    res.json({ requestId, sql });
+    res.json({ correlationId, sql });
     return;
   }
 
   try {
     const { rows, truncated } = await runCapped(pool!, sql, tenantParams ?? []);
-    res.json({ requestId, sql, rows, truncated });
+    res.json({ correlationId, sql, rows, truncated });
   } catch (err) {
-    console.error({ requestId, sql, err });
-    res.status(500).json({ requestId, sql, error: "The query failed. See the server log for this requestId." });
+    console.error({ correlationId, sql, err });
+    res.status(500).json({ correlationId, sql, error: "The query failed. See the server log for this correlationId." });
   }
 });
 
@@ -124,5 +124,5 @@ const host = process.env.HOST ?? "localhost";
 
 app.listen(port, host, () => {
   console.log(`AskDB Express server listening on http://${host}:${port}`);
-  console.log(`POST /ask  { "question": "...", "execute": false }  →  { "requestId": "...", "sql": "..." }`);
+  console.log(`POST /ask  { "question": "...", "execute": false }  →  { "correlationId": "...", "sql": "..." }`);
 });

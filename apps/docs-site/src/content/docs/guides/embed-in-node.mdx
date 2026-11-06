@@ -78,7 +78,7 @@ export async function askQuestion(question: string) {
 `./my-app.schema` is a **directory**, not a file — `<name>.schema/` is AskDB's convention for the introspected-and-enriched artifact. The schema loads on the first `ask()` and stays in memory on the client; call `askdb.reload()` if the artifact changes while the process runs.
 
 <Aside type="note">
-This example uses `pg` to run the SQL, but the driver is your choice — AskDB never opens a connection. If you already use an ORM or query builder (Prisma, Drizzle, Sequelize, Knex, …), skip `pg` entirely and pass the returned `sql` string to your existing client, e.g. `prisma.$queryRawUnsafe(sql)` or `db.execute(sql)`.
+This example uses `pg` to run the SQL, but the driver is your choice — AskDB never opens a connection. If you already use an ORM or query builder (Prisma, Drizzle, Sequelize, Knex, …), skip `pg` entirely and pass the returned `sql` string and its values (`tenantParams ?? []`) to your existing client, e.g. `prisma.$queryRawUnsafe(sql, ...values)` or `db.execute(sql, values)`.
 </Aside>
 
 AskDB returns checked SQL; your handler logs it, runs it, and returns the result. `runReadOnly` reads every row the query returns. To cap the rows, use `runCapped` from [Row limits](/guides/run-safely-in-prod/#row-limits), as the [Express example](#complete-example-express-server) below does.
@@ -174,7 +174,7 @@ Same `ask()` call, different dialect string. Change `dialect: "postgres"` to `"c
 
 The snippet below is a copy-paste-ready Express server. Schema, model, and dialect are fully config-driven — `askdb.config.ts` sets `host.schemaPath` and the AI provider; `server.ts` only handles HTTP.
 
-The `/ask` endpoint accepts an optional `execute` flag: `false` (default) returns just the SQL; `true` also runs it and returns the rows. It runs the SQL the way [Run safely in production](/guides/run-safely-in-prod/) describes: under a read-only role with a statement timeout, inside a read-only transaction, and capped at 1,000 rows ([Row limits](/guides/run-safely-in-prod/#row-limits)). Errors go to the server log under a request ID; the caller gets a generic message, because an error can carry provider or schema details.
+The `/ask` endpoint accepts an optional `execute` flag: `false` (default) returns just the SQL; `true` also runs it and returns the rows. It runs the SQL the way [Run safely in production](/guides/run-safely-in-prod/) describes: under a read-only role with a statement timeout, inside a read-only transaction, and capped at 1,000 rows ([Row limits](/guides/run-safely-in-prod/#row-limits)). Errors go to the server log under a correlation ID; the caller gets that ID and a generic message, because an error can carry provider or schema details.
 
 ```ts
 // server.ts
@@ -222,21 +222,21 @@ async function runCapped(db: pg.Pool, sql: string, params: unknown[] = []) {
 }
 
 app.post("/ask", async (req: Request, res: Response) => {
-  const requestId = randomUUID();
+  const correlationId = randomUUID();
   const { question, execute } = (req.body ?? {}) as { question?: unknown; execute?: unknown };
 
   if (typeof question !== "string" || question.trim() === "") {
-    res.status(400).json({ requestId, error: "question is required and must be a non-empty string" });
+    res.status(400).json({ correlationId, error: "question is required and must be a non-empty string" });
     return;
   }
 
   if (execute !== undefined && typeof execute !== "boolean") {
-    res.status(400).json({ requestId, error: "execute must be a boolean when provided" });
+    res.status(400).json({ correlationId, error: "execute must be a boolean when provided" });
     return;
   }
 
   if (execute && !pool) {
-    res.status(500).json({ requestId, error: "DATABASE_URL is not configured" });
+    res.status(500).json({ correlationId, error: "DATABASE_URL is not configured" });
     return;
   }
 
@@ -245,26 +245,26 @@ app.post("/ask", async (req: Request, res: Response) => {
   try {
     result = await askdb.ask(question.trim());
   } catch (err) {
-    console.error({ requestId, question, err });
-    res.status(500).json({ requestId, error: "Could not generate SQL for this question. See the server log for this requestId." });
+    console.error({ correlationId, question, err });
+    res.status(500).json({ correlationId, error: "Could not generate SQL for this question. See the server log for this correlationId." });
     return;
   }
 
   // `sql` runs with `tenantParams` (none here: this server passes no tenant scope).
   const { sql, tenantParams } = result;
-  console.log({ requestId, question, sql, execute: execute === true });
+  console.log({ correlationId, question, sql, execute: execute === true });
 
   if (!execute) {
-    res.json({ requestId, sql });
+    res.json({ correlationId, sql });
     return;
   }
 
   try {
     const { rows, truncated } = await runCapped(pool!, sql, tenantParams ?? []);
-    res.json({ requestId, sql, rows, truncated });
+    res.json({ correlationId, sql, rows, truncated });
   } catch (err) {
-    console.error({ requestId, sql, err });
-    res.status(500).json({ requestId, sql, error: "The query failed. See the server log for this requestId." });
+    console.error({ correlationId, sql, err });
+    res.status(500).json({ correlationId, sql, error: "The query failed. See the server log for this correlationId." });
   }
 });
 
