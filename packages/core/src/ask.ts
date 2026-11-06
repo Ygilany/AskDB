@@ -41,6 +41,7 @@ import {
   type TenantIdsByRoot,
 } from "./sql/tenant-scope-expand.js";
 import { validateTenantScope } from "./sql/tenant-scope-validate.js";
+import { logTenantPolicyWarningsOnce } from "./sql/tenant-policy-warnings.js";
 import {
   type SensitiveGuardrailMode,
   type SensitiveGuardrailResult,
@@ -342,6 +343,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // Tenant scope validation (fail closed when policy exists but no scope provided)
   const tenantPolicy = isV2Schema(options.schema) ? options.schema.tenantPolicy : undefined;
   if (tenantPolicy) {
+    logTenantPolicyWarningsOnce(logger, tenantPolicy);
     validateTenantScope(tenantPolicy, options.tenantScope);
     logger?.info(
       {

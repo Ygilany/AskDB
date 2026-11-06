@@ -111,7 +111,7 @@ globalTables:
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `schemaId` | string | yes | Must match the parent `schema.json`'s `schemaId`. |
-| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. When the heuristic tenant check finds a problem, `strict` throws `TenantGuardrailError`; `warn` returns SQL with `tenantGuardrail.warnings`. |
+| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. When the heuristic tenant check finds a problem, `strict` throws `TenantGuardrailError`; `warn` returns SQL with `tenantGuardrail.warnings`. It also decides whether a policy that doesn't match `schema.json` fails the load (see [Policy validation](#policy-validation)). |
 | `roots` | array | yes | Tenant root definitions (see below). At least one root required. |
 | `hierarchy` | array | no | Explicit hierarchy edges between roots. Required when roots have parent/child relationships. |
 | `scopedTables` | array | no | Tables whose rows are constrained by tenant roots. |
@@ -141,7 +141,7 @@ Explicit declaration of parent/child relationships between roots. Redundant with
 | `child` | string | yes | Stable table ID of the child root. |
 | `foreignKey` | string | yes | Stable column ID of the FK on the child table pointing to the parent. |
 
-**Validation:** hierarchy edges must form a DAG (directed acyclic graph). Cycles are a validation error.
+**Validation:** hierarchy edges must form a DAG (directed acyclic graph). Cycles are a validation error: under `strict` the load fails, and under `warn` a cycle is a warning (see [Policy validation](#policy-validation)).
 
 #### `scopedTables[]` — tenant-scoped operational tables
 
@@ -177,6 +177,21 @@ Tables that use a type discriminator + id column pair, where the id references d
 An array of stable table IDs for tables that are intentionally exempt from tenant filtering. These are typically lookup/reference tables shared across all tenants (e.g., `lookup_states`, `service_types`).
 
 Tables not listed in `scopedTables`, `polymorphicTables`, or `globalTables` are classified as **unknown**. Unknown tables trigger warnings and, in strict mode, block queries that reference them.
+
+### Policy validation
+
+The loader checks every ID in the front-matter against `schema.json` when it loads the policy. What a problem does depends on `enforcement` ([ADR 0023](../adrs/0023-tenant-policy-problems-fail-strict-loads.md)):
+
+| Problem | `warn` | `strict` |
+|---|---|---|
+| A column or foreign key ID that `schema.json` doesn't have: `tenantIdColumn`, `parent.foreignKey`, `hierarchy[].foreignKey`, a `scopeThrough` column or join step, a polymorphic `typeColumn` or `idColumn` | Warning | Error |
+| A hierarchy cycle | Warning | Error |
+| A root named in `parent.root`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare | Warning | Error |
+| A root, scoped, polymorphic or global table that `schema.json` doesn't have | Warning | Warning |
+
+- **An error** makes `loadSchema()` throw `SchemaParseError` naming the file and each problem with its IDs. `@askdb/enrich`'s `saveTenantPolicy()` refuses the same policy.
+- **A warning** loads. It is in `schema.tenantPolicy.warnings` as a `TenantPolicyWarning`, and `formatTenantPolicyWarning()` describes one in a line. `ask()` logs `askdb.tenant.policy_warnings` at `warn` level once per loaded schema, `askdb introspect --out` prints the problems in the directory it wrote, and Studio's Tenancy page lists them.
+- **A removed table** is one warning. The checks skip the column IDs of an entry whose own table is gone, since that entry scopes nothing. A join on a table that still exists, running through a removed table, is still an error.
 
 ---
 
@@ -360,7 +375,7 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | Two roots that derive the same `:tenant_<name>_ids` placeholder | Rejected with `SchemaParseError` naming both roots: when the policy loads, by `validateTenantScope()` (so by `ask()`) and by `resolveTenantSql()` for a policy built in code or changed after validation, and by Studio's policy save (400, nothing written). |
 | Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
 | Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
-| A tenant ID that isn't printable ASCII (U+0020 to U+007E) or that contains a backslash, inlined as a literal: `"sql-only"` mode on any dialect (a custom `AskDialect`, with no dialect, included), and the `sql` that `bindPreparedQuery()` returns | Rejected (`UNESCAPABLE_TENANT_ID`). A printable-ASCII literal with no backslash and its quotes doubled reads the same under every server string setting and ASCII-compatible connection charset; any other doesn't, whatever the dialect's `backslashEscapes` says ([ADR 0024](../adrs/0024-tenant-ids-leave-the-sql-text.md)). `"sql-params"` mode passes it as a driver parameter. |
+| A tenant ID that isn't printable ASCII (U+0020 to U+007E) or that contains a backslash, inlined as a literal: `"sql-only"` mode on any dialect (a custom `AskDialect`, with no dialect, included), in `ask()`, `resolveTenantSql()` and `bindPreparedQuery()` | Rejected (`UNESCAPABLE_TENANT_ID`). A printable-ASCII literal with no backslash and its quotes doubled reads the same under every server string setting and ASCII-compatible connection charset; any other doesn't, whatever the dialect's `backslashEscapes` says ([ADR 0024](../adrs/0024-tenant-ids-leave-the-sql-text.md)). `"sql-params"` mode passes it as a driver parameter. |
 | `ask()` with a tenant policy, no `tenantSqlMode`, and a custom `AskDialect` or a `DialectSpec` whose `id` isn't built in | Rejected (`TENANT_SQL_MODE_REQUIRED`) before the model call. AskDB can't know a custom dialect's driver markers, and `$N` is a money constant on SQL Server. |
 | A `tenantSqlMode` other than `"sql-params"` or `"sql-only"`: `ask()` with a tenant policy, on any dialect, and `resolveTenantSql()` | Rejected (`TENANT_SQL_MODE_REQUIRED`), in `ask()` before the model call. It's never read as either mode. |
 | Advisory `context` with unknown keys in `attributes` | Accepted (freeform). |
@@ -404,7 +419,7 @@ The mode is configurable per `ask()` call (`tenantSqlMode`); the default is expo
 
 `tenantBindings` keeps its tenant-only meaning for audit.
 
-**Rebind.** `bindPreparedQuery(prepared, values, { schema, tenantScope, … })` ([ADR 0010](../adrs/0010-sql-guardrail-decision-point.md)) takes tenant IDs from `tenantScope`, never from `values` (a `:tenant_*` key there throws `QueryParameterError`, `TENANT_VALUE_SUPPLIED`). It re-runs this guardrail on the stored template under the bind-time scope and the policy as it is then, and renders each placeholder with the same substitution `ask()` uses: literals in `sql` (so a tenant ID that isn't printable ASCII or contains a backslash throws `UNESCAPABLE_TENANT_ID`; #664 proposes returning `unboundSql` + `params` instead), driver markers after the business markers in `unboundSql`, with the IDs folded into `params`. A placeholder the scope has no IDs for throws `UNRESOLVED_TENANT_PLACEHOLDER`, so a template scoped through one root can't bind under a scope for another. A `subtree` scope must be expanded first, with `expandTenantScope()` (`SUBTREE_NOT_RESOLVABLE` otherwise). Under `enforcement: strict` a failing template throws `TenantGuardrailError`; under `warn` it is refused too, unless the caller passes `acceptWarnings: ["tenant"]`. Authorizing `tenantScope` remains the host's responsibility, as for `ask()`.
+**Rebind.** `bindPreparedQuery(prepared, values, { schema, tenantScope, … })` ([ADR 0010](../adrs/0010-sql-guardrail-decision-point.md)) takes tenant IDs from `tenantScope`, never from `values` (a `:tenant_*` key there throws `QueryParameterError`, `TENANT_VALUE_SUPPLIED`). It re-runs this guardrail on the stored template under the bind-time scope and the policy as it is then, and renders each placeholder with the same substitution `ask()` uses, in the `tenantSqlMode` it's given (default `"sql-params"`): driver markers in `sql`, with the IDs in `tenantParams`, or literals in `"sql-only"` (where a tenant ID that isn't printable ASCII or contains a backslash throws `UNESCAPABLE_TENANT_ID`); and driver markers after the business markers in `unboundSql`, with the IDs folded into `params`. A placeholder the scope has no IDs for throws `UNRESOLVED_TENANT_PLACEHOLDER`, so a template scoped through one root can't bind under a scope for another. A `subtree` scope must be expanded first, with `expandTenantScope()` (`SUBTREE_NOT_RESOLVABLE` otherwise). Under `enforcement: strict` a failing template throws `TenantGuardrailError`; under `warn` it is refused too, unless the caller passes `acceptWarnings: ["tenant"]`. Authorizing `tenantScope` remains the host's responsibility, as for `ask()`.
 
 **`global` scope.** A `global` scope binds no IDs. SQL that still has a `:tenant_*` placeholder (in any casing, or with the next word glued to it) throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) instead of being returned with the raw placeholder, in `ask()`, `resolveTenantSql()` and at rebind. SQL without one passes through unchanged.
 
@@ -490,9 +505,9 @@ Chunks for tenant-scoped tables carry metadata identifying their required scope 
 | Scenario | Behavior |
 |---|---|
 | New table added via re-introspection | Classified as **unknown** in the coverage report. Warning triggered. Strict mode blocks queries touching it until classified. |
-| Table removed | Orphaned references in `tenant-policy.md` flagged as warnings. Authoring surfaces offer a prune flow. |
-| FK path changed | Propagation paths referencing the old FK produce validation errors. Integrator must update the policy. |
-| Column renamed | Column IDs in `scopeThrough`, `polymorphicTables`, etc. become orphaned. Reported as validation errors. |
+| Table removed | Each policy entry for the removed table is one warning, in both modes. Authoring surfaces offer a prune flow. |
+| FK path changed | Propagation paths referencing the old FK are validation errors: under `strict` the load fails until the integrator updates the policy; under `warn` they are warnings. |
+| Column renamed | Column IDs in `scopeThrough`, `polymorphicTables`, etc. become orphaned: validation errors, as for a changed FK path. |
 | New `tenant-policy.md` added to existing schema | Tenant enforcement activates. All `ask()` calls now require `tenantScope`. |
 | `tenant-policy.md` removed | Tenant enforcement deactivates. `ask()` no longer requires `tenantScope`. |
 
@@ -507,7 +522,7 @@ Chunks for tenant-scoped tables carry metadata identifying their required scope 
 - The policy is optional — Schema v2 directories without it behave identically to pre-Phase-10.
 - The policy is authored alongside `tables/*.md` and `concepts.md` in Studio.
 - The bundler (`askdb bundle`) includes `tenant-policy.md` content in the bundled JSON.
-- Re-introspection does not modify `tenant-policy.md` — it only updates `schema.json`. The loader reports any resulting cross-reference mismatches.
+- Re-introspection does not modify `tenant-policy.md` — it only updates `schema.json`. The loader reports any resulting cross-reference mismatches (see [Policy validation](#policy-validation)), and `askdb introspect --out` prints them.
 
 ---
 

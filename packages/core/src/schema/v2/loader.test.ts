@@ -381,6 +381,80 @@ describe("loadSchema — optional files fail closed when present but broken", ()
   });
 });
 
+// A policy that no longer matches schema.json (a renamed column, a cycle) is a
+// validation error under `enforcement: strict`: the load fails closed instead of
+// returning a policy whose problems only Studio shows (#332, ADR 0023).
+describe("loadSchema — a tenant policy that doesn't match schema.json", () => {
+  /** Copy the multi-tenant fixture, edit its tenant-policy.md, and return the directory. */
+  function editedPolicy(edit: (policy: string) => string): { dir: string; policyPath: string } {
+    const dir = copyFixture(multiTenantDir);
+    const policyPath = join(dir, "tenant-policy.md");
+    const before = readFileSync(policyPath, "utf8");
+    const after = edit(before);
+    expect(after).not.toBe(before);
+    writeFileSync(policyPath, after);
+    return { dir, policyPath };
+  }
+  const addCycle = (policy: string) =>
+    policy.replace(
+      "hierarchy:\n",
+      "hierarchy:\n  - parent: table:public.clients\n    child: table:public.agencies\n    foreignKey: table:public.agencies#id\n",
+    );
+  const renameScopeColumn = (policy: string) =>
+    policy.replace("column: table:public.orders#agency_id", "column: table:public.orders#agency_ref");
+
+  it.each([
+    {
+      problem: "a hierarchy cycle",
+      edit: addCycle,
+      ids: ["table:public.agencies", "table:public.sub_agencies", "table:public.clients"],
+    },
+    {
+      problem: "a scopeThrough column missing from schema.json",
+      edit: renameScopeColumn,
+      ids: ["table:public.orders#agency_ref"],
+    },
+  ])("strict: $problem throws SchemaParseError naming the file and the IDs", ({ edit, ids }) => {
+    const { dir, policyPath } = editedPolicy(edit);
+    const caught = thrownBy(() => loadSchema(dir));
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    const message = (caught as SchemaParseError).message;
+    expect(message).toContain(policyPath);
+    for (const id of ids) expect(message).toContain(id);
+  });
+
+  // An entry whose own table is gone scopes nothing: its columns went with the table, so
+  // the entry is one warning and the strict load succeeds. Removing `clients` also drops
+  // the parent foreign key on that root and the hierarchy edge's key on the child.
+  it.each([
+    {
+      removed: ["table:public.orders"],
+      warnings: [{ kind: "orphaned_scoped_table_id", id: "table:public.orders" }],
+    },
+    {
+      removed: ["table:public.notes"],
+      warnings: [{ kind: "orphaned_polymorphic_table_id", id: "table:public.notes" }],
+    },
+    {
+      removed: ["table:public.clients", "table:public.appointments"],
+      warnings: [
+        { kind: "orphaned_root_id", id: "table:public.clients" },
+        { kind: "orphaned_scoped_table_id", id: "table:public.appointments" },
+      ],
+    },
+  ])("strict: removing $removed from schema.json leaves only table warnings, and the schema loads", ({ removed, warnings }) => {
+    const dir = copyFixture(multiTenantDir);
+    const schemaJsonPath = join(dir, "schema.json");
+    const physical = JSON.parse(readFileSync(schemaJsonPath, "utf8")) as {
+      tables: { id: string }[];
+    };
+    physical.tables = physical.tables.filter((t) => !removed.includes(t.id));
+    writeFileSync(schemaJsonPath, JSON.stringify(physical));
+
+    expect(loadSchema(dir).tenantPolicy!.warnings).toEqual(warnings);
+  });
+});
+
 describe("loadSchema — bundles treat optional files exactly like the directory loader", () => {
   const multiTenantPhysical = () =>
     JSON.parse(readFileSync(join(multiTenantDir, "schema.json"), "utf8")) as unknown;

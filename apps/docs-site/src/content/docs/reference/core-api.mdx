@@ -122,7 +122,7 @@ type GuardrailForm = "sql" | "template";
 
 ### `bindPreparedQuery(prepared, values, guardrails)`
 
-Local rebind of a stored `preparedQuery` with new business values, without a model call. Synchronous. It re-runs the guardrails on the template under the schema, tenant scope and modes you pass now, then renders the template. It returns a ready-to-run `sql`, `unboundSql` + `params` for driver binding, `bindings` for the business parameters, and the `verdict`. `sql` and `unboundSql` keep the trailing `;` of `namedSql`, if it has one; remove it before you wrap the statement (see [Row limits](/guides/run-safely-in-prod/#row-limits)).
+Local rebind of a stored `preparedQuery` with new business values, without a model call. Synchronous. It re-runs the guardrails on the template under the schema, tenant scope and modes you pass now, then renders the template. It returns `sql` with the business values inlined (with a tenant scope in the default `tenantSqlMode: "sql-params"`, run it with `tenantParams`; in `"sql-only"` the tenant IDs are inlined too), `unboundSql` + `params` for driver binding, `bindings` for the business parameters, and the `verdict`. `sql` and `unboundSql` keep the trailing `;` of `namedSql`, if it has one; remove it before you wrap the statement (see [Row limits](/guides/run-safely-in-prod/#row-limits)).
 
 ```ts
 import { bindPreparedQuery } from "@askdb/core";
@@ -132,7 +132,7 @@ const rebound = bindPreparedQuery(
   { state_name: "Utah" },
   { schema, tenantScope }, // the same schema and the caller's scope, as for ask()
 );
-await pool.query(rebound.sql);
+await pool.query(rebound.sql, rebound.tenantParams ?? []);
 // or: await pool.query(rebound.unboundSql, rebound.params);
 ```
 
@@ -144,16 +144,17 @@ The third argument, `BindGuardrails`, is required:
 | `tenantScope` | `TenantScope` | with a tenant policy | — | The caller's scope, as for `ask()`. Tenant IDs are rendered from it. A `subtree` scope must be expanded first with [`expandTenantScope()`](#expandtenantscopepolicy-scope-resolvetenantdescendants). |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | As for `ask()`: `"warn"` binds and reports sensitive references in `verdict`; `"strict"` refuses them. |
 | `acceptWarnings` | `ReadonlyArray<"tenant">` | no | — | With a policy whose `enforcement` is `warn`, a template that fails the tenant check is refused unless this includes `"tenant"`. |
+| `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-params"` | As for `ask()`: `"sql-params"` puts tenant markers in `sql` and the IDs in `tenantParams`, with the markers of the template's built-in dialect (a rebind always has one, so `ask()`'s custom-dialect rule never applies); `"sql-only"` inlines them as escaped literals and refuses a tenant ID that isn't printable ASCII or contains a backslash. Any other value throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). |
 | `dialect` | `DialectSpec \| BuiltInDialectId` | for a `"host"` template, or one stored without `dialectRules` | the built-in spec | The dialect rules to check and render under: the `DialectSpec` you passed to `ask()`, or a built-in id. Its `id` must be the template's `dialect`. |
 
 **Which dialect rules a rebind uses.** `ask()` records them in `preparedQuery.dialectRules`: `"builtin"` when it ran with a built-in id or the exported constant (`POSTGRES_DIALECT` and the others), `"host"` for any other `DialectSpec` object, such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }`. A `"builtin"` template rebinds under the built-in spec unless you pass `dialect`. A `"host"` template needs the same spec as `dialect`, so your `backslashEscapes`, `blockedFunctions`, `extraForbiddenKeywords` and `extraValidate` apply at rebind too. A template stored without `dialectRules`, before 1.0.0-beta.46, needs `dialect` as well: pass the spec `ask()` ran with, or the built-in id, such as `"postgres"`, if it ran with the built-in rules. If your app loads two copies of `@askdb/core`, such as ESM beside CJS, a constant from the other copy is a different object, so its templates are `"host"`: pass `dialect` ([ADR 0032](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0032-rebind-checks-under-the-hosts-dialect-spec.md)).
 
-Tenant IDs come from `tenantScope`, never from `values`. Each `:tenant_<root>_ids` placeholder is filled in both forms: escaped literals in `sql`, as `ask()` fills it in `"sql-only"` mode (`col = :tenant_agency_ids` becomes `col IN ('7', '8')` with several IDs), and driver markers after the business markers in `unboundSql`, with the IDs in `params` (appended for `$N` / `@pN`, interleaved in source order for `?`, and `bindings[].indices` remapped).
+Tenant IDs come from `tenantScope`, never from `values`. Each `:tenant_<root>_ids` placeholder is filled in both forms, as `ask()` fills it. In `sql`, it becomes driver markers numbered from the first slot, with the IDs in `tenantParams` (the default, `"sql-params"`), or escaped literals in `"sql-only"` (`col = :tenant_agency_ids` becomes `col IN ('7', '8')` with several IDs). In `unboundSql`, it becomes driver markers after the business markers, with the IDs in `params` (appended for `$N` / `@pN`, interleaved in source order for `?`, and `bindings[].indices` remapped). Run each form with its own array, never the two concatenated.
 
 Every check uses the bind-time inputs, so a template refused today may have bound yesterday: a tightened policy, or a scope other than the one it was produced under, applies at the next rebind. It throws:
 
 - `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`) without the third argument or its `schema`; (`DIALECT_SPEC_REQUIRED`) without `dialect` for a `"host"` template or one stored without `dialectRules`; (`DIALECT_UNSUPPORTED`) for a `dialect` whose `id` isn't the template's; (`TENANT_VALUE_SUPPLIED`) for a `:tenant_*` key in `values`; (`TENANT_PARAM_ALIGNMENT`) when the tenant markers can't be lined up with the business params; and the existing reasons for a wrong, missing or misplaced business value.
-- `TenantScopeError`: as in `ask()` for a missing or invalid scope; `SUBTREE_NOT_RESOLVABLE` for an unexpanded `subtree`; `UNRESOLVED_TENANT_PLACEHOLDER` for a placeholder the scope has no IDs for. That includes a template scoped through another root, any placeholder under a `global` scope, and any placeholder when the schema has no tenant policy. `UNESCAPABLE_TENANT_ID` for a tenant ID that isn't printable ASCII or contains a backslash, because `sql` always inlines the IDs ([#664](https://github.com/Ygilany/AskDB/issues/664) proposes returning `unboundSql` + `params` instead).
+- `TenantScopeError`: as in `ask()` for a missing or invalid scope; `SUBTREE_NOT_RESOLVABLE` for an unexpanded `subtree`; `UNRESOLVED_TENANT_PLACEHOLDER` for a placeholder the scope has no IDs for. That includes a template scoped through another root, any placeholder under a `global` scope, and any placeholder when the schema has no tenant policy. `UNESCAPABLE_TENANT_ID` in `"sql-only"` mode for a tenant ID that isn't printable ASCII or contains a backslash. `TENANT_SQL_MODE_REQUIRED` for a `tenantSqlMode` that is neither mode.
 - `SqlValidationError`, `TenantGuardrailError` or `SensitiveReferenceError` for a `deny` verdict (see [Guardrail verdict](#guardrail-verdict)). A refused tenant warning throws `TenantGuardrailError` with a message naming `acceptWarnings`.
 
 `@askdb/client` users call [`askdb.bind()`](/reference/client-api/#clientbindprepared-values-options), which supplies the client's schema and expands a `subtree` scope.
@@ -296,6 +297,8 @@ Autodetects and loads a v2 schema artifact. Accepts:
 The file names `loadSchema()` looks up in a directory are exact: `schema.json`, `tenant-policy.md`, `concepts.md`, `tables/`, and the `.md` extension in `tables/`. A file whose name matches one only when case is ignored, such as `Tenant-Policy.md` or `tables/orders.MD`, throws `SchemaParseError` on every OS, and the error names each rename. On Linux, where file names are case-sensitive, the file would otherwise be skipped, and a skipped `tenant-policy.md` turns tenant enforcement off.
 
 Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy", and the error names the file and the bundle, for example `tenant-policy.md (in /srv/prod.bundle.json)`. A broken `tenant-policy.md` never silently turns tenant enforcement off.
+
+`loadSchema()` also checks every ID in `tenant-policy.md` against `schema.json`. Under `enforcement: strict`, an orphaned column or foreign key ID, a hierarchy cycle, or a root that `roots` doesn't declare throws `SchemaParseError` naming the file and the IDs. Under `warn` these load, listed in `schema.tenantPolicy.warnings`. A table that `schema.json` doesn't have is a warning in both modes. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
 
 Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag. A column that is sensitive only because its table is also carries `sensitiveFromTable: true`; `@askdb/rag` uses it to count a mention of that column only when written as `table.column`.
 
@@ -534,6 +537,8 @@ Returns an `AskDbLogger` that emits structured JSON for each pipeline stage. Pas
 
 The emitted log events are typed as `AskDbLogEvent` constants (e.g. `PipelineMode`, `PipelineGenerateStart`, `TenantScopeValidated`). Import `AskDbLogEvent` from `@askdb/core` to filter logs by event kind.
 
+To pass your own logger instead, implement `AskDbLogger`: `info(context, message)` and `error(context, message)`, plus optional `debug` and `warn`. `ask()` logs `TenantPolicyWarnings` (`askdb.tenant.policy_warnings`) through `warn`, or through `info` when your logger has no `warn`.
+
 ---
 
 ## Tenant types
@@ -582,6 +587,19 @@ placeholderForTenantRoot({ id: "table:public.clients", label: "Клиент" });
 Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prompt names, `ask()` and `resolveTenantSql()` bind, and the tenant guardrail checks. `<name>` is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit uses the root's table name instead. Pass a root from `schema.tenantPolicy.roots` (anything with `id` and `label`).
 
 `placeholderForRoot(label)` is deprecated. It takes the label alone, so for a label with no ASCII letter or digit it returns `:tenant___ids`, which core doesn't bind. For every other label the two agree.
+
+### `formatTenantPolicyWarning(warning)`
+
+```ts
+import { formatTenantPolicyWarning, loadSchema } from "@askdb/core";
+
+// A policy with `enforcement: warn`: under `strict`, this problem makes loadSchema() throw.
+const schema = loadSchema("./my-app.schema");
+schema.tenantPolicy?.warnings.map(formatTenantPolicyWarning);
+// ["scopeThrough column on table:public.orders: column table:public.orders#agency_ref is not in schema.json"]
+```
+
+Returns one line describing a `TenantPolicyWarning`, naming the IDs involved. The `SchemaParseError` for a strict policy, the `askdb.tenant.policy_warnings` log message and `askdb introspect` use the same wording.
 
 ### `TenantScope`
 

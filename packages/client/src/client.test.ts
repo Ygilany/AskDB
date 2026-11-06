@@ -674,7 +674,7 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     );
     const { preparedQuery } = await askdb.ask("orders by status", { tenantScope: agencyIds("42") });
 
-    const bound = await askdb.bind(preparedQuery!, { status_name: "open" }, { tenantScope: agencyIds("7") });
+    const bound = await askdb.bind(preparedQuery!, { status_name: "open" }, { tenantScope: agencyIds("7"), tenantSqlMode: "sql-only" });
     expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '7' AND status = 'open'");
     expect(bound.verdict.outcome).toBe("allow");
 
@@ -756,7 +756,7 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     await expect(askdb.bind(stored, { status_name: "open" }, { tenantScope: agencyIds("7") })).rejects.toMatchObject({
       reason: "DIALECT_SPEC_REQUIRED",
     });
-    const bound = await askdb.bind(stored, { status_name: "open" }, { tenantScope: agencyIds("7"), dialect: "postgres" });
+    const bound = await askdb.bind(stored, { status_name: "open" }, { tenantScope: agencyIds("7"), dialect: "postgres", tenantSqlMode: "sql-only" });
     expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '7' AND status = 'open'");
   });
 
@@ -773,6 +773,7 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     const bound = await askdb.bind(preparedQuery!, { status_name: "open" }, {
       tenantScope: { access: { kind: "subtree", tenantRoot: agencies, rootIds: ["1"], includeDescendants: true } },
       resolveTenantDescendants,
+      tenantSqlMode: "sql-only",
     });
     expect(resolveTenantDescendants).toHaveBeenCalledWith(agencies, ["1"]);
     expect(bound.sql).toBe(

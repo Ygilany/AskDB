@@ -81,9 +81,9 @@ Top-level front-matter fields:
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `schemaId` | yes | Must match the `schemaId` in the artifact's `schema.json`. Ties the policy to one schema. |
-| `enforcement` | yes | What happens when the tenant check finds a problem (see [What the tenant check requires](#what-the-tenant-check-requires)). `strict` throws `TenantGuardrailError`; `warn` returns the SQL with the findings in `tenantGuardrail.warnings`. Start with `strict`. Neither mode proves the query is correctly scoped. |
+| `enforcement` | yes | What happens when the tenant check finds a problem (see [What the tenant check requires](#what-the-tenant-check-requires)). `strict` throws `TenantGuardrailError`; `warn` returns the SQL with the findings in `tenantGuardrail.warnings`. Start with `strict`. Neither mode proves the query is correctly scoped. It also decides whether a policy that doesn't match the schema loads (see [When the policy and the schema disagree](#when-the-policy-and-the-schema-disagree)). |
 | `roots` | yes | The tables that *are* tenants (at least one). Everything else is scoped relative to a root. |
-| `hierarchy` | no | Parent→child edges between roots (agency → sub-agency → client). Must form a cycle-free graph. |
+| `hierarchy` | no | Parent→child edges between roots (agency → sub-agency → client). Must form a cycle-free graph: a cycle fails the load under `strict`. |
 | `scopedTables` | no | Tables whose rows belong to a tenant, and how to reach the root from them. |
 | `polymorphicTables` | no | Tables that reference different tenant types via a discriminator column pair. |
 | `globalTables` | no | Stable table IDs intentionally exempt from tenant filtering (shared lookups). |
@@ -120,6 +120,37 @@ A table may declare several `scopeThrough` paths (e.g. scoped directly by `agenc
 | `mapping` | yes | Maps each literal `typeColumn` value to a tenant root's table ID (`agency: table:public.agencies`). |
 
 The full contract — including hierarchy validation rules and the five scoping patterns these fields express — lives in [`docs/contracts/tenant-policy.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md).
+
+## When the policy and the schema disagree
+
+The policy names tables and columns by stable ID. After you rename a column or re-introspect, it can name IDs that `schema.json` no longer has. `loadSchema()` checks every ID when it loads the policy, and `enforcement` decides what happens:
+
+| Problem | `warn` | `strict` |
+| --- | --- | --- |
+| A column or foreign key ID that `schema.json` doesn't have | Warning | `loadSchema()` throws |
+| A cycle in `hierarchy` or `parent` | Warning | `loadSchema()` throws |
+| A root in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare | Warning | `loadSchema()` throws |
+| A table that `schema.json` doesn't have | Warning | Warning |
+
+Under `strict`, the `SchemaParseError` names `tenant-policy.md` and each ID. Update the policy to match `schema.json`: until you do, the schema doesn't load anywhere, Studio included.
+
+A warning loads, and you can find it in four places:
+
+- **`schema.tenantPolicy.warnings`**: one `TenantPolicyWarning` per problem. `formatTenantPolicyWarning()` from `@askdb/core` describes one in a line.
+- **Your logger**: the first `ask()` that gets the loaded schema with a `logger` logs an `askdb.tenant.policy_warnings` event at `warn` level, once per loaded schema.
+- **`askdb introspect --out`**: when the output directory already holds a `tenant-policy.md`, it checks the policy against the `schema.json` it just wrote and prints what no longer matches.
+- **Studio's Tenancy page.**
+
+```ts
+import { formatTenantPolicyWarning, loadSchema } from "@askdb/core";
+
+const schema = loadSchema("./askdb/my-app.schema");
+for (const warning of schema.tenantPolicy?.warnings ?? []) {
+  console.warn(formatTenantPolicyWarning(warning));
+}
+```
+
+A table removed from the schema is one warning in both modes: remove its entry from the policy.
 
 ## Asking with a tenant scope
 
@@ -168,7 +199,7 @@ if (result.preparedQuery) {
 }
 ```
 
-A rebind takes tenant IDs only from `tenantScope`; a `:tenant_*` key in the values throws. It runs the tenant check under the scope you pass now and the policy as it is now, so a template produced under a `global` scope, or before a policy change, is refused if it doesn't filter for this caller. Under `enforcement: warn`, a template that fails the tenant check is refused at rebind unless you pass `acceptWarnings: ["tenant"]`. Without `@askdb/client`, call core's [`bindPreparedQuery(prepared, values, { schema, tenantScope })`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails), expanding a `subtree` scope with `expandTenantScope()` first.
+A rebind takes tenant IDs only from `tenantScope`; a `:tenant_*` key in the values throws. It runs the tenant check under the scope you pass now and the policy as it is now, so a template produced under a `global` scope, or before a policy change, is refused if it doesn't filter for this caller. Under `enforcement: warn`, a template that fails the tenant check is refused at rebind unless you pass `acceptWarnings: ["tenant"]`. A rebind takes the same `tenantSqlMode` as `ask()`, with the same default: `rebound.sql` holds tenant markers, so run it with `rebound.tenantParams` (or run `rebound.unboundSql` with `rebound.params`, as above). Without `@askdb/client`, call core's [`bindPreparedQuery(prepared, values, { schema, tenantScope })`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails), expanding a `subtree` scope with `expandTenantScope()` first.
 
 `access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (a root's IDs plus all descendants: `{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`; needs a `resolveTenantDescendants` callback that returns IDs per root, see [below](#hierarchical-scope-subtree)), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail; the tenant check is skipped, and SQL that still uses a tenant placeholder throws `TenantScopeError`, since a `global` scope has no IDs to bind). The optional `context` field carries advisory metadata (role, department) into the prompt. It isn't enforced.
 
