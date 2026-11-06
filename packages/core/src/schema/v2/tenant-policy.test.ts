@@ -176,6 +176,7 @@ unknownKey: bad
 ---
 `;
     expect(() => parseTenantPolicyMarkdown(content)).toThrow(SchemaParseError);
+    expect(() => parseTenantPolicyMarkdown(content)).toThrow(/^Invalid tenant-policy front-matter: /);
   });
 });
 

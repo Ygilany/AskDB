@@ -1,6 +1,6 @@
 import { AskDbError } from "../errors.js";
 
-/** Operating modes selectable in Phase 2 v1 (see `docs/contracts/modes-v1.md`). */
+/** The selectable operating modes (contract: `docs/contracts/modes-v1.md`). */
 export const ASKDB_MODES_V1 = ["schema_only", "bounded_results"] as const;
 export type AskDbModeV1 = (typeof ASKDB_MODES_V1)[number];
 

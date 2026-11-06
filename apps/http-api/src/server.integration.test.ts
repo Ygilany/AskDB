@@ -1,5 +1,4 @@
 import {
-  flattenAskDbConfig,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
   type AskDbConfig,
@@ -68,7 +67,7 @@ function installTestRuntime(opts: {
     ...(opts.modes ? { modes: opts.modes } : {}),
     ...(opts.httpApi ? { httpApi: opts.httpApi } : {}),
   };
-  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  setAskDbRuntimeForTests(structured);
 }
 
 /** Start an AskDB HTTP server on an ephemeral port; returns its base URL and a close fn. */
@@ -204,7 +203,7 @@ describe("http-api", () => {
     }
   });
 
-  it("prefers schemaPath option over configured ASKDB_SCHEMA_PATH", async () => {
+  it("prefers the schemaPath option over host.schemaPath", async () => {
     installTestRuntime({
       mockSql: "select 1",
       logLevel: "silent",
@@ -390,14 +389,14 @@ describe("http-api", () => {
   });
 
   it("missing AI key with no mock returns generation_not_configured", async () => {
-    // apiKey: "" is stripped by flattenAskDbConfig's set() helper, so aiEnv
+    // A blank apiKey resolves to no key, so aiEnv
     // has no OPENAI_API_KEY and createLanguageModelFromEnv returns undefined.
     const noKeyConfig: AskDbConfig = {
       ...BASE_CONFIG,
       ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } }, language: { model: "gpt-4o-mini" } },
       host: { schemaPath: schemaPath.pathname },
     };
-    setAskDbRuntimeForTests({ structured: noKeyConfig, flat: flattenAskDbConfig(noKeyConfig) });
+    setAskDbRuntimeForTests(noKeyConfig);
     const app = await startApp();
     try {
       const { status, json } = await postAsk(app.url, { question: "hi" });

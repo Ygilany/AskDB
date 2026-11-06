@@ -1,7 +1,7 @@
 import { createJiti } from "jiti";
 import { pathToFileURL } from "node:url";
 import { discoverAskDbConfigPath } from "./discover.js";
-import { isPlainObject } from "./normalize.js";
+import { isPlainObject } from "./resolve.js";
 import { defineConfig, isAskDbEnvProjection, type AskDbEnvProjection } from "./projection.js";
 import type { AskDbConfig } from "./types.js";
 

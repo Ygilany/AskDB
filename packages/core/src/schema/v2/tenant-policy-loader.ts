@@ -1,5 +1,5 @@
 import { SchemaParseError } from "../../errors.js";
-import { readFrontMatter } from "./parser.js";
+import { extractH2Sections, parseFrontMatter } from "./parser.js";
 import {
   assertDistinctRootPlaceholders,
   formatTenantPolicyWarning,
@@ -7,7 +7,6 @@ import {
   TENANT_POLICY_H2_SECTIONS,
   type ParsedTenantPolicyMarkdown,
   type TenantPolicyFrontmatter,
-  type TenantPolicyH2Section,
   type NormalizedTenantPolicy,
   type TenantPolicyWarning,
   type TableCoverageEntry,
@@ -24,39 +23,13 @@ export function parseTenantPolicyMarkdown(
 ): ParsedTenantPolicyMarkdown {
   // Malformed YAML must surface as SchemaParseError, never as a raw exception a
   // caller might treat as "no policy" — that would silently disable tenancy.
-  const file = readFrontMatter(content, "tenant-policy", filePath);
-  const result = tenantPolicyFrontmatterSchema.safeParse(file.data);
-  if (!result.success) {
-    const loc = filePath ? ` in ${filePath}` : "";
-    throw new SchemaParseError(
-      `Invalid tenant-policy front-matter${loc}: ${result.error.message}`,
-      result.error,
-    );
-  }
-
-  const body = file.content;
-  const sections = extractTenantPolicySections(body);
-
-  return { frontmatter: result.data, body, sections };
-}
-
-function extractTenantPolicySections(
-  body: string,
-): Partial<Record<TenantPolicyH2Section, string>> {
-  const sections: Partial<Record<TenantPolicyH2Section, string>> = {};
-  const parts = body.split(/^## /m);
-  for (const part of parts.slice(1)) {
-    const newline = part.indexOf("\n");
-    const heading = (newline === -1 ? part : part.slice(0, newline)).trim();
-    const sectionBody = newline === -1 ? "" : part.slice(newline + 1);
-    const matched = TENANT_POLICY_H2_SECTIONS.find(
-      (s) => s.toLowerCase() === heading.toLowerCase(),
-    );
-    if (matched) {
-      sections[matched] = sectionBody;
-    }
-  }
-  return sections;
+  const { frontmatter, body } = parseFrontMatter(
+    content,
+    "tenant-policy",
+    tenantPolicyFrontmatterSchema,
+    filePath,
+  );
+  return { frontmatter, body, sections: extractH2Sections(body, TENANT_POLICY_H2_SECTIONS) };
 }
 
 // ---------------------------------------------------------------------------

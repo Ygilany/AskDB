@@ -1,7 +1,7 @@
 /**
  * Prefer an explicitly `sql`-tagged fence; fall back to an untagged fence.
  * Never return a fence tagged with anything else (e.g. `json`, `sql-unbound`).
- * Keep single-block and bare-prose behavior identical to the pre-parameterize path.
+ * With no fence at all, the whole trimmed reply is the SQL.
  */
 export function extractSqlFromModelText(raw: string): string {
   const text = raw.trim();
@@ -17,7 +17,7 @@ export function extractSqlFromModelText(raw: string): string {
   if (/```[a-zA-Z][\w-]*/.test(text)) {
     return "";
   }
-  return text.trim();
+  return text;
 }
 
 /**
