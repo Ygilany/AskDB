@@ -27,6 +27,17 @@ export function validateTenantScope(
     );
   }
 
+  // Global access must say why, for the audit record: checked before the shape so a missing
+  // or blank reason gets its own code rather than INVALID_SCOPE_SHAPE.
+  const rawAccess = (tenantScope as { access?: { kind?: unknown; reason?: unknown } }).access;
+  if (rawAccess?.kind === "global" && (typeof rawAccess.reason !== "string" || rawAccess.reason.trim() === "")) {
+    throw new TenantScopeError(
+      "A global tenantScope needs a non-blank reason, for the audit record: " +
+        "{ access: { kind: \"global\", reason: \"<why this user sees every tenant>\" } }.",
+      "GLOBAL_WITHOUT_REASON",
+    );
+  }
+
   // Validate shape with zod
   const parsed = tenantScopeSchema.safeParse(tenantScope);
   if (!parsed.success) {
@@ -73,7 +84,7 @@ export function validateTenantScope(
       break;
 
     case "global":
-      // reason is already validated as non-empty by zod
+      // reason is already checked above
       break;
   }
 }

@@ -531,7 +531,7 @@ Returns an `AskDbLogger` that emits structured JSON for each pipeline stage. Pas
 | --- | --- | --- | --- | --- |
 | `correlationId` | `string` | yes | — | Attached to every log line. Pass the request id. |
 | `level` | `AskDbLogLevel` | no | `"silent"` | Pino log level. `"silent"` suppresses all output. |
-| `logFile` | `string` | no | — | Append JSON logs to this path. Parent directories are created automatically. |
+| `logFile` | `string` | no | — | Append JSON logs to this path. Parent directories are created automatically. Loggers with the same path share one open file, which stays open for the life of the process: rotate it with `copytruncate`, or restart the process after a rotate. |
 | `logStdout` | `boolean` | no | `false` | Duplicate logs to stdout in addition to stderr/file. |
 
 **`AskDbLogLevel`:** `"fatal"` | `"error"` | `"warn"` | `"info"` | `"debug"` | `"trace"` | `"silent"`
@@ -632,7 +632,7 @@ const adminScope: TenantScope = {
 | `"ids"` (`TenantAccessIds`) | `tenantRoot: string`, `ids: string[]` (at least one) | User can access specific root-entity ids. |
 | `"subtree"` (`TenantAccessSubtree`) | `tenantRoot: string`, `rootIds: string[]` (at least one), `includeDescendants: true` | User can access a subtree rooted at `rootIds`, including descendant roots. Requires the `resolveTenantDescendants` option on `ask()`, which returns IDs per root; `ask()` expands the scope to `"multi_root"` before generation. |
 | `"multi_root"` (`TenantAccessMultiRoot`) | `scopes: { tenantRoot: string; ids: string[] }[]` | User has access across multiple tenant roots, each with their own id set. An entry's `ids` may be empty (a covered root with no IDs, which fails closed if read); at least one entry needs an ID. |
-| `"global"` (`TenantAccessGlobal`) | `reason: string` (non-empty) | Super / admin access. The `reason` is for audit. Binds no tenant IDs: SQL that still has a `:tenant_*` placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), in `ask()` and at rebind. |
+| `"global"` (`TenantAccessGlobal`) | `reason: string` (not blank) | Super / admin access. The `reason` is for audit: a missing or blank one throws `TenantScopeError` (`GLOBAL_WITHOUT_REASON`). Binds no tenant IDs: SQL that still has a `:tenant_*` placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), in `ask()` and at rebind. |
 
 `context` is an optional `TenantScopeContext`: `role`, `label`, `department`, `region` and `description` (each a `string`), and `attributes` (`Record<string, string>`). The prompt lists the fields that are set under "User context (advisory — not enforced)", and no check enforces them. `validateTenantScope()` refuses any other key.
 
@@ -671,6 +671,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `SQL_NOT_SELECT_OR_WITH` | A first keyword other than `SELECT` or `WITH`. |
 | `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. |
 | `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, such as `pg_sleep(`. |
+| `SQL_UNICODE_ESCAPED_IDENTIFIER` | On Postgres and CockroachDB, a Unicode-escaped identifier such as `U&"set\005fconfig"`, whose escapes could spell a blocked function or a sensitive column. |
 | `SQL_UNTERMINATED` | A string, quoted identifier, dollar-quoted string or block comment that never closes. |
 | `SQL_LOCKING_READ` | A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as `UPDLOCK`. On SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in parentheses after a name, which SQL Server can read as a hint. |
 
@@ -683,9 +684,9 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | Reason | Cause |
 | --- | --- |
 | `MISSING_SCOPE` | The schema has a tenant policy and no `tenantScope` was passed. |
-| `INVALID_SCOPE_SHAPE` | `tenantScope` doesn't match [`TenantScope`](#tenantscope), for example an `ids` scope with no IDs, or a `global` scope with no `reason`. |
+| `INVALID_SCOPE_SHAPE` | `tenantScope` doesn't match [`TenantScope`](#tenantscope), for example an `ids` scope with no IDs. |
 | `UNKNOWN_TENANT_ROOT` | `tenantRoot` isn't a root in the policy. |
-| `GLOBAL_WITHOUT_REASON` | Declared, but nothing throws it: a `global` scope without a `reason` throws `INVALID_SCOPE_SHAPE`. |
+| `GLOBAL_WITHOUT_REASON` | A `global` scope whose `reason` is missing, isn't a string, or is blank. It's checked before the shape, so such a scope never throws `INVALID_SCOPE_SHAPE`. |
 | `SUBTREE_NOT_RESOLVABLE` | A `subtree` scope can't be expanded: no `resolveTenantDescendants`, or it returned something other than IDs per root in the subtree. Also an unexpanded `subtree` passed to `bindPreparedQuery()`, `resolveTenantSql()` or `buildTenantPromptBlock()`. |
 | `UNRESOLVED_TENANT_PLACEHOLDER` | The SQL has a `:tenant_<root>_ids` placeholder the scope has no IDs for, including any placeholder under a `global` scope. |
 | `UNSUPPORTED_TENANT_PREDICATE` | A scope with several IDs meets a tenant predicate with no list form, such as `<=`. |
@@ -701,11 +702,10 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `MISSING_TENANT_PREDICATE` | Reads a tenant-scoped table, or a root table the scope covers, with no tenant predicate that filters it. See [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires). |
 | `MISSING_TYPE_DISCRIMINATOR` | Reads a polymorphic table without its type column compared with the mapping key of the root whose placeholder filters its ID column, ANDed into the same clause (`owner_type = 'agency' AND owner_id = :tenant_agency_ids`). |
 | `UNKNOWN_TABLE_REFERENCED` | Reads a table that `tenant-policy.md` doesn't classify. |
+| `UNICODE_ESCAPED_IDENTIFIER` | Uses a Postgres Unicode-escaped name, such as `U&"\006Frders"`, as a table, column or function. Postgres decodes it, so the check can't tell what it reads. Reported with `tableId: ""` when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect` or no dialect. |
 | `UNPROVABLE_SCOPE` | Reported for a custom `AskDialect` whose `tenantGuardrail` has `passed: false` and no warnings. |
 | `NOT_SELECT_OR_WITH` | Has a statement that doesn't start with `SELECT` or `WITH` (after any comments and opening parentheses), such as a `DO` block, `CALL`, `EXPLAIN` or `SHOW`, so the check can't read what it touches. Every statement counts: each one after a `;`, and on SQL Server each one a verb such as `EXEC` starts with no `;`. For a custom `AskDialect`, every engine's reading counts. Not checked under a `global` scope. Reported for the whole SQL (`tableId: ""`), under every dialect, a custom `AskDialect` included. |
 | `UNCHECKABLE_FUNCTION` | Names a function whose reads the check can't see: one that runs a query passed as a string (`query_to_xml`, `ts_stat`, `crosstab`), reads a table named in a string (`table_to_xml`, `schema_to_xml`, `connectby`), runs SQL over another connection (`dblink`, `OPENQUERY`, `OPENROWSET`), or sets a value row-level security may read (`set_config`). The [tenant policy contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#what-the-check-requires) lists the 32 functions, each built into Postgres or SQL Server or from the `tablefunc`, `dblink` or `xml2` extension; a function from any other extension, such as pgRouting's, passes. A listed name counts in any code position, so a column, alias or parameter named like one (`crosstab`, `set_config`) is refused too. Only the first listed name is reported. Not checked under a `global` scope. Reported for the whole SQL (`tableId: ""`), under every dialect, a custom `AskDialect` included. |
-| `INCOMPATIBLE_JOIN_SCOPES` | Declared, but no check reports it. |
-| `CROSS_TENANT_WITHOUT_GLOBAL` | Declared, but no check reports it. |
 
 The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrailError`, and `warn` returns the findings in `result.verdict`. At rebind, a `warn` finding throws too, unless `acceptWarnings` includes `"tenant"`.
 
@@ -715,12 +715,10 @@ The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrail
 
 ### `QueryParameterError` reasons
 
-`reason` is a `QueryParameterRejectionReason`. [`bindPreparedQuery()`](#bindpreparedqueryprepared-values-guardrails) throws all but the first two:
+`reason` is a `QueryParameterRejectionReason`. [`bindPreparedQuery()`](#bindpreparedqueryprepared-values-guardrails) throws every one:
 
 | Reason | Cause |
 | --- | --- |
-| `INVALID_NAME` | Not thrown. `ask()` uses it inside when a name in the model's parameter manifest doesn't match `^[a-z][a-z0-9_]*$`, and drops the reuse artifacts instead. |
-| `RESERVED_NAME` | Not thrown. `ask()` uses it inside when a manifest name starts with `tenant_` or `askdb_`, and drops the reuse artifacts instead. |
 | `INVALID_VALUE` | A value doesn't match its parameter's `type` or `cardinality`: a list for a scalar, a non-finite number, a date that isn't `YYYY-MM-DD`, or `null`. |
 | `MISSING_VALUE` | `values` has no entry for a declared parameter. |
 | `UNRESOLVED_PLACEHOLDER` | A declared parameter doesn't appear in `namedSql`, a placeholder has no declaration, or a placeholder is left after binding. |

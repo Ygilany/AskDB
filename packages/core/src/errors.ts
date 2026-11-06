@@ -27,6 +27,11 @@ export type SqlValidationRuleCode =
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
   /**
+   * Postgres family: a Unicode-escaped identifier (`U&"set\005fconfig"`). Its escapes can spell
+   * a name the other checks look for, such as a denylisted function, so it is refused (#692).
+   */
+  | "SQL_UNICODE_ESCAPED_IDENTIFIER"
+  /**
    * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
    * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
    * parentheses after a name, which SQL Server may read as a hint.
@@ -73,6 +78,7 @@ export class UnknownDialectError extends AskDbError {
 export type TenantScopeRejectionReason =
   | "MISSING_SCOPE"
   | "UNKNOWN_TENANT_ROOT"
+  /** A `global` scope whose `reason` is missing, not a string, or blank: global access must say why. */
   | "GLOBAL_WITHOUT_REASON"
   | "INVALID_SCOPE_SHAPE"
   /**
@@ -118,8 +124,6 @@ export class TenantScopeError extends AskDbError {
 }
 
 export type QueryParameterRejectionReason =
-  | "INVALID_NAME"
-  | "RESERVED_NAME"
   | "INVALID_VALUE"
   | "MISSING_VALUE"
   | "UNRESOLVED_PLACEHOLDER"
@@ -150,9 +154,7 @@ export class QueryParameterError extends AskDbError {
 export type TenantGuardrailRuleCode =
   | "MISSING_TENANT_PREDICATE"
   | "MISSING_TYPE_DISCRIMINATOR"
-  | "INCOMPATIBLE_JOIN_SCOPES"
   | "UNKNOWN_TABLE_REFERENCED"
-  | "CROSS_TENANT_WITHOUT_GLOBAL"
   | "UNPROVABLE_SCOPE"
   /**
    * A statement doesn't start with `SELECT` or `WITH` (a `DO` block, `CALL`, `EXPLAIN`,
@@ -172,7 +174,15 @@ export type TenantGuardrailRuleCode =
    * `tableId: ""`, under every dialect, a custom `AskDialect` included; not under a `global`
    * scope (#702).
    */
-  | "UNCHECKABLE_FUNCTION";
+  | "UNCHECKABLE_FUNCTION"
+  /**
+   * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a
+   * function. Postgres decodes it, and the tenant check matches names as written, so it can't
+   * tell what the name reads. Reported for the whole SQL, with `tableId: ""`, whenever the SQL
+   * is read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not under
+   * a `global` scope (#704, #692).
+   */
+  | "UNICODE_ESCAPED_IDENTIFIER";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;

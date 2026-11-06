@@ -437,6 +437,13 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
     );
   }
 
+  // Nothing ever read it: the file store writes its files after every change (#676).
+  if (rag.storeConfig.file?.autoFlush !== undefined) {
+    warn(
+      "askdb.config: rag.storeConfig.file.autoFlush is deprecated and ignored (the file store writes its files after every change); remove it.",
+    );
+  }
+
   if (!isMember(rag.embedder, ASKDB_RAG_EMBEDDERS)) {
     throw new Error(
       `askdb.config: invalid rag.embedder "${rag.embedder}" (expected one of: ${ASKDB_RAG_EMBEDDERS.join(", ")}).`,
