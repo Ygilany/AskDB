@@ -10,7 +10,7 @@ import {
   type ConnectorProviderAdapter,
   type IntrospectionResult,
 } from "@askdb/introspect";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -231,6 +231,52 @@ describe("askdb introspect — injected connector registry", () => {
     const engineLine = stdout.split("\n").find((line) => line.trimStart().startsWith("--engine <id>"));
     expect(engineLine).toContain("acme");
     expect(engineLine).not.toContain("mysql");
+  });
+});
+
+// #337, ADR 0037: a source that renders no tables fails with the error that names it, in every
+// output mode, and writes nothing.
+describe("askdb introspect — a source with nothing to render", () => {
+  const emptyResult: IntrospectionResult = { ...acmeResult, schema: { schemaId: "acme", schemas: [] }, isEmpty: true };
+  function engine(result: IntrospectionResult) {
+    const adapter: ConnectorProviderAdapter = {
+      provider: "acme",
+      createConnector: () => ({ mode: "live", input: {}, connector: { describe: async () => result } }),
+      resolveConnection: () => ({ ok: true as const, connection: { url: "acme://admin:S3cret@db.internal/app" } }),
+    };
+    return { connectorRegistry: createConnectorRegistry([adapter]) };
+  }
+  let dir: string;
+  beforeEach(() => {
+    installRuntime();
+    dir = mkdtempSync(join(tmpdir(), "askdb-introspect-empty-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it.each([["--out"], ["--print"]])("%s exits 1 with the error, writes nothing and repeats no connection detail", async (mode) => {
+    const out = join(dir, "acme.schema");
+    const argv = ["--engine", "acme", "--schema-id", "acme", "--schemas", "main", "--tables", "main.nothing*", ...(mode === "--out" ? ["--out", out] : ["--print"])];
+
+    expect(await runIntrospectCli(argv, engine(emptyResult))).toBe(1);
+
+    expect(stderr).toContain('Introspection found no tables or views for schema "acme" (acme), so nothing was written.');
+    expect(stderr).toContain("the filters match nothing (schemas: main; tables: main.nothing*)");
+    expect(stderr).not.toMatch(/S3cret|admin|db\.internal/);
+    expect(stdout).toBe("");
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("--diff exits 1 and leaves the artifact it compares against as it was", async () => {
+    const out = join(dir, "acme.schema");
+    expect(await runIntrospectCli(["--engine", "acme", "--schema-id", "acme", "--out", out], engine(acmeResult))).toBe(0);
+    const before = readFileSync(join(out, "schema.json"));
+    stdout = "";
+
+    expect(await runIntrospectCli(["--engine", "acme", "--schema-id", "acme", "--diff", out], engine(emptyResult))).toBe(1);
+
+    expect(stderr).toContain("Introspection found no tables or views");
+    expect(stdout).toBe("");
+    expect(readFileSync(join(out, "schema.json"))).toEqual(before);
   });
 });
 
