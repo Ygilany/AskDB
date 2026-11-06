@@ -1,6 +1,6 @@
 ---
 title: "@askdb/client API reference"
-description: "Full API reference for @askdb/client: createAskDb(), AskDbClient, and per-call overrides."
+description: "Full API reference for @askdb/client: createAskDb(), AskDbClient, per-call overrides, and errors."
 ---
 
 <p class="doc-eyebrow">Reference · @askdb/client</p>
@@ -9,7 +9,13 @@ description: "Full API reference for @askdb/client: createAskDb(), AskDbClient, 
 
 ## `createAskDb(options)`
 
-Builds a client bound to a config snapshot and AI provider registry. The schema, model, and dialect are resolved lazily on the first `ask()` call and cached for the process lifetime. Call `reload()` to clear the cache.
+Builds an `AskDbClient` bound to one config snapshot and one AI provider registry. Nothing loads until the first `ask()` or `bind()` call:
+
+- **Schema**: the default schema loads on first use and is cached on this client. A per-call `schema` is loaded for that call and never cached.
+- **Model**: built from the registry on the first `ask()` that needs it, and cached on this client with its resolved AI config.
+- **Dialect**: resolved on every `ask()` call (see [`DialectResolution`](#dialectresolution)). It isn't cached.
+
+Each client has its own cache, so two clients never share a schema or a model. Call [`reload()`](#clientreload) to clear it.
 
 ```ts
 import { createAskDb } from "@askdb/client";
@@ -31,11 +37,35 @@ Install the AI SDK package for the provider your config selects, for example `@a
 | --- | --- | --- | --- |
 | `config` | `AskDbRuntimeConfig` | yes | Runtime config snapshot from `getAskDbRuntimeConfig()`. Call `bootstrapAskDbEnv()` at startup first. |
 | `providers` | `AiProviderAdapters` | no | Which providers the client can build models for. Default: every provider built into `@askdb/ai` (`openai`, `anthropic`, `google`, `azure`/`foundry`, `gateway`). Pass built-in names to restrict the set (`["openai"]`) or `AiProviderAdapter` objects to add custom providers; both can be mixed. |
-| `registry` | `AiRegistry` | no | Prebuilt registry from `createAiRegistry(...)` — advanced alternative to `providers` (e.g. to share one registry across clients). Pass at most one of `providers` or `registry`. |
-| `schema` | `SchemaSource` | no | Default schema source. Falls back to `host.schemaJson`, then `host.schemaPath`, from `askdb.config.ts`. |
-| `dialect` | `BuiltInDialectId` | no | Default dialect override. Falls back to `config.nlToSql.dialect` → `schema.provider` → `"postgres"`. |
-| `unknownDialect` | `"throw" \| "fallback-postgres"` | no | What to do when `schema.provider` is not a recognized built-in dialect id. Default `"throw"`. |
-| `onResolve` | `(info: ResolveInfo) => void` | no | Hook fired on every `ask()` call once resolution completes. Useful for logging which dialect and model were chosen. `ResolveInfo` has `dialect` and `modelSource`. |
+| `registry` | `AiRegistry` | no | Prebuilt registry from `createAiRegistry(...)` — advanced alternative to `providers` (e.g. to share one registry across clients). Pass at most one of `providers` or `registry`: passing both throws an `Error` from `createAskDb()`. |
+| `schema` | `SchemaSource` | no | Default schema source. Falls back to `host.schemaJson`, then `host.schemaPath`, from `askdb.config.ts`. With none of the three, the first call throws [`SchemaNotConfiguredError`](#errors). |
+| `dialect` | `BuiltInDialectId` | no | Default dialect override. Falls back to `dialect` in `askdb.config.ts`, then `schema.provider`, then `"postgres"` when the schema records no provider. |
+| `unknownDialect` | `"throw" \| "fallback-postgres"` | no | What to do when no dialect is set and `schema.provider` isn't a built-in dialect id. Default `"throw"`: `ask()` throws [`DialectNotSupportedError`](#errors). `"fallback-postgres"` uses `"postgres"` and reports it in `DialectResolution.note`. |
+| `reasoningEffort` | `ReasoningEffort` | no | `"minimal"`, `"low"`, `"medium"` or `"high"`. The default reasoning effort for this client's `ask()` calls. It takes precedence over `ai.language.reasoning` in `askdb.config.ts` (see [Reasoning effort](/reference/config/#reasoning-effort)), and a per-call `reasoningEffort` takes precedence over it. |
+| `onResolve` | `(info: { dialect: DialectResolution; modelSource: "override" \| "registry" \| "mock" }) => void` | no | Called on every `ask()` call after the schema, dialect and model resolve, before the model call. Useful for logging which dialect and model were chosen. `bind()` doesn't call it. |
+
+`modelSource` says where the model came from: `"override"` for a per-call `model`, `"mock"` for a per-call `deps.generateText` or `dev.mockSql` in `askdb.config.ts`, and `"registry"` for a model built from `ai` in the config.
+
+### `DialectResolution`
+
+The `dialect` that `onResolve` receives:
+
+```ts
+type DialectResolution = {
+  dialect: AskDialectInput;
+  source: "override" | "config" | "schema" | "default";
+  note?: string;
+};
+```
+
+| `source` | Where `dialect` came from |
+| --- | --- |
+| `"override"` | The call's `dialect` override. |
+| `"config"` | `createAskDb({ dialect })`, else `dialect` in `askdb.config.ts`. |
+| `"schema"` | The schema's `provider`, a built-in dialect id. |
+| `"default"` | `"postgres"`: the schema records no provider, or `unknownDialect` is `"fallback-postgres"`. |
+
+`note` is set when the config dialect and the schema's `provider` disagree (the config wins), and when `"fallback-postgres"` applies. `askdb ask` prints it to stderr as `Note: …`.
 
 ### `SchemaSource`
 
@@ -59,6 +89,8 @@ const { sql, usage, unboundSql, params, preparedQuery } = await askdb.ask(
 
 Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/#result--askpipelineresult). The facade forwards options and returns the core result verbatim, including `verdict` and the optional `unboundSql` / `params` / `parameters` / `preparedQuery` when `parameterize` is on (default). Rebind a stored `preparedQuery` with [`client.bind()`](#clientbindprepared-values-options).
 
+The model comes from the first of these that is set: the call's `model`, the call's `deps.generateText`, `dev.mockSql` in `askdb.config.ts` (every call returns that SQL, with no model call), then the registry's model for `ai` in the config.
+
 ### Overrides — `AskOverrides`
 
 All `AskPipelineOptions` fields can be overridden per call, except that the two config `modes` settings work as floors: a call can tighten them, never loosen them. In addition, `schema`, `model`, and `dialect` can be swapped for a single request:
@@ -66,8 +98,9 @@ All `AskPipelineOptions` fields can be overridden per call, except that the two 
 | Field | Type | Description |
 | --- | --- | --- |
 | `schema` | `SchemaSource \| AnyNormalizedSchema` | Override the default schema for this call only. |
-| `model` | `AskDbLanguageModel` | Override the default model for this call only. |
+| `model` | `AskDbLanguageModel` | Override the default model for this call only. The registry isn't used, so `reasoningEffort` doesn't apply. |
 | `dialect` | `AskDialectInput` | Override the dialect for this call only. |
+| `reasoningEffort` | `ReasoningEffort` | Reasoning effort for this call: `"minimal"`, `"low"`, `"medium"` or `"high"`. It takes precedence over `createAskDb({ reasoningEffort })` and the config. It applies only to the registry's model: it's ignored with `model`, `deps.generateText` or `dev.mockSql`, and when `deps.providerOptions` is set. |
 | `explain` | `boolean` | Include guardrail metadata in the result. |
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers, and any describable text that names one, from the prompt. Config `modes.omitSensitiveFromPrompt: true` is a floor: `true` here tightens a single call, but `false` can't loosen the config setting. |
 | `abortSignal` | `AbortSignal` | Core's [`ask()` option](/reference/core-api/#options), passed through: cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` to enforce a timeout. With a built-in dialect, an aborted call rejects with `SqlGenerationError`; a custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
@@ -76,12 +109,13 @@ All `AskPipelineOptions` fields can be overridden per call, except that the two 
 | `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-params"` (the default) binds tenant IDs through driver markers and returns them as `tenantParams`; `"sql-only"` inlines them as escaped literals. A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default with a tenant scope and must set it, or the call throws `TENANT_SQL_MODE_REQUIRED`; see [`ask()` options](/reference/core-api/#options). See [Executing the result](/reference/core-api/#executing-the-result). |
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` tenant scope: returns the subtree's IDs grouped by tenant root (`TenantIdsByRoot`), which `ask()` binds to each root's own placeholder. Required for `subtree` scopes. See [`ask()` options](/reference/core-api/#options). |
 | `parameterize` | `boolean` | Default `true`. Set `false` to skip unbound SQL / parameter manifest output tokens. |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | Default `"warn"`. How `ask()` treats SQL that references identifiers marked `sensitive`; see [`ask()` options](/reference/core-api/#options). |
 | `retriever` | `Retriever` | RAG retriever. |
 | `retrievalK` | `number` | Top-k for the retriever. |
 | `retrievalThresholdChunks` | `number` | Chunk count threshold for triggering retrieval. |
 | `totalSchemaChunkCount` | `number` | Total indexed chunk count; from `buildSchemaIndex` result stats. |
 | `logger` | `AskDbLogger` | Per-call structured logger. |
-| `deps` | `AskGenerateDeps` | `{ generateText? }` for testing. |
+| `deps` | `AskGenerateDeps` | `{ generateText?, providerOptions? }`. `generateText` replaces the model call, for tests; the registry isn't used. `providerOptions` is passed to the model call as is, and takes precedence over the options the client resolves from `reasoningEffort`. |
 
 ---
 
@@ -117,7 +151,40 @@ Rebinds a stored `preparedQuery` with new values, without calling the model. It 
 askdb.reload();
 ```
 
-Drops the cached schema and model. The next `ask()` call re-resolves them from config. Useful in tests or in processes that hot-reload their config without restarting.
+Drops this client's cached schema, model and resolved AI config. The next call resolves them again from the config snapshot the client was created with, so a schema path is read from disk again. To pick up a changed `askdb.config.*`, create a new client from a fresh `getAskDbRuntimeConfig()`.
+
+---
+
+## `AskDbClient`
+
+The type `createAskDb()` returns:
+
+```ts
+type AskDbClient = {
+  ask(question: string, overrides?: AskOverrides): Promise<AskPipelineResult>;
+  bind(
+    prepared: PreparedQuery,
+    values: Record<string, QueryParameterValue | readonly QueryParameterValue[]>,
+    options?: BindOptions,
+  ): Promise<BoundQuery>;
+  reload(): void;
+};
+```
+
+---
+
+## Errors
+
+`@askdb/client` exports four error classes. Each extends `AskDbError` from `@askdb/core` and sets `name` to its class name. `ask()` and `bind()` also throw `@askdb/core`'s errors unchanged; see [@askdb/core API → Errors](/reference/core-api/#errors).
+
+| Class | Thrown when | Fields |
+| --- | --- | --- |
+| `SchemaNotConfiguredError` | No schema to load: no per-call `schema`, no `createAskDb({ schema })`, and neither `host.schemaJson` nor `host.schemaPath` in `askdb.config.ts`. | — |
+| `SchemaLoadError` | Loading a `{ path }` or `{ json }` schema source fails: the path doesn't exist, the JSON is invalid, or `loadSchema()` throws `SchemaParseError`. | `source`: which source failed, such as `host.schemaPath (./my-app.schema)` or `request`. `cause`: the original error. |
+| `DialectNotSupportedError` | No dialect is set, the schema's `provider` isn't a built-in dialect id, and `unknownDialect` is `"throw"` (the default). | `provider`: the schema's `provider`. |
+| `ModelNotConfiguredError` | The call needs the registry's model, and the config's `ai` block doesn't resolve to one, for example because the API key is missing. | — |
+
+`createAskDb()` itself throws a plain `Error` when you pass both `providers` and `registry`.
 
 ---
 

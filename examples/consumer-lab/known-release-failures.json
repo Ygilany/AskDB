@@ -1,5 +1,5 @@
 {
-  "askdb@1.0.0-beta.44": {
+  "askdb@1.0.0-beta.45": {
     "safety-for-update [postgres]": "#319: fixed on main by #649 (SQL_LOCKING_READ replaces SQL_FORBIDDEN_KEYWORD for FOR UPDATE), not released",
     "safety-for-update [mysql]": "#319: fixed on main by #649 (SQL_LOCKING_READ replaces SQL_FORBIDDEN_KEYWORD for FOR UPDATE), not released",
     "safety-for-update [mariadb]": "#319: fixed on main by #649 (SQL_LOCKING_READ replaces SQL_FORBIDDEN_KEYWORD for FOR UPDATE), not released",

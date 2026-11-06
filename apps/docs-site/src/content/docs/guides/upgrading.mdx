@@ -106,6 +106,28 @@ await pool.query(rebound.sql, rebound.tenantParams ?? []); // or: pool.query(reb
 - **Under `enforcement: warn`,** the policy still loads, with the problems in `schema.tenantPolicy.warnings`. `ask()` now logs them once per loaded schema as `askdb.tenant.policy_warnings`, through the `logger` you pass to it.
 - **A table that `schema.json` doesn't have** stays a warning in both modes. Its policy entry now reports only the table, not each of its columns.
 
+### Build enrichment targets from `loadSchema()`'s tables
+
+`EnrichmentTarget.table` and `EnrichmentContext.neighbors` now take `NormalizedV2Table`, the table type in `loadSchema()`'s result, instead of `V2Table`, the table as `schema.json` stores it ([#667](https://github.com/Ygilany/AskDB/issues/667), ADR 0026). Before, a table read straight from `schema.json` lacked front-matter sensitivity. With `omitSensitiveIdentifiersFromPrompt` on, a column marked sensitive only in `tables/*.md` was named in the prompt, and a suggestion for it wasn't refused. If your app passes such a table to `suggestEnrichment()` or `buildEnrichmentUserPrompt()`, it no longer typechecks. Build the target and context from `loadSchema()`'s result:
+
+```ts
+// Before
+const table = schemaJson.tables.find((t) => t.id === tableId); // a V2Table
+await suggestEnrichment({ kind: "table-description", table }, { schemaId: schemaJson.schemaId }, model, deps);
+
+// After
+import { loadSchema, suggestEnrichment } from "@askdb/core";
+import { buildSuggestionContext, buildSuggestionTarget } from "@askdb/enrich";
+
+const schema = loadSchema("./my-app.schema");
+const source = { scope: "table", tableId, field: "description" } as const;
+await suggestEnrichment(buildSuggestionTarget(schema, source), buildSuggestionContext(schema, tableId), model, deps);
+```
+
+- **If you build both with `@askdb/enrich`'s `buildSuggestionTarget()` and `buildSuggestionContext()`,** or use Studio, you have nothing to change.
+- **A table you build by hand** must set `sensitive` on the table, and `sensitive` and `primaryKey` on every column. Mark sensitive each column that `tables/*.md` marks, and every column of a sensitive table, as `loadSchema()` does.
+- **`loadSchemaFromJson()` of a bare `schema.json`** typechecks too, but has no front-matter flags. Load the schema directory or a bundle with `loadSchema()` instead.
+
 ## 1.0.0-beta.45
 
 Released with `@askdb/client` 1.0.0-beta.8, `@askdb/ai` 0.1.0-beta.9, `@askdb/config` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.16, `@askdb/introspect` 0.3.0-beta.19 and `@askdb/studio` 0.2.0-beta.38. Every other package got a new version too; its CHANGELOG lists what changed.

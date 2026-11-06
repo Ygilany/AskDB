@@ -12,7 +12,7 @@
  * once `ask()` keeps the `;`; one that strips every trailing `;`, or every `;`, so a statement
  * AskDB should have rejected or changed compares equal; and a fence read from an untagged block,
  * which `ask()` reads and the replay suites don't.
- * Not covered elsewhere: on the committed baseline (`1.0.0-beta.44`) and `lab:use .`, the replay
+ * Not covered elsewhere: on the committed baseline (`npm:latest`) and `lab:use .`, the replay
  * suites and `record.test.ts` run against an AskDB that keeps the `;`, so they exercise the side of
  * the comparison that handles a removed `;` only on an older target (`npm:askdb@1.0.0-beta.43`).
  * No production seam: plain functions over strings, and one real cassette read from disk.
