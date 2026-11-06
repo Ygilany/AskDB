@@ -89,8 +89,8 @@ export type TenantScopeRejectionReason =
   | "UNSUPPORTED_TENANT_PREDICATE"
   /**
    * A tenant ID that isn't printable ASCII (U+0020 to U+007E), or that contains a
-   * backslash, would be inlined as a literal: by `ask()` or `resolveTenantSql()` in
-   * `sql-only` mode, or in the `sql` that `bindPreparedQuery()` returns. It's refused on
+   * backslash, would be inlined as a literal: by `ask()`, `resolveTenantSql()` or
+   * `bindPreparedQuery()` in `sql-only` mode. It's refused on
    * every dialect, because a server whose string settings or connection charset differ
    * from the dialect's can read part of it as the end of the literal (a backslash, or a
    * `¥` sent as byte 0x5C under `sjis`). Use `tenantSqlMode: "sql-params"` (the default)
