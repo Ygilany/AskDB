@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-02, maintainer decision). Implemented by #435, which also fixes the RAG key leak in #345: the types are in `packages/config/src/types.ts`, the translation of the old keys and the section resolution in `packages/config/src/normalize.ts`, and Studio's RAG embedder reads `getAskDbRuntimeConfig().ai.embedding`. AskDB assumes no vector width for any model, old configs included (maintainer decision on #435): it learns the width from the model, and a deprecation warning tells an old config which width an existing index has.
+Accepted (2026-10-02, maintainer decision). Implemented by #435, which also fixes the RAG key leak in #345: the types are in `packages/config/src/types.ts`, the translation of the old keys and the section resolution in `packages/config/src/resolve.ts` (`normalize.ts` before #711), and Studio's RAG embedder reads `getAskDbRuntimeConfig().ai.embedding`. AskDB assumes no vector width for any model, old configs included (maintainer decision on #435): it learns the width from the model, and a deprecation warning tells an old config which width an existing index has.
 
 ## Context
 

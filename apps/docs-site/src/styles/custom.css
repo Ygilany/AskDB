@@ -179,11 +179,85 @@
   margin-bottom: 1.25rem;
 }
 
-figure:has(.askdb-diagram) {
+/*
+ * D2 diagrams (astro-d2, inline SVG). D2's dark theme is off; these rules map its theme-0
+ * palette classes to Starlight's color variables, so each diagram follows the theme toggle.
+ * `:root` raises specificity above D2's own `.d2-<hash> .fill-X` rules. Colors hard-coded in
+ * a .d2 file (style.fill: "#…") don't follow the theme: use the palette instead.
+ *
+ * D2's own <style> (its fonts and the rules below) never reaches the page: MDX's static
+ * optimizer moves it into a `set:html` attribute and leaves the element empty. So labels use
+ * the site font, and these rules stand in for the ones a diagram needs.
+ */
+.d2-svg text { font-family: var(--sl-font); }
+.d2-svg .text-bold { font-weight: 600; }
+.d2-svg .text-italic { font-style: italic; }
+.d2-svg .text-mono { font-family: var(--sl-font-mono); }
+.d2-svg .shape { shape-rendering: geometricPrecision; stroke-linejoin: round; }
+.d2-svg .connection { stroke-linecap: round; stroke-linejoin: round; }
+.d2-svg .blend { mix-blend-mode: multiply; opacity: 0.5; }
+.d2-svg .dark-code { display: none; }
+:root .d2-svg .fill-N1 { fill: var(--sl-color-white); }
+:root .d2-svg .fill-N2 { fill: var(--sl-color-gray-1); }
+:root .d2-svg .fill-N3 { fill: var(--sl-color-gray-2); }
+:root .d2-svg .fill-N4 { fill: var(--sl-color-gray-5); }
+:root .d2-svg .fill-N5 { fill: var(--sl-color-gray-4); }
+:root .d2-svg .fill-N6 { fill: var(--sl-color-gray-5); }
+:root .d2-svg .fill-N7 { fill: var(--sl-color-black); }
+:root .d2-svg .fill-B1,
+:root .d2-svg .fill-B2,
+:root .d2-svg .fill-AA2 { fill: var(--sl-color-accent); }
+:root .d2-svg .fill-B3,
+:root .d2-svg .fill-B4,
+:root .d2-svg .fill-B5,
+:root .d2-svg .fill-AA4,
+:root .d2-svg .fill-AA5 { fill: var(--sl-color-gray-6); }
+:root .d2-svg .fill-B6,
+:root .d2-svg .fill-AB4,
+:root .d2-svg .fill-AB5 { fill: var(--sl-color-accent-low); }
+:root .d2-svg .stroke-N1 { stroke: var(--sl-color-white); }
+:root .d2-svg .stroke-N2,
+:root .d2-svg .stroke-N3,
+:root .d2-svg .stroke-N4,
+:root .d2-svg .stroke-N5,
+:root .d2-svg .stroke-N6 { stroke: var(--sl-color-gray-3); }
+:root .d2-svg .stroke-N7 { stroke: var(--sl-color-black); }
+:root .d2-svg .stroke-B1,
+:root .d2-svg .stroke-B2,
+:root .d2-svg .stroke-B3,
+:root .d2-svg .stroke-AA2 { stroke: var(--sl-color-accent); }
+:root .d2-svg .stroke-B4,
+:root .d2-svg .stroke-B5,
+:root .d2-svg .stroke-B6,
+:root .d2-svg .stroke-AA4,
+:root .d2-svg .stroke-AA5,
+:root .d2-svg .stroke-AB4,
+:root .d2-svg .stroke-AB5 { stroke: var(--sl-color-gray-5); }
+
+/*
+ * An inline D2 diagram has no size of its own: astro-d2 ignores the fence's `width` with D2's
+ * WebAssembly build. The page sets `--d2-width` on the <figure> to the diagram's natural width;
+ * these rules apply it, center the diagram and shrink it on narrow screens.
+ */
+figure > svg[data-d2-version] {
+  display: block;
+  height: auto;
+  margin-inline: auto;
+  max-width: 100%;
+  width: var(--d2-width, 100%);
+}
+
+figure:has(.askdb-diagram),
+figure:has(> svg[data-d2-version]) {
   margin: 1.25rem 0;
 }
 
-figure:has(.askdb-diagram) figcaption {
+figure:has(> svg[data-d2-version]) figcaption {
+  text-align: center;
+}
+
+figure:has(.askdb-diagram) figcaption,
+figure:has(> svg[data-d2-version]) figcaption {
   color: var(--sl-color-gray-2);
   font-size: 0.9rem;
   line-height: 1.55;

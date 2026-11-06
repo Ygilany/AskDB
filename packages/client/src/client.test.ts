@@ -94,11 +94,9 @@ function makeConfig(overrides?: {
   schemaJson?: string;
   mockSql?: string;
   dialect?: AskDbRuntimeConfig["nlToSql"]["dialect"];
-  envSchemaPath?: string;
-  envSchemaJson?: string;
   aiEnv?: Record<string, string | undefined>;
   omitSensitiveFromPrompt?: boolean;
-  askdbMode?: string;
+  askdbMode?: AskDbModeV1;
 }): AskDbRuntimeConfig {
   return {
     structured: {
@@ -107,13 +105,7 @@ function makeConfig(overrides?: {
         schemaJson: overrides?.schemaJson,
       },
     } as AskDbRuntimeConfig["structured"],
-    ai: {
-      aiEnv: {
-        ASKDB_SCHEMA_PATH: overrides?.envSchemaPath,
-        ASKDB_SCHEMA_JSON: overrides?.envSchemaJson,
-        ...overrides?.aiEnv,
-      },
-    },
+    ai: { aiEnv: { ...overrides?.aiEnv } },
     dev: { mockSql: overrides?.mockSql },
     nlToSql: { dialect: overrides?.dialect },
     modes: { askdbMode: overrides?.askdbMode, omitSensitiveFromPrompt: overrides?.omitSensitiveFromPrompt ?? false },
@@ -279,36 +271,21 @@ describe("createAskDb", () => {
     }
   });
 
-  describe("schema from config: host.schemaJson → ASKDB_SCHEMA_JSON → host.schemaPath → ASKDB_SCHEMA_PATH", () => {
+  describe("schema from config: host.schemaJson → host.schemaPath", () => {
     const badJson = "{not json";
     const missing = "/nope/does-not-exist.schema";
 
     // Each case breaks the source that should win, so the error's `source` names which one was read.
     it.each([
       {
-        name: "host.schemaJson wins over ASKDB_SCHEMA_JSON",
-        config: { schemaJson: badJson, envSchemaJson: minimalV2Json },
+        name: "host.schemaJson wins over host.schemaPath",
+        config: { schemaJson: badJson, schemaPath: fixtureSchemaPath },
         source: "host.schemaJson",
       },
       {
-        name: "a blank host.schemaJson falls through to ASKDB_SCHEMA_JSON",
-        config: { schemaJson: "   ", envSchemaJson: badJson },
-        source: "ASKDB_SCHEMA_JSON",
-      },
-      {
-        name: "schema JSON wins over a schema path",
-        config: { envSchemaJson: badJson, schemaPath: fixtureSchemaPath },
-        source: "ASKDB_SCHEMA_JSON",
-      },
-      {
-        name: "host.schemaPath wins over ASKDB_SCHEMA_PATH",
-        config: { schemaPath: missing, envSchemaPath: fixtureSchemaPath },
+        name: "a blank host.schemaJson falls through to host.schemaPath",
+        config: { schemaJson: "   ", schemaPath: missing },
         source: `host.schemaPath (${missing})`,
-      },
-      {
-        name: "a blank host.schemaPath falls through to ASKDB_SCHEMA_PATH",
-        config: { schemaJson: "", envSchemaJson: " ", schemaPath: "  ", envSchemaPath: missing },
-        source: `ASKDB_SCHEMA_PATH (${missing})`,
       },
     ])("$name", async ({ config, source }) => {
       const askdb = createAskDb({ config: makeConfig({ ...config, mockSql: "SELECT 1" }), registry: makeRegistry() });
@@ -317,8 +294,14 @@ describe("createAskDb", () => {
       expect((error as SchemaLoadError).source).toBe(source);
     });
 
-    it("treats all-blank values as no schema configured", async () => {
-      const config = makeConfig({ schemaJson: " ", envSchemaJson: "", schemaPath: "\t", envSchemaPath: "  ", mockSql: "SELECT 1" });
+    // The flat map is a projection of `host.*`; a schema key found only there is never read (#711).
+    it("treats blank host values as no schema configured, whatever the env map holds", async () => {
+      const config = makeConfig({
+        schemaJson: " ",
+        schemaPath: "\t",
+        mockSql: "SELECT 1",
+        aiEnv: { ASKDB_SCHEMA_JSON: minimalV2Json, ASKDB_SCHEMA_PATH: fixtureSchemaPath },
+      });
       const askdb = createAskDb({ config, registry: makeRegistry() });
       await expect(askdb.ask("q")).rejects.toBeInstanceOf(SchemaNotConfiguredError);
     });
