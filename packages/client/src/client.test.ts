@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AiBaseUrlCredentialsError, createAiRegistry, type AiConfig, type AiProviderAdapter, type AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import type { AnyNormalizedSchema, AskDbLogger, AskDbModeV1, AskDialect } from "@askdb/core";
@@ -810,23 +810,41 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
   });
 });
 
-// #787: a runtime config a host builds itself skips the config file's check, so @askdb/ai refuses
-// a base URL with credentials before any request is made. fetch would quote the URL in its error,
-// which core logs as askdb.pipeline.failed.
+// #787: a base URL with credentials is refused before any request is made. Unrefused, fetch quotes
+// the URL in its error, which core logs as askdb.pipeline.failed; refused, core never runs, so the
+// run logs nothing at all.
 describe("createAskDb with a model base URL that carries credentials", () => {
-  it("rejects before any request, and neither the error nor the log repeats the URL", async () => {
+  const SECRET_URL = "http://admin:S3cret@proxy.example/v1";
+  const saved = process.env.OPENAI_BASE_URL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = saved;
+  });
+
+  async function askWith(aiEnv: Record<string, string>): Promise<{ error: unknown; lines: unknown[] }> {
     const lines: unknown[] = [];
     const logger: AskDbLogger = { info: (context) => void lines.push(context), error: (context) => void lines.push(context) };
     const askdb = createAskDb({
-      config: makeConfig({ aiEnv: { OPENAI_API_KEY: "sk-test", OPENAI_BASE_URL: "http://admin:S3cret@proxy.example/v1" } }),
+      config: makeConfig({ aiEnv }),
       registry: createAiRegistry(),
       schema: { schema: loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema },
     });
-
     const error = await askdb.ask("count users", { logger }).catch((e: unknown) => e);
+    return { error, lines };
+  }
+
+  it.each([
+    // A runtime config a host builds itself skips the config file's check.
+    ["in the runtime config's env", { OPENAI_API_KEY: "sk-test", OPENAI_BASE_URL: SECRET_URL }, () => {}],
+    // The OpenAI SDK reads OPENAI_BASE_URL from process.env itself when AskDB passes no base URL.
+    ["in process.env, where the SDK would read it", { OPENAI_API_KEY: "sk-test" }, () => void (process.env.OPENAI_BASE_URL = SECRET_URL)],
+  ])("rejects one %s, and nothing repeats the URL", async (_where, aiEnv, arrange) => {
+    arrange();
+    const { error, lines } = await askWith(aiEnv);
 
     expect(error).toBeInstanceOf(AiBaseUrlCredentialsError);
     expect((error as AiBaseUrlCredentialsError).setting).toBe("OPENAI_BASE_URL");
-    expect(`${(error as Error).message}${JSON.stringify(lines)}`).not.toMatch(/S3cret|admin/);
+    expect((error as Error).message).not.toMatch(/S3cret|admin/);
+    expect(lines).toEqual([]);
   });
 });

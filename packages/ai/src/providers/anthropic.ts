@@ -68,7 +68,7 @@ export const anthropicProvider: AiProviderAdapter = {
     return resolveBaseConfig("anthropic", env, ENV_SPEC, options);
   },
   async createLanguageModel(config) {
-    const baseURL = baseURLOption(config);
+    const baseURL = baseURLOption(config, "ANTHROPIC_BASE_URL");
     const { createAnthropic } = await import("@ai-sdk/anthropic").catch(
       rethrowMissingPeer("anthropic", PEER_PACKAGE),
     );

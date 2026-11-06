@@ -38,8 +38,24 @@ export function refuseBaseUrlCredentials(url: string | undefined, setting: strin
   if (url !== undefined && hasCredentials(url)) throw new AiBaseUrlCredentialsError(setting);
 }
 
-/** `{ baseURL }` for an AI SDK provider factory, once the URL is known to carry no credentials. */
-export function baseURLOption(config: AiConfig): { baseURL?: string } {
+/**
+ * `{ baseURL }` for an AI SDK provider factory. Throws {@link AiBaseUrlCredentialsError} when
+ * `config.baseURL` carries a user name or password.
+ *
+ * With no `config.baseURL`, some provider SDKs read a base URL variable of their own from
+ * `process.env` (`@ai-sdk/openai` reads `OPENAI_BASE_URL`, `@ai-sdk/anthropic` reads
+ * `ANTHROPIC_BASE_URL`). Pass that name as `sdkEnvVar`: its value is checked the same way and
+ * left for the SDK to read. This is the one `process.env` read in `@askdb/ai` (ADR 0005, as
+ * amended by ADR 0036).
+ */
+export function baseURLOption(config: AiConfig, sdkEnvVar?: string): { baseURL?: string } {
   refuseBaseUrlCredentials(config.baseURL, "baseURL");
-  return config.baseURL ? { baseURL: config.baseURL } : {};
+  if (config.baseURL) return { baseURL: config.baseURL };
+  if (sdkEnvVar) refuseBaseUrlCredentials(processEnv(sdkEnvVar), sdkEnvVar);
+  return {};
+}
+
+function processEnv(name: string): string | undefined {
+  const value = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
+  return value?.trim() ? value : undefined;
 }

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   AiBaseUrlCredentialsError,
+  BUILTIN_AI_PROVIDERS,
   anthropicProvider,
   azureProvider,
   gatewayProvider,
@@ -43,23 +44,44 @@ describe("a model base URL with credentials", () => {
     expectRefused(await failure(() => adapter.resolveConfig(env, { usage: "language" })), setting);
   });
 
-  it.each<[string, AiProviderAdapter, boolean]>([
-    ["openai", openaiProvider, true],
-    ["anthropic", anthropicProvider, false],
-    ["google", googleProvider, true],
-    ["azure", azureProvider, true],
-    ["gateway", gatewayProvider, true],
-  ])("%s: building a model refuses one in an AiConfig, naming baseURL", async (_name, adapter, embeds) => {
-    // A gateway model id names its upstream provider.
-    const model = adapter === gatewayProvider ? "openai/gpt-4o-mini" : "m";
-    const config: AiConfig = { provider: adapter.provider, apiKey: "k", model, baseURL: WITH_CREDENTIALS };
-    expectRefused(await failure(() => adapter.createLanguageModel(config)), "baseURL");
-    if (embeds) expectRefused(await failure(() => adapter.createEmbeddingModel(config)), "baseURL");
-  });
+  // Every row of the built-in table, so a provider added later fails here until it builds its
+  // SDK options through baseURLOption.
+  it.each(BUILTIN_AI_PROVIDERS.map((row) => [row.provider, row] as const))(
+    "%s: building a model refuses one in an AiConfig, naming baseURL",
+    async (_name, { adapter, env }) => {
+      const config: AiConfig = { provider: adapter.provider, apiKey: "k", model: env.defaultModel, baseURL: WITH_CREDENTIALS };
+      expectRefused(await failure(() => adapter.createLanguageModel(config)), "baseURL");
+      const embedding = await failure(() => adapter.createEmbeddingModel(config));
+      // Anthropic has no embedding model to build.
+      if (!(embedding instanceof Error && /does not provide an embeddings API/.test(embedding.message))) expectRefused(embedding, "baseURL");
+    },
+  );
 
   it("refuses a URL that doesn't parse but has an @, since it may still carry a password", async () => {
     const env = { OPENAI_API_KEY: "k", OPENAI_BASE_URL: "http://admin:S3 cret@proxy.example/v1" };
     expectRefused(await failure(() => openaiProvider.resolveConfig(env, { usage: "language" })), "OPENAI_BASE_URL");
+  });
+
+  describe("the base URL variable a provider SDK reads from process.env when given none", () => {
+    const saved = { ...process.env };
+    afterEach(() => {
+      process.env = { ...saved };
+    });
+
+    it.each<[string, AiProviderAdapter, string]>([
+      ["openai", openaiProvider, "OPENAI_BASE_URL"],
+      ["anthropic", anthropicProvider, "ANTHROPIC_BASE_URL"],
+    ])("%s: building a model refuses a credentialed one, naming the variable", async (_name, adapter, variable) => {
+      process.env[variable] = WITH_CREDENTIALS;
+      const config: AiConfig = { provider: adapter.provider, apiKey: "k", model: "m" };
+      expectRefused(await failure(() => adapter.createLanguageModel(config)), variable);
+    });
+
+    it("leaves it alone when the AiConfig sets its own baseURL, which the SDK uses instead", async () => {
+      process.env.OPENAI_BASE_URL = WITH_CREDENTIALS;
+      const config: AiConfig = { provider: "openai", apiKey: "k", model: "m", baseURL: "https://proxy.example/v1" };
+      await expect(openaiProvider.createLanguageModel(config)).resolves.toBeDefined();
+    });
   });
 
   it("keeps a base URL without credentials, including one with an @ only in its path", () => {

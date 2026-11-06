@@ -21,7 +21,7 @@ const CONFIG_HINT =
   "For OpenAI, set ai.provider: \"openai\" and ai.providerConfig.openai.apiKey in askdb.config.*.";
 
 async function createProvider(config: AiConfig) {
-  const baseURL = baseURLOption(config);
+  const baseURL = baseURLOption(config, "OPENAI_BASE_URL");
   const { createOpenAI } = await import("@ai-sdk/openai").catch(
     rethrowMissingPeer("openai", PEER_PACKAGE),
   );
