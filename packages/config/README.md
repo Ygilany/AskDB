@@ -102,6 +102,7 @@ const embeddingModel = config.ai.embedding
 
 Tooling for `askdb init` and AskDB Studio's setup wizard. It is experimental, like Studio: a minor release of `@askdb/config` may change it (ADR 0030). Your own `askdb.config.ts` never needs it.
 
+- `planAskDbScaffold(answers, versions)` — a new project's `askdb.config.ts` source, `.env.example`, the env vars the config reads, and the packages to install, from its answers (engine, connection variable or SQLite file, schema directory, `ai`, RAG store, Studio execute). Pure; it throws `AskDbScaffoldInputError`, with the answer's `field`, for an env var name that isn't uppercase POSIX (`^[A-Z_][A-Z0-9_]*$`), a control character in a path, an unknown id, or a missing answer. The caller supplies the defaults.
 - `renderAskDbAiConfigScaffold(input)` — the `ai` block of a new `askdb.config.ts`, plus the env vars it reads.
 - `detectPackageManager(dir, env?)` — the package manager for `dir`: a lockfile in `dir` or a parent, then the nearest `package.json`'s `packageManager` or `devEngines.packageManager`, then `npm_config_user_agent`, then npm.
 - `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` — project and install-command helpers.
