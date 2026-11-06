@@ -145,6 +145,7 @@ export default defineConfig({
             { label: "HTTP API", slug: "reference/http-api" },
             { label: "Configuration", slug: "reference/config" },
             { label: "Packages", slug: "reference/packages" },
+            { label: "Versioning", slug: "reference/versioning" },
             { label: "@askdb/core API", slug: "reference/core-api" },
             { label: "@askdb/client API", slug: "reference/client-api" },
             { label: "@askdb/rag API", slug: "reference/rag-api" },
