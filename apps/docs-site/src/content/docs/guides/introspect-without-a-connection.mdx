@@ -3,8 +3,6 @@ title: "Introspect without a connection"
 description: "Build a Postgres schema artifact from exported catalog query results, when the machine running AskDB can't reach the database."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
-
 <p class="doc-eyebrow">Schema author guide</p>
 
 <p class="doc-lede">When the machine that runs <code>askdb</code> can't reach your Postgres database, or shouldn't hold its credentials, someone who can runs AskDB's catalog queries and hands you the results. AskDB builds the same schema artifact from them as from a live connection.</p>
@@ -13,7 +11,7 @@ This works for Postgres only. The other engines need a live connection.
 
 ## What you hand over
 
-The export holds catalog metadata, and nothing else:
+The export bundle, the folder of query results you hand over, holds catalog metadata and nothing else:
 
 - The names of schemas, tables, views, columns, constraints, indexes and sequences.
 - Column types, nullability and default expressions; primary, foreign and unique keys; and whether row-level security is on.
@@ -43,7 +41,14 @@ sed -e 's/\$1::text\[\]/NULL::text[]/g' -e 's/\$2::text\[\]/NULL::text[]/g' \
   askdb-templates.sql > askdb-queries.sql
 ```
 
-To export only some schemas, replace `$1` with a list instead, such as `ARRAY['public','sales']::text[]`. You can also export everything and filter in step 4.
+To export only some schemas, put a list in place of every `$1` instead. Each query uses `$1` and `$2` twice, and the `g` at the end of each `sed` expression replaces them all:
+
+```bash
+sed -e "s/\$1::text\[\]/ARRAY['public','sales']::text[]/g" -e 's/\$2::text\[\]/NULL::text[]/g' \
+  askdb-templates.sql > askdb-queries.sql
+```
+
+You can also export everything and filter in step 4.
 
 ## 3. Run each query and save it as CSV
 
@@ -60,9 +65,9 @@ echo '{ "engine": "postgres", "version": 1 }' > askdb-export/manifest.json
 
 The first command splits the file into one query per file in `askdb-queries/`. The loop runs each one and saves its result in `askdb-export/`.
 
-The folder now holds `manifest.json` and one CSV file for each query, such as `tables.csv` and `columns.csv`. `psql --csv` writes each file the way AskDB reads it: a header row with the query's column names, `t` and `f` for booleans, and an empty field for null. Hand over the folder.
+The export bundle, `askdb-export/`, now holds `manifest.json` and one CSV file for each query, such as `tables.csv` and `columns.csv`. `psql --csv` writes each file the way AskDB reads it: a header row with the query's column names, `t` and `f` for booleans, and an empty field for null. Hand over `askdb-export/`.
 
-## 4. Introspect from the folder
+## 4. Introspect from the export bundle
 
 ```bash
 npx askdb introspect --engine postgres --from-export ./askdb-export
@@ -72,20 +77,20 @@ It writes the schema artifact to `introspection.outputDir` from your config, or 
 
 ## 5. Refresh it when the database changes
 
-When the database changes, repeat steps 3 and 4. Introspecting again into the same folder keeps your `tables/*.md`, `concepts.md` and `tenant-policy.md`, and the `sensitive` flags in `schema.json`. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps after a table or column is renamed.
+When the database changes, repeat steps 3 and 4. Introspecting again into the same output folder (`introspection.outputDir` or `--out`) keeps your `tables/*.md`, `concepts.md` and `tenant-policy.md`, and the `sensitive` flags in `schema.json`. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps after a table or column is renamed.
 
 ## If it fails
 
 | Error | Fix |
 | --- | --- |
 | `ERROR: there is no parameter $1` (from `psql`) | The queries still hold `$1` and `$2`. Do step 2. |
-| `export bundle is missing manifest.json at <path>` | Write `manifest.json` into the folder (step 3). |
+| `export bundle is missing manifest.json at <path>` | Write `manifest.json` into the export bundle (step 3). |
 | `export bundle is missing views.csv or views.json` | A query's result is missing. Run that query again and save its CSV. |
 | `<file> header mismatch for template '<name>' (expected [...], got [...])` | The CSV's header row doesn't match the query's columns. Save the result again with `psql --csv`, which writes the header as the query names it. |
 | `unsupported export bundle version '2' (expected 1)` | `manifest.json` names another version. Write `"version": 1`, or print the queries again with the `askdb` you're introspecting with. |
 | `--from-export is currently supported only for --engine postgres (got <engine>)` | Your config names another engine. Pass `--engine postgres`. |
 
-<Aside type="tip">The [Introspection API reference](/reference/introspect-api/#export-bundles) describes the export folder's format in full, including JSON files instead of CSV.</Aside>
+The [Introspection API reference](/reference/introspect-api/#export-bundles) describes the export bundle's format in full, including JSON files instead of CSV.
 
 ## Read next
 
