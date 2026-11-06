@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createAskDbLogger } from "./create-askdb-logger.js";
@@ -59,6 +59,18 @@ describe("createAskDbLogger", () => {
         .map((line) => (JSON.parse(line) as { correlationId: string }).correlationId);
       expect(ids).toEqual(Array.from({ length: 51 }, (_, i) => `req-${i}`));
       expect(opened).toBeLessThan(5);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a logFile that ends in a path separator, without creating a file", () => {
+    const dir = mkdtempSync(join(__dirname, "log-fixture-"));
+    try {
+      expect(() =>
+        createAskDbLogger({ correlationId: "c", level: "info", stderr: false, logFile: join(dir, "logs") + sep }),
+      ).toThrow();
+      expect(existsSync(join(dir, "logs"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

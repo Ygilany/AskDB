@@ -52,12 +52,14 @@ function wrapPinoAsAskDbLogger(pinoLogger: PinoLogger): AskDbLogger {
 const logFileDestinations = new Map<string, pino.DestinationStream>();
 
 function logFileDestination(logFile: string): pino.DestinationStream {
-  const path = resolve(logFile);
-  let destination = logFileDestinations.get(path);
+  // Key by the absolute path, but open the path as given: `resolve()` drops a trailing separator,
+  // which would turn `logs/` into a file named `logs` instead of failing to open a directory.
+  const key = resolve(logFile);
+  let destination = logFileDestinations.get(key);
   if (destination === undefined) {
-    mkdirSync(dirname(path), { recursive: true });
-    destination = pino.destination({ dest: path, sync: true });
-    logFileDestinations.set(path, destination);
+    mkdirSync(dirname(logFile), { recursive: true });
+    destination = pino.destination({ dest: logFile, sync: true });
+    logFileDestinations.set(key, destination);
   }
   return destination;
 }
