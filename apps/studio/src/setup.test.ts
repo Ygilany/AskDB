@@ -162,7 +162,9 @@ describe("writeSetupConfig dependency install", () => {
    *
    * `pnpResolves` makes it a Yarn Plug'n'Play project instead: no `node_modules`, and a
    * preload that patches Node's resolver as `.pnp.cjs` does, resolving those packages.
-   * `setupJs` runs another build of the module (a published layout, say).
+   * `setupJs` runs another build of the module (a published layout, say). `manifest` replaces
+   * the project's `package.json`, and `lockfile: false` leaves out its `pnpm-lock.yaml`.
+   * `npm_config_user_agent` is cleared, so the test runner's own pnpm never picks the manager.
    */
   function setupInPnpmProject(
     input: SetupConfigInput,
@@ -171,12 +173,21 @@ describe("writeSetupConfig dependency install", () => {
       writes = [],
       pnpResolves,
       setupJs: setupModule = setupJs,
-    }: { pnpmVersion?: string; writes?: string[]; pnpResolves?: string[]; setupJs?: string } = {},
+      manifest = { name: "app", private: true },
+      lockfile = true,
+    }: {
+      pnpmVersion?: string;
+      writes?: string[];
+      pnpResolves?: string[];
+      setupJs?: string;
+      manifest?: Record<string, unknown>;
+      lockfile?: boolean;
+    } = {},
   ): { dir: string; calls: unknown[][]; manualInstallCommand: string | null; resolvable: boolean[] } {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "askdb-setup-install-")));
     dirs.push(dir);
-    writeFileSync(join(dir, "package.json"), '{ "name": "app", "private": true }\n');
-    writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    writeFileSync(join(dir, "package.json"), `${JSON.stringify(manifest)}\n`);
+    if (lockfile) writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
     const preload: string[] = [];
     if (pnpResolves) {
       writeFileSync(
@@ -229,7 +240,7 @@ describe("writeSetupConfig dependency install", () => {
     const run = spawnSync(process.execPath, [...preload, "--input-type=module", "-e", script], {
       cwd: dir,
       encoding: "utf8",
-      env: { ...process.env, NODE_PATH: "", PATH: `${bin}${delimiter}${process.env.PATH}` },
+      env: { ...process.env, NODE_PATH: "", PATH: `${bin}${delimiter}${process.env.PATH}`, npm_config_user_agent: "" },
     });
     if (run.status !== 0) throw new Error(run.stderr);
     return { dir, ...JSON.parse(run.stdout) };
@@ -292,6 +303,19 @@ describe("writeSetupConfig dependency install", () => {
 
     expect(calls).toEqual([]);
     expect(manualInstallCommand).toBeNull();
+  });
+
+  // #750: `pnpm init` writes devEngines.packageManager and no lockfile, and npm refuses to
+  // install there (EBADDEVENGINES).
+  it("installs with pnpm in a fresh `pnpm init` project with no lockfile", () => {
+    const { dir, calls, manualInstallCommand } = setupInPnpmProject(
+      { database: "postgres", aiProvider: "openai" },
+      { lockfile: false, manifest: { name: "app", devEngines: { packageManager: { name: "pnpm", version: "12.18.0" } } } },
+    );
+
+    const packages = [`@askdb/config@${version("config")}`, "pg"];
+    expect(calls).toEqual([["pnpm", dir, packages, []]]);
+    expect(manualInstallCommand).toBe(`pnpm add ${packages.join(" ")}`);
   });
 
   it("installs no engine package and approves no build for a live engine", () => {
