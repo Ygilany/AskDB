@@ -14,7 +14,7 @@ Upgrading from an earlier beta? [Upgrade AskDB](/guides/upgrading/) lists what t
 ## What to install — by use case
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect a database, enrich, and ask from the CLI.</span></a>
+  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> and your database's driver (<code>pg</code>, <code>mysql2</code>, <code>better-sqlite3</code> or <code>mssql</code>) are enough to introspect, enrich, and ask from the CLI. <code>askdb init</code> installs the driver for you.</span></a>
   <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/client</code> + <code>@askdb/core</code> + <code>@askdb/config</code> + <code>ai</code> + an AI SDK provider package such as <code>@ai-sdk/openai</code>.</span></a>
   <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
