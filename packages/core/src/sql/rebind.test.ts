@@ -290,6 +290,17 @@ describe("bindPreparedQuery — a parameter declaration AskDB doesn't know", () 
     );
   });
 
+  it.each([
+    ["a parameters field that isn't a list", { ...template(unscoped), parameters: undefined }, "The template's parameters aren't a list. Regenerate the template."],
+    ["an entry that isn't a declaration", { ...template(unscoped), parameters: [status, null] }, "Parameter 2 in the template isn't a declaration. Regenerate the template."],
+  ])("refuses %s with INVALID_DECLARATION, not a TypeError", (_case, prepared, message) => {
+    const error = catchError(() => bindPreparedQuery(prepared as unknown as PreparedQuery, { status_name: "open" }, { schema: noPolicySchema }));
+
+    expect(error).toBeInstanceOf(QueryParameterError);
+    expect((error as QueryParameterError).reason).toBe("INVALID_DECLARATION");
+    expect((error as Error).message).toBe(message);
+  });
+
   it("reports the declaration before a missing value", () => {
     const error = catchError(() => bindPreparedQuery(declaring({ type: "uuid" }), {}, { schema: noPolicySchema }));
 

@@ -14,7 +14,11 @@ import { validateSelectSql } from "./validate.js";
 // Public parameter types (owned by the binder; re-exported from barrels)
 // ---------------------------------------------------------------------------
 
-export type QueryParameterType = "string" | "number" | "boolean" | "date" | "datetime";
+/** Every `type` a parameter can declare. `QueryParameterType` is derived from it, so the two can't drift. */
+export const QUERY_PARAMETER_TYPES = ["string", "number", "boolean", "date", "datetime"] as const;
+export type QueryParameterType = (typeof QUERY_PARAMETER_TYPES)[number];
+/** Every `cardinality` a parameter can declare. */
+export const QUERY_PARAMETER_CARDINALITIES = ["one", "many"] as const;
 export type QueryParameterValue = string | number | boolean;
 /** One slot in `BoundQuery.params` — a scalar, or an array for Postgres/CockroachDB listBinding. */
 export type QueryParamSlot = QueryParameterValue | QueryParameterValue[];
@@ -332,23 +336,30 @@ function nextMarker(style: MarkerStyle, counters: { dollar: number; atp: number 
 // renderPreparedQuery
 // ---------------------------------------------------------------------------
 
-const PARAMETER_TYPES: readonly string[] = ["string", "number", "boolean", "date", "datetime"] satisfies QueryParameterType[];
-const CARDINALITIES: readonly string[] = ["one", "many"] satisfies PreparedQuery["parameters"][number]["cardinality"][];
-
 /**
- * Refuses a declaration whose `type` or `cardinality` AskDB doesn't support. A stored template is
- * data and can hold anything; an unknown `type` would otherwise reach the renderer and fail there
- * as a `TypeError`, and an unknown `cardinality` would bind as `"one"`. Runs before any value is read.
+ * Refuses a parameter list that isn't a list of declarations, and a declaration whose `type` or
+ * `cardinality` AskDB doesn't support. A stored template is data and can hold anything; an unknown
+ * `type` would otherwise reach the renderer and fail there as a `TypeError`, and an unknown
+ * `cardinality` would bind as `"one"`. Runs before any value is read.
  */
 export function assertParameterDeclarations(parameters: PreparedQuery["parameters"]): void {
-  for (const p of parameters) {
-    if (!PARAMETER_TYPES.includes(p.type)) {
+  if (!Array.isArray(parameters)) {
+    throw paramError("INVALID_DECLARATION", "The template's parameters aren't a list. Regenerate the template.");
+  }
+  for (const [index, p] of parameters.entries()) {
+    if (typeof p !== "object" || p === null) {
+      throw paramError(
+        "INVALID_DECLARATION",
+        `Parameter ${index + 1} in the template isn't a declaration. Regenerate the template.`,
+      );
+    }
+    if (!(QUERY_PARAMETER_TYPES as readonly unknown[]).includes(p.type)) {
       throw paramError(
         "INVALID_DECLARATION",
         `Parameter '${p.name}' declares a type AskDB doesn't support; expected string, number, boolean, date or datetime. Regenerate the template.`,
       );
     }
-    if (!CARDINALITIES.includes(p.cardinality)) {
+    if (!(QUERY_PARAMETER_CARDINALITIES as readonly unknown[]).includes(p.cardinality)) {
       throw paramError(
         "INVALID_DECLARATION",
         `Parameter '${p.name}' declares a cardinality AskDB doesn't support; expected one or many. Regenerate the template.`,

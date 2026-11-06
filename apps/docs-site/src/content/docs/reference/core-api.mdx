@@ -657,7 +657,7 @@ const adminScope: TenantScope = {
 | `TenantScopeError` | `ask()`, `bindPreparedQuery()`, `expandTenantScope()`, `validateTenantScope()`, `resolveTenantSql()` and `buildTenantPromptBlock()`: a missing or invalid scope, or tenant IDs that can't be bound. | `reason` |
 | `TenantGuardrailError` | A `deny` from the tenant check in `ask()`, `generateSelectSql()` and `bindPreparedQuery()`, and `validateTenantGuardrails()` under a `strict` policy. | `warnings`, `verdict?` |
 | `SensitiveReferenceError` | `validateSensitiveReferences()` in `strict` mode, and a `deny` from the sensitive check in `ask()` and `bindPreparedQuery()`. | `rule`, `references`, `unresolvedScope?`, `verdict?` |
-| `QueryParameterError` | `bindPreparedQuery()`: missing guardrail inputs, or values that don't fit the template. | `reason` |
+| `QueryParameterError` | `bindPreparedQuery()`: missing guardrail inputs, a template that declares a parameter `type` or `cardinality` AskDB doesn't support, or values that don't fit the template. | `reason` |
 | `SensitiveEnrichmentTargetError` | `suggestEnrichment()` and `buildEnrichmentUserPrompt()`, for a sensitive target column while `omitSensitiveIdentifiersFromPrompt` is on. The message names no column. | — |
 
 `verdict` is set when the error comes from `ask()`, `generateSelectSql()` or `bindPreparedQuery()`: every finding of every check, not only the one that denied. See [Guardrail verdict](#guardrail-verdict). A direct `validateSelectSql()` or `validateSensitiveReferences()` call leaves it unset.
@@ -737,7 +737,7 @@ The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrail
 | `TENANT_VALUE_SUPPLIED` | `values` has a `:tenant_*` key. Tenant IDs come from `tenantScope` only. |
 | `TENANT_PARAM_ALIGNMENT` | The tenant markers in `unboundSql` can't be lined up with the business parameters. |
 | `DIALECT_SPEC_REQUIRED` | No `guardrails.dialect` for a template with `dialectRules: "host"`, or one stored without `dialectRules`. |
-| `INVALID_DECLARATION` | A parameter in the template declares a `type` other than `string`, `number`, `boolean`, `date` or `datetime`, or a `cardinality` other than `one` or `many`. Checked before any value; regenerate the template. |
+| `INVALID_DECLARATION` | A parameter in the template declares a `type` other than `string`, `number`, `boolean`, `date` or `datetime`, or a `cardinality` other than `one` or `many`, or the template's `parameters` isn't a list of declarations. Checked before any value; regenerate the template. |
 
 ---
 
