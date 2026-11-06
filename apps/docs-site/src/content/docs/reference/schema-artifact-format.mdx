@@ -3,7 +3,7 @@ title: "Schema artifact format"
 description: "Every file in a schema artifact: the schema.json fields, the table and concept front-matter, stable IDs, sensitivity rules, the loader's warnings, and the bundle format."
 ---
 
-<p class="doc-eyebrow">Reference · Formats and rules</p>
+<p class="doc-eyebrow">Reference · Schema artifact</p>
 
 <p class="doc-lede">A schema artifact is a folder of files that <code>loadSchema()</code> reads, or one bundle file that holds them. This page lists each file, every field it accepts, and what AskDB does with it. For why the artifact is split this way, see <a href="/concepts/the-schema-artifact/">The schema artifact</a>.</p>
 
@@ -59,7 +59,7 @@ Two names count as the same when they differ only in case or Unicode form, as `O
 | A file named `schema.json`, in any case | Its folder, as if you passed the folder. AskDB reads the physical layer from the path you gave. |
 | Any other JSON file | Its physical layer only, with no table files, concepts or tenant policy. |
 
-Another JSON file throws instead when its folder also holds `tenant-policy.md`, `tables` or `concepts.md`, in any case. Loading the file alone would skip them, and a skipped `tenant-policy.md` turns tenant enforcement off. The error starts `Refusing to load <file> as a standalone physical layer`. To load only the physical layer of such a file, pass its text to `loadSchemaFromJson()`.
+Another JSON file throws instead when its folder also holds `tenant-policy.md`, `tables` or `concepts.md`, in any case. Loading the file alone would skip them ([why the loader fails closed](/concepts/the-schema-artifact/#directory-or-bundle)). The error starts `Refusing to load <file> as a standalone physical layer`. To load only the physical layer of such a file, pass its text to `loadSchemaFromJson()`.
 
 `loadSchemaFromJson()` takes JSON text: a bundle, or a physical layer alone. It never reads the file system.
 
