@@ -35,6 +35,7 @@ Released with `@askdb/config` 1.0.0-beta.16. Other packages that got a new versi
 
 - **`httpApi.listen.port`** is checked when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). A value that isn't an integer from 0 to 65535, or a string holding one, fails with `askdb.config: invalid httpApi.listen.port`, in every tool that loads the config. Before, the HTTP server passed such a value straight to `listen()`. A value that reads as `NaN`, such as `Number(env("PORT"))` with `PORT` unset, now counts as unset: the server uses port 3000 instead of failing to start.
 - **`rag.storeConfig.file.autoFlush`** gives a deprecation warning when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). Nothing ever read it, because the file store writes its files after every change. Remove it.
+- **`logging.logFile`** stays open for the life of the process ([#693](https://github.com/Ygilany/AskDB/issues/693)). `createAskDbLogger()` opens each log file once and shares it across loggers, so the HTTP API server no longer leaks a file descriptor on every `POST /ask`. After a rename or delete, logs keep going to the old file: rotate it with `copytruncate`, or restart the process after a rotate.
 
 ## 1.0.0-beta.46
 
