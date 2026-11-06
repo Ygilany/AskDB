@@ -107,6 +107,56 @@ async function elapsedSleep(p: ProofContext): Promise<void> {
   });
 }
 
+/** One row of `sys.dm_exec_session_wait_stats` for wait type `WAITFOR`. */
+interface WaitforWait {
+  count: number;
+  ms: number;
+}
+
+/**
+ * The `WAITFOR` waits SQL Server records for a new owner session that runs `statement`.
+ * `observer` reads them after the batch, keyed to that session's id, before the session
+ * closes (a new session with the same id starts with empty wait stats).
+ */
+async function waitforWaits(scratch: ScratchDb, observer: ScratchConnection, statement: string): Promise<WaitforWait[]> {
+  return withOwner(scratch, async (c) => {
+    const session = await scalar(c, "SELECT @@SPID AS n");
+    expect(Number.isSafeInteger(session) && session > 0).toBe(true);
+    await c.run(statement);
+    const rows = await observer.rows(
+      `SELECT waiting_tasks_count AS tasks, wait_time_ms AS ms FROM sys.dm_exec_session_wait_stats WHERE session_id = ${session} AND wait_type = 'WAITFOR'`,
+    );
+    return rows.map((r) => ({ count: Number(r.tasks), ms: Number(r.ms) }));
+  });
+}
+
+/**
+ * SQL Server's sleep, proven by its own wait record instead of a stopwatch (#479). SQL Server
+ * times `WAITFOR` on its internal millisecond counter (`sys.dm_os_sys_info.ms_ticks`), and on
+ * CI a freshly started server's counter can run ahead of real time: the batch then ends
+ * early by the client's clock (178 ms once) although the server waited its full second by
+ * its own. The session's wait stats use that same counter, so they show the wait the
+ * statement really asked for.
+ */
+async function serverWaitforSleep(p: ProofContext): Promise<void> {
+  await withOwner(p.scratch, async (observer) => {
+    // Without this permission the DMV shows the observer only its own session: no row, no error.
+    expect(await scalar(observer, "SELECT HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE') AS n"), "the owner can read other sessions' waits").toBe(1);
+    const waits = await waitforWaits(p.scratch, observer, p.statement);
+    expect(waits, "one WAITFOR wait recorded for the statement's session").toEqual([{ count: 1, ms: expect.any(Number) }]);
+    expect(waits[0]!.ms).toBeGreaterThanOrEqual(900);
+
+    // Negative controls: the same read fails a batch whose wait is zero, and finds no wait at all without one.
+    const noDelay = p.statement.replace("WAITFOR DELAY '00:00:01'", "WAITFOR DELAY '00:00:00'");
+    const noWaitfor = p.statement.replace(/\s*WAITFOR DELAY '00:00:01'$/, "");
+    expect([noDelay, noWaitfor]).not.toContain(p.statement);
+    const zero = await waitforWaits(p.scratch, observer, noDelay);
+    expect(zero).toEqual([{ count: 1, ms: expect.any(Number) }]);
+    expect(zero[0]!.ms).toBeLessThan(900);
+    expect(await waitforWaits(p.scratch, observer, noWaitfor)).toEqual([]);
+  });
+}
+
 /** Restrict MySQL to its default secure_file_priv directory; MariaDB permits /tmp. */
 const outfile = (d: SupportedDialect) => d === "mysql" ? "/var/lib/mysql-files/lab-agency.csv" : "/tmp/lab-agency.csv";
 const inputFile = (d: SupportedDialect) => d === "mysql" ? "/var/lib/mysql-files/lab-input.txt" : "/tmp/lab-input.txt";
@@ -539,7 +589,8 @@ const CASES: Case[] = [
     rule: "SQL_NOT_SELECT_OR_WITH",
   },
 
-  // Bounded sleeps. Timed only on the verified isolated fixture.
+  // Bounded sleeps, proven only on the verified isolated fixture: timed by the client, or on
+  // SQL Server read from the server's own wait record (`serverWaitforSleep`, #479).
   {
     scenario: "safety-sleep",
     what: "pg_sleep()",
@@ -562,7 +613,7 @@ const CASES: Case[] = [
     dialects: ["sqlserver"],
     sql: () => `SELECT 1 AS ok WAITFOR DELAY '00:00:01'`,
     rule: "SQL_FORBIDDEN_KEYWORD",
-    isolatedProof: elapsedSleep,
+    isolatedProof: serverWaitforSleep,
   },
 ];
 
