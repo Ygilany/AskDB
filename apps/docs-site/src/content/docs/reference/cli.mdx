@@ -323,7 +323,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 | `--file-path <path>` | `rag.storeConfig.file.basePath`, else `<schema-dir>/schema` |
 | `--pg-url <connstr>` | `rag.storeConfig.pgvector.databaseUrl`, read even when `rag.store` is another store |
 | `--pg-table <name>` | `rag.storeConfig.pgvector.table`, else `askdb_rag_chunks` |
-| `--embedder mock\|ai` | `rag.embedder`: `"ai"` (or its deprecated `"openai"` and `"ai-sdk"`) selects `ai`, and `"mock"` selects `mock` |
+| `--embedder mock\|ai` | `rag.embedder`: `"ai"` selects `ai`, and `"mock"` selects `mock` |
 | `--embedder-model <id>` | `ai.embedding.model` |
 | `--dimensions <n>` | See [Vector width](#vector-width) |
 

@@ -56,7 +56,7 @@ const result = await ask({
 
 ### Without a config file
 
-A host with no `askdb.config.*` passes an env map instead: `ai.createLanguageModelFromEnv(process.env)` reads `ASKDB_AI_PROVIDER` (default `openai`), then the API key, model and base URL from the `ASKDB_AI_*` variables first and the provider's own variables (`OPENAI_API_KEY`, …) after them. The [bring-your-own-model guide](https://askdb.tools/guides/bring-your-own-model/#without-a-config-file-the-env-path) lists the precedence. The section and env paths give the same `AiConfig` for the same settings.
+A host with no `askdb.config.*` passes an env map instead: `ai.createLanguageModelFromEnv(process.env)` reads `ASKDB_AI_PROVIDER` (default `openai`), then the API key, model and base URL from the `ASKDB_AI_*` variables first and the provider's own variables (`OPENAI_API_KEY`, …) after them. The [package reference](https://askdb.tools/reference/packages/#env-map-precedence) lists the precedence. The section and env paths give the same `AiConfig` for the same settings.
 
 ### Custom providers
 
