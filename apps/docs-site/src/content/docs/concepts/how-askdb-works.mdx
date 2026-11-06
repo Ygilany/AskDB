@@ -28,7 +28,7 @@ The return value is a string of checked SQL and a parameter list. What happens n
 AskDB stops at checked SQL. Your application — the code that imports `@askdb/core` or calls the HTTP API — owns everything past that:
 
 - The database driver and connection pool.
-- Read-only roles and any further row-level security.
+- Read-only roles, and tenant isolation such as Postgres row-level security ([Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/)).
 - Query timeouts, row limits, and result pagination. The SQL comes back without a row limit; [Row limits](/guides/run-safely-in-prod/#row-limits) shows how to cap it on each engine.
 - Whether to show the SQL to the user, log it, queue it for review, or run it immediately.
 - Audit logging and observability.

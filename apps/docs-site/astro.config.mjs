@@ -90,7 +90,7 @@ export default defineConfig({
             "\n" +
             "The docs site is organized as Start (quickstart, install, Studio), Guides (embedding in Node, HTTP deployment, multi-tenancy, RAG for large schemas, switching engines, bringing your own model, upgrading between releases, agent/MCP integration), Concepts (how AskDB works, the schema artifact, safety boundaries, privacy model, modes and dialects), and Reference (CLI, HTTP API, configuration, the full package map, API docs). The full per-page index is in the linked documentation sets below.\n" +
             "\n" +
-            "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — config-driven `@askdb/client`/`@askdb/ai` (built-in providers; install the matching `@ai-sdk/*` package) vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities. AskDB validates the scope shape, binds tenant IDs, and runs heuristic checks, but never originates scope and isn't the enforcement boundary; see /concepts/safety-boundaries/.\n" +
+            "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — config-driven `@askdb/client`/`@askdb/ai` (built-in providers; install the matching `@ai-sdk/*` package) vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities. AskDB validates the scope shape, binds tenant IDs, and runs heuristic checks, but never originates scope and isn't the enforcement boundary; see /concepts/safety-boundaries/, and /guides/enforce-tenancy-in-the-database/ for Postgres row-level security.\n" +
             "\n" +
             "For a project-onboarding map written specifically for coding agents implementing AskDB elsewhere, see /AGENTS.md.",
         }),
@@ -113,6 +113,7 @@ export default defineConfig({
             { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
             { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
             { label: "Multi-tenancy", slug: "guides/multi-tenancy" },
+            { label: "Enforce tenancy in the database", slug: "guides/enforce-tenancy-in-the-database" },
             { label: "Switch engines", slug: "guides/switch-engines" },
             { label: "Bring your own model", slug: "guides/bring-your-own-model" },
             { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },

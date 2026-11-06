@@ -56,7 +56,7 @@ await pool.query(result.unboundSql!, result.params);
 
 // A new value, no model call.
 const rebound = await askdb.bind(result.preparedQuery!, { state_name: "Utah" }, { tenantScope });
-await pool.query(rebound.sql);
+await pool.query(rebound.sql, rebound.tenantParams ?? []);
 ```
 
 Every `ask()` is still one model call. Set `{ parameterize: false }` to opt out of the extra output tokens. Each SQL form runs with its own array: `sql` with `tenantParams`, `unboundSql` with `params` (which already holds the tenant IDs); never concatenate them. Set `tenantSqlMode: "sql-only"` to get the tenant IDs inlined in `sql` instead.
@@ -71,7 +71,7 @@ The schema and model caches are **per-client-instance**. For multi-tenant server
 
 ## `reload()`
 
-Drops the cached schema and model so the next `ask()` re-resolves them from config:
+Drops the cached schema, model and AI config, so the next call resolves them again from the config snapshot the client was created with. To pick up a changed `askdb.config.*`, create a new client.
 
 ```ts
 askdb.reload();

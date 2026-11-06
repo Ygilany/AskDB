@@ -88,7 +88,7 @@ await pool.query(result.unboundSql!, result.params); // every value bound
 // Render a form from result.parameters, then rebind locally — no model call.
 // The guardrails run again on the template under this schema and scope.
 const rebound = bindPreparedQuery(result.preparedQuery!, { state_name: "Utah" }, { schema, tenantScope });
-await pool.query(rebound.sql);
+await pool.query(rebound.sql, rebound.tenantParams ?? []); // like ask(): tenant IDs bound
 ```
 
 Key rules:

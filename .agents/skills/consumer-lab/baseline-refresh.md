@@ -53,14 +53,17 @@ The first cases: once a release includes the change, the capability's `n/a` cell
 | `tenant-driver-markers` | #197 (fixes #231) |
 | `tenant-predicate-required` | #341 (fixes #315) |
 | `client-built-in-providers` | #198 (`@askdb/client` 1.0.0-beta.7) |
+| `askdb-optional-prisma` | #656 (fixes #259) |
+| `config-plain-mjs` | #648 (fixes #264 and #265) |
 
-The first five shipped in `askdb@1.0.0-beta.43` and `client-built-in-providers` in `askdb@1.0.0-beta.44`, so the beta.44 baseline has no `n/a` cell. They gate cells again only on an older target (`npm:askdb@<version>`).
+The first five shipped in `askdb@1.0.0-beta.43` and `client-built-in-providers` in `askdb@1.0.0-beta.44`; they gate cells again only on an older target (`npm:askdb@<version>`). `askdb-optional-prisma` and `config-plain-mjs` merged after `askdb@1.0.0-beta.45`, so the beta.45 baseline has two expected `n/a` cells, `askdb-no-prisma [postgres]` and `config-forms [sqlite]`, until a release ships their changesets (`prisma-optional-peer`, `config-mjs-plain-object`).
 
 Check `src/capabilities.ts` for the current list: a capability added since this table was written is checked the same way.
 
 ## 4. Commit and open the PR
 
-1. In `examples/consumer-lab/known-release-failures.json`, delete the entries for releases older than the new baseline: no `npm:latest` run installs them again.
-2. Stage exactly the three files: `git add examples/consumer-lab/package.json examples/consumer-lab/pnpm-workspace.yaml examples/consumer-lab/pnpm-lock.yaml`, plus `git add examples/consumer-lab/known-release-failures.json` if step 1 changed it. Then `git diff --cached --name-only` must print those and nothing else.
-3. Commit, for example `chore(lab): refresh the npm:latest baseline to askdb@<version>`. No changeset: the lab isn't published. The installed lab now matches the commit, so `pnpm lab:use --restore` isn't needed.
-4. The PR body gives the versions before and after, the `FAIL` cells and their triage, the verdict for each capability, and the findings filed.
+1. In `examples/consumer-lab/known-release-failures.json`, move each cell that still fails on the new baseline (its fix merged after the release, so it hasn't shipped) under the new release's `askdb@<version>` key, keeping its issue and reason. Then delete every key for an older release: no `npm:latest` run installs them again.
+2. Update the hand-written mentions of the old baseline that `lab:use` doesn't rewrite. List them with `grep -rnF '<old version>' examples/consumer-lab .agents/skills/consumer-lab --exclude=pnpm-lock.yaml --exclude-dir=node_modules --exclude-dir=.lab`. Change each one that calls it the committed baseline, such as the Prisma comment above the `lab:use` block in `pnpm-workspace.yaml`, the README's `@prisma/engines` paragraph and this file's capability table. Leave a mention of one specific older release, such as a test's fixture version.
+3. Stage exactly the three files: `git add examples/consumer-lab/package.json examples/consumer-lab/pnpm-workspace.yaml examples/consumer-lab/pnpm-lock.yaml`, plus `examples/consumer-lab/known-release-failures.json` if step 1 changed it and each file step 2 changed. Then `git diff --cached --name-only` must print those and nothing else.
+4. Commit, for example `chore(lab): refresh the npm:latest baseline to askdb@<version>`. No changeset: the lab isn't published. The installed lab now matches the commit, so `pnpm lab:use --restore` isn't needed.
+5. The PR body gives the versions before and after, the `FAIL` cells and their triage, the verdict for each capability, and the findings filed.

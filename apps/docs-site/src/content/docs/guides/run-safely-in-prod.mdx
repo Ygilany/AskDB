@@ -54,7 +54,7 @@ const pool = new Pool({
 
 ## Row limits
 
-The SQL `ask()` returns has no row limit, so your application caps the rows, so that a question like "show me every row in this 100M-row table", which is valid SQL, doesn't load the whole table into your server and your UI.
+The SQL `ask()` returns has no row limit. Your application caps the rows, so that a question like "show me every row in this 100M-row table", which is valid SQL, doesn't load the whole table into your server and your UI.
 
 Read one row more than you show, then stop. If that extra row arrives, the result was cut: show the rows you kept and say that there are more. Stop reading in the driver, as in the tabs below, instead of rewriting the SQL. This keeps the query's `ORDER BY` on every engine, so a "top 10" question still gets the top 10.
 
@@ -258,7 +258,9 @@ See [Privacy model](/concepts/privacy-model/) for what crosses the boundary in e
 
 ## Multi-tenancy
 
-If your app is multi-tenant, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs a heuristic check that each scoped table has a tenant predicate that filters. By default (`tenantSqlMode: "sql-params"`) the IDs are driver parameters, never part of the SQL text: run `result.sql` with `result.tenantParams`, or `result.unboundSql` with `result.params`. Keep that default in production. `sql-only` inlines the IDs as literals, for tools that take one SQL string. That check doesn't prove the query is scoped correctly, so enforce tenant isolation in the database too, for example with Postgres row-level security keyed on a per-request setting. See [Multi-tenancy](/guides/multi-tenancy/).
+If your app is multi-tenant, make the database the tenant boundary: run generated SQL under Postgres row-level security keyed on a per-request setting, or your engine's equivalent. [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/) covers the policies, the per-request transaction, and the checks that show the setup works.
+
+On AskDB's side, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs a heuristic check that each scoped table has a tenant predicate that filters. That check doesn't prove the query is scoped correctly. By default (`tenantSqlMode: "sql-params"`) the IDs are driver parameters, never part of the SQL text: run `result.sql` with `result.tenantParams`, or `result.unboundSql` with `result.params`. Keep that default in production. `sql-only` inlines the IDs as literals, for tools that take one SQL string. See [Multi-tenancy](/guides/multi-tenancy/).
 
 ## Read next
 
