@@ -53,6 +53,24 @@ describe("validateTenantScope", () => {
     expect(() => validateTenantScope(policy, scope)).not.toThrow();
   });
 
+  it.each([
+    ["no reason", {}],
+    ["an empty reason", { reason: "" }],
+    ["a blank reason", { reason: "  \t " }],
+    ["a reason that isn't a string", { reason: 42 }],
+  ])("rejects a global scope with %s as GLOBAL_WITHOUT_REASON", (_label, reason) => {
+    const scope = { access: { kind: "global", ...reason } } as unknown as TenantScope;
+    let error: unknown;
+    try {
+      validateTenantScope(policy, scope);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("GLOBAL_WITHOUT_REASON");
+    expect((error as TenantScopeError).message).toContain("reason");
+  });
+
   it("passes with advisory context", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
