@@ -36,6 +36,7 @@ The sensitive check now fails closed on two Postgres forms it can't read, with t
 - **`askdb init` installs on Windows** ([#668](https://github.com/Ygilany/AskDB/issues/668)). Its install always failed there, because Node refuses to run a package manager's `.cmd` shim without a shell.
 - **The install command `askdb init` prints names the package manager it picked.** At a workspace root, or with no `package.json`, it printed `npm install --save …`. It now prints that manager's command, with `--allow-build=@prisma/engines` for a Prisma project on pnpm 10.4 or later. A script that matched the old text needs updating.
 - **`@askdb/config/scaffold` is experimental** ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). It now also exports the package-manager helpers `askdb init` and Studio share. A minor release of `@askdb/config` may change it. Your own `askdb.config.ts` never imports it.
+- **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
 
 ## 1.0.0-beta.48
 
