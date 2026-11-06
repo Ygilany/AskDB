@@ -639,17 +639,19 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
       expect(withEmbedding.ai.language.connection).toEqual({ name: "default", apiKey: "ant-key" });
     });
 
-    it("gives the RAG CLI no key or base URL from a custom language provider", () => {
+    it("keeps the embedding connection in rt.ai.embedding only; rt.rag holds the store", () => {
       const rt = runtimeFor(
         minimalConfig({
           ai: {
-            provider: "mistral",
-            providerConfig: { mistral: { apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1" } },
+            provider: "openai",
+            providerConfig: { openai: { apiKey: "oai-key", baseUrl: "https://oai.example/v1" } },
+            embedding: { model: "text-embedding-3-small" },
           },
+          rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
         }),
       );
-      expect(rt.rag.embedder.apiKey).toBeUndefined();
-      expect(rt.rag.embedder.baseURL).toBeUndefined();
+      expect(rt.ai.embedding?.connection).toMatchObject({ apiKey: "oai-key", baseUrl: "https://oai.example/v1" });
+      expect(rt.rag).toEqual({ store: "memory", storeConfig: { memory: {} } });
     });
   });
 

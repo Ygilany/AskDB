@@ -63,19 +63,7 @@ export type AskDbRuntimeAiConfig = {
     | undefined;
 };
 
-/**
- * OpenAI embedder settings, from `ai.embedding`'s connection when its provider is `openai`, else
- * from the OpenAI language connection; never another provider's. No first-party code reads them:
- * `askdb rag` and Studio use `ai.embedding`.
- */
-export type AskDbRuntimeRagEmbedderConfig = {
-  apiKey: string | undefined;
-  baseURL: string | undefined;
-  model: string | undefined;
-};
-
 export type AskDbRuntimeRagConfig = {
-  embedder: AskDbRuntimeRagEmbedderConfig;
   /** `rag.store`, or `"memory"` when the config has no `rag` block. Read this rather than `structured.rag`, which is `undefined` when the block is omitted. */
   store: AskDbRagStore;
   /** `rag.storeConfig` as written, with no defaults filled in; `{}` when the config has no `rag` block or the block has no `storeConfig`. */

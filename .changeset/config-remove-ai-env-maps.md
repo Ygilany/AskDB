@@ -7,6 +7,6 @@
 - **`rt.ai.language.connection` and `rt.ai.embedding.connection` are objects:** the connection's `name` (before, the whole value) and its settings, trimmed, with unset ones left out: `apiKey`, `apiKeySecondary` (the config's `secondaryApiKey`), `baseUrl`, `resourceName` and `apiVersion`. The new `AskDbRuntimeAiConnection` type describes it.
 - **`rt.ai.language.reasoning`** is the config's `ai.language.reasoning`.
 - Both sections are assignable to `@askdb/ai`'s `AiLanguageSection` and `AiEmbeddingSection`; neither package depends on the other.
-- **`rt.rag.embedder.apiKey` and `.baseURL`** now come from the OpenAI section's typed connection, with the same values as before.
+- **`rt.rag.embedder` is removed**, with its type `AskDbRuntimeRagEmbedderConfig`. It held the OpenAI embedder's key, base URL and model, and nothing in AskDB read it. It's now `undefined`: read `rt.ai.embedding` instead (`connection.apiKey`, `connection.baseUrl` and `model`), which carries the embedding model's settings for any provider.
 
 The upgrade guide shows each change before and after.

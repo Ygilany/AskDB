@@ -680,20 +680,8 @@ function resolveRag(rag: NormalizedAskDbConfig["rag"], ai: ResolvedAskDbConfig["
     setFlat(flat, "ASKDB_PGVECTOR_INDEX_STRATEGY", pgvectorIndexStrategy(pgvector.indexStrategy));
   }
 
-  // `rt.rag.embedder` holds OpenAI settings only, never another provider's key or base URL: the
-  // embedding connection when that is OpenAI's, else the OpenAI language connection. No first-party
-  // code reads it (`askdb rag` and Studio use `ai.embedding`); it stays for hosts that do.
-  const openaiEmbedding = embedding?.provider === "openai" ? embedding : undefined;
-  const source = openaiEmbedding ?? (ai.language.provider === "openai" ? ai.language : undefined);
-  return {
-    embedder: {
-      apiKey: source?.connection.apiKey,
-      baseURL: source?.connection.baseUrl,
-      model: openaiEmbedding?.model,
-    },
-    store,
-    storeConfig,
-  };
+  // The embedding model's settings live in `rt.ai.embedding` only.
+  return { store, storeConfig };
 }
 
 function resolveLogging(logging: AskDbConfig["logging"], flat: FlatMap): AskDbRuntimeLoggingConfig {

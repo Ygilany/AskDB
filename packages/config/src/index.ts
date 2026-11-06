@@ -14,7 +14,6 @@ export type {
   AskDbRuntimeAiSection,
   AskDbRuntimeIntrospectionConfig,
   AskDbRuntimeRagConfig,
-  AskDbRuntimeRagEmbedderConfig,
   AskDbRuntimeLoggingConfig,
   AskDbRuntimeHttpApiConfig,
   AskDbRuntimeDevConfig,

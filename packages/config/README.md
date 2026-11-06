@@ -63,7 +63,7 @@ The `rag` block is optional. Omit it when you don't use retrieval: AskDB then us
 import { getAskDbRuntimeConfig } from "@askdb/config";
 
 const config = getAskDbRuntimeConfig();
-const apiKey = opts.apiKey ?? config.rag.embedder.apiKey;
+const store = config.rag.store;
 const level = config.logging.level;
 // @askdb/ai's registry takes the typed ai.language section as it is:
 const model = await aiRegistry.createLanguageModelFromSection(config.ai.language);
