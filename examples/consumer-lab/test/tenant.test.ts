@@ -209,7 +209,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
         // The lab's runner uses `query`; hosts also use `execute` (server-side prepared statements).
         const conn = await mysql.createConnection(connectionUrl(dialect, "reader"));
         try {
-          await expect(conn.execute(sql, [...params]), `${what} via execute, business values only`).rejects.toThrow();
+          await expect(conn.execute(sql, [...params] as mysql.ExecuteValues), `${what} via execute, business values only`).rejects.toThrow();
         } finally {
           await conn.end();
         }
