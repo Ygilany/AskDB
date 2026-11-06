@@ -455,7 +455,7 @@ The protection scenarios are engine-independent and run once, as `[postgres]`. T
 `lab:use` rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the **`npm:latest` baseline** (decision 2 in the spec): `latest` is what `npm install askdb` resolves, so it's what users run. `pnpm lab:use --restore` brings them back: it removes `.lab/` and `node_modules`, reinstalls the committed lockfile as-is and verifies it against the pins in the committed overrides block.
 
 - **Don't commit the three files after `.`, a path or `git:`**: they hold `file:` tarball paths. Don't commit them after another npm target either.
-- **To refresh the baseline** after a release ships, run `pnpm lab:use npm:latest`, commit the three files, and delete the entries for older releases from [`known-release-failures.json`](known-release-failures.json). The [baseline refresh](../../.agents/skills/consumer-lab/baseline-refresh.md) procedure has every step.
+- **To refresh the baseline** after a release ships, run `pnpm lab:use npm:latest` and commit the three files. In [`known-release-failures.json`](known-release-failures.json), move each cell that still fails on the new release under its key, and delete the entries for older releases. The [baseline refresh](../../.agents/skills/consumer-lab/baseline-refresh.md) procedure has every step.
 - There is no `beta` dist-tag: it was removed from every package on 2026-09-29 (#267), so `pnpm lab:use npm:beta` stops with `no AskDB package is published under the "beta" dist-tag`. Prereleases are on `latest` until the RC line (#354) publishes under `rc`.
 - The lab's typecheck (`pnpm -C examples/consumer-lab lint`) is against the installed target too, so run it after `pnpm lab:use .`.
 
