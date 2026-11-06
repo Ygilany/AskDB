@@ -1,5 +1,20 @@
 # @askdb/sqlite
 
+## 0.1.0-beta.24
+
+### Patch Changes
+
+- 82c2f94: Every built-in connector adapter now passes `ConnectorConfig.schemaId` to its connector (#775). Only the Prisma adapter did, so `createConnector({ provider: "postgres" | "mysql" | "sqlite" | "sqlserver", schemaId })` returned a `SqlSchema` with `schemaId: "introspected"`. It now returns the ID you set, and `"introspected"` only when you set none. To carry it, `LiveCatalogInput`, `PostgresIntrospectionInput`, `MysqlIntrospectionInput`, `SqliteIntrospectionInput` and `SqlServerIntrospectionInput` gain an optional `schemaId`. `schema.json` is unchanged: it takes its ID from `RenderOptions.schemaId`.
+- a8cef1b: `createSqliteCatalogQueryRunner`'s JSDoc no longer offers `:memory:` for an empty database (#712). The runner opens the file read-only, which `better-sqlite3` refuses for an in-memory database, so `:memory:` and a missing file both throw on the first query. Behavior is unchanged.
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [82c2f94]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [4437394]
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/introspect@0.3.0-beta.23
+
 ## 0.1.0-beta.23
 
 ### Patch Changes

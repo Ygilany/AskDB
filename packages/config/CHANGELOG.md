@@ -1,5 +1,17 @@
 # @askdb/config
 
+## 1.0.0-beta.18
+
+### Minor Changes
+
+- 0e5d542: `@askdb/config/scaffold` exports the package-manager helpers `askdb init` and Studio share (#711): `detectPackageManager`, `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand`, `packageManagerSpawnSpec`, and the `PackageManager` and `PackageManagerSpawnSpec` types. The `@askdb/config/scaffold` entry point is tooling for `askdb init` and Studio, and experimental like Studio: a minor release of `@askdb/config` may change it (ADR 0030). `detectPackageManager` reads an existing lockfile first, then the nearest `package.json`'s `packageManager` or `devEngines.packageManager` field, then `npm_config_user_agent`, and falls back to npm (#750).
+- 4a83b61: `@askdb/config/scaffold` exports `planAskDbScaffold`, the planner `askdb init` and Studio's setup wizard share (#711). It takes a new project's answers (engine, connection variable or SQLite file, Prisma schema path, schema directory, `ai` block, RAG store, Studio execute) and the `@askdb/config` and `@askdb/prisma` specs to install, and returns the `askdb.config.ts` source, the `.env.example`, the env vars the config reads, and the packages to install. It's pure. It throws `AskDbScaffoldInputError`, whose `field` names the answer, for an env var name that isn't uppercase POSIX (`^[A-Z_][A-Z0-9_]*$`), a control character in a path, an unknown id or a missing answer. Also exported: `isAskDbScaffoldEnvName(name)`, the planner's env var name rule, and the `AskDbScaffoldAnswers`, `AskDbScaffoldPlan` and `ScaffoldValue` types. For a Prisma project the plan installs `ai` (the newest major `@askdb/core`'s peer accepts) and `zod` (core's range) next to `@askdb/prisma`, which Yarn Plug'n'Play needs (#760). The `@askdb/config/scaffold` entry point is experimental: a minor release of `@askdb/config` may change it (ADR 0030).
+
+### Patch Changes
+
+- 150a293: `@askdb/config` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: config resolution, the flat env map, `bootstrapAskDbEnv` and every `askdb.config: …` error give the same results as before. The JSDoc on `flattenAskDbConfig` and `env()` now says which flat-map keys are written with a default (`ASKDB_RAG_EMBEDDER`, `ASKDB_INTROSPECT_OUT`, and with pgvector the index strategy and the mock embedder's dimensions) and which stay out until the config sets them.
+- a8cef1b: The JSDoc for `introspection.providerConfig.sqlite.file` no longer offers `:memory:` for an empty database (#712). Introspection opens the file read-only, which an in-memory database can't be, so the path must name an existing file. Behavior is unchanged.
+
 ## 1.0.0-beta.17
 
 ### Minor Changes
