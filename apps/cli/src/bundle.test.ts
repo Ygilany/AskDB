@@ -61,6 +61,8 @@ function loaderError(dir: string): string {
   throw new Error(`expected loadSchema() to refuse ${dir}`);
 }
 
+/** A table file whose front-matter isn't YAML, which the loader refuses (GHSA-qqx9-qpw2-wcqg). */
+const NON_YAML_TABLE = "---js\n{ id: 'table:public.orders' }\n---\n";
 const MALFORMED_TENANT_POLICY = "---\nschemaId: agency-multi-tenant\nenforcement: strict\nroots:\n  - id: [unclosed\n---\n";
 
 describe("askdb bundle refuses a directory the loader refuses", () => {
@@ -68,7 +70,7 @@ describe("askdb bundle refuses a directory the loader refuses", () => {
     {
       problem: "a table file whose front-matter isn't YAML",
       fixture: "orders-users.schema",
-      breakIt: (dir: string) => writeFileSync(join(dir, "tables", "orders.md"), "---js\n{ id: 'table:public.orders' }\n---\n"),
+      breakIt: (dir: string) => writeFileSync(join(dir, "tables", "orders.md"), NON_YAML_TABLE),
     },
     {
       problem: "a tenant-policy.md that doesn't parse",
@@ -92,7 +94,7 @@ describe("askdb bundle refuses a directory the loader refuses", () => {
 
   it("leaves a file already at --out as it was", async () => {
     const { dir, out } = copyFixture("orders-users.schema");
-    writeFileSync(join(dir, "tables", "orders.md"), "---js\n{ id: 'table:public.orders' }\n---\n");
+    writeFileSync(join(dir, "tables", "orders.md"), NON_YAML_TABLE);
     writeFileSync(out, "the previous bundle\n");
 
     expect(await runBundleCli([dir, "--out", out])).toBe(1);

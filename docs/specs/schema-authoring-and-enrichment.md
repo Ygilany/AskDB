@@ -70,7 +70,7 @@ The suggestion prompt (`suggestEnrichment` in `@askdb/core`) follows `modes.omit
 ```sh
 # CLI surface
 askdb enrich [--schema <path>]      # opens Studio on the schema artifact
-askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich
+askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich; exits 1 and writes nothing if loadSchema() refuses it
 ```
 
 ## Test bar
