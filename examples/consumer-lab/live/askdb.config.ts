@@ -28,7 +28,6 @@ export default defineConfig({
   },
   rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: { memory: {} },
   },

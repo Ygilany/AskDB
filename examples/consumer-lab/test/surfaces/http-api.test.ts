@@ -232,7 +232,7 @@ describe("[postgres]", () => {
 export default defineConfig({
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-replay-no-key" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
   httpApi: { allowSchemaOverride: true },
 });
 `,
@@ -275,7 +275,7 @@ export default defineConfig({
 export default defineConfig({
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 });
 `,
       );

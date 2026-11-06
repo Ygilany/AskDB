@@ -819,8 +819,6 @@ describe("AskDB Studio server", () => {
           pgvector: {
             databaseUrl: "postgres://pgvector.test/askdb",
             table: "studio_rag_chunks",
-            // Ignored with the mock embedder (a load warning says so): its vectors are always 64 wide.
-            dimensions: 128,
             indexStrategy: "hnsw",
           },
         },
