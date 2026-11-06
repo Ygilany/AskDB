@@ -43,7 +43,7 @@ Phase 10 built this as a Postgres-first proof, with the tenant enforcement model
 
 - User authentication — AskDB receives authorized scope from the host; it does not authenticate users
 - Multi-engine tenant proof beyond Postgres — Phase 13
-- Row-level security (RLS) DDL generation — AskDB does not generate RLS policies. RLS (or equivalent database-level enforcement) is the **recommended primary tenant boundary**; AskDB's prompt instructions and guardrail are the defense-in-depth layer, not the other way round
+- Row-level security (RLS) DDL generation — AskDB does not generate RLS policies. RLS (or equivalent database-level enforcement) is the **recommended primary tenant boundary**; AskDB's prompt instructions and guardrail are the defense-in-depth layer, not the other way round. The docs site's [Enforce tenancy in the database](https://askdb.tools/guides/enforce-tenancy-in-the-database/) has the Postgres recipe: policies keyed on a `SET LOCAL` setting, `set_config` revoked from `PUBLIC`, the bypasses to close, and the checks that show it works
 - Built-in subtree expansion. AskDB does not generate a recursive CTE for `subtree` scopes; the host supplies `resolveTenantDescendants`. An in-database recursive-CTE strategy is a possible follow-up (#268).
 - Runtime pre-resolution of polymorphic scope — polymorphic tables are declared in the policy and surfaced to the model via the prompt; there is no scope field for host-resolved polymorphic filters
 
