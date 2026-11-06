@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ASKDB_AI_PROVIDERS,
@@ -20,33 +19,8 @@ import {
 } from "./index.js";
 import type { AskDbRuntimeConfig } from "./index.js";
 import { renderAskDbAiConfigScaffold } from "./scaffold/index.js";
+import { linkWorkspacePackage } from "./test-utils.js";
 import type { AskDbConfig } from "./types.js";
-
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-function linkWorkspacePackage(projectDir: string): void {
-  const nmAskdb = join(projectDir, "node_modules", "@askdb");
-  mkdirSync(nmAskdb, { recursive: true });
-  const linkedPackage = join(nmAskdb, "config");
-  mkdirSync(linkedPackage, { recursive: true });
-  symlinkSync(join(pkgRoot, "src"), join(linkedPackage, "src"), "dir");
-  writeFileSync(
-    join(linkedPackage, "package.json"),
-    JSON.stringify(
-      {
-        name: "@askdb/config",
-        type: "module",
-        main: "./src/index.ts",
-        exports: {
-          ".": "./src/index.ts",
-        },
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
-}
 
 function minimalConfig(overrides: Partial<AskDbConfig> = {}): AskDbConfig {
   const base: AskDbConfig = {
