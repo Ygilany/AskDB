@@ -1,5 +1,75 @@
 # @askdb/studio
 
+## 0.2.0-beta.39
+
+### Minor Changes
+
+- 76dc3a3: `@askdb/prisma` is now an optional peer of `askdb` and `@askdb/studio`, not a dependency. `pnpm add askdb` no longer installs Prisma, so it exits 0 on pnpm 11, which refused to run the unapproved `@prisma/engines` install script and exited 1 (#259). The CLI and Studio import `@askdb/prisma` only for Prisma introspection (#339), so `askdb --help` and every other command load no Prisma module.
+  
+  **Breaking** for Prisma users: install `@askdb/prisma` next to `askdb` (`npm i @askdb/prisma`). On pnpm 11, approve its `@prisma/engines` build in the same command, `pnpm add --allow-build=@prisma/engines @askdb/prisma`, or run `pnpm approve-builds` afterwards. Without the package, `askdb introspect --engine prisma` exits 1 naming it, and Studio shows the same message instead of resyncing. `askdb` looks for `@askdb/prisma` in its own install, then in the project it runs in, so `npx askdb introspect` uses the project's copy.
+  
+  `askdb init --database prisma` now installs `@askdb/prisma` at the version of the `askdb` running it. Studio's guided setup installs it within Studio's peer range, so a newer `askdb` hosting Studio still gets a version its own range accepts. With pnpm 10.4 or later both approve the `@prisma/engines` build (older pnpm has no `--allow-build`). `@askdb/prisma`'s README says to install it next to `askdb`.
+  
+  Studio's guided setup now checks for installed packages on disk rather than through Node's resolver (under Yarn Plug'n'Play, which has no `node_modules`, it still asks the resolver). On Node 24 and later, a failed lookup could last until Studio exited, so the introspection step couldn't load a driver or `@askdb/prisma` that setup had just installed.
+
+### Patch Changes
+
+- f3decbb: Every AskDB write into a schema directory now refuses symbolic links (#617, ADR 0028).
+  
+  - New `@askdb/core` export: `saveSchemaFile(schemaDir, relativePath, content)` writes one file inside a schema directory; `content` is a string (written as UTF-8) or a `Uint8Array`. It refuses a symbolic link at the file or at a directory between it and the schema directory (such as `tables/`), and a `relativePath` with an empty, `.` or `..` part or a NUL byte. It writes a temp file next to the target, with the target's permission bits, group and, where allowed, owner, and renames it over the target, so a hard link is replaced instead of written through and the write is atomic. A read-only target is refused with `EACCES`. The schema directory itself may be a symbolic link. This is the helper `@askdb/enrich`'s saves used since #372, moved to core so every writer shares it.
+  - `@askdb/introspect`: `renderToSchemaV2()`, and so `introspect()` with render options, writes `schema.json` through `saveSchemaFile()`. A `schema.json` that is a symbolic link now throws `Refusing to write schema.json outside the schema directory: "schema.json" is a symbolic link`. Before, the write went to the file the link pointed at.
+  - `askdb`: `askdb introspect --out` fails the same way on a linked `schema.json`.
+  - `@askdb/studio`: Playground history (`playground-history.json`, saved on every generate and on delete) and the `.gitignore` entry Studio adds for it are written through `saveSchemaFile()`, and so is `schema.json` on **Resync schema**. A linked history file fails the request with the refusal message. A linked `.gitignore` is left as it is and the history still saves, as with any `.gitignore` failure before. A dangling link at `.gitignore` no longer creates the file it names. The `.gitignore` update keeps the existing file's bytes, so a non-UTF-8 file name in it survives.
+  - `@askdb/enrich`: `saveTable()`, `saveConcepts()` and `saveTenantPolicy()` call core's `saveSchemaFile()`; the behavior is unchanged. The refusal for a table now reads `Refusing to write tables/orders.md outside the schema directory: …` instead of `Refusing to write table markdown outside tables/: …`. The check on a table filename keeps its message.
+  
+  **Upgrade notes:**
+  
+  - `renderToSchemaV2()`, `introspect()` with render options, and `askdb introspect --out` throw when `schema.json` in the output directory is a symbolic link. Replace the link with a regular file.
+  - Writing `schema.json` now needs write access to the output directory for the temp file, and a hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's mode bits, owner and group, but not an access control list (#659). On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; running again usually works.
+- ed7f35c: Remove public exports that nothing in AskDB calls and no page documents, before the 1.0 API freeze (#356, ADR 0031).
+  
+  **Upgrade notes (breaking):**
+  
+  - `@askdb/core`: `formatSchemaForPrompt(schema, options)` is removed. Call `formatSchemaForNlToSql(schema, options).ddl`, which returns the same string.
+  - `@askdb/config`: `DEFAULT_LOCAL_POSTGRES_URL` is removed, with no replacement. Write your own local connection string.
+  - `@askdb/enrich`: `hasAnyColumnDescribable`, `isEnumCandidate`, `parseListInput` and `formatList` are removed, with no replacement. In place of `parseListInput(value)`, use `value.split(",").map((s) => s.trim()).filter(Boolean)`; in place of `formatList(list)`, use `list?.join(", ") ?? ""`.
+  
+  Internal cleanup with no API change: core's tenant-policy loader drops two unused helpers, and Studio's web app drops the unused `Drawer` and `Panel` components, the Drawer CSS and four unused formatting helpers.
+- 9ef4a6f: `askdb-studio --help`, the README and the sample NL-to-SQL "no AI key" error name `studio.listen.port`, `studio.listen.host`, the `ai` block and `dev.mockSql` in `askdb.config` instead of `ASKDB_STUDIO_PORT`, `ASKDB_STUDIO_HOST`, `OPENAI_API_KEY`, `ASKDB_AI_MODEL` and `ASKDB_MOCK_SQL`, which Studio never reads from the environment (#281). A `studio.listen.port` that isn't an integer from 1 to 65535 now stops Studio with an error instead of quietly binding port 5556; a numeric string works like a number.
+- 0868651: The Playground runs `sql-params` output correctly, now that it starts in that mode. Replaying a `sql-params` history entry restores the tenant params it was saved with, so Execute no longer sends marker SQL without them. SQL Server Execute binds SQL that already uses `@pN` markers as written: before, it rewrote a `?` or `$…` inside a string literal, or a money literal such as `$1000`, into a marker.
+- 4d6a315: **Breaking: tenant IDs are driver parameters by default** (`tenantSqlMode: "sql-params"`, #231, ADR 0024).
+  
+  **What a host must change:** if you pass `tenantScope` to `ask()` (or `askdb.ask()` in `@askdb/client`, which forwards to it) without `tenantSqlMode`, `result.sql` now holds the dialect's driver markers (`$1`, `?` or `@p0`) where the tenant IDs used to be inlined, and the IDs are in `result.tenantParams`. Run `result.sql` with `result.tenantParams`, or `result.unboundSql` with `result.params` (which already holds the tenant IDs); never concatenate the two arrays. To keep the old output, set `tenantSqlMode: "sql-only"`. Running the new `sql` without its params fails at the driver (Postgres: "there is no parameter $1"; better-sqlite3: "Too few parameter values"; MySQL: a syntax error). It never returns other tenants' rows.
+  
+  **A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` now throws `TenantScopeError` with the new reason `TENANT_SQL_MODE_REQUIRED`, before any retrieval or model call. AskDB can't know which parameter markers such a dialect's driver takes, and the `$N` markers it would emit are money constants on SQL Server, where `agency_id = $1` runs and matches agency 1. Set `tenantSqlMode: "sql-params"` if your driver binds `$1`-style markers, or `"sql-only"` to keep the IDs inlined. On any dialect, `ask()` with a tenant scope and `resolveTenantSql()` now throw the same reason for a `tenantSqlMode` that is neither of the two (for example `"sql_only"`) instead of treating it as `"sql-params"`.
+  
+  `resolveTenantSql()` defaults to `"sql-params"` too. The default is exported as `DEFAULT_TENANT_SQL_MODE`; import it rather than hard-code the mode. Studio's Playground now starts in `sql-params`, and Studio reports that default when a request names no mode.
+- Updated dependencies [47eef72]
+- Updated dependencies [2234954]
+- Updated dependencies [9ef4a6f]
+- Updated dependencies [d82125c]
+- Updated dependencies [b40309d]
+- Updated dependencies [f3decbb]
+- Updated dependencies [7ca1940]
+- Updated dependencies [76dc3a3]
+- Updated dependencies [234eec0]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [cdab7d7]
+- Updated dependencies [ed7f35c]
+- Updated dependencies [4d6a315]
+- Updated dependencies [4d6a315]
+- Updated dependencies [8fbc115]
+  - @askdb/core@1.0.0-beta.46
+  - @askdb/config@1.0.0-beta.15
+  - @askdb/mysql@0.1.0-beta.21
+  - @askdb/sqlite@0.1.0-beta.21
+  - @askdb/sqlserver@0.1.0-beta.22
+  - @askdb/introspect@0.3.0-beta.20
+  - @askdb/enrich@0.2.0-beta.17
+  - @askdb/postgres@0.2.0-beta.22
+  - @askdb/rag@0.2.0-beta.26
+
 ## 0.2.0-beta.38
 
 ### Patch Changes

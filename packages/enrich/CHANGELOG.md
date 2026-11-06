@@ -1,5 +1,64 @@
 # @askdb/enrich
 
+## 0.2.0-beta.17
+
+### Minor Changes
+
+- 234eec0: - **A wrong-case schema file name throws instead of being skipped.** `loadSchema()` now throws `SchemaParseError` when a schema directory holds `Tenant-Policy.md`, `Concepts.md`, `Tables/`, `tables/<name>.MD`, or (for a directory path) `Schema.json`. The error names each rename, for example `rename Tenant-Policy.md to tenant-policy.md`, or says to keep one when both spellings exist (possible only on Linux). Before, on Linux (case-sensitive), the loader skipped those files: a skipped `tenant-policy.md` loaded the schema with no tenant policy, so `ask()` stopped requiring a `tenantScope`, and nothing reported an error. A `tables/*.MD` file was skipped on every OS, with every `sensitive: true` in it. The check runs on every OS, so a directory that loaded on macOS or Windows with a wrong-case name now throws there too. Rename the file to fix it. A path you pass is still read as given, so `loadSchema("<dir>/Schema.json")` loads as before. See ADR 0027.
+  - **An optional file is absent only when the directory doesn't list it.** A listed `tenant-policy.md`, `concepts.md`, `tables/` or table file that can't be read now throws, including a symbolic link whose target is missing, which used to load as "no file".
+  - **The stray-JSON check counts a sibling in any case.** On Linux, `loadSchema("<dir>/prod-schema.json")` beside `Tenant-Policy.md` loaded with no tenant policy. It now throws, as it already did beside `tenant-policy.md` (ADR 0019).
+  - **New `readSchemaDirectory(dir)`** in `@askdb/core` reads a schema directory into its `BundledSchemaV2` bundle form. `loadSchema()` reads every directory through it.
+  - **`@askdb/enrich`'s `bundleSchemaDirectory()` returns `readSchemaDirectory()`**, so `askdb bundle` refuses the same directories `loadSchema()` refuses, instead of writing a bundle without a wrong-case `Tenant-Policy.md`. Its errors are now `SchemaParseError`s from core, where a failed read used to throw the raw Node error. `loadWorkspace()` (Studio) refuses such a directory too, through its `loadSchema()` call. Minor: these directories used to be accepted.
+  - Docs: the core API reference covers `readSchemaDirectory()` and the exact-name rule; troubleshooting covers the new error; the CLI reference notes that `askdb bundle` refuses such a directory.
+- ed7f35c: Remove public exports that nothing in AskDB calls and no page documents, before the 1.0 API freeze (#356, ADR 0031).
+  
+  **Upgrade notes (breaking):**
+  
+  - `@askdb/core`: `formatSchemaForPrompt(schema, options)` is removed. Call `formatSchemaForNlToSql(schema, options).ddl`, which returns the same string.
+  - `@askdb/config`: `DEFAULT_LOCAL_POSTGRES_URL` is removed, with no replacement. Write your own local connection string.
+  - `@askdb/enrich`: `hasAnyColumnDescribable`, `isEnumCandidate`, `parseListInput` and `formatList` are removed, with no replacement. In place of `parseListInput(value)`, use `value.split(",").map((s) => s.trim()).filter(Boolean)`; in place of `formatList(list)`, use `list?.join(", ") ?? ""`.
+  
+  Internal cleanup with no API change: core's tenant-policy loader drops two unused helpers, and Studio's web app drops the unused `Drawer` and `Panel` components, the Drawer CSS and four unused formatting helpers.
+
+### Patch Changes
+
+- f3decbb: Every AskDB write into a schema directory now refuses symbolic links (#617, ADR 0028).
+  
+  - New `@askdb/core` export: `saveSchemaFile(schemaDir, relativePath, content)` writes one file inside a schema directory; `content` is a string (written as UTF-8) or a `Uint8Array`. It refuses a symbolic link at the file or at a directory between it and the schema directory (such as `tables/`), and a `relativePath` with an empty, `.` or `..` part or a NUL byte. It writes a temp file next to the target, with the target's permission bits, group and, where allowed, owner, and renames it over the target, so a hard link is replaced instead of written through and the write is atomic. A read-only target is refused with `EACCES`. The schema directory itself may be a symbolic link. This is the helper `@askdb/enrich`'s saves used since #372, moved to core so every writer shares it.
+  - `@askdb/introspect`: `renderToSchemaV2()`, and so `introspect()` with render options, writes `schema.json` through `saveSchemaFile()`. A `schema.json` that is a symbolic link now throws `Refusing to write schema.json outside the schema directory: "schema.json" is a symbolic link`. Before, the write went to the file the link pointed at.
+  - `askdb`: `askdb introspect --out` fails the same way on a linked `schema.json`.
+  - `@askdb/studio`: Playground history (`playground-history.json`, saved on every generate and on delete) and the `.gitignore` entry Studio adds for it are written through `saveSchemaFile()`, and so is `schema.json` on **Resync schema**. A linked history file fails the request with the refusal message. A linked `.gitignore` is left as it is and the history still saves, as with any `.gitignore` failure before. A dangling link at `.gitignore` no longer creates the file it names. The `.gitignore` update keeps the existing file's bytes, so a non-UTF-8 file name in it survives.
+  - `@askdb/enrich`: `saveTable()`, `saveConcepts()` and `saveTenantPolicy()` call core's `saveSchemaFile()`; the behavior is unchanged. The refusal for a table now reads `Refusing to write tables/orders.md outside the schema directory: …` instead of `Refusing to write table markdown outside tables/: …`. The check on a table filename keeps its message.
+  
+  **Upgrade notes:**
+  
+  - `renderToSchemaV2()`, `introspect()` with render options, and `askdb introspect --out` throw when `schema.json` in the output directory is a symbolic link. Replace the link with a regular file.
+  - Writing `schema.json` now needs write access to the output directory for the temp file, and a hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's mode bits, owner and group, but not an access control list (#659). On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; running again usually works.
+- 7ca1940: A tenant policy that doesn't match `schema.json` now fails the load under `enforcement: strict`, and is reported under `warn` (ADR 0023, #332).
+  
+  `loadSchema()` and `loadSchemaFromJson()` check every ID in `tenant-policy.md` against `schema.json`. Under `strict`, an orphaned column or foreign key ID, a hierarchy cycle, or a root named in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare throws `SchemaParseError` naming the file and the IDs. `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save) refuses the same policy. Under `warn` these load in `schema.tenantPolicy.warnings`, as before. A root, scoped, polymorphic or global table that `schema.json` doesn't have stays a warning in both modes, and an entry for a removed table now reports only the table, not each of its columns. Cycle detection now follows every parent edge, so a cycle through a root that also has another parent is found wherever its edges appear in `hierarchy`.
+  
+  `ask()` logs the new `AskDbLogEvent.TenantPolicyWarnings` (`askdb.tenant.policy_warnings`) once per loaded schema when its policy has warnings, with `enforcement`, `warningCount` and `warnings`. It logs at `warn` level through the new optional `AskDbLogger.warn`, which `createAskDbLogger()` implements, and falls back to `info` for a logger without it. New export: `formatTenantPolicyWarning(warning)`, one line per problem.
+  
+  `@askdb/enrich`'s `saveTenantPolicy()` checks the policy against `schema.json` on disk rather than the workspace in memory, so Studio can save a corrected policy after a re-introspection left its workspace stale.
+  
+  `askdb introspect --out` checks an existing `tenant-policy.md` against the `schema.json` it just wrote and prints what no longer matches on stderr. The exit code stays 0.
+  
+  **Upgrade notes (breaking):** a strict policy that loads today with an orphaned column or foreign key, a cycle or an undeclared root now throws `SchemaParseError` from `loadSchema()`, `createAskDb()` and the HTTP API (400 `schema_parse_error`). Studio can't open that workspace until the file is fixed. Update `tenant-policy.md` to match `schema.json`; the error lists every ID to change.
+- Updated dependencies [47eef72]
+- Updated dependencies [d82125c]
+- Updated dependencies [b40309d]
+- Updated dependencies [f3decbb]
+- Updated dependencies [7ca1940]
+- Updated dependencies [234eec0]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [cdab7d7]
+- Updated dependencies [ed7f35c]
+- Updated dependencies [4d6a315]
+- Updated dependencies [4d6a315]
+  - @askdb/core@1.0.0-beta.46
+
 ## 0.2.0-beta.16
 
 ### Minor Changes

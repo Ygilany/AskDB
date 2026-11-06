@@ -1,5 +1,29 @@
 # @askdb/http-api
 
+## 1.0.0-beta.46
+
+### Patch Changes
+
+- Updated dependencies [47eef72]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [2234954]
+- Updated dependencies [d82125c]
+- Updated dependencies [b40309d]
+- Updated dependencies [f3decbb]
+- Updated dependencies [7ca1940]
+- Updated dependencies [02387ec]
+- Updated dependencies [234eec0]
+- Updated dependencies [0f4246c]
+- Updated dependencies [96f36ef]
+- Updated dependencies [cdab7d7]
+- Updated dependencies [ed7f35c]
+- Updated dependencies [4d6a315]
+- Updated dependencies [4d6a315]
+  - @askdb/core@1.0.0-beta.46
+  - @askdb/client@1.0.0-beta.9
+  - @askdb/config@1.0.0-beta.15
+
 ## 1.0.0-beta.45
 
 ### Minor Changes
