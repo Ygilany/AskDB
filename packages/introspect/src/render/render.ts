@@ -75,7 +75,9 @@ export function renderSchemaV2Body(
   const warnings: IntrospectionWarning[] = [];
   const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
   // `loadSchema` rejects an artifact with no tables, so refuse before any merge or write (ADR 0037).
-  if (fresh.tables.length === 0) throw new EmptyIntrospectionError(options.schemaId, options.provider, options.filters);
+  if (fresh.tables.length === 0) {
+    throw new EmptyIntrospectionError({ schemaId: options.schemaId, provider: options.provider, filters: options.filters });
+  }
   const json = options.existingArtifactDir
     ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
     : fresh;

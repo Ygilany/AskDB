@@ -1383,7 +1383,7 @@ describe("AskDB Studio server", () => {
       new BetterSqlite3(dbFile).close();
       installStudioRuntime({
         ...STUDIO_TEST_BASE,
-        introspection: { provider: "sqlite", providerConfig: { sqlite: { file: dbFile } }, outputDir: "./askdb/" },
+        introspection: { provider: "sqlite", providerConfig: { sqlite: { file: dbFile } }, outputDir: "./askdb/", schemas: ["main"] },
       });
       const schemaDir = copyFixture();
       const before = readFileSync(join(schemaDir, "schema.json"));
@@ -1396,6 +1396,7 @@ describe("AskDB Studio server", () => {
       expect(response.status).toBe(422);
       const body = (await response.json()) as { error: { message: string } };
       expect(body.error.message).toContain("Introspection found no tables or views");
+      expect(body.error.message).toContain("the filters match nothing (schemas: main)");
       expect(readFileSync(join(schemaDir, "schema.json"))).toEqual(before);
     } finally {
       rmSync(dbDir, { recursive: true, force: true });

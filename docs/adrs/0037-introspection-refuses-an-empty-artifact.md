@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-06, the coordinating thread's decision on #337, option A). Implemented in PR #792.
+Accepted (2026-11-06), for #337. Implemented in PR #792.
 
 ## Context
 

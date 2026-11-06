@@ -36,7 +36,7 @@ A model base URL with a username or password, such as `http://user:pass@proxy.ex
 Introspection now refuses to write an artifact with no tables ([#337](https://github.com/Ygilany/AskDB/issues/337), ADR 0037). It used to write a `schema.json` with `tables: []`, which `loadSchema()` rejects, and re-introspecting a database that had lost its tables replaced a valid artifact with it.
 
 - **`askdb introspect` exits `1`** where it exited `0`, with `--out`, `--print` and `--diff` alike, and writes nothing. A script that checks the exit code sees the failure now; the message names the schema id, the engine and the filters.
-- **`introspect()`, `renderToSchemaV2()` and `renderSchemaV2Body()` throw the new `EmptyIntrospectionError`** when the schema renders no tables or views, after filters. Catch it where you introspect from code; it carries `schemaId`, `provider` and `filters`.
+- **`introspect()` with render options, `renderToSchemaV2()` and `renderSchemaV2Body()` throw the new `EmptyIntrospectionError`** when the schema renders no tables or views, after filters. Catch it where you introspect from code; it carries `schemaId`, `provider` and `filters`.
 - **Studio answers `422`** with the reason when its introspection or resync finds nothing, and keeps the artifact on disk.
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-) for the likely causes.

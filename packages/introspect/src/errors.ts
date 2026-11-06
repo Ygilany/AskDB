@@ -12,7 +12,7 @@ export class EmptyIntrospectionError extends AskDbError {
   readonly provider: string | undefined;
   readonly filters: IntrospectionFilters | undefined;
 
-  constructor(schemaId: string, provider?: string, filters?: IntrospectionFilters) {
+  constructor({ schemaId, provider, filters }: { schemaId: string; provider?: string; filters?: IntrospectionFilters }) {
     super(emptyMessage(schemaId, provider, filters));
     this.name = "EmptyIntrospectionError";
     this.schemaId = schemaId;
