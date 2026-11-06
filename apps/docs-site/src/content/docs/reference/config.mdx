@@ -137,6 +137,8 @@ Keyed by provider id. Each value is one connection, or a list of connections whe
 
 Every connection also takes `name`, which defaults to `"default"` and must be unique within its provider. A list needs a `"default"` entry unless every section that uses the provider sets `connection`.
 
+A `baseUrl` can't hold a username or password: a config that sets one on any connection, used or not, fails to load, with an error that names the key and doesn't repeat the URL. `fetch` refuses such a URL anyway. The same goes for `OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL` in the environment, which the OpenAI and Anthropic SDKs read when the connection sets no `baseUrl`. Put the key in `apiKey`. To send other credentials, such as a proxy's, build the model in your own code with the AI SDK provider's `headers` option and pass it to `ask()` as `model` (see [Bring your own model](/guides/bring-your-own-model/)). The `askdb` CLI, Studio and the HTTP server can't send extra headers.
+
 ### `ai.language`
 
 | Field | Type | Default | Notes |
@@ -382,7 +384,7 @@ Configs written before the `ai.language` and `ai.embedding` sections still load,
 | `rag.embedder: "openai"` | `rag.embedder: "ai"` with `ai.embedding: { provider: "openai", model }` |
 | `rag.embedder: "ai-sdk"` | `rag.embedder: "ai"` with `ai.embedding: { model }` |
 | `rag.embedderConfig.openai.model`, `.dimension` | `ai.embedding.model`, `ai.embedding.dimensions` |
-| `rag.embedderConfig.openai.apiKey`, `.baseUrl` | A connection in `ai.providerConfig`, named in `ai.embedding.connection` if it isn't the default one |
+| `rag.embedderConfig.openai.apiKey`, `.baseUrl` | A connection in `ai.providerConfig`, named in `ai.embedding.connection` if it isn't the default one. A `.baseUrl` with a username or password fails to load (see [`ai.providerConfig`](#aiproviderconfig)). |
 | `rag.storeConfig.pgvector.dimensions` with an AI embedder | `ai.embedding.dimensions` |
 | `rag.storeConfig.pgvector.dimensions` with `rag.embedder: "mock"` | Nothing: remove it. The mock embedder's vectors are always 64 wide. |
 | `rag.storeConfig.file.autoFlush` | Nothing: remove it. It was never read; the file store writes its files after every change. |

@@ -71,6 +71,7 @@ AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsof
 | `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
 | `withEmbeddingProviderOptions` | Wraps an embedding model so `dimensions`/`user` reach the provider; an optional mapper renames them to the provider's own settings (e.g. Gemini's `outputDimensionality`). Shared across adapters. |
 | `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
+| `AiBaseUrlCredentialsError` | Thrown when a model base URL holds a username or password: by a provider's `resolveConfig` (its `setting` names the env variable, such as `OPENAI_BASE_URL`) and by a built-in adapter building a model from an `AiConfig` (`setting: "baseURL"`). The message never repeats the URL. |
 
 ### Provider SDKs
 
