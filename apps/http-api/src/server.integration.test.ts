@@ -389,7 +389,7 @@ describe("http-api", () => {
     }
   });
 
-  it("runs nothing from a schemaJson override whose table file has `---js` front-matter", async () => {
+  it("refuses a schemaJson override whose table front-matter isn't YAML, and writes no file", async () => {
     installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true } });
     const dir = mkdtempSync(join(tmpdir(), "askdb-front-matter-"));
     const marker = join(dir, "marker");
