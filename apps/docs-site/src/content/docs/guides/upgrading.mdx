@@ -19,6 +19,23 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.47
+
+Released with `@askdb/config` 1.0.0-beta.16. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Replace the removed `DEFAULT_RAG_FILE_BASE_PATH` import
+
+`@askdb/config` no longer exports `DEFAULT_RAG_FILE_BASE_PATH` ([#676](https://github.com/Ygilany/AskDB/issues/676)). Nothing read it, and its value, `./askdb/rag`, was never the file store's default. If your app imports it, it no longer typechecks or loads.
+
+| Package | Removed export | Use instead |
+| --- | --- | --- |
+| `@askdb/config` | `DEFAULT_RAG_FILE_BASE_PATH` | Your own path. With `rag.storeConfig.file.basePath` unset, the CLI and Studio use `<schema dir>/schema`, as before. |
+
+### Other changes you may notice in beta.47
+
+- **`httpApi.listen.port`** is checked when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). A value that isn't an integer from 0 to 65535, or a string holding one, fails with `askdb.config: invalid httpApi.listen.port`, in every tool that loads the config. Before, the HTTP server passed such a value straight to `listen()`. A value that reads as `NaN`, such as `Number(env("PORT"))` with `PORT` unset, now counts as unset: the server uses port 3000 instead of failing to start.
+- **`rag.storeConfig.file.autoFlush`** gives a deprecation warning when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). Nothing ever read it, because the file store writes its files after every change. Remove it.
+
 ## 1.0.0-beta.46
 
 Released with `@askdb/client` 1.0.0-beta.9, `@askdb/config` 1.0.0-beta.15, `@askdb/enrich` 0.2.0-beta.17, `@askdb/introspect` 0.3.0-beta.20, `@askdb/mysql` 0.1.0-beta.21, `@askdb/prisma` 0.2.0-beta.20, `@askdb/sqlite` 0.1.0-beta.21, `@askdb/sqlserver` 0.1.0-beta.22 and `@askdb/studio` 0.2.0-beta.39. Other packages that got a new version list what changed in their CHANGELOG.

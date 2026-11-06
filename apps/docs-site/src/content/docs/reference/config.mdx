@@ -244,13 +244,12 @@ The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock",
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `file.basePath` | `string` | `<schema dir>/schema`: `./askdb/schema` with the default `outputDir` | Path prefix of the file store. It writes `<basePath>.embeddings.bin` and `<basePath>.embeddings.json`. A relative path resolves against the working directory. |
-| `file.autoFlush` | `boolean` | none | Accepted, but not read today: the CLI and Studio write the files after every change ([#676](https://github.com/Ygilany/AskDB/issues/676)). |
 | `memory` | `{}` | none | The in-memory store has no options. |
 | `pgvector.databaseUrl` | `string` | Required with `store: "pgvector"` | Connection URL of the Postgres database with pgvector. |
 | `pgvector.table` | `string` | `askdb_rag_chunks` | The table that holds the chunks and their vectors. |
 | `pgvector.indexStrategy` | `"hnsw" \| "ivfflat" \| "none"` | `"hnsw"` | The index `askdb rag setup-store`, `askdb rag index` and Studio create. `"none"` means sequential scans. With `store: "pgvector"`, another value fails to load. |
 
-With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. `storeConfig.pgvector.dimensions` is [deprecated](#deprecated-keys): with `embedder: "ai"` it moves to `ai.embedding.dimensions`, and with `embedder: "mock"`, whose vectors are always 64 wide, it's ignored.
+With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. `storeConfig.pgvector.dimensions` is [deprecated](#deprecated-keys): with `embedder: "ai"` it moves to `ai.embedding.dimensions`, and with `embedder: "mock"`, whose vectors are always 64 wide, it's ignored. `storeConfig.file.autoFlush` is deprecated too: nothing ever read it, because the file store writes its files after every change.
 
 ## `modes` and `host`
 
@@ -350,7 +349,7 @@ Each execute provider requires its optional peer driver package (`pg`, `mysql2`,
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `listen.port` | `number` | `3000` | The server's port. |
+| `listen.port` | `number` | `3000` | The server's port: an integer from 0 to 65535. `NaN` counts as unset. Another value fails to load. |
 | `listen.host` | `string` | `"127.0.0.1"` | The bind address. Bind to `0.0.0.0` only behind a gateway. |
 | `allowSchemaOverride` | `boolean` | `false` | Accept a per-request `schemaJson` on `POST /ask`. An override lets any caller send arbitrary schema and prompt content through the server's model key, so enable it only for tests or trusted multi-schema deployments. |
 | `requestTimeoutMs` | `number` | `60000` | Aborts the model call of a `POST /ask` request after this many milliseconds: a positive integer, at most `2147483647`. Another value fails to load. |
@@ -366,7 +365,7 @@ export default defineConfig({
 });
 ```
 
-Keep the `?? 3000`. With `PORT` unset, `Number(env("PORT"))` is `NaN`, and the server fails to start ([#676](https://github.com/Ygilany/AskDB/issues/676)).
+With `PORT` unset, `Number(env("PORT"))` is `NaN`, which counts as unset, so the server uses `3000` either way. The `?? 3000` shows the fallback in the config.
 
 ## Deprecated keys
 
@@ -384,6 +383,7 @@ Configs written before the `ai.language` and `ai.embedding` sections still load,
 | `rag.embedderConfig.openai.apiKey`, `.baseUrl` | A connection in `ai.providerConfig`, named in `ai.embedding.connection` if it isn't the default one |
 | `rag.storeConfig.pgvector.dimensions` with an AI embedder | `ai.embedding.dimensions` |
 | `rag.storeConfig.pgvector.dimensions` with `rag.embedder: "mock"` | Nothing: remove it. The mock embedder's vectors are always 64 wide. |
+| `rag.storeConfig.file.autoFlush` | Nothing: remove it. It was never read; the file store writes its files after every change. |
 
 How the old embedder keys translate:
 
