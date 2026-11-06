@@ -70,7 +70,8 @@
     "@askdb/rag": "workspace:*",
     "@askdb/sqlite": "workspace:*",
     "@askdb/sqlserver": "workspace:*",
-    "ai": "^7.0.51"
+    "ai": "^7.0.51",
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "@askdb/prisma": "workspace:^",

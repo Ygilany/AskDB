@@ -106,6 +106,9 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@askdb/prisma':
         specifier: workspace:*
@@ -173,6 +176,9 @@ importers:
       ai:
         specifier: ^7.0.51
         version: 7.0.163(zod@4.6.7)
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       tsx:
         specifier: ^4.23.15
@@ -231,6 +237,9 @@ importers:
       ai:
         specifier: ^7.0.51
         version: 7.0.163(zod@4.6.7)
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@askdb/prisma':
         specifier: workspace:*
@@ -517,6 +526,9 @@ importers:
       '@askdb/core':
         specifier: workspace:*
         version: link:../core
+      ai:
+        specifier: ^6.0.0 || ^7.0.51
+        version: 7.0.163(zod@4.6.7)
     devDependencies:
       typescript:
         specifier: ^6.0.3
@@ -530,6 +542,9 @@ importers:
       '@askdb/core':
         specifier: workspace:*
         version: link:../core
+      ai:
+        specifier: ^6.0.0 || ^7.0.51
+        version: 7.0.163(zod@4.6.7)
     devDependencies:
       typescript:
         specifier: ^6.0.3
@@ -546,6 +561,9 @@ importers:
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../introspect
+      ai:
+        specifier: ^6.0.0 || ^7.0.51
+        version: 7.0.163(zod@4.6.7)
     devDependencies:
       mysql2:
         specifier: ^3.24.6
@@ -565,6 +583,9 @@ importers:
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../introspect
+      ai:
+        specifier: ^6.0.0 || ^7.0.51
+        version: 7.0.163(zod@4.6.7)
       pg-connection-string:
         specifier: ^2.14.1
         version: 2.14.1
@@ -590,6 +611,9 @@ importers:
       '@prisma/internals':
         specifier: ^7.10.1
         version: 7.10.1(magicast@0.5.5)(typescript@6.0.3)
+      ai:
+        specifier: ^6.0.0 || ^7.0.51
+        version: 7.0.163(zod@4.6.7)
     devDependencies:
       typescript:
         specifier: ^6.0.3
@@ -631,6 +655,9 @@ importers:
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../introspect
+      ai:
+        specifier: ^6.0.0 || ^7.0.51
+        version: 7.0.163(zod@4.6.7)
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^9.6.0
@@ -656,6 +683,9 @@ importers:
       '@tediousjs/connection-string':
         specifier: ^1.1.0
         version: 1.1.0
+      ai:
+        specifier: ^6.0.0 || ^7.0.51
+        version: 7.0.163(zod@4.6.7)
     devDependencies:
       '@types/mssql':
         specifier: ^12.3.0

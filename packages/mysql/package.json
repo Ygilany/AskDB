@@ -53,6 +53,7 @@
     "@askdb/introspect": "workspace:*"
   },
   "peerDependencies": {
+    "ai": "^6.0.0 || ^7.0.51",
     "mysql2": ">=3"
   },
   "peerDependenciesMeta": {
