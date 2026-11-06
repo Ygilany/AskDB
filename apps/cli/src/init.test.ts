@@ -325,6 +325,37 @@ describe("runInitCli --yes --skip-install", () => {
     }
   });
 
+  // #777: Studio execute on the introspection engine reads the same connection env var, as the wizard does.
+  it.each(["postgres", "mysql", "sqlserver"])(
+    "--database %s --connection-env PG_URL --studio-execute: introspection and execute both read PG_URL",
+    async (database) => {
+      const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+      try {
+        const outPath = join(tmp, "askdb.config.ts");
+        const code = await runInitCli([
+          "--yes", "--skip-install", "--path", outPath,
+          "--database", database, "--connection-env", "PG_URL", "--studio-execute",
+        ]);
+        expect(code).toBe(0);
+        const config = readFileSync(outPath, "utf8");
+        expect(config.match(/databaseUrl: env\("PG_URL"\)/g)).toHaveLength(2);
+        expect(config).not.toContain("DATABASE_URL");
+        const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+        expect(envExample).not.toContain("DATABASE_URL");
+        expect(envExample.match(/^PG_URL=/gm)).toHaveLength(1);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("Studio execute on another engine than introspection keeps DATABASE_URL, and an explicit execute env var wins", () => {
+    const other = resolveDefaultInitAnswers({ database: "mysql", connectionEnv: "MY_URL", studioExecute: true, studioExecuteProvider: "postgres" });
+    expect(other.studioExecute).toMatchObject({ enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" });
+    const explicit = resolveDefaultInitAnswers({ database: "mysql", connectionEnv: "MY_URL", studioExecute: true, studioExecuteConnectionEnv: "EXEC_URL" });
+    expect(explicit.studioExecute).toMatchObject({ enabled: true, provider: "mysql", connectionEnv: "EXEC_URL" });
+  });
+
   it("--ai-provider azure: config and .env.example include the resource name", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
     try {
