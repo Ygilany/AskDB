@@ -46,10 +46,15 @@ const pool = new Pool({
   statement_timeout: 5000,
   max: 10,
 });
+// An idle client whose connection drops emits on the pool; without a listener, the process exits.
+pool.on("error", (err) => console.error({ err }, "idle database client error"));
 
 // Runs one generated statement in a read-only transaction.
 async function runReadOnly(sql: string, params: unknown[] = []) {
   const client = await pool.connect();
+  // A dropped connection then fails the query instead of crashing the process.
+  const onError = () => undefined;
+  client.on("error", onError);
   try {
     await client.query("BEGIN READ ONLY");
     // queryMode "extended" sends the statement on its own, so a stacked second statement fails.
@@ -59,6 +64,7 @@ async function runReadOnly(sql: string, params: unknown[] = []) {
     return rows;
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
+    client.off("error", onError);
     client.release();
   }
 }
@@ -149,6 +155,7 @@ const model = openai("gpt-4o-mini");
 
 // Connect as a read-only, least-privilege role, with a statement timeout.
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, statement_timeout: 5000 });
+pool.on("error", (err) => console.error({ err }, "idle database client error"));
 
 export async function askQuestion(question: string) {
   const { sql, tenantParams } = await ask({
@@ -198,6 +205,8 @@ const askdb = createAskDb({
 const pool = process.env.DATABASE_URL
   ? new pg.Pool({ connectionString: process.env.DATABASE_URL, statement_timeout: 5000 })
   : null;
+// An idle client whose connection drops emits on the pool; without a listener, the process exits.
+pool?.on("error", (err) => console.error({ err }, "idle database client error"));
 
 const ROW_CAP = 1000;
 

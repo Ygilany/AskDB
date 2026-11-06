@@ -45,6 +45,8 @@ const askdb = createAskDb({
 const pool = process.env.DATABASE_URL
   ? new pg.Pool({ connectionString: process.env.DATABASE_URL, statement_timeout: 5000 })
   : null;
+// An idle client whose connection drops emits on the pool; without a listener, the process exits.
+pool?.on("error", (err) => console.error({ err }, "idle database client error"));
 
 const ROW_CAP = 1000;
 
