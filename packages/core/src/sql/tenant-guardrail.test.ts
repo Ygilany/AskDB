@@ -490,14 +490,34 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
   it.each([
     ["an unscoped read after the pair", bypass],
     ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'\\'' AS x, o.* FROM orders o --'"],
+    ["a JSON_OBJECT key's `:` before the E", "SELECT JSON_OBJECT('k':E'a'\n'\\'' || (SELECT count(*) FROM orders o)::text --'\n) AS x FROM agencies WHERE id = :tenant_agency_ids"],
   ])("reports %s under every reading that includes Postgres", (_label, sql) => {
-    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect]) {
+    const customWithEscapes = { ...customDialect, backslashEscapes: true } as unknown as DialectSpec;
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect, customWithEscapes]) {
       expect(findings(sql, dialect), String(dialect?.id)).toContain("STRING_CONTINUATION:");
     }
   });
 
   it("refuses it under strict enforcement", () => {
     expect(() => validateTenantGuardrails(bypass, policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it("reads an unknown dialect with backslash escapes both ways", () => {
+    // With escapes on, 'a\'' is one string and the E'…' pair after it is code; with them off,
+    // 'a\' ends early and the pair sits inside the next string. Only one reading sees the pair.
+    const sql = String.raw`SELECT 'a\'' AS z, E'b'` + "\n'c' AS y";
+    const custom = (backslashEscapes: boolean) =>
+      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
+    expect(findings(sql, custom(true))).toContain("STRING_CONTINUATION:");
+    expect(findings(sql, custom(false))).not.toContain("STRING_CONTINUATION:");
+  });
+
+  it("names the string's position, not its text", () => {
+    const [warning] = validateTenantGuardrails("SELECT E'Jane Doe'\n'x' AS a", warnPolicy, agencyScope, {
+      dialect: POSTGRES_DIALECT,
+    }).warnings;
+    expect(warning?.message).toContain("offset 7");
+    expect(warning?.message).not.toContain("Jane");
   });
 
   it("leaves strings that keep the same reading alone", () => {

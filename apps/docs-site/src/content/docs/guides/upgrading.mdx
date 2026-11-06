@@ -39,7 +39,7 @@ A `global` tenant scope whose `reason` is missing, isn't a string, or is blank n
 
 ### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
 
-On Postgres and CockroachDB, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
+On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
 
 - **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
 - **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.

@@ -401,8 +401,21 @@ describe("validateSelectSql — string continued after E'…' (#703)", () => {
     ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'b' AS x"],
     ["a newline inside a /* */ comment in the gap", "SELECT E'a' /* one\ntwo */ 'b' AS x"],
     ["a third string", "SELECT 'a'\n'b' || E'c'\n\n'd' AS x"],
+    // A `:` glued to the E used to lex as a `:E` placeholder, hiding the E-string (#709 review).
+    ["a JSON_OBJECT key's `:` before the E", "SELECT JSON_OBJECT('k':E'a'\n'\\'' || (SELECT count(*) FROM orders o)::text --'\n) AS x"],
+    ["an array slice's `:` before the E", "SELECT (ARRAY[1,2])[1:E'1'\n'\\''::int] AS x --'"],
   ])("rejects %s", (_label, sql) => {
     expectRule(sql, "SQL_STRING_CONTINUATION");
+  });
+
+  it("names the string's position, not its text, which may hold a value from the question", () => {
+    try {
+      validateSelectSql(POSTGRES_DIALECT, "SELECT E'Jane Doe'\n'x' AS a");
+      expect.fail("expected SqlValidationError");
+    } catch (e) {
+      expect((e as SqlValidationError).message).toContain("offset 7");
+      expect((e as SqlValidationError).message).not.toContain("Jane");
+    }
   });
 
   it("rejects it on CockroachDB and on a dialect id that is no built-in engine", () => {

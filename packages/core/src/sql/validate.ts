@@ -123,7 +123,7 @@ function checkWithProfile(
     if (continued) {
       throw validationError(
         "SQL_STRING_CONTINUATION",
-        `An E'…' string continued on a later line is not allowed: generated SQL continues ${continued}.`,
+        `An E'…' string continued on a later line is not allowed: generated SQL continues the E'…' string at offset ${continued.start}.`,
         "Postgres joins E'…' with the next '…' across a newline and reads both with backslash escapes, so the check can't tell where the string ends. Write one literal, or join the parts with ||.",
       );
     }

@@ -105,7 +105,7 @@ The generated SQL is a locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE M
 
 ### `SqlValidationError: SQL_STRING_CONTINUATION`
 
-On Postgres or CockroachDB, the generated SQL continues an `E'…'` string on a later line: `E'a'`, a newline (and possibly a comment), then `'b'`. Postgres joins the two and reads the second with backslash escapes, while AskDB's checks read it as a plain string, so they can disagree about where it ends and miss code after it. AskDB refuses the pair rather than guess. Join the parts with `||`, or write one literal. A plain `'…'` string continued on the next line passes. See [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
+On Postgres, CockroachDB, or a dialect id that is no built-in engine, the generated SQL continues an `E'…'` string on a later line: `E'a'`, a newline (and possibly a comment), then `'b'`. Postgres joins the two and reads the second with backslash escapes, while AskDB's checks read it as a plain string, so they can disagree about where it ends and miss code after it. AskDB refuses the pair rather than guess. Join the parts with `||`, or write one literal. A plain `'…'` string continued on the next line passes. See [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
 
 ### `SqlValidationError: SQL_UNTERMINATED`
 
