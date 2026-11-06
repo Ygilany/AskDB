@@ -6,21 +6,21 @@ settings:
 
 overrides:
   deepmerge-ts: ^8.0.2
-  '@askdb/ai': 0.1.0-beta.8
-  '@askdb/client': 1.0.0-beta.7
-  '@askdb/config': 1.0.0-beta.13
-  '@askdb/core': 1.0.0-beta.44
-  '@askdb/enrich': 0.2.0-beta.15
-  '@askdb/http-api': 1.0.0-beta.44
-  '@askdb/introspect': 0.3.0-beta.18
-  '@askdb/mysql': 0.1.0-beta.19
-  '@askdb/postgres': 0.2.0-beta.20
-  '@askdb/prisma': 0.2.0-beta.18
-  '@askdb/rag': 0.2.0-beta.24
-  '@askdb/sqlite': 0.1.0-beta.19
-  '@askdb/sqlserver': 0.1.0-beta.20
-  '@askdb/studio': 0.2.0-beta.37
-  askdb: 1.0.0-beta.44
+  '@askdb/ai': 0.1.0-beta.9
+  '@askdb/client': 1.0.0-beta.8
+  '@askdb/config': 1.0.0-beta.14
+  '@askdb/core': 1.0.0-beta.45
+  '@askdb/enrich': 0.2.0-beta.16
+  '@askdb/http-api': 1.0.0-beta.45
+  '@askdb/introspect': 0.3.0-beta.19
+  '@askdb/mysql': 0.1.0-beta.20
+  '@askdb/postgres': 0.2.0-beta.21
+  '@askdb/prisma': 0.2.0-beta.19
+  '@askdb/rag': 0.2.0-beta.25
+  '@askdb/sqlite': 0.1.0-beta.20
+  '@askdb/sqlserver': 0.1.0-beta.21
+  '@askdb/studio': 0.2.0-beta.38
+  askdb: 1.0.0-beta.45
 
 importers:
 
@@ -30,26 +30,26 @@ importers:
         specifier: 4.0.29
         version: 4.0.29(zod@4.6.5)
       '@askdb/client':
-        specifier: 1.0.0-beta.7
-        version: 1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
+        specifier: 1.0.0-beta.8
+        version: 1.0.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(@askdb/config@1.0.0-beta.14)(@askdb/core@1.0.0-beta.45(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
       '@askdb/config':
-        specifier: 1.0.0-beta.13
-        version: 1.0.0-beta.13
+        specifier: 1.0.0-beta.14
+        version: 1.0.0-beta.14
       '@askdb/core':
-        specifier: 1.0.0-beta.44
-        version: 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+        specifier: 1.0.0-beta.45
+        version: 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
       '@askdb/http-api':
-        specifier: 1.0.0-beta.44
-        version: 1.0.0-beta.44(zod@4.6.5)
+        specifier: 1.0.0-beta.45
+        version: 1.0.0-beta.45(zod@4.6.5)
       '@askdb/studio':
-        specifier: 0.2.0-beta.37
-        version: 0.2.0-beta.37(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
+        specifier: 0.2.0-beta.38
+        version: 0.2.0-beta.38(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
       ai:
         specifier: 7.0.51
         version: 7.0.51(zod@4.6.5)
       askdb:
-        specifier: 1.0.0-beta.44
-        version: 1.0.0-beta.44(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
+        specifier: 1.0.0-beta.45
+        version: 1.0.0-beta.45(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -152,8 +152,8 @@ packages:
     resolution: {integrity: sha512-9WAerTaPU2jcVi8dh8x27tySEuLur1Kfg7Go74GuCmsC/2MDSvrTkrK8ZrXWjryEevKfcPPmO1enveE7eqlzoA==}
     engines: {node: '>=22'}
 
-  '@askdb/ai@0.1.0-beta.8':
-    resolution: {integrity: sha512-Tjzdb5ciLxCAYHrUdrmOdi4rCR4gLuY42gpIGWRU5OpN7YwH3vMmtO24Cl/DeIEKFwjAWFgWyAXaloZ2Z6YUtA==}
+  '@askdb/ai@0.1.0-beta.9':
+    resolution: {integrity: sha512-Je5+2dEslUjHIpw/3JOGH2ZGUtsvHScNO7hrZYCCgEnSIkj7OTG9EnLXAXJ5xqci/iB2qx4Qh6EvvQ4WTKtd6w==}
     engines: {node: '>=22.23.4'}
     peerDependencies:
       '@ai-sdk/anthropic': ^4.0.0
@@ -171,16 +171,16 @@ packages:
       '@ai-sdk/openai':
         optional: true
 
-  '@askdb/client@1.0.0-beta.7':
-    resolution: {integrity: sha512-1FkxP3h0pztRJn4xNP2oMQ5ND7WVeg2oa6ZcLXgvmjEmUpafqjD27MysD0cxYUlbs4SDL29FT1oO/ITGlly/ww==}
+  '@askdb/client@1.0.0-beta.8':
+    resolution: {integrity: sha512-y0WnDPZT0gUq4dzWDuKmqOpAVCtpvzv5WtECTckdTTFTP7tooeQwHS2cW4JR4VlVF8fCClFtgjss6r3NgByiLA==}
     engines: {node: '>=22.23.4'}
     peerDependencies:
       '@ai-sdk/anthropic': ^4.0.0
       '@ai-sdk/azure': ^4.0.0
       '@ai-sdk/google': ^4.0.0
       '@ai-sdk/openai': ^4.0.0
-      '@askdb/config': 1.0.0-beta.13
-      '@askdb/core': 1.0.0-beta.44
+      '@askdb/config': 1.0.0-beta.14
+      '@askdb/core': 1.0.0-beta.45
       ai: ^7.0.51
     peerDependenciesMeta:
       '@ai-sdk/anthropic':
@@ -192,31 +192,31 @@ packages:
       '@ai-sdk/openai':
         optional: true
 
-  '@askdb/config@1.0.0-beta.13':
-    resolution: {integrity: sha512-4Lnuem5IMQ8igoXRKLlJso/17sd6ksI4rbMsu9IcBrYy69chtahGcGZX+ub7nhKyUd3yK+fyL4d0ZkOwZYFwnQ==}
+  '@askdb/config@1.0.0-beta.14':
+    resolution: {integrity: sha512-6rwPeSXvGPNz2zO9ly547oGdWYODFgcId0M10TQdqw9lEWu90xHLj0T/z5lPDO0GqpSpLAC0soOiFvlW0QzM0w==}
     engines: {node: '>=22.23.4'}
 
-  '@askdb/core@1.0.0-beta.44':
-    resolution: {integrity: sha512-p8SVFFdLy5YLljmpi8W3ufvgW+tdAxzy6zH/jAP/rUuaLRUbEDYTcdZtFtrtpzdnsWIBaRg/Z/mg2xrjBeV9vA==}
+  '@askdb/core@1.0.0-beta.45':
+    resolution: {integrity: sha512-8cpeoLy+Q8rBAGIaYVg8rQ7sqyOUsdOIPklIQtz4vk+Ye/KuWDN5uBBhB/lWheay9Y5K4m6oLPJDqDgWsJtdFA==}
     engines: {node: '>=22.23.4'}
     peerDependencies:
       ai: ^6.0.0 || ^7.0.51
 
-  '@askdb/enrich@0.2.0-beta.15':
-    resolution: {integrity: sha512-uBvuORck6+rpOdAEfS5U26wylshit1xKTFP3t31X96b99vyzzSpm78TMAfK630+DouXxDguLHRWHEhTbVJc2tQ==}
+  '@askdb/enrich@0.2.0-beta.16':
+    resolution: {integrity: sha512-FnvoOIPN5f2C+RhB7/TFTDygsTW2XWCcXn7rkkThL857b2X4DBpFl/Nyed3oimIoRZZFxHnwQJOqDXO8k0vlPQ==}
     engines: {node: '>=22.23.4'}
 
-  '@askdb/http-api@1.0.0-beta.44':
-    resolution: {integrity: sha512-rxto7aiCiMsWP5E5ObVvJcfZvfG1hvOUoAcva5QsQRfOA7a9YbTERRHMuweRRPec6dXldDtC1ZqV7S007kwx3Q==}
+  '@askdb/http-api@1.0.0-beta.45':
+    resolution: {integrity: sha512-oE3D/nO08hx7z2agO2Jfh8roafUz3WGyVgYKBOAUDfCLN/GvAIX0zY4JL7kcgVSFEhxYMIUMa8yoKqoL7PY8YA==}
     engines: {node: '>=22.23.4'}
     hasBin: true
 
-  '@askdb/introspect@0.3.0-beta.18':
-    resolution: {integrity: sha512-M40IaztZ3QTjnJ3IHYKHIZiYNOv6K+ClFnvGLDlglH0XkyFoStJgPR/oqArvbsj2Isq139siFa/4ir+0CtFNGA==}
+  '@askdb/introspect@0.3.0-beta.19':
+    resolution: {integrity: sha512-1zpkyGYlsfeLWDBDvJCo/jzC8nofaYr081XxWJ1RhwlZCAHcmQ8bT+nTRvT4qKKXkMBC7guwWNsufX/JQb74rA==}
     engines: {node: '>=22.23.4'}
 
-  '@askdb/mysql@0.1.0-beta.19':
-    resolution: {integrity: sha512-Gd6tiBR23jtxFNjtA4A2KV4n/UJ7hBMKYU3Al5WbNSBOfVFStcKVWffYV/s79sIB5MB3o9QcPCz0J1ao3j5mjw==}
+  '@askdb/mysql@0.1.0-beta.20':
+    resolution: {integrity: sha512-EJ+yfCXNr1PogVsWuRcbnqDvRVd66OPxP2Th36qNMJUpn2ciVSRWw7lhUBm0bv3ylAUvuBrlf4gD0/DFO7+UjQ==}
     engines: {node: '>=22.23.4'}
     peerDependencies:
       mysql2: '>=3'
@@ -224,8 +224,8 @@ packages:
       mysql2:
         optional: true
 
-  '@askdb/postgres@0.2.0-beta.20':
-    resolution: {integrity: sha512-cv4RaU0U5PIFx/UTzpLn2KJ1lRgAs+NCtxDjQAilwiqpz+HwCuek2GT1hC3Sw94lomd3tEsjthzay/4U/hl+fA==}
+  '@askdb/postgres@0.2.0-beta.21':
+    resolution: {integrity: sha512-8ljnhTxc1XHbWuJj6bqIscetTCM95lt2gzRZsJACnYiLL3eMKdCp3jpnJwkdbeZ95+76Md3MJ/Lpi1gwtKvbVQ==}
     engines: {node: '>=22.23.4'}
     peerDependencies:
       pg: '>=8'
@@ -233,12 +233,12 @@ packages:
       pg:
         optional: true
 
-  '@askdb/prisma@0.2.0-beta.18':
-    resolution: {integrity: sha512-NfKP0wCWWAHaYUBoQ+kWiKsJvbiauviWeOhaw2GhYFGOHxVaI07HhnHyorsACxedSL/NKmitutQaMpuTNLSWGw==}
+  '@askdb/prisma@0.2.0-beta.19':
+    resolution: {integrity: sha512-xk2aFHnAZUN0L3BerWbndjmEoaO0ausSNMLNU2x3Tn/KylDSltgoHXfHzbgzNns/DkON9Z4DcGWdPcrKaIj/pg==}
     engines: {node: '>=22.23.4'}
 
-  '@askdb/rag@0.2.0-beta.24':
-    resolution: {integrity: sha512-MLs9vJrioMswCKiqLR3kpaBU3J9dXzr/YyxUpTfU9ooh952BSUWuwkGu7v9t+h+NgLk6hVaWSbNeYOn2S1cEbA==}
+  '@askdb/rag@0.2.0-beta.25':
+    resolution: {integrity: sha512-X/0HJLi+XaymQo3pkt9jP8u6c+bOCN3FpBkkPKxalIewSAjMWhFe9Y3yuUf3LVcaht1cI+jiZo/pEOOWpv14dQ==}
     engines: {node: '>=22.23.4'}
     hasBin: true
     peerDependencies:
@@ -253,8 +253,8 @@ packages:
       pg:
         optional: true
 
-  '@askdb/sqlite@0.1.0-beta.19':
-    resolution: {integrity: sha512-XPK3ZkkGAFriXlCB5hn3f5MdIqXQnvvGnv92uiKkzYibfXmbVUfWllvNlVZ7WddWpYsAP+xntW6hGvOFJm5CKg==}
+  '@askdb/sqlite@0.1.0-beta.20':
+    resolution: {integrity: sha512-Tes9Ns1aFcQDQyjwsT2Y8F709LiKH9ZDuLC44bVuPOQpHGrHWGk28rm1H/Hc3sfmeIKZBreUAIZf6zSOGBbfSQ==}
     engines: {node: '>=22.23.4'}
     peerDependencies:
       better-sqlite3: '>=12'
@@ -262,8 +262,8 @@ packages:
       better-sqlite3:
         optional: true
 
-  '@askdb/sqlserver@0.1.0-beta.20':
-    resolution: {integrity: sha512-Hop1V+UevUM99K24b0lP2jX3BSDpO2dHzFgGQ4E++2Dce0M7xcmmX+duZo9zAPb3zDT+o8kdxHXQcuRU7H5p/Q==}
+  '@askdb/sqlserver@0.1.0-beta.21':
+    resolution: {integrity: sha512-r6OTYOq5El/80wvCj4L4TH2ZB9JKegxUcSzJ2M2aYnqu1V0myB3DG6bfDPB+8/Fvv5TSmR9PDFJMhWiuHLC5QQ==}
     engines: {node: '>=22.23.4'}
     peerDependencies:
       mssql: '>=12'
@@ -271,8 +271,8 @@ packages:
       mssql:
         optional: true
 
-  '@askdb/studio@0.2.0-beta.37':
-    resolution: {integrity: sha512-fMv6O38uvhLm/Pf3yLRAgcUSWPhP5lc0LSBN+E7N47OrEpNtwyEE89FV7biLccaK3E0XUfQvSId6PT5oCHcGFw==}
+  '@askdb/studio@0.2.0-beta.38':
+    resolution: {integrity: sha512-duzpSBdonBIku0LjajzJ8tWddLsDcB5/m/d8K9u5E7xtxhHaEiAmopJV9fhWeYUUD9EKPAMQwnqbbPCw12zdsA==}
     engines: {node: '>=22.23.4'}
     hasBin: true
     peerDependencies:
@@ -1014,8 +1014,8 @@ packages:
   argparse@1.0.10:
     resolution: {integrity: sha512-o5Roy6tNG4SL/FOkCAN6RzjiakZS25RLYFrcMttJqbdd8BWrnA+fGz57iN5Pb06pvBGvl5gQ0B48dJlslXvoTg==}
 
-  askdb@1.0.0-beta.44:
-    resolution: {integrity: sha512-KFPF2KWTC6dHqMqIaFlMXeKJP8aJWafdqR2RWxU2Gob1SDT9aW/aHVuaDVQ/XJp73+H/9VMWdnxOMuLateI/+Q==}
+  askdb@1.0.0-beta.45:
+    resolution: {integrity: sha512-KUPAIKxQI0BCXZqIYEJ8585Jih5AGFN6+w5Lb7PrsJiGRlCA9QwLjlDvagREaLowR87xU9qfKJ15fcGQby3J8w==}
     engines: {node: '>=22.23.4'}
     hasBin: true
 
@@ -1862,7 +1862,7 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@askdb/ai@0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))':
+  '@askdb/ai@0.1.0-beta.9(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))':
     dependencies:
       ai: 7.0.51(zod@4.6.5)
     optionalDependencies:
@@ -1871,7 +1871,7 @@ snapshots:
       '@ai-sdk/google': 4.0.111(zod@4.6.5)
       '@ai-sdk/openai': 4.0.108(zod@4.6.5)
 
-  '@askdb/ai@0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.51(zod@4.6.5))':
+  '@askdb/ai@0.1.0-beta.9(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.51(zod@4.6.5))':
     dependencies:
       ai: 7.0.51(zod@4.6.5)
     optionalDependencies:
@@ -1880,11 +1880,11 @@ snapshots:
       '@ai-sdk/google': 4.0.111(zod@4.6.5)
       '@ai-sdk/openai': 4.0.29(zod@4.6.5)
 
-  '@askdb/client@1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))':
+  '@askdb/client@1.0.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.14)(@askdb/core@1.0.0-beta.45(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.13
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/ai': 0.1.0-beta.9(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.14
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
       ai: 7.0.51(zod@4.6.5)
     optionalDependencies:
       '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
@@ -1892,11 +1892,11 @@ snapshots:
       '@ai-sdk/google': 4.0.111(zod@4.6.5)
       '@ai-sdk/openai': 4.0.108(zod@4.6.5)
 
-  '@askdb/client@1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))':
+  '@askdb/client@1.0.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(@askdb/config@1.0.0-beta.14)(@askdb/core@1.0.0-beta.45(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.13
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/ai': 0.1.0-beta.9(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.29(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.14
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
       ai: 7.0.51(zod@4.6.5)
     optionalDependencies:
       '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
@@ -1904,116 +1904,116 @@ snapshots:
       '@ai-sdk/google': 4.0.111(zod@4.6.5)
       '@ai-sdk/openai': 4.0.29(zod@4.6.5)
 
-  '@askdb/config@1.0.0-beta.13':
+  '@askdb/config@1.0.0-beta.14':
     dependencies:
       dotenv: 18.0.9
       jiti: 2.7.0
 
-  '@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5))':
+  '@askdb/core@1.0.0-beta.45(ai@7.0.51(zod@4.6.5))':
     dependencies:
       ai: 7.0.51(zod@4.6.5)
       gray-matter: 4.0.3
       pino: 10.4.0
       zod: 4.6.7
 
-  '@askdb/enrich@0.2.0-beta.15(ai@7.0.51(zod@4.6.5))':
+  '@askdb/enrich@0.2.0-beta.16(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
     transitivePeerDependencies:
       - ai
 
-  '@askdb/http-api@1.0.0-beta.44(zod@4.6.5)':
+  '@askdb/http-api@1.0.0-beta.45(zod@4.6.5)':
     dependencies:
       '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
       '@ai-sdk/azure': 4.0.116(zod@4.6.5)
       '@ai-sdk/google': 4.0.111(zod@4.6.5)
       '@ai-sdk/openai': 4.0.108(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
-      '@askdb/client': 1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.13
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/ai': 0.1.0-beta.9(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/client': 1.0.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.14)(@askdb/core@1.0.0-beta.45(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.14
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
       ai: 7.0.51(zod@4.6.5)
     transitivePeerDependencies:
       - zod
 
-  '@askdb/introspect@0.3.0-beta.18(ai@7.0.51(zod@4.6.5))':
+  '@askdb/introspect@0.3.0-beta.19(ai@7.0.51(zod@4.6.5))':
     dependencies:
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
     transitivePeerDependencies:
       - ai
 
-  '@askdb/mysql@0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))':
+  '@askdb/mysql@0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))':
     dependencies:
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
-      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.19(ai@7.0.51(zod@4.6.5))
     optionalDependencies:
       mysql2: 3.24.5(@types/node@22.20.4)
     transitivePeerDependencies:
       - ai
 
-  '@askdb/postgres@0.2.0-beta.20(ai@7.0.51(zod@4.6.5))(pg@8.23.1)':
+  '@askdb/postgres@0.2.0-beta.21(ai@7.0.51(zod@4.6.5))(pg@8.23.1)':
     dependencies:
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
-      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.19(ai@7.0.51(zod@4.6.5))
       pg-connection-string: 2.14.1
     optionalDependencies:
       pg: 8.23.1
     transitivePeerDependencies:
       - ai
 
-  '@askdb/prisma@0.2.0-beta.18(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)':
+  '@askdb/prisma@0.2.0-beta.19(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)':
     dependencies:
-      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.19(ai@7.0.51(zod@4.6.5))
       '@prisma/internals': 7.10.1(typescript@7.0.2)
     transitivePeerDependencies:
       - ai
       - magicast
       - typescript
 
-  '@askdb/rag@0.2.0-beta.24(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)':
+  '@askdb/rag@0.2.0-beta.25(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)':
     dependencies:
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
     optionalDependencies:
       '@ai-sdk/openai': 4.0.108(zod@4.6.5)
       ai: 7.0.51(zod@4.6.5)
       pg: 8.23.1
 
-  '@askdb/sqlite@0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)':
+  '@askdb/sqlite@0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)':
     dependencies:
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
-      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.19(ai@7.0.51(zod@4.6.5))
     optionalDependencies:
       better-sqlite3: 13.0.3
     transitivePeerDependencies:
       - ai
 
-  '@askdb/sqlserver@0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)':
+  '@askdb/sqlserver@0.1.0-beta.21(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)':
     dependencies:
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
-      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.19(ai@7.0.51(zod@4.6.5))
       '@tediousjs/connection-string': 1.1.0
     optionalDependencies:
       mssql: 12.7.2
     transitivePeerDependencies:
       - ai
 
-  '@askdb/studio@0.2.0-beta.37(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)':
+  '@askdb/studio@0.2.0-beta.38(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)':
     dependencies:
       '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
       '@ai-sdk/azure': 4.0.116(zod@4.6.5)
       '@ai-sdk/google': 4.0.111(zod@4.6.5)
       '@ai-sdk/openai': 4.0.108(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.13
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
-      '@askdb/enrich': 0.2.0-beta.15(ai@7.0.51(zod@4.6.5))
-      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
-      '@askdb/mysql': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))
-      '@askdb/postgres': 0.2.0-beta.20(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
-      '@askdb/prisma': 0.2.0-beta.18(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)
-      '@askdb/rag': 0.2.0-beta.24(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
-      '@askdb/sqlite': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)
-      '@askdb/sqlserver': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)
+      '@askdb/ai': 0.1.0-beta.9(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.14
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
+      '@askdb/enrich': 0.2.0-beta.16(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.19(ai@7.0.51(zod@4.6.5))
+      '@askdb/mysql': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))
+      '@askdb/postgres': 0.2.0-beta.21(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/prisma': 0.2.0-beta.19(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)
+      '@askdb/rag': 0.2.0-beta.25(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/sqlite': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)
+      '@askdb/sqlserver': 0.1.0-beta.21(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)
       ai: 7.0.51(zod@4.6.5)
     optionalDependencies:
       better-sqlite3: 13.0.3
@@ -2649,25 +2649,25 @@ snapshots:
     dependencies:
       sprintf-js: 1.0.3
 
-  askdb@1.0.0-beta.44(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5):
+  askdb@1.0.0-beta.45(@types/node@22.20.4)(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5):
     dependencies:
       '@ai-sdk/anthropic': 4.0.96(zod@4.6.5)
       '@ai-sdk/azure': 4.0.116(zod@4.6.5)
       '@ai-sdk/google': 4.0.111(zod@4.6.5)
       '@ai-sdk/openai': 4.0.108(zod@4.6.5)
-      '@askdb/ai': 0.1.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
-      '@askdb/client': 1.0.0-beta.7(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.13)(@askdb/core@1.0.0-beta.44(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
-      '@askdb/config': 1.0.0-beta.13
-      '@askdb/core': 1.0.0-beta.44(ai@7.0.51(zod@4.6.5))
-      '@askdb/enrich': 0.2.0-beta.15(ai@7.0.51(zod@4.6.5))
-      '@askdb/introspect': 0.3.0-beta.18(ai@7.0.51(zod@4.6.5))
-      '@askdb/mysql': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))
-      '@askdb/postgres': 0.2.0-beta.20(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
-      '@askdb/prisma': 0.2.0-beta.18(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)
-      '@askdb/rag': 0.2.0-beta.24(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
-      '@askdb/sqlite': 0.1.0-beta.19(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)
-      '@askdb/sqlserver': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)
-      '@askdb/studio': 0.2.0-beta.37(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
+      '@askdb/ai': 0.1.0-beta.9(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))
+      '@askdb/client': 1.0.0-beta.8(@ai-sdk/anthropic@4.0.96(zod@4.6.5))(@ai-sdk/azure@4.0.116(zod@4.6.5))(@ai-sdk/google@4.0.111(zod@4.6.5))(@ai-sdk/openai@4.0.108(zod@4.6.5))(@askdb/config@1.0.0-beta.14)(@askdb/core@1.0.0-beta.45(ai@7.0.51(zod@4.6.5)))(ai@7.0.51(zod@4.6.5))
+      '@askdb/config': 1.0.0-beta.14
+      '@askdb/core': 1.0.0-beta.45(ai@7.0.51(zod@4.6.5))
+      '@askdb/enrich': 0.2.0-beta.16(ai@7.0.51(zod@4.6.5))
+      '@askdb/introspect': 0.3.0-beta.19(ai@7.0.51(zod@4.6.5))
+      '@askdb/mysql': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(mysql2@3.24.5(@types/node@22.20.4))
+      '@askdb/postgres': 0.2.0-beta.21(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/prisma': 0.2.0-beta.19(ai@7.0.51(zod@4.6.5))(typescript@7.0.2)
+      '@askdb/rag': 0.2.0-beta.25(@ai-sdk/openai@4.0.108(zod@4.6.5))(ai@7.0.51(zod@4.6.5))(pg@8.23.1)
+      '@askdb/sqlite': 0.1.0-beta.20(ai@7.0.51(zod@4.6.5))(better-sqlite3@13.0.3)
+      '@askdb/sqlserver': 0.1.0-beta.21(ai@7.0.51(zod@4.6.5))(mssql@12.7.2)
+      '@askdb/studio': 0.2.0-beta.38(better-sqlite3@13.0.3)(mssql@12.7.2)(mysql2@3.24.5(@types/node@22.20.4))(pg@8.23.1)(typescript@7.0.2)(zod@4.6.5)
       '@inquirer/prompts': 8.7.5(@types/node@22.20.4)
       ai: 7.0.51(zod@4.6.5)
       commander: 15.0.0

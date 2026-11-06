@@ -53,8 +53,10 @@ The first cases: once a release includes the change, the capability's `n/a` cell
 | `tenant-driver-markers` | #197 (fixes #231) |
 | `tenant-predicate-required` | #341 (fixes #315) |
 | `client-built-in-providers` | #198 (`@askdb/client` 1.0.0-beta.7) |
+| `askdb-optional-prisma` | #656 (fixes #259) |
+| `config-plain-mjs` | #648 (fixes #264 and #265) |
 
-The first five shipped in `askdb@1.0.0-beta.43` and `client-built-in-providers` in `askdb@1.0.0-beta.44`, so the beta.44 baseline has no `n/a` cell. They gate cells again only on an older target (`npm:askdb@<version>`).
+The first five shipped in `askdb@1.0.0-beta.43` and `client-built-in-providers` in `askdb@1.0.0-beta.44`; they gate cells again only on an older target (`npm:askdb@<version>`). `askdb-optional-prisma` and `config-plain-mjs` merged after `askdb@1.0.0-beta.45`, so the beta.45 baseline has two expected `n/a` cells, `askdb-no-prisma [postgres]` and `config-forms [sqlite]`, until a release ships their changesets (`prisma-optional-peer`, `config-mjs-plain-object`).
 
 Check `src/capabilities.ts` for the current list: a capability added since this table was written is checked the same way.
 
