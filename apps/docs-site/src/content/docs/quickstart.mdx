@@ -37,7 +37,7 @@ cd askdb-shop
 npm init -y
 ```
 
-Now create `shop.sql` in that folder. It defines three tables (customers, products and orders) and adds a few rows to each:
+Now create `shop.sql` in that folder. It defines three tables and adds 4 customers, 3 products and 6 orders:
 
 ```sql title="shop.sql"
 CREATE TABLE customers (
@@ -59,7 +59,7 @@ CREATE TABLE orders (
   ordered_at TEXT NOT NULL
 );
 INSERT INTO customers VALUES (1, 'Ada', 'UK'), (2, 'Grace', 'US'), (3, 'Linus', 'FI'), (4, 'Margaret', 'US');
-INSERT INTO products VALUES (1, 'Keyboard', 'hardware', 49.99), (2, 'Monitor', 'hardware', 199.00), (3, 'IDE licence', 'software', 89.00);
+INSERT INTO products VALUES (1, 'Keyboard', 'hardware', 49.99), (2, 'Monitor', 'hardware', 199.00), (3, 'IDE license', 'software', 89.00);
 INSERT INTO orders VALUES
   (1, 1, 1, 1, '2026-01-05'), (2, 1, 3, 1, '2026-01-06'), (3, 2, 2, 2, '2026-02-10'),
   (4, 3, 1, 1, '2026-03-01'), (5, 4, 2, 1, '2026-04-20'), (6, 4, 3, 2, '2026-04-21');
@@ -200,7 +200,7 @@ GROUP BY c.id, c.name
 ORDER BY total_spent DESC;
 ```
 
-Your SQL may differ a little, because the model writes it. Notice what AskDB did and didn't do. It checked the SQL before printing it: for example, it returns only read-only SQL. It didn't run the SQL. Running it is our job.
+Your SQL can use different aliases, layout or clause order, because the model writes it. Notice what AskDB did and didn't do. It checked the SQL before printing it: for example, it returns only read-only SQL. It didn't run the SQL. Running it is our job.
 
 If you see `no AI API key configured`, check that `.env` has your key (step 3).
 
@@ -278,7 +278,9 @@ The SQLite driver, `better-sqlite3`, has prebuilt binaries only for the systems 
 
 ## Read next
 
-- [Studio](/studio/): describe tables and columns, and test questions in your browser, to improve the SQL the model writes. [Author your schema](/guides/author-your-schema/) covers what to add.
-- [Embed in a Node app](/guides/embed-in-node/): call AskDB from a TypeScript service and run the SQL through your own database pool.
-- [Deploy as an HTTP service](/guides/deploy-as-http-service/): let Python, browsers or agents ask questions over HTTP.
-- [How AskDB works](/concepts/how-askdb-works/): the whole flow, step by step.
+<div class="home-path-grid">
+  <a href="/studio/"><strong>Studio</strong><span>Describe tables and columns, and test questions in your browser, to improve the SQL the model writes.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Call AskDB from a TypeScript service and run the SQL through your own database pool.</span></a>
+  <a href="/guides/deploy-as-http-service/"><strong>Deploy as an HTTP service</strong><span>Let Python, browsers or agents ask questions over HTTP.</span></a>
+  <a href="/concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The whole flow, step by step.</span></a>
+</div>
