@@ -71,6 +71,7 @@ If you run `unboundSql` with `params`, you need no change: the pair still return
 
 - **A malformed schema markdown file reports the same error on every load** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, when one process loaded the same malformed front-matter YAML in `tables/*.md`, `concepts.md` or `tenant-policy.md` a second time, it reported `Invalid <kind> front-matter` (missing fields) instead of `Malformed <kind> front-matter YAML`. Loading failed both times. `@askdb/core` also no longer keeps every schema markdown file it reads or writes in memory for the life of the process, so a server that accepts per-request schemas (`httpApi.allowSchemaOverride`) no longer grows with each new one.
 - **A schema markdown body that starts with a `---` horizontal rule survives a save** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, `writeTableMarkdown()`, `writeConceptsMarkdown()` and `writeTenantPolicyMarkdown()`, and the Studio saves that use them, read the rule as front-matter: the body was emptied, and the file then failed to load.
+- **Schema markdown front-matter accepts YAML only.** A `tables/*.md`, `concepts.md` or `tenant-policy.md` file whose front-matter isn't YAML now fails to load with `SchemaParseError` (`Malformed <kind> front-matter YAML`). Front-matter that opens with a plain `---`, as Studio and `@askdb/enrich` write it, loads as before.
 
 ## 1.0.0-beta.47
 
