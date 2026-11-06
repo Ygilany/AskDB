@@ -13,7 +13,7 @@ import {
   parseAskDbModeV1,
   SchemaParseError,
 } from "@askdb/core";
-import { printCliError } from "./cli-error.js";
+import { errorMessage, printCliError } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { createCliLogger, loggingFlags, resolveCliLogLevel, type CliLoggingFlags } from "./logger.js";
 
@@ -174,8 +174,7 @@ async function runAsk(opts: AskOptions): Promise<number> {
     logger.info({ event: AskDbLogEvent.RunEnd, ok: true }, "askdb run end");
     return 0;
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logger.error({ event: AskDbLogEvent.RunError, errMessage: msg }, "askdb run error");
+    logger.error({ event: AskDbLogEvent.RunError, errMessage: errorMessage(error) }, "askdb run error");
     printCliError(error);
     return 1;
   }
@@ -199,7 +198,6 @@ function loadSchemaFromPath(schemaPath: string): ReturnType<typeof loadSchema> {
     if (e instanceof SchemaParseError) {
       throw new AskDbError(`Failed to parse schema.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${e.message}`, e);
     }
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new AskDbError(`Failed to load schema.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${msg}`, e);
+    throw new AskDbError(`Failed to load schema.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${errorMessage(e)}`, e);
   }
 }
