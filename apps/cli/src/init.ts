@@ -10,6 +10,7 @@ import {
   detectPackageManager,
   findNearestPackageJsonDir,
   formatInstallCommand,
+  isAskDbScaffoldEnvName,
   isLikelyWorkspaceRoot,
   packageManagerAddArgs,
   packageManagerSpawnSpec,
@@ -87,13 +88,13 @@ function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: st
 }
 
 /**
- * `--sqlite-file`'s value as the config reads it: an env-var-shaped value (`SQLITE_FILE`,
- * `UPPER_SNAKE_CASE`) is a variable, anything else (`data.db`, `../db/app.db`, `/srv/app.db`)
- * a path. No value means the `SQLITE_FILE` variable.
+ * `--sqlite-file`'s value as the config reads it: a value the planner accepts as an env var
+ * name (`SQLITE_FILE`, `UPPER_SNAKE_CASE`) is a variable, anything else (`data.db`,
+ * `../db/app.db`, `/srv/app.db`) a path. No value means the `SQLITE_FILE` variable.
  */
 function sqliteFileValue(file: string | undefined): ScaffoldValue {
   if (!file) return { env: "SQLITE_FILE" };
-  return /^[A-Z_][A-Z0-9_]*$/.test(file) ? { env: file } : { path: file };
+  return isAskDbScaffoldEnvName(file) ? { env: file } : { path: file };
 }
 
 /** `InitAnswers` as the planner in `@askdb/config/scaffold` takes them. It ignores what the engine doesn't read. */

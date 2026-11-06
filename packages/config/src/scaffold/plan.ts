@@ -287,8 +287,16 @@ function installPlan(a: CheckedAnswers, versions: { config: string; prisma: stri
   return { packages, allowBuilds };
 }
 
-/** POSIX env var names, uppercase. A leading `_` is allowed. */
-const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+/**
+ * Whether `name` is an env var name the planner accepts: POSIX, uppercase
+ * (`^[A-Z_][A-Z0-9_]*$`). A leading `_` is allowed. `askdb init` uses it to tell an env
+ * var name from a path in `--sqlite-file`.
+ *
+ * @experimental See the module note.
+ */
+export function isAskDbScaffoldEnvName(name: string): boolean {
+  return /^[A-Z_][A-Z0-9_]*$/.test(name);
+}
 
 // C0 controls, DEL, and the JS line and paragraph separators: never part of a project path.
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f\u2028\u2029]/;
@@ -300,7 +308,7 @@ function checkRequired(field: string, value: unknown): string {
 
 function checkEnvName(field: string, value: unknown): string {
   const name = checkRequired(field, value);
-  if (!ENV_NAME_PATTERN.test(name)) {
+  if (!isAskDbScaffoldEnvName(name)) {
     throw new AskDbScaffoldInputError(
       field,
       "must be an environment variable name like DATABASE_URL: uppercase letters, digits and underscores, not starting with a digit. Values belong in .env, not here.",

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ASKDB_AI_PROVIDERS, loadAskDbConfigProjectionSync, resetAskDbRuntimeForTests, type AskDbConfig } from "../index.js";
 import { linkWorkspacePackage } from "../test-utils.js";
-import { AskDbScaffoldInputError, planAskDbScaffold, type AskDbScaffoldAnswers } from "./index.js";
+import { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold, type AskDbScaffoldAnswers } from "./index.js";
 
 const VERSIONS = { config: "1.2.3", prisma: "0.9.0" };
 
@@ -242,6 +242,19 @@ AZURE_RESOURCE_NAME=
     ["studioExecute.sqliteFile", answers({ studioExecute: { provider: "sqlite", sqliteFile: { env: "Exec_File" } } })],
   ] satisfies [string, AskDbScaffoldAnswers][])("rejects an env var name that isn't uppercase POSIX in %s", (field, input) => {
     expect(inputError(input).field).toBe(field);
+  });
+
+  it.each([
+    ["DATABASE_URL", true],
+    ["_PRIVATE_URL", true],
+    ["A1", true],
+    ["my-url", false],
+    ["database_url", false],
+    ["1DATABASE_URL", false],
+    ["DATABASE URL", false],
+    ["", false],
+  ])("isAskDbScaffoldEnvName(%j) is %s", (name, expected) => {
+    expect(isAskDbScaffoldEnvName(name)).toBe(expected);
   });
 
   it("accepts env var names with a leading underscore", () => {

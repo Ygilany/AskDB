@@ -10,7 +10,7 @@
  */
 export { renderAskDbAiConfigScaffold } from "./ai.js";
 export type { AskDbAiConfigScaffold, AskDbAiConfigScaffoldInput, AskDbScaffoldEnvVar } from "./ai.js";
-export { AskDbScaffoldInputError, planAskDbScaffold } from "./plan.js";
+export { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold } from "./plan.js";
 export type { AskDbScaffoldAnswers, AskDbScaffoldPlan, ScaffoldValue } from "./plan.js";
 export {
   detectPackageManager,
