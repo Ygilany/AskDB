@@ -60,14 +60,14 @@ export default defineConfig({
 | `rag` | no | Experimental. The embedder (`mock`, or `ai` for the `ai.embedding` model), the vector store (`file`, `memory`, `pgvector`) and the store's options. Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store. See [The `rag` block](#the-rag-block). |
 | `modes` | no | `askdbMode` (`schema_only` default, `bounded_results`) and `omitSensitiveFromPrompt` (default `false`). Both are floors: a CLI flag, a client call, or an HTTP request can tighten them, never loosen them. See [`modes` and `host`](#modes-and-host). |
 | `host` | no | `schemaPath` or `schemaJson`: the default schema artifact for `createAskDb` and the HTTP API. See [`modes` and `host`](#modes-and-host). |
-| `logging` | no | The level, log file, stdout copy and correlation ID of the structured logs from the CLI and the HTTP API server. See [`logging` and `dev`](#logging-and-dev). |
+| `logging` | no | The level, log file and stdout copy of the structured logs from the CLI and the HTTP API server, and the CLI's correlation ID. See [`logging` and `dev`](#logging-and-dev). |
 | `dev` | no | `mockSql`: fixed SQL in place of the model call, for tests. See [`logging` and `dev`](#logging-and-dev). |
 | `studio` | no | Experimental. Studio's listen address and the Query Playground's `execute` block. See [The `studio` block](#the-studio-block). |
 | `httpApi` | no | The HTTP API server's listen address, schema override and request timeout. See [The `httpApi` block](#the-httpapi-block). |
 
 A config without `ai` or `introspection` fails to load, with an error that names the file and the missing block. That includes a config you only use for `askdb introspect`: it still needs an `ai` block.
 
-The sections below list every field of each block, with its type and default. **Required** in the Default column means the field must be set whenever its block is present; every other field is optional. Old fields that still load are listed under [Deprecated keys](#deprecated-keys).
+The sections below list every field of each block, with its type and default. **Required** in the Default column means the field must be set whenever its block is present, or under the condition the column names; every other field is optional. Old fields that still load are listed under [Deprecated keys](#deprecated-keys).
 
 ## The `ai` block
 
@@ -153,7 +153,7 @@ Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`. Setting it in a c
 | --- | --- | --- | --- |
 | `provider` | `string` | `ai.provider` | Anthropic has no embeddings API, so a config whose `ai.embedding` provider resolves to `anthropic` fails to load. Set `provider` (for example `"openai"`) and give it a connection. |
 | `connection` | `string` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
-| `model` | `string` | Required | AskDB has no default embedding model. On Azure, the embedding deployment name. On the AI Gateway, an `<upstream>/<model>` id such as `openai/text-embedding-3-small`. |
+| `model` | `string` | Required with `rag.embedder: "ai"` | AskDB has no default embedding model. On Azure, the embedding deployment name. On the AI Gateway, an `<upstream>/<model>` id such as `openai/text-embedding-3-small`. |
 | `dimensions` | `number` or `string` | The model's own width | A positive integer, or a string holding one: the vector size to request from the provider, for models that let you choose one (OpenAI's `text-embedding-3` models, Gemini's; on the AI Gateway, `openai/…` and `google/…` models). Unset, AskDB assumes nothing: it uses the width the model returns, which it learns when it first builds the index, so the `pgvector` store doesn't need it either. |
 
 Changing the `ai.embedding` provider, model or dimensions changes the index's embedder id: Studio then reports the RAG index as stale and asks you to reindex before using it.
@@ -237,13 +237,13 @@ The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock",
 | --- | --- | --- | --- |
 | `embedder` | `"mock" \| "ai"` | Required | `"mock"` is a deterministic lexical embedder that needs no key. `"ai"` is the [`ai.embedding`](#aiembedding) model. `"openai"` and `"ai-sdk"` still load, but they're [deprecated](#deprecated-keys). |
 | `store` | `"file" \| "memory" \| "pgvector"` | Required | The vector store. |
-| `storeConfig` | object | Required | The selected store's options, below. The `file` and `pgvector` stores need their branch, even an empty one (`storeConfig: { file: {} }`); `memory` takes `storeConfig: {}`. |
+| `storeConfig` | object | Required | The selected store's options, below. The `file` and `pgvector` stores need their branch, even an empty one (`storeConfig: { file: {} }`). The type requires `storeConfig` with `memory` too, but a JavaScript config can leave it out. |
 
 ### `rag.storeConfig`
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `file.basePath` | `string` | `./askdb/rag` | Path prefix of the file store. It writes `<basePath>.embeddings.bin` and `<basePath>.embeddings.json`. |
+| `file.basePath` | `string` | `<schema dir>/schema`: `./askdb/schema` with the default `outputDir` | Path prefix of the file store. It writes `<basePath>.embeddings.bin` and `<basePath>.embeddings.json`. A relative path resolves against the working directory. |
 | `file.autoFlush` | `boolean` | none | Accepted, but not read today: the CLI and Studio write the files after every change ([#676](https://github.com/Ygilany/AskDB/issues/676)). |
 | `memory` | `{}` | none | The in-memory store has no options. |
 | `pgvector.databaseUrl` | `string` | Required with `store: "pgvector"` | Connection URL of the Postgres database with pgvector. |
@@ -285,7 +285,7 @@ export default defineConfig({
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `logging.level` | `"fatal" \| "error" \| "warn" \| "info" \| "debug" \| "trace" \| "silent"` | CLI: `"silent"`, or `"info"` with `-v`, `--log-file` or `--log-stdout`. HTTP server: `"info"`. | Another value fails to load. A `logFile` or `logStdout` in config doesn't raise the CLI's level: set `level` too. |
-| `logging.logFile` | `string` | none | Also appends the logs to this file. Parent directories are created. |
+| `logging.logFile` | `string` | none | Also appends the logs to this file. Parent directories are created. The HTTP API server opens the file again for every request and doesn't close it, so a long-running server runs out of file descriptors ([#693](https://github.com/Ygilany/AskDB/issues/693)). |
 | `logging.logStdout` | `boolean` | `false` | Also copies the logs to stdout. |
 | `logging.correlationId` | `string` | A new UUID per run | CLI only: the ID on every log line of a run. `--correlation-id` overrides it. The HTTP server uses each request's `x-correlation-id` header instead, else a new UUID. |
 | `dev.mockSql` | `string` | none | SQL that `askdb ask`, `createAskDb` and the HTTP API use in place of the model call, for tests and local development. |
