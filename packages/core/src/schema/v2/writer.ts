@@ -2,6 +2,9 @@ import matter from "gray-matter";
 import type { V2TableFrontmatter, V2ConceptsFrontmatter } from "./describable.js";
 import type { TenantPolicyFrontmatter } from "./tenant-policy.js";
 
+// Each `matter.stringify` call passes `{}` so gray-matter doesn't cache the body it parses;
+// see `readFrontMatter` in parser.ts (#742).
+
 /**
  * Serialize a table front-matter model back to markdown.
  *
@@ -11,14 +14,14 @@ import type { TenantPolicyFrontmatter } from "./tenant-policy.js";
  */
 export function writeTableMarkdown(frontmatter: V2TableFrontmatter, body: string): string {
   const data = orderedTableFrontmatter(frontmatter);
-  return matter.stringify(body, data);
+  return matter.stringify(body, data, {});
 }
 
 /**
  * Serialize `concepts.md` front-matter + body back to markdown.
  */
 export function writeConceptsMarkdown(frontmatter: V2ConceptsFrontmatter, body: string): string {
-  return matter.stringify(body, { concepts: frontmatter.concepts });
+  return matter.stringify(body, { concepts: frontmatter.concepts }, {});
 }
 
 /**
@@ -26,7 +29,7 @@ export function writeConceptsMarkdown(frontmatter: V2ConceptsFrontmatter, body: 
  */
 export function writeTenantPolicyMarkdown(frontmatter: TenantPolicyFrontmatter, body: string): string {
   const data = orderedTenantPolicyFrontmatter(frontmatter);
-  return matter.stringify(body, data);
+  return matter.stringify(body, data, {});
 }
 
 /** Emit tenant policy front-matter keys in a stable order. */

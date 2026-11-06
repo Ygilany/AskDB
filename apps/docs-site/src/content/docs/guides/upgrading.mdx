@@ -19,6 +19,14 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.48
+
+Not published yet: these changes ship with `@askdb/core` 1.0.0-beta.48.
+
+### Other changes you may notice in beta.48
+
+- **A malformed schema markdown file reports the same error on every load** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, when one process loaded the same malformed front-matter YAML in `tables/*.md`, `concepts.md` or `tenant-policy.md` a second time, it reported `Invalid <kind> front-matter` (missing fields) instead of `Malformed <kind> front-matter YAML`. Loading failed both times. `@askdb/core` also no longer keeps every schema markdown file it reads or writes in memory for the life of the process, so a server that accepts per-request schemas (`httpApi.allowSchemaOverride`) no longer grows with each new one.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.

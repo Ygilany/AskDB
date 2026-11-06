@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import matter from "gray-matter";
 import { describe, expect, it } from "vitest";
 import { SchemaParseError } from "../../errors.js";
 import { parseConceptsMarkdown, parseTableMarkdown } from "./parser.js";
-import { writeConceptsMarkdown, writeTableMarkdown } from "./writer.js";
+import { parseTenantPolicyMarkdown } from "./tenant-policy-loader.js";
+import { writeConceptsMarkdown, writeTableMarkdown, writeTenantPolicyMarkdown } from "./writer.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tablesDir = join(here, "../../../../../fixtures/schemas/orders-users.schema/tables");
@@ -192,5 +194,31 @@ describe("writeConceptsMarkdown — round-trip", () => {
 
     expect(reparsed.frontmatter).toEqual(parsed.frontmatter);
     expect(reparsed.body).toBe(parsed.body);
+  });
+});
+
+describe("front-matter parsing keeps no state between calls (#742)", () => {
+  it.each([
+    ["table", parseTableMarkdown],
+    ["concepts", parseConceptsMarkdown],
+  ] as const)("reports malformed %s YAML on every parse, not only the first", (kind, parse) => {
+    const bad = `---\nnote: [unclosed ${kind}\n---\nBody.\n`;
+    const malformed = new RegExp(`^Malformed ${kind} front-matter YAML in x\\.md: `);
+    expect(() => parse(bad, "x.md")).toThrow(malformed);
+    expect(() => parse(bad, "x.md")).toThrow(malformed);
+  });
+
+  it("leaves nothing in gray-matter's cache after parsing or writing", () => {
+    // gray-matter caches every input it parses without options, for the life of the process.
+    const gm = matter as unknown as { cache: Record<string, unknown>; clearCache(): void };
+    gm.clearCache();
+    const orders = parseTableMarkdown(readFileSync(ordersPath, "utf8"), ordersPath);
+    const concepts = parseConceptsMarkdown(readFileSync(conceptsPath, "utf8"), conceptsPath);
+    const policyPath = join(here, "../../../../../fixtures/schemas/agency-multi-tenant.schema/tenant-policy.md");
+    const policy = parseTenantPolicyMarkdown(readFileSync(policyPath, "utf8"), policyPath);
+    writeTableMarkdown(orders.frontmatter, orders.body);
+    writeConceptsMarkdown(concepts.frontmatter, concepts.body);
+    writeTenantPolicyMarkdown(policy.frontmatter, policy.body);
+    expect(Object.keys(gm.cache)).toEqual([]);
   });
 });
