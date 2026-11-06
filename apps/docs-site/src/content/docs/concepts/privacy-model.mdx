@@ -1,32 +1,35 @@
 ---
 title: "Privacy model"
-description: "What AskDB sends to the model, what stays in your stack, and why your data never leaves your infrastructure."
+description: "What AskDB sends to your model provider, what stays in your stack, and what you control."
 ---
 
 import PrivacyFlowDiagram from "../../../components/PrivacyFlowDiagram.astro";
 
 <p class="doc-eyebrow">What crosses the boundary</p>
 
-<p class="doc-lede">AskDB sends the question and your schema artifact to the model. Nothing else. Your rows, your credentials, your query results, your user identifiers — none of them cross that boundary, by design.</p>
+<p class="doc-lede">AskDB sends the model the question and text from your schema artifact, plus your tenant policy and the caller's scope context when you use one. It never reads your rows, your credentials or your query results, so it can't send them.</p>
 
 ## What the model sees
 
 When `ask()` calls your model provider, the request contains:
 
 - **The user's question.** As supplied to AskDB.
-- **Schema context.** Tables, columns, types, nullability, and any descriptions you authored — drawn from the schema artifact. For large schemas, only the chunks retrieval selected.
-- **Dialect cues.** The SQL flavor AskDB expects back.
+- **Schema context.** From the schema artifact: table and column names, types, primary keys and nullability, plus the text you authored, such as descriptions, aliases, `enum` values and common query language notes. For large schemas, only the chunks retrieval selected, which can also carry concepts, example questions, relationships and tenant policy text.
+- **Your tenant policy and the caller's scope**, when the schema has a tenant policy. The prompt lists the tenant roots, the tenant-scoped tables and the columns that filter them. It names a placeholder such as `:tenant_organization_ids` where the caller's IDs go, never the IDs themselves. It also carries a `global` scope's `reason` and everything in `tenantScope.context` (role, department, region, label, description and `attributes`), marked as advisory.
+- **Hints AskDB derives from the question and the schema.** For example, when the question seems to name a table the schema doesn't have, a note lists the schema's table names. Today that list includes tables marked `tracked: false` ([#677](https://github.com/Ygilany/AskDB/issues/677)).
+- **Dialect cues and output rules.** The SQL flavor AskDB expects back, and the format to answer in.
 
-That's the full payload. The model returns SQL.
+That's everything `ask()` sends. The model returns SQL.
 
 ## What never crosses the boundary
 
 The model never receives:
 
-- **Your database rows.** AskDB does not read your data to construct prompts.
-- **Database credentials.** Connection strings, passwords, and roles live in your application's environment. AskDB doesn't open a database connection during generation.
+- **Your database rows.** AskDB does not read your data to construct prompts. A value reaches the prompt only as text: something you wrote into the schema artifact, such as an `enum` list or a description, or something the user typed in the question.
+- **Database credentials.** Connection strings, passwords, and roles live in your application's environment. `ask()` doesn't open a database connection. A pgvector retriever you pass in connects to its own vector store, and its credentials stay out of the prompt.
 - **Query results.** Your application runs the SQL after AskDB returns it. Results stay between your app and your database.
-- **User identifiers, session tokens, request headers.** Unless you put them in the question text, they don't get sent.
+- **Tenant IDs.** The prompt names a placeholder for them, and AskDB binds your IDs into the SQL after the model answers. See [Multi-tenancy](/guides/multi-tenancy/).
+- **User identifiers, session tokens, request headers.** AskDB doesn't send them unless you put one in the question or in `tenantScope.context`. Keep personal data out of `context` if it mustn't reach your model provider: a `label` such as `"Jane Smith"` goes into the prompt as written. See [`TenantScope`](/reference/core-api/#tenantscope).
 
 ## No middlemen
 
@@ -35,6 +38,12 @@ Requests go straight from your environment to the model provider you wired in. A
 <PrivacyFlowDiagram />
 
 The model provider sees what's in the prompt and bills you for the tokens. AskDB is in your dependency tree, not on the wire.
+
+## Large schemas and the embedding provider
+
+With `@askdb/rag`, a second provider receives text: your embedding model. Building the index sends it every schema chunk: table and column names and types, the text you authored, concepts, example questions and tenant policy text. Each `ask()` call that uses retrieval sends it the question.
+
+By default, sensitive tables and columns, and any text that names a sensitive column, stay out of the index. `chunkOptions: { includeSensitiveDescribable: true }` puts them in. Untracked tables (`tracked: false`) are never indexed. See [RAG for large schemas](/guides/rag-for-large-schemas/).
 
 ## Sensitive columns
 
@@ -45,7 +54,7 @@ The schema artifact lets you mark tables and columns as `sensitive: true`, eithe
 
 The setting covers every prompt AskDB sends to a language model, including Studio's Playground, its enrichment suggestions and its tenant policy draft.
 
-Either way, the *values* in those columns are never in the prompt — the flag is about the schema metadata, not the data.
+Either way, AskDB never reads the values in those columns. The flag is about the schema metadata, not the data.
 
 Both of those are **prompt-level**: they change what the model sees, not what can execute. SQL that reaches your database by another route — your own SQL cache, a stored or replayed statement, an artifact regenerated with the flags reset — is unaffected. For that, `@askdb/core` exports `validateSensitiveReferences(sql, schema)`, which reports the sensitive tables and columns a given statement references. `ask()` runs it for you and returns the result as `sensitiveGuardrail`, and `bindPreparedQuery()` runs it again whenever you rebind a stored `preparedQuery`; if you cache or replay SQL any other way, call it on every execution path. See [Core API](/reference/core-api/#validatesensitivereferencessql-schema-options).
 
@@ -53,6 +62,8 @@ Both of those are **prompt-level**: they change what the model sees, not what ca
 
 Audit logging is your application's job, not AskDB's. AskDB doesn't log questions, generated SQL, or model responses. If you want a record of every question that was asked and every SQL string that got generated, log them in the code that wraps `ask()`. That keeps the log inside your stack — same place your user identities and session data already live.
 
+Studio is the one place AskDB keeps them, on your machine: its Playground saves each question, its SQL and explanation, and any tenant scope with its tenant IDs to `playground-history.json` in the schema directory, and adds that file to the directory's `.gitignore`.
+
 ## In one sentence
 
-AskDB lets you put a natural-language interface in front of your database without putting your data, your credentials, or your results in front of a model.
+AskDB lets you put a natural-language interface in front of your database without putting your rows, your credentials, or your results in front of a model.
