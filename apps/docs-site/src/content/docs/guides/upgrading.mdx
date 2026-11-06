@@ -21,7 +21,15 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.47
 
-Released with `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
+Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Replace the removed `DEFAULT_RAG_FILE_BASE_PATH` import
+
+`@askdb/config` no longer exports `DEFAULT_RAG_FILE_BASE_PATH` ([#676](https://github.com/Ygilany/AskDB/issues/676)). Nothing read it, and its value, `./askdb/rag`, was never the file store's default. If your app imports it, it no longer typechecks or loads.
+
+| Package | Removed export | Use instead |
+| --- | --- | --- |
+| `@askdb/config` | `DEFAULT_RAG_FILE_BASE_PATH` | Your own path. With `rag.storeConfig.file.basePath` unset, the CLI and Studio use `<schema dir>/schema`, as before. |
 
 ### Handle `SQL_UNICODE_ESCAPED_IDENTIFIER` for Unicode-escaped names
 
@@ -32,6 +40,11 @@ On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped
 - **If you store SQL with a `U&"…"` name and rebind it,** the rebind now rejects it. Write the name in plain double quotes (`"注文数"`) instead.
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_unicode_escaped_identifier) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
+
+### Other changes you may notice in beta.47
+
+- **`httpApi.listen.port`** is checked when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). A value that isn't an integer from 0 to 65535, or a string holding one, fails with `askdb.config: invalid httpApi.listen.port`, in every tool that loads the config. Before, the HTTP server passed such a value straight to `listen()`. A value that reads as `NaN`, such as `Number(env("PORT"))` with `PORT` unset, now counts as unset: the server uses port 3000 instead of failing to start.
+- **`rag.storeConfig.file.autoFlush`** gives a deprecation warning when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). Nothing ever read it, because the file store writes its files after every change. Remove it.
 
 ## 1.0.0-beta.46
 
@@ -444,7 +457,7 @@ const statement = sql.replace(/;$/, "").trimEnd();
 const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
 ```
 
-[Row limits](/guides/run-safely-in-prod/#row-limits) explains why this pattern is safe.
+This wrapper works on Postgres and SQLite only. [Row limits](/guides/run-safely-in-prod/#row-limits) shows a cap that works on every engine and keeps the query's `ORDER BY`.
 
 ### Other changes you may notice in beta.44
 

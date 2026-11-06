@@ -6,8 +6,8 @@ import {
 import {
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
-  DEFAULT_RAG_FILE_BASE_PATH,
   normalizePgvectorIndexStrategy,
+  parseHttpApiListenPort,
   parseHttpApiRequestTimeoutMs,
   parsePositiveInteger,
 } from "./defaults.js";
@@ -158,8 +158,9 @@ export function flattenNormalizedAskDbConfig(config: NormalizedAskDbConfig): Rec
   if (rag.store === "file") {
     const f = rag.storeConfig.file;
     if (!f) throw new Error('askdb.config: rag.store is "file" but `rag.storeConfig.file` is missing.');
-    const basePath = f.basePath?.trim() || DEFAULT_RAG_FILE_BASE_PATH;
-    set(out, "ASKDB_RAG_FILE_BASE_PATH", basePath);
+    // Unset, the CLI and Studio use `<schema dir>/schema`.
+    const basePath = f.basePath?.trim();
+    if (basePath) set(out, "ASKDB_RAG_FILE_BASE_PATH", basePath);
   } else if (rag.store === "memory") {
     // no env keys
   } else if (rag.store === "pgvector") {
@@ -268,9 +269,8 @@ export function flattenNormalizedAskDbConfig(config: NormalizedAskDbConfig): Rec
   }
   // --- HTTP API listen (canonical keys on runtime flat map) ---
   const httpListen = config.httpApi?.listen;
-  if (httpListen?.port !== undefined && !Number.isNaN(httpListen.port)) {
-    set(out, "PORT", String(httpListen.port));
-  }
+  const port = parseHttpApiListenPort(httpListen?.port, "httpApi.listen.port");
+  if (port !== undefined) set(out, "PORT", String(port));
   if (httpListen?.host) {
     set(out, "HOST", httpListen.host);
   }

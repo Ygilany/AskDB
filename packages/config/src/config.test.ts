@@ -203,7 +203,8 @@ describe("flattenAskDbConfig", () => {
     expect(flat.DATABASE_URL).toBeUndefined();
   });
 
-  it("defaults file-store base path when basePath omitted", () => {
+  // The CLI and Studio default an unset basePath to `<schema dir>/schema` themselves (#676).
+  it("writes no file-store base path when basePath is omitted", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
         rag: {
@@ -213,7 +214,7 @@ describe("flattenAskDbConfig", () => {
         },
       }),
     );
-    expect(flat.ASKDB_RAG_FILE_BASE_PATH).toBe("./askdb/rag");
+    expect(flat.ASKDB_RAG_FILE_BASE_PATH).toBeUndefined();
   });
 
   it("defaults the gateway model to openai/gpt-4o-mini and requires its branch", () => {
@@ -557,6 +558,24 @@ describe("optional rag block (#226)", () => {
       expect(rt.rag.storeConfig).toEqual(store.storeConfig);
     },
   );
+});
+
+describe("rag.storeConfig.file.autoFlush (#676)", () => {
+  const deprecated =
+    "askdb.config: rag.storeConfig.file.autoFlush is deprecated and ignored (the file store writes its files after every change); remove it.";
+
+  it.each([
+    ["set to true", true, [deprecated]],
+    ["set to false", false, [deprecated]],
+    ["unset", undefined, []],
+  ] satisfies [string, boolean | undefined, string[]][])("warns only when autoFlush is set: %s", (_name, autoFlush, expected) => {
+    const { deprecations } = defineConfig(
+      minimalConfig({
+        rag: { embedder: "mock", store: "file", storeConfig: { file: { basePath: "./data/rag", autoFlush } } },
+      }),
+    );
+    expect(deprecations).toEqual(expected);
+  });
 });
 
 describe("ai config sections: provider connections, ai.language, ai.embedding (#435)", () => {
@@ -1795,6 +1814,41 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
     }
   });
 
+  it("defaults listen to port 3000 on 127.0.0.1", () => {
+    install(undefined);
+    expect(getAskDbRuntimeConfig().httpApi.listen).toEqual({ port: 3000, host: "127.0.0.1" });
+  });
+
+  // `Number(env("PORT"))` with PORT unset is NaN, which used to reach listen() (#676).
+  it("treats a NaN listen.port as unset", () => {
+    install({ listen: { port: Number(env("ASKDB_TEST_PORT_676_NEVER_SET")) } });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.listen.port).toBe(3000);
+    expect(rt.flat["PORT"]).toBeUndefined();
+  });
+
+  it("accepts a listen.port from 0 to 65535, or a string holding one", () => {
+    for (const [port, expected] of [
+      [0, 0],
+      [8080, 8080],
+      [65535, 65535],
+      ["8080", 8080],
+      [" 4000 ", 4000],
+    ] as const) {
+      install({ listen: { port } as unknown as NonNullable<AskDbConfig["httpApi"]>["listen"] });
+      const rt = getAskDbRuntimeConfig();
+      expect(rt.httpApi.listen.port).toBe(expected);
+      expect(rt.flat["PORT"]).toBe(String(expected));
+    }
+  });
+
+  it("rejects any other listen.port when the config loads, naming the key", () => {
+    for (const port of [65536, 70000, -1, 1.5, Infinity, "abc", "", "80.5", true, null]) {
+      const httpApi = { listen: { port } } as unknown as AskDbConfig["httpApi"];
+      expect(() => defineConfig(minimalConfig({ httpApi }))).toThrow(/askdb\.config: invalid httpApi\.listen\.port/);
+    }
+  });
+
   it("reads allowSchemaOverride and requestTimeoutMs from the flat keys when the structured config leaves them out", () => {
     const structured = minimalConfig({});
     setAskDbRuntimeForTests({
@@ -1804,6 +1858,14 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
     const rt = getAskDbRuntimeConfig();
     expect(rt.httpApi.allowSchemaOverride).toBe(true);
     expect(rt.httpApi.requestTimeoutMs).toBe(1500);
+  });
+
+  it("reads the port from the flat PORT key when the structured config leaves it out, and rejects a bad one", () => {
+    const structured = minimalConfig({});
+    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), PORT: "9000" } });
+    expect(getAskDbRuntimeConfig().httpApi.listen.port).toBe(9000);
+    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), PORT: "abc" } });
+    expect(() => getAskDbRuntimeConfig()).toThrow(/askdb\.config: invalid PORT "abc"/);
   });
 
   it("rejects an out-of-range ASKDB_HTTP_REQUEST_TIMEOUT_MS in the flat fallback", () => {
