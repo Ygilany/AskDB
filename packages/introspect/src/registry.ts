@@ -32,7 +32,12 @@ export type ConnectorConfig = {
   /** Prisma schema file path or directory containing `.prisma` files (prisma only). */
   schemaPath?: string;
   filters?: IntrospectionFilters;
-  /** Schema ID embedded in the resulting `SqlSchema`. Defaults to `"introspected"`. */
+  /**
+   * Schema ID for the resulting `SqlSchema`. Only the Prisma adapter passes it
+   * on; the other built-in adapters ignore it, and every built-in connector
+   * falls back to `"introspected"`. The artifact's ID comes from
+   * `RenderOptions.schemaId`, not from this.
+   */
   schemaId?: string;
 };
 

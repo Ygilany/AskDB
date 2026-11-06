@@ -21,7 +21,7 @@ function defaultExport(mod: unknown, configPath: string): unknown {
   if (!("default" in mod)) {
     throw new Error(`AskDB config at ${configPath}: the file has no default export; ${CONFIG_FORMS}.`);
   }
-  return (mod as { default: unknown }).default;
+  return mod.default;
 }
 
 /**

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { loadAskDbConfigProjectionSync } from "./load-merge.js";
 import { setAskDbRuntime } from "./runtime-store.js";
 
-/** dotenv v17 logs injected keys by default; keep bootstrap silent like v16. */
+/** dotenv logs the keys it injects unless `quiet` is set; bootstrap stays silent. */
 const DOTENV_LOAD_OPTIONS = { quiet: true } as const;
 
 /** `process.emitWarning` code for a deprecated `askdb.config` key. */
@@ -25,13 +25,15 @@ export type BootstrapAskDbEnvOptions = {
   /** Working directory for `.env` default path and config discovery. Defaults to `process.cwd()`. */
   cwd?: string;
   /**
-   * Explicit `.env` file paths to try in order. First existing file wins.
-   * When omitted, loads `${cwd}/.env` only.
+   * Explicit `.env` file paths to try in order. The first one that exists and loads wins; one that
+   * exists but fails to load is skipped without a report. When none loads, the `.env` in the
+   * process's working directory is tried. When omitted, loads `${cwd}/.env` only.
    */
   dotenvCandidatePaths?: readonly string[];
   /**
-   * When `true` (default), non-ENOENT dotenv issues are logged to stderr and `process.exitCode`
-   * is set to `1`, matching legacy `askdb` CLI / `@askdb/http-api` behavior. Set `false` to throw instead.
+   * When `true` (default), an error loading `${cwd}/.env`, or the fallback `.env` after the
+   * candidates, other than a missing file, is logged to stderr and `process.exitCode` is set to `1`.
+   * Set `false` to throw instead. A candidate that fails to load is skipped, not reported.
    */
   dotenvNonFatal?: boolean;
 };
@@ -40,7 +42,7 @@ function handleDotenvError(error: unknown, nonFatal: boolean | undefined): void 
   const err = error as { code?: unknown; message?: unknown };
   const code = typeof err.code === "string" ? err.code : undefined;
   const message = typeof err.message === "string" ? err.message : String(error);
-  if (code === "ENOENT") return;
+  if (code === "ENOENT") return; // A missing `.env` is normal.
   if (nonFatal) {
     console.error(`Failed to load .env: ${message}`);
     process.exitCode = 1;
@@ -70,34 +72,23 @@ export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
   let dotenvPath: string | undefined;
 
   if (options.dotenvCandidatePaths && options.dotenvCandidatePaths.length > 0) {
-    let loaded = false;
     for (const path of options.dotenvCandidatePaths) {
       if (!existsSync(path)) continue;
       const { error } = dotenv.config({ ...DOTENV_LOAD_OPTIONS, path });
       if (!error) {
-        loaded = true;
         dotenvPath = path;
         break;
       }
     }
-    if (!loaded) {
+    if (dotenvPath === undefined) {
       const { error } = dotenv.config(DOTENV_LOAD_OPTIONS);
       if (error) handleDotenvError(error, nonFatal);
     }
   } else {
     const path = join(cwd, ".env");
     const { error } = dotenv.config({ ...DOTENV_LOAD_OPTIONS, path });
-    if (error) {
-      const err = error as { code?: unknown; message?: unknown };
-      const code = typeof err.code === "string" ? err.code : undefined;
-      if (code === "ENOENT") {
-        // Missing `.env` is normal.
-      } else {
-        handleDotenvError(error, nonFatal);
-      }
-    } else {
-      dotenvPath = path;
-    }
+    if (error) handleDotenvError(error, nonFatal);
+    else dotenvPath = path;
   }
 
   const { path: configPath, projection } = loadAskDbConfigProjectionSync(cwd);

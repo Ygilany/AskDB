@@ -204,7 +204,7 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 | `provider` | `"postgres" \| "mysql" \| "sqlite" \| "sqlserver" \| "prisma"` | Required | The engine to introspect. MariaDB uses `mysql`. |
 | `providerConfig.postgres.databaseUrl` | `string` | none | Postgres connection URL. Without it, pass `askdb introspect --url`. |
 | `providerConfig.mysql.databaseUrl` | `string` | none | MySQL or MariaDB connection URL, such as `mysql://user:pass@host:3306/database`. Without it, pass `--url`. |
-| `providerConfig.sqlite.file` | `string` | none | Path to a `.db` or `.sqlite` file, or `:memory:` for an empty database. Without it, pass `--url <path>`. |
+| `providerConfig.sqlite.file` | `string` | none | Path to an existing `.db` or `.sqlite` file, which introspection opens read-only. `:memory:` doesn't work: `better-sqlite3` can't open an in-memory database read-only. Without it, pass `--url <path>`. |
 | `providerConfig.sqlserver.databaseUrl` | `string` | none | SQL Server connection URL: an mssql URI or a `Server=…;` connection string. Without it, pass `--url`. |
 | `providerConfig.prisma.schemaPath` | `string` | `prisma/schema.prisma`, else `schema.prisma`, in the project root | A `schema.prisma` file, or a directory of `.prisma` files. `--prisma-schema` overrides it. |
 | `outputDir` | `string` | `./askdb/` | Where `askdb introspect` writes the schema artifact. `--out` overrides it. `askdb ask` and Studio read the artifact from here. |
@@ -353,7 +353,7 @@ Each execute provider requires its optional peer driver package (`pg`, `mysql2`,
 | --- | --- | --- | --- |
 | `listen.port` | `number` | `3000` | The server's port: an integer from 0 to 65535. `NaN` counts as unset. Another value fails to load. |
 | `listen.host` | `string` | `"127.0.0.1"` | The bind address. Bind to `0.0.0.0` only behind a gateway. |
-| `allowSchemaOverride` | `boolean` | `false` | Accept a per-request `schemaJson` on `POST /ask`. An override lets any caller send arbitrary schema and prompt content through the server's model key, so enable it only for tests or trusted multi-schema deployments. |
+| `allowSchemaOverride` | `boolean` | `false` | Accept a per-request `schemaJson` on `POST /ask`. An override is a schema artifact the server parses and puts into the prompt through its model key, so enable it only for tests or trusted multi-schema deployments, on `@askdb/http-api` 1.0.0-beta.48 or later ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)). |
 | `requestTimeoutMs` | `number` | `60000` | Aborts the model call of a `POST /ask` request after this many milliseconds: a positive integer, at most `2147483647`. Another value fails to load. |
 
 On a platform that injects the port as `PORT`, convert it to a number. `env()` returns a string, so `port: env("PORT")` doesn't type-check:
