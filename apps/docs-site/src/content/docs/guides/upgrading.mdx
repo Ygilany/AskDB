@@ -19,6 +19,18 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.48
+
+Released with `@askdb/core` 1.0.0-beta.48. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Keep a built-in `id` on a `DialectSpec`
+
+`ask()` now refuses a `DialectSpec` whose `id` isn't one of the six built-in ids, with `UnknownDialectError` ([#717](https://github.com/Ygilany/AskDB/issues/717)). Core lexes, quotes and binds SQL by `id` (ADR 0029), so a spec under another `id` was checked under every engine's lexer at once: that rejected some valid column names ([#672](https://github.com/Ygilany/AskDB/issues/672)) and couldn't read the SQL the way the real engine does. `bindPreparedQuery()` already refused its templates. `ask()` refuses such a spec before any tenant check, retrieval or model call.
+
+- **For a variant of a built-in engine,** such as TiDB on MySQL or Redshift on Postgres, spread the built-in spec and keep its `id`: `{ ...MYSQL_DIALECT, displayName: "TiDB", promptBrief: "…" }`.
+- **For any other engine,** implement `AskDialect` and call `validateSelectSql` on its SQL yourself.
+- **With a tenant policy,** such a spec used to get `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). It now gets `UnknownDialectError` first.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.

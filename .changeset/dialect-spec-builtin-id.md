@@ -1,0 +1,5 @@
+---
+"@askdb/core": minor
+---
+
+**`ask()` refuses a `DialectSpec` whose `id` isn't one of the six built-in ids, with `UnknownDialectError`** (#717). `DialectSpec.id` was already typed to the built-in ids, and ADR 0029 keeps that union closed, but `ask()` accepted a spec under another id, for example `{ ...MYSQL_DIALECT, id: "tidb" }`, from JavaScript or through a cast. It then checked the SQL under every engine's lexer at once, which rejected some valid column names (#672) and couldn't read the SQL the way the real engine does. `ask()` now refuses such a spec before any tenant check, retrieval or model call, so with a tenant policy it reports `UnknownDialectError` instead of `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). For a variant of a built-in engine, spread that engine's spec and keep its `id`; for another engine, implement `AskDialect`. `validateSelectSql()`, `validateTenantGuardrails()` and `generateSelectSql()` still accept a spec under another id and read its SQL every engine's way.

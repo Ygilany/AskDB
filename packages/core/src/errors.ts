@@ -64,7 +64,10 @@ export class SqlGenerationError extends AskDbError {
   }
 }
 
-/** A string `dialect` passed to `ask()` that is not a built-in dialect id. */
+/**
+ * A `dialect` passed to `ask()` that isn't a built-in dialect id: a string, or a `DialectSpec`
+ * whose `id` isn't one (#717). `dialectId` is the id it got.
+ */
 export class UnknownDialectError extends AskDbError {
   constructor(
     message: string,
@@ -104,9 +107,8 @@ export type TenantScopeRejectionReason =
    */
   | "UNESCAPABLE_TENANT_ID"
   /**
-   * `ask()` got a tenant scope, no `tenantSqlMode`, and a custom `AskDialect` or a
-   * `DialectSpec` whose `id` isn't built in. AskDB can't know which driver markers such a
-   * dialect takes, and its `$N` default is a money constant on SQL Server, so the host
+   * `ask()` got a tenant scope, no `tenantSqlMode`, and a custom `AskDialect`. AskDB can't
+   * know which driver markers such a dialect takes, and its `$N` default is a money constant on SQL Server, so the host
    * must choose `"sql-params"` or `"sql-only"`.
    * Also thrown, on every dialect, when `ask()` (with a tenant scope) or
    * `resolveTenantSql()` gets a `tenantSqlMode` that is neither of the two.

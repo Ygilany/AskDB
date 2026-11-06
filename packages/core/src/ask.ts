@@ -240,8 +240,8 @@ export type AskPipelineOptions = {
    * ({@link DEFAULT_TENANT_SQL_MODE}) replaces them with the dialect's driver
    * markers (`$N` for Postgres/CockroachDB, `?` for MySQL/MariaDB/SQLite, `@pN` for
    * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
-   * with the two arrays concatenated. A custom `AskDialect`, or a `DialectSpec` whose
-   * `id` isn't built in, has no default: with a tenant scope it must set this
+   * with the two arrays concatenated. A custom `AskDialect` has no default: with a
+   * tenant scope it must set this
    * (`"sql-params"` gives `$N` markers), or `ask()` throws `TenantScopeError`
    * (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it does on every dialect for
    * a value that is neither `"sql-params"` nor `"sql-only"`.
@@ -348,6 +348,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const logger = options.logger;
   const mode = options.mode ?? DEFAULT_ASKDB_MODE;
   logger?.info({ event: AskDbLogEvent.PipelineMode, mode }, "pipeline mode");
+  assertBuiltInSpecId(options.dialect);
 
   // Tenant scope validation (fail closed when policy exists but no scope provided)
   const tenantPolicy = isV2Schema(options.schema) ? options.schema.tenantPolicy : undefined;
@@ -377,7 +378,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   if (tenantPolicy && options.tenantSqlMode != null) assertTenantSqlMode(options.tenantSqlMode, "ask()");
   if (tenantPolicy && options.tenantSqlMode == null && !knowsTenantMarkers(options.dialect)) {
     throw new TenantScopeError(
-      "A custom AskDialect, or a DialectSpec whose id isn't a built-in dialect, needs an explicit " +
+      "A custom AskDialect needs an explicit " +
         "tenantSqlMode with a tenant scope: AskDB can't tell which parameter markers its driver takes. " +
         "Set tenantSqlMode: 'sql-params' if the driver binds $1, $2, … (not SQL Server, which reads $1 as a " +
         "money constant), or 'sql-only' to inline the IDs as escaped literals.",
@@ -638,12 +639,30 @@ function isAskDialect(value: DialectSpec | AskDialect): value is AskDialect {
 }
 
 /**
- * Whether AskDB knows the driver markers for `dialect`: a built-in id, or a `DialectSpec` under
- * one. An unknown string id isn't refused here: `ask()` throws `UnknownDialectError` for it.
+ * A `DialectSpec` must keep a built-in id: core lexes, quotes and binds SQL by `id`, so a spec
+ * under another id would be checked under guessed lexers. A variant of an engine spreads its
+ * built-in spec and keeps the id; another engine implements `AskDialect` (ADR 0029, #717).
+ * Refused before any tenant check, retrieval or model call. An unknown string id is refused
+ * later, by {@link resolveDialect}.
+ */
+function assertBuiltInSpecId(dialect: AskDialectInput): void {
+  if (typeof dialect === "string" || isAskDialect(dialect) || isBuiltInDialectId(dialect.id)) return;
+  const id = String(dialect.id);
+  throw new UnknownDialectError(
+    `A DialectSpec's id must be a built-in dialect id, not '${id}'. For a variant of a built-in engine, ` +
+      "spread its spec and keep its id ({ ...MYSQL_DIALECT, displayName, promptBrief }); for another " +
+      "engine, implement AskDialect.",
+    id,
+  );
+}
+
+/**
+ * Whether AskDB knows the driver markers for `dialect`: a built-in id or a `DialectSpec`, which
+ * {@link assertBuiltInSpecId} has held to a built-in id. An unknown string id isn't refused here:
+ * `ask()` throws `UnknownDialectError` for it.
  */
 function knowsTenantMarkers(dialect: AskDialectInput): boolean {
-  if (typeof dialect === "string") return true;
-  return !isAskDialect(dialect) && isBuiltInDialectId(dialect.id);
+  return typeof dialect === "string" || !isAskDialect(dialect);
 }
 
 /** Return the DialectSpec when the input is a built-in id or spec; undefined for custom AskDialect. */

@@ -261,7 +261,7 @@ A tenant ID in the scope contains a backslash or a character outside printable A
 
 ### `TenantScopeError: TENANT_SQL_MODE_REQUIRED`
 
-`ask()` got a schema with a tenant policy, no `tenantSqlMode`, and a dialect whose markers AskDB doesn't know: a custom `AskDialect`, or a `DialectSpec` whose `id` isn't a built-in dialect. AskDB can't tell which parameter markers a custom dialect's driver takes, so it doesn't guess: the default `$1, $2, …` would be read as money constants on SQL Server and filter to the wrong tenant. Set `tenantSqlMode: "sql-params"` if your driver binds `$1`-style markers, or `tenantSqlMode: "sql-only"` to get the tenant IDs inlined as escaped literals. Built-in dialect ids, and `DialectSpec`s under one (such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }`), don't need it.
+`ask()` got a schema with a tenant policy, no `tenantSqlMode`, and a dialect whose markers AskDB doesn't know: a custom `AskDialect`. AskDB can't tell which parameter markers a custom dialect's driver takes, so it doesn't guess: the default `$1, $2, …` would be read as money constants on SQL Server and filter to the wrong tenant. Set `tenantSqlMode: "sql-params"` if your driver binds `$1`-style markers, or `tenantSqlMode: "sql-only"` to get the tenant IDs inlined as escaped literals. Built-in dialect ids, and `DialectSpec`s under one (such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }`), don't need it.
 
 The same error comes from a `tenantSqlMode` that is neither `"sql-params"` nor `"sql-only"` (a typo such as `"sql_only"`, or an empty string), on any dialect: AskDB refuses it rather than read it as either mode.
 
