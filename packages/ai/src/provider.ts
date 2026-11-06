@@ -1,5 +1,6 @@
 import type { EmbeddingModel, LanguageModel } from "ai";
 import type { ReasoningSettings } from "./reasoning.js";
+import { refuseBaseUrlCredentials, type AiBaseUrlCredentialsError } from "./base-url.js";
 
 /*
  * AskDB is BYO-LanguageModel at the function level (see `ask()`), but the
@@ -85,6 +86,9 @@ export type ProviderEnvSpec = {
  *   1. `ASKDB_AI_BASE_URL`
  *   2. provider-native base URL vars
  *
+ * A base URL with a username or password throws {@link AiBaseUrlCredentialsError}, naming the
+ * variable it came from: `fetch` would refuse it and quote the whole URL in its error.
+ *
  * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load
  * and while evaluating `askdb.config.*`). Pass
  * `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
@@ -107,8 +111,10 @@ export function resolveBaseConfig(
     ]);
   if (!apiKey) return undefined;
 
+  const baseURLVar = firstSet(env, ["ASKDB_AI_BASE_URL", ...(spec.baseURLVars ?? [])]);
+  refuseBaseUrlCredentials(baseURLVar?.value, baseURLVar?.name ?? "");
+  const baseURL = baseURLVar?.value;
   const model = resolveModel(provider, env, spec, options);
-  const baseURL = first(env, ["ASKDB_AI_BASE_URL", ...(spec.baseURLVars ?? [])]);
 
   return {
     provider,
@@ -173,9 +179,14 @@ export function normalizeProvider(provider: string): string {
 }
 
 function first(env: AiEnv, vars: readonly string[]): string | undefined {
+  return firstSet(env, vars)?.value;
+}
+
+/** The first of `vars` set to a non-blank value in `env`, with its name. */
+function firstSet(env: AiEnv, vars: readonly string[]): { name: string; value: string } | undefined {
   for (const name of vars) {
     const value = env[name]?.trim();
-    if (value) return value;
+    if (value) return { name, value };
   }
   return undefined;
 }

@@ -438,6 +438,98 @@ describe("validateSelectSql — unterminated tokens fail closed", () => {
   });
 });
 
+describe("validateSelectSql — string continued after E'…' (#703)", () => {
+  // Postgres joins E'a' and the next '…' across a newline and keeps escape mode, so it reads
+  // `a'` and then code; AskDB read three closed strings and passed it.
+  const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
+
+  it.each([
+    ["the bypass", bypass],
+    ["a lower-case e", "SELECT e'a'\n'\\'' AS x FROM orders --'"],
+    ["a -- comment in the gap", "SELECT E'a' -- note\n'b' AS x"],
+    ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'b' AS x"],
+    ["a newline inside a /* */ comment in the gap", "SELECT E'a' /* one\ntwo */ 'b' AS x"],
+    ["a third string", "SELECT 'a'\n'b' || E'c'\n\n'd' AS x"],
+    // A `:` glued to the E used to lex as a `:E` placeholder, hiding the E-string (#709 review).
+    ["a JSON_OBJECT key's `:` before the E", "SELECT JSON_OBJECT('k':E'a'\n'\\'' || (SELECT count(*) FROM orders o)::text --'\n) AS x"],
+    ["an array slice's `:` before the E", "SELECT (ARRAY[1,2])[1:E'1'\n'\\''::int] AS x --'"],
+  ])("rejects %s", (_label, sql) => {
+    expectRule(sql, "SQL_STRING_CONTINUATION");
+  });
+
+  it("names the string's position, not its text, which may hold a value from the question", () => {
+    try {
+      validateSelectSql(POSTGRES_DIALECT, "SELECT E'Jane Doe'\n'x' AS a");
+      expect.fail("expected SqlValidationError");
+    } catch (e) {
+      expect((e as SqlValidationError).message).toContain("offset 7");
+      expect((e as SqlValidationError).message).not.toContain("Jane");
+    }
+  });
+
+  it("rejects it on CockroachDB and on a dialect id that is no built-in engine", () => {
+    expectRule(bypass, "SQL_STRING_CONTINUATION", BUILT_IN_DIALECTS.cockroachdb);
+    expectRule(bypass, "SQL_STRING_CONTINUATION", { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec);
+  });
+
+  it("accepts strings that keep the same reading", () => {
+    // A plain string continued on the next line reads the same either way, and so does a
+    // continuation joined with `||` or written on one line.
+    for (const sql of ["SELECT 'a'\n'b' AS x", "SELECT E'a' || 'b' AS x", "SELECT E'a'\n|| 'b' AS x", "SELECT E'a\\nb' AS x"]) {
+      expect(validateSelectSql(POSTGRES_DIALECT, sql), JSON.stringify(sql)).toBe(sql);
+    }
+    // MySQL has no E'…' strings: `E` is a column there.
+    const mysql = "SELECT E 'a'\n, 'b' AS x FROM t";
+    expect(validateSelectSql(MYSQL_DIALECT, mysql)).toBe(mysql);
+  });
+});
+
+describe("validateSelectSql — CockroachDB b'…' byte strings (#730)", () => {
+  // CockroachDB reads b'…' with backslash escapes, so it reads the bytes `'` and then an unscoped
+  // read of orders; AskDB read one string and passed it.
+  const bypass = String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`;
+  const cockroach = BUILT_IN_DIALECTS.cockroachdb;
+  const custom = { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec;
+
+  it.each([
+    ["the bypass", bypass],
+    // CockroachDB keeps the escape mode across a continuation.
+    ["a continued b'…' string", "SELECT b'a'\n'\\'' AS x, o.* FROM orders o --'"],
+    ["a b'…' string after a slice's `:`", String.raw`SELECT (ARRAY[1,2])[1:b'\''] AS x, o.* FROM orders o --'`],
+  ])("rejects %s on CockroachDB, Postgres and a dialect id that is no built-in engine", (_label, sql) => {
+    for (const dialect of [cockroach, POSTGRES_DIALECT, custom]) {
+      expectRule(sql, "SQL_ESCAPED_BYTE_STRING", dialect);
+    }
+  });
+
+  it("names the string's position, not its text, which may hold a value from the question", () => {
+    try {
+      validateSelectSql(cockroach, String.raw`SELECT b'Jane\x20Doe' AS a`);
+      expect.fail("expected SqlValidationError");
+    } catch (e) {
+      expect((e as SqlValidationError).message).toContain("offset 7");
+      expect((e as SqlValidationError).message).not.toContain("Jane");
+    }
+  });
+
+  it("accepts byte and bit strings that keep the same reading", () => {
+    // No backslash and no continuation: both readings end the string at the same quote. A B'…'
+    // bit string and an x'…' hex string have no escapes on either engine.
+    for (const sql of ["SELECT b'abc' AS x", "SELECT b'it''s' AS x", "SELECT B'01'\n'10' AS x", "SELECT x'0a' AS x", "SELECT b'0101' AS x"]) {
+      expect(validateSelectSql(cockroach, sql), JSON.stringify(sql)).toBe(sql);
+      expect(validateSelectSql(POSTGRES_DIALECT, sql), JSON.stringify(sql)).toBe(sql);
+    }
+    // MySQL's b'…' is a bit-value literal, read without escapes.
+    expect(validateSelectSql(MYSQL_DIALECT, "SELECT b'0101' AS x")).toBe("SELECT b'0101' AS x");
+  });
+
+  it("refuses a continued lower-case bit string on postgres too, the decided cost", () => {
+    // Postgres reads b'01' + newline + '10' as one bit string, but a host may point the postgres
+    // dialect at CockroachDB, which would read it with escapes. Refused there too (ADR 0012, #730).
+    expectRule("SELECT b'01'\n'10' AS x", "SQL_ESCAPED_BYTE_STRING", POSTGRES_DIALECT);
+  });
+});
+
 describe("validateSelectSql — legitimate SQL still accepted", () => {
   const accept = (dialect: DialectSpec, sql: string) => {
     expect(validateSelectSql(dialect, sql)).toBe(sql);

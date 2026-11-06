@@ -19,6 +19,6 @@ export const sqliteConnectorProvider = defineLiveConnectorProvider({
   },
   fromExportUnsupported: "--from-export is currently supported only for --engine postgres (got sqlite).",
   createConnector: createSqliteConnector,
-  createRunner: (file) => createSqliteCatalogQueryRunner(file),
+  createRunner: createSqliteCatalogQueryRunner,
   connectionLabelParts: parseSqliteConnection,
 });

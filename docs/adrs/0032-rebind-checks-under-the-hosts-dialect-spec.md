@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-05). Settled on [#660](https://github.com/Ygilany/AskDB/issues/660) under the release's rule that safety wins over convenience. Implemented by the `dialectRules` field of `PreparedQuery` (`packages/core/src/sql/bind.ts`), set in `ask()`, and the `dialect` option of `BindGuardrails` with its resolution in `rebindSpec()` (`packages/core/src/sql/rebind.ts`). It extends [ADR 0010](0010-sql-guardrail-decision-point.md)'s re-check at rebind: the bind-time schema, scope and modes now come with the bind-time dialect rules. It amends [ADR 0029](0029-core-owns-built-in-dialect-specs.md), whose spread spec held in `ask()` only.
+Accepted (2026-11-05). Settled on [#660](https://github.com/Ygilany/AskDB/issues/660) under the release's rule that safety wins over convenience. Implemented by the `dialectRules` field of `PreparedQuery` (`packages/core/src/sql/bind.ts`), set in `ask()`, and the `dialect` option of `BindGuardrails` with its resolution in `readPreparedQueryDialect()` (`packages/core/src/sql/checked-statement.ts`). It extends [ADR 0010](0010-sql-guardrail-decision-point.md)'s re-check at rebind: the bind-time schema, scope and modes now come with the bind-time dialect rules. It amends [ADR 0029](0029-core-owns-built-in-dialect-specs.md), whose spread spec held in `ask()` only.
 
 ## Context
 

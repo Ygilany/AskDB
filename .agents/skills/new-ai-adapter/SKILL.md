@@ -41,6 +41,7 @@ Create `packages/ai/src/providers/<provider>.ts`, following this template:
 
 ```ts
 import { withEmbeddingProviderOptions } from "../embedding.js";
+import { baseURLOption } from "../base-url.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
 import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
@@ -65,10 +66,13 @@ async function createProvider(config: AiConfig) {
   // `import()` itself: that is how esbuild and other bundlers tell an optional import from a
   // required one. Wrapping it as `() => import(...)` in a helper makes every host's bundle
   // fail unless this SDK is installed (the installable smoke test's esbuild step checks this).
+  // Refuses a base URL with a user name or password (ADR 0036). If the SDK reads a base URL
+  // variable of its own from process.env when none is passed, name it: baseURLOption(config, "<X>_BASE_URL").
+  const baseURL = baseURLOption(config);
   const { create<X> } = await import("<sdk>").catch(rethrowMissingPeer("<provider>", PEER_PACKAGE));
   return create<X>({
     apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...baseURL,
   });
 }
 
@@ -137,9 +141,9 @@ Rules:
 
 - `src/constants.ts`: append `<provider>` to `ASKDB_AI_PROVIDERS`.
 - `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_LANGUAGE_MODEL`, equal to `ENV_SPEC.defaultModel`.
-- `src/types.ts`: a `<Provider>Connection` type holding connection fields only (`apiKey`, `baseUrl`, and any setting the adapter can't start without), never a model; add it to `AiProviderConnections` and export it from `src/index.ts`. If it has a field Azure's connection lacks, widen the index signature's union in `AiProviderConnections` too, or the named key stops type-checking, and add the field to `CONNECTION_FIELDS` in `src/normalize.ts`, or loading drops it.
-- `src/flatten.ts`: a `case` in `applyAiConnection` writing the env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry). The language model goes out through `applyLanguageModel`'s default branch (`ASKDB_AI_MODEL`) unless the provider has a native model variable worth writing too.
-- `src/normalize.ts`: return `DEFAULT_<PROVIDER>_LANGUAGE_MODEL` from `defaultLanguageModel()`. If the provider has no embeddings API, make the `anthropic` check in `normalizeAskDbConfig` cover it too, so a config that embeds with it fails at load.
+- `src/types.ts`: a `<Provider>Connection` type holding connection fields only (`apiKey`, `baseUrl`, and any setting the adapter can't start without), never a model; add it to `AiProviderConnections` and export it from `src/index.ts`. If it has a field Azure's connection lacks, widen the index signature's union in `AiProviderConnections` too, or the named key stops type-checking, and add the field to `CONNECTION_FIELDS` in `src/ai-env.ts`, or loading drops it.
+- `src/ai-env.ts`: a `case` in `applyAiConnection` writing the env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry). The language model goes out through `applyLanguageModel`'s default branch (`ASKDB_AI_MODEL`) unless the provider has a native model variable worth writing too.
+- `src/resolve.ts`: return `DEFAULT_<PROVIDER>_LANGUAGE_MODEL` from `defaultLanguageModel()`. If the provider has no embeddings API, make the `anthropic` check in `normalizeAskDbConfig` cover it too, so a config that embeds with it fails at load.
 - `src/config.test.ts`: flatten tests for the new provider's connection; update the `ASKDB_AI_PROVIDERS` list test.
 - `src/scaffold/ai.ts` (`@askdb/config/scaffold`): if the provider can't start without a setting beyond the API key and model (as Azure needs `resourceName`), add it to `renderAskDbAiConfigScaffold`. `askdb init` and Studio's setup wizard both render the `ai` block through it, so this is the only place to change.
 

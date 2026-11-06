@@ -1,6 +1,7 @@
 import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import astroD2 from "astro-d2";
 import starlightLlmsTxt from "starlight-llms-txt";
 
 const base = process.env.ASTRO_BASE ?? "/";
@@ -41,10 +42,21 @@ function remarkRebaseLinks() {
 export default defineConfig({
   site: `${site}${normalizedBase}`,
   base,
+  // Pages that moved or were deleted. A static build writes each one as a page that forwards the
+  // reader (a meta refresh), so old links and bookmarks still land. Astro adds the base to the
+  // old path but not to the destination, so the destination carries it here.
+  redirects: {
+    "/reference/ask-options": `${normalizedBase}/reference/core-api/`,
+  },
   markdown: {
     processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
   },
   integrations: [
+    // Diagrams: ```d2 fences (or `src` files under src/assets/diagrams/d2/) render to inline SVG
+    // at build time through D2's WebAssembly build, so CI and the Pages deploy need no D2 binary.
+    // D2's own dark theme is off: src/styles/custom.css maps D2's palette classes to Starlight's
+    // color variables, so a diagram follows the site's theme toggle.
+    astroD2({ experimental: { useD2js: true }, inline: true, pad: 16, theme: { dark: false } }),
     starlight({
       head: [
         {
@@ -108,17 +120,37 @@ export default defineConfig({
         {
           label: "Guides",
           items: [
-            { label: "Embed in a Node app", slug: "guides/embed-in-node" },
-            { label: "Author your schema", slug: "guides/author-your-schema" },
-            { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
-            { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
-            { label: "Multi-tenancy", slug: "guides/multi-tenancy" },
-            { label: "Enforce tenancy in the database", slug: "guides/enforce-tenancy-in-the-database" },
-            { label: "Switch engines", slug: "guides/switch-engines" },
-            { label: "Bring your own model", slug: "guides/bring-your-own-model" },
-            { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
-            { label: "Upgrade AskDB", slug: "guides/upgrading" },
-            { label: "Troubleshooting", slug: "getting-started/troubleshooting" },
+            {
+              label: "Build",
+              items: [
+                { label: "Embed in a Node app", slug: "guides/embed-in-node" },
+                { label: "Author your schema", slug: "guides/author-your-schema" },
+                { label: "Bring your own model", slug: "guides/bring-your-own-model" },
+                { label: "Switch engines", slug: "guides/switch-engines" },
+                { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
+              ],
+            },
+            {
+              label: "Run in production",
+              items: [
+                { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
+                { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
+              ],
+            },
+            {
+              label: "Tenancy",
+              items: [
+                { label: "Multi-tenancy", slug: "guides/multi-tenancy" },
+                { label: "Enforce tenancy in the database", slug: "guides/enforce-tenancy-in-the-database" },
+              ],
+            },
+            {
+              label: "Maintain",
+              items: [
+                { label: "Upgrade AskDB", slug: "guides/upgrading" },
+                { label: "Troubleshooting", slug: "getting-started/troubleshooting" },
+              ],
+            },
             {
               label: "Integrations",
               items: [
@@ -141,13 +173,27 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
-            { label: "CLI", slug: "reference/cli" },
-            { label: "HTTP API", slug: "reference/http-api" },
-            { label: "Configuration", slug: "reference/config" },
-            { label: "Packages", slug: "reference/packages" },
-            { label: "@askdb/core API", slug: "reference/core-api" },
-            { label: "@askdb/client API", slug: "reference/client-api" },
-            { label: "@askdb/rag API", slug: "reference/rag-api" },
+            {
+              label: "Surfaces",
+              items: [
+                { label: "CLI", slug: "reference/cli" },
+                { label: "HTTP API", slug: "reference/http-api" },
+                { label: "Configuration", slug: "reference/config" },
+              ],
+            },
+            {
+              label: "Packages and releases",
+              items: [{ label: "Packages", slug: "reference/packages" }],
+            },
+            {
+              label: "APIs",
+              items: [
+                { label: "@askdb/core API", slug: "reference/core-api" },
+                { label: "@askdb/client API", slug: "reference/client-api" },
+                { label: "@askdb/rag API", slug: "reference/rag-api" },
+                { label: "Introspection API", slug: "reference/introspect-api" },
+              ],
+            },
           ],
         },
       ],

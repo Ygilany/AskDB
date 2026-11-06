@@ -1,5 +1,38 @@
 # @askdb/rag
 
+## 0.2.0-beta.29
+
+### Patch Changes
+
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [4437394]
+  - @askdb/core@1.0.0-beta.49
+
+## 0.2.0-beta.28
+
+### Patch Changes
+
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+  - @askdb/core@1.0.0-beta.48
+
+## 0.2.0-beta.27
+
+### Patch Changes
+
+- Updated dependencies [f4e60a9]
+- Updated dependencies [80c7ddf]
+- Updated dependencies [0a94c6f]
+- Updated dependencies [4f322db]
+- Updated dependencies [4365d4c]
+  - @askdb/core@1.0.0-beta.47
+
 ## 0.2.0-beta.26
 
 ### Patch Changes

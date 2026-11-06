@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
-import type { AiConfig, AiProviderAdapter, AiRegistry } from "@askdb/ai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AiBaseUrlCredentialsError, createAiRegistry, type AiConfig, type AiProviderAdapter, type AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import type { AnyNormalizedSchema, AskDbLogger, AskDbModeV1, AskDialect } from "@askdb/core";
 import {
@@ -94,11 +94,9 @@ function makeConfig(overrides?: {
   schemaJson?: string;
   mockSql?: string;
   dialect?: AskDbRuntimeConfig["nlToSql"]["dialect"];
-  envSchemaPath?: string;
-  envSchemaJson?: string;
   aiEnv?: Record<string, string | undefined>;
   omitSensitiveFromPrompt?: boolean;
-  askdbMode?: string;
+  askdbMode?: AskDbModeV1;
 }): AskDbRuntimeConfig {
   return {
     structured: {
@@ -107,13 +105,7 @@ function makeConfig(overrides?: {
         schemaJson: overrides?.schemaJson,
       },
     } as AskDbRuntimeConfig["structured"],
-    ai: {
-      aiEnv: {
-        ASKDB_SCHEMA_PATH: overrides?.envSchemaPath,
-        ASKDB_SCHEMA_JSON: overrides?.envSchemaJson,
-        ...overrides?.aiEnv,
-      },
-    },
+    ai: { aiEnv: { ...overrides?.aiEnv } },
     dev: { mockSql: overrides?.mockSql },
     nlToSql: { dialect: overrides?.dialect },
     modes: { askdbMode: overrides?.askdbMode, omitSensitiveFromPrompt: overrides?.omitSensitiveFromPrompt ?? false },
@@ -279,36 +271,21 @@ describe("createAskDb", () => {
     }
   });
 
-  describe("schema from config: host.schemaJson → ASKDB_SCHEMA_JSON → host.schemaPath → ASKDB_SCHEMA_PATH", () => {
+  describe("schema from config: host.schemaJson → host.schemaPath", () => {
     const badJson = "{not json";
     const missing = "/nope/does-not-exist.schema";
 
     // Each case breaks the source that should win, so the error's `source` names which one was read.
     it.each([
       {
-        name: "host.schemaJson wins over ASKDB_SCHEMA_JSON",
-        config: { schemaJson: badJson, envSchemaJson: minimalV2Json },
+        name: "host.schemaJson wins over host.schemaPath",
+        config: { schemaJson: badJson, schemaPath: fixtureSchemaPath },
         source: "host.schemaJson",
       },
       {
-        name: "a blank host.schemaJson falls through to ASKDB_SCHEMA_JSON",
-        config: { schemaJson: "   ", envSchemaJson: badJson },
-        source: "ASKDB_SCHEMA_JSON",
-      },
-      {
-        name: "schema JSON wins over a schema path",
-        config: { envSchemaJson: badJson, schemaPath: fixtureSchemaPath },
-        source: "ASKDB_SCHEMA_JSON",
-      },
-      {
-        name: "host.schemaPath wins over ASKDB_SCHEMA_PATH",
-        config: { schemaPath: missing, envSchemaPath: fixtureSchemaPath },
+        name: "a blank host.schemaJson falls through to host.schemaPath",
+        config: { schemaJson: "   ", schemaPath: missing },
         source: `host.schemaPath (${missing})`,
-      },
-      {
-        name: "a blank host.schemaPath falls through to ASKDB_SCHEMA_PATH",
-        config: { schemaJson: "", envSchemaJson: " ", schemaPath: "  ", envSchemaPath: missing },
-        source: `ASKDB_SCHEMA_PATH (${missing})`,
       },
     ])("$name", async ({ config, source }) => {
       const askdb = createAskDb({ config: makeConfig({ ...config, mockSql: "SELECT 1" }), registry: makeRegistry() });
@@ -317,8 +294,14 @@ describe("createAskDb", () => {
       expect((error as SchemaLoadError).source).toBe(source);
     });
 
-    it("treats all-blank values as no schema configured", async () => {
-      const config = makeConfig({ schemaJson: " ", envSchemaJson: "", schemaPath: "\t", envSchemaPath: "  ", mockSql: "SELECT 1" });
+    // The flat map is a projection of `host.*`; a schema key found only there is never read (#711).
+    it("treats blank host values as no schema configured, whatever the env map holds", async () => {
+      const config = makeConfig({
+        schemaJson: " ",
+        schemaPath: "\t",
+        mockSql: "SELECT 1",
+        aiEnv: { ASKDB_SCHEMA_JSON: minimalV2Json, ASKDB_SCHEMA_PATH: fixtureSchemaPath },
+      });
       const askdb = createAskDb({ config, registry: makeRegistry() });
       await expect(askdb.ask("q")).rejects.toBeInstanceOf(SchemaNotConfiguredError);
     });
@@ -824,5 +807,44 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     expect(bound.sql).toBe(
       "SELECT count(*) FROM orders WHERE agency_id IN ('1', '2') AND status = 'open'",
     );
+  });
+});
+
+// #787: a base URL with credentials is refused before any request is made. Unrefused, fetch quotes
+// the URL in its error, which core logs as askdb.pipeline.failed; refused, core never runs, so the
+// run logs nothing at all.
+describe("createAskDb with a model base URL that carries credentials", () => {
+  const SECRET_URL = "http://admin:S3cret@proxy.example/v1";
+  const saved = process.env.OPENAI_BASE_URL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = saved;
+  });
+
+  async function askWith(aiEnv: Record<string, string>): Promise<{ error: unknown; lines: unknown[] }> {
+    const lines: unknown[] = [];
+    const logger: AskDbLogger = { info: (context) => void lines.push(context), error: (context) => void lines.push(context) };
+    const askdb = createAskDb({
+      config: makeConfig({ aiEnv }),
+      registry: createAiRegistry(),
+      schema: { schema: loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema },
+    });
+    const error = await askdb.ask("count users", { logger }).catch((e: unknown) => e);
+    return { error, lines };
+  }
+
+  it.each([
+    // A runtime config a host builds itself skips the config file's check.
+    ["in the runtime config's env", { OPENAI_API_KEY: "sk-test", OPENAI_BASE_URL: SECRET_URL }, () => {}],
+    // The OpenAI SDK reads OPENAI_BASE_URL from process.env itself when AskDB passes no base URL.
+    ["in process.env, where the SDK would read it", { OPENAI_API_KEY: "sk-test" }, () => void (process.env.OPENAI_BASE_URL = SECRET_URL)],
+  ])("rejects one %s, and nothing repeats the URL", async (_where, aiEnv, arrange) => {
+    arrange();
+    const { error, lines } = await askWith(aiEnv);
+
+    expect(error).toBeInstanceOf(AiBaseUrlCredentialsError);
+    expect((error as AiBaseUrlCredentialsError).setting).toBe("OPENAI_BASE_URL");
+    expect((error as Error).message).not.toMatch(/S3cret|admin/);
+    expect(lines).toEqual([]);
   });
 });

@@ -11,6 +11,12 @@ import {
   getAskDbRuntimeConfig,
 } from "@askdb/config";
 import {
+  findNearestPackageJsonDir,
+  lockfilePackageManager,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+} from "@askdb/config/scaffold";
+import {
   createAiRegistry,
   resolveReasoningEffort,
   type AiConfig,
@@ -105,11 +111,6 @@ import {
   validateExecuteSql,
 } from "./execute-registry.js";
 import type { StudioExecuteProvider } from "./execute-registry.js";
-import {
-  lockfilePackageManager,
-  packageManagerAddArgs,
-  packageManagerSpawnSpec,
-} from "./package-manager.js";
 import { resolveStudioIntrospectionPlan, runStudioIntrospection } from "./introspection.js";
 import { probeSetupState, writeSetupConfig, SetupError, type SetupConfigInput } from "./setup.js";
 import {
@@ -1743,7 +1744,7 @@ async function getExecuteStatus(schemaDir: string): Promise<ExecuteStatusRespons
   const exec = rt.studio.execute;
   const { provider, databaseUrl, file } = exec;
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const projectRoot = findNearestPackageJsonDir(schemaDir) ?? schemaDir;
   const installed = isDriverInstalled(def.packageName, projectRoot);
   const connectionKind: "url" | "file" = provider === "sqlite" ? "file" : "url";
   const configured = connectionKind === "file" ? Boolean(file) : Boolean(databaseUrl);
@@ -1792,7 +1793,7 @@ async function installExecuteDriver(
   }
 
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  const detection = detectPackageManager(schemaDir, def.packageName);
+  const detection = detectExecuteDriverInstaller(schemaDir, def.packageName);
 
   if (detection.manualReason !== null) {
     return {
@@ -1821,7 +1822,7 @@ async function installExecuteDriver(
   };
 }
 
-type PackageManagerDetection =
+type ExecuteDriverInstaller =
   | {
       manualReason: null;
       packageManager: string;
@@ -1830,9 +1831,14 @@ type PackageManagerDetection =
     }
   | { manualReason: string };
 
-function detectPackageManager(cwd: string, packageName: string): PackageManagerDetection {
-  // Walk up from schemaDir to find the project root's lockfile.
-  const projectRoot = findProjectRoot(cwd);
+/**
+ * How to install the execute driver: with the manager of the lockfile in the nearest
+ * `package.json` directory above `cwd`. Unlike setup's detection it doesn't walk further
+ * up or guess, so Studio never installs into a parent project or with a manager the
+ * project hasn't chosen.
+ */
+function detectExecuteDriverInstaller(cwd: string, packageName: string): ExecuteDriverInstaller {
+  const projectRoot = findNearestPackageJsonDir(cwd);
   if (!projectRoot) {
     return { manualReason: `Could not locate a package.json above ${cwd}. Run the install manually.` };
   }
@@ -1846,17 +1852,6 @@ function detectPackageManager(cwd: string, packageName: string): PackageManagerD
     projectRoot,
     spawnSpec: packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, [packageName])),
   };
-}
-
-function findProjectRoot(startDir: string): string | null {
-  let current = resolve(startDir);
-  for (let i = 0; i < 20; i++) {
-    if (existsSync(join(current, "package.json"))) return current;
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
-  return null;
 }
 
 function spawnCommand(
@@ -1915,7 +1910,7 @@ async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteRe
     schemaDir,
     executeDialectFor(exec.provider, rt.nlToSql.dialect),
   );
-  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const projectRoot = findNearestPackageJsonDir(schemaDir) ?? schemaDir;
   const def = EXECUTE_DRIVER_REGISTRY[exec.provider];
   const result = await def.execute({
     connectionString: exec.databaseUrl,

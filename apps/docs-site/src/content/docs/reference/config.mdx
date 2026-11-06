@@ -69,6 +69,8 @@ A config without `ai` or `introspection` fails to load, with an error that names
 
 The sections below list every field of each block, with its type and default. **Required** in the Default column means the field must be set whenever its block is present, or under the condition the column names; every other field is optional. Old fields that still load are listed under [Deprecated keys](#deprecated-keys).
 
+AskDB checks each field's type when the config loads. A value of another type fails to load, with an error that names the file and the field, such as `AskDB config at /app/askdb.config.ts: modes.omitSensitiveFromPrompt must be a boolean (got "false").` A `boolean` field takes only `true` or `false`, because the string `"false"` is truthy. A `number` field also takes a string that holds the number, such as `"8080"`, since `env()` returns a string. A field set to `undefined`, as an unset `env()` read gives, takes its default, and so does a `string` field set to `null`.
+
 ## The `ai` block
 
 `ai` separates *how to reach a provider* from *which model to use for what*: `providerConfig` holds the connections, and `language` and `embedding` each pick a model.
@@ -135,6 +137,8 @@ Keyed by provider id. Each value is one connection, or a list of connections whe
 
 Every connection also takes `name`, which defaults to `"default"` and must be unique within its provider. A list needs a `"default"` entry unless every section that uses the provider sets `connection`.
 
+A `baseUrl` can't hold a username or password: a config that sets one on any connection, used or not, fails to load, with an error that names the key and doesn't repeat the URL. `fetch` refuses such a URL anyway. The same goes for `OPENAI_BASE_URL` and `ANTHROPIC_BASE_URL` in the environment, which the OpenAI and Anthropic SDKs read when the connection sets no `baseUrl`. Put the key in `apiKey`. To send other credentials, such as a proxy's, build the model in your own code with the AI SDK provider's `headers` option and pass it to `ask()` as `model` (see [Bring your own model](/guides/bring-your-own-model/)). The `askdb` CLI, Studio and the HTTP server can't send extra headers.
+
 ### `ai.language`
 
 | Field | Type | Default | Notes |
@@ -185,7 +189,7 @@ export default defineConfig({
 | `nlToSql` | Same as `effort` | `effort` | Overrides `effort` for NL→SQL generation calls (`ask()`). Typically left unset (provider default) or `"medium"`/`"high"` — this path is accuracy-sensitive. |
 | `enrichment` | Same as `effort` | `effort` | Overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()`). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical. |
 
-AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic `thinking` (adaptive thinking plus `effort` on Claude Sonnet 4.6, Opus 4.6 and newer, and the 5.x models; a `budgetTokens` budget on Claude 3.7 Sonnet and the 4.0–4.5 models). Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gpt-5-chat-latest`, `gemini-2.0-flash`, `claude-3-5-haiku`) never receive these options, even when `reasoning` is set. Where a model has no `minimal` level, AskDB sends `low` instead: OpenAI and Azure gpt-6 and later (which accept `low` through `max`), and Anthropic models that take `effort`. For the Vercel AI Gateway (`gateway`), AskDB uses the mapping of the model's upstream (`openai/…`, `google/…`, `anthropic/…`) on the id after the prefix, and the gateway passes the options on; models from other upstreams get no reasoning options.
+AskDB maps the portable value to each provider's native knob via the `@askdb/ai` registry's `resolveProviderOptions()` method — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic `thinking` (adaptive thinking plus `effort` on Claude Sonnet 4.6, Opus 4.6 and newer, and the 5.x models; a `budgetTokens` budget on Claude 3.7 Sonnet and the 4.0–4.5 models). Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gpt-5-chat-latest`, `gemini-2.0-flash`, `claude-3-5-haiku`) never receive these options, even when `reasoning` is set. Where a model has no `minimal` level, AskDB sends `low` instead: OpenAI and Azure gpt-6 and later (which accept `low` through `max`), and Anthropic models that take `effort`. For the Vercel AI Gateway (`gateway`), AskDB uses the mapping of the model's upstream (`openai/…`, `google/…`, `anthropic/…`) on the id after the prefix, and the gateway passes the options on; models from other upstreams get no reasoning options.
 
 `@askdb/client`'s `createAskDb` resolves `ai.language.reasoning` automatically for `ask()` calls — no extra wiring needed. See [Bring your own model](/guides/bring-your-own-model/) for the client and programmatic APIs.
 
@@ -202,7 +206,7 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 | `provider` | `"postgres" \| "mysql" \| "sqlite" \| "sqlserver" \| "prisma"` | Required | The engine to introspect. MariaDB uses `mysql`. |
 | `providerConfig.postgres.databaseUrl` | `string` | none | Postgres connection URL. Without it, pass `askdb introspect --url`. |
 | `providerConfig.mysql.databaseUrl` | `string` | none | MySQL or MariaDB connection URL, such as `mysql://user:pass@host:3306/database`. Without it, pass `--url`. |
-| `providerConfig.sqlite.file` | `string` | none | Path to a `.db` or `.sqlite` file, or `:memory:` for an empty database. Without it, pass `--url <path>`. |
+| `providerConfig.sqlite.file` | `string` | none | Path to an existing `.db` or `.sqlite` file, which introspection opens read-only. `:memory:` doesn't work: `better-sqlite3` can't open an in-memory database read-only. Without it, pass `--url <path>`. |
 | `providerConfig.sqlserver.databaseUrl` | `string` | none | SQL Server connection URL: an mssql URI or a `Server=…;` connection string. Without it, pass `--url`. |
 | `providerConfig.prisma.schemaPath` | `string` | `prisma/schema.prisma`, else `schema.prisma`, in the project root | A `schema.prisma` file, or a directory of `.prisma` files. `--prisma-schema` overrides it. |
 | `outputDir` | `string` | `./askdb/` | Where `askdb introspect` writes the schema artifact. `--out` overrides it. `askdb ask` and Studio read the artifact from here. |
@@ -351,7 +355,7 @@ Each execute provider requires its optional peer driver package (`pg`, `mysql2`,
 | --- | --- | --- | --- |
 | `listen.port` | `number` | `3000` | The server's port: an integer from 0 to 65535. `NaN` counts as unset. Another value fails to load. |
 | `listen.host` | `string` | `"127.0.0.1"` | The bind address. Bind to `0.0.0.0` only behind a gateway. |
-| `allowSchemaOverride` | `boolean` | `false` | Accept a per-request `schemaJson` on `POST /ask`. An override lets any caller send arbitrary schema and prompt content through the server's model key, so enable it only for tests or trusted multi-schema deployments. |
+| `allowSchemaOverride` | `boolean` | `false` | Accept a per-request `schemaJson` on `POST /ask`. An override is a schema artifact the server parses and puts into the prompt through its model key, so enable it only for tests or trusted multi-schema deployments, on `@askdb/http-api` 1.0.0-beta.48 or later ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)). |
 | `requestTimeoutMs` | `number` | `60000` | Aborts the model call of a `POST /ask` request after this many milliseconds: a positive integer, at most `2147483647`. Another value fails to load. |
 
 On a platform that injects the port as `PORT`, convert it to a number. `env()` returns a string, so `port: env("PORT")` doesn't type-check:
@@ -380,7 +384,7 @@ Configs written before the `ai.language` and `ai.embedding` sections still load,
 | `rag.embedder: "openai"` | `rag.embedder: "ai"` with `ai.embedding: { provider: "openai", model }` |
 | `rag.embedder: "ai-sdk"` | `rag.embedder: "ai"` with `ai.embedding: { model }` |
 | `rag.embedderConfig.openai.model`, `.dimension` | `ai.embedding.model`, `ai.embedding.dimensions` |
-| `rag.embedderConfig.openai.apiKey`, `.baseUrl` | A connection in `ai.providerConfig`, named in `ai.embedding.connection` if it isn't the default one |
+| `rag.embedderConfig.openai.apiKey`, `.baseUrl` | A connection in `ai.providerConfig`, named in `ai.embedding.connection` if it isn't the default one. A `.baseUrl` with a username or password fails to load (see [`ai.providerConfig`](#aiproviderconfig)). |
 | `rag.storeConfig.pgvector.dimensions` with an AI embedder | `ai.embedding.dimensions` |
 | `rag.storeConfig.pgvector.dimensions` with `rag.embedder: "mock"` | Nothing: remove it. The mock embedder's vectors are always 64 wide. |
 | `rag.storeConfig.file.autoFlush` | Nothing: remove it. It was never read; the file store writes its files after every change. |
@@ -482,7 +486,7 @@ AskDB does **not** copy the full config into `process.env`. The runtime snapshot
 
 `getAskDbRuntimeConfig()` throws until a snapshot is installed. `isAskDbRuntimeInitialized()` returns `true` once one is, so code that may run before or after its host's bootstrap can call `bootstrapAskDbEnv()` only when it's needed. The snapshot is process-wide: when two versions of `@askdb/config` are installed, both see the one your process bootstrapped. `createAskDbHttpServer()` works this way (see [HTTP API → Config loading](/reference/http-api/#config-loading)).
 
-`rt.flat` and `rt.ai.aiEnv` hold internal keys named like environment variables (`ASKDB_STUDIO_PORT`, `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`, …). AskDB builds them from your config and never reads them from the environment, so setting one in the shell changes nothing. Treat them as read-only, and set the config key instead.
+Every `rt` field is resolved from your config when it loads: checked, with deprecated keys translated and defaults filled in. `rt.flat` and `rt.ai.aiEnv` hold internal keys named like environment variables (`ASKDB_STUDIO_PORT`, `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`, …), built from the same resolved settings. AskDB never reads them from the environment, so setting one in the shell changes nothing. Treat them as read-only, and set the config key instead.
 
 ## Config precedence
 
@@ -500,5 +504,5 @@ Environment variables don't override the config file from the outside — they f
 
 <div class="home-path-grid">
   <a href="/reference/cli/"><strong>CLI reference</strong><span>How each CLI command resolves config and flags.</span></a>
-  <a href="/reference/packages/"><strong>Package reference</strong><span>The full @askdb/config API surface.</span></a>
+  <a href="/reference/packages/"><strong>Package reference</strong><span>The @askdb/config exports most hosts use.</span></a>
 </div>

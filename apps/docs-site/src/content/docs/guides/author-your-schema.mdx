@@ -19,7 +19,7 @@ Studio is the browser-based editor. Launch it from your project root:
 npx askdb studio
 ```
 
-The command reads `outputDir` from `askdb.config.ts`. Pass `--schema <path>` to override for this run. By default Studio serves on `http://127.0.0.1:5556`. It reads and writes the files in your schema folder directly — no separate database, no separate copy of your schema.
+The command opens the schema directory in `introspection.outputDir` from `askdb.config.ts`, or `./askdb/` when that isn't set. Pass `--schema <dir>` to open another directory for this run. By default Studio serves on `http://127.0.0.1:5556`; `studio.listen.port` and `studio.listen.host` change that. It reads and writes the files in your schema folder directly — no separate database, no separate copy of your schema.
 
 What you can edit (all fields are optional):
 

@@ -13,10 +13,10 @@ import {
   parseParameterManifest,
   type ParameterManifest,
 } from "./parameter-manifest.js";
+import { failureMessage } from "./failure-reason.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
-import { decide, tenantGuardrailResult, throwIfDenied } from "./guardrail-decide.js";
-import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./guardrails.js";
+import { enforceGuardrails } from "./guardrails.js";
 import type { TenantGuardrailResult } from "./tenant-guardrail.js";
 import {
   buildSelectGuardrailExplanation,
@@ -100,32 +100,18 @@ export async function generateSelectSql(
   deps: GenerateSqlDeps = {},
 ): Promise<GenerateSelectSqlResult> {
   const generated = await runGenerateSelectSql(dialect, question, schema, model, deps);
-  const tenant =
-    deps.tenantPolicy && deps.tenantScope ? { policy: deps.tenantPolicy, scope: deps.tenantScope } : undefined;
-  const { checks, modes } = guardrailPlan("generate", { dialect, schema, tenantPolicy: tenant?.policy });
-  const findings = evaluateGuardrails(
-    {
-      forms: {
-        sql: generated.sql,
-        ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
-      },
-      dialect,
-      schema,
-      ...(tenant ? { tenant } : {}),
+  const { verdict, tenantGuardrail } = enforceGuardrails({
+    path: "generate",
+    forms: {
+      sql: generated.sql,
+      ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
     },
-    checks,
-  );
-  const verdict = decide(findings, modes, "return");
-  logGuardrailVerdict(deps.logger, verdict, { tenantPolicy: tenant?.policy, sensitiveChecked: false });
-  try {
-    throwIfDenied(verdict, modes, "return");
-  } catch (e) {
-    logGenerateFailed(deps.logger, e);
-    throw e;
-  }
-  const out: GenerateSelectSqlResult = { ...generated, verdict };
-  if (tenant) out.tenantGuardrail = tenantGuardrailResult(findings);
-  return out;
+    dialect,
+    schema,
+    ...(deps.tenantPolicy && deps.tenantScope ? { tenant: { policy: deps.tenantPolicy, scope: deps.tenantScope } } : {}),
+    logger: deps.logger,
+  });
+  return { ...generated, verdict, ...(tenantGuardrail ? { tenantGuardrail } : {}) };
 }
 
 /**
@@ -224,8 +210,7 @@ async function runGenerateSelectSql(
         };
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      throw new SqlGenerationError(`Model call failed: ${message}`, e);
+      throw new SqlGenerationError(`Model call failed: ${failureMessage(e)}`, e);
     }
     // The read-only check is a guardrail finding, decided by the caller; here the SQL is
     // only normalized (trailing `;` removed) when it passes.
@@ -261,6 +246,7 @@ async function runGenerateSelectSql(
 }
 
 function logGenerateFailed(logger: AskDbLogger | undefined, e: unknown): void {
+  // A failed model call arrives as the SqlGenerationError above, whose message already names the reason.
   const msg = e instanceof Error ? e.message : String(e);
   logger?.error(
     {

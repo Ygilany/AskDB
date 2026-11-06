@@ -15,7 +15,7 @@ import { Aside } from "@astrojs/starlight/components";
 - **A read-only role for generated SQL.** Here it's `askdb_reader`, set up as in [Database role](/guides/run-safely-in-prod/#database-role). It must not own the tenant tables, be a superuser, or have `BYPASSRLS`: Postgres skips row-level security for all three.
 - **PostgreSQL 15 or later** if the role reads views, for `security_invoker`. The examples were tested on PostgreSQL 17.
 
-The examples use the tables from the multi-tenancy guide, with integer IDs: `organizations` (the tenant root), `documents` with an `organization_id` column, and `comments`, which reaches its organization through `document_id`.
+The examples build on the multi-tenancy guide's tables: `organizations` (the tenant root) and `documents`, with an `organization_id` column. They use integer IDs, and add a `comments` table that reaches its organization through `document_id`.
 
 Keep `enforcement: strict` in your tenant policy. AskDB's check still stops most unscoped queries before they reach the database, so a model mistake shows up as an error you can log, and the database makes the mistakes that get past it harmless.
 

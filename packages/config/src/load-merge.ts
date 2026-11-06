@@ -1,7 +1,7 @@
 import { createJiti } from "jiti";
 import { pathToFileURL } from "node:url";
 import { discoverAskDbConfigPath } from "./discover.js";
-import { isPlainObject } from "./normalize.js";
+import { isPlainObject } from "./resolve.js";
 import { defineConfig, isAskDbEnvProjection, type AskDbEnvProjection } from "./projection.js";
 import type { AskDbConfig } from "./types.js";
 
@@ -21,7 +21,7 @@ function defaultExport(mod: unknown, configPath: string): unknown {
   if (!("default" in mod)) {
     throw new Error(`AskDB config at ${configPath}: the file has no default export; ${CONFIG_FORMS}.`);
   }
-  return (mod as { default: unknown }).default;
+  return mod.default;
 }
 
 /**

@@ -11,30 +11,15 @@ import { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
 import type { TenantScope } from "./schema/v2/tenant-policy.js";
 import {
-  BUILT_IN_DIALECTS,
   type BuiltInDialectId,
   type DialectSpec,
   getDialectSpec,
   isBuiltInDialectId,
 } from "./sql/dialect-spec.js";
 import { generateSelectSqlForAsk } from "./sql/generate.js";
-import {
-  decide,
-  sensitiveGuardrailResult,
-  tenantFindings,
-  tenantGuardrailResult,
-  throwIfDenied,
-} from "./sql/guardrail-decide.js";
-import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./sql/guardrails.js";
-import { bindTenantIntoUnboundSql } from "./sql/rebind.js";
-import type { TenantGuardrailResult } from "./sql/tenant-guardrail.js";
-import {
-  assertTenantSqlMode,
-  DEFAULT_TENANT_SQL_MODE,
-  resolveTenantSql,
-  type TenantSqlOutputMode,
-  type TenantBinding,
-} from "./sql/tenant-placeholders.js";
+import { enforceGuardrails } from "./sql/guardrails.js";
+import { assertRenderedSql, renderTemplate, renderTenantSql, tenantRendering, writePreparedQuery } from "./sql/checked-statement.js";
+import type { DEFAULT_TENANT_SQL_MODE, TenantSqlOutputMode, TenantBinding } from "./sql/tenant-placeholders.js";
 import {
   expandTenantScope,
   type ResolveTenantDescendants,
@@ -47,14 +32,12 @@ import {
   type SensitiveGuardrailResult,
 } from "./sql/sensitive-guardrail.js";
 import {
+  QueryParameterError,
   TenantScopeError,
   UnknownDialectError,
-  type GuardrailFinding,
   type GuardrailVerdict,
 } from "./errors.js";
 import {
-  renderPreparedQuery,
-  scanTenantPlaceholders,
   sqlStructurallyEqual,
   type PreparedQuery,
   type QueryParameterBinding,
@@ -203,22 +186,21 @@ export type AskPipelineOptions = {
    */
   mode?: AskDbModeV1;
   /**
-   * Optional retriever from `@askdb/rag` (or any compatible implementation).
-   * When supplied **and** the schema's chunk count exceeds
-   * {@link retrievalThresholdChunks} (default 30), the retriever is called
-   * with the user question and the retrieved chunks replace the full DDL
-   * block in the NL→SQL prompt.
+   * Optional retriever from `@askdb/rag` (or any compatible implementation). With a v2 schema
+   * it is called with the user question whenever it is supplied, and the retrieved chunks
+   * replace the full DDL block in the NL→SQL prompt. The full DDL is inlined instead when the
+   * host passes {@link totalSchemaChunkCount} at or below {@link retrievalThresholdChunks}
+   * (default 30), which skips the call, or when the retriever returns no chunks.
    *
-   * When omitted, the Phase 5 behavior is preserved (full DDL inlined when
-   * v2 fields exist).
+   * When omitted, the full DDL is inlined.
    */
   retriever?: Retriever;
   /** Top-k forwarded to the retriever. Default 8. */
   retrievalK?: number;
   /**
-   * Chunk-count threshold above which retrieval is preferred. When the
-   * total chunk count for the schema is at or below this number, the full
-   * DDL is inlined even if a retriever is supplied. Default 30.
+   * Chunk-count threshold above which retrieval is preferred. When the host passes
+   * {@link totalSchemaChunkCount} at or below this number, the full DDL is inlined even if
+   * a retriever is supplied. Without a count the threshold doesn't apply. Default 30.
    */
   retrievalThresholdChunks?: number;
   /**
@@ -236,7 +218,7 @@ export type AskPipelineOptions = {
    */
   tenantScope?: TenantScope;
   /**
-   * SQL output mode for tenant placeholders. Default `"sql-params"`
+   * SQL output mode for tenant placeholders in `sql`. Default `"sql-params"`
    * ({@link DEFAULT_TENANT_SQL_MODE}) replaces them with the dialect's driver
    * markers (`$N` for Postgres/CockroachDB, `?` for MySQL/MariaDB/SQLite, `@pN` for
    * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
@@ -246,7 +228,8 @@ export type AskPipelineOptions = {
    * (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it does on every dialect for
    * a value that is neither `"sql-params"` nor `"sql-only"`.
    * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
-   * parameters (a tool that takes one SQL string); it throws `TenantScopeError`
+   * parameters (a tool that takes one SQL string); `unboundSql` still binds them, in
+   * every mode. It throws `TenantScopeError`
    * (`UNESCAPABLE_TENANT_ID`) for a tenant ID that isn't printable ASCII or that
    * contains a backslash.
    */
@@ -297,14 +280,14 @@ export type AskPipelineResult = {
    */
   sql: string;
   /**
-   * Driver markers for every value (business and, in `"sql-params"` mode, tenant).
+   * Driver markers for every value, business and tenant, whatever `tenantSqlMode` is.
    * Execute with `params` — never with `tenantParams`.
    */
   unboundSql?: string;
   /**
    * Values for `unboundSql`, in driver-marker order (array slots on
-   * Postgres/CockroachDB listBinding). In `"sql-params"` mode this already
-   * includes the tenant values — for `?` dialects interleaved in source order,
+   * Postgres/CockroachDB listBinding). With a tenant scope this already
+   * includes the tenant values, in either `tenantSqlMode` — for `?` dialects interleaved in source order,
    * otherwise after the business values. Do not concatenate `tenantParams`.
    */
   params?: QueryParamSlot[];
@@ -375,7 +358,9 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // the default would emit can be a money constant (SQL Server: `agency_id = $1` runs and
   // matches agency 1), so the host chooses the mode, before any retrieval or model call
   // (ADR 0024). A mode that isn't one of the two is refused on every dialect.
-  if (tenantPolicy && options.tenantSqlMode != null) assertTenantSqlMode(options.tenantSqlMode, "ask()");
+  const tenant = tenantPolicy
+    ? tenantRendering(tenantPolicy, tenantScope, options.tenantSqlMode, "ask()")
+    : undefined;
   if (tenantPolicy && options.tenantSqlMode == null && !knowsTenantMarkers(options.dialect)) {
     throw new TenantScopeError(
       "A custom AskDialect needs an explicit " +
@@ -419,60 +404,33 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // The guardrails run on the model's forms before AskDB renders them (ADR 0010): its
   // bound `sql` and its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders
   // still in place. Rendering below only swaps placeholders for literals or driver
-  // markers, so one check covers every tenantSqlMode, dialect and output form. A custom
-  // AskDialect (no DialectSpec) gets no read-only check: it may target non-SELECT SQL.
-  const tenant = tenantPolicy && tenantScope ? { policy: tenantPolicy, scope: tenantScope } : undefined;
-  const { checks, modes } = guardrailPlan("ask", {
+  // markers, so one check covers every tenantSqlMode, dialect and output form. A deny
+  // throws here, after logging pipeline.failed.
+  const enforced = enforceGuardrails({
+    path: "ask",
+    forms: {
+      sql: generated.sql,
+      ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
+    },
     dialect: dialectSpec,
     schema: options.schema,
-    tenantPolicy: tenant?.policy,
+    ...(tenant ? { tenant } : {}),
     sensitiveGuardrailMode: options.sensitiveGuardrailMode,
+    generatorTenantGuardrail: generated.tenantGuardrail,
+    logger,
   });
-  const runSensitive = checks.includes("sensitive");
-  const findings = evaluateGuardrails(
-    {
-      forms: {
-        sql: generated.sql,
-        ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
-      },
-      dialect: dialectSpec,
-      schema: options.schema,
-      ...(tenant ? { tenant } : {}),
-    },
-    checks,
-  );
-  if (tenant) findings.push(...generatorFindings(generated.tenantGuardrail));
-  const verdict = decide(findings, modes, "return");
-  logGuardrailVerdict(logger, verdict, { tenantPolicy, sensitiveChecked: runSensitive });
-  try {
-    throwIfDenied(verdict, modes, "return");
-  } catch (e) {
-    // A denied run ends in pipeline.failed, as generateSelectSql() logs it (and as a
-    // read-only failure was logged when that check ran inside generation).
-    logger?.error(
-      { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: (e as Error).message },
-      "nl-to-sql generate failed",
-    );
-    throw e;
-  }
 
   // result.sql is always the model's bound SQL (possibly with tenant literals/
   // markers applied below). Never overwrite it with a re-bound version.
-  const result: AskPipelineResult = { sql: generated.sql, verdict };
+  const result: AskPipelineResult = { sql: generated.sql, verdict: enforced.verdict };
   if (generated.explain !== undefined) result.explain = generated.explain;
-  if (tenant) {
-    result.tenantGuardrail = tenantGuardrailResult(findings);
-  } else if (generated.tenantGuardrail !== undefined) {
-    // Without a tenant policy there is no mode to decide with: pass through what a
-    // custom dialect reported.
-    result.tenantGuardrail = generated.tenantGuardrail;
-  }
-  if (runSensitive) result.sensitiveGuardrail = sensitiveGuardrailResult(findings);
+  if (enforced.tenantGuardrail !== undefined) result.tenantGuardrail = enforced.tenantGuardrail;
+  if (enforced.sensitiveGuardrail !== undefined) result.sensitiveGuardrail = enforced.sensitiveGuardrail;
   if (generated.usage !== undefined) result.usage = generated.usage;
 
-  // Reuse artifacts: bind the template's business values with the mechanical renderer,
-  // leaving its tenant placeholders in place, and keep them only when that reproduces the
-  // model's `sql`. Any failure drops the artifacts only.
+  // Reuse artifacts: render the template's two forms (tenant IDs bound into `unboundSql`) and
+  // keep them only when its bound form reproduces the model's `sql`. Any failure drops the
+  // artifacts only, never `sql`.
   if (
     parameterize &&
     dialectSpec &&
@@ -480,158 +438,73 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     generated.parameterManifest &&
     generated.parameterManifest.parameters.length > 0
   ) {
-    const prepared: PreparedQuery = {
-      version: 1,
-      dialect: dialectSpec.id as BuiltInDialectId,
-      dialectRules: dialectSpec === BUILT_IN_DIALECTS[dialectSpec.id as BuiltInDialectId] ? "builtin" : "host",
-      namedSql: generated.unboundNamedSql,
-      parameters: [
-        ...generated.parameterManifest.parameters.map((p) => ({
-          name: p.name,
-          placeholder: `:${p.name}`,
-          type: p.type,
-          cardinality: p.cardinality,
-          description: p.description,
-          source: "question" as const,
-        })),
-        ...tenantDecls(generated.unboundNamedSql, dialectSpec),
-      ],
-    };
+    const prepared = writePreparedQuery(generated.unboundNamedSql, generated.parameterManifest, dialectSpec);
     const values: Record<string, QueryParameterValue | QueryParameterValue[]> = {};
     for (const p of generated.parameterManifest.parameters) {
       values[p.name] = p.value;
     }
     try {
-      const bound = renderPreparedQuery(prepared, values, { skipTenantPlaceholders: true, dialect: dialectSpec });
-      if (!sqlStructurallyEqual(bound.sql, generated.sql)) {
-        logger?.debug?.(
-          {
-            event: AskDbLogEvent.PipelineParameterized,
-            parameterCount: 0,
-            listParameterCount: 0,
-            reason: "consistency_mismatch",
-          },
-          "parameterize extras dropped",
-        );
+      const rendered = renderTemplate(prepared, values, dialectSpec, tenant);
+      if (!sqlStructurallyEqual(rendered.businessSql, generated.sql)) {
+        logParameterizeDropped(logger, "consistency_mismatch");
       } else {
         result.preparedQuery = prepared;
-        result.parameters = bound.bindings;
-        result.unboundSql = bound.unboundSql;
-        result.params = bound.params;
+        result.parameters = rendered.bindings;
+        result.unboundSql = rendered.unboundSql;
+        result.params = rendered.params;
         logger?.info(
           {
             event: AskDbLogEvent.PipelineParameterized,
-            parameterCount: bound.bindings.length,
-            listParameterCount: bound.bindings.filter((b) => b.cardinality === "many").length,
+            parameterCount: rendered.bindings.length,
+            listParameterCount: rendered.bindings.filter((b) => b.cardinality === "many").length,
           },
           "parameterize extras attached",
         );
       }
-    } catch {
-      logger?.debug?.(
-        {
-          event: AskDbLogEvent.PipelineParameterized,
-          parameterCount: 0,
-          listParameterCount: 0,
-          reason: "bind_failed",
-        },
-        "parameterize extras dropped",
+    } catch (error) {
+      logParameterizeDropped(
+        logger,
+        error instanceof QueryParameterError && error.reason === "TENANT_PARAM_ALIGNMENT"
+          ? "tenant_param_alignment"
+          : "bind_failed",
       );
     }
   }
 
+  // The model's `sql` carries business values as inlined literals, so its only markers are
+  // tenant markers, numbered from the first slot: `sql` runs with `tenantParams` alone. The
+  // mode governs `sql` only: `unboundSql` always binds the tenant IDs, as the rebind does.
   if (tenant) {
-    const tenantMode = options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
-    // `sql` carries business values as inlined literals, so its only markers are
-    // tenant markers, numbered from the first slot: `sql` runs with `tenantParams`
-    // alone. `unboundSql` runs with the combined `params` (handled below).
-    const resolved = resolveTenantSql(result.sql, tenant.policy, tenant.scope, tenantMode, 1, dialectSpec);
-    result.sql = resolved.sql;
-    if (resolved.bindings.length > 0) result.tenantBindings = resolved.bindings;
-    if (resolved.mode === "sql-params" && resolved.params.length > 0) {
-      result.tenantParams = resolved.params;
-    }
-
-    if (result.preparedQuery && result.unboundSql !== undefined && result.params && result.parameters) {
-      if (tenantMode === "sql-only") {
-        result.unboundSql = resolveTenantSql(
-          result.unboundSql,
-          tenant.policy,
-          tenant.scope,
-          "sql-only",
-          1,
-          dialectSpec,
-        ).sql;
-      } else {
-        const rendered = bindTenantIntoUnboundSql(
-          { unboundSql: result.unboundSql, params: result.params, bindings: result.parameters },
-          {
-            namedSql: result.preparedQuery.namedSql,
-            tenantPolicy: tenant.policy,
-            tenantScope: tenant.scope,
-            dialectSpec,
-          },
+    const rendered = renderTenantSql(result.sql, dialectSpec, tenant);
+    // Re-check the rendered `sql`, as bindPreparedQuery() does: rendering a tenant literal
+    // must not change how the statement reads (GHSA-wjgj-mf9h-6g68).
+    if (dialectSpec) {
+      try {
+        assertRenderedSql(rendered.sql, dialectSpec);
+      } catch (e) {
+        logger?.error(
+          { event: AskDbLogEvent.PipelineFailed, phase: "generate", errMessage: e instanceof Error ? e.message : String(e) },
+          "nl-to-sql generate failed",
         );
-        if (rendered) {
-          result.unboundSql = rendered.unboundSql;
-          result.params = rendered.params;
-          result.parameters = rendered.bindings;
-        } else {
-          dropParameterizeExtras(result);
-          logger?.debug?.(
-            {
-              event: AskDbLogEvent.PipelineParameterized,
-              parameterCount: 0,
-              listParameterCount: 0,
-              reason: "tenant_param_alignment",
-            },
-            "parameterize extras dropped",
-          );
-        }
+        throw e;
       }
     }
+    result.sql = rendered.sql;
+    if (rendered.tenantBindings.length > 0) result.tenantBindings = rendered.tenantBindings;
+    if (rendered.tenantParams) result.tenantParams = rendered.tenantParams;
   }
 
   return result;
 }
 
-/**
- * A custom generator's `tenantGuardrail`, as tenant findings: its warnings, and one
- * `UNPROVABLE_SCOPE` finding for a failure it reported without any, so it is never
- * dropped. They add to `ask()`'s own check; they never replace it.
- */
-function generatorFindings(reported: TenantGuardrailResult | undefined): GuardrailFinding[] {
-  if (!reported) return [];
-  const findings = tenantFindings(reported.warnings ?? [], "generator");
-  if (reported.passed === false && findings.length === 0) {
-    findings.push({
-      check: "tenant",
-      form: "generator",
-      rule: "UNPROVABLE_SCOPE",
-      tableId: "",
-      message: "The custom SQL generator reported a failed tenant guardrail without details.",
-    });
-  }
-  return findings;
-}
-
-function dropParameterizeExtras(result: AskPipelineResult): void {
-  delete result.unboundSql;
-  delete result.params;
-  delete result.parameters;
-  delete result.preparedQuery;
-}
-
-/** A declaration per distinct `:tenant_<root>_ids` placeholder in the template. */
-function tenantDecls(namedSql: string, dialect: DialectSpec): PreparedQuery["parameters"] {
-  const names = new Set(scanTenantPlaceholders(namedSql, dialect).map((p) => p.name));
-  return [...names].map((name) => ({
-    name,
-    placeholder: `:${name}`,
-    type: "string",
-    cardinality: "many",
-    source: "tenant",
-  }));
+function logParameterizeDropped(
+  logger: AskDbLogger | undefined,
+  reason: "consistency_mismatch" | "bind_failed" | "tenant_param_alignment",
+): void {
+  logger?.debug?.(
+    { event: AskDbLogEvent.PipelineParameterized, parameterCount: 0, listParameterCount: 0, reason },
+    "parameterize extras dropped",
+  );
 }
 
 function isAskDialect(value: DialectSpec | AskDialect): value is AskDialect {

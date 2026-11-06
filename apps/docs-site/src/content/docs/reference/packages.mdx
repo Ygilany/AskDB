@@ -4,16 +4,11 @@ description: "Every @askdb/* package: purpose, when to install, and what it expo
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
-import packageDependenciesUrl from "../../../assets/diagrams/askdb-package-dependencies.svg?url";
 import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Reference · Packages</p>
 
 <p class="doc-lede">AskDB is a workspace of focused packages. Install the ones your use case needs. This page is the index — purpose, install, and key exports for each.</p>
-
-<img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, HTTP API) at the bottom composing them" class="doc-diagram" />
-
-<p class="doc-caption">AI providers are built into <code>@askdb/ai</code>, which loads the matching AI SDK package (<code>@ai-sdk/openai</code>, <code>@ai-sdk/azure</code>, <code>@ai-sdk/google</code>, <code>@ai-sdk/anthropic</code>) on first use. <code>@askdb/client</code> sits above <code>@askdb/core</code> + <code>@askdb/ai</code> as the config-driven entry point.</p>
 
 ## Core
 
@@ -25,7 +20,7 @@ The NL-to-SQL pipeline. Schema loading, prompt construction, validation, tenant-
 
 `ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, with the range `^6.0.0 || ^7.0.51` (AI SDK 6, or 7.0.51 and later). Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through the config-driven path (`@askdb/ai` and `@askdb/client`), which currently requires AI SDK 7.
 
-Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL. That covers `@askdb/client`, the engine adapters, `@askdb/introspect`, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. Core loads `ai` when it is imported. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
+Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL, because core loads `ai` when it is imported. The four engine packages, `@askdb/introspect`, `@askdb/prisma` and `@askdb/enrich` declare `ai` as a peer with core's range, `@askdb/client` declares it as a peer (AI SDK 7), and `@askdb/rag` as an optional peer. Under Yarn Plug'n'Play, each one passes your app's `ai` through to core. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
 
 **Key exports**
 
@@ -76,6 +71,7 @@ AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsof
 | `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
 | `withEmbeddingProviderOptions` | Wraps an embedding model so `dimensions`/`user` reach the provider; an optional mapper renames them to the provider's own settings (e.g. Gemini's `outputDimensionality`). Shared across adapters. |
 | `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
+| `AiBaseUrlCredentialsError` | Thrown when a model base URL holds a username or password: by a provider's `resolveConfig` (its `setting` names the env variable, such as `OPENAI_BASE_URL`) and by a built-in adapter building a model from an `AiConfig` (`setting: "baseURL"`). The message never repeats the URL. |
 
 ### Provider SDKs
 
@@ -134,35 +130,35 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
 | `DEFAULT_OPENAI_LANGUAGE_MODEL`, `DEFAULT_ANTHROPIC_LANGUAGE_MODEL`, `DEFAULT_GOOGLE_LANGUAGE_MODEL`, `DEFAULT_GATEWAY_LANGUAGE_MODEL` | Each provider's default `ai.language.model`. The `DEFAULT_*_CHAT_MODEL` names are deprecated aliases, removed at 1.0. |
 
-For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry point exports `renderAskDbAiConfigScaffold(input)`. It renders the config's `ai` block (the provider connection in `ai.providerConfig`, plus `ai.language.model` read from an env var when one is given) and lists the env vars that block reads. `askdb init` and Studio's setup wizard use it. Your own `askdb.config.ts` never needs it.
+For tools that set up a project, the `@askdb/config/scaffold` entry point exports `planAskDbScaffold(answers, versions)`, `renderAskDbAiConfigScaffold(input)` and the package-manager helpers `askdb init` and Studio share: `detectPackageManager`, `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` and `packageManagerSpawnSpec`. `planAskDbScaffold` turns a new project's answers into its `askdb.config.ts` source, its `.env.example`, the env vars the config reads and the packages to install, and throws `AskDbScaffoldInputError` (with the answer's `field`) for a bad answer; its types are `AskDbScaffoldAnswers`, `AskDbScaffoldPlan` and `ScaffoldValue`. `isAskDbScaffoldEnvName(name)` is its env var name rule: POSIX, uppercase (`^[A-Z_][A-Z0-9_]*$`). `renderAskDbAiConfigScaffold` renders the config's `ai` block (the provider connection in `ai.providerConfig`, plus `ai.language.model` read from an env var when one is given) and lists the env vars that block reads. The entry point is tooling for `askdb init` and Studio's setup wizard. It is experimental, like Studio: a minor release of `@askdb/config` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). Your own `askdb.config.ts` never needs it.
 
-## Engine adapters
+## Engine packages
 
-Each engine package ships the introspection connector for its engine, any catalog SQL templates, and a re-export of that engine's dialect constant. Its connector provider adapter parses the engine's connection strings into display-safe parts, so `registry.connectionLabel()` and the `sourceLabel` from `registry.resolveConnection()` turn `postgres://app:S3cret@db:5432/app` into `postgres://db:5432/app`, and a string the engine can't parse cleanly into `configured <engine> connection`. The label never contains a user name, password, or query string. The dialect specs themselves (SQL generation + validation rules) live in `@askdb/core` — `ask()` needs only the dialect id, no engine package.
+Each engine package ships the introspection connector for its engine, a catalog query runner on the engine's driver (an optional peer), and a re-export of that engine's dialect from `@askdb/core`. `ask()` needs only the dialect id, no engine package. The [Introspection API reference](/reference/introspect-api/#engine-packages) lists their exports.
 
 ### `@askdb/postgres`
 
 <InstallTabs pkgs="@askdb/postgres ai" />
 
-PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based catalog query runner for live introspection. Pass `dialect: "postgres"` to `ask()`.
+The PostgreSQL connector, for a live database or an export bundle, the catalog SQL templates, and an optional `pg`-based catalog query runner. Pass `dialect: "postgres"` to `ask()`.
 
 ### `@askdb/mysql`
 
 <InstallTabs pkgs="@askdb/mysql ai" />
 
-MySQL dialect, connector, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
+The MySQL and MariaDB connector, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` or `dialect: "mariadb"` to `ask()`.
 
 ### `@askdb/sqlite`
 
 <InstallTabs pkgs="@askdb/sqlite ai" />
 
-SQLite dialect, connector, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
+The SQLite connector, and an optional `better-sqlite3`-based catalog query runner that reads a database file. Pass `dialect: "sqlite"` to `ask()`.
 
 ### `@askdb/sqlserver`
 
 <InstallTabs pkgs="@askdb/sqlserver ai" />
 
-SQL Server (T-SQL) dialect, connector, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
+The SQL Server (T-SQL) connector, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
 
 ## Introspection
 
@@ -172,34 +168,11 @@ The engine-agnostic introspection contract and the schema-directory writer. Use 
 
 <InstallTabs pkgs="@askdb/introspect ai" />
 
-To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. Its options type is `RenderBodyOptions` (`schemaId`, optional `provider` and `existingArtifactDir`), and it returns a `RenderBodyResult`: `{ json, body, warnings }`, the Schema v2 document, the exact file contents and the merge warnings. It applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`. `introspect()` and `renderToSchemaV2()` write `schema.json` with `@askdb/core`'s `saveSchemaFile()`, so they throw instead of writing when `schema.json` is a symbolic link. `isSchemaV2Json(value)` is the check it applies to an existing `schema.json` before merging (the shape the merge reads: version, schema id, table and column ids, names and types, and boolean `sensitive` flags; not every field of Schema v2), for callers that need to decide up front.
-
-It also exports the **connector provider registry**, which config-driven hosts use to pick an engine by id. Each engine package exports a `ConnectorProviderAdapter` (`postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`). Provider ids are open strings, so a third-party engine can register its own id.
-
-| Symbol | Purpose |
-| --- | --- |
-| `introspect(input, renderOptions, { connector })` | Run a connector and write the schema directory. |
-| `createConnectorRegistry(adapters)` | Build a registry from provider adapters and lazy entries. Returns `{ hasProvider, providers, load, createConnector, getTemplates, resolveConnection, connectionLabel }`. `hasProvider` and `providers` list lazy entries without loading them. |
-| `registry.load(provider)` | Resolve the provider's adapter, importing a lazy entry on the first call. Concurrent calls share one import, and a failed one is retried on the next call. Call it once the engine is selected: until then, the methods below throw `Connector provider "<id>" is not loaded yet` for a lazy entry instead of falling back. Rejects for an unregistered provider, with the entry's own `load()` error, or when the loaded adapter's `provider` differs from the entry's. An adapter object is loaded already. |
-| `registry.resolveConnection(provider, { explicit?, runtime, surface? })` | Let the engine's adapter merge explicit values (for example `--url`) with AskDB runtime config (`getAskDbRuntimeConfig()`). Returns `{ ok, connection, sourceLabel }` or `{ ok: false, error }`. `sourceLabel` is `registry.connectionLabel(provider, connection)`, so it is safe to display for every adapter. |
-| `registry.connectionLabel(provider, { url?, fromExport?, schemaPath? })` | A label that is safe to display or log, for any adapter: the registry builds it with `formatConnectionLabel` from the parts the adapter's `connectionLabelParts` hook parses (host, port, database, or a file path). A connection that doesn't parse cleanly, or an adapter without the hook, gets `configured <engine> connection`. |
-| `ConnectorConnection` | The connection `connectionLabel` and an adapter's `connectionLabelParts` read: `{ url?, fromExport?, schemaPath? }`. |
-| `ConnectionLabelParts`, `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | From `@askdb/introspect/kit`: what `connectionLabelParts` returns (`{ host?, port?, database? }`, or `{ file }`), the allowlisted label builder, and a strict standard-URL parser for engines whose driver has no parser to reuse. The built-in engines don't use the parser: Postgres takes its parts from `pg-connection-string` and SQL Server's ADO.NET strings from `@tediousjs/connection-string`, the parsers their drivers use; MySQL reads a `mysql://` URL with the mapping `mysql2` applies; SQL Server's `mssql://` and Prisma-style `sqlserver://` URLs go through `@askdb/sqlserver`'s own connection parser; SQLite labels the file path. |
-| `ConnectorProviderAdapter` | The adapter shape: `createConnector`, plus optional `resolveConnection`, `connectionLabelParts`, `getTemplates`. |
-| `ConnectorProviderAdapters`, `ConnectorProviderEntry` | What `createConnectorRegistry` takes: an array of entries, or an object keyed by provider id. An entry is an adapter or a lazy entry. |
-| `LazyConnectorProviderAdapter` | A lazy entry, `{ provider, load(): Promise<ConnectorProviderAdapter> }`, for an engine package the host may not have installed. The CLI and Studio register `@askdb/prisma` this way, so only Prisma introspection imports it. |
-| `ConnectorProviderId`, `BuiltInConnectorProvider`, `BUILT_IN_CONNECTOR_PROVIDERS` | A provider id is any string; `BuiltInConnectorProvider` is the union of the first-party ids, which `BUILT_IN_CONNECTOR_PROVIDERS` lists (`postgres`, `prisma`, `mysql`, `sqlite`, `sqlserver`). |
-| `connectorProviderMissingMessage(provider)` | The error text for an unregistered provider: `Install @askdb/<id>` for a built-in id, otherwise the package that provides it. |
-| `connectorPackageMissingMessage({ provider, packageName, allowBuilds? })` | The CLI's and Studio's error text for a registered engine whose package isn't installed: an install command and the one-off `npx -p askdb -p <package>` form. With `allowBuilds` (dependencies whose install scripts pnpm must approve), the command is `npm install <package>`, or on pnpm 10.4 or later `pnpm add --allow-build=<dependency> <package>`. They pass it as the `missingMessage` of the `createOptionalDriverLoader` a lazy entry's `load` uses. The `askdb` binary registers only the first-party engines, so a third-party host writes its own message. |
-| `ConnectorConfig`, `ConnectorResult` | What `createConnector` takes (`provider`, the connection fields, `filters`, `schemaId`) and returns (`{ connector, input, mode }`). |
-| `ConnectorConnectionRequest`, `ConnectorRuntimeConfig` | What `resolveConnection` takes: `{ explicit?, runtime, surface? }`, where `runtime` is `getAskDbRuntimeConfig()` (typed structurally: `introspection` and optional `structured`). |
-| `ConnectorConnectionResult`, `ConnectorConnectionResolution` | What an adapter's `resolveConnection` hook returns (`{ ok, connection }` or `{ ok: false, error }`), and what `registry.resolveConnection` returns (the same, plus `sourceLabel`). |
-
-The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`, `missingDriverMessage` for the first-party engines' install hint, and `rethrowDriverImportError` to chain on your driver's `import()` so bundlers treat it as optional), the live-catalog adapter builder (`defineLiveConnectorProvider`, with `LiveConnectorProviderSpec` and `LiveCatalogInput`), `runtimeIntrospectionString` for reading an engine's string from AskDB runtime config, table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction`), and connection labels (`formatConnectionLabel`, `parseConnectionUrl`). Its types are `OptionalDriverSpec` (what `createOptionalDriverLoader` takes), `OptionalDriverLoader` (what it returns), `DriverLoadOptions` (`{ resolveFrom? }`), `GlobMatcher` (what `compileTableFilters` returns), `RowsToRecordsOptions` and `ConnectionLabelParts`. Import it when you write a connector for a new engine.
+Its API is in the [Introspection API reference](/reference/introspect-api/): `introspect()`, the schema writer (`renderToSchemaV2()`, `renderSchemaV2Body()`), the connector registry that config-driven hosts use to pick an engine by id, and the `@askdb/introspect/kit` helpers for writing a connector for a new engine.
 
 ### `@askdb/prisma`
 
-File-only connector that reads `.prisma` schema files and produces AskDB physical metadata — no live database needed. Pair with an engine adapter for SQL generation at runtime.
+File-only connector that reads `.prisma` schema files and produces AskDB physical metadata — no live database needed. It includes no dialect: pass `ask()` the dialect id that matches your database. Its API is in the [Introspection API reference](/reference/introspect-api/#askdbprisma).
 
 <InstallTabs pkgs="@askdb/prisma @askdb/introspect ai" />
 
@@ -295,17 +268,28 @@ See [the CLI reference](/reference/cli/).
 
 ## Dependency direction
 
+<figure style="--d2-width: 684px">
+
+```d2 src="../../../assets/diagrams/d2/package-dependencies.d2"
+```
+
+<figcaption>Each arrow points to a package's dependency or peer. An arrow is left out when the package already reaches that dependency through another one: `askdb` gets the engine packages through Studio. Dashed arrows are optional peers, drawn for each package that declares one. Boxes name `@askdb/*` packages without the scope (`ai` is `@askdb/ai`), except `askdb` itself. Not drawn: the AI SDK package `ai`, the `@ai-sdk/*` providers and the database drivers.</figcaption>
+</figure>
+
 | Package | Depends on |
 | --- | --- |
-| `@askdb/core` | AI SDK core package (`ai`, AI SDK 6 or 7) as a required peer |
-| `@askdb/introspect` | `@askdb/core` |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
-| `@askdb/prisma` | `@askdb/introspect`, Prisma (`@prisma/internals`) |
-| `@askdb/ai` | AI SDK core package (`ai`); `@ai-sdk/*` provider packages as optional peers |
-| `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
-| `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used); `@askdb/prisma` as an optional peer |
-| `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
-| `askdb` (CLI) | All of the above (lazy-imported per command), except `@askdb/prisma`, an optional peer |
+| `@askdb/core` | `ai` (AI SDK 6 or 7) as a required peer |
+| `@askdb/introspect` | `@askdb/core`; `ai` as a peer |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect`; `ai` as a peer; the database driver (`pg`, `mysql2`, `better-sqlite3`, `mssql`) as an optional peer |
+| `@askdb/prisma` | `@askdb/introspect`, Prisma (`@prisma/internals`); `ai` as a peer |
+| `@askdb/ai` | `ai` as a peer; the `@ai-sdk/*` provider packages as optional peers |
+| `@askdb/config` | No AskDB package |
+| `@askdb/client` | `@askdb/ai`; `@askdb/core`, `@askdb/config` and `ai` as peers; the `@ai-sdk/*` provider packages as optional peers |
+| `@askdb/enrich` | `@askdb/core`; `ai` as a peer |
+| `@askdb/rag` | `@askdb/core`; `ai`, `@ai-sdk/openai` and `pg` as optional peers |
+| `@askdb/studio` | `@askdb/core`, `@askdb/ai`, `@askdb/config`, `@askdb/enrich`, `@askdb/introspect`, `@askdb/rag`, the four engine packages, `ai`, the four `@ai-sdk/*` provider packages and `zod`; `@askdb/prisma` and the database drivers as optional peers |
+| `@askdb/http-api` | `@askdb/client`, `@askdb/core`, `@askdb/ai`, `@askdb/config`, `ai`, the four `@ai-sdk/*` provider packages and `zod`. No engine package: it doesn't connect to your database. |
+| `askdb` (CLI) | Every package above except `@askdb/http-api`, plus `ai` and the four `@ai-sdk/*` provider packages, lazy-imported per command, and `zod`, which those packages need as a peer. `@askdb/prisma` is an optional peer. |
 
 Reusable packages stay small and layered. First-party surfaces (CLI, Studio, HTTP API) compose them.
 

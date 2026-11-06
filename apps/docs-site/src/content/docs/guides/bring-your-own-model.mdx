@@ -14,9 +14,8 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 | | What you do | Best for |
 | --- | --- | --- |
-| **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio, and the HTTP API resolve the model for you. No model code. | CLI workflows, Studio, the bundled HTTP service |
+| **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio and the HTTP API resolve the model for you. In your own code, `createAskDb({ config })` from `@askdb/client` does the same: schema, model and dialect come from config. No model code. | CLI workflows, Studio, the bundled HTTP service, and embeds where `askdb.config.ts` owns provider and model selection |
 | **In your code** | Pass any Vercel AI SDK `LanguageModel` to `ask()`. Full control. | Embedding `@askdb/core` in your own service |
-| **With `@askdb/client`** | Call `createAskDb({ config })` then `askdb.ask("question")`. Schema, model, and dialect come from config. | The shortest config-driven embed — one schema, one model |
 
 Same providers, same keys — pick per surface. You can use both in one project (for example: Studio uses your config, your embedding service constructs the model directly).
 
@@ -96,6 +95,8 @@ export default {
   // ...
 };
 ```
+
+Default model: `gemini-2.0-flash`. To use a different one, set `ai.language.model` (bind it to `GOOGLE_AI_MODEL` in your config).
 
   </TabItem>
   <TabItem label="Azure OpenAI">
@@ -354,7 +355,7 @@ const { sql } = await ask({ question, schema, dialect: "postgres", model });
 
 You're billed by your model provider for every `ask()` call. Cost scales with:
 
-- Schema size (larger artifacts mean more tokens in the prompt) — use [RAG for large schemas](/guides/rag-for-large-schemas/) to send only the relevant slice. AskDB handles the chunking, embedding, and retrieval; you configure the store and it takes care of the rest.
+- Schema size (larger artifacts mean more tokens in the prompt) — use [RAG for large schemas](/guides/rag-for-large-schemas/) to send only the relevant slice. You build the index with `@askdb/rag` and pass a retriever to `ask()`; AskDB chunks, embeds and retrieves.
 - Question length.
 - Model tier.
 

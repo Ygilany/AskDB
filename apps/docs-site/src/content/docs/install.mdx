@@ -11,6 +11,8 @@ import InstallTabs from "../../components/InstallTabs.astro";
 
 Upgrading from an earlier beta? [Upgrade AskDB](/guides/upgrading/) lists what to change for each release.
 
+On the day an AskDB version is published, `pnpm dlx askdb@latest` and `yarn dlx askdb@latest` still install the previous one. pnpm 11 and later, and Yarn 4.18, skip versions less than a day old by default (pnpm's `minimumReleaseAge`, Yarn's `npmMinimalAgeGate`). npm installs the new version at once.
+
 ## What to install — by use case
 
 <div class="home-path-grid">
@@ -24,6 +26,6 @@ Upgrading from an earlier beta? [Upgrade AskDB](/guides/upgrading/) lists what t
 
 To introspect a `schema.prisma` file instead of a live database, install `@askdb/prisma` next to `askdb`. `askdb` doesn't bring it in, because it pulls in Prisma itself:
 
-<InstallTabs pkgs="askdb @askdb/prisma" />
+<InstallTabs pkgs="askdb @askdb/prisma ai zod" />
 
-On pnpm 11, `@askdb/prisma` also needs its Prisma build approved, or `pnpm add` exits 1. The [Prisma guide](/guides/integrations/prisma/#install) shows how. `askdb init --database prisma` installs it and, on pnpm 10.4 or later, approves the build for you.
+On pnpm 11, `@askdb/prisma` also needs its Prisma build approved, or `pnpm add` exits 1. The [Prisma guide](/guides/integrations/prisma/#install) shows how. Yarn Plug'n'Play also needs `ai` and `zod` in the project, so the line installs them too. `askdb init --database prisma` installs all of them and, on pnpm 10.4 or later, approves the build for you.
