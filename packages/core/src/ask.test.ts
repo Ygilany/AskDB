@@ -2333,3 +2333,31 @@ describe("ask — text that names a sensitive column, with omission on (#374)", 
     );
   });
 });
+
+describe("ask — an E'…' string continued on a later line (#703)", () => {
+  // Postgres reads `a'` and then an unscoped read of orders; both checks used to pass it.
+  const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
+
+  it("built-in postgres: the read-only check refuses it", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + bypass + "\n```" })) as never },
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SqlValidationError);
+    expect((error as SqlValidationError).rule).toBe("SQL_STRING_CONTINUATION");
+  });
+
+  it("custom AskDialect: the tenant check refuses it under strict enforcement", async () => {
+    const dialect: AskDialect = { generate: async () => ({ sql: bypass }) };
+    const rejection = ask({ question: "q", schema: loadSchema(multiTenantDir), model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({
+      warnings: expect.arrayContaining([expect.objectContaining({ rule: "STRING_CONTINUATION", tableId: "" })]),
+    });
+  });
+});

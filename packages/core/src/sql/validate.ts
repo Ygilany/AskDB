@@ -2,6 +2,7 @@ import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
   ENGINE_LEXER_PROFILES,
+  findEscapeStringContinuation,
   GENERIC_LEXER,
   lexSql,
   lexerProfileFor,
@@ -50,22 +51,26 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * Checks, in order (the first failure throws {@link SqlValidationError}):
  *
  * 1. `SQL_EMPTY` — nothing left after trimming.
- * 2. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block
+ * 2. `SQL_STRING_CONTINUATION`, Postgres lexer only (postgres, cockroachdb, and a dialect id
+ *    that is no built-in engine) — an `E'…'` string continued on a later line, which Postgres
+ *    reads with backslash escapes; past it the tokens may not be Postgres's, so it runs first
+ *    (#703).
+ * 3. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block
  *    comment never closes. Fails closed rather than guessing where it ends.
- * 3. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
- * 4. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
- * 5. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
- * 6. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
+ * 4. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
+ * 5. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
+ * 6. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
+ * 7. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
  *    built-in engine) — a second statement written without `;`, which T-SQL doesn't
  *    need, or code SQL Server may split differently from the lexer (see `tsql-batch.ts`).
- * 7. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
+ * 8. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
  *    `FOR SHARE`, `FOR KEY SHARE` or `LOCK IN SHARE MODE` on every lexer, and on the SQL Server
  *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
  *    parentheses right after a name, at any depth and with trailing spaces, and any such name
  *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
- * 8. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 9. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 9. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 10. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
@@ -111,6 +116,18 @@ function checkWithProfile(
   functions: ReadonlySet<string>,
 ): SqlToken[] {
   const tokens = lexSql(sql, profile);
+
+  // First: past this boundary the tokens may not be the ones Postgres reads (#703).
+  if (profile.id === "postgres") {
+    const continued = findEscapeStringContinuation(sql, tokens);
+    if (continued) {
+      throw validationError(
+        "SQL_STRING_CONTINUATION",
+        `An E'…' string continued on a later line is not allowed: generated SQL continues ${continued}.`,
+        "Postgres joins E'…' with the next '…' across a newline and reads both with backslash escapes, so the check can't tell where the string ends. Write one literal, or join the parts with ||.",
+      );
+    }
+  }
 
   const open = tokens.find((t) => t.unterminated);
   if (open) {

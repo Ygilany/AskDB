@@ -27,6 +27,12 @@ export type SqlValidationRuleCode =
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
   /**
+   * Postgres family: an `E'…'` string continued on a later line (`E'a'`, a newline, `'b'`).
+   * Postgres reads the continuation with backslash escapes and the checks don't, so they could
+   * read code as a string; refused at the boundary (#703).
+   */
+  | "SQL_STRING_CONTINUATION"
+  /**
    * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
    * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
    * parentheses after a name, which SQL Server may read as a hint.
@@ -150,7 +156,14 @@ export type TenantGuardrailRuleCode =
   | "MISSING_TENANT_PREDICATE"
   | "MISSING_TYPE_DISCRIMINATOR"
   | "UNKNOWN_TABLE_REFERENCED"
-  | "UNPROVABLE_SCOPE";
+  | "UNPROVABLE_SCOPE"
+  /**
+   * An `E'…'` string continued on a later line, which Postgres reads with backslash escapes and
+   * the tenant check doesn't, so a table or call after it could be hidden. Reported for the
+   * whole SQL, with `tableId: ""`, whenever the SQL may be read as Postgres: postgres,
+   * cockroachdb, a custom `AskDialect`, or no dialect; not under a `global` scope (#703).
+   */
+  | "STRING_CONTINUATION";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;

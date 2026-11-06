@@ -672,6 +672,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. |
 | `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, such as `pg_sleep(`. |
 | `SQL_UNTERMINATED` | A string, quoted identifier, dollar-quoted string or block comment that never closes. |
+| `SQL_STRING_CONTINUATION` | On Postgres and CockroachDB, an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`). Postgres reads the continuation with backslash escapes, so the checks can't tell where the string ends. |
 | `SQL_LOCKING_READ` | A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as `UPDLOCK`. On SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in parentheses after a name, which SQL Server can read as a hint. |
 
 `hint` explains why the rule exists and how to fix the SQL.
@@ -702,6 +703,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `MISSING_TYPE_DISCRIMINATOR` | Reads a polymorphic table without its type column compared with the mapping key of the root whose placeholder filters its ID column, ANDed into the same clause (`owner_type = 'agency' AND owner_id = :tenant_agency_ids`). |
 | `UNKNOWN_TABLE_REFERENCED` | Reads a table that `tenant-policy.md` doesn't classify. |
 | `UNPROVABLE_SCOPE` | Reported for a custom `AskDialect` whose `tenantGuardrail` has `passed: false` and no warnings. |
+| `STRING_CONTINUATION` | Continues an `E'…'` string on a later line, which Postgres reads with backslash escapes and the check doesn't, so a table or call after it could be hidden. Reported with `tableId: ""` when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect` or no dialect. |
 
 The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrailError`, and `warn` returns the findings in `result.verdict`. At rebind, a `warn` finding throws too, unless `acceptWarnings` includes `"tenant"`.
 

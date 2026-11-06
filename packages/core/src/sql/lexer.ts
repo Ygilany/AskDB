@@ -543,6 +543,29 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   return tokens;
 }
 
+/**
+ * A Postgres `E'…'` string continued on a later line: the string, then a gap that contains a
+ * newline and holds only whitespace and comments, then a bare `'…'` string. Postgres joins the
+ * two and keeps the escape mode, so it reads the second one with backslash escapes, which this
+ * lexer doesn't: where `\'` ends one reading's string, the other's goes on. AskDB doesn't model
+ * the continuation. The read-only check and the tenant check refuse it at this boundary, where
+ * both readings still agree (#703, ADR 0012). Postgres allows only whitespace and `--` comments
+ * in the gap; a `/* … *\/` comment there is refused too. Returns the first string as written.
+ */
+export function findEscapeStringContinuation(sql: string, tokens: readonly SqlToken[]): string | undefined {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind !== "string" || !/^[eE]'/.test(t.text)) continue;
+    let j = i + 1;
+    while (tokens[j]?.kind === "comment") j++;
+    const next = tokens[j];
+    if (next?.kind === "string" && next.text.startsWith("'") && /[\n\r]/.test(sql.slice(t.end, next.start))) {
+      return t.text;
+    }
+  }
+  return undefined;
+}
+
 /** True when any token ran off the end of the input. */
 export function hasUnterminatedToken(tokens: readonly SqlToken[]): boolean {
   return tokens.some((t) => t.unterminated === true);

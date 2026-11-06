@@ -478,3 +478,33 @@ describe("validateTenantGuardrails — parenthesized set-operation operands are 
     expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });
+
+describe("validateTenantGuardrails — string continued after E'…' (#703)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  // Postgres reads `a'` and then an unscoped read of orders; the check saw three strings.
+  const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
+
+  it.each([
+    ["an unscoped read after the pair", bypass],
+    ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'\\'' AS x, o.* FROM orders o --'"],
+  ])("reports %s under every reading that includes Postgres", (_label, sql) => {
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("STRING_CONTINUATION:");
+    }
+  });
+
+  it("refuses it under strict enforcement", () => {
+    expect(() => validateTenantGuardrails(bypass, policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it("leaves strings that keep the same reading alone", () => {
+    const scoped = "FROM agencies WHERE id = :tenant_agency_ids";
+    expect(findings(`SELECT 'a'\n'b' AS x ${scoped}`, POSTGRES_DIALECT)).toEqual([]);
+    expect(findings(`SELECT E'a' || 'b' AS x ${scoped}`, POSTGRES_DIALECT)).toEqual([]);
+    // MySQL reads E as a column and has no escape-string prefix.
+    expect(findings(`SELECT E 'a'\n, 'b' AS x ${scoped}`, MYSQL_DIALECT)).toEqual([]);
+  });
+});

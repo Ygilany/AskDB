@@ -8,7 +8,14 @@ import {
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { startsDashComment } from "./lexer.js";
+import {
+  POSTGRES_LEXER,
+  findEscapeStringContinuation,
+  lexSql,
+  lexerProfileFor,
+  startsDashComment,
+  type SqlToken,
+} from "./lexer.js";
 
 export type TenantGuardrailResult = {
   passed: boolean;
@@ -98,6 +105,19 @@ export function tenantRuleWarnings(
   if (scope.access.kind === "global") return [];
 
   const warnings: TenantGuardrailWarning[] = [];
+
+  // Past an E'…' string continued on a later line, Postgres and the checks below read different
+  // strings, so a table or call could sit in what they take for a string: refuse it (#703).
+  const postgresTokens = postgresReading(sql, dialect);
+  const continued = postgresTokens && findEscapeStringContinuation(sql, postgresTokens);
+  if (continued) {
+    warnings.push(
+      warn("STRING_CONTINUATION", "",
+        `The SQL continues the string ${continued} on a later line, which Postgres reads with backslash ` +
+        "escapes and the tenant check doesn't. Write one literal, or join the parts with ||."),
+    );
+  }
+
   const views = codeViews(sql, dialect);
 
   // Check the roots this scope covers: a query on the root table itself is scoped by its tenant ID column.
@@ -307,6 +327,22 @@ function scopeRootIds(scope: TenantScope): string[] {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * `sql` lexed the way Postgres reads it, when the SQL may be read as Postgres: a dialect on the
+ * Postgres lexer (postgres, cockroachdb), a dialect that is no built-in engine, or none. An
+ * unknown dialect's `backslashEscapes` is honored, as on the read-only check. Undefined for any
+ * other built-in engine.
+ */
+function postgresReading(
+  sql: string,
+  dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+): readonly SqlToken[] | undefined {
+  const known = dialect === undefined ? undefined : lexerProfileFor(dialect);
+  if (known !== undefined && known.id !== "postgres") return undefined;
+  const profile = known ?? (dialect?.backslashEscapes === true ? { ...POSTGRES_LEXER, backslashEscapes: true } : POSTGRES_LEXER);
+  return lexSql(sql, profile);
+}
 
 function warn(
   rule: TenantGuardrailRuleCode,

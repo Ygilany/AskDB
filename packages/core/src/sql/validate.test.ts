@@ -389,6 +389,39 @@ describe("validateSelectSql — unterminated tokens fail closed", () => {
   });
 });
 
+describe("validateSelectSql — string continued after E'…' (#703)", () => {
+  // Postgres joins E'a' and the next '…' across a newline and keeps escape mode, so it reads
+  // `a'` and then code; AskDB read three closed strings and passed it.
+  const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
+
+  it.each([
+    ["the bypass", bypass],
+    ["a lower-case e", "SELECT e'a'\n'\\'' AS x FROM orders --'"],
+    ["a -- comment in the gap", "SELECT E'a' -- note\n'b' AS x"],
+    ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'b' AS x"],
+    ["a newline inside a /* */ comment in the gap", "SELECT E'a' /* one\ntwo */ 'b' AS x"],
+    ["a third string", "SELECT 'a'\n'b' || E'c'\n\n'd' AS x"],
+  ])("rejects %s", (_label, sql) => {
+    expectRule(sql, "SQL_STRING_CONTINUATION");
+  });
+
+  it("rejects it on CockroachDB and on a dialect id that is no built-in engine", () => {
+    expectRule(bypass, "SQL_STRING_CONTINUATION", BUILT_IN_DIALECTS.cockroachdb);
+    expectRule(bypass, "SQL_STRING_CONTINUATION", { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec);
+  });
+
+  it("accepts strings that keep the same reading", () => {
+    // A plain string continued on the next line reads the same either way, and so does a
+    // continuation joined with `||` or written on one line.
+    for (const sql of ["SELECT 'a'\n'b' AS x", "SELECT E'a' || 'b' AS x", "SELECT E'a'\n|| 'b' AS x", "SELECT E'a\\nb' AS x"]) {
+      expect(validateSelectSql(POSTGRES_DIALECT, sql), JSON.stringify(sql)).toBe(sql);
+    }
+    // MySQL has no E'…' strings: `E` is a column there.
+    const mysql = "SELECT E 'a'\n, 'b' AS x FROM t";
+    expect(validateSelectSql(MYSQL_DIALECT, mysql)).toBe(mysql);
+  });
+});
+
 describe("validateSelectSql — legitimate SQL still accepted", () => {
   const accept = (dialect: DialectSpec, sql: string) => {
     expect(validateSelectSql(dialect, sql)).toBe(sql);
