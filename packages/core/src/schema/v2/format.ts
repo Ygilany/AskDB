@@ -98,7 +98,7 @@ export function formatSchemaV2ForNlToSql(
  * omitted, text that names a sensitive column (ADR 0017's names, the schema v2 contract's
  * mention rule) is withheld and counted; otherwise every text is shown.
  */
-export type PromptTextGate = {
+type PromptTextGate = {
   /**
    * Whether `text`, as the prompt renders it, may go in. With omission on, a text that names a
    * sensitive column is withheld, and so is one whose source is `flagged` sensitive (a retrieved
@@ -176,7 +176,7 @@ function buildColumnLine(
   const flags = [c.primaryKey ? "PK" : "", c.nullable ? "NULL" : "NOT NULL"]
     .filter(Boolean)
     .join(" ");
-  let line = `  - ${quoteIdentifier(c.name)} ${c.type}${flags ? ` (${flags})` : ""}`;
+  let line = `  - ${quoteIdentifier(c.name)} ${c.type} (${flags})`;
 
   if (effective) {
     line += " (sensitive)";

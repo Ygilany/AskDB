@@ -1,6 +1,6 @@
 {
   "name": "@askdb/enrich",
-  "version": "0.2.0-beta.17",
+  "version": "0.2.0-beta.18",
   "description": "AskDB enrichment workspace helpers for Schema v2 authoring surfaces.",
   "keywords": [
     "askdb",
@@ -46,6 +46,9 @@
   },
   "dependencies": {
     "@askdb/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "ai": "^6.0.0 || ^7.0.51"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

@@ -1,5 +1,4 @@
 import type {
-  CatalogQueryResult,
   CatalogQueryRunner,
   IntrospectionFilters,
   IntrospectionResult,
@@ -47,21 +46,6 @@ import {
   findTemplate,
 } from "./templates.js";
 
-
-/**
- * Coerce a `CatalogQueryResult` (positional rows) into a list of records using the
- * template's documented column list. Tolerates extra trailing columns (which
- * shouldn't happen but keeps the path tolerant). Throws if a documented
- * column is missing — that signals a runner or bundle that does not match
- * the template's contract.
- */
-export function coerceRows<T>(
-  result: CatalogQueryResult,
-  expected: readonly string[],
-): T[] {
-  return rowsToRecords<T>(result, { expectedColumns: expected, source: "@askdb/postgres" });
-}
-
 export type DescribePostgresInput = {
   runner: CatalogQueryRunner;
   filters?: IntrospectionFilters;
@@ -83,7 +67,9 @@ export async function describePostgres(
   const run = async <T>(name: Parameters<typeof findTemplate>[0]) => {
     const tpl = findTemplate(name);
     const result = await input.runner(tpl.sql, params);
-    return coerceRows<T>(result, tpl.columns);
+    // Rows become records by the template's documented columns: extra trailing columns are
+    // tolerated, and a missing documented column throws (the runner or bundle doesn't match).
+    return rowsToRecords<T>(result, { expectedColumns: tpl.columns, source: "@askdb/postgres" });
   };
 
   const schemasRows = await run<SchemasRow>("schemas");
@@ -306,15 +292,8 @@ export function foldIntrospectionResult(input: FoldInput): IntrospectionResult {
   );
 
   const schema: SqlSchema = { schemaId: input.schemaId, schemas };
-  const isEmpty =
-    schemas.length === 0 ||
-    schemas.every(
-      (ns) =>
-        ns.tables.length === 0 &&
-        ns.views.length === 0 &&
-        ns.enums.length === 0 &&
-        ns.sequences.length === 0,
-    );
+  // The filter above drops every namespace with nothing in it.
+  const isEmpty = schemas.length === 0;
 
   return { schema, warnings, isEmpty, viewDefinitions, provider: "postgres" };
 }
@@ -424,9 +403,9 @@ function normalizePgTextArray(value: unknown): Array<string | null> {
   if (typeof value !== "string") return [];
   if (value === "") return [];
 
-  // Defensive compatibility for runners that do not decode Postgres arrays.
-  // The canonical SQL casts to text[], so `pg` returns arrays on the live path;
-  // bundle ingestion in M5 may still surface literal strings.
+  // Runners that don't decode Postgres arrays pass the literal string. The canonical SQL
+  // casts to text[], so `pg` returns arrays on the live path, but CSV export bundles carry
+  // these columns as text.
   if (!value.startsWith("{") || !value.endsWith("}")) return [value];
   const inner = value.slice(1, -1);
   if (inner === "") return [];

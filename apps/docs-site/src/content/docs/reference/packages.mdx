@@ -4,16 +4,11 @@ description: "Every @askdb/* package: purpose, when to install, and what it expo
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
-import packageDependenciesUrl from "../../../assets/diagrams/askdb-package-dependencies.svg?url";
 import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Reference · Packages</p>
 
 <p class="doc-lede">AskDB is a workspace of focused packages. Install the ones your use case needs. This page is the index — purpose, install, and key exports for each.</p>
-
-<img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, HTTP API) at the bottom composing them" class="doc-diagram" />
-
-<p class="doc-caption">AI providers are built into <code>@askdb/ai</code>, which loads the matching AI SDK package (<code>@ai-sdk/openai</code>, <code>@ai-sdk/azure</code>, <code>@ai-sdk/google</code>, <code>@ai-sdk/anthropic</code>) on first use. <code>@askdb/client</code> sits above <code>@askdb/core</code> + <code>@askdb/ai</code> as the config-driven entry point.</p>
 
 ## Core
 
@@ -25,7 +20,7 @@ The NL-to-SQL pipeline. Schema loading, prompt construction, validation, tenant-
 
 `ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, with the range `^6.0.0 || ^7.0.51` (AI SDK 6, or 7.0.51 and later). Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through the config-driven path (`@askdb/ai` and `@askdb/client`), which currently requires AI SDK 7.
 
-Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL. That covers `@askdb/client`, the engine adapters, `@askdb/introspect`, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. Core loads `ai` when it is imported. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
+Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL, because core loads `ai` when it is imported. The four engine packages, `@askdb/introspect`, `@askdb/prisma` and `@askdb/enrich` declare `ai` as a peer with core's range, `@askdb/client` declares it as a peer (AI SDK 7), and `@askdb/rag` as an optional peer. Under Yarn Plug'n'Play, each one passes your app's `ai` through to core. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
 
 **Key exports**
 
@@ -295,17 +290,28 @@ See [the CLI reference](/reference/cli/).
 
 ## Dependency direction
 
+<figure style="--d2-width: 684px">
+
+```d2 src="../../../assets/diagrams/d2/package-dependencies.d2"
+```
+
+<figcaption>Each arrow points to a package's dependency or peer. An arrow is left out when the package already reaches that dependency through another one: `askdb` gets the engine packages through Studio. Dashed arrows are optional peers, drawn for each package that declares one. Boxes name `@askdb/*` packages without the scope (`ai` is `@askdb/ai`), except `askdb` itself. Not drawn: the AI SDK package `ai`, the `@ai-sdk/*` providers and the database drivers.</figcaption>
+</figure>
+
 | Package | Depends on |
 | --- | --- |
-| `@askdb/core` | AI SDK core package (`ai`, AI SDK 6 or 7) as a required peer |
-| `@askdb/introspect` | `@askdb/core` |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
-| `@askdb/prisma` | `@askdb/introspect`, Prisma (`@prisma/internals`) |
-| `@askdb/ai` | AI SDK core package (`ai`); `@ai-sdk/*` provider packages as optional peers |
-| `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
-| `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used); `@askdb/prisma` as an optional peer |
-| `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
-| `askdb` (CLI) | All of the above (lazy-imported per command), except `@askdb/prisma`, an optional peer |
+| `@askdb/core` | `ai` (AI SDK 6 or 7) as a required peer |
+| `@askdb/introspect` | `@askdb/core`; `ai` as a peer |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect`; `ai` as a peer; the database driver (`pg`, `mysql2`, `better-sqlite3`, `mssql`) as an optional peer |
+| `@askdb/prisma` | `@askdb/introspect`, Prisma (`@prisma/internals`); `ai` as a peer |
+| `@askdb/ai` | `ai` as a peer; the `@ai-sdk/*` provider packages as optional peers |
+| `@askdb/config` | No AskDB package |
+| `@askdb/client` | `@askdb/ai`; `@askdb/core`, `@askdb/config` and `ai` as peers; the `@ai-sdk/*` provider packages as optional peers |
+| `@askdb/enrich` | `@askdb/core`; `ai` as a peer |
+| `@askdb/rag` | `@askdb/core`; `ai`, `@ai-sdk/openai` and `pg` as optional peers |
+| `@askdb/studio` | `@askdb/core`, `@askdb/ai`, `@askdb/config`, `@askdb/enrich`, `@askdb/introspect`, `@askdb/rag`, the four engine packages, `ai`, the four `@ai-sdk/*` provider packages and `zod`; `@askdb/prisma` and the database drivers as optional peers |
+| `@askdb/http-api` | `@askdb/client`, `@askdb/core`, `@askdb/ai`, `@askdb/config`, `ai`, the four `@ai-sdk/*` provider packages and `zod`. No engine package: it doesn't connect to your database. |
+| `askdb` (CLI) | Every package above except `@askdb/http-api`, plus `ai` and the four `@ai-sdk/*` provider packages, lazy-imported per command, and `zod`, which those packages need as a peer. `@askdb/prisma` is an optional peer. |
 
 Reusable packages stay small and layered. First-party surfaces (CLI, Studio, HTTP API) compose them.
 

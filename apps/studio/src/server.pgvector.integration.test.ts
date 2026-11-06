@@ -17,7 +17,7 @@ import { cpSync, mkdtempSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
+import { resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
 import pg from "pg";
 import { afterEach, expect, it } from "vitest";
@@ -161,7 +161,7 @@ type StudioResult<T> = { status: number; body: T; error: string | undefined };
 
 /** Studio on `schemaDir`, with `structured` as its runtime config. */
 async function startStudio(structured: AskDbConfig, schemaDir: string) {
-  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  setAskDbRuntimeForTests(structured);
   const server = createStudioServer({ schema: schemaDir });
   const baseUrl = await listen(server);
   const headers = { "content-type": "application/json", "x-askdb-studio-token": server.sessionToken ?? "" };

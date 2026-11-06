@@ -371,8 +371,7 @@ function buildColumn(
   pkSet: Set<string>,
 ): SqlColumn {
   // Render a precision-aware type string for the prompt — e.g. `nvarchar(255)`,
-  // `decimal(10,2)`. `max_length` is in bytes; for nvarchar/nchar it's 2 × chars
-  // (we surface bytes here; consumers don't need the unit).
+  // `decimal(10,2)`.
   const dataType = renderType(c);
   return {
     id: makeColumnId(schemaName, tableName, c.column_name),
