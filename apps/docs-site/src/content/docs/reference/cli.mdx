@@ -169,7 +169,7 @@ askdb introspect \
 | `--url <connstr>` | Live database connection string (a file path for SQLite). Falls back to `introspection.providerConfig.<engine>.databaseUrl` (SQLite: `.file`) in `askdb.config.ts` when `introspection.provider` names the engine. |
 | `--engine <id>` | Engine: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. Falls back to `introspection.provider`, then `postgres`. |
 | `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
-| `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. The directory holds a `manifest.json` and the result of each query that [`askdb introspect templates`](#askdb-introspect-templates) prints. |
+| `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. The directory holds a `manifest.json` and the result of each query that [`askdb introspect templates`](#askdb-introspect-templates) prints. [Introspect without a connection](/guides/introspect-without-a-connection/) walks through it. |
 | `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. If `schema.json` there is a symbolic link, the command fails instead of writing to the file the link points at; replace the link with a regular file. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. Default: the name of the `--out` or `--diff` directory without a `.schema` suffix (`./my-app.schema` gives `my-app`), else `introspected`. |
 | `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. Without either, Postgres and SQL Server read every non-system schema, and MySQL and MariaDB read the database in the connection URL. |
@@ -201,7 +201,7 @@ Prisma introspection needs `@askdb/prisma` the same way: in the project running 
 askdb introspect templates --engine postgres > askdb-templates.sql
 ```
 
-Prints the SQL queries that `--from-export` reads the results of, each headed by a `-- <name>` comment. Run them against the database yourself, for example where `askdb` can't connect, and save each result in the bundle directory. Only `postgres` has templates; another engine exits `1` and names the engines that do. It reads no config, so it works in any directory, and `--engine` defaults to `postgres` rather than `introspection.provider`.
+Prints the SQL queries that `--from-export` reads the results of, each headed by a `-- <name>` comment. Run them against the database yourself, for example where `askdb` can't connect, and save each result in the bundle directory. Each query takes two `text[]` parameters, `$1` (schemas to include) and `$2` (schemas to skip), where `NULL` means no filter: replace them before you run the queries in `psql`. [Introspect without a connection](/guides/introspect-without-a-connection/) walks through it. Only `postgres` has templates; another engine exits `1` and names the engines that do. It reads no config, so it works in any directory, and `--engine` defaults to `postgres` rather than `introspection.provider`.
 
 ### `askdb enrich`
 
