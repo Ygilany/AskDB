@@ -25,7 +25,7 @@ pnpm preflight
 
 Twelve packages are on the 1.0 line and share one version: `askdb`, `@askdb/ai`, `@askdb/client`, `@askdb/config`, `@askdb/core`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/mysql`, `@askdb/postgres`, `@askdb/prisma`, `@askdb/sqlite` and `@askdb/sqlserver`. They are the `fixed` group in `.changeset/config.json`, so every release publishes all 12 at the same version, even a package that didn't change. `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` stay on `0.x`, outside the group.
 
-- **A breaking change to one of the 12** is a `major` changeset. During the release candidates, any bump only raises the `rc` number. From `1.0.0` on, a major in any of the 12 moves all 12 to the next major.
+- **A breaking change to one of the 12** is a `major` changeset. From `1.0.0` on, a major in any of the 12 moves all 12 to the next major. Between `1.0.0-rc.1` and `1.0.0` the public API is frozen ([ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md), [ADR 0031](adrs/0031-unused-exports-leave-before-1-0.md)), so a breaking change there needs the maintainer's decision. The tooling doesn't stop one: in pre mode any bump only raises the `rc` number.
 - **A breaking change confined to an experimental surface** in the 1.0 set (the `studio` and `rag` config blocks, the `askdb studio`, `enrich`, `bundle` and `rag` commands, and `askdb init`'s RAG and Studio flags; [ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)) is a `minor` changeset naming `askdb` or `@askdb/config`.
 - **A breaking change to Studio, `@askdb/enrich` or `@askdb/rag`** is a `minor` changeset. Never give one of them a `major`: it would move that package to 1.0.
 
@@ -69,7 +69,7 @@ Once you push to a Dependabot branch, Dependabot stops resolving its conflicts. 
 
 Prereleases publish under `latest`: the betas did, and the release candidates do (decided 2026-11-06 in #354). So `npm install askdb` gets the newest one, and no stable version exists yet for `latest` to protect. There is no `beta` or `rc` dist-tag: the stale `beta` tag was removed on 2026-09-29 (#267). The pipeline doesn't use `changeset publish`, because in prerelease mode that would publish under the pre tag from `.changeset/pre.json`. Trusted publishing can only publish, so a second tag can't be moved afterwards without an npm token.
 
-This changes at 1.0.0. The PR that exits pre mode also replaces the fixed `--tag latest` in `release.yml`: the pre tag while `.changeset/pre.json` is in pre mode, `latest` otherwise. Then a later prerelease, such as `1.1.0-beta.1`, can't take `latest` from a stable release.
+This changes at 1.0.0. The PR that exits pre mode also replaces the fixed `--tag latest` in both publish paths, `release.yml` and the root `release` script ([Publishing by Hand](#publishing-by-hand)): the pre tag while `.changeset/pre.json` is in pre mode, `latest` otherwise. Then a later prerelease, such as `1.1.0-beta.1`, can't take `latest` from a stable release.
 
 ## Prerelease Lines
 

@@ -43,12 +43,13 @@ Setting the versions by hand in the PR that enters `rc` was rejected for every o
 
 - The 12 packages of the 1.0 set are one `fixed` group in `.changeset/config.json`. `linked` is empty. `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` stay outside the group, on `0.x`.
 - The release candidates start at `1.0.0-rc.1` (`0.2.0-rc.1` for the three `0.x` packages), through `scripts/prerelease-counter.mjs` in `pnpm version-packages`.
-- The release candidates publish under `latest`. The PR that releases 1.0.0 changes `release.yml` to publish a prerelease under its pre tag and a stable version under `latest`.
+- The release candidates publish under `latest`. The PR that releases 1.0.0 changes both publish paths, `release.yml` and the root `release` script (`pnpm release`, the hand publish in `docs/release.md`), to publish a prerelease under its pre tag and a stable version under `latest`.
 - The `1.0.0` CHANGELOG entry lists only the release candidates' changes.
 
 ## Consequences
 
-- A breaking change to one of the 12 is a `major` changeset, unless it is confined to an experimental surface in ADR 0030, which takes a `minor` naming `askdb` or `@askdb/config`. During the release candidates, any bump only raises the `rc` number. After 1.0.0, a major in any of the 12 moves all 12.
+- A breaking change to one of the 12 is a `major` changeset, unless it is confined to an experimental surface in ADR 0030, which takes a `minor` naming `askdb` or `@askdb/config`. After 1.0.0, a major in any of the 12 moves all 12.
+- `1.0.0-rc.1` freezes the public API (ADRs 0030 and 0031), so a breaking change before 1.0.0 needs the maintainer's decision. The tooling doesn't enforce the freeze: in pre mode a `major` only raises the `rc` number.
 - A breaking change to Studio, `@askdb/enrich` or `@askdb/rag` is a `minor`. A `major` would move that package to 1.0, which amends ADR 0030.
 - Pre mode applies to every package, so the three `0.x` packages publish as `0.2.0-rc.N` during the release candidates and become stable `0.2.0` at 1.0.0.
 - `pnpm changeset status` shows the counter before the reset (`1.0.0-rc.47`) right after a pre-tag change. The Version PR shows the real versions.

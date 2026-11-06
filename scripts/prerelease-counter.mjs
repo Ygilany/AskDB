@@ -15,7 +15,8 @@
 // isn't on npm, so release.yml would publish it once the Version PR merged.
 //
 // Only public packages count: they are the versions npm shows. Outside pre mode (no
-// `.changeset/pre.json`, or `"mode": "exit"`), both commands do nothing.
+// `.changeset/pre.json`, or `"mode": "exit"`), both commands do nothing. Pre mode without a
+// tag fails both.
 //
 // Self-test: `node --test scripts/prerelease-counter.test.mjs` (CI's `preflight` job).
 import { execFileSync } from "node:child_process";
@@ -34,7 +35,10 @@ function preTag() {
   const file = join(".changeset", "pre.json");
   if (!existsSync(file)) return undefined;
   const { mode, tag } = JSON.parse(readFileSync(file, "utf8"));
-  return mode === "pre" ? tag : undefined;
+  if (mode !== "pre") return undefined;
+  // Changesets would version `1.0.0-undefined.N`; fail before it does.
+  if (typeof tag !== "string" || tag === "") throw new Error(`${file}: pre mode has no tag`);
+  return tag;
 }
 
 function publicPackages() {
@@ -60,17 +64,17 @@ if (command !== "reset" && command !== "check") {
 
 const tag = preTag();
 if (tag !== undefined) {
-  const offTag = publicPackages().filter(({ id }) => id !== undefined && id !== tag);
+  const offTagPackages = publicPackages().filter(({ id }) => id !== undefined && id !== tag);
   if (command === "reset") {
-    for (const pkg of offTag) {
+    for (const pkg of offTagPackages) {
       const next = `${pkg.release}-${pkg.id}.0`;
       if (next === pkg.version) continue;
       setVersion(pkg, next);
       console.log(`prerelease-counter: ${pkg.name} ${pkg.version} -> ${next} (pre tag "${tag}")`);
     }
-  } else if (offTag.length > 0) {
+  } else if (offTagPackages.length > 0) {
     console.error(`prerelease-counter: these public packages aren't on the "${tag}" prerelease line:`);
-    for (const { name, version } of offTag) console.error(`  ${name}@${version}`);
+    for (const { name, version } of offTagPackages) console.error(`  ${name}@${version}`);
     console.error("Most likely `reset` restarted its counter and `changeset version` didn't bump it. Add a changeset for it and rerun.");
     process.exit(1);
   }

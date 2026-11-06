@@ -6,8 +6,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
-const SCRIPT = new URL("./prerelease-counter.mjs", import.meta.url).pathname;
+const SCRIPT = fileURLToPath(new URL("./prerelease-counter.mjs", import.meta.url));
 let dir;
 
 // One workspace package per entry: `{ name: { version, private? } }`.
@@ -59,6 +60,7 @@ test("check fails naming each public package left on another prerelease line", (
   workspace({ mode: "pre", tag: "rc" }, {
     core: { version: "1.0.0-rc.1" },
     studio: { version: "0.2.0-beta.0" },
+    rag: { version: "0.2.0-alpha.3" },
     released: { version: "1.2.0" },
     docs: { version: "0.0.1-beta.9", private: true },
   });
@@ -67,6 +69,7 @@ test("check fails naming each public package left on another prerelease line", (
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /studio@0\.2\.0-beta\.0/);
+  assert.match(result.stderr, /rag@0\.2\.0-alpha\.3/);
   assert.doesNotMatch(result.stderr, /core@|released@|docs@/);
 });
 
@@ -90,4 +93,15 @@ test("both commands do nothing outside pre mode", () => {
 
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("both commands fail when pre mode has no tag", () => {
+  workspace({ mode: "pre" }, { core: { version: "1.0.0-beta.46" } });
+
+  for (const command of ["reset", "check"]) {
+    const result = run(command);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /pre mode has no tag/);
+  }
+  assert.equal(manifest("core").version, "1.0.0-beta.46");
 });
