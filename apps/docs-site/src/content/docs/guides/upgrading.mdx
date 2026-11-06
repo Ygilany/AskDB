@@ -52,7 +52,7 @@ See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-
 
 ### Other changes you may notice in beta.50
 
-- **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
+- **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
 
 ## 1.0.0-beta.49
 

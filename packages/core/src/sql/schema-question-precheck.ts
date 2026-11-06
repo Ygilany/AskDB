@@ -23,12 +23,13 @@ export function assertNlToSqlInputs(schema: AnyNormalizedSchema, question: strin
  *
  * The notes name no schema table. The prompt's DDL already lists every table the model may use, and
  * a list here would name tables the DDL leaves out: an untracked one (`tracked: false`), or one that
- * retrieval didn't pick (#677). The question is checked against tracked tables only, the ones the
- * full-schema prompt can show.
+ * retrieval didn't pick (#677, ADR 0038). The question is checked against tracked tables only, the
+ * ones the full-schema prompt can show.
  */
 export function nlToSqlAmbiguityNotes(question: string, schema: AnyNormalizedSchema): string[] {
   const notes: string[] = [];
-  const tracked = schema.tables.filter((t) => (t as { tracked?: boolean }).tracked !== false);
+  // `tracked` is a v2 field; a v1 schema has none, so every table counts.
+  const tracked = "schemaId" in schema ? schema.tables.filter((t) => t.tracked !== false) : schema.tables;
   const tableNames = new Set(tracked.map((t) => t.name.toLowerCase()));
 
   if (tracked.length === 1 && JOIN_RELATION_HINT.test(question)) {

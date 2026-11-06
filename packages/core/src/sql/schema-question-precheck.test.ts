@@ -80,7 +80,8 @@ describe("schema-question-precheck", () => {
     });
 
     it("checks the question against tracked tables only", () => {
-      // An untracked table isn't in the prompt, so to the model it isn't in the schema.
+      // An untracked table stays in the artifact, but the prompt's DDL doesn't list it, so the note
+      // treats it like any name the prompt doesn't show.
       const notes = nlToSqlAmbiguityNotes("rows from hidden_payroll", schemaOf(table("orders"), table("hidden_payroll", false)));
       expect(notes).toEqual(['The question mentions table "hidden_payroll" which is not in the schema.']);
     });
