@@ -186,8 +186,9 @@
  * a .d2 file (style.fill: "#…") don't follow the theme: use the palette instead.
  *
  * D2's own <style> (its fonts and the rules below) never reaches the page: MDX's static
- * optimizer moves it into a `set:html` attribute and leaves the element empty. So labels use
- * the site font, and these rules stand in for the ones a diagram needs.
+ * optimizer moves it into a `set:html` attribute and leaves the element empty
+ * (https://github.com/withastro/astro/issues/18652). So labels use the site font, and these rules stand in for
+ * the ones a diagram needs. Drop them once that issue is fixed.
  */
 .d2-svg text { font-family: var(--sl-font); }
 .d2-svg .text-bold { font-weight: 600; }
@@ -236,7 +237,8 @@
 
 /*
  * An inline D2 diagram has no size of its own: astro-d2 ignores the fence's `width` with D2's
- * WebAssembly build. The page sets `--d2-width` on the <figure> to the diagram's natural width;
+ * WebAssembly build (https://github.com/HiDeoo/astro-d2/issues/69). The page sets `--d2-width` on the
+ * <figure> to the diagram's natural width;
  * these rules apply it, center the diagram and shrink it on narrow screens.
  */
 figure > svg[data-d2-version] {

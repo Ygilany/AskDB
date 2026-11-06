@@ -1,6 +1,6 @@
 {
   "name": "@askdb/prisma",
-  "version": "0.2.0-beta.21",
+  "version": "0.2.0-beta.22",
   "description": "AskDB Prisma integration: schema-file introspection connector for Prisma schemas.",
   "keywords": [
     "askdb",
@@ -48,6 +48,9 @@
   "dependencies": {
     "@askdb/introspect": "workspace:*",
     "@prisma/internals": "^7.10.1"
+  },
+  "peerDependencies": {
+    "ai": "^6.0.0 || ^7.0.51"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

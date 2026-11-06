@@ -31,7 +31,7 @@ Starlight switches its colors on `data-theme`, which the reader sets with the th
 ## Consequences
 
 - `useD2js` is marked experimental upstream, and `astro-d2` is 0.x. A minor `astro-d2` release can change it, so a bump is a deliberate change that rebuilds the site and checks a diagram in both themes.
-- `astro-d2` ignores a fence's `width` and `title` with D2's WebAssembly build: it looks for the D2 CLI's `d2Version` attribute, which the WebAssembly build writes as `data-d2-version`. A page sizes a diagram with `--d2-width` on its `<figure>`, and the `<figcaption>` is the text alternative.
-- D2's embedded `<style>` doesn't reach the page: MDX's static optimizer moves it into a `set:html` attribute and leaves the element empty. Labels render in the site font, and `custom.css` stands in for the D2 rules a diagram needs. Markdown labels and sketch mode lose their styling.
+- `astro-d2` ignores a fence's `width` and `title` with D2's WebAssembly build: it looks for the D2 CLI's `d2Version` attribute, which the WebAssembly build writes as `data-d2-version` ([astro-d2#69](https://github.com/HiDeoo/astro-d2/issues/69)). A page sizes a diagram with `--d2-width` on its `<figure>`, and the `<figcaption>` is the text alternative.
+- D2's embedded `<style>` doesn't reach the page: MDX's static optimizer moves it into a `set:html` attribute and leaves the element empty ([astro#18652](https://github.com/withastro/astro/issues/18652)). Labels render in the site font, and `custom.css` stands in for the D2 rules a diagram needs. Markdown labels and sketch mode lose their styling.
 - `@d2lang/d2` adds about 91 MB to the docs site's dev install. Nothing but the SVGs reaches readers.
 - Astro 7.4.7 is the oldest release whose markdown pipeline builds with `astro-d2`, and the docs site pins `@emnapi/runtime` 1.x so that `astro check` still loads with it.
