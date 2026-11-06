@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.48
 
-Released with `@askdb/client` 1.0.0-beta.11 and `@askdb/config` 1.0.0-beta.17. Other packages that got a new version list what changed in their CHANGELOG.
+Released with `@askdb/client` 1.0.0-beta.11, `@askdb/config` 1.0.0-beta.17 and `@askdb/core` 1.0.0-beta.48. Other packages that got a new version list what changed in their CHANGELOG.
 
 ### Fix config values of the wrong type, which now fail to load
 
@@ -51,6 +51,26 @@ Code that reads or installs the runtime config may need a change too:
 
 - **`setAskDbRuntimeForTests()` takes an `AskDbConfig`,** the object you write in `askdb.config.ts`, and installs it as `bootstrapAskDbEnv()` installs a loaded file. Replace `setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) })` with `setAskDbRuntimeForTests(structured)`. If a test put a setting only in `flat`, set it in the config instead, such as `dev: { mockSql }` in place of `ASKDB_MOCK_SQL`.
 - **`createAskDb()` reads the default schema from `host.schemaJson`, then `host.schemaPath`, and nowhere else.** A runtime config built by hand with `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `ai.aiEnv` and no `host` block now throws `SchemaNotConfiguredError`: set `structured.host` instead. A config loaded from a file works as before.
+
+### Run `unboundSql` with the tenant IDs in `params` under `"sql-only"`
+
+`tenantSqlMode` now governs `sql` only ([#731](https://github.com/Ygilany/AskDB/issues/731)). Under `"sql-only"`, `ask()` used to inline the tenant IDs into `unboundSql` and leave them out of `params`, while `bindPreparedQuery()` and `askdb.bind()` bound them. Now `ask()` binds them too: `unboundSql` holds driver markers for the tenant IDs, and `params` holds their values, as in `"sql-params"` mode. `sql` is unchanged, with the IDs inlined as literals.
+
+```diff
+ // ask({ …, tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } }, tenantSqlMode: "sql-only" })
+ result.sql        // SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'   (unchanged)
+-result.unboundSql // SELECT * FROM orders WHERE agency_id = '42' AND status = $1
+-result.params     // ["open"]
++result.unboundSql // SELECT * FROM orders WHERE agency_id = $2 AND status = $1
++result.params     // ["open", "42"]
+```
+
+If you run `unboundSql` with `params`, you need no change: the pair still returns the same rows. If you run `unboundSql` with your own array of business values, switch to `params` before you upgrade, and check every place that runs `unboundSql`. With your array, the values no longer line up with the markers: the tenant markers come first in source order on `?` dialects, so your first business value can land on a tenant marker. The drivers AskDB documents (`pg`, `mysql2`, `mssql`, `better-sqlite3`) refuse the short array, so the query fails. `node:sqlite` doesn't check the number of values it binds: it binds them in order and the rest as `NULL`, which can return another tenant's rows. Always pass `params` as returned. If you need one SQL string with the IDs inlined, use `sql`.
+
+### Other changes you may notice in beta.48
+
+- **A malformed schema markdown file reports the same error on every load** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, when one process loaded the same malformed front-matter YAML in `tables/*.md`, `concepts.md` or `tenant-policy.md` a second time, it reported `Invalid <kind> front-matter` (missing fields) instead of `Malformed <kind> front-matter YAML`. Loading failed both times. `@askdb/core` also no longer keeps every schema markdown file it reads or writes in memory for the life of the process, so a server that accepts per-request schemas (`httpApi.allowSchemaOverride`) no longer grows with each new one.
+- **A schema markdown body that starts with a `---` horizontal rule survives a save** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, `writeTableMarkdown()`, `writeConceptsMarkdown()` and `writeTenantPolicyMarkdown()`, and the Studio saves that use them, read the rule as front-matter: the body was emptied, and the file then failed to load.
 
 ## 1.0.0-beta.47
 

@@ -49,6 +49,9 @@
     "@askdb/introspect": "workspace:*",
     "@prisma/internals": "^7.10.1"
   },
+  "peerDependencies": {
+    "ai": "^6.0.0 || ^7.0.51"
+  },
   "devDependencies": {
     "typescript": "^6.0.3",
     "vitest": "^5.0.5"
