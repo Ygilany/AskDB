@@ -78,6 +78,10 @@ function makeRegistry(overrides?: Partial<AiRegistry>): AiRegistry {
   return {
     hasProvider: vi.fn(() => false),
     resolveAiConfig: vi.fn(() => undefined),
+    resolveAiConfigFromSection: vi.fn(() => undefined),
+    resolveEmbeddingConfigFromSection: vi.fn(() => undefined),
+    createLanguageModelFromSection: vi.fn(async () => undefined),
+    createEmbeddingModelFromSection: vi.fn(async () => undefined),
     resolveEmbeddingConfig: vi.fn(() => undefined),
     createLanguageModel: vi.fn(async () => ({}) as never),
     createEmbeddingModel: vi.fn(async () => ({}) as never),
@@ -94,7 +98,9 @@ function makeConfig(overrides?: {
   schemaJson?: string;
   mockSql?: string;
   dialect?: AskDbRuntimeConfig["nlToSql"]["dialect"];
-  aiEnv?: Record<string, string | undefined>;
+  language?: Partial<AskDbRuntimeConfig["ai"]["language"]>;
+  /** The flat map, which the client never reads. */
+  flat?: Record<string, string>;
   omitSensitiveFromPrompt?: boolean;
   askdbMode?: AskDbModeV1;
 }): AskDbRuntimeConfig {
@@ -105,7 +111,18 @@ function makeConfig(overrides?: {
         schemaJson: overrides?.schemaJson,
       },
     } as AskDbRuntimeConfig["structured"],
-    ai: { aiEnv: { ...overrides?.aiEnv } },
+    flat: { ...overrides?.flat },
+    ai: {
+      language: {
+        provider: "openai",
+        connection: { name: "default" },
+        model: undefined,
+        modelFamily: undefined,
+        reasoning: undefined,
+        ...overrides?.language,
+      },
+      embedding: undefined,
+    },
     dev: { mockSql: overrides?.mockSql },
     nlToSql: { dialect: overrides?.dialect },
     modes: { askdbMode: overrides?.askdbMode, omitSensitiveFromPrompt: overrides?.omitSensitiveFromPrompt ?? false },
@@ -127,7 +144,7 @@ describe("createAskDb", () => {
     const result = await askdb.ask("count users");
     expect(result.sql).toBe("SELECT 1");
     expect(modelSource).toBe("mock");
-    expect(registry.resolveAiConfig).not.toHaveBeenCalled();
+    expect(registry.resolveAiConfigFromSection).not.toHaveBeenCalled();
     expect(registry.createLanguageModel).not.toHaveBeenCalled();
   });
 
@@ -149,7 +166,7 @@ describe("createAskDb", () => {
     });
     expect(result.sql).toBe("SELECT 2");
     expect(modelSource).toBe("override");
-    expect(registry.resolveAiConfig).not.toHaveBeenCalled();
+    expect(registry.resolveAiConfigFromSection).not.toHaveBeenCalled();
     expect(registry.createLanguageModel).not.toHaveBeenCalled();
   });
 
@@ -295,12 +312,12 @@ describe("createAskDb", () => {
     });
 
     // The flat map is a projection of `host.*`; a schema key found only there is never read (#711).
-    it("treats blank host values as no schema configured, whatever the env map holds", async () => {
+    it("treats blank host values as no schema configured, whatever the flat map holds", async () => {
       const config = makeConfig({
         schemaJson: " ",
         schemaPath: "\t",
         mockSql: "SELECT 1",
-        aiEnv: { ASKDB_SCHEMA_JSON: minimalV2Json, ASKDB_SCHEMA_PATH: fixtureSchemaPath },
+        flat: { ASKDB_SCHEMA_JSON: minimalV2Json, ASKDB_SCHEMA_PATH: fixtureSchemaPath },
       });
       const askdb = createAskDb({ config, registry: makeRegistry() });
       await expect(askdb.ask("q")).rejects.toBeInstanceOf(SchemaNotConfiguredError);
@@ -372,7 +389,7 @@ describe("createAskDb providers option", () => {
   });
 
   it("accepts built-in provider names and registers only those", async () => {
-    const config = makeConfig({ aiEnv: { ASKDB_AI_PROVIDER: "anthropic" } });
+    const config = makeConfig({ language: { provider: "anthropic" } });
     const askdb = createAskDb({ config, providers: ["anthropic"], schema: { path: fixtureSchemaPath } });
     const error = await askdb.ask("q").catch((e: unknown) => e as Error);
     expect(error).toBeInstanceOf(ModelNotConfiguredError);
@@ -399,10 +416,10 @@ describe("createAskDb reasoning effort resolution", () => {
     };
   }
 
-  it("resolves ai.reasoning env config into providerOptions and forwards to ask()", async () => {
-    const config = makeConfig({ aiEnv: { ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "low" } });
+  it("resolves ai.language.reasoning into providerOptions and forwards to ask()", async () => {
+    const config = makeConfig({ language: { reasoning: { nlToSql: "low" } } });
     const registry = makeRegistry({
-      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      resolveAiConfigFromSection: vi.fn(() => resolvedAiConfig),
       createLanguageModel: vi.fn(async () => sentinelModel),
       resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "low" } })),
     });
@@ -418,10 +435,10 @@ describe("createAskDb reasoning effort resolution", () => {
     expect(seen()).toEqual({ openai: { reasoningEffort: "low" } });
   });
 
-  it("per-call reasoningEffort overrides both the client default and env config", async () => {
-    const config = makeConfig({ aiEnv: { ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "low" } });
+  it("per-call reasoningEffort overrides both the client default and the config's reasoning", async () => {
+    const config = makeConfig({ language: { reasoning: { nlToSql: "low" } } });
     const registry = makeRegistry({
-      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      resolveAiConfigFromSection: vi.fn(() => resolvedAiConfig),
       createLanguageModel: vi.fn(async () => sentinelModel),
       resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "high" } })),
     });
@@ -444,7 +461,7 @@ describe("createAskDb reasoning effort resolution", () => {
   it("client-level reasoningEffort default applies when no per-call override is set", async () => {
     const config = makeConfig();
     const registry = makeRegistry({
-      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      resolveAiConfigFromSection: vi.fn(() => resolvedAiConfig),
       createLanguageModel: vi.fn(async () => sentinelModel),
       resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "medium" } })),
     });
@@ -467,7 +484,7 @@ describe("createAskDb reasoning effort resolution", () => {
   it("does not call resolveProviderOptions when no reasoningEffort is configured (preserves current behavior)", async () => {
     const config = makeConfig();
     const registry = makeRegistry({
-      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      resolveAiConfigFromSection: vi.fn(() => resolvedAiConfig),
       createLanguageModel: vi.fn(async () => sentinelModel),
     });
     const { dialect, seen } = capturingDialect();
@@ -480,9 +497,9 @@ describe("createAskDb reasoning effort resolution", () => {
   });
 
   it("an explicit deps.providerOptions from the caller wins over the resolved reasoningEffort", async () => {
-    const config = makeConfig({ aiEnv: { ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "low" } });
+    const config = makeConfig({ language: { reasoning: { nlToSql: "low" } } });
     const registry = makeRegistry({
-      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      resolveAiConfigFromSection: vi.fn(() => resolvedAiConfig),
       createLanguageModel: vi.fn(async () => sentinelModel),
       resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "low" } })),
     });
@@ -655,7 +672,7 @@ describe("createAskDb — abortSignal", () => {
     const askdb = createAskDb({
       config: makeConfig(),
       registry: makeRegistry({
-        resolveAiConfig: vi.fn(() => ({ provider: "openai", apiKey: "k", model: "m" }) as AiConfig),
+        resolveAiConfigFromSection: vi.fn(() => ({ provider: "openai", apiKey: "k", model: "m" }) as AiConfig),
         createLanguageModel: vi.fn(async () => model as never),
       }),
       schema: { schema: preloaded },
@@ -821,11 +838,13 @@ describe("createAskDb with a model base URL that carries credentials", () => {
     else process.env.OPENAI_BASE_URL = saved;
   });
 
-  async function askWith(aiEnv: Record<string, string>): Promise<{ error: unknown; lines: unknown[] }> {
+  async function askWith(
+    connection: AskDbRuntimeConfig["ai"]["language"]["connection"],
+  ): Promise<{ error: unknown; lines: unknown[] }> {
     const lines: unknown[] = [];
     const logger: AskDbLogger = { info: (context) => void lines.push(context), error: (context) => void lines.push(context) };
     const askdb = createAskDb({
-      config: makeConfig({ aiEnv }),
+      config: makeConfig({ language: { connection } }),
       registry: createAiRegistry(),
       schema: { schema: loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema },
     });
@@ -835,15 +854,20 @@ describe("createAskDb with a model base URL that carries credentials", () => {
 
   it.each([
     // A runtime config a host builds itself skips the config file's check.
-    ["in the runtime config's env", { OPENAI_API_KEY: "sk-test", OPENAI_BASE_URL: SECRET_URL }, () => {}],
+    ["in the runtime config's connection", { name: "default", apiKey: "sk-test", baseUrl: SECRET_URL }, () => {}, "connection.baseUrl"],
     // The OpenAI SDK reads OPENAI_BASE_URL from process.env itself when AskDB passes no base URL.
-    ["in process.env, where the SDK would read it", { OPENAI_API_KEY: "sk-test" }, () => void (process.env.OPENAI_BASE_URL = SECRET_URL)],
-  ])("rejects one %s, and nothing repeats the URL", async (_where, aiEnv, arrange) => {
+    [
+      "in process.env, where the SDK would read it",
+      { name: "default", apiKey: "sk-test" },
+      () => void (process.env.OPENAI_BASE_URL = SECRET_URL),
+      "OPENAI_BASE_URL",
+    ],
+  ])("rejects one %s, and nothing repeats the URL", async (_where, connection, arrange, setting) => {
     arrange();
-    const { error, lines } = await askWith(aiEnv);
+    const { error, lines } = await askWith(connection);
 
     expect(error).toBeInstanceOf(AiBaseUrlCredentialsError);
-    expect((error as AiBaseUrlCredentialsError).setting).toBe("OPENAI_BASE_URL");
+    expect((error as AiBaseUrlCredentialsError).setting).toBe(setting);
     expect((error as Error).message).not.toMatch(/S3cret|admin/);
     expect(lines).toEqual([]);
   });

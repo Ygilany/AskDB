@@ -342,11 +342,9 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
       `--embedder openai embeds with OpenAI, but ai.embedding.provider is "${embedding.provider}"; use --embedder ai.`,
     );
   }
-  // The registry reads ASKDB_AI_EMBEDDING_MODEL first, so --embedder-model overrides ai.embedding.model.
-  const env = opts.embedderModel
-    ? { ...embedding.env, ASKDB_AI_EMBEDDING_MODEL: opts.embedderModel }
-    : embedding.env;
-  const aiConfig = ai.resolveEmbeddingConfig(env);
+  // --embedder-model overrides ai.embedding.model.
+  const model = opts.embedderModel ?? embedding.model;
+  const aiConfig = ai.resolveEmbeddingConfigFromSection({ ...embedding, model });
   if (!aiConfig) {
     throw new Error(
       `askdb rag: embeddings need an API key on the ai.embedding connection ` +
@@ -354,7 +352,6 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
         "Set it in askdb.config.*, or pass --embedder mock.",
     );
   }
-  const model = opts.embedderModel ?? embedding.model;
   const dimensions = opts.dimensions ?? embedding.dimensions;
   return {
     kind: "ai",

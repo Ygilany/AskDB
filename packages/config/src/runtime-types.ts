@@ -24,27 +24,23 @@ export type AskDbRuntimeAiConnection = {
 };
 
 /**
- * One resolved `ai` section: its provider, the connection it uses, its model, and an env view built
- * from that connection only. Assignable to `@askdb/ai`'s `AiLanguageSection` / `AiEmbeddingSection`.
+ * One resolved `ai` section: its provider, the connection it uses and its model. Assignable to
+ * `@askdb/ai`'s `AiLanguageSection` / `AiEmbeddingSection`, so a host passes it to the registry's
+ * `*FromSection` methods as it is.
  */
 export type AskDbRuntimeAiSection = {
   provider: string;
   connection: AskDbRuntimeAiConnection;
   model: string | undefined;
-  /** `AiEnv` for `@askdb/ai` registry calls, built from this section's connection only. */
-  env: Record<string, string | undefined>;
 };
 
 /**
- * Typed AI runtime settings for `@askdb/core` (not `process.env`).
+ * Typed AI runtime settings: one section per use of a model. Pass `language` to `@askdb/ai`'s
+ * `resolveAiConfigFromSection` / `createLanguageModelFromSection`, `language.reasoning` to
+ * `resolveReasoningEffortFromSection`, and `embedding` to `resolveEmbeddingConfigFromSection` /
+ * `createEmbeddingModelFromSection`.
  */
 export type AskDbRuntimeAiConfig = {
-  /**
-   * Flat env-shaped map built from the runtime snapshot: the language view plus every other
-   * canonical key. Pass to `@askdb/ai` registry methods such as `resolveAiConfig` and
-   * `createLanguageModelFromEnv`.
-   */
-  aiEnv: Record<string, string | undefined>;
   /** `ai.language`: the language model. `model` is undefined only for a custom provider with no model set. */
   language: AskDbRuntimeAiSection & {
     modelFamily: string | undefined;
@@ -52,9 +48,8 @@ export type AskDbRuntimeAiConfig = {
     reasoning: AskDbAiReasoningConfig | undefined;
   };
   /**
-   * `ai.embedding`: the embedding model. Undefined unless `rag.embedder` is `"ai"`. Pass `env`
-   * to `resolveEmbeddingConfig` / `createEmbeddingModelFromEnv`, and `{ dimensions }` as the
-   * latter's options: `env` holds the connection and model, not the width.
+   * `ai.embedding`: the embedding model. Undefined unless `rag.embedder` is `"ai"`.
+   * `createEmbeddingModelFromSection` asks the model for `dimensions` when it's set.
    */
   embedding:
     | (AskDbRuntimeAiSection & {
@@ -195,11 +190,14 @@ export type AskDbRuntimeStudioConfig = {
 
 /**
  * Typed runtime view over the bootstrapped AskDB config snapshot. Every field is resolved from
- * `structured`; `flat` and `ai.aiEnv` are projections of the same resolution, never read back.
+ * `structured`; `flat` is a projection of the same resolution, never read back.
  */
 export type AskDbRuntimeConfig = {
   readonly structured: Readonly<AskDbConfig>;
-  /** Canonical flattened map (subprocess env via {@link mergeAskDbFlatIntoEnvMap}), built from `structured`. */
+  /**
+   * Canonical flattened map (subprocess env via {@link mergeAskDbFlatIntoEnvMap}), built from
+   * `structured`. It holds no AI keys: read `ai.language` and `ai.embedding`.
+   */
   readonly flat: Readonly<Record<string, string>>;
   ai: AskDbRuntimeAiConfig;
   introspection: AskDbRuntimeIntrospectionConfig;

@@ -410,8 +410,8 @@ describe("http-api", () => {
   });
 
   it("missing AI key with no mock returns generation_not_configured", async () => {
-    // A blank apiKey resolves to no key, so aiEnv
-    // has no OPENAI_API_KEY and createLanguageModelFromEnv returns undefined.
+    // A blank apiKey resolves to no key, so the language section's connection has none and
+    // the client reports the model as not configured.
     const noKeyConfig: AskDbConfig = {
       ...BASE_CONFIG,
       ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } }, language: { model: "gpt-4o-mini" } },

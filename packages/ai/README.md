@@ -22,7 +22,7 @@ pnpm add @ai-sdk/openai
 | `azure` (aliases `azure-openai`, `foundry`) | `@ai-sdk/azure` | `AZURE_OPENAI_API_KEY` | `gpt-4o-mini` (deployment name) |
 | `gateway` (Vercel AI Gateway) | nothing: ships with `ai` | `AI_GATEWAY_API_KEY` | `openai/gpt-4o-mini` |
 
-Embedding models have no default in `askdb.config.*`: `rag.embedder: "ai"` requires `ai.embedding.model`, and `getAskDbRuntimeConfig().ai.embedding.env` always carries it. An env map with no embedding model still falls back to `text-embedding-3-small` on `openai` and `azure` (`openai/text-embedding-3-small` on `gateway`), with a one-time `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`). That fallback is removed at 1.0.
+Embedding models have no default in `askdb.config.*`: `rag.embedder: "ai"` requires `ai.embedding.model`, and the section path (`createEmbeddingModelFromSection`) requires a model too. An env map with no embedding model still falls back to `text-embedding-3-small` on `openai` and `azure` (`openai/text-embedding-3-small` on `gateway`), with a one-time `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`). That fallback is removed at 1.0.
 
 Each built-in provider imports its SDK package lazily, the first time it builds a model, so registering all of them costs nothing. If the package isn't installed, model creation fails with: `Provider 'google' requires the optional peer dependency @ai-sdk/google. Install it: npm i @ai-sdk/google`. The same data is exported as `BUILTIN_AI_PROVIDERS`.
 
@@ -30,7 +30,7 @@ Each built-in provider imports its SDK package lazily, the first time it builds 
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
+import { createAiRegistry, resolveReasoningEffortFromSection } from "@askdb/ai";
 import { ask, loadSchema } from "@askdb/core";
 
 // No arguments: every built-in provider. Or restrict it: createAiRegistry(["openai"]).
@@ -39,7 +39,8 @@ const ai = createAiRegistry();
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const runtime = getAskDbRuntimeConfig();
-const model = await ai.createLanguageModelFromEnv(runtime.ai.aiEnv);
+// The typed ai.language section from askdb.config.*; no env map in between.
+const model = await ai.createLanguageModelFromSection(runtime.ai.language);
 
 if (!model) throw new Error(ai.keyMissingMessage("NL-to-SQL"));
 
@@ -52,6 +53,10 @@ const result = await ask({
   model,
 });
 ```
+
+### Without a config file
+
+A host with no `askdb.config.*` passes an env map instead: `ai.createLanguageModelFromEnv(process.env)` reads `ASKDB_AI_PROVIDER` (default `openai`), then the API key, model and base URL from the `ASKDB_AI_*` variables first and the provider's own variables (`OPENAI_API_KEY`, …) after them. The [bring-your-own-model guide](https://askdb.tools/guides/bring-your-own-model/#without-a-config-file-the-env-path) lists the precedence. The section and env paths give the same `AiConfig` for the same settings.
 
 ### Custom providers
 
@@ -68,14 +73,15 @@ Bundling: importing `@askdb/ai` reaches every built-in, and each loads its SDK w
 `resolveProviderOptions` maps a provider-portable reasoning effort (`"minimal" | "low" | "medium" | "high"`) to each adapter's native `generateText` `providerOptions` — OpenAI/Azure `reasoningEffort`, Google `thinkingConfig` (`thinkingLevel` for Gemini 3.x, `thinkingBudget` for Gemini 2.5), Anthropic extended or adaptive `thinking`. It returns `undefined` when the effort is unset or the model doesn't support reasoning tuning. The `gateway` provider uses its upstream's mapping for `openai/`, `google/`, and `anthropic/` model ids and returns `undefined` for other upstreams.
 
 ```ts
-const config = ai.resolveAiConfig(runtime.ai.aiEnv)!;
+const config = ai.resolveAiConfigFromSection(runtime.ai.language)!;
 const model = await ai.createLanguageModel(config);
-const providerOptions = ai.resolveProviderOptions(config, { reasoningEffort: "low" });
+const reasoningEffort = resolveReasoningEffortFromSection(runtime.ai.language.reasoning, "nlToSql");
+const providerOptions = reasoningEffort ? ai.resolveProviderOptions(config, { reasoningEffort }) : undefined;
 
 await ask({ question, schema, dialect: "postgres", model, deps: { providerOptions } });
 ```
 
-`resolveReasoningEffort(env, purpose, override)` resolves the effective effort from an explicit override, a call-site env var (`ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` / `_ENRICHMENT`), then the global `ASKDB_AI_REASONING_EFFORT` — set from `askdb.config.ts`'s `ai.language.reasoning` block by `@askdb/config`. See the [config reference](https://askdb.tools/reference/config/#reasoning-effort).
+`resolveReasoningEffortFromSection(reasoning, purpose, override)` resolves the effective effort from an explicit override, the call purpose's own effort (`ai.language.reasoning.nlToSql` / `.enrichment`), then `ai.language.reasoning.effort`. Without a config file, `resolveReasoningEffort(env, purpose, override)` reads the same from `ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` / `_ENRICHMENT`, then `ASKDB_AI_REASONING_EFFORT`. See the [config reference](https://askdb.tools/reference/config/#reasoning-effort).
 
 ## Exports
 
@@ -83,11 +89,12 @@ await ask({ question, schema, dialect: "postgres", model, deps: { providerOption
 - `BUILTIN_AI_PROVIDERS`, `getBuiltinAiProviderSetup`, `listBuiltinAiProviderSetups`
 - the built-in adapters: `openaiProvider`, `azureProvider`, `googleProvider`, `anthropicProvider`, `gatewayProvider`
 - `resolveBaseConfig`
-- registry methods such as `resolveAiConfig`, `resolveEmbeddingConfig`, `createLanguageModelFromEnv`, `createEmbeddingModelFromEnv`, and `resolveProviderOptions`
+- registry methods for a typed config section (`resolveAiConfigFromSection`, `resolveEmbeddingConfigFromSection`, `createLanguageModelFromSection`, `createEmbeddingModelFromSection`), for an env map (`resolveAiConfig`, `resolveEmbeddingConfig`, `createLanguageModelFromEnv`, `createEmbeddingModelFromEnv`), and `resolveProviderOptions`
+- the section types `AiLanguageSection`, `AiEmbeddingSection`, `AiConnectionSection`, `AiReasoningSection`, and `AiModelSection` (what an adapter's optional `resolveConfigFromSection` reads)
 - `aiKeyMissingMessage`
 - `aiProviderMissingMessage`
 - `AiBaseUrlCredentialsError`, thrown when a model base URL holds a username or password
-- `resolveReasoningEffort`, `isReasoningEffort`, `REASONING_EFFORTS`
+- `resolveReasoningEffortFromSection`, `resolveReasoningEffort`, `isReasoningEffort`, `REASONING_EFFORTS`
 
 ## License
 

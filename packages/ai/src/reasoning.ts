@@ -37,9 +37,9 @@ const CALL_PURPOSE_ENV_VAR: Record<AiCallPurpose, string> = {
  * the global `ASKDB_AI_REASONING_EFFORT` > `undefined` (provider/model
  * default — nothing configured).
  *
- * `env` is typically `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config`,
- * already populated by `flattenAskDbConfig` from `askdb.config.*`'s
- * `ai.reasoning` block.
+ * `env` is the host's own env map, for a host without an `askdb.config` file. A host with one
+ * passes `getAskDbRuntimeConfig().ai.language.reasoning` (`askdb.config.*`'s
+ * `ai.language.reasoning`) to {@link resolveReasoningEffortFromSection} instead.
  */
 export function resolveReasoningEffort(
   env: Record<string, string | undefined>,

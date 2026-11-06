@@ -1,6 +1,6 @@
 import {
   createAiRegistry,
-  resolveReasoningEffort,
+  resolveReasoningEffortFromSection,
   type AiConfig,
   type AiProviderAdapters,
   type AiRegistry,
@@ -61,7 +61,7 @@ export type AskOverrides = Omit<
   dialect?: AskDialectInput;
   /**
    * Provider-portable reasoning/latency effort for this call, overriding the
-   * client default and `askdb.config.ts`'s `ai.reasoning.nlToSql`/`effort`.
+   * client default and `askdb.config.ts`'s `ai.language.reasoning.nlToSql`/`effort`.
    * Ignored when `model` or `deps.generateText` is also set (BYO paths).
    */
   reasoningEffort?: ReasoningEffort;
@@ -115,7 +115,7 @@ export type CreateAskDbOptions = {
   /**
    * Client-level default reasoning/latency effort for NL→SQL generation
    * (`ask()`). When set, takes precedence over `askdb.config.ts`'s
-   * `ai.reasoning.nlToSql`/`effort` env resolution; overridden per-call by
+   * `ai.language.reasoning.nlToSql`/`effort`; overridden per-call by
    * `AskOverrides.reasoningEffort`.
    */
   reasoningEffort?: ReasoningEffort;
@@ -261,14 +261,14 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       };
     }
     if (!cachedAiConfig) {
-      cachedAiConfig = registry.resolveAiConfig(config.ai.aiEnv);
+      cachedAiConfig = registry.resolveAiConfigFromSection(config.ai.language);
       if (!cachedAiConfig) throw new ModelNotConfiguredError(registry.keyMissingMessage("NL→SQL generation"));
     }
     if (!cachedModel) {
       cachedModel = await registry.createLanguageModel(cachedAiConfig);
     }
-    const reasoningEffort = resolveReasoningEffort(
-      config.ai.aiEnv,
+    const reasoningEffort = resolveReasoningEffortFromSection(
+      config.ai.language.reasoning,
       "nlToSql",
       reasoningEffortOverride ?? options.reasoningEffort,
     );

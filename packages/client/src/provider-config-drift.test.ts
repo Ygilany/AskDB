@@ -1,12 +1,13 @@
 /**
- * `@askdb/config` keeps its own AI provider list, default models, and env var
- * names: it is the zero-AI bootstrap layer and must not depend on `@askdb/ai`
- * at runtime. `@askdb/client` depends on both, so the guard that the two agree
- * lives here rather than as an upward edge from `@askdb/ai` to `@askdb/config`.
+ * `@askdb/config` keeps its own AI provider list and default language models: it is the zero-AI
+ * bootstrap layer and must not depend on `@askdb/ai` at runtime, nor `@askdb/ai` on it. `@askdb/client`
+ * depends on both, so the guard that the two agree lives here.
  *
- * Each provider's `askdb.config.*` connection is flattened (and, for embeddings, turned into
- * the `ai.embedding` env view) and then resolved by the registry the client uses, so an env
- * var name that `@askdb/config` writes but the provider doesn't read (or the reverse) fails here.
+ * Each provider's `askdb.config.*` connection is resolved to the runtime view, whose
+ * `ai.language` / `ai.embedding` sections go to the registry's `*FromSection` methods as they are
+ * (the client's own `resolveAiConfigFromSection(config.ai.language)` call is the compile-time
+ * check that they fit `AiLanguageSection`). A field `@askdb/config` names one way and the
+ * provider reads another fails here.
  */
 import {
   AiBaseUrlCredentialsError,
@@ -18,7 +19,6 @@ import {
 import {
   ASKDB_AI_PROVIDERS,
   defineConfig,
-  flattenAskDbConfig,
   getAskDbRuntimeConfig,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
@@ -71,57 +71,13 @@ describe("@askdb/config agrees with @askdb/ai's built-in provider table", () => 
 
   afterEach(() => resetAskDbRuntimeForTests());
 
-  it.each([...ASKDB_AI_PROVIDERS])(
-    "the %s connection round-trips its API key, base URL, and default model through the provider",
-    (provider) => {
-      const azureLike = provider === "azure" || provider === "foundry";
-      const flat = flattenAskDbConfig(
-        configFor(provider, {
-          apiKey: "k",
-          baseUrl: "https://proxy.example/v1",
-          ...(azureLike ? { resourceName: "my-resource" } : {}),
-        }),
-      );
-      const resolved = createAiRegistry().resolveAiConfig(flat);
-      const row = BUILTIN_AI_PROVIDERS.find((r) => r.provider === resolved?.provider);
-      expect(resolved).toMatchObject({ apiKey: "k", baseURL: "https://proxy.example/v1" });
-      expect(resolved?.model, "config's default model").toBe(row?.env.defaultModel);
-    },
-  );
-
-  // A model the provider falls back to by default can't show which env var flatten wrote,
-  // so this one is never a default.
-  it.each([...ASKDB_AI_PROVIDERS])("the %s language model reaches the provider", (provider) => {
-    const azureLike = provider === "azure" || provider === "foundry";
-    const flat = flattenAskDbConfig(
-      configFor(
-        provider,
-        { apiKey: "k", ...(azureLike ? { resourceName: "my-resource" } : {}) },
-        { language: { model: "not-a-default-model" } },
-      ),
-    );
-    expect(createAiRegistry().resolveAiConfig(flat)?.model).toBe("not-a-default-model");
+  // Q15 B: config fills in the default language model itself, so it must be the provider's own.
+  it.each([...ASKDB_AI_PROVIDERS])("the %s language section gets the provider's default model", (provider) => {
+    setAskDbRuntimeForTests(configFor(provider, { apiKey: "k", ...(azureLike(provider) ? AZURE_CONNECTION : {}) }));
+    const resolved = createAiRegistry().resolveAiConfigFromSection(getAskDbRuntimeConfig().ai.language);
+    const row = BUILTIN_AI_PROVIDERS.find((r) => r.provider === resolved?.provider);
+    expect(resolved?.model).toBe(row?.env.defaultModel);
   });
-
-  // Anthropic has no embeddings API, so config refuses it as the ai.embedding provider.
-  it.each(ASKDB_AI_PROVIDERS.filter((provider) => provider !== "anthropic"))(
-    "the %s embedding env view round-trips its connection and embedding model through the provider",
-    (provider) => {
-      const azureLike = provider === "azure" || provider === "foundry";
-      const structured = configFor(
-        provider,
-        { apiKey: "k", baseUrl: "https://proxy.example/v1", ...(azureLike ? { resourceName: "my-resource" } : {}) },
-        { embedding: { model: "not-a-default-embedding-model", dimensions: 8 } },
-      );
-      setAskDbRuntimeForTests(structured);
-      const embedding = getAskDbRuntimeConfig().ai.embedding;
-      expect(createAiRegistry().resolveEmbeddingConfig(embedding?.env ?? {})).toMatchObject({
-        apiKey: "k",
-        baseURL: "https://proxy.example/v1",
-        model: "not-a-default-embedding-model",
-      });
-    },
-  );
 
   // A host with a config file passes `rt.ai.language` / `rt.ai.embedding` as typed sections; a host
   // without one sets env. Both must reach the same AiConfig, for every provider config knows.

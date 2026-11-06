@@ -18,7 +18,7 @@ import {
 } from "@askdb/config/scaffold";
 import {
   createAiRegistry,
-  resolveReasoningEffort,
+  resolveReasoningEffortFromSection,
   type AiConfig,
   type AiProvider,
 } from "@askdb/ai";
@@ -406,10 +406,10 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
   const rt = getAskDbRuntimeConfig();
   const aiConfig = (() => {
     try {
-      return ai.resolveAiConfig(rt.ai.aiEnv);
+      return ai.resolveAiConfigFromSection(rt.ai.language);
     } catch {
-      // A misconfigured AI env (e.g. azure without resourceName) shouldn't crash the workspace
-      // listing — surface it as "not configured" in the UI and let the user fix .env.
+      // A misconfigured AI section (e.g. azure without resourceName) shouldn't crash the workspace
+      // listing — surface it as "not configured" in the UI and let the user fix askdb.config.
       return undefined;
     }
   })();
@@ -702,12 +702,12 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 
 async function suggestForSource(state: StudioState, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const rt = getAskDbRuntimeConfig();
-  const aiConfig = ai.resolveAiConfig(rt.ai.aiEnv);
+  const aiConfig = ai.resolveAiConfigFromSection(rt.ai.language);
   if (!aiConfig) {
     throw new StudioHttpError(400, ai.keyMissingMessage("AI enrichment suggestions"));
   }
   const model = await ai.createLanguageModel(aiConfig);
-  const reasoningEffort = resolveReasoningEffort(rt.ai.aiEnv, "enrichment");
+  const reasoningEffort = resolveReasoningEffortFromSection(rt.ai.language.reasoning, "enrichment");
   const providerOptions = reasoningEffort
     ? ai.resolveProviderOptions(aiConfig, { reasoningEffort })
     : undefined;
@@ -819,7 +819,7 @@ function tenantPolicySchemaForPrompt(
 
 async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTenantPolicyResponse> {
   const rt = getAskDbRuntimeConfig();
-  const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
+  const model = await ai.createLanguageModelFromSection(rt.ai.language);
   if (!model) {
     throw new StudioHttpError(400, ai.keyMissingMessage("AI tenant policy suggestion"));
   }
@@ -908,14 +908,14 @@ async function askSampleQuestion(
 ): Promise<AskResponse> {
   const rt = getAskDbRuntimeConfig();
   const mockSql = rt.dev.mockSql;
-  const aiConfig = mockSql ? undefined : ai.resolveAiConfig(rt.ai.aiEnv);
+  const aiConfig = mockSql ? undefined : ai.resolveAiConfigFromSection(rt.ai.language);
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
       `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set dev.mockSql in askdb.config to bypass the live model.`,
     );
   }
-  const reasoningEffort = mockSql ? undefined : resolveReasoningEffort(rt.ai.aiEnv, "nlToSql");
+  const reasoningEffort = mockSql ? undefined : resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql");
   const providerOptions =
     aiConfig && reasoningEffort ? ai.resolveProviderOptions(aiConfig, { reasoningEffort }) : undefined;
 
@@ -928,7 +928,7 @@ async function askSampleQuestion(
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
-    : ((await ai.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
+    : ((await ai.createLanguageModel(aiConfig!)) as AskModel);
 
   const schemaProvider =
     "provider" in schema && typeof schema.provider === "string"
@@ -1315,8 +1315,8 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     };
   }
 
-  // The env holds the embedding connection only, so no other provider's key can reach it (#345).
-  const aiConfig = ai.resolveEmbeddingConfig(embedding.env);
+  // The section holds the embedding connection only, so no other provider's key can reach it (#345).
+  const aiConfig = ai.resolveEmbeddingConfigFromSection(embedding);
   // The adapter's canonical name (`foundry` resolves to `azure`) keeps existing index ids stable.
   const provider = aiConfig?.provider ?? embedding.provider;
   const model = embedding.model;

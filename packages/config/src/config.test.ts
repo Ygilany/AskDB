@@ -19,7 +19,7 @@ import {
 } from "./index.js";
 import type { AskDbRuntimeConfig } from "./index.js";
 import { renderAskDbAiConfigScaffold } from "./scaffold/index.js";
-import { linkWorkspacePackage } from "./test-utils.js";
+import { linkWorkspacePackage, resolvedRuntimeText } from "./test-utils.js";
 import type { AskDbConfig } from "./types.js";
 
 function minimalConfig(overrides: Partial<AskDbConfig> = {}): AskDbConfig {
@@ -95,7 +95,6 @@ describe("env helpers", () => {
 describe("flattenAskDbConfig", () => {
   it("maps openai + mock rag + memory store", () => {
     const flat = flattenAskDbConfig(minimalConfig());
-    expect(flat.OPENAI_API_KEY).toBe("k");
     expect(flat.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/db");
     expect(flat.ASKDB_RAG_EMBEDDER).toBe("mock");
     expect(flat.ASKDB_INTROSPECT_OUT).toBe("./askdb/");
@@ -151,19 +150,6 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_INTROSPECT_SQLSERVER_URL).toBe("Server=localhost;Database=app;");
   });
 
-  it("defaults OpenAI language model when model omitted", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "openai",
-          providerConfig: { openai: { apiKey: "k" } },
-        },
-      }),
-    );
-    expect(flat.OPENAI_MODEL).toBe("gpt-4o-mini");
-    expect(flat.ASKDB_MODEL).toBe("gpt-4o-mini");
-  });
-
   it("omits ASKDB_INTROSPECT_POSTGRES_URL when postgres databaseUrl is not set", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
@@ -192,116 +178,25 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_RAG_FILE_BASE_PATH).toBeUndefined();
   });
 
-  it("defaults the gateway model to openai/gpt-4o-mini and requires its branch", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
-      }),
-    );
-    expect(flat.ASKDB_AI_MODEL).toBe("openai/gpt-4o-mini");
+  it("requires a built-in provider's connection", () => {
     expect(() =>
       flattenAskDbConfig(minimalConfig({ ai: { provider: "gateway" } as never })),
     ).toThrow(/ai\.providerConfig\.gateway is required/);
   });
 
-  it("defaults anthropic model to claude-sonnet-4-6 when model omitted", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "anthropic",
-          providerConfig: {
-            anthropic: { apiKey: "ant-key" },
-          },
-        },
-      }),
-    );
-    expect(flat.ASKDB_AI_MODEL).toBe("claude-sonnet-4-6");
-  });
-
-  it("flattens azure modelFamily override to ASKDB_AI_AZURE_MODEL_FAMILY", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "azure",
-          providerConfig: {
-            azure: {
-              apiKey: "k",
-              baseUrl: "https://askdb-ai.openai.azure.com",
-            },
-          },
-          language: { model: "askdb-reporting", modelFamily: "gpt-5" },
-        },
-      }),
-    );
-    expect(flat.AZURE_OPENAI_DEPLOYMENT).toBe("askdb-reporting");
-    expect(flat.ASKDB_AI_AZURE_MODEL_FAMILY).toBe("gpt-5");
-  });
-
-  it.each(["azure", "foundry"] as const)(
-    "flattens %s resourceName/baseUrl/apiVersion to the env keys the Azure adapter reads",
-    (provider) => {
-      const flat = flattenAskDbConfig(
-        minimalConfig({
-          ai: {
-            provider,
-            providerConfig: {
-              [provider]: {
-                apiKey: "k",
-                resourceName: "my-foundry",
-                baseUrl: "https://my-foundry.openai.azure.com/openai",
-                apiVersion: "2025-04-01-preview",
-              },
-            },
-          } as AskDbConfig["ai"],
-        }),
-      );
-      expect(flat.ASKDB_AI_PROVIDER).toBe(provider);
-      expect(flat.ASKDB_AI_AZURE_RESOURCE_NAME).toBe("my-foundry");
-      expect(flat.AZURE_OPENAI_BASE_URL).toBe("https://my-foundry.openai.azure.com/openai");
-      expect(flat.AZURE_OPENAI_API_VERSION).toBe("2025-04-01-preview");
-    },
-  );
-
-  it("omits ASKDB_AI_AZURE_RESOURCE_NAME when azure resourceName is unset", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "azure",
-          providerConfig: { azure: { apiKey: "k", baseUrl: "https://x.openai.azure.com" } },
-        },
-      }),
-    );
-    expect(flat).not.toHaveProperty("ASKDB_AI_AZURE_RESOURCE_NAME");
-  });
-
-  it("flattens a custom provider string to universal ASKDB_AI_* keys", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "mistral",
-          providerConfig: {
-            mistral: { apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1" },
-          },
-          language: { model: "mistral-large-2" },
-        },
-      }),
-    );
-    expect(flat.ASKDB_AI_PROVIDER).toBe("mistral");
-    expect(flat.ASKDB_AI_API_KEY).toBe("mistral-key");
-    expect(flat.ASKDB_AI_MODEL).toBe("mistral-large-2");
-    expect(flat.ASKDB_AI_BASE_URL).toBe("https://api.mistral.ai/v1");
-  });
-
-  it("sets ASKDB_AI_PROVIDER for custom provider even when providerConfig is absent", () => {
-    const flat = flattenAskDbConfig(
-      minimalConfig({
-        ai: {
-          provider: "bedrock",
-        },
-      }),
-    );
-    expect(flat.ASKDB_AI_PROVIDER).toBe("bedrock");
-    expect(flat.ASKDB_AI_API_KEY).toBeUndefined();
+  // The `ai` block reaches @askdb/ai as typed sections (`rt.ai.language`, `rt.ai.embedding`), so
+  // nothing in it reaches a child process's env through the flat map.
+  it("writes no AI keys, whatever the ai block holds", () => {
+    const azure = minimalConfig({
+      ai: {
+        provider: "azure",
+        providerConfig: { azure: { apiKey: "k", resourceName: "eastus", baseUrl: "https://eastus.openai.azure.com" } },
+        language: { model: "askdb-reporting", modelFamily: "gpt-5", reasoning: { effort: "low" } },
+        embedding: { model: "text-embedding-3-small" },
+      },
+      rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
+    });
+    expect(flattenAskDbConfig(azure)).toEqual(flattenAskDbConfig(minimalConfig()));
   });
 
   it("throws a clear error when openai provider has no providerConfig", () => {
@@ -326,36 +221,6 @@ describe("flattenAskDbConfig", () => {
   });
 
   describe("ai.language.reasoning", () => {
-    it("flattens the global effort to ASKDB_AI_REASONING_EFFORT", () => {
-      const flat = flattenAskDbConfig(
-        minimalConfig({
-          ai: {
-            provider: "openai",
-            providerConfig: { openai: { apiKey: "k" } },
-            language: { reasoning: { effort: "medium" } },
-          },
-        }),
-      );
-      expect(flat.ASKDB_AI_REASONING_EFFORT).toBe("medium");
-      expect(flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBeUndefined();
-      expect(flat.ASKDB_AI_REASONING_EFFORT_ENRICHMENT).toBeUndefined();
-    });
-
-    it("flattens per-call-site overrides independently of the global effort", () => {
-      const flat = flattenAskDbConfig(
-        minimalConfig({
-          ai: {
-            provider: "openai",
-            providerConfig: { openai: { apiKey: "k" } },
-            language: { reasoning: { effort: "medium", nlToSql: "high", enrichment: "low" } },
-          },
-        }),
-      );
-      expect(flat.ASKDB_AI_REASONING_EFFORT).toBe("medium");
-      expect(flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBe("high");
-      expect(flat.ASKDB_AI_REASONING_EFFORT_ENRICHMENT).toBe("low");
-    });
-
     it("throws a clear error for an invalid reasoning effort value", () => {
       expect(() =>
         flattenAskDbConfig(
@@ -369,6 +234,108 @@ describe("flattenAskDbConfig", () => {
         ),
       ).toThrow(/invalid ai\.language\.reasoning value "ultra"/);
     });
+  });
+});
+
+describe("getAskDbRuntimeConfig — the ai.language section", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  const NO_EXTRAS = { modelFamily: undefined, reasoning: undefined };
+
+  // The section goes to @askdb/ai's resolveAiConfigFromSection as it is, so every field is pinned.
+  it.each<[string, AskDbConfig["ai"], AskDbRuntimeConfig["ai"]["language"]]>([
+    [
+      "openai, with its default model",
+      { provider: "openai", providerConfig: { openai: { apiKey: "k", baseUrl: "https://proxy.example/v1" } } },
+      { provider: "openai", connection: { name: "default", apiKey: "k", baseUrl: "https://proxy.example/v1" }, model: "gpt-4o-mini", ...NO_EXTRAS },
+    ],
+    [
+      "anthropic, with its default model",
+      { provider: "anthropic", providerConfig: { anthropic: { apiKey: "ant-key" } } },
+      { provider: "anthropic", connection: { name: "default", apiKey: "ant-key" }, model: "claude-sonnet-4-6", ...NO_EXTRAS },
+    ],
+    [
+      "google, with its default model",
+      { provider: "google", providerConfig: { google: { apiKey: "g-key" } } },
+      { provider: "google", connection: { name: "default", apiKey: "g-key" }, model: "gemini-2.0-flash", ...NO_EXTRAS },
+    ],
+    [
+      "gateway, with its default model",
+      { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
+      { provider: "gateway", connection: { name: "default", apiKey: "gw-key" }, model: "openai/gpt-4o-mini", ...NO_EXTRAS },
+    ],
+    [
+      "azure, every connection field, a deployment and a model family",
+      {
+        provider: "azure",
+        providerConfig: {
+          azure: {
+            apiKey: " az-key ",
+            secondaryApiKey: "az-key-2",
+            resourceName: "eastus-chat",
+            baseUrl: "https://eastus-chat.openai.azure.com/openai",
+            apiVersion: "2025-04-01-preview",
+          },
+        },
+        language: { model: "askdb-reporting", modelFamily: "gpt-5" },
+      },
+      {
+        provider: "azure",
+        connection: {
+          name: "default",
+          apiKey: "az-key",
+          apiKeySecondary: "az-key-2",
+          resourceName: "eastus-chat",
+          baseUrl: "https://eastus-chat.openai.azure.com/openai",
+          apiVersion: "2025-04-01-preview",
+        },
+        model: "askdb-reporting",
+        modelFamily: "gpt-5",
+        reasoning: undefined,
+      },
+    ],
+    [
+      "foundry, with Azure's default deployment and no blank settings",
+      { provider: "foundry", providerConfig: { foundry: { apiKey: "fd-key", resourceName: "my-foundry", apiVersion: " " } } },
+      { provider: "foundry", connection: { name: "default", apiKey: "fd-key", resourceName: "my-foundry" }, model: "gpt-4o-mini", ...NO_EXTRAS },
+    ],
+    [
+      "a custom provider keyed by its id",
+      {
+        provider: "mistral",
+        providerConfig: { mistral: { apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1" } },
+        language: { model: "mistral-large-2" },
+      },
+      {
+        provider: "mistral",
+        connection: { name: "default", apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1" },
+        model: "mistral-large-2",
+        ...NO_EXTRAS,
+      },
+    ],
+    [
+      "a custom provider with no connection and no model",
+      { provider: "bedrock" },
+      { provider: "bedrock", connection: { name: "default" }, model: undefined, ...NO_EXTRAS },
+    ],
+    [
+      "a named connection and reasoning efforts",
+      {
+        provider: "openai",
+        providerConfig: { openai: [{ apiKey: "k" }, { name: "eu", apiKey: "eu-key" }] },
+        language: { connection: "eu", model: "o3-mini", reasoning: { effort: "medium", nlToSql: "high", enrichment: "low" } },
+      },
+      {
+        provider: "openai",
+        connection: { name: "eu", apiKey: "eu-key" },
+        model: "o3-mini",
+        modelFamily: undefined,
+        reasoning: { effort: "medium", nlToSql: "high", enrichment: "low" },
+      },
+    ],
+  ])("resolves %s", (_name, ai, expected) => {
+    setAskDbRuntimeForTests(minimalConfig({ ai }));
+    expect(getAskDbRuntimeConfig().ai.language).toEqual(expected);
   });
 });
 
@@ -561,13 +528,6 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
     return getAskDbRuntimeConfig();
   }
 
-  /** The env map without the RAG and introspection keys, which no `ai` section writes. */
-  function aiKeys<V>(env: Record<string, V>): Record<string, V> {
-    return Object.fromEntries(
-      Object.entries(env).filter(([key]) => !key.startsWith("ASKDB_RAG_") && !key.startsWith("ASKDB_INTROSPECT_")),
-    );
-  }
-
   describe("regressions", () => {
     it("refuses to move a legacy RAG key to a provider other than openai, azure, foundry or gateway (#345)", () => {
       const config = minimalConfig({
@@ -591,7 +551,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
       expect(message).not.toContain("sk-rag-secret");
     });
 
-    it("builds the embedding env from the embedding connection only, leaving the language view unchanged", () => {
+    it("gives the embedding section the embedding connection only, leaving the language section unchanged", () => {
       const ai: AskDbConfig["ai"] = {
         provider: "anthropic",
         providerConfig: {
@@ -605,13 +565,14 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
         }),
       );
-      expect(withEmbedding.ai.embedding?.env).toEqual({
-        ASKDB_AI_PROVIDER: "openai",
-        OPENAI_API_KEY: "oai-key",
-        ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-small",
+      expect(withEmbedding.ai.embedding).toMatchObject({
+        provider: "openai",
+        connection: { name: "default", apiKey: "oai-key" },
+        model: "text-embedding-3-small",
       });
       const languageOnly = runtimeFor(minimalConfig({ ai }));
-      expect(aiKeys(withEmbedding.ai.aiEnv)).toEqual(aiKeys(languageOnly.ai.aiEnv));
+      expect(withEmbedding.ai.language).toEqual(languageOnly.ai.language);
+      expect(withEmbedding.ai.language.connection).toEqual({ name: "default", apiKey: "ant-key" });
     });
 
     it("gives the RAG CLI no key or base URL from a custom language provider", () => {
@@ -634,26 +595,26 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
       provider: "openai",
       providerConfig: { openai: { apiKey: "oai-key", baseUrl: "https://oai.example/v1", model: "gpt-4o" } },
     };
-    const OPENAI_LANGUAGE_KEYS = {
-      ASKDB_AI_PROVIDER: "openai",
-      OPENAI_API_KEY: "oai-key",
-      OPENAI_BASE_URL: "https://oai.example/v1",
-      OPENAI_MODEL: "gpt-4o",
-      ASKDB_MODEL: "gpt-4o",
+    const OPENAI_LANGUAGE: AskDbRuntimeConfig["ai"]["language"] = {
+      provider: "openai",
+      connection: { name: "default", apiKey: "oai-key", baseUrl: "https://oai.example/v1" },
+      model: "gpt-4o",
+      modelFamily: undefined,
+      reasoning: undefined,
     };
 
     function config(ai: AskDbConfig["ai"], rag: AskDbConfig["rag"] = MOCK_RAG): AskDbConfig {
       return { ...minimalConfig(), ai, rag };
     }
 
-    // Expected maps are what `flattenAskDbConfig` produced on main before the sections existed.
-    it.each<[string, AskDbConfig["ai"], AskDbConfig["rag"], Record<string, string>]>([
-      ["openai", OPENAI_AI, MOCK_RAG, OPENAI_LANGUAGE_KEYS],
+    // Each legacy key translates to the language section the current shape gives.
+    it.each<[string, AskDbConfig["ai"], AskDbConfig["rag"], AskDbRuntimeConfig["ai"]["language"]]>([
+      ["openai", OPENAI_AI, MOCK_RAG, OPENAI_LANGUAGE],
       [
         "openai with a legacy rag.embedder and its own key",
         OPENAI_AI,
         { embedder: "openai", embedderConfig: { openai: { apiKey: "rag-key" } }, store: "memory", storeConfig: { memory: {} } },
-        OPENAI_LANGUAGE_KEYS,
+        OPENAI_LANGUAGE,
       ],
       [
         "azure with modelFamily",
@@ -662,10 +623,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           providerConfig: {
             azure: {
               apiKey: "az-key",
-              secondaryApiKey: "az-key-2",
               resourceName: "eastus-chat",
-              baseUrl: "https://eastus-chat.openai.azure.com/openai",
-              apiVersion: "2025-04-01-preview",
               model: "askdb-reporting",
               modelFamily: "gpt-5",
             },
@@ -673,65 +631,11 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         },
         MOCK_RAG,
         {
-          ASKDB_AI_PROVIDER: "azure",
-          AZURE_OPENAI_API_KEY: "az-key",
-          AZURE_OPENAI_API_KEY_SECONDARY: "az-key-2",
-          AZURE_OPENAI_DEPLOYMENT: "askdb-reporting",
-          AZURE_DEPLOYMENT_NAME: "askdb-reporting",
-          ASKDB_AI_MODEL: "askdb-reporting",
-          ASKDB_AI_AZURE_RESOURCE_NAME: "eastus-chat",
-          AZURE_OPENAI_BASE_URL: "https://eastus-chat.openai.azure.com/openai",
-          AZURE_OPENAI_API_VERSION: "2025-04-01-preview",
-          ASKDB_AI_AZURE_MODEL_FAMILY: "gpt-5",
-        },
-      ],
-      [
-        "foundry with the default deployment",
-        { provider: "foundry", providerConfig: { foundry: { apiKey: "fd-key", resourceName: "my-foundry" } } },
-        MOCK_RAG,
-        {
-          ASKDB_AI_PROVIDER: "foundry",
-          AZURE_OPENAI_API_KEY: "fd-key",
-          AZURE_OPENAI_DEPLOYMENT: "gpt-4o-mini",
-          AZURE_DEPLOYMENT_NAME: "gpt-4o-mini",
-          ASKDB_AI_MODEL: "gpt-4o-mini",
-          ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-        },
-      ],
-      [
-        "anthropic",
-        { provider: "anthropic", providerConfig: { anthropic: { apiKey: "ant-key", baseUrl: "https://ant.example", model: "claude-opus-4-8" } } },
-        MOCK_RAG,
-        {
-          ASKDB_AI_PROVIDER: "anthropic",
-          ANTHROPIC_API_KEY: "ant-key",
-          ANTHROPIC_BASE_URL: "https://ant.example",
-          ASKDB_AI_MODEL: "claude-opus-4-8",
-        },
-      ],
-      [
-        "google with the default model",
-        { provider: "google", providerConfig: { google: { apiKey: "g-key", baseUrl: "https://g.example" } } },
-        MOCK_RAG,
-        {
-          ASKDB_AI_PROVIDER: "google",
-          GOOGLE_GENERATIVE_AI_API_KEY: "g-key",
-          GOOGLE_AI_BASE_URL: "https://g.example",
-          ASKDB_AI_MODEL: "gemini-2.0-flash",
-        },
-      ],
-      [
-        "gateway",
-        {
-          provider: "gateway",
-          providerConfig: { gateway: { apiKey: "gw-key", baseUrl: "https://gw.example/v3/ai", model: "anthropic/claude-sonnet-4-6" } },
-        },
-        MOCK_RAG,
-        {
-          ASKDB_AI_PROVIDER: "gateway",
-          AI_GATEWAY_API_KEY: "gw-key",
-          ASKDB_AI_BASE_URL: "https://gw.example/v3/ai",
-          ASKDB_AI_MODEL: "anthropic/claude-sonnet-4-6",
+          provider: "azure",
+          connection: { name: "default", apiKey: "az-key", resourceName: "eastus-chat" },
+          model: "askdb-reporting",
+          modelFamily: "gpt-5",
+          reasoning: undefined,
         },
       ],
       [
@@ -742,10 +646,11 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         },
         MOCK_RAG,
         {
-          ASKDB_AI_PROVIDER: "mistral",
-          ASKDB_AI_API_KEY: "mistral-key",
-          ASKDB_AI_BASE_URL: "https://api.mistral.ai/v1",
-          ASKDB_AI_MODEL: "mistral-large-2",
+          provider: "mistral",
+          connection: { name: "default", apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1" },
+          model: "mistral-large-2",
+          modelFamily: undefined,
+          reasoning: undefined,
         },
       ],
       [
@@ -757,17 +662,15 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         },
         MOCK_RAG,
         {
-          ASKDB_AI_PROVIDER: "openai",
-          OPENAI_API_KEY: "oai-key",
-          OPENAI_MODEL: "gpt-4o-mini",
-          ASKDB_MODEL: "gpt-4o-mini",
-          ASKDB_AI_REASONING_EFFORT: "low",
-          ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "high",
-          ASKDB_AI_REASONING_EFFORT_ENRICHMENT: "minimal",
+          provider: "openai",
+          connection: { name: "default", apiKey: "oai-key" },
+          model: "gpt-4o-mini",
+          modelFamily: undefined,
+          reasoning: { effort: "low", nlToSql: "high", enrichment: "minimal" },
         },
       ],
-    ])("a legacy %s config flattens to the same language keys as before", (_name, ai, rag, expected) => {
-      expect(aiKeys(flattenAskDbConfig(config(ai, rag)))).toEqual(expected);
+    ])("a legacy %s config resolves to the same language section", (_name, ai, rag, expected) => {
+      expect(runtimeFor(config(ai, rag)).ai.language).toEqual(expected);
     });
 
     it.each([
@@ -785,9 +688,8 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
             storeConfig: { memory: {} },
           }),
         );
-        expect(rt.ai.embedding).toMatchObject({ provider: "openai", connection: { name: connection }, model: "text-embedding-3-small" });
-        expect(rt.ai.embedding?.env.OPENAI_API_KEY).toBe(ragKey);
-        expect(rt.ai.embedding?.env.OPENAI_BASE_URL).toBe(baseUrl);
+        expect(rt.ai.embedding).toMatchObject({ provider: "openai", model: "text-embedding-3-small" });
+        expect(rt.ai.embedding?.connection).toEqual({ name: connection, apiKey: ragKey, ...(baseUrl ? { baseUrl } : {}) });
         expect(rt.rag.embedder.apiKey).toBe(ragKey);
       },
     );
@@ -810,12 +712,6 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pgvector/db" } } },
       } satisfies AskDbConfig;
       const rt = runtimeFor(designExample);
-      expect(rt.ai.embedding?.env).toEqual({
-        ASKDB_AI_PROVIDER: "azure",
-        AZURE_OPENAI_API_KEY: "embed-key",
-        ASKDB_AI_AZURE_RESOURCE_NAME: "westus-embed",
-        ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-small",
-      });
       expect(rt.ai.embedding?.connection).toEqual({ name: "westus", apiKey: "embed-key", resourceName: "westus-embed" });
       expect(rt.ai.language).toMatchObject({
         provider: "anthropic",
@@ -823,7 +719,6 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         model: "claude-sonnet-4-6",
         reasoning: { effort: "low", nlToSql: "medium" },
       });
-      expect(rt.ai.language.env.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBe("medium");
       expect(rt.ai.embedding?.dimensions).toBe(1536);
       expect(rt.deprecations).toEqual([]);
     });
@@ -840,11 +735,10 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           },
         ),
       );
-      expect(rt.ai.embedding).toMatchObject({ provider: "gateway", model: "openai/text-embedding-3-small" });
-      expect(rt.ai.embedding?.env).toEqual({
-        ASKDB_AI_PROVIDER: "gateway",
-        AI_GATEWAY_API_KEY: "gw-key",
-        ASKDB_AI_EMBEDDING_MODEL: "openai/text-embedding-3-small",
+      expect(rt.ai.embedding).toMatchObject({
+        provider: "gateway",
+        connection: { name: "default", apiKey: "gw-key" },
+        model: "openai/text-embedding-3-small",
       });
       expect(rt.ai.embedding?.dimensions).toBeUndefined();
     });
@@ -1075,7 +969,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
       const { language } = runtimeFor(legacy).ai;
       expect(language.model).toBe("askdb-reporting");
       expect(language.modelFamily).toBe("gpt-5");
-      expect(language.env.ASKDB_AI_REASONING_EFFORT).toBe("low");
+      expect(language.reasoning).toEqual({ effort: "low" });
     });
 
     it("prefers ai.language.model over a legacy provider model, and says the legacy one is ignored", () => {
@@ -1165,16 +1059,15 @@ ${scaffold.source}
       for (const name of names) process.env[name] = `value-of-${name}`;
       try {
         const { projection } = loadAskDbConfigProjectionSync(dir);
-        expect(projection?.entries.ASKDB_AI_PROVIDER).toBe(provider);
         expect(projection?.deprecations).toEqual([]);
-        const values = Object.values(projection?.entries ?? {});
-        for (const name of names) expect(values).toContain(`value-of-${name}`);
+        const resolved = resolvedRuntimeText(projection!.config);
+        for (const name of names) expect(resolved).toContain(`"value-of-${name}"`);
+        const { language } = getAskDbRuntimeConfig().ai;
+        expect(language.provider).toBe(provider);
         // Azure / Foundry can't start without a resource name or endpoint.
         const isAzure = provider === "azure" || provider === "foundry";
         expect(names.includes("AZURE_RESOURCE_NAME")).toBe(isAzure);
-        if (isAzure) {
-          expect(projection?.entries.ASKDB_AI_AZURE_RESOURCE_NAME).toBe("value-of-AZURE_RESOURCE_NAME");
-        }
+        if (isAzure) expect(language.connection.resourceName).toBe("value-of-AZURE_RESOURCE_NAME");
       } finally {
         for (const name of names) delete process.env[name];
       }
@@ -1198,7 +1091,8 @@ ${scaffold.source}
     expect(projection?.deprecations).toEqual([
       "askdb.config: ai.reasoning is deprecated; move it to ai.language.reasoning.",
     ]);
-    expect(projection?.entries.ASKDB_AI_REASONING_EFFORT).toBe("low");
+    setAskDbRuntimeForTests(projection!.config);
+    expect(getAskDbRuntimeConfig().ai.language.reasoning).toEqual({ effort: "low" });
   });
 
   // #626: a config that can't load fails with an error that names the file and what is wrong,
@@ -1252,7 +1146,8 @@ ${scaffold.source}
       "utf8",
     );
     const { projection } = loadAskDbConfigProjectionSync(dir);
-    expect(projection?.entries.OPENAI_API_KEY).toBe("from-cjs");
+    setAskDbRuntimeForTests(projection!.config);
+    expect(getAskDbRuntimeConfig().ai.language.connection.apiKey).toBe("from-cjs");
   });
 
   // The async loader imports .mjs with native import(), not jiti, so its own path gets its own cases.
@@ -1467,7 +1362,7 @@ describe("bootstrapAskDbEnv", () => {
     bootstrapAskDbEnv({ cwd: dir });
     expect(isAskDbRuntimeInitialized()).toBe(true);
     const rt = getAskDbRuntimeConfig();
-    expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("dog");
+    expect(rt.ai.language.connection.apiKey).toBe("dog");
     expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://localhost/db");
     delete process.env.MY_AI;
     delete process.env.MY_DB;
@@ -1496,7 +1391,7 @@ describe("bootstrapAskDbEnv", () => {
 
       bootstrapAskDbEnv({ cwd: dir });
       const rt = getAskDbRuntimeConfig();
-      expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe(`key-${ext}`);
+      expect(rt.ai.language.connection.apiKey).toBe(`key-${ext}`);
       expect(rt.introspection.postgresDatabaseUrl).toBe(`postgres://localhost/${ext}`);
       expect(rt.introspection.outputDir).toBe("./askdb/");
     },
@@ -1526,7 +1421,7 @@ describe("bootstrapAskDbEnv", () => {
         [message, { type: "DeprecationWarning", code: "ASKDB_CONFIG_DEPRECATED" }],
       ]);
       expect(getAskDbRuntimeConfig().deprecations).toEqual([message]);
-      expect(getAskDbRuntimeConfig().ai.language.env.ASKDB_AI_REASONING_EFFORT).toBe("low");
+      expect(getAskDbRuntimeConfig().ai.language.reasoning).toEqual({ effort: "low" });
     } finally {
       emitWarning.mockRestore();
     }
@@ -1811,10 +1706,10 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     expect(rt.httpApi.listen.port).toBe(8080);
     expect(rt.logging.level).toBeUndefined();
     expect(rt.modes.omitSensitiveFromPrompt).toBe(false);
-    expect(rt.ai.language.env.OPENAI_API_KEY).toBe("k");
-    // The env maps are this copy's projection of `structured` too.
-    expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("k");
+    expect(rt.ai.language.connection.apiKey).toBe("k");
+    // The flat map is this copy's projection of `structured` too.
     expect(rt.flat).toMatchObject({ ASKDB_MOCK_SQL: "select 1", PORT: "8080" });
+    expect(rt.flat.OPENAI_API_KEY).toBeUndefined();
     expect(rt.flat.ASKDB_LOG_LEVEL).toBeUndefined();
   });
 });
@@ -1880,8 +1775,9 @@ describe("a model baseUrl with credentials", () => {
   });
 
   it("accepts a base URL without credentials, and one with an @ only in its path", () => {
-    const rt = defineConfig(withAi({ provider: "openai", providerConfig: { openai: { apiKey: "k", baseUrl: "https://proxy.example/v1/@team" } } }));
-    expect(rt.entries.OPENAI_BASE_URL).toBe("https://proxy.example/v1/@team");
+    setAskDbRuntimeForTests(withAi({ provider: "openai", providerConfig: { openai: { apiKey: "k", baseUrl: "https://proxy.example/v1/@team" } } }));
+    expect(getAskDbRuntimeConfig().ai.language.connection.baseUrl).toBe("https://proxy.example/v1/@team");
+    resetAskDbRuntimeForTests();
   });
 
   it("names the file when the config file holds one, and neither the error nor its cause repeats the URL", () => {

@@ -10,14 +10,6 @@ import {
   type AskDbStudioExecuteProvider,
 } from "./constants.js";
 import {
-  aiEmbeddingEnv,
-  aiLanguageEnv,
-  CONNECTION_FIELDS,
-  setEnvKey,
-  type ConnectionSettings,
-  type NormalizedAiConnection,
-} from "./ai-env.js";
-import {
   DEFAULT_ANTHROPIC_LANGUAGE_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_GATEWAY_LANGUAGE_MODEL,
@@ -36,12 +28,12 @@ import {
   defaultRagEmbeddingDimensions,
 } from "./defaults.js";
 import type {
+  AskDbRuntimeAiConnection,
   AskDbRuntimeConfig,
   AskDbRuntimeHttpApiConfig,
   AskDbRuntimeIntrospectionConfig,
   AskDbRuntimeLoggingConfig,
   AskDbRuntimeModesConfig,
-  AskDbRuntimeAiConfig,
   AskDbRuntimeRagConfig,
   AskDbRuntimeStudioConfig,
 } from "./runtime-types.js";
@@ -54,13 +46,16 @@ import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
  * back from a flat map.
  */
 
-/**
- * Every {@link AskDbRuntimeConfig} section, checked, translated and defaulted. Not `structured`,
- * `flat`, `deprecations` or `ai.aiEnv`, which is built from `flat`.
- */
-type ResolvedAskDbConfig = Omit<AskDbRuntimeConfig, "structured" | "flat" | "ai" | "deprecations"> & {
-  ai: Omit<AskDbRuntimeAiConfig, "aiEnv">;
-};
+/** Every {@link AskDbRuntimeConfig} section, checked, translated and defaulted. Not `structured`, `flat` or `deprecations`. */
+type ResolvedAskDbConfig = Omit<AskDbRuntimeConfig, "structured" | "flat" | "deprecations">;
+
+/** Every setting a built-in provider connection can carry, besides its name, as `askdb.config` spells it. */
+const CONNECTION_FIELDS = ["apiKey", "secondaryApiKey", "resourceName", "baseUrl", "apiVersion"] as const;
+
+type ConnectionSettings = { [Field in (typeof CONNECTION_FIELDS)[number]]?: string };
+
+/** A provider connection after resolution: its settings, trimmed, plus its name. */
+type NormalizedAiConnection = AskDbRuntimeAiConnection;
 
 type NormalizedAiLanguageSection = {
   provider: string;
@@ -827,9 +822,10 @@ function pgvectorIndexStrategy(raw: unknown): PgvectorIndexStrategyId {
 /** The flat map under construction: canonical env keys to trimmed values. */
 type FlatMap = Record<string, string>;
 
-/** Writes `value` under `key` unless it's unset or blank. */
+/** Writes `value`, trimmed, under `key` unless it's unset or blank. */
 function setFlat(flat: FlatMap, key: string, value: string | number | undefined): void {
-  setEnvKey(flat, key, value === undefined ? undefined : String(value));
+  const trimmed = value === undefined ? "" : String(value).trim();
+  if (trimmed !== "") flat[key] = trimmed;
 }
 
 function resolveIntrospection(intro: AskDbConfig["introspection"], flat: FlatMap): AskDbRuntimeIntrospectionConfig {
@@ -863,17 +859,18 @@ function resolveIntrospection(intro: AskDbConfig["introspection"], flat: FlatMap
   return resolved;
 }
 
-function resolveAi(ai: NormalizedAskDbConfig["ai"], flat: FlatMap): ResolvedAskDbConfig["ai"] {
+/**
+ * The typed `ai` sections, for `@askdb/ai`'s `*FromSection` methods. The flat map carries no AI
+ * keys: `@askdb/ai`'s adapters map a section's settings to a provider, so no copy of that mapping
+ * lives here.
+ */
+function resolveAi(ai: NormalizedAskDbConfig["ai"]): ResolvedAskDbConfig["ai"] {
   const { language, embedding } = ai;
-  const languageEnv = aiLanguageEnv(language);
-  // The flat map carries the language section's env view; the embedding section's stays on its own.
-  Object.assign(flat, languageEnv);
   return {
     language: {
       provider: language.provider,
       connection: { ...language.connection },
       model: language.model,
-      env: languageEnv,
       modelFamily: language.modelFamily,
       reasoning: language.reasoning,
     },
@@ -882,7 +879,6 @@ function resolveAi(ai: NormalizedAskDbConfig["ai"], flat: FlatMap): ResolvedAskD
           provider: embedding.provider,
           connection: { ...embedding.connection },
           model: embedding.model,
-          env: aiEmbeddingEnv(embedding),
           dimensions: embedding.dimensions,
         }
       : undefined,
@@ -924,11 +920,11 @@ function resolveRag(rag: NormalizedAskDbConfig["rag"], ai: ResolvedAskDbConfig["
   // The RAG CLI's OpenAI embedder never reads another provider's key or base URL: it uses the
   // embedding connection when that is OpenAI's, else only the OpenAI language connection.
   const openaiEmbedding = embedding?.provider === "openai" ? embedding : undefined;
-  const source = openaiEmbedding ?? ai.language;
+  const source = openaiEmbedding ?? (ai.language.provider === "openai" ? ai.language : undefined);
   return {
     embedder: {
-      apiKey: source.env.OPENAI_API_KEY,
-      baseURL: source.env.OPENAI_BASE_URL,
+      apiKey: source?.connection.apiKey,
+      baseURL: source?.connection.baseUrl,
       model: openaiEmbedding?.model,
     },
     store,
@@ -1076,7 +1072,7 @@ export type AskDbConfigResolution = {
 export function resolveAskDbConfig(config: AskDbConfig): AskDbConfigResolution {
   const { config: normalized, deprecations } = normalizeAskDbConfig(config);
   const flat: FlatMap = {};
-  const ai = resolveAi(normalized.ai, flat);
+  const ai = resolveAi(normalized.ai);
   const introspection = resolveIntrospection(config.introspection, flat);
   const rag = resolveRag(normalized.rag, ai, flat);
   const logging = resolveLogging(config.logging, flat);

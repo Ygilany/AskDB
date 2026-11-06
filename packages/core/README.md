@@ -25,7 +25,7 @@ pnpm add @askdb/ai
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 
-Runtime AI configuration helpers live in `@askdb/ai`, which has built-in providers for OpenAI, Azure/Foundry, Google, Anthropic, and the Vercel AI Gateway (install the matching `@ai-sdk/*` package). If you use [`@askdb/config`](https://github.com/Ygilany/AskDB/blob/main/packages/config/README.md), call `bootstrapAskDbEnv()`, create an AI registry, then pass **`getAskDbRuntimeConfig().ai.aiEnv`** to `registry.createLanguageModelFromEnv(...)`.
+Runtime AI configuration helpers live in `@askdb/ai`, which has built-in providers for OpenAI, Azure/Foundry, Google, Anthropic, and the Vercel AI Gateway (install the matching `@ai-sdk/*` package). If you use [`@askdb/config`](https://github.com/Ygilany/AskDB/blob/main/packages/config/README.md), call `bootstrapAskDbEnv()`, create an AI registry, then pass **`getAskDbRuntimeConfig().ai.language`** to `registry.createLanguageModelFromSection(...)`.
 
 ## Schema format
 

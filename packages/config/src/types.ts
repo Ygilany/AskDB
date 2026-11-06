@@ -30,9 +30,8 @@ type LegacyConnectionModelFamily = {
 
 /** OpenAI connection (`ai.providerConfig.openai`). */
 export type OpenaiConnection = LegacyConnectionModel & {
-  /** Flattened to `OPENAI_API_KEY`. */
   apiKey?: string;
-  /** Flattened to `OPENAI_BASE_URL`; use it for an OpenAI-compatible endpoint. */
+  /** Use it for an OpenAI-compatible endpoint. */
   baseUrl?: string;
 };
 
@@ -69,15 +68,15 @@ export type GoogleConnection = LegacyConnectionModel & {
 
 /** Vercel AI Gateway connection (`ai.providerConfig.gateway`), built into `ai` — no extra provider package. */
 export type GatewayConnection = LegacyConnectionModel & {
-  /** AI Gateway API key. Flattened to `AI_GATEWAY_API_KEY`. */
+  /** AI Gateway API key. */
   apiKey?: string;
   baseUrl?: string;
 };
 
 /**
  * Connection for a provider AskDB has no dedicated type for, keyed by its provider id
- * (`ai.providerConfig.mistral`). Flattened to the universal `ASKDB_AI_*` keys; works end to
- * end only when the consuming registry has an adapter registered under that provider id.
+ * (`ai.providerConfig.mistral`). Works end to end only when the consuming registry has an adapter
+ * registered under that provider id.
  */
 export type CustomConnection = LegacyConnectionModel & {
   apiKey?: string;
