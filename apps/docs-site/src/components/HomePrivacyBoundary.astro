@@ -2,6 +2,7 @@
 const sees = [
   "The user's question",
   "Your schema artifact (tables, columns, descriptions you authored)",
+  "Your tenant policy and the caller's scope context, if you use one",
   "Reasoning and SQL it generates",
 ];
 
@@ -9,7 +10,7 @@ const stays = [
   "Your database rows",
   "Database credentials and connection strings",
   "Query results returned to your app",
-  "User identifiers, session tokens, anything you don't put in the prompt",
+  "Tenant IDs, session tokens, and anything you keep out of the question and scope context",
 ];
 ---
 
