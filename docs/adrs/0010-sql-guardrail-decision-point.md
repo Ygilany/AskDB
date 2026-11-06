@@ -25,7 +25,8 @@ It drops them, keeping `sql`, when:
 
 - the model's `sql-unbound` block is missing, fails `validateSelectSql`, or its parameter manifest is invalid (`generate.ts`);
 - the template, bound with the manifest values, is not `sqlStructurallyEqual` to the model's `sql`, or that consistency bind throws (`ask.ts`);
-- in `sql-params` mode, the tenant markers can't be aligned with the business params (`ask.ts`, `bindTenantIntoUnboundSql`).
+- the tenant markers can't be aligned with the business params in `unboundSql` (`renderTemplate` in `sql/checked-statement.ts`);
+- a rendered form of the template, its bound form or `unboundSql`, still holds a placeholder or fails `validateSelectSql` (`renderTemplate`, #711): for example a `:tenant_<root>_ids` placeholder under a schema with no tenant policy, which nothing fills.
 
 This per-path wiring has produced bugs of the same shape:
 

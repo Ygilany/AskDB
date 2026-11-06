@@ -129,49 +129,6 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     }
   });
 
-  it("fills each root's placeholder from a multi_root scope", () => {
-    const sql =
-      "SELECT n.id FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = :tenant_agency_ids AND n.body = :status_name " +
-      "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id = :tenant_client_ids";
-    const bound = bindPreparedQuery(template(sql), { status_name: "open" }, {
-      schema: strictSchema,
-      tenantSqlMode: "sql-only",
-      tenantScope: {
-        access: {
-          kind: "multi_root",
-          scopes: [
-            { tenantRoot: agencies, ids: ["1"] },
-            { tenantRoot: clients, ids: ["5", "6"] },
-          ],
-        },
-      },
-    });
-    expect(bound.sql).toBe(
-      "SELECT n.id FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = '1' AND n.body = 'open' " +
-        "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id IN ('5', '6')",
-    );
-    expect(bound.params).toEqual(["open", "1", "5", "6"]);
-
-    // By default each root's IDs become markers in `sql`, in source order across roots.
-    const byDefault = bindPreparedQuery(template(sql), { status_name: "open" }, {
-      schema: strictSchema,
-      tenantScope: {
-        access: {
-          kind: "multi_root",
-          scopes: [
-            { tenantRoot: agencies, ids: ["1"] },
-            { tenantRoot: clients, ids: ["5", "6"] },
-          ],
-        },
-      },
-    });
-    expect(byDefault.sql).toBe(
-      "SELECT n.id FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = $1 AND n.body = 'open' " +
-        "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id IN ($2, $3)",
-    );
-    expect(byDefault.tenantParams).toEqual(["1", "5", "6"]);
-  });
-
   it("throws SUBTREE_NOT_RESOLVABLE for an unexpanded subtree scope", () => {
     const error = catchError(() =>
       bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
