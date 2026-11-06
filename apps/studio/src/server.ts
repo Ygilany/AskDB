@@ -47,6 +47,7 @@ import {
   SchemaParseError,
   tenantPolicyFrontmatterSchema,
 } from "@askdb/core";
+import { EmptyIntrospectionError } from "@askdb/introspect";
 import {
   buildSchemaIndex,
   chunkContentHash,
@@ -535,7 +536,7 @@ async function handleSetupIntrospect(state: StudioState): Promise<IntrospectRunR
     );
   }
   const outDir = probe.outputDir;
-  const run = await runStudioIntrospection({
+  const run = await introspectForRequest({
     outDir,
     hasExistingArtifact: existsSync(join(outDir, "schema.json")),
   });
@@ -560,7 +561,7 @@ async function handleResync(state: StudioState): Promise<IntrospectRunResponse> 
   } catch {
     // Keep the snapshot the server started with when the config disappeared mid-session.
   }
-  const run = await runStudioIntrospection({
+  const run = await introspectForRequest({
     outDir: state.schemaDir,
     schemaId: workspace.physical.schemaId,
     hasExistingArtifact: true,
@@ -2295,6 +2296,16 @@ function contentTypeFor(path: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `runStudioIntrospection` for an HTTP route: an empty result is the user's to fix (ADR 0037), so it becomes a 422, not a 500. */
+async function introspectForRequest(options: Parameters<typeof runStudioIntrospection>[0]): ReturnType<typeof runStudioIntrospection> {
+  try {
+    return await runStudioIntrospection(options);
+  } catch (error) {
+    if (error instanceof EmptyIntrospectionError) throw new StudioHttpError(422, error.message);
+    throw error;
+  }
 }
 
 class StudioHttpError extends Error {

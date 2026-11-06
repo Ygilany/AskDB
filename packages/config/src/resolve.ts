@@ -22,6 +22,8 @@ import {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_GATEWAY_LANGUAGE_MODEL,
   DEFAULT_GOOGLE_LANGUAGE_MODEL,
+  DEFAULT_HTTP_API_HOST,
+  DEFAULT_HTTP_API_PORT,
   DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
@@ -54,16 +56,11 @@ import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
 
 /**
  * Every {@link AskDbRuntimeConfig} section, checked, translated and defaulted. Not `structured`,
- * `flat` or `ai.aiEnv`, which is built from `flat`.
+ * `flat`, `deprecations` or `ai.aiEnv`, which is built from `flat`.
  */
-export type ResolvedAskDbConfig = Omit<AskDbRuntimeConfig, "structured" | "flat" | "ai" | "deprecations"> & {
+type ResolvedAskDbConfig = Omit<AskDbRuntimeConfig, "structured" | "flat" | "ai" | "deprecations"> & {
   ai: Omit<AskDbRuntimeAiConfig, "aiEnv">;
 };
-
-/** The default `httpApi.listen.port`. */
-const DEFAULT_HTTP_API_PORT = 3000;
-/** The default `httpApi.listen.host`. */
-const DEFAULT_HTTP_API_HOST = "127.0.0.1";
 
 type NormalizedAiLanguageSection = {
   provider: string;
@@ -124,7 +121,7 @@ function widthEarlierVersionsAssumed(model: string): number {
   return defaultRagEmbeddingDimensions(model);
 }
 
-export function isMember<T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
+function isMember<T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
   return (allowed as readonly unknown[]).includes(value);
 }
 
@@ -173,6 +170,29 @@ function toConnection(raw: RawConnection, name: string): NormalizedAiConnection 
   return connection;
 }
 
+/**
+ * Refuses a model base URL with a user name or password. `fetch` refuses it as well, and its error
+ * quotes the whole URL, credentials included, so the error here names `key` and never the URL. A
+ * value that doesn't parse counts when it holds an `@`. (`@askdb/ai` checks what reaches it the
+ * same way, with `AiBaseUrlCredentialsError`.)
+ */
+function refuseBaseUrlCredentials(url: string | undefined, key: string): void {
+  if (url === undefined) return;
+  let credentials: boolean;
+  try {
+    const parsed = new URL(url);
+    credentials = parsed.username !== "" || parsed.password !== "";
+  } catch {
+    credentials = url.includes("@");
+  }
+  if (credentials) {
+    throw new Error(
+      `askdb.config: ${key} contains a username or password, which AskDB won't send in a URL. Put the key in apiKey; ` +
+        `to send other credentials, such as a proxy's, build the model in code with the AI SDK provider's headers option.`,
+    );
+  }
+}
+
 function readConnections(config: AskDbConfig): Map<string, ProviderConnections> {
   const table = new Map<string, ProviderConnections>();
   for (const [provider, value] of Object.entries(config.ai.providerConfig ?? {})) {
@@ -188,9 +208,11 @@ function readConnections(config: AskDbConfig): Map<string, ProviderConnections> 
           `askdb.config: ${label} has more than one connection named "${name}"; connection names must be unique within a provider.`,
         );
       }
+      const connection = toConnection(raw, name);
+      refuseBaseUrlCredentials(connection.baseUrl, isList ? `${label}.baseUrl (connection "${name}")` : `${label}.baseUrl`);
       entries.push({
         raw,
-        connection: toConnection(raw, name),
+        connection,
         label: isList ? `${label} connection "${name}"` : label,
       });
     }
@@ -340,6 +362,7 @@ function translateLegacyEmbedder(
 
   const apiKey = nonBlank(legacyOpenai.apiKey);
   const baseUrl = nonBlank(legacyOpenai.baseUrl);
+  refuseBaseUrlCredentials(baseUrl, "rag.embedderConfig.openai.baseUrl");
   if (apiKey !== undefined || baseUrl !== undefined) {
     if (!LEGACY_RAG_KEY_PROVIDERS.has(provider)) {
       throw new Error(
@@ -771,7 +794,7 @@ type PgvectorIndexStrategyId = (typeof PGVECTOR_INDEX_STRATEGIES)[number];
 
 /**
  * `rag.storeConfig.pgvector.indexStrategy`, lowercased, or the default when unset or blank. A
- * value that isn't a string counts as unset, as it always has.
+ * value that isn't a string counts as unset.
  */
 function pgvectorIndexStrategy(raw: unknown): PgvectorIndexStrategyId {
   if (typeof raw !== "string" || raw.trim() === "") return DEFAULT_PGVECTOR_INDEX_STRATEGY;
@@ -784,8 +807,12 @@ function pgvectorIndexStrategy(raw: unknown): PgvectorIndexStrategyId {
 
 // ---------------------------------------------------------------------------
 // One resolver per section. Each one checks its settings, returns its runtime section and writes
-// its keys to the flat map. An optional key reaches the flat map only when the config sets it,
-// so a child process's env built from the map gets no defaults (`PORT=3000`).
+// its keys to the flat map. Most optional keys reach the flat map only when the config sets them,
+// so a child process's env built from the map gets no defaults (`PORT=3000`); the runtime config
+// applies those. Four keys are written with a default: `ASKDB_RAG_EMBEDDER` (`mock` without
+// `ai.embedding`), `ASKDB_INTROSPECT_OUT` (`./askdb/`), and with the pgvector store
+// `ASKDB_PGVECTOR_INDEX_STRATEGY` (`hnsw`) and, for the mock embedder, `ASKDB_RAG_EMBEDDER_DIMENSIONS`
+// (`64`).
 // ---------------------------------------------------------------------------
 
 /** The flat map under construction: canonical env keys to trimmed values. */
@@ -878,9 +905,9 @@ function resolveRag(rag: NormalizedAskDbConfig["rag"], ai: ResolvedAskDbConfig["
       );
     }
     setFlat(flat, "ASKDB_PGVECTOR_URL", url);
-    // With `rag.embedder: "ai"` this is only a size to request: unset, the model's own width
-    // applies, learned at index time. The mock embedder's vectors are always 64 wide.
-    setFlat(flat, "ASKDB_RAG_EMBEDDER_DIMENSIONS", embedding ? embedding.dimensions : DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS);
+    // The mock embedder's vectors are always 64 wide. With `ai.embedding`, the dimensions written
+    // above are only a size to request: unset, the model's own width applies, learned at index time.
+    if (!embedding) setFlat(flat, "ASKDB_RAG_EMBEDDER_DIMENSIONS", DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS);
     setFlat(flat, "ASKDB_PGVECTOR_INDEX_STRATEGY", pgvectorIndexStrategy(pgvector.indexStrategy));
   }
 
@@ -1058,7 +1085,7 @@ export function resolveAskDbConfig(config: AskDbConfig): AskDbConfigResolution {
       httpApi,
       dev,
       modes,
-      // Passed through as written: loading has never checked it.
+      // Passed through as written: loading doesn't check it.
       nlToSql: { dialect: config.dialect },
       studio,
     },

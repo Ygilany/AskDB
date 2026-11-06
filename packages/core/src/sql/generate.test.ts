@@ -1,10 +1,10 @@
-import type { LanguageModel } from "ai";
+import { APICallError, RetryError, type LanguageModel } from "ai";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
-import { AskDbError, SqlValidationError, TenantGuardrailError } from "../errors.js";
+import { AskDbError, SqlGenerationError, SqlValidationError, TenantGuardrailError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
 import type { NormalizedSchema } from "../schema/types.js";
@@ -423,5 +423,72 @@ describe("generateSelectSql — tenant guardrail checks the returned SQL", () =>
         tenantScope: agencyScope,
       }),
     ).rejects.toThrow(TenantGuardrailError);
+  });
+});
+
+describe("generateSelectSql — a model call that fails before giving a reason", () => {
+  // What Node throws for each address when `localhost` refuses on both ::1 and 127.0.0.1.
+  const refused = (address: string): Error =>
+    Object.assign(new Error(`connect ECONNREFUSED ${address}:11434`), { code: "ECONNREFUSED", syscall: "connect", address, port: 11434 });
+  // The AI SDK's wrapping of that refusal: `Cannot connect to API: ${cause.message}` over the
+  // message-less AggregateError, then the retry's "Last error: …". The URL and request carry secrets.
+  const cannotConnect = (cause: unknown): APICallError =>
+    new APICallError({
+      message: `Cannot connect to API: ${cause instanceof Error ? cause.message : ""}`,
+      cause,
+      url: "http://admin:S3cret@localhost:11434/v1/chat/completions",
+      requestBodyValues: { model: "llama3", apiKey: "sk-S3cret", messages: [] },
+      isRetryable: true,
+    });
+  const bothRefused = (): AggregateError => new AggregateError([refused("::1"), refused("127.0.0.1")], "");
+  const afterRetries = (last: unknown): RetryError =>
+    new RetryError({
+      message: `Failed after 3 attempts. Last error: ${last instanceof Error ? last.message : ""}`,
+      reason: "maxRetriesExceeded",
+      errors: [last, last, last],
+    });
+
+  async function failWith(error: unknown): Promise<{ thrown: unknown; logged: unknown }> {
+    const logger = { info: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const generateText = vi.fn(async () => {
+      throw error;
+    });
+    const thrown = await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText,
+      logger: logger as never,
+    }).catch((e: unknown) => e);
+    const failed = logger.error.mock.calls.find(([entry]) => (entry as { event?: string }).event === AskDbLogEvent.PipelineFailed);
+    return { thrown, logged: (failed?.[0] as { errMessage?: unknown } | undefined)?.errMessage };
+  }
+
+  it.each([
+    [
+      "the retried call, refused on both addresses",
+      () => afterRetries(cannotConnect(bothRefused())),
+      "Model call failed: Failed after 3 attempts. Last error: Cannot connect to API: ECONNREFUSED [::1]:11434; ECONNREFUSED 127.0.0.1:11434",
+    ],
+    [
+      "a single call, refused on both addresses",
+      () => cannotConnect(bothRefused()),
+      "Model call failed: Cannot connect to API: ECONNREFUSED [::1]:11434; ECONNREFUSED 127.0.0.1:11434",
+    ],
+    [
+      "an inner error whose text carries a credential: only its code is used",
+      () => cannotConnect(new AggregateError([Object.assign(new Error("reset by https://admin:S3cret@llm.internal"), { code: "ECONNRESET" })], "")),
+      "Model call failed: Cannot connect to API: ECONNRESET",
+    ],
+    [
+      "an inner error with no code: its name",
+      () => cannotConnect(new AggregateError([new TypeError("https://admin:S3cret@llm.internal")], "")),
+      "Model call failed: Cannot connect to API: TypeError",
+    ],
+    ["a message that already gives its reason, unchanged", () => new Error("Rate limit reached: retry in 20s"), "Model call failed: Rate limit reached: retry in 20s"],
+    ["an error whose message isn't a string, as before", () => Object.assign(new Error(), { message: null }), "Model call failed: null"],
+  ])("names the reason for %s, in the error and in the pipeline.failed log", async (_name, makeError, expected) => {
+    const { thrown, logged } = await failWith(makeError());
+    expect(thrown).toBeInstanceOf(SqlGenerationError);
+    expect((thrown as Error).message).toBe(expected);
+    expect(logged).toBe(expected);
+    expect(`${(thrown as Error).message}${String(logged)}`).not.toMatch(/S3cret|admin|llm\.internal/);
   });
 });

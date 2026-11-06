@@ -4,28 +4,28 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBuiltinAiProviderSetup, listBuiltinAiProviderSetups } from "@askdb/ai";
-import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "@askdb/config";
+import { ASKDB_AI_PROVIDERS, ASKDB_RAG_STORES, type AskDbAiProviderId, type AskDbRagStore } from "@askdb/config";
 import {
+  AskDbScaffoldInputError,
   detectPackageManager,
   findNearestPackageJsonDir,
   formatInstallCommand,
+  isAskDbScaffoldEnvName,
   isLikelyWorkspaceRoot,
   packageManagerAddArgs,
   packageManagerSpawnSpec,
-  renderAskDbAiConfigScaffold,
+  planAskDbScaffold,
   supportedBuildApprovals,
-  type AskDbScaffoldEnvVar,
+  type AskDbScaffoldAnswers,
+  type AskDbScaffoldPlan,
   type PackageManager,
+  type ScaffoldValue,
 } from "@askdb/config/scaffold";
+import { errorMessage } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { showable } from "./error-values.js";
-import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type InitAnswers = {
   database: "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
@@ -36,7 +36,7 @@ export type InitAnswers = {
   aiProvider: AskDbAiProviderId;
   aiKeyEnv: string;
   aiModelEnv?: string;
-  ragStore: "file" | "memory" | "pgvector";
+  ragStore: AskDbRagStore;
   pgvectorEnv?: string;
   studioExecute:
     | { enabled: false }
@@ -65,10 +65,6 @@ export type InitPrompter = {
   }): Promise<boolean>;
 };
 
-// ---------------------------------------------------------------------------
-// Config rendering
-// ---------------------------------------------------------------------------
-
 /**
  * Selectable AI providers, in `@askdb/ai`'s built-in table order: every id that has an
  * `askdb.config.*` branch (`ASKDB_AI_PROVIDERS`), with the key/model env var names to
@@ -76,7 +72,7 @@ export type InitPrompter = {
  */
 const AI_PROVIDER_SETUPS = listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS);
 /** Every id `--ai-provider` accepts; its help line lists them. */
-export const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
+const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
 
 function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: string } {
   const setup = getBuiltinAiProviderSetup(provider);
@@ -85,179 +81,70 @@ function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: st
 }
 
 /**
- * Render a value as a TypeScript string literal for the generated config.
- * Every interpolated value goes through this — the file is later executed
- * (via jiti), so a raw `"${value}"` would let a quote in a path inject code.
- * Mirrors `tsString` in `apps/studio/src/setup.ts`.
+ * `--sqlite-file`'s value as the config reads it: a value the planner accepts as an env var
+ * name (`SQLITE_FILE`, `UPPER_SNAKE_CASE`) is a variable, anything else (`data.db`,
+ * `../db/app.db`, `/srv/app.db`) a path. No value means the `SQLITE_FILE` variable.
  */
-function tsString(value: string): string {
-  return JSON.stringify(value);
+function sqliteFileValue(file: string | undefined): ScaffoldValue {
+  if (!file) return { env: "SQLITE_FILE" };
+  return isAskDbScaffoldEnvName(file) ? { env: file } : { path: file };
 }
 
-/** An env var name as `--sqlite-file` accepts one, e.g. `SQLITE_FILE`. Anything else is a path. */
-const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
-
-/**
- * The env var a SQLite `file` setting reads, or `undefined` when it's a literal
- * path (`data.db`, `../db/app.db`, `/srv/app.db`, …). Only an env-name-shaped value
- * is a variable. No value means the `SQLITE_FILE` default. Rendering, the
- * `.env.example`, and the printed variable list all go through this.
- */
-function sqliteFileEnv(file: string | undefined): string | undefined {
-  if (!file) return "SQLITE_FILE";
-  return ENV_NAME_PATTERN.test(file) ? file : undefined;
-}
-
-/**
- * The `ai` block and the env vars it reads, from `@askdb/config/scaffold` (shared with
- * Studio's setup wizard, so provider-specific fields such as Azure's
- * `resourceName` live in one place).
- */
-function aiScaffold(answers: InitAnswers): { source: string; envVars: AskDbScaffoldEnvVar[] } {
-  return renderAskDbAiConfigScaffold({
-    provider: answers.aiProvider,
-    keyEnv: answers.aiKeyEnv,
-    ...(answers.aiModelEnv ? { modelEnv: answers.aiModelEnv } : {}),
-  });
-}
-
-function renderIntrospectionSection(answers: InitAnswers): string {
-  const { database, connectionEnv, sqliteFile, prismaSchema, schemaOut } = answers;
-  const outputDirLine = `\n    outputDir: ${tsString(schemaOut)},`;
-  const connectionEnvExpr = `env(${tsString(connectionEnv ?? "DATABASE_URL")})`;
-  switch (database) {
-    case "postgres":
-      return `  introspection: {
-    provider: "postgres",
-    providerConfig: {
-      postgres: {
-        databaseUrl: ${connectionEnvExpr},
-      },
-    },${outputDirLine}
-  },`;
-    case "mysql":
-      return `  introspection: {
-    provider: "mysql",
-    providerConfig: {
-      mysql: {
-        databaseUrl: ${connectionEnvExpr},
-      },
-    },${outputDirLine}
-  },`;
-    case "sqlite": {
-      const fileEnv = sqliteFileEnv(sqliteFile);
-      const resolvedFile = fileEnv ? `env(${tsString(fileEnv)})` : tsString(sqliteFile!);
-      return `  introspection: {
-    provider: "sqlite",
-    providerConfig: {
-      sqlite: {
-        file: ${resolvedFile},
-      },
-    },${outputDirLine}
-  },`;
-    }
-    case "sqlserver":
-      return `  introspection: {
-    provider: "sqlserver",
-    providerConfig: {
-      sqlserver: {
-        databaseUrl: ${connectionEnvExpr},
-      },
-    },${outputDirLine}
-  },`;
-    case "prisma": {
-      const schemaLine = prismaSchema ? `\n        schemaPath: ${tsString(prismaSchema)},` : "";
-      return `  introspection: {
-    provider: "prisma",
-    providerConfig: {
-      prisma: {${schemaLine}
-      },
-    },${outputDirLine}
-  },`;
-    }
-  }
-}
-
-function renderRagSection(answers: InitAnswers): string {
-  const { ragStore, pgvectorEnv } = answers;
-  switch (ragStore) {
-    case "file":
-      return `  rag: {
-    embedder: "mock",
-    store: "file",
-    storeConfig: {
-      file: {},
-    },
-  },`;
-    case "memory":
-      return `  rag: {
-    embedder: "mock",
-    store: "memory",
-    storeConfig: {
-      memory: {},
-    },
-  },`;
-    case "pgvector":
-      return `  rag: {
-    embedder: "mock",
-    store: "pgvector",
-    storeConfig: {
-      pgvector: {
-        databaseUrl: env(${tsString(pgvectorEnv ?? "ASKDB_PGVECTOR_URL")}),
-      },
-    },
-  },`;
-  }
-}
-
-function renderStudioSection(answers: InitAnswers): string | null {
+/** `InitAnswers` as the planner in `@askdb/config/scaffold` takes them. It ignores what the engine doesn't read. */
+function scaffoldAnswers(answers: InitAnswers): AskDbScaffoldAnswers {
   const { studioExecute } = answers;
-  if (!studioExecute.enabled) return null;
-
-  const { provider } = studioExecute;
-  if (provider === "sqlite") {
-    const fileEnv = sqliteFileEnv(studioExecute.sqliteFile);
-    const fileExpr = fileEnv ? `env(${tsString(fileEnv)})` : tsString(studioExecute.sqliteFile!);
-    return `  studio: {
-    execute: {
-      enabled: true,
-      provider: "sqlite",
-      file: ${fileExpr},
+  return {
+    database: answers.database,
+    connectionEnv: answers.connectionEnv ?? "DATABASE_URL",
+    sqliteFile: sqliteFileValue(answers.sqliteFile),
+    ...(answers.prismaSchema ? { prismaSchemaPath: answers.prismaSchema } : {}),
+    schemaOut: answers.schemaOut,
+    ai: {
+      provider: answers.aiProvider,
+      keyEnv: answers.aiKeyEnv,
+      ...(answers.aiModelEnv ? { modelEnv: answers.aiModelEnv } : {}),
     },
-  },`;
+    rag: { store: answers.ragStore, pgvectorEnv: answers.pgvectorEnv ?? "ASKDB_PGVECTOR_URL" },
+    ...(studioExecute.enabled
+      ? {
+          studioExecute: {
+            provider: studioExecute.provider,
+            connectionEnv: studioExecute.connectionEnv ?? "DATABASE_URL",
+            sqliteFile: sqliteFileValue(studioExecute.sqliteFile),
+          },
+        }
+      : {}),
+  };
+}
+
+/** The flag that sets each planner answer, for errors. */
+const ANSWER_FLAGS: Record<string, string> = {
+  database: "--database",
+  connectionEnv: "--connection-env",
+  sqliteFile: "--sqlite-file",
+  prismaSchemaPath: "--prisma-schema",
+  schemaOut: "--schema-out",
+  "ai.provider": "--ai-provider",
+  "ai.keyEnv": "--ai-key-env",
+  "ai.modelEnv": "--ai-model-env",
+  "rag.store": "--rag-store",
+  "rag.pgvectorEnv": "--pgvector-env",
+  "studioExecute.sqliteFile": "--sqlite-file",
+};
+
+/**
+ * The config, `.env.example` and installs for `answers`, from `@askdb/config/scaffold`'s
+ * planner (shared with Studio's setup wizard). A bad answer fails with an error that names
+ * its flag, before anything is written.
+ */
+export function planInitScaffold(answers: InitAnswers, specs: InitDepSpecs): AskDbScaffoldPlan {
+  try {
+    return planAskDbScaffold(scaffoldAnswers(answers), { config: specs.configSpec, prisma: specs.prismaSpec });
+  } catch (error) {
+    if (!(error instanceof AskDbScaffoldInputError)) throw error;
+    throw new Error(`${ANSWER_FLAGS[error.field] ?? error.field} ${error.reason}`);
   }
-
-  const urlEnv = studioExecute.connectionEnv ?? "DATABASE_URL";
-  return `  studio: {
-    execute: {
-      enabled: true,
-      provider: ${tsString(provider)},
-      databaseUrl: env(${tsString(urlEnv)}),
-    },
-  },`;
 }
-
-export function renderInitConfig(answers: InitAnswers): string {
-  const sections: string[] = [
-    aiScaffold(answers).source,
-    renderIntrospectionSection(answers),
-    renderRagSection(answers),
-  ];
-
-  const studio = renderStudioSection(answers);
-  if (studio) sections.push(studio);
-
-  return `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
-
-export default defineConfig({
-${sections.join("\n")}
-} satisfies AskDbConfig);
-`;
-}
-
-// ---------------------------------------------------------------------------
-// Default answers
-// ---------------------------------------------------------------------------
 
 type InitAnswerOverrides = Partial<{
   database: InitAnswers["database"];
@@ -295,7 +182,10 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
     studioExecute = {
       enabled: true,
       provider: execProvider,
-      connectionEnv: overrides.studioExecuteConnectionEnv ?? (execProvider === "sqlite" ? undefined : "DATABASE_URL"),
+      // On the introspection engine, execute reads the same connection env var, as the wizard does (#777).
+      connectionEnv:
+        overrides.studioExecuteConnectionEnv ??
+        (execProvider === "sqlite" ? undefined : execProvider === database ? connectionEnv : "DATABASE_URL"),
       sqliteFile: overrides.studioExecuteSqliteFile ?? (execProvider === "sqlite" ? overrides.sqliteFile : undefined),
     };
   } else {
@@ -317,72 +207,9 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
   };
 }
 
-// ---------------------------------------------------------------------------
-// Install plan
-// ---------------------------------------------------------------------------
-
-export type InitInstallPlan = {
-  packages: string[];
-  labels: string[];
-  /** Dependencies whose install scripts pnpm must be told to run (`pnpm add --allow-build=<name>`). */
-  allowBuilds: string[];
-};
-
-/** Package maps — names come from an allowlist, not from user input */
-const DB_DRIVER_PACKAGES: Record<string, string> = {
-  postgres: "pg",
-  mysql: "mysql2",
-  sqlite: "better-sqlite3",
-  sqlserver: "mssql",
-};
+const require = createRequire(import.meta.url);
 
 export type InitDepSpecs = { configSpec: string; prismaSpec: string };
-
-export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs): InitInstallPlan {
-  const packages: string[] = [
-    `@askdb/config@${specs.configSpec}`,
-  ];
-  const labels: string[] = ["@askdb/config"];
-  const allowBuilds: string[] = [];
-
-  // `@askdb/prisma` is an optional peer of askdb (#259). It depends on Prisma, whose
-  // `@prisma/engines` postinstall pnpm 11 refuses to run until it's approved, and then
-  // exits 1. A Prisma project approves it anyway, so the install does it here.
-  // Studio's guided setup does the same (`apps/studio/src/setup.ts`).
-  if (answers.database === "prisma") {
-    packages.push(`@askdb/prisma@${specs.prismaSpec}`);
-    labels.push("@askdb/prisma");
-    allowBuilds.push(...PRISMA_BUILD_APPROVALS);
-  }
-
-  const driversNeeded = new Set<string>();
-
-  // Live DB driver for introspection
-  if (answers.database !== "prisma") {
-    driversNeeded.add(answers.database);
-  }
-
-  // Live DB driver for Studio execute
-  if (answers.studioExecute.enabled) {
-    driversNeeded.add(answers.studioExecute.provider);
-  }
-
-  for (const db of driversNeeded) {
-    const pkg = DB_DRIVER_PACKAGES[db];
-    if (pkg) {
-      packages.push(pkg);
-      labels.push(pkg);
-    }
-  }
-
-  return { packages, labels, allowBuilds };
-}
-
-// ---------------------------------------------------------------------------
-// Dependency versions
-// ---------------------------------------------------------------------------
-
-const require = createRequire(import.meta.url);
 
 /**
  * The versions `askdb init` installs: `@askdb/config` and `@askdb/prisma` at the versions
@@ -414,10 +241,6 @@ function builtWithVersion(packageName: string, declared: string | undefined): st
   }
 }
 
-// ---------------------------------------------------------------------------
-// Package manager install
-// ---------------------------------------------------------------------------
-
 /** Runs the package manager's add command; `allowBuilds` are the pnpm build approvals it passes. */
 type InstallFn = (pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]) => boolean;
 
@@ -428,10 +251,6 @@ function defaultInstaller(pm: PackageManager, packageDir: string, packages: stri
   return r.status === 0;
 }
 
-// ---------------------------------------------------------------------------
-// Option parsing
-// ---------------------------------------------------------------------------
-
 type InitOptions = {
   force: boolean;
   path: string;
@@ -439,7 +258,6 @@ type InitOptions = {
   yes: boolean;
   interactive: boolean | undefined;
   noInteractive: boolean;
-  // wizard flags
   database?: InitAnswers["database"];
   connectionEnv?: string;
   sqliteFile?: string;
@@ -454,7 +272,6 @@ type InitOptions = {
 };
 
 const VALID_DATABASES = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-const VALID_RAG_STORES = ["file", "memory", "pgvector"] as const;
 
 /** A flag that takes one of `allowed`; the error repeats a bad value only when it's `showable`. */
 function oneOf<T extends string>(flag: string, allowed: readonly T[], value: string): T {
@@ -544,8 +361,8 @@ const INIT_FLAGS: readonly Flag<InitOptions>[] = [
     names: ["--rag-store"],
     value: "<name>",
     group: "RAG options",
-    help: `${VALID_RAG_STORES.join("|")} (default: file)`,
-    apply: (opts, value) => (opts.ragStore = oneOf("--rag-store", VALID_RAG_STORES, value)),
+    help: `${ASKDB_RAG_STORES.join("|")} (default: file)`,
+    apply: (opts, value) => (opts.ragStore = oneOf("--rag-store", ASKDB_RAG_STORES, value)),
   },
   {
     names: ["--pgvector-env"],
@@ -603,16 +420,12 @@ export function initCommand(installer: InstallFn = defaultInstaller): CommandSpe
   };
 }
 
-// ---------------------------------------------------------------------------
-// TTY wizard
-// ---------------------------------------------------------------------------
-
 function validatePath(value: string): true | string {
   if (!value.trim()) return "Cannot be empty.";
   return true;
 }
 
-export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
+export async function runWizard(prompter: InitPrompter): Promise<InitAnswers> {
   const database = await prompter.select<InitAnswers["database"]>({
     message: "Database source",
     choices: [
@@ -753,10 +566,6 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
   };
 }
 
-// ---------------------------------------------------------------------------
-// Real Inquirer prompter
-// ---------------------------------------------------------------------------
-
 async function buildInquirerPrompter(): Promise<InitPrompter> {
   const { select, input, confirm } = await import("@inquirer/prompts");
   return {
@@ -764,87 +573,6 @@ async function buildInquirerPrompter(): Promise<InitPrompter> {
     input: (opts) => input({ message: opts.message, default: opts.default, validate: opts.validate }),
     confirm: (opts) => confirm({ message: opts.message, default: opts.default }),
   };
-}
-
-// ---------------------------------------------------------------------------
-// Next steps printer
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// .env.example generation
-// ---------------------------------------------------------------------------
-
-const DB_URL_PLACEHOLDER: Partial<Record<InitAnswers["database"], string>> = {
-  postgres: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
-  mysql: "mysql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
-  sqlserver:
-    "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
-};
-
-/** A database-side env var the generated config reads, with its `.env.example` placeholder. */
-type DatabaseEnvVar = { name: string; placeholder: string; purpose?: string };
-
-/**
- * The database-side env vars the generated config reads (the introspection URL,
- * SQLite file paths, the pgvector URL, and Studio execute's URL), each once.
- * Names fall back to the same defaults the renderers above use, so
- * `.env.example` and the printed variable list match the config.
- */
-function databaseEnvVars(answers: InitAnswers): DatabaseEnvVar[] {
-  const { database, studioExecute } = answers;
-  const vars = new Map<string, DatabaseEnvVar>();
-  const add = (envVar: DatabaseEnvVar) => {
-    if (!vars.has(envVar.name)) vars.set(envVar.name, envVar);
-  };
-
-  if (database !== "sqlite" && database !== "prisma") {
-    add({ name: answers.connectionEnv ?? "DATABASE_URL", placeholder: DB_URL_PLACEHOLDER[database] ?? "" });
-  }
-  const sqliteFileEnvs = [
-    database === "sqlite" ? sqliteFileEnv(answers.sqliteFile) : undefined,
-    studioExecute.enabled && studioExecute.provider === "sqlite" ? sqliteFileEnv(studioExecute.sqliteFile) : undefined,
-  ];
-  for (const name of sqliteFileEnvs) {
-    if (name) add({ name, placeholder: "", purpose: "SQLite database file path" });
-  }
-  if (answers.ragStore === "pgvector") {
-    add({ name: answers.pgvectorEnv ?? "ASKDB_PGVECTOR_URL", placeholder: DB_URL_PLACEHOLDER.postgres ?? "" });
-  }
-  if (studioExecute.enabled && studioExecute.provider !== "sqlite") {
-    add({
-      name: studioExecute.connectionEnv ?? "DATABASE_URL",
-      placeholder: DB_URL_PLACEHOLDER[studioExecute.provider] ?? "",
-    });
-  }
-  return [...vars.values()];
-}
-
-function buildEnvExample(answers: InitAnswers): string {
-  const lines: string[] = [
-    "# AskDB environment — copy to .env and fill in real values.",
-    "# .env is read by the CLI, Studio, and the HTTP API; never commit it.",
-    "",
-  ];
-
-  for (const envVar of databaseEnvVars(answers)) {
-    if (envVar.purpose) lines.push(`# ${envVar.purpose}`);
-    lines.push(`${envVar.name}=${envVar.placeholder}`);
-  }
-
-  for (const envVar of aiScaffold(answers).envVars) {
-    lines.push(`# ${envVar.purpose}`);
-    lines.push(`${envVar.name}=`);
-  }
-  lines.push("");
-  return lines.join("\n");
-}
-
-/** Env var NAMES the generated config references — conventional defaults, not values. */
-function collectEnvVarNames(answers: InitAnswers): string[] {
-  const names = new Set<string>();
-  for (const envVar of aiScaffold(answers).envVars) names.add(envVar.name);
-  for (const envVar of databaseEnvVars(answers)) names.add(envVar.name);
-  return Array.from(names);
 }
 
 function printNextSteps(answers: InitAnswers): void {
@@ -865,10 +593,6 @@ function printNextSteps(answers: InitAnswers): void {
   process.stdout.write(lines.join("\n") + "\n");
 }
 
-// ---------------------------------------------------------------------------
-// Main entry point
-// ---------------------------------------------------------------------------
-
 export async function runInitCli(argv: readonly string[], installer?: InstallFn): Promise<number> {
   return runCommand(initCommand(installer), argv);
 }
@@ -885,7 +609,6 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
     return 1;
   }
 
-  // Determine interactive mode
   const isTTY = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
   const wantInteractive = opts.interactive === true || (!opts.yes && !opts.noInteractive && isTTY);
 
@@ -895,6 +618,7 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
   }
 
   let answers: InitAnswers;
+  let plan: AskDbScaffoldPlan;
 
   if (wantInteractive) {
     let prompter: InitPrompter;
@@ -903,27 +627,18 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
     } catch {
       process.stderr.write("Failed to load @inquirer/prompts. Falling back to non-interactive mode.\n");
       answers = resolveDefaultInitAnswers(optsToOverrides(opts));
-      return await finishInit(configTarget, answers, opts, installer);
+      return await finishInit(configTarget, answers, planInitScaffold(answers, resolveInitDepSpecs()), opts, installer);
     }
 
-    let wizardResult: InitAnswers | null;
     try {
-      wizardResult = await runWizard(prompter);
+      answers = await runWizard(prompter);
     } catch {
       process.stderr.write("\nSetup cancelled.\n");
       return 1;
     }
 
-    if (!wizardResult) {
-      process.stderr.write("\nSetup cancelled.\n");
-      return 1;
-    }
+    plan = planInitScaffold(answers, resolveInitDepSpecs());
 
-    answers = wizardResult;
-
-    // Summary and confirmation
-    const specs = resolveInitDepSpecs();
-    const plan = buildInitInstallPlan(answers, specs);
     process.stdout.write("\n--- Summary ---\n");
     process.stdout.write(`  Config path:   ${configTarget}\n`);
     process.stdout.write(`  Database:      ${answers.database}\n`);
@@ -931,9 +646,10 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
     process.stdout.write(`  RAG store:     ${answers.ragStore}\n`);
     process.stdout.write(`  Studio execute: ${answers.studioExecute.enabled ? `enabled (${answers.studioExecute.provider})` : "disabled"}\n`);
     if (!opts.skipInstall) {
-      process.stdout.write(`  Packages:      ${plan.labels.join(", ")}\n`);
+      const packages = packagesToInstall(plan, findNearestPackageJsonDir(process.cwd()));
+      process.stdout.write(`  Packages:      ${packages.map(packageNameOf).join(", ")}\n`);
     }
-    process.stdout.write(`  Env vars:      ${collectEnvVarNames(answers).join(", ")}\n`);
+    process.stdout.write(`  Env vars:      ${plan.envVars.map((v) => v.name).join(", ")}\n`);
     process.stdout.write('                 (defaults — rename via `env("...")` in askdb.config.ts if you\'d like)\n');
     process.stdout.write("---------------\n\n");
 
@@ -951,9 +667,47 @@ async function runInit(opts: InitOptions, installer: InstallFn): Promise<number>
     }
   } else {
     answers = resolveDefaultInitAnswers(optsToOverrides(opts));
+    plan = planInitScaffold(answers, resolveInitDepSpecs());
   }
 
-  return await finishInit(configTarget, answers, opts, installer);
+  return await finishInit(configTarget, answers, plan, opts, installer);
+}
+
+/** `@askdb/prisma` from `@askdb/prisma@1.0.0`, `pg` from `pg`. */
+function packageNameOf(spec: string): string {
+  const at = spec.indexOf("@", 1);
+  return at === -1 ? spec : spec.slice(0, at);
+}
+
+/**
+ * The plan's packages to install in `pkgRoot`. AskDB's own packages always install, at the
+ * versions this CLI pins. Any other package (a driver, or `ai` and `zod` for Prisma) installs
+ * only when the project's `package.json` doesn't list it yet, so `init` never moves a range
+ * the project already chose, such as `ai@^6`. With no project, or at a workspace root, where
+ * `init` only prints the command for another package, every package is listed.
+ */
+function packagesToInstall(plan: AskDbScaffoldPlan, pkgRoot: string | undefined): string[] {
+  const listed = pkgRoot && !isLikelyWorkspaceRoot(pkgRoot) ? listedDependencies(pkgRoot) : new Set<string>();
+  return plan.install.packages.filter((spec) => {
+    const name = packageNameOf(spec);
+    return name.startsWith("@askdb/") || !listed.has(name);
+  });
+}
+
+/** Every package `dir/package.json` lists as a dependency of any kind. */
+function listedDependencies(dir: string): Set<string> {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as Record<string, unknown>;
+    const fields = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+    return new Set(
+      fields.flatMap((field) => {
+        const deps = pkg[field];
+        return deps !== null && typeof deps === "object" ? Object.keys(deps) : [];
+      }),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 function optsToOverrides(opts: InitOptions): InitAnswerOverrides {
@@ -975,16 +729,14 @@ function optsToOverrides(opts: InitOptions): InitAnswerOverrides {
 async function finishInit(
   configTarget: string,
   answers: InitAnswers,
+  plan: AskDbScaffoldPlan,
   opts: InitOptions,
   installer: InstallFn,
 ): Promise<number> {
-  const configContent = renderInitConfig(answers);
-
   try {
-    writeFileSync(configTarget, configContent, { encoding: "utf8" });
+    writeFileSync(configTarget, plan.configSource, { encoding: "utf8" });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    process.stderr.write(`Failed to write config: ${msg}\n`);
+    process.stderr.write(`Failed to write config: ${errorMessage(e)}\n`);
     return 1;
   }
 
@@ -993,7 +745,7 @@ async function finishInit(
   const envExamplePath = join(dirname(configTarget), ".env.example");
   if (!existsSync(envExamplePath)) {
     try {
-      writeFileSync(envExamplePath, buildEnvExample(answers), { encoding: "utf8" });
+      writeFileSync(envExamplePath, plan.envExample, { encoding: "utf8" });
       process.stdout.write(`  - ${envExamplePath}\n`);
     } catch {
       // non-fatal — config was written successfully
@@ -1002,15 +754,15 @@ async function finishInit(
 
   if (!opts.skipInstall) {
     const pkgRoot = findNearestPackageJsonDir(process.cwd());
-    const specs = resolveInitDepSpecs();
-    const plan = buildInitInstallPlan(answers, specs);
+    const packages = packagesToInstall(plan, pkgRoot);
+    const { allowBuilds } = plan.install;
 
     // The manager comes from the project's lockfile or package.json, else from whoever
     // ran init (`pnpm dlx`, `npx`, …); with no package.json, from the current directory.
     const pmDir = pkgRoot ?? process.cwd();
     const pm = detectPackageManager(pmDir);
-    const approvedBuilds = supportedBuildApprovals(pm, pmDir, plan.allowBuilds);
-    const installCommand = formatInstallCommand(pm, plan.packages, approvedBuilds);
+    const approvedBuilds = supportedBuildApprovals(pm, pmDir, allowBuilds);
+    const installCommand = formatInstallCommand(pm, packages, approvedBuilds);
 
     if (!pkgRoot) {
       process.stdout.write(
@@ -1026,7 +778,7 @@ async function finishInit(
       );
     } else {
       process.stdout.write(`\nInstalling dependencies with ${pm} in ${pkgRoot} …\n`);
-      const ok = installer(pm, pkgRoot, plan.packages, approvedBuilds);
+      const ok = installer(pm, pkgRoot, packages, approvedBuilds);
       if (!ok) {
         process.stderr.write(
           "Dependency install failed. The config file was written, but packages are not installed yet.\n" +
@@ -1035,7 +787,7 @@ async function finishInit(
         );
         return 1;
       }
-      process.stdout.write(`Installed: ${plan.labels.join(", ")}.\n`);
+      process.stdout.write(`Installed: ${packages.map(packageNameOf).join(", ")}.\n`);
     }
   }
 

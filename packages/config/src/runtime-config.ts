@@ -9,7 +9,7 @@ const resolutionByConfig = new WeakMap<object, AskDbConfigResolution>();
 function resolutionFor(structured: Readonly<AskDbConfig>): AskDbConfigResolution {
   let resolution = resolutionByConfig.get(structured);
   if (!resolution) {
-    resolution = resolveAskDbConfig(structured as AskDbConfig);
+    resolution = resolveAskDbConfig(structured);
     resolutionByConfig.set(structured, resolution);
   }
   return resolution;

@@ -1,19 +1,18 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { select, input, confirm } from "@inquirer/prompts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  buildInitInstallPlan,
-  renderInitConfig,
+  planInitScaffold,
   resolveDefaultInitAnswers,
   resolveInitDepSpecs,
   runInitCli,
   runWizard,
-  type InitAnswers,
   type InitDepSpecs,
   type InitPrompter,
 } from "./init.js";
+import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 // Only buildInquirerPrompter imports this; the runWizard tests pass their own prompter.
 vi.mock("@inquirer/prompts", () => ({
@@ -21,24 +20,6 @@ vi.mock("@inquirer/prompts", () => ({
   input: vi.fn().mockRejectedValue(new Error("unexpected prompt")),
   confirm: vi.fn().mockRejectedValue(new Error("unexpected prompt")),
 }));
-
-// ---------------------------------------------------------------------------
-// Fixture helpers
-// ---------------------------------------------------------------------------
-
-function postgresAnswers(overrides: Partial<InitAnswers> = {}): InitAnswers {
-  return {
-    database: "postgres",
-    connectionEnv: "DATABASE_URL",
-    schemaOut: "./askdb",
-    aiProvider: "openai",
-    aiKeyEnv: "OPENAI_API_KEY",
-    aiModelEnv: "OPENAI_MODEL",
-    ragStore: "file",
-    studioExecute: { enabled: false },
-    ...overrides,
-  };
-}
 
 const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0", prismaSpec: "0.2.0" };
 
@@ -62,215 +43,6 @@ function createRecordingPrompter(): { prompter: InitPrompter; messages: string[]
   return { prompter, messages };
 }
 
-// ---------------------------------------------------------------------------
-// renderInitConfig
-// ---------------------------------------------------------------------------
-
-describe("renderInitConfig", () => {
-  it("SQL Server: sqlserver branch + studio.execute.provider when execute enabled", () => {
-    const out = renderInitConfig(postgresAnswers({
-      database: "sqlserver",
-      connectionEnv: "DATABASE_URL",
-      studioExecute: { enabled: true, provider: "sqlserver", connectionEnv: "DATABASE_URL" },
-    }));
-    expect(out).toContain('provider: "sqlserver"');
-    expect(out).toContain('databaseUrl: env("DATABASE_URL")');
-    expect(out).toContain("studio:");
-    expect(out).toContain("enabled: true");
-    expect(out).not.toContain('"postgres"');
-    expect(out).not.toContain('"pg"');
-  });
-
-  it("SQLite: file field in introspection and studio.execute", () => {
-    const out = renderInitConfig(postgresAnswers({
-      database: "sqlite",
-      sqliteFile: "SQLITE_FILE",
-      studioExecute: { enabled: true, provider: "sqlite", sqliteFile: "SQLITE_FILE" },
-    }));
-    expect(out).toContain('provider: "sqlite"');
-    expect(out).toContain('file: env("SQLITE_FILE")');
-    // studio section also uses file
-    expect(out).toContain("studio:");
-    expect(out).not.toContain("databaseUrl");
-  });
-
-  it("Prisma: schemaPath in providerConfig, no live driver branch", () => {
-    const out = renderInitConfig(postgresAnswers({
-      database: "prisma",
-      prismaSchema: "./prisma/schema.prisma",
-      studioExecute: { enabled: false },
-    }));
-    expect(out).toContain('provider: "prisma"');
-    expect(out).toContain('schemaPath: "./prisma/schema.prisma"');
-    expect(out).not.toContain("studio:");
-    expect(out).not.toContain('"postgres"');
-  });
-
-  it.each([
-    { aiProvider: "openai", aiKeyEnv: "OPENAI_API_KEY", aiModelEnv: "OPENAI_MODEL" },
-    { aiProvider: "anthropic", aiKeyEnv: "ANTHROPIC_API_KEY", aiModelEnv: "ANTHROPIC_MODEL" },
-    { aiProvider: "google", aiKeyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", aiModelEnv: "GOOGLE_AI_MODEL" },
-    { aiProvider: "azure", aiKeyEnv: "AZURE_OPENAI_API_KEY", aiModelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-    { aiProvider: "foundry", aiKeyEnv: "AZURE_OPENAI_API_KEY", aiModelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-  ] as const)(
-    "$aiProvider AI provider: scaffolds only its own providerConfig (resourceName for azure and foundry, not the others)",
-    ({ aiProvider, aiKeyEnv, aiModelEnv }) => {
-      const out = renderInitConfig(postgresAnswers({ aiProvider, aiKeyEnv, aiModelEnv }));
-      const config = evaluateRenderedConfig(out) as any;
-      const needsResourceName = aiProvider === "azure" || aiProvider === "foundry";
-      expect(config.ai.provider).toBe(aiProvider);
-      // The connection holds no model; the language model is the one named by aiModelEnv.
-      expect(config.ai.providerConfig).toEqual({
-        [aiProvider]: {
-          apiKey: { env: aiKeyEnv },
-          ...(needsResourceName ? { resourceName: { env: "AZURE_RESOURCE_NAME" } } : {}),
-        },
-      });
-      expect(config.ai.language).toEqual({ model: { env: aiModelEnv } });
-    },
-  );
-
-  it("pgvector RAG: only pgvector store branch", () => {
-    const out = renderInitConfig(postgresAnswers({
-      ragStore: "pgvector",
-      pgvectorEnv: "ASKDB_PGVECTOR_URL",
-    }));
-    expect(out).toContain('store: "pgvector"');
-    expect(out).toContain('databaseUrl: env("ASKDB_PGVECTOR_URL")');
-    expect(out).not.toContain('"file"');
-    expect(out).not.toContain('"memory"');
-  });
-
-  it("MySQL: mysql branch only", () => {
-    const out = renderInitConfig(postgresAnswers({ database: "mysql", connectionEnv: "DATABASE_URL" }));
-    expect(out).toContain('provider: "mysql"');
-    expect(out).not.toContain('"postgres"');
-  });
-
-  it("no dotenv import: bootstrap handles .env loading", () => {
-    const out = renderInitConfig(postgresAnswers());
-    expect(out).toContain("satisfies AskDbConfig");
-    expect(out).not.toContain("dotenv");
-  });
-
-  it("escapes quotes, backslashes, and newlines in interpolated values (no code injection)", () => {
-    const hostile = 'x", injected: (() => { throw new Error("pwned"); })(), y: "\\\n';
-    const config = evaluateRenderedConfig(
-      renderInitConfig(
-        postgresAnswers({
-          database: "prisma",
-          connectionEnv: undefined,
-          prismaSchema: `./prisma/${hostile}`,
-          schemaOut: `./out/${hostile}`,
-          aiKeyEnv: `KEY${hostile}`,
-          ragStore: "pgvector",
-          pgvectorEnv: `PGV${hostile}`,
-          studioExecute: { enabled: true, provider: "sqlite", sqliteFile: `./db/${hostile}` },
-        }),
-      ),
-    ) as any;
-    expect(config.introspection.providerConfig.prisma.schemaPath).toBe(`./prisma/${hostile}`);
-    expect(config.introspection.outputDir).toBe(`./out/${hostile}`);
-    expect(config.ai.providerConfig.openai.apiKey).toEqual({ env: `KEY${hostile}` });
-    expect(config.rag.storeConfig.pgvector.databaseUrl).toEqual({ env: `PGV${hostile}` });
-    expect(config.studio.execute.file).toBe(`./db/${hostile}`);
-    expect(Object.keys(config).sort()).toEqual(["ai", "introspection", "rag", "studio"]);
-    expect(Object.keys(config.introspection).sort()).toEqual(["outputDir", "provider", "providerConfig"]);
-  });
-});
-
-/**
- * Evaluate a rendered `askdb.config.ts` with stubbed `defineConfig` / `env`,
- * so tests can assert on the object the config actually produces.
- */
-function evaluateRenderedConfig(source: string): unknown {
-  const body = source
-    .replace(/^import .*$/m, "")
-    .replace("export default defineConfig(", "return defineConfig(")
-    .replace(/\}\s*satisfies AskDbConfig\);\s*$/, "});");
-  return new Function("defineConfig", "env", body)(
-    (config: unknown) => config,
-    (name: string) => ({ env: name }),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// buildInitInstallPlan
-// ---------------------------------------------------------------------------
-
-describe("buildInitInstallPlan", () => {
-  it("base packages always included", () => {
-    const plan = buildInitInstallPlan(postgresAnswers(), FAKE_SPECS);
-    expect(plan.packages).toContain("@askdb/config@1.0.0");
-    expect(plan.packages).toContain("pg");
-    expect(plan.packages.some((p) => p.startsWith("dotenv"))).toBe(false);
-  });
-
-  it("includes mssql for sqlserver", () => {
-    const plan = buildInitInstallPlan(postgresAnswers({ database: "sqlserver", connectionEnv: "DATABASE_URL" }), FAKE_SPECS);
-    expect(plan.packages).toContain("mssql");
-    expect(plan.packages).not.toContain("pg");
-  });
-
-  it("includes better-sqlite3 for sqlite", () => {
-    const plan = buildInitInstallPlan(postgresAnswers({ database: "sqlite", sqliteFile: "SQLITE_FILE" }), FAKE_SPECS);
-    expect(plan.packages).toContain("better-sqlite3");
-    expect(plan.packages).not.toContain("pg");
-    expect(plan.packages).not.toContain("mysql2");
-  });
-
-  it("prisma without execute: no live driver", () => {
-    const plan = buildInitInstallPlan(
-      postgresAnswers({ database: "prisma", studioExecute: { enabled: false } }),
-      FAKE_SPECS,
-    );
-    expect(plan.packages).not.toContain("pg");
-    expect(plan.packages).not.toContain("mysql2");
-    expect(plan.packages).not.toContain("mssql");
-    expect(plan.packages).not.toContain("better-sqlite3");
-  });
-
-  // @askdb/prisma is an optional peer of askdb (#259): a Prisma project installs it, and
-  // pnpm 11 must approve its @prisma/engines build or the install exits 1.
-  it("prisma installs @askdb/prisma and approves its @prisma/engines build; other engines don't", () => {
-    const prisma = buildInitInstallPlan(postgresAnswers({ database: "prisma", studioExecute: { enabled: false } }), FAKE_SPECS);
-    expect(prisma.packages).toEqual(["@askdb/config@1.0.0", "@askdb/prisma@0.2.0"]);
-    expect(prisma.allowBuilds).toEqual(["@prisma/engines"]);
-
-    const postgres = buildInitInstallPlan(postgresAnswers(), FAKE_SPECS);
-    expect(postgres.packages.some((p) => p.startsWith("@askdb/prisma"))).toBe(false);
-    expect(postgres.allowBuilds).toEqual([]);
-  });
-
-  it("prisma + sqlserver execute: installs mssql", () => {
-    const plan = buildInitInstallPlan(
-      postgresAnswers({
-        database: "prisma",
-        studioExecute: { enabled: true, provider: "sqlserver", connectionEnv: "DATABASE_URL" },
-      }),
-      FAKE_SPECS,
-    );
-    expect(plan.packages).toContain("mssql");
-    expect(plan.packages).not.toContain("pg");
-  });
-
-  it("no duplicate packages for same driver", () => {
-    const plan = buildInitInstallPlan(
-      postgresAnswers({
-        database: "postgres",
-        studioExecute: { enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" },
-      }),
-      FAKE_SPECS,
-    );
-    const pgCount = plan.packages.filter((p) => p === "pg").length;
-    expect(pgCount).toBe(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveDefaultInitAnswers
-// ---------------------------------------------------------------------------
-
 describe("resolveDefaultInitAnswers", () => {
   it("non-interactive defaults: postgres/openai/file/no-execute", () => {
     const a = resolveDefaultInitAnswers();
@@ -286,7 +58,7 @@ describe("resolveDefaultInitAnswers", () => {
     const a = resolveDefaultInitAnswers({ aiProvider: "gateway" });
     expect(a.aiKeyEnv).toBe("AI_GATEWAY_API_KEY");
     expect(a.aiModelEnv).toBe("ASKDB_AI_MODEL");
-    const out = renderInitConfig(a);
+    const out = planInitScaffold(a, FAKE_SPECS).configSource;
     expect(out).toContain('provider: "gateway"');
     expect(out).toContain('apiKey: env("AI_GATEWAY_API_KEY")');
   });
@@ -308,18 +80,13 @@ describe("resolveDefaultInitAnswers", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// runWizard — env var NAMES are defaulted, never prompted for
-// ---------------------------------------------------------------------------
-
 describe("runWizard", () => {
   it("never asks the user to name an env var — uses conventional defaults", async () => {
     const { prompter, messages } = createRecordingPrompter();
     const answers = await runWizard(prompter);
-    expect(answers).not.toBeNull();
-    expect(answers!.connectionEnv).toBe("DATABASE_URL");
-    expect(answers!.aiKeyEnv).toBe("OPENAI_API_KEY");
-    expect(answers!.aiModelEnv).toBe("OPENAI_MODEL");
+    expect(answers.connectionEnv).toBe("DATABASE_URL");
+    expect(answers.aiKeyEnv).toBe("OPENAI_API_KEY");
+    expect(answers.aiModelEnv).toBe("OPENAI_MODEL");
     for (const message of messages) {
       expect(message.toLowerCase()).not.toContain("env var");
     }
@@ -347,16 +114,16 @@ describe("runWizard", () => {
       return (opts.default ?? opts.choices[0]!.value) as never;
     }) as InitPrompter["select"];
     const answers = await runWizard(prompter);
-    expect(answers!.ragStore).toBe("pgvector");
-    expect(answers!.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
+    expect(answers.ragStore).toBe("pgvector");
+    expect(answers.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
     expect(messages.some((m) => m.toLowerCase().includes("env var"))).toBe(false);
   });
 
   it("defaults Studio execute to off when the user accepts every default", async () => {
     const { prompter } = createRecordingPrompter();
     const answers = await runWizard(prompter);
-    expect(answers!.studioExecute).toEqual({ enabled: false });
-    expect(renderInitConfig(answers!)).not.toContain("studio:");
+    expect(answers.studioExecute).toEqual({ enabled: false });
+    expect(planInitScaffold(answers, FAKE_SPECS).configSource).not.toContain("studio:");
   });
 
   it("Prisma + Studio execute still asks which live provider to use (a real decision)", async () => {
@@ -371,15 +138,11 @@ describe("runWizard", () => {
       return true;
     };
     const answers = await runWizard(prompter);
-    expect(answers!.database).toBe("prisma");
-    expect(answers!.studioExecute).toEqual({ enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" });
+    expect(answers.database).toBe("prisma");
+    expect(answers.studioExecute).toEqual({ enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" });
     expect(messages).toContain("Studio execute needs a live database provider. Which one?");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Option parser (indirectly via runInitCli error paths)
-// ---------------------------------------------------------------------------
 
 describe("option parser", () => {
   it("rejects invalid --database value", async () => {
@@ -422,10 +185,6 @@ describe("option parser", () => {
     expect(writes.join("")).toContain("--yes");
   });
 });
-
-// ---------------------------------------------------------------------------
-// runInitCli integration
-// ---------------------------------------------------------------------------
 
 describe("runInitCli --yes --skip-install", () => {
   it("writes config with default Postgres branch", async () => {
@@ -545,6 +304,37 @@ describe("runInitCli --yes --skip-install", () => {
     }
   });
 
+  // #777: Studio execute on the introspection engine reads the same connection env var, as the wizard does.
+  it.each(["postgres", "mysql", "sqlserver"])(
+    "--database %s --connection-env PG_URL --studio-execute: introspection and execute both read PG_URL",
+    async (database) => {
+      const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+      try {
+        const outPath = join(tmp, "askdb.config.ts");
+        const code = await runInitCli([
+          "--yes", "--skip-install", "--path", outPath,
+          "--database", database, "--connection-env", "PG_URL", "--studio-execute",
+        ]);
+        expect(code).toBe(0);
+        const config = readFileSync(outPath, "utf8");
+        expect(config.match(/databaseUrl: env\("PG_URL"\)/g)).toHaveLength(2);
+        expect(config).not.toContain("DATABASE_URL");
+        const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+        expect(envExample).not.toContain("DATABASE_URL");
+        expect(envExample.match(/^PG_URL=/gm)).toHaveLength(1);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("Studio execute on another engine than introspection keeps DATABASE_URL, and an explicit execute env var wins", () => {
+    const other = resolveDefaultInitAnswers({ database: "mysql", connectionEnv: "MY_URL", studioExecute: true, studioExecuteProvider: "postgres" });
+    expect(other.studioExecute).toMatchObject({ enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" });
+    const explicit = resolveDefaultInitAnswers({ database: "mysql", connectionEnv: "MY_URL", studioExecute: true, studioExecuteConnectionEnv: "EXEC_URL" });
+    expect(explicit.studioExecute).toMatchObject({ enabled: true, provider: "mysql", connectionEnv: "EXEC_URL" });
+  });
+
   it("--ai-provider azure: config and .env.example include the resource name", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
     try {
@@ -560,6 +350,26 @@ describe("runInitCli --yes --skip-install", () => {
       expect(envExample).toMatch(/^AZURE_OPENAI_API_KEY=$/m);
       expect(envExample).toMatch(/^AZURE_RESOURCE_NAME=$/m);
     } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  // The flag's value would land in the config as `env("my-url")`, which no shell can set.
+  it.each([
+    [["--connection-env", "my-url"], "--connection-env must be an environment variable name"],
+    [["--ai-key-env", "sk-live-1234"], "--ai-key-env must be an environment variable name"],
+    [["--rag-store", "pgvector", "--pgvector-env", "pgvector url"], "--pgvector-env must be an environment variable name"],
+    [["--database", "sqlite", "--sqlite-file", "./shop\n.db"], "--sqlite-file must not contain control characters"],
+  ])("%j fails, naming the flag, and writes nothing", async (flags, message) => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const code = await runInitCli(["--yes", "--skip-install", "--path", join(tmp, "askdb.config.ts"), ...flags]);
+      expect(code).toBe(1);
+      expect(stderr.mock.calls.join("")).toContain(message);
+      expect(readdirSync(tmp)).toEqual([]);
+    } finally {
+      stderr.mockRestore();
       rmSync(tmp, { recursive: true, force: true });
     }
   });
@@ -598,14 +408,16 @@ describe("runInitCli --yes --skip-install", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Existing helper tests (preserved)
-// ---------------------------------------------------------------------------
-
 describe("init helpers", () => {
   it("resolveInitDepSpecs returns non-empty specs", () => {
     const s = resolveInitDepSpecs();
     expect(s.configSpec.length).toBeGreaterThan(0);
+  });
+
+  // The introspect command's missing-package hint keeps its own copy of the approvals.
+  it("approves the same Prisma build in the introspect hint as the scaffold planner does", () => {
+    const plan = planInitScaffold(resolveDefaultInitAnswers({ database: "prisma" }), FAKE_SPECS);
+    expect(PRISMA_BUILD_APPROVALS).toEqual(plan.install.allowBuilds);
   });
 
   it("resolveInitDepSpecs pins @askdb/prisma to the version this CLI was built with", () => {
@@ -653,9 +465,10 @@ describe("runInitCli install", () => {
     rmSync(project, { recursive: true, force: true });
   });
 
+  /** What a Prisma project installs: `ai` (the newest major `@askdb/core` accepts) and `zod` too, for Yarn Plug'n'Play (#760). */
   function prismaPackages(): string[] {
     const { prismaSpec, configSpec } = resolveInitDepSpecs();
-    return [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`];
+    return [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`, "ai@^7.0.51", "zod@^4.6.7"];
   }
 
   // `pnpm add --allow-build` arrived in pnpm 10.4.0; older pnpm rejects the unknown option.
@@ -677,6 +490,21 @@ describe("runInitCli install", () => {
     expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, prismaPackages(), allowBuilds);
     const command = ["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...prismaPackages()].join(" ");
     expect(stderr.join("")).toContain(`  ${command}\n`);
+  });
+
+  // A project that already lists `ai` or `zod` keeps its range: `init` doesn't move `ai@^6` to 7.
+  it("installs ai and zod for a Prisma project only when its package.json doesn't list them", async () => {
+    enterProject({
+      "package.json": JSON.stringify({ name: "app", private: true, dependencies: { ai: "^6.0.0" }, devDependencies: { zod: "^3.25.76" } }),
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+    });
+    const installer = vi.fn().mockReturnValue(true);
+
+    const code = await runInitCli(["--yes", "--database", "prisma", "--path", join(project, "askdb.config.ts")], installer);
+
+    expect(code).toBe(0);
+    const { configSpec, prismaSpec } = resolveInitDepSpecs();
+    expect(installer).toHaveBeenCalledWith("pnpm", project, [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`], ["@prisma/engines"]);
   });
 
   // #750: `pnpm init` writes devEngines.packageManager and no lockfile, and npm refuses to

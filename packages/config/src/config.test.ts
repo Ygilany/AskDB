@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ASKDB_AI_PROVIDERS,
@@ -20,33 +19,8 @@ import {
 } from "./index.js";
 import type { AskDbRuntimeConfig } from "./index.js";
 import { renderAskDbAiConfigScaffold } from "./scaffold/index.js";
+import { linkWorkspacePackage } from "./test-utils.js";
 import type { AskDbConfig } from "./types.js";
-
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-function linkWorkspacePackage(projectDir: string): void {
-  const nmAskdb = join(projectDir, "node_modules", "@askdb");
-  mkdirSync(nmAskdb, { recursive: true });
-  const linkedPackage = join(nmAskdb, "config");
-  mkdirSync(linkedPackage, { recursive: true });
-  symlinkSync(join(pkgRoot, "src"), join(linkedPackage, "src"), "dir");
-  writeFileSync(
-    join(linkedPackage, "package.json"),
-    JSON.stringify(
-      {
-        name: "@askdb/config",
-        type: "module",
-        main: "./src/index.ts",
-        exports: {
-          ".": "./src/index.ts",
-        },
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
-}
 
 function minimalConfig(overrides: Partial<AskDbConfig> = {}): AskDbConfig {
   const base: AskDbConfig = {
@@ -1836,5 +1810,92 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("k");
     expect(rt.flat).toMatchObject({ ASKDB_MOCK_SQL: "select 1", PORT: "8080" });
     expect(rt.flat.ASKDB_LOG_LEVEL).toBeUndefined();
+  });
+});
+
+// #787: a model base URL that carries a username or password fails to load, and no error repeats
+// it. fetch refuses such a URL anyway, and its own error quotes the whole URL.
+describe("a model baseUrl with credentials", () => {
+  const SECRET = /S3cret|admin/;
+  const withAi = (ai: AskDbConfig["ai"], rag?: AskDbConfig["rag"]): AskDbConfig => ({ ...minimalConfig(), ai, ...(rag ? { rag } : {}) });
+
+  it.each<[string, AskDbConfig, string]>([
+    [
+      "a provider's connection",
+      withAi({ provider: "openai", providerConfig: { openai: { apiKey: "k", baseUrl: "http://admin:S3cret@proxy.example/v1" } } }),
+      "ai.providerConfig.openai.baseUrl",
+    ],
+    [
+      "a user name without a password",
+      withAi({ provider: "anthropic", providerConfig: { anthropic: { apiKey: "k", baseUrl: "https://admin@proxy.example/v1" } } }),
+      "ai.providerConfig.anthropic.baseUrl",
+    ],
+    [
+      "a named connection",
+      withAi({
+        provider: "openai",
+        providerConfig: {
+          openai: [
+            { apiKey: "k", baseUrl: "https://proxy.example/v1" },
+            { name: "eu", apiKey: "k", baseUrl: "https://admin:S3cret@eu.proxy.example/v1" },
+          ],
+        },
+      }),
+      'ai.providerConfig.openai.baseUrl (connection "eu")',
+    ],
+    [
+      "a custom provider's connection",
+      withAi({ provider: "mistral", providerConfig: { mistral: { apiKey: "k", baseUrl: "http://admin:S3cret@llm.internal/v1" } }, language: { model: "m" } }),
+      "ai.providerConfig.mistral.baseUrl",
+    ],
+    [
+      "a URL that doesn't parse but has an @",
+      withAi({ provider: "openai", providerConfig: { openai: { apiKey: "k", baseUrl: "http://admin:S3 cret@proxy.example/v1" } } }),
+      "ai.providerConfig.openai.baseUrl",
+    ],
+    [
+      "the deprecated rag.embedderConfig.openai.baseUrl",
+      withAi(
+        { provider: "openai", providerConfig: { openai: { apiKey: "k" } } },
+        { embedder: "openai", embedderConfig: { openai: { baseUrl: "http://admin:S3cret@proxy.example/v1" } }, store: "memory", storeConfig: { memory: {} } },
+      ),
+      "rag.embedderConfig.openai.baseUrl",
+    ],
+  ])("refuses %s, naming the key and not the URL", (_case, config, key) => {
+    let error: unknown;
+    try {
+      defineConfig(config);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(new RegExp(`^askdb\\.config: ${key.replace(/[.()"]/g, "\\$&")} contains a username or password`));
+    expect((error as Error).message).not.toMatch(SECRET);
+  });
+
+  it("accepts a base URL without credentials, and one with an @ only in its path", () => {
+    const rt = defineConfig(withAi({ provider: "openai", providerConfig: { openai: { apiKey: "k", baseUrl: "https://proxy.example/v1/@team" } } }));
+    expect(rt.entries.OPENAI_BASE_URL).toBe("https://proxy.example/v1/@team");
+  });
+
+  it("names the file when the config file holds one, and neither the error nor its cause repeats the URL", () => {
+    const dir = mkdtempSync(join(tmpdir(), "askdb-baseurl-creds-"));
+    try {
+      writeFileSync(
+        join(dir, "askdb.config.mjs"),
+        `export default { ai: { provider: "openai", providerConfig: { openai: { apiKey: "k", baseUrl: "http://admin:S3cret@proxy.example/v1" } } }, introspection: { provider: "postgres" } };\n`,
+      );
+      let error: unknown;
+      try {
+        loadAskDbConfigProjectionSync(dir);
+      } catch (e) {
+        error = e;
+      }
+      expect((error as Error).message).toContain("askdb.config.mjs: ai.providerConfig.openai.baseUrl contains a username or password");
+      expect((error as Error).message).not.toMatch(SECRET);
+      expect(String((error as { cause?: Error }).cause?.message)).not.toMatch(SECRET);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

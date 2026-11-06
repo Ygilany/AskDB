@@ -120,8 +120,8 @@ function parseArgs<O>(spec: CommandSpec<O>, argv: readonly string[]): O {
       continue;
     }
     if (arg.startsWith("--") || arg.length < 3) throw new Error(labelled("Unknown option", name));
-    // Short flags together, as commander took them: `-fy` is `-f -y`, `-qtext` is `-q text`, and
-    // `-vq text` ends with the flag that takes a value.
+    // Short flags cluster: `-fy` is `-f -y`, `-qtext` is `-q text`, and `-vq text` ends with the
+    // flag that takes a value.
     for (let j = 1; j < arg.length; j += 1) {
       const short = `-${arg[j]}`;
       const cluster = byName.get(short);

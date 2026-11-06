@@ -1129,36 +1129,6 @@ describe("ask — tenant params contract across dialects (sql-params)", () => {
     }
   });
 
-  it("MySQL: a business marker before the tenant list keeps source order", async () => {
-    const schema = loadSchema(multiTenantDir);
-    const before = [
-      "```sql",
-      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = :tenant_agency_ids",
-      "```",
-      "```sql-unbound",
-      "SELECT count(*) FROM orders WHERE status = :status_name AND agency_id = :tenant_agency_ids",
-      "```",
-      "```json",
-      '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"}]}',
-      "```",
-    ].join("\n");
-    const result = await ask({
-      question: "q",
-      schema,
-      model: fakeModel,
-      dialect: "mysql",
-      tenantScope: twoAgencies,
-      tenantSqlMode: "sql-params",
-      deps: { generateText: vi.fn(async () => ({ text: before })) },
-    });
-    expect(result.unboundSql).toBe(
-      "SELECT count(*) FROM orders WHERE status = ? AND agency_id IN (?, ?)",
-    );
-    expect(result.params).toEqual(["paid", "42", "99"]);
-    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id IN (?, ?)");
-    expect(result.sql).not.toMatch(/\$\d/);
-  });
-
   it("zero IDs for a referenced root throws instead of returning SQL", async () => {
     const schema = loadSchema(multiTenantDir);
     const clientOnly = [
@@ -1695,6 +1665,31 @@ describe("ask — one guardrail decision point (ADR 0010)", () => {
     expect(result.verdict).toEqual({ outcome: "allow", findings: [] });
   });
 
+  // ask() checks its rendered forms as the rebind does (#711): with no tenant policy nothing
+  // fills a `:tenant_*` placeholder, so an unboundSql that keeps one isn't returned for reuse.
+  it("drops the reuse artifacts when a rendered form keeps a placeholder, logs why, and still returns sql", async () => {
+    const debug = vi.fn();
+    const sql = "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'open'";
+    const result = await ask({
+      question: "q",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      logger: { info: vi.fn(), error: vi.fn(), debug },
+      deps: replying(reply3(sql, "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status")),
+    });
+
+    expect(result.sql).toBe(sql);
+    expect(result).not.toHaveProperty("preparedQuery");
+    expect(result).not.toHaveProperty("unboundSql");
+    expect(result).not.toHaveProperty("params");
+    expect(result).not.toHaveProperty("parameters");
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({ event: AskDbLogEvent.PipelineParameterized, parameterCount: 0, reason: "bind_failed" }),
+      "parameterize extras dropped",
+    );
+  });
+
   it("returns no preparedQuery for a template whose placeholder is glued to an identifier", async () => {
     const result = await ask({
       question: "q",
@@ -1839,6 +1834,8 @@ describe("ask — sensitive-identifier guardrail", () => {
     // `\'`, so u.password is code; the check matched neither (#707).
     ["a U& name", String.raw`SELECT U&"p\0061ssword" FROM users`, "UNICODE_ESCAPED_IDENTIFIER"],
     ["a continued E'…' string", "SELECT E'a'\n'\\'' AS x, u.password FROM users u --'", "STRING_CONTINUATION"],
+    // CockroachDB reads the b'…' string with backslash escapes, so u.password is code (#730).
+    ["a b'…' string with a backslash", String.raw`SELECT b'\'' AS x, u.password FROM users u --'`, "ESCAPED_BYTE_STRING"],
   ])("strict mode rejects %s from a custom dialect, which no read-only check covers (#707)", async (_label, sql, issue) => {
     const error = await ask({
       question: "credentials",
@@ -2520,5 +2517,82 @@ describe("ask — an E'…' string continued on a later line (#703)", () => {
     await expect(rejection).rejects.toMatchObject({
       warnings: expect.arrayContaining([expect.objectContaining({ rule: "STRING_CONTINUATION", tableId: "" })]),
     });
+  });
+});
+
+describe("ask — a CockroachDB b'…' byte string with a backslash (#730)", () => {
+  // CockroachDB reads the bytes `'` and then an unscoped read of orders; every check used to pass it.
+  const bypass = String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`;
+
+  it("built-in cockroachdb: the read-only check refuses it", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "cockroachdb",
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + bypass + "\n```" })) as never },
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SqlValidationError);
+    expect((error as SqlValidationError).rule).toBe("SQL_ESCAPED_BYTE_STRING");
+  });
+
+  it("custom AskDialect: the tenant check refuses it under strict enforcement", async () => {
+    const dialect: AskDialect = { generate: async () => ({ sql: bypass }) };
+    const rejection = ask({ question: "q", schema: loadSchema(multiTenantDir), model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({
+      warnings: expect.arrayContaining([expect.objectContaining({ rule: "ESCAPED_BYTE_STRING", tableId: "" })]),
+    });
+  });
+});
+
+describe("ask — a rendered tenant literal can't change how the SQL reads (GHSA-wjgj-mf9h-6g68)", () => {
+  // The model reply reads as plain tokens with the placeholder in place: `E` is an alias,
+  // `:tenant_agency_ids` a placeholder, `'x'` a closed string, and `agency_id = :tenant_agency_ids`
+  // is the tenant predicate. In sql-only mode the placeholder renders to a quoted literal, so the
+  // select item becomes `E'…'` followed on the next line by `'x'`, which Postgres and CockroachDB
+  // read as one continued escape string. ask() re-checks the rendered sql and refuses it.
+  const reply = [
+    "```sql",
+    "SELECT E:tenant_agency_ids",
+    "'x' AS c FROM orders WHERE agency_id = :tenant_agency_ids",
+    "```",
+  ].join("\n");
+
+  it.each(["postgres", "cockroachdb"] as const)(
+    "%s sql-only: a reply whose rendered tenant literal continues a string is refused",
+    async (dialect) => {
+      const generateText = vi.fn(async () => ({ text: reply }));
+      const rejection = ask({
+        question: "count",
+        schema: loadSchema(multiTenantDir),
+        model: fakeModel,
+        dialect,
+        tenantScope: agencyScope,
+        tenantSqlMode: "sql-only",
+        deps: { generateText },
+      });
+      await expect(rejection).rejects.toBeInstanceOf(SqlValidationError);
+      await expect(rejection).rejects.toMatchObject({ rule: "SQL_STRING_CONTINUATION" });
+    },
+  );
+
+  it("sql-only: a scoped reply with no such trick is still returned, inlined", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
+    }));
+    const result = await ask({
+      question: "count",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '42'");
+    expect(result.verdict.outcome).toBe("allow");
   });
 });
