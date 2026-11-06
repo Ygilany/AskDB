@@ -78,7 +78,7 @@ Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `t
 
 - **`connection` is now an object:** the connection's `name` and its settings (`apiKey`, `apiKeySecondary`, `baseUrl`, `resourceName`, `apiVersion`), with unset ones left out. The config's `secondaryApiKey` is `apiKeySecondary` here. `rt.ai.language` also gains `reasoning`.
 - **The flat map holds no AI keys.** `rt.flat`, `flattenAskDbConfig()` and `defineConfig().entries` no longer carry `ASKDB_AI_PROVIDER`, `OPENAI_API_KEY`, the reasoning keys or any other AI key. A child process that took its AI settings from `mergeAskDbFlatIntoEnvMap()` needs them another way, for example by loading the same `askdb.config.*`.
-- **If you pass `registry` to `createAskDb`**, build it with `@askdb/ai` 0.1.0-beta.11 or newer: the client calls the new section methods.
+- **If you pass `registry` to `createAskDb`**, build it with `@askdb/ai` 0.1.0-beta.11 or newer: the client calls the new section methods. With an older one, the first `ask()` that needs the config's model throws `ModelNotConfiguredError`, which names the older `@askdb/ai`.
 - **Without a config file**, nothing changes: `resolveAiConfig(env)` and the `*FromEnv` methods read an env map as before. [Env map precedence](/reference/packages/#env-map-precedence) lists the variables.
 
 ### Replace the removed `@askdb/config` exports

@@ -376,6 +376,21 @@ describe("createAskDb providers option", () => {
     ).toThrow(/not both/);
   });
 
+  it("names an older @askdb/ai when the passed registry has no section methods", async () => {
+    // A host's own, older @askdb/ai builds a registry without resolveAiConfigFromSection().
+    const olderRegistry: Partial<AiRegistry> = makeRegistry();
+    delete olderRegistry.resolveAiConfigFromSection;
+    const askdb = createAskDb({
+      config: makeConfig(),
+      registry: olderRegistry as AiRegistry,
+      schema: { path: fixtureSchemaPath },
+    });
+    const error = await askdb.ask("q").catch((e: unknown) => e as Error);
+    expect(error).toBeInstanceOf(ModelNotConfiguredError);
+    expect(error.message).toContain("older `@askdb/ai`");
+    expect(error.message).toContain("Upgrade `@askdb/ai`");
+  });
+
   it("registers every built-in provider when neither providers nor registry is passed", async () => {
     const config = makeConfig(); // no mockSql and no key -> registry path
     const askdb = createAskDb({ config, schema: { path: fixtureSchemaPath } });

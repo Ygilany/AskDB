@@ -261,6 +261,14 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       };
     }
     if (!cachedAiConfig) {
+      // A `registry` the host built with its own, older @askdb/ai has no section methods.
+      if (typeof registry.resolveAiConfigFromSection !== "function") {
+        throw new ModelNotConfiguredError(
+          "The `registry` passed to createAskDb() has no resolveAiConfigFromSection(): it comes from an older `@askdb/ai` " +
+            "than `@askdb/client` needs. Upgrade `@askdb/ai` to the version `@askdb/client` depends on " +
+            "(`npm ls @askdb/ai` shows both), or pass `providers` instead of `registry`.",
+        );
+      }
       cachedAiConfig = registry.resolveAiConfigFromSection(config.ai.language);
       if (!cachedAiConfig) throw new ModelNotConfiguredError(registry.keyMissingMessage("NL→SQL generation"));
     }
