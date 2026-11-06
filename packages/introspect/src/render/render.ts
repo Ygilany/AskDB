@@ -7,6 +7,7 @@ import {
   type V2Table,
   type V2Column,
 } from "@askdb/core";
+import { EmptyIntrospectionError } from "../errors.js";
 import { makeColumnId, makeTableId } from "../kit/ids.js";
 import type {
   IntrospectionWarning,
@@ -60,7 +61,8 @@ export function renderToSchemaV2(
  * Pure (no-write) form of {@link renderToSchemaV2}: produces the exact
  * `schema.json` bytes `--out` would write, including the ID-anchored merge
  * with `existingArtifactDir` (human-set `sensitive` flags preserved) and the
- * connector-detected `provider`.
+ * connector-detected `provider`. Throws {@link EmptyIntrospectionError} when
+ * the schema renders no tables or views.
  *
  * `askdb introspect --out`, `--print`, and `--diff` all go through this one
  * function so `--diff` against an artifact produced by `--out` from the same
@@ -72,6 +74,8 @@ export function renderSchemaV2Body(
 ): RenderBodyResult {
   const warnings: IntrospectionWarning[] = [];
   const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
+  // `loadSchema` rejects an artifact with no tables, so refuse before any merge or write (ADR 0037).
+  if (fresh.tables.length === 0) throw new EmptyIntrospectionError(options.schemaId, options.provider, options.filters);
   const json = options.existingArtifactDir
     ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
     : fresh;

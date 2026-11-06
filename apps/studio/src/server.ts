@@ -111,6 +111,7 @@ import {
   validateExecuteSql,
 } from "./execute-registry.js";
 import type { StudioExecuteProvider } from "./execute-registry.js";
+import { EmptyIntrospectionError } from "@askdb/introspect";
 import { resolveStudioIntrospectionPlan, runStudioIntrospection } from "./introspection.js";
 import { probeSetupState, writeSetupConfig, SetupError, type SetupConfigInput } from "./setup.js";
 import {
@@ -535,7 +536,7 @@ async function handleSetupIntrospect(state: StudioState): Promise<IntrospectRunR
     );
   }
   const outDir = probe.outputDir;
-  const run = await runStudioIntrospection({
+  const run = await introspectOrRefuse({
     outDir,
     hasExistingArtifact: existsSync(join(outDir, "schema.json")),
   });
@@ -560,7 +561,7 @@ async function handleResync(state: StudioState): Promise<IntrospectRunResponse> 
   } catch {
     // Keep the snapshot the server started with when the config disappeared mid-session.
   }
-  const run = await runStudioIntrospection({
+  const run = await introspectOrRefuse({
     outDir: state.schemaDir,
     schemaId: workspace.physical.schemaId,
     hasExistingArtifact: true,
@@ -2295,6 +2296,16 @@ function contentTypeFor(path: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Runs introspection; an empty result is the user's to fix (ADR 0037), so it answers 422, not 500. */
+async function introspectOrRefuse(options: Parameters<typeof runStudioIntrospection>[0]): ReturnType<typeof runStudioIntrospection> {
+  try {
+    return await runStudioIntrospection(options);
+  } catch (error) {
+    if (error instanceof EmptyIntrospectionError) throw new StudioHttpError(422, error.message);
+    throw error;
+  }
 }
 
 class StudioHttpError extends Error {

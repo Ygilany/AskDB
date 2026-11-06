@@ -24,7 +24,7 @@ console.log(result.render?.schemaJsonPath, result.warnings);
 
 ## `@askdb/introspect`
 
-The engine-agnostic contract: the `introspect()` orchestrator, the schema-artifact writer, the connector registry, and the types every connector shares. It exports no error classes: its functions throw `Error`.
+The engine-agnostic contract: the `introspect()` orchestrator, the schema-artifact writer, the connector registry, and the types every connector shares. It exports one error class, `EmptyIntrospectionError` (see [Writing the artifact](#writing-the-artifact)); its other errors are plain `Error`s.
 
 ### `introspect(input, renderOptions, options)`
 
@@ -56,6 +56,8 @@ Runs `options.connector.describe(input)`. The connector's package owns the shape
 
 The output is deterministic: tables sorted by schema and name, columns in their ordinal order, and `JSON.stringify(json, null, 2)` plus a newline, so the same catalog gives the same bytes.
 
+When the schema renders no tables or views, `renderSchemaV2Body()`, and so `renderToSchemaV2()` and `introspect()` with render options, throws `EmptyIntrospectionError` and writes nothing ([ADR 0037](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0037-introspection-refuses-an-empty-artifact.md)). That covers an empty database, a Postgres schema with only enums or sequences, and filters that match nothing. `loadSchema()` rejects an artifact with no tables, so an existing `schema.json` stays as it was. The error, an `AskDbError`, carries `schemaId`, `provider` and `filters`; its message names them and the likely causes, and never the connection.
+
 **`RenderOptions`:**
 
 | Field | Type | Description |
@@ -63,6 +65,7 @@ The output is deterministic: tables sorted by schema and name, columns in their 
 | `outDir` | `string` | Output directory, such as `"my-app.schema/"`. |
 | `schemaId` | `string` | The artifact's `schemaId`. |
 | `provider` | `string` | Dialect id to record in `schema.json`, so hosts pick the SQL dialect from it. |
+| `filters` | `IntrospectionFilters` | The filters the connector ran with. Read only to name them in `EmptyIntrospectionError`. |
 | `existingArtifactDir` | `string` | Merge with the `schema.json` already in this directory: `sensitive` flags set there are kept, and a column the old file lacks gets a `new_column` warning. Each id in `tables/*.md` that the new schema no longer has gets an `orphan_id` warning. The markdown files are read, never changed. |
 
 `RenderBodyOptions` is `RenderOptions` without `outDir`. `RenderResult` is `{ schemaJsonPath, warnings }`, with the absolute path of the written file.

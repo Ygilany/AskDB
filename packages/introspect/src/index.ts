@@ -28,6 +28,7 @@ export type {
   RenderBodyResult,
 } from "./render/types.js";
 
+export { EmptyIntrospectionError } from "./errors.js";
 export {
   introspect,
   type IntrospectOptions,
