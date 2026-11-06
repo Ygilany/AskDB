@@ -133,7 +133,7 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 ```json
 {
   "ok": true,
-  "correlationId": "01H…",
+  "correlationId": "8f14e45f-ceea-4e7a-9f2b-1c3d5e7a9b0c",
   "sql": "SELECT count(*) FROM customers WHERE created_at >= …",
   "explain": null,
   "usage": {
@@ -160,7 +160,7 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 ```json
 {
   "ok": false,
-  "correlationId": "01H…",
+  "correlationId": "8f14e45f-ceea-4e7a-9f2b-1c3d5e7a9b0c",
   "error": {
     "code": "sql_validation_error",
     "message": "Generated SQL contains a write statement.",
@@ -188,9 +188,9 @@ The server picks the status code from the error's type, never from its message t
 
 ## Correlation IDs
 
-Every response includes a `correlationId`. The same ID is emitted in the server's structured log events, so you can join HTTP requests to generated SQL and any errors.
+Every response except `GET /health` includes a `correlationId`. The same ID is emitted in the server's structured log events, so you can join HTTP requests to generated SQL and any errors.
 
-To carry a correlation ID supplied by your gateway, send the `x-correlation-id` header on the request — the server uses it as-is if present, otherwise generates one.
+To carry a correlation ID supplied by your gateway, send the `x-correlation-id` header on the request. The server trims the value and uses it; when the header is missing or blank, it generates a UUID.
 
 ```bash
 curl -X POST http://localhost:3000/ask \
