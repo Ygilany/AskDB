@@ -61,6 +61,8 @@ The bundle carries every file the directory loader reads, so `loadSchema(bundle)
 
 An error in a bundled file names the file and the bundle, for example `tenant-policy.md (in /srv/prod.bundle.json)` or `tables/orders.md (in /srv/prod.bundle.json)`.
 
+`tables` is required, `{}` when the directory has no table files. A bundle without it, or whose `tables` isn't an object of strings, throws `SchemaParseError` naming `tables` and the bundle: loading it as if it had no tables would drop every `sensitive: true` they set (#797).
+
 ### Loading a schema
 
 `loadSchema(path)` picks the form from the path:

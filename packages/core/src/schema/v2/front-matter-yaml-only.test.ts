@@ -101,14 +101,12 @@ describe("schema markdown front-matter is YAML only", () => {
     }
   });
 
-  it("loadSchemaFromJson refuses a bundle whose table file isn't text", () => {
-    const bundle = readSchemaDirectory(join(fixtures, "orders-users.schema"));
-    const table = Object.keys(bundle.tables)[0]!;
-    const tampered = {
-      ...bundle,
-      tables: { ...bundle.tables, [table]: { content: "---\n---\n", data: { id: "table:public.orders", aliases: ["x"] } } },
-    };
-    expect(() => loadSchemaFromJson(JSON.stringify(tampered))).toThrow(SchemaParseError);
-    expect(() => loadSchemaFromJson(JSON.stringify(tampered))).toThrow(/Malformed table front-matter YAML/);
+  // The loader refuses a bundle entry that isn't text before parsing it (loader.test.ts, #797);
+  // this is the guard for a host that calls parseTableMarkdown() itself.
+  it("parseTableMarkdown refuses a table file that isn't text", () => {
+    const notText = { content: "---\n---\n", data: { id: "table:public.orders", aliases: ["x"] } };
+    const parse = () => parseTableMarkdown(notText as unknown as string, "orders.md");
+    expect(parse).toThrow(SchemaParseError);
+    expect(parse).toThrow("Malformed table front-matter YAML in orders.md: expected the file's text");
   });
 });
