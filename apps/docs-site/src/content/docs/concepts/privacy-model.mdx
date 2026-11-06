@@ -62,7 +62,7 @@ Both of those are **prompt-level**: they change what the model sees, not what ca
 
 Audit logging is your application's job, not AskDB's. AskDB doesn't log questions, generated SQL, or model responses. If you want a record of every question that was asked and every SQL string that got generated, log them in the code that wraps `ask()`. That keeps the log inside your stack — same place your user identities and session data already live.
 
-Studio is the one place AskDB keeps them, on your machine: its Playground saves each question, its SQL and any tenant scope to `playground-history.json` in the schema directory, and adds that file to the directory's `.gitignore`.
+Studio is the one place AskDB keeps them, on your machine: its Playground saves each question, its SQL and explanation, and any tenant scope with its tenant IDs to `playground-history.json` in the schema directory, and adds that file to the directory's `.gitignore`.
 
 ## In one sentence
 
