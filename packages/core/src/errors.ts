@@ -78,6 +78,7 @@ export class UnknownDialectError extends AskDbError {
 export type TenantScopeRejectionReason =
   | "MISSING_SCOPE"
   | "UNKNOWN_TENANT_ROOT"
+  /** A `global` scope whose `reason` is missing, not a string, or blank: global access must say why. */
   | "GLOBAL_WITHOUT_REASON"
   | "INVALID_SCOPE_SHAPE"
   /**
@@ -123,8 +124,6 @@ export class TenantScopeError extends AskDbError {
 }
 
 export type QueryParameterRejectionReason =
-  | "INVALID_NAME"
-  | "RESERVED_NAME"
   | "INVALID_VALUE"
   | "MISSING_VALUE"
   | "UNRESOLVED_PLACEHOLDER"
@@ -155,9 +154,7 @@ export class QueryParameterError extends AskDbError {
 export type TenantGuardrailRuleCode =
   | "MISSING_TENANT_PREDICATE"
   | "MISSING_TYPE_DISCRIMINATOR"
-  | "INCOMPATIBLE_JOIN_SCOPES"
   | "UNKNOWN_TABLE_REFERENCED"
-  | "CROSS_TENANT_WITHOUT_GLOBAL"
   | "UNPROVABLE_SCOPE"
   /**
    * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a

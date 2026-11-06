@@ -1,5 +1,6 @@
 // Fails when an error class or code in @askdb/core's or @askdb/client's errors.ts is missing
-// from its API reference page, so a new class or code can't ship undocumented (#287).
+// from its API reference page, so a new class or code can't ship undocumented (#287), and when
+// the page's Errors tables list one that errors.ts no longer declares (#682).
 //
 // It reads each errors.ts with a small parser, not the TypeScript compiler, and fails closed:
 // an export it can't classify stops the check instead of being skipped. A name counts as
@@ -118,20 +119,39 @@ export function missingFromPage(sourceText, pageText) {
   );
 }
 
+/**
+ * The names in the first column of the tables in `pageText`'s `## Errors` section (each row
+ * starting `` | `name` | ``) that `sourceText` (an errors.ts) doesn't declare: rows left
+ * behind when a class or code is removed. Throws when the page has no `## Errors` section.
+ */
+export function staleOnPage(sourceText, pageText) {
+  const section = /^## Errors\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(pageText);
+  if (!section) throw new Error("The page has no `## Errors` section.");
+  const declared = new Set(documentedNames(stripComments(sourceText)));
+  const rows = [...section[1].matchAll(/^\| `(\w+)` \|/gm)].map((match) => match[1]);
+  return rows.filter((name) => !declared.has(name));
+}
+
 async function main() {
   let failed = false;
   for (const { sourceUrl, pageUrl } of ERROR_SOURCES) {
-    const missing = missingFromPage(await readFile(sourceUrl, "utf8"), await readFile(pageUrl, "utf8"));
+    const [sourceText, pageText] = [await readFile(sourceUrl, "utf8"), await readFile(pageUrl, "utf8")];
+    const page = fileURLToPath(pageUrl);
+    const source = fileURLToPath(sourceUrl);
+    const missing = missingFromPage(sourceText, pageText);
     if (missing.length > 0) {
       failed = true;
-      console.error(`${fileURLToPath(pageUrl)} doesn't document these from ${fileURLToPath(sourceUrl)}:`);
+      console.error(`${page} doesn't document these from ${source}; add each one to its Errors section:`);
       for (const name of missing) console.error(`- ${name}`);
     }
+    const stale = staleOnPage(sourceText, pageText);
+    if (stale.length > 0) {
+      failed = true;
+      console.error(`${page}'s Errors section lists these, which ${source} doesn't declare; remove each row:`);
+      for (const name of stale) console.error(`- ${name}`);
+    }
   }
-  if (failed) {
-    console.error("Add each one to the page's Errors section.");
-    process.exitCode = 1;
-  }
+  if (failed) process.exitCode = 1;
 }
 
 // Compare real paths, so a run through a symbolic link (macOS's /tmp) still runs the check.

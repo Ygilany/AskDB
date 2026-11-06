@@ -20,9 +20,13 @@ export type ParameterManifest = {
   parameters: ManifestParameter[];
 };
 
+/**
+ * Why the model's parameter manifest was dropped. Internal: `ask()` logs it at debug level
+ * (lowercased) and returns the SQL without the reuse artifacts, so nothing throws these.
+ */
 export type ManifestParseFailure = {
   ok: false;
-  reason: QueryParameterRejectionReason | "MALFORMED" | "EMPTY" | "MISSING";
+  reason: QueryParameterRejectionReason | "INVALID_NAME" | "RESERVED_NAME" | "MALFORMED" | "EMPTY" | "MISSING";
   message: string;
 };
 

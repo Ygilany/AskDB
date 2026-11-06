@@ -284,7 +284,7 @@ export default defineConfig({
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `logging.level` | `"fatal" \| "error" \| "warn" \| "info" \| "debug" \| "trace" \| "silent"` | CLI: `"silent"`, or `"info"` with `-v`, `--log-file` or `--log-stdout`. HTTP server: `"info"`. | Another value fails to load. A `logFile` or `logStdout` in config doesn't raise the CLI's level: set `level` too. |
-| `logging.logFile` | `string` | none | Also appends the logs to this file. Parent directories are created. The HTTP API server opens the file again for every request and doesn't close it, so a long-running server runs out of file descriptors ([#693](https://github.com/Ygilany/AskDB/issues/693)). |
+| `logging.logFile` | `string` | none | Also appends the logs to this file. Parent directories are created. The file stays open for the life of the process: rotate it with `copytruncate`, or restart the process after a rotate. |
 | `logging.logStdout` | `boolean` | `false` | Also copies the logs to stdout. |
 | `logging.correlationId` | `string` | A new UUID per run | CLI only: the ID on every log line of a run. `--correlation-id` overrides it. The HTTP server uses each request's `x-correlation-id` header instead, else a new UUID. |
 | `dev.mockSql` | `string` | none | SQL that `askdb ask`, `createAskDb` and the HTTP API use in place of the model call, for tests and local development. |

@@ -31,6 +31,12 @@ Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Oth
 | --- | --- | --- |
 | `@askdb/config` | `DEFAULT_RAG_FILE_BASE_PATH` | Your own path. With `rag.storeConfig.file.basePath` unset, the CLI and Studio use `<schema dir>/schema`, as before. |
 
+### Remove the error codes nothing threw
+
+Four codes are gone from `@askdb/core`'s error-code types, because none of AskDB's own checks reported them ([#682](https://github.com/Ygilany/AskDB/issues/682), ADR 0033): `INCOMPATIBLE_JOIN_SCOPES` and `CROSS_TENANT_WITHOUT_GLOBAL` from `TenantGuardrailRuleCode`, and `INVALID_NAME` and `RESERVED_NAME` from `QueryParameterRejectionReason`. Only code that names them breaks, and TypeScript reports where: delete those `case` branches and comparisons. A custom `AskDialect` that reported one of the two tenant rules in `tenantGuardrail.warnings` reports `MISSING_TENANT_PREDICATE` (a table read without its tenant predicate) or `UNPROVABLE_SCOPE` instead.
+
+A `global` tenant scope whose `reason` is missing, isn't a string, or is blank now throws `TenantScopeError` with `GLOBAL_WITHOUT_REASON`, not `INVALID_SCOPE_SHAPE`. A blank `reason`, such as `"  "`, passed before. Give every `global` scope a `reason` that says why it sees every tenant, and match `GLOBAL_WITHOUT_REASON` where you handled `INVALID_SCOPE_SHAPE` for it.
+
 ### Handle `SQL_UNICODE_ESCAPED_IDENTIFIER` for Unicode-escaped names
 
 On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped identifier such as `U&"set\005fconfig"`, and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_UNICODE_ESCAPED_IDENTIFIER` ([#692](https://github.com/Ygilany/AskDB/issues/692), ADR 0012). Postgres decodes the escapes, which could spell a blocked function, such as `set_config`, a scoped table (`U&"\006Frders"` reads `orders`) or a sensitive column, and the checks didn't decode them.
@@ -45,6 +51,7 @@ See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidatione
 
 - **`httpApi.listen.port`** is checked when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). A value that isn't an integer from 0 to 65535, or a string holding one, fails with `askdb.config: invalid httpApi.listen.port`, in every tool that loads the config. Before, the HTTP server passed such a value straight to `listen()`. A value that reads as `NaN`, such as `Number(env("PORT"))` with `PORT` unset, now counts as unset: the server uses port 3000 instead of failing to start.
 - **`rag.storeConfig.file.autoFlush`** gives a deprecation warning when the config loads ([#676](https://github.com/Ygilany/AskDB/issues/676)). Nothing ever read it, because the file store writes its files after every change. Remove it.
+- **`logging.logFile`** stays open for the life of the process ([#693](https://github.com/Ygilany/AskDB/issues/693)). `createAskDbLogger()` opens each log file once and shares it across loggers, so the HTTP API server no longer leaks a file descriptor on every `POST /ask`. After a rename or delete, logs keep going to the old file: rotate it with `copytruncate`, or restart the process after a rotate.
 
 ## 1.0.0-beta.46
 
