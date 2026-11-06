@@ -1,90 +1,120 @@
 ---
 title: "Quickstart"
-description: "Scaffold config, introspect a database, enrich the schema, and ask your first question — in under five minutes."
+description: "Create a small SQLite database, point AskDB at it, ask a question in plain English, and run the SQL that AskDB returns."
 ---
 
-import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
-import ExampleLink from "../../components/ExampleLink.astro";
+import { Aside } from "@astrojs/starlight/components";
 
 <p class="doc-eyebrow">From zero to first query</p>
 
-<p class="doc-lede">Scaffold your config, point AskDB at your database, enrich the schema artifact, and ask your first question. The same packages drop straight into a Node service when you're ready to embed.</p>
+<p class="doc-lede">In this tutorial, we'll create a small shop database, point AskDB at it, ask a question in plain English, and run the SQL that AskDB returns.</p>
 
-## Prerequisites
+<figure style="--d2-width: 226px">
 
-- Node 22.23.4 or newer.
-- npm, pnpm, or yarn — tabbed examples adapt to your choice; standalone snippets use `npx` (substitute `pnpm dlx` or `yarn dlx`).
-- An API key from a model provider — OpenAI, Anthropic, Google, Azure, or any OpenAI-compatible endpoint (OpenRouter, vLLM, Ollama, ...). See [Bring your own model](/guides/bring-your-own-model/).
-- A database AskDB can read — Postgres, MySQL, MariaDB, SQLite or SQL Server — or even a Prisma schema file (no live database required).
-
-## The whole flow, in four commands
-
-<Tabs syncKey="pkg">
-  <TabItem label="npm">
-
-```bash
-npx askdb@latest init        # scaffold askdb.config.ts
-npx askdb introspect         # read your database into a schema artifact
-npx askdb studio             # enrich the schema and test questions in your browser
-npx askdb ask --question "Which customers signed up last week?"
+```d2 src="../../assets/diagrams/d2/quickstart-flow.d2"
 ```
 
-  </TabItem>
-  <TabItem label="pnpm">
-
-```bash
-pnpm dlx askdb@latest init   # scaffold askdb.config.ts
-pnpm dlx askdb introspect    # read your database into a schema artifact
-pnpm dlx askdb studio        # enrich the schema and test questions in your browser
-pnpm dlx askdb ask --question "Which customers signed up last week?"
-```
-
-  </TabItem>
-  <TabItem label="yarn">
-
-```bash
-yarn dlx askdb@latest init   # scaffold askdb.config.ts
-yarn dlx askdb introspect    # read your database into a schema artifact
-yarn dlx askdb studio        # enrich the schema and test questions in your browser
-yarn dlx askdb ask --question "Which customers signed up last week?"
-```
-
-  </TabItem>
-</Tabs>
-
-Each step is explained below. The loop that makes answers good: **introspect once, then enrich and re-ask in Studio until the SQL matches how your team thinks about the data.**
-
-<figure style="--d2-width: 273px">
-
-```d2 src="../../assets/diagrams/d2/quickstart-loop.d2"
-```
-
-<figcaption>The four steps below, in order. When the SQL isn't right yet, enrich the schema in Studio and ask again.</figcaption>
+<figcaption>The files we'll make, and the step that makes each. AskDB reads the schema and returns checked SQL. Our own code runs it.</figcaption>
 </figure>
 
-## 1. Scaffold your config
+## Before you start
+
+You need:
+
+- Node.js 22.23.4 or newer, with npm. Run `node --version` to check.
+- An OpenAI API key. You can switch to another model provider later: see [Bring your own model](/guides/bring-your-own-model/).
+- macOS 11 or newer, Windows, or Linux with glibc 2.34 or newer, on x64 or arm64. The SQLite driver ships prebuilt binaries for these.
+
+<Aside type="note">This tutorial uses npm. In a new project, pnpm and Yarn can't run it yet ([#750](https://github.com/Ygilany/AskDB/issues/750), [#748](https://github.com/Ygilany/AskDB/issues/748)). On an older Linux, see [If SQLite won't install](#if-sqlite-wont-install-use-postgres-in-docker).</Aside>
+
+## 1. Create a sample database
+
+First, make a folder for the project and set it up as an npm package:
 
 ```bash
-npx askdb@latest init
+mkdir askdb-shop
+cd askdb-shop
+npm init -y
 ```
 
-`npx` (like `pnpm dlx` and `yarn dlx`) downloads and runs `askdb` on the fly — no separate install step needed. In a terminal, `askdb init` opens a short wizard. It asks which database you use, where to write the schema artifact, which AI provider you have a key for, which RAG store to use, and whether Studio may run generated SQL (read-only) from its Playground. It then writes only the relevant config branches and installs only the packages your setup needs, including your database's driver.
+Now create `shop.sql` in that folder. It defines three tables (customers, products and orders) and adds a few rows to each:
 
-In CI or scripts, skip the wizard:
+```sql title="shop.sql"
+CREATE TABLE customers (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  country TEXT NOT NULL
+);
+CREATE TABLE products (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  price NUMERIC(10, 2) NOT NULL
+);
+CREATE TABLE orders (
+  id INTEGER PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers (id),
+  product_id INTEGER NOT NULL REFERENCES products (id),
+  quantity INTEGER NOT NULL,
+  ordered_at TEXT NOT NULL
+);
+INSERT INTO customers VALUES (1, 'Ada', 'UK'), (2, 'Grace', 'US'), (3, 'Linus', 'FI'), (4, 'Margaret', 'US');
+INSERT INTO products VALUES (1, 'Keyboard', 'hardware', 49.99), (2, 'Monitor', 'hardware', 199.00), (3, 'IDE licence', 'software', 89.00);
+INSERT INTO orders VALUES
+  (1, 1, 1, 1, '2026-01-05'), (2, 1, 3, 1, '2026-01-06'), (3, 2, 2, 2, '2026-02-10'),
+  (4, 3, 1, 1, '2026-03-01'), (5, 4, 2, 1, '2026-04-20'), (6, 4, 3, 2, '2026-04-21');
+```
+
+Next, create `make-shop.mjs`. It loads `shop.sql` into a new SQLite file with Node's built-in SQLite module:
+
+```js title="make-shop.mjs"
+import { readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+
+new DatabaseSync("shop.db").exec(readFileSync("shop.sql", "utf8"));
+console.log("Created shop.db");
+```
+
+Run it:
 
 ```bash
-npx askdb@latest init --yes                           # Postgres + OpenAI defaults
-npx askdb@latest init --yes --database sqlserver      # SQL Server instead
-npx askdb@latest init --yes --database sqlite --sqlite-file SQLITE_FILE
+node make-shop.mjs
 ```
 
-<Aside type="tip">`askdb.config.ts` is checked in; `.env` (your real keys) is not.</Aside>
+It prints `Created shop.db`, and a new `shop.db` file appears in the folder. That's our database. On Node 22, Node also prints an `ExperimentalWarning` about SQLite, which is safe to ignore here. To start over, delete `shop.db` first: running the script twice fails with `table customers already exists`.
 
-<Aside type="note">Prefer the browser? Skip `init` and run `npx askdb studio` directly — with no config present, Studio opens a [guided setup wizard](/studio/#guided-setup) that writes the config and runs introspection for you.</Aside>
+## 2. Install AskDB and scaffold the config
 
-The generated config is tailored to what you chose — for example, a SQL Server setup:
+Install the AskDB CLI into the project:
 
-```ts
+```bash
+npm install --save-dev askdb
+```
+
+Then let `askdb init` write the config for our database:
+
+```bash
+npx askdb init --yes --database sqlite --sqlite-file ./shop.db
+```
+
+`--yes` skips the setup questions and picks OpenAI as the model provider. The output starts with the files it wrote and the packages it installed:
+
+```
+Wrote:
+  - …/askdb-shop/askdb.config.ts
+  - …/askdb-shop/.env.example
+
+Installing dependencies with npm in …/askdb-shop …
+
+added 2 packages in 497ms
+Installed: @askdb/config, better-sqlite3.
+```
+
+<Aside type="caution">On Windows, `askdb init` can't install the packages yet ([#668](https://github.com/Ygilany/AskDB/issues/668)). It still writes the config, then prints an `npm install` command and exits with an error. Run that command, then go on to step 3.</Aside>
+
+Open `askdb.config.ts`:
+
+```ts title="askdb.config.ts"
 import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 export default defineConfig({
@@ -100,10 +130,10 @@ export default defineConfig({
     },
   },
   introspection: {
-    provider: "sqlserver",
+    provider: "sqlite",
     providerConfig: {
-      sqlserver: {
-        databaseUrl: env("DATABASE_URL"),
+      sqlite: {
+        file: "./shop.db",
       },
     },
     outputDir: "./askdb",
@@ -118,125 +148,137 @@ export default defineConfig({
 } satisfies AskDbConfig);
 ```
 
-See the [Configuration reference](/reference/config/) for every option. See [CLI reference — askdb init](/reference/cli/#askdb-init) for all flags.
+Notice two parts. `introspection` tells AskDB where our database is. `ai` tells it which model to use, and reads the API key from an environment variable called `OPENAI_API_KEY`.
 
-Once this is configured, most CLI flags below are optional.
+## 3. Add your API key
 
-## 2. Introspect your database
+AskDB reads environment variables from a `.env` file in the folder you run it from. Copy the example file that `askdb init` wrote:
 
-Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. That artifact is the only thing the model ever sees about your database.
+```bash
+cp .env.example .env
+```
 
-<Tabs syncKey="engine">
-  <TabItem label="Live database">
+In the Windows Command Prompt, use `copy` instead of `cp`.
 
-With your database connection configured in `askdb.config.ts` under `introspection.provider` and `introspection.providerConfig`, one command is enough:
+Open `.env` and put your key after `OPENAI_API_KEY=`. Leave `OPENAI_MODEL` empty to use AskDB's default OpenAI model:
+
+```bash title=".env"
+OPENAI_API_KEY=<your OpenAI API key>
+OPENAI_MODEL=
+```
+
+`.env` holds your key, so keep it out of version control. `askdb.config.ts` holds no secrets and is safe to commit.
+
+## 4. Read the schema
+
+Now let AskDB read the structure of our database:
 
 ```bash
 npx askdb introspect
 ```
 
-For example, for Postgres:
+It prints nothing when it succeeds. Look in the new `askdb` folder instead: `askdb/schema.json` is the **schema artifact**. It lists our three tables, their columns and types, and the two links from `orders` to `customers` and `products`.
 
-```ts
-introspection: {
-  provider: "postgres",
-  providerConfig: {
-    postgres: { databaseUrl: env("DATABASE_URL") },  // env name is yours to pick
-  },
-},
-```
+The schema artifact is what AskDB gives the model. When we ask a question, AskDB sends the model our question and this schema, never the rows in `shop.db`. [Privacy model](/concepts/privacy-model/) lists everything that's sent.
 
-The database is only used here — for introspection. To target a different database for one run, pass `--url`:
+## 5. Ask a question
+
+Ask the question in plain English:
 
 ```bash
-npx askdb introspect --url "$OTHER_DATABASE_URL"
+npx askdb ask --question "How much has each customer spent in total?"
 ```
 
-The engine comes from `introspection.provider` in your config (or the `--engine` flag); the introspected artifact records it, and `askdb ask` later infers the SQL dialect from the artifact. The complete config surface is documented in the [Configuration reference](/reference/config/). For engine-specific install steps see [Switch engines](/guides/switch-engines/).
-
-  </TabItem>
-  <TabItem label="Prisma schema file">
-
-With your Prisma schema configured in `askdb.config.ts` under `introspection.provider` and `introspection.providerConfig`, one command is enough — no live database required. It reads the file with `@askdb/prisma`, which `askdb init` installed in your project when you chose Prisma (otherwise, see [the Prisma guide](/guides/integrations/prisma/#install)):
-
-```bash
-npx askdb introspect
-```
-
-For example:
-
-```ts
-introspection: {
-  provider: "prisma",
-  providerConfig: {
-    prisma: { schemaPath: "./prisma/schema.prisma" },
-  },
-},
-```
-
-To introspect a different schema file for one run, pass the flags instead:
-
-```bash
-npx askdb introspect --engine prisma --prisma-schema ./other/schema.prisma
-```
-
-  </TabItem>
-</Tabs>
-
-## 3. Enrich and test in Studio
-
-Raw introspection captures structure. Enrichment adds descriptions, aliases, business concepts, sensitive markers, and example questions — the layer that makes generation good.
-
-Launch **Studio** — the recommended authoring surface — in a browser:
-
-```bash
-npx askdb studio
-```
-
-Studio is also the best place to **test your questions**: ask a question in the same session, review the generated SQL, and keep enriching if the answer isn't what you expected — all without switching tools. See the [Studio tour](/studio/) for what each view does.
-
-Studio reads `outputDir` from `askdb.config.ts`, so no flags are needed. The full walkthrough lives in [Author your schema](/guides/author-your-schema/).
-
-## 4. Ask your question
-
-You have two ways to test that your schema is generating good SQL — pick whichever fits the moment.
-
-### In Studio (recommended)
-
-If Studio is already open from step 3, ask your question there. You'll see the generated SQL alongside the schema; if the answer isn't right, keep enriching descriptions, aliases, or concepts and re-ask in the same session.
-
-Asking in Studio isn't the destination — it's how you dial in the enrichment until the SQL satisfies what your users actually need. Once you're happy with the answers, you embed the **same** schema artifact into your own app or service (see step 5) — Studio was just the place you tuned it.
-
-### From the CLI
-
-For one-off checks and CI smoke tests, ask directly from the terminal:
-
-```bash
-npx askdb ask --question "Which customers signed up last week?"
-```
-
-You get checked SQL on stdout — for example:
+AskDB prints a `-- sql --` line, then the SQL. It should look something like this:
 
 ```sql
-SELECT c.id, c.name, c.signed_up_at
+SELECT c.name, SUM(o.quantity * p.price) AS total_spent
 FROM customers AS c
-WHERE c.signed_up_at >= NOW() - INTERVAL '7 days'
-ORDER BY c.signed_up_at DESC;
+JOIN orders AS o ON o.customer_id = c.id
+JOIN products AS p ON p.id = o.product_id
+GROUP BY c.id, c.name
+ORDER BY total_spent DESC;
 ```
 
-In both cases AskDB returns checked SQL. It does **not** run it against your database — your application owns execution.
+Your SQL may differ a little, because the model writes it. Notice what AskDB did and didn't do. It checked the SQL before printing it: for example, it returns only read-only SQL. It didn't run the SQL. Running it is our job.
 
-<Aside type="caution">AskDB's SQL checks are heuristic guardrails, not a security boundary. Before your application runs generated SQL, read [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely): use a read-only, least-privilege database role, set timeouts, and enforce tenant isolation in the database.</Aside>
+If you see `no AI API key configured`, check that `.env` has your key (step 3).
 
-## 5. From here
+## 6. Run the SQL
 
-Now that the CLI works, pick the path that matches what you're building:
+Copy the SQL that AskDB printed (everything after the `-- sql --` line) into a new file called `query.sql`.
 
-<div class="home-path-grid">
-  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/client</code> into a TypeScript service and run the SQL through your own pool.</span></a>
-  <a href="/guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Stand up <code>@askdb/http-api</code> so Python, browsers, or agents can ask questions.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
-  <a href="/concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>
-</div>
+Then create `run-query.mjs`. It opens `shop.db` read-only and runs `query.sql`:
 
-Want to skip the steps above and explore a runnable script? The <ExampleLink path="examples/ask-question">examples/ask-question</ExampleLink> package in the repo shows the same `createAskDb` and direct `ask()` patterns against a live schema.
+```js title="run-query.mjs"
+import { readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+
+const sql = readFileSync("query.sql", "utf8");
+const db = new DatabaseSync("shop.db", { readOnly: true });
+console.table(db.prepare(sql).all());
+```
+
+Run it:
+
+```bash
+node run-query.mjs
+```
+
+The output should look like this:
+
+```
+┌─────────┬────────────┬─────────────┐
+│ (index) │ name       │ total_spent │
+├─────────┼────────────┼─────────────┤
+│ 0       │ 'Grace'    │ 398         │
+│ 1       │ 'Margaret' │ 377         │
+│ 2       │ 'Ada'      │ 138.99      │
+│ 3       │ 'Linus'    │ 49.99       │
+└─────────┴────────────┴─────────────┘
+```
+
+That's the answer to our question: Grace bought two monitors, so she has spent the most.
+
+<Aside type="caution">AskDB's SQL checks are heuristics, not a security boundary. Before your application runs generated SQL against real data, read [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely): use a read-only, least-privilege database role, set timeouts, and enforce tenant isolation in the database.</Aside>
+
+## What we built
+
+We made a database, and AskDB read its schema. Then we asked a question in plain English and got back checked SQL. Our own code ran that SQL read-only and printed the answer. Your own database works the same way: point `askdb init` at it, introspect, and ask. Try another question, such as "Which products has nobody from the US bought?", and run its SQL the same way.
+
+## If SQLite won't install: use Postgres in Docker
+
+The SQLite driver, `better-sqlite3`, has prebuilt binaries only for the systems listed in [Before you start](#before-you-start). On Linux with glibc older than 2.34 (Ubuntu 20.04, Debian 11 and Amazon Linux 2, for example), use Postgres in Docker instead. Run `ldd --version` to see your glibc version. You also need Docker running.
+
+1. In step 1, create the folder and `shop.sql`, but skip `make-shop.mjs`.
+2. Start Postgres and load the tables:
+
+   ```bash
+   docker run -d --name askdb-shop-db -e POSTGRES_PASSWORD=askdb \
+     -p 5432:5432 postgres:17
+   docker exec -i askdb-shop-db psql -U postgres < shop.sql
+   ```
+
+   If the second command can't connect, Postgres is still starting. Wait a few seconds and run it again.
+3. In step 2, run `npx askdb init --yes` without the `--database` and `--sqlite-file` flags. Postgres is the default.
+4. In step 3, also set `DATABASE_URL` in `.env`:
+
+   ```bash
+   DATABASE_URL=postgres://postgres:askdb@127.0.0.1:5432/postgres
+   ```
+
+5. Do steps 4 and 5 as written.
+6. In step 6, save the SQL as `query.sql`, then run it with `psql` instead of `run-query.mjs`:
+
+   ```bash
+   docker exec -i askdb-shop-db psql -U postgres < query.sql
+   ```
+
+7. When you're done, remove the container: `docker rm -f askdb-shop-db`.
+
+## Read next
+
+- [Studio](/studio/): describe tables and columns, and test questions in your browser, to improve the SQL the model writes. [Author your schema](/guides/author-your-schema/) covers what to add.
+- [Embed in a Node app](/guides/embed-in-node/): call AskDB from a TypeScript service and run the SQL through your own database pool.
+- [Deploy as an HTTP service](/guides/deploy-as-http-service/): let Python, browsers or agents ask questions over HTTP.
+- [How AskDB works](/concepts/how-askdb-works/): the whole flow, step by step.
