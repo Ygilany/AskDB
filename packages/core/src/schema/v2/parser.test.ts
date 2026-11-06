@@ -222,3 +222,23 @@ describe("front-matter parsing keeps no state between calls (#742)", () => {
     expect(Object.keys(gm.cache)).toEqual([]);
   });
 });
+
+describe("writers keep a body that starts with a `---` rule (#746 review)", () => {
+  const body = "---\n\nText after a horizontal rule.\n";
+  const policyPath = join(here, "../../../../../fixtures/schemas/agency-multi-tenant.schema/tenant-policy.md");
+
+  it("round-trips the body through writeTableMarkdown", () => {
+    const { frontmatter } = parseTableMarkdown(readFileSync(ordersPath, "utf8"), ordersPath);
+    expect(parseTableMarkdown(writeTableMarkdown(frontmatter, body)).body).toBe(body);
+  });
+
+  it("round-trips the body through writeConceptsMarkdown", () => {
+    const { frontmatter } = parseConceptsMarkdown(readFileSync(conceptsPath, "utf8"), conceptsPath);
+    expect(parseConceptsMarkdown(writeConceptsMarkdown(frontmatter, body)).body).toBe(body);
+  });
+
+  it("round-trips the body through writeTenantPolicyMarkdown", () => {
+    const { frontmatter } = parseTenantPolicyMarkdown(readFileSync(policyPath, "utf8"), policyPath);
+    expect(parseTenantPolicyMarkdown(writeTenantPolicyMarkdown(frontmatter, body)).body).toBe(body);
+  });
+});
