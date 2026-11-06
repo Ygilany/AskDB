@@ -122,7 +122,7 @@ The server does not connect to your database. It generates SQL and returns it. E
 
 ## Custom schema per request
 
-The default is to load the schema from `host.schemaPath` once at boot. Per-request schemas are **off by default**: a request that sends `schemaJson` gets `403 schema_override_disabled`. An override puts caller-supplied text into the prompt through your model key, so only enable it for tests or callers you trust. For a multi-product deployment where different consumers send different schemas, turn it on in `askdb.config.ts`:
+The default is to load the schema from `host.schemaPath` once at boot. Per-request schemas are **off by default**: a request that sends `schemaJson` gets `403 schema_override_disabled`. An override is a schema artifact the server parses and puts into the prompt through your model key, so a caller who can send `schemaJson` controls what AskDB loads. Only enable it for tests or callers you trust, and run `@askdb/core` 1.0.0-beta.48 or later, which fixes [GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg). For a multi-product deployment where different consumers send different schemas, turn it on in `askdb.config.ts`:
 
 ```ts
 httpApi: { allowSchemaOverride: true },
