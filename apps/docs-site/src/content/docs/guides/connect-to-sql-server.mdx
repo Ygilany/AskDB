@@ -7,7 +7,7 @@ import { Aside } from "@astrojs/starlight/components";
 
 <p class="doc-eyebrow">Engine setup</p>
 
-<p class="doc-lede">Connect AskDB to a SQL Server database and introspect it. You write one connection string, run <code>askdb introspect</code>, and fix the certificate error a development server usually gives. Then you connect your own <code>mssql</code> pool to run the SQL AskDB returns.</p>
+<p class="doc-lede">Connect AskDB to a SQL Server database and introspect it. You write one connection string, run <code>askdb introspect</code>, and fix the error a self-signed certificate causes. Then you connect your own <code>mssql</code> pool to run the SQL AskDB returns.</p>
 
 ## Before you start
 
@@ -56,7 +56,7 @@ If introspection fails with `self-signed certificate`, go to step 3.
 
 ## 3. Fix the self-signed certificate error
 
-SQL Server encrypts connections by default, and a development server usually has a self-signed certificate. Node.js rejects it:
+SQL Server encrypts connections by default. When the server's certificate is self-signed, as on many development servers, Node.js rejects it:
 
 ```
 Failed to connect to localhost:1433 - self-signed certificate
@@ -95,7 +95,7 @@ NODE_OPTIONS=--use-system-ca npx askdb introspect
 
 ## 4. Connect your own pool
 
-AskDB returns SQL and never runs it. Your app runs it, usually through the `mssql` driver, and the driver reads fewer connection strings than AskDB does:
+AskDB returns SQL and never runs it: your app does. The `mssql` driver reads fewer connection strings than AskDB does:
 
 - It reads an ADO.NET string or a config object. It doesn't read `mssql://` or `sqlserver://` URLs.
 - It reads `TrustServerCertificate=True` only without spaces. With spaces, it ignores the key, and the certificate error comes back.

@@ -214,7 +214,7 @@ See [Configuration — Studio execute](/reference/config/#studio-execute-configu
 
 ### `self-signed certificate` / TLS error on connection
 
-A development SQL Server usually has a self-signed certificate, which Node.js rejects. [Connect to SQL Server](/guides/connect-to-sql-server/#3-fix-the-self-signed-certificate-error) has the fix for each connection-string format, and for production.
+Node.js rejects a SQL Server whose certificate is self-signed, as on many development servers. [Connect to SQL Server](/guides/connect-to-sql-server/#3-fix-the-self-signed-certificate-error) has the fix for each connection-string format, and for production.
 
 ---
 
