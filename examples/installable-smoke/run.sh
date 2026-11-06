@@ -6,8 +6,9 @@
 # check-tarballs.mjs), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace; includes @askdb/config, a peer of @askdb/client), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
-# bootstraps runtime config on startup. Last, yarn-pnp.sh installs the packed CLI and HTTP API with
-# Yarn 4 Plug'n'Play and strict peer resolution, and starts both.
+# bootstraps runtime config on startup. Last, yarn-pnp.sh checks that every packed manifest passes
+# `ai` and `zod` through, then installs the packed CLI and HTTP API with Yarn 4 Plug'n'Play and
+# strict peer resolution and runs their commands, which must load and exit 0.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -431,7 +432,7 @@ if grep -q 'smoke-secret' <<<"$RAG_STUB_STDERR"; then
   exit 1
 fi
 
-echo "smoke: Yarn 4 Plug'n'Play: askdb and askdb-http start with strict peer resolution (#748)…"
+echo "smoke: Yarn 4 Plug'n'Play: askdb and askdb-http load with strict peer resolution (#748)…"
 bash "$SCRIPT_DIR/yarn-pnp.sh" "$WORK/tarballs" "$WORK/yarn-pnp"
 
 echo "smoke: PASSED"
