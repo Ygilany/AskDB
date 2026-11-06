@@ -17,9 +17,12 @@
 #    project's own dependencies, so no top-level package can cover a missing peer.
 set -euo pipefail
 
-TARBALLS="$(cd "$1" && pwd)"
+# Physical paths (pwd -P): on macOS mktemp returns /var/…, a symlink to /private/var/…. Yarn
+# records the cache under the path it is given, Node loads modules by their real path, and
+# Plug'n'Play then can't tell which package a cached file belongs to.
+TARBALLS="$(cd "$1" && pwd -P)"
 mkdir -p "$2"
-DIR="$(cd "$2" && pwd)"
+DIR="$(cd "$2" && pwd -P)"
 # Yarn runs from a pinned release, not Corepack: Node 25+ no longer ships Corepack.
 YARN_RELEASE="4.18.1"
 
