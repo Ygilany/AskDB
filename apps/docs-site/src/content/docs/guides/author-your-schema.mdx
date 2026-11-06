@@ -57,7 +57,7 @@ npx askdb bundle ./my-app.schema --out my-app.schema.bundle.json
 
 The bundle file is the entire artifact in one JSON. Load it with `loadSchema` the same way as a directory.
 
-`askdb bundle` checks the file names and `schema.json`, but it doesn't parse the markdown files. Load the bundle once before you ship it, for example in a test, so a front-matter error fails there and not in the service.
+`askdb bundle` loads the directory with `loadSchema()` before it writes the bundle, and exits `1` with the loader's error if the directory doesn't load. So a front-matter error fails the build, not the service, and a bundle it writes always loads.
 
 ## Commit it
 
