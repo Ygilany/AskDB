@@ -1,4 +1,4 @@
-# ADR 0038 — `askdb-http` refuses a schema it can't serve, and says why
+# ADR 0039 — `askdb-http` refuses a schema it can't serve, and says why
 
 ## Status
 
