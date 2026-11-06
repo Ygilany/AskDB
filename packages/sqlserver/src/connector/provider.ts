@@ -15,6 +15,6 @@ export const sqlServerConnectorProvider = defineLiveConnectorProvider({
   },
   fromExportUnsupported: "--from-export is currently supported only for --engine postgres (got sqlserver).",
   createConnector: createSqlServerConnector,
-  createRunner: (url) => createSqlServerCatalogQueryRunner(url),
+  createRunner: createSqlServerCatalogQueryRunner,
   connectionLabelParts: parseSqlServerConnection,
 });

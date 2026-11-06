@@ -38,6 +38,9 @@ type PgDriverModule = typeof import("pg");
  */
 export async function loadPgDriver(options?: DriverLoadOptions): Promise<PgDriverModule> {
   const mod = await pgLoader.load(options);
+  // `pg` is CJS — Node's ESM interop puts the namespace under `.default` at runtime, but the
+  // static type doesn't model that. Reach for `default` defensively, then fall back to the
+  // top-level namespace for bundlers that hoist the CJS named exports.
   return (mod as unknown as { default?: PgDriverModule }).default ?? mod;
 }
 
@@ -51,11 +54,7 @@ async function runPostgresCatalogQuery(
   params: ReadonlyArray<unknown> | undefined,
   options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await pgLoader.load(options);
-  // `pg` is CJS — Node's ESM interop puts the namespace under `.default` at runtime, but the
-  // static type doesn't model that. Reach for `default` defensively, then fall back to the
-  // top-level namespace for bundlers that hoist the CJS named exports.
-  const pgRuntime = (mod as unknown as { default?: typeof mod }).default ?? mod;
+  const pgRuntime = await loadPgDriver(options);
   const pool = new pgRuntime.Pool({ connectionString });
   const client = await pool.connect();
   try {

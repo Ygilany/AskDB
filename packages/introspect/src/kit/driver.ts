@@ -69,7 +69,7 @@ function isModuleResolutionFailure(
   specifier: string = packageName,
 ): boolean {
   if (!(cause instanceof Error)) return false;
-  const nestedCause = (cause as { cause?: unknown }).cause;
+  const nestedCause = cause.cause;
   if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName, specifier)) {
     return true;
   }

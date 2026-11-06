@@ -15,6 +15,6 @@ export const mysqlConnectorProvider = defineLiveConnectorProvider({
   },
   fromExportUnsupported: "--from-export is currently supported only for --engine postgres (got mysql).",
   createConnector: createMysqlConnector,
-  createRunner: (url) => createMysqlCatalogQueryRunner(url),
+  createRunner: createMysqlCatalogQueryRunner,
   connectionLabelParts: parseMysqlConnection,
 });

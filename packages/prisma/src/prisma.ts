@@ -315,9 +315,8 @@ function foldPrismaDmmf(input: {
 
   const enumsBySchema = new Map<string, SqlEnum[]>();
   const enumSchema = DEFAULT_SCHEMA;
-  if (!includeSchemas || includeSchemas.has(enumSchema)) {
+  if ((!includeSchemas || includeSchemas.has(enumSchema)) && !excludeSchemas.has(enumSchema)) {
     for (const enumDef of input.dmmf.datamodel.enums) {
-      if (excludeSchemas.has(enumSchema)) continue;
       const list = enumsBySchema.get(enumSchema) ?? [];
       list.push({
         schema: enumSchema,
@@ -560,8 +559,10 @@ function extractSchemaHints(datamodel: PrismaSchemaInput): ParsedSchemaHints {
       if (!line || line.startsWith("//") || line.startsWith("@@")) continue;
       const match = /^([A-Za-z_][A-Za-z0-9_]*)\s+(\S+)(?:\s+(.*))?$/.exec(line);
       if (!match) continue;
-      const [, fieldName, typeToken, attributes = ""] = match;
-      if (!fieldName || !typeToken) continue;
+      // Both groups are required and match at least one character.
+      const fieldName = match[1]!;
+      const typeToken = match[2]!;
+      const attributes = match[3] ?? "";
       const position = order.size + 1;
       order.set(fieldName, position);
 
