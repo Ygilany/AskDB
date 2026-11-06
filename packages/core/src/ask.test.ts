@@ -1021,6 +1021,12 @@ describe("ask — a model's trailing semicolon is kept (#477)", () => {
       sql: "status = 'paid' AND agency_id IN ('42', '99');",
       unbound: "status = ? AND agency_id IN (?, ?);",
     },
+    {
+      dialect: "sqlserver" as const,
+      mode: "sql-only" as const,
+      sql: "status = 'paid' AND agency_id IN ('42', '99');",
+      unbound: "status = @p0 AND agency_id IN (@p1, @p2);",
+    },
   ])("$dialect $mode: the tenant guardrail passes and substitutes a placeholder right before it", async (c) => {
     const result = await ask({
       question: "how many paid orders",
