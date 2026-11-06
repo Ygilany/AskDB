@@ -522,6 +522,12 @@ describe("validateSelectSql — CockroachDB b'…' byte strings (#730)", () => {
     // MySQL's b'…' is a bit-value literal, read without escapes.
     expect(validateSelectSql(MYSQL_DIALECT, "SELECT b'0101' AS x")).toBe("SELECT b'0101' AS x");
   });
+
+  it("refuses a continued lower-case bit string on postgres too, the decided cost", () => {
+    // Postgres reads b'01' + newline + '10' as one bit string, but a host may point the postgres
+    // dialect at CockroachDB, which would read it with escapes. Refused there too (ADR 0012, #730).
+    expectRule("SELECT b'01'\n'10' AS x", "SQL_ESCAPED_BYTE_STRING", POSTGRES_DIALECT);
+  });
 });
 
 describe("validateSelectSql — legitimate SQL still accepted", () => {
