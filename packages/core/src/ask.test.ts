@@ -1501,6 +1501,44 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
   });
 
+  // #702: a SELECT can reach rows through a call the per-table checks can't read. Here the
+  // call rewrites the setting row-level security reads, then runs a query passed as a string.
+  it("strict: refuses a SELECT naming functions the tenant check can't read through, from a custom dialect (UNCHECKABLE_FUNCTION)", async () => {
+    const sql =
+      "SELECT set_config('app.agency_ids', '1,2,3', true) AS s, query_to_xml('SELECT * FROM orders', true, false, '') AS x";
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { generate: async () => ({ sql }) },
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    const warnings = (error as TenantGuardrailError).warnings;
+    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["UNCHECKABLE_FUNCTION", ""]]);
+    expect(warnings[0]!.message).toContain("set_config");
+  });
+
+  // #702: the built-in Postgres read-only check allows `table_to_xml` because it only reads,
+  // but the tenant check can't see the table it names in a string.
+  it("strict: refuses table_to_xml from the built-in postgres dialect (UNCHECKABLE_FUNCTION)", async () => {
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: {
+        generateText: vi.fn(async () => ({ text: "```sql\nSELECT table_to_xml('orders', true, false, '') AS x\n```" })),
+      },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    expect((error as TenantGuardrailError).warnings.map((w) => [w.rule, w.tableId])).toEqual([["UNCHECKABLE_FUNCTION", ""]]);
+  });
+
   it("without a tenant policy, custom dialect output is unchanged", async () => {
     const dialect: AskDialect = { generate: async () => ({ sql: "DELETE FROM orders" }) };
     const result = await ask({ question: "q", schema: minimalSchema, model: fakeModel, dialect });

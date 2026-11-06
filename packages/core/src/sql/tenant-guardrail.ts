@@ -114,6 +114,21 @@ export function tenantRuleWarnings(
     );
   }
 
+  // Nor can they see what a query reaches through a call that runs SQL or reads a table named
+  // in a string they blank, runs SQL over another connection, or sets what row-level security
+  // reads. The read-only check allows some of these as reads, and a custom AskDialect skips
+  // it, so the tenant check refuses them under every dialect (#702). A listed name counts in any
+  // code position, since an engine can reach a function without `(` right after its name.
+  const name = uncheckableName(sql, dialect);
+  if (name !== undefined) {
+    warnings.push(
+      warn("UNCHECKABLE_FUNCTION", "",
+        `The SQL names ${name}, a function that reads or scopes rows the tenant check can't see. Under a ` +
+        "tenant policy, query the tables directly (pivot with CASE or FILTER, not crosstab), and don't " +
+        "name a column, alias or parameter after one of these functions."),
+    );
+  }
+
   // The checks below match names as written. Postgres decodes a U&"…" name, so they can't tell
   // which table, column or function it is: refuse it rather than decode it (#704, #692).
   const escaped = unicodeEscapedName(sql, dialect);
@@ -409,6 +424,61 @@ function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["
       }
     }
   }
+  return undefined;
+}
+
+/**
+ * Functions whose reads the tenant check can't see, lowercase (#702). A function belongs here when
+ * it is built into Postgres or SQL Server, or comes from an extension that ships with Postgres
+ * (`tablefunc`, `dblink`, `xml2`); any role can call it; and it runs a query passed as a string,
+ * returns row data from a table, schema or database named in a string, runs SQL over another
+ * connection, or sets a value row-level security may read. A function from any other extension
+ * (pgRouting's `pgr_*`, SQLite's loadable `eval()`) or of the host's own isn't here and passes.
+ * Fixed here, not taken from a `DialectSpec`, so a spec that overrides `blockedFunctions` can't
+ * shrink it; and the read-only check allows the plain reads among them (`table_to_xml`, `crosstab`).
+ */
+const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
+  // Run a query passed as a string. `crosstab*` come from Postgres's `tablefunc` extension.
+  "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema", "cursor_to_xml", "ts_stat",
+  "ts_rewrite", "crosstab", "crosstab2", "crosstab3", "crosstab4",
+  // Return row data from a table, a schema or the database named in a string (`connectby` from
+  // `tablefunc`, `dblink_build_sql_*` from `dblink`, `xpath_table` from `xml2`).
+  "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
+  "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
+  "dblink_build_sql_insert", "dblink_build_sql_update", "xpath_table",
+  // Run SQL over another connection: Postgres's `dblink` extension, SQL Server's rowset functions.
+  "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
+  "dblink_fetch", "dblink_get_result", "openquery", "openrowset", "opendatasource",
+  // Set a value row-level security may read.
+  "set_config",
+]);
+
+/**
+ * The first name in `sql` from {@link UNCHECKABLE_FUNCTIONS}, lowercase, or undefined. A name counts
+ * in any code position, in any case, bare, quoted or qualified, not only right before `(`: an
+ * engine can reach a function in forms with no `(` after its name, so a column, an alias or a
+ * placeholder named like a listed function counts too. Text in comments and single-quoted strings
+ * doesn't. Read under every reading from {@link statementReadings}, so a name any of them sees counts.
+ */
+function uncheckableName(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of statementReadings(dialect)) {
+    for (const token of lexSql(sql, profile)) {
+      const name = nameOf(token);
+      if (name !== undefined && UNCHECKABLE_FUNCTIONS.has(name)) return name;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A token's name, lowercase, when it can name a function: a word, a quoted identifier, a `"…"`
+ * string (which some servers read as a name), or a `:name` placeholder, which the shared lexer
+ * reads as one token but Postgres reads as `:` and then a name.
+ */
+function nameOf(token: SqlToken): string | undefined {
+  if (token.kind === "word" || token.kind === "quoted_identifier") return token.lower;
+  if (token.kind === "string" && token.quote === '"') return token.text.slice(1, -1).toLowerCase();
+  if (token.kind === "parameter" && token.text.startsWith(":") && !token.text.startsWith("::")) return token.lower.slice(1);
   return undefined;
 }
 

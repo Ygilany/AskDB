@@ -572,6 +572,96 @@ describe("validateTenantGuardrails — every statement is a query, however the s
   });
 });
 
+// #702: the per-table checks blank string literals and see only the statement's own tables, so
+// a call that runs a query or reads a table named in a string, runs SQL over another
+// connection, or rewrites a setting row-level security reads is out of their sight.
+describe("validateTenantGuardrails — a call the tenant check can't read through is refused (#702)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
+  const everyDialect = [undefined, POSTGRES_DIALECT, MYSQL_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT];
+  const scoped = "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids";
+
+  it.each([
+    ["a query passed as a string", "SELECT query_to_xml('SELECT * FROM orders', true, false, '') AS x"],
+    ["a table named in a string", "SELECT table_to_xml('orders', true, false, '') AS x"],
+    ["SQL over another connection", "SELECT * FROM dblink('dbname=app', 'SELECT id FROM orders') AS t(id int)"],
+    ["a linked-server query", "SELECT * FROM OPENQUERY(self, 'SELECT id FROM orders')"],
+    ["a setting row-level security reads", "SELECT set_config('app.agency_ids', '1,2,3', true) AS s"],
+  ])("refuses %s under every dialect", (_label, sql) => {
+    for (const dialect of everyDialect) {
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual(["UNCHECKABLE_FUNCTION"]);
+    }
+  });
+
+  // `docs/contracts/tenant-policy.md` lists every function the rule refuses. They're typed out
+  // here, so a misspelled or dropped entry in the check's own list fails a test.
+  it.each([
+    "query_to_xml", "query_to_xmlschema", "query_to_xml_and_xmlschema", "cursor_to_xml", "ts_stat", "ts_rewrite",
+    "crosstab", "crosstab2", "crosstab3", "crosstab4",
+    "table_to_xml", "table_to_xml_and_xmlschema", "schema_to_xml", "schema_to_xml_and_xmlschema",
+    "database_to_xml", "database_to_xml_and_xmlschema", "connectby",
+    "dblink", "dblink_exec", "dblink_connect", "dblink_connect_u", "dblink_open", "dblink_send_query",
+    "dblink_fetch", "dblink_get_result", "dblink_build_sql_insert", "dblink_build_sql_update", "xpath_table",
+    "openquery", "openrowset", "opendatasource",
+    "set_config",
+  ])("refuses a call to %s, as the contract lists", (name) => {
+    expect(rules(`SELECT ${name}('x') AS v`)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
+  // Postgres resolves each of these to `query_to_xml`. It doesn't care how the name is
+  // qualified or cased, or what comment sits before the `(`.
+  it.each([
+    ["schema-qualified", "SELECT pg_catalog.query_to_xml('SELECT * FROM orders', true, false, '')"],
+    ["quoted", `SELECT pg_catalog."query_to_xml"('SELECT * FROM orders', true, false, '')`],
+    ["upper case", "SELECT QUERY_TO_XML('SELECT * FROM orders', true, false, '')"],
+    ["with a comment before its parenthesis", "SELECT query_to_xml /* x */ ('SELECT * FROM orders', true, false, '')"],
+    // The lexer reads `:set_config` as a placeholder; Postgres reads `:` and then the call.
+    ["after a colon in an array slice (set_config)", "SELECT (ARRAY[1, 2])[1:set_config('a', 'b', true)::int] AS v"],
+    ["after a colon in an array slice (crosstab)", "SELECT (ARRAY[1, 2])[1:crosstab('x')] AS v"],
+  ])("refuses a function name written %s", (_label, sql) => {
+    expect(rules(sql, POSTGRES_DIALECT)).toEqual(["UNCHECKABLE_FUNCTION"]);
+    expect(rules(sql)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
+  // Under standard strings `'a\'` ends at the second quote, so the call is code. Under
+  // MySQL's backslash escapes, it sits inside the literal. A custom dialect's server may run
+  // either setting.
+  it("refuses a call that only one string setting shows", () => {
+    const sql = `${scoped} AND note = 'a\\' AND query_to_xml('x', true, false, '') IS NOT NULL --'`;
+    expect(rules(sql, POSTGRES_DIALECT)).toContain("UNCHECKABLE_FUNCTION");
+    expect(rules(sql)).toContain("UNCHECKABLE_FUNCTION");
+    expect(rules(sql, MYSQL_DIALECT)).not.toContain("UNCHECKABLE_FUNCTION");
+  });
+
+  // A listed name counts in any code position, not only right before `(`: Postgres reaches a
+  // function in forms with no `(` after its name (#702 review, round 3). So a column, an alias
+  // or a placeholder named like a listed function is refused too, a false positive the rule
+  // accepts so that no spelling of a call gets past it.
+  it.each([
+    ["a column", `SELECT crosstab FROM orders WHERE agency_id = :tenant_agency_ids`],
+    ["an alias", `SELECT note AS set_config FROM orders WHERE agency_id = :tenant_agency_ids`],
+    ["a qualified name", `SELECT o.ts_stat FROM orders o WHERE o.agency_id = :tenant_agency_ids`],
+    ["a placeholder", `${scoped} AND note = :set_config`],
+  ])("refuses a listed name used as %s", (_label, sql) => {
+    for (const dialect of everyDialect) {
+      expect(rules(sql, dialect), dialect?.id ?? "custom").toEqual(["UNCHECKABLE_FUNCTION"]);
+    }
+  });
+
+  // MySQL reads `"…"` as a string, and with ANSI_QUOTES as a name, so a listed name in one counts.
+  it("refuses a listed name in double quotes under MySQL", () => {
+    expect(rules(`SELECT "query_to_xml"('x') AS v`, MYSQL_DIALECT)).toEqual(["UNCHECKABLE_FUNCTION"]);
+  });
+
+  // Text inside a single-quoted literal isn't code, so a listed name there doesn't count.
+  it("passes a listed name inside a string", () => {
+    for (const dialect of everyDialect) {
+      expect(rules(`${scoped} AND note = 'query_to_xml(1)'`, dialect), dialect?.id ?? "custom").toEqual([]);
+    }
+  });
+});
+
 describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () => {
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const findings = (sql: string, dialect?: DialectSpec) =>

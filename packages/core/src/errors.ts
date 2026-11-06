@@ -166,6 +166,16 @@ export type TenantGuardrailRuleCode =
    */
   | "NOT_SELECT_OR_WITH"
   /**
+   * The SQL names a function whose reads the tenant check can't see, in any code position (a
+   * column, alias or placeholder named like one counts too): one that runs a query
+   * passed as a string (`query_to_xml`, `crosstab`), reads a table named in a string
+   * (`table_to_xml`), runs SQL over another connection (`dblink`, `OPENQUERY`), or sets a
+   * value row-level security may read (`set_config`). Reported for the whole SQL, with
+   * `tableId: ""`, under every dialect, a custom `AskDialect` included; not under a `global`
+   * scope (#702).
+   */
+  | "UNCHECKABLE_FUNCTION"
+  /**
    * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a
    * function. Postgres decodes it, and the tenant check matches names as written, so it can't
    * tell what the name reads. Reported for the whole SQL, with `tableId: ""`, whenever the SQL
