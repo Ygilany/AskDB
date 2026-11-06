@@ -267,6 +267,36 @@ describe("bindPreparedQuery — a placeholder glued to an identifier", () => {
   });
 });
 
+// #789: a stored template whose parameter declares a type or cardinality AskDB doesn't know is a
+// broken template, not a bad value: QueryParameterError with INVALID_DECLARATION, checked before
+// any value is read, never a raw TypeError from the renderer.
+describe("bindPreparedQuery — a parameter declaration AskDB doesn't know", () => {
+  const unscoped = "SELECT count(*) FROM orders WHERE status = :status_name";
+  const declaring = (declaration: Record<string, unknown>): PreparedQuery => ({
+    ...template(unscoped),
+    parameters: [{ ...status, ...declaration } as unknown as PreparedQuery["parameters"][number]],
+  });
+
+  it.each([
+    ["an unknown type", { type: "uuid" }, "type", "string, number, boolean, date or datetime"],
+    ["an unknown cardinality", { cardinality: "several" }, "cardinality", "one or many"],
+  ])("refuses %s with INVALID_DECLARATION, naming the parameter", (_case, declaration, field, expected) => {
+    const error = catchError(() => bindPreparedQuery(declaring(declaration), { status_name: "open" }, { schema: noPolicySchema }));
+
+    expect(error).toBeInstanceOf(QueryParameterError);
+    expect((error as QueryParameterError).reason).toBe("INVALID_DECLARATION");
+    expect((error as Error).message).toBe(
+      `Parameter 'status_name' declares a ${field} AskDB doesn't support; expected ${expected}. Regenerate the template.`,
+    );
+  });
+
+  it("reports the declaration before a missing value", () => {
+    const error = catchError(() => bindPreparedQuery(declaring({ type: "uuid" }), {}, { schema: noPolicySchema }));
+
+    expect((error as QueryParameterError).reason).toBe("INVALID_DECLARATION");
+  });
+});
+
 describe("bindPreparedQuery — tenant placeholders nothing can render", () => {
   const unscoped = "SELECT count(*) FROM orders WHERE status = :status_name";
 
