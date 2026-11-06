@@ -169,14 +169,14 @@ See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidatione
 Every AskDB write into a schema directory now refuses symbolic links ([#617](https://github.com/Ygilany/AskDB/issues/617), ADR 0028). When `schema.json` is one, `askdb introspect --out`, `renderToSchemaV2()` and `introspect()` with render options throw `Refusing to write schema.json outside the schema directory: "schema.json" is a symbolic link`. Before, they wrote to the file the link pointed at. Replace the link with a regular file.
 
 - **Studio** refuses a linked `playground-history.json` the same way. It leaves a linked `.gitignore` as it is.
-- **Writing `schema.json` needs write access to the output directory,** because AskDB writes a temporary file there and renames it over the target. A hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's mode bits, owner and group, but not an access control list. On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; run the command again.
+- **Writing `schema.json` needs write access to the output directory,** because AskDB writes a temporary file there and renames it over the target. A hard link at `schema.json` is replaced instead of written through. The new file keeps the old one's permission bits and group where it can, but not an access control list. Only root can give a file to another user, so on macOS and Linux a save by anyone other than the file's owner makes the saver its owner. On Windows, the rename fails with `EPERM` while another process holds `schema.json` open; run the command again.
 - **If you match `@askdb/enrich`'s table-save error,** it now reads `Refusing to write tables/orders.md outside the schema directory: …`.
 
 ### Other changes you may notice in beta.46
 
 - **Config files:** `askdb.config.mjs` and a plain `export default { … }` now load, as the docs said ([#264](https://github.com/Ygilany/AskDB/issues/264), [#265](https://github.com/Ygilany/AskDB/issues/265)). A config with no `ai` or `introspection` block, no default export, or top-level `await` fails with an error that names the file and what to change, instead of a bare `TypeError`.
-- **Studio:** a `studio.listen.port` that isn't an integer from 1 to 65535 now stops Studio with an error. Before, Studio bound port 5556 instead.
-- **`askdb introspect --out`** checks an existing `tenant-policy.md` against the `schema.json` it just wrote, and prints what no longer matches on stderr. The exit code stays 0. Fix those IDs before a strict policy stops loading.
+- **Studio:** a `studio.listen.port` that is set but isn't an integer from 1 to 65535 now stops Studio with an error. Before, Studio bound port 5556 instead. A value that reads as `NaN`, such as `Number(env("STUDIO_PORT"))` with the variable unset, still counts as unset.
+- **`askdb introspect --out`** checks an existing `tenant-policy.md` against the `schema.json` it just wrote. On stderr, it prints what no longer matches, or, under `enforcement: strict`, that the schema no longer loads. The exit code stays 0, so read stderr. Under `strict`, fix `tenant-policy.md` before anything loads the new schema. Under `warn`, the schema loads, with the problems in `schema.tenantPolicy.warnings`.
 
 ## 1.0.0-beta.45
 
