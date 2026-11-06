@@ -17,8 +17,8 @@ export type AskDbEnvProjection = {
 
 /**
  * Checks a nested {@link AskDbConfig} and wraps it with its canonical env keys, for `bootstrapAskDbEnv`
- * to install. Check the object with TypeScript’s
- * `satisfies AskDbConfig` so excess or mistyped keys fail at compile time while literals stay narrow, e.g.:
+ * to install. Use TypeScript’s `satisfies AskDbConfig` on the object so excess or mistyped keys fail
+ * at compile time while literals stay narrow, e.g.:
  *
  * ```ts
  * export default defineConfig({
@@ -61,8 +61,9 @@ export function isAskDbEnvProjection(value: unknown): value is AskDbEnvProjectio
     value !== null &&
     ASKDB_ENV_PROJECTION in value &&
     value[ASKDB_ENV_PROJECTION] === true &&
-    typeof (value as AskDbEnvProjection).entries === "object" &&
-    (value as AskDbEnvProjection).entries !== null &&
+    "entries" in value &&
+    typeof value.entries === "object" &&
+    value.entries !== null &&
     "config" in value &&
     typeof value.config === "object" &&
     value.config !== null

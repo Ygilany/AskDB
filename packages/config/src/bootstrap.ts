@@ -25,13 +25,15 @@ export type BootstrapAskDbEnvOptions = {
   /** Working directory for `.env` default path and config discovery. Defaults to `process.cwd()`. */
   cwd?: string;
   /**
-   * Explicit `.env` file paths to try in order. First existing file wins.
-   * When omitted, loads `${cwd}/.env` only.
+   * Explicit `.env` file paths to try in order. The first one that exists and loads wins; one that
+   * exists but fails to load is skipped without a report. When none loads, the `.env` in the
+   * process's working directory is tried. When omitted, loads `${cwd}/.env` only.
    */
   dotenvCandidatePaths?: readonly string[];
   /**
-   * When `true` (default), dotenv errors other than a missing file are logged to stderr and
-   * `process.exitCode` is set to `1`. Set `false` to throw instead.
+   * When `true` (default), an error loading `${cwd}/.env`, or the fallback `.env` after the
+   * candidates, other than a missing file, is logged to stderr and `process.exitCode` is set to `1`.
+   * Set `false` to throw instead. A candidate that fails to load is skipped, not reported.
    */
   dotenvNonFatal?: boolean;
 };
