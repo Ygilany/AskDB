@@ -25,9 +25,9 @@ function loadFixtureJson(): V2SchemaJson {
   return JSON.parse(readFileSync(join(multiTenantDir, "schema.json"), "utf8"));
 }
 
-function loadFixturePolicyMd() {
+function loadFixturePolicyMd(enforcement: "strict" | "warn" = "strict") {
   const md = readFileSync(join(multiTenantDir, "tenant-policy.md"), "utf8");
-  return parseTenantPolicyMarkdown(md);
+  return parseTenantPolicyMarkdown(md.replace("enforcement: strict", `enforcement: ${enforcement}`));
 }
 
 describe("schema evolution — new table added", () => {
@@ -57,7 +57,8 @@ describe("schema evolution — new table added", () => {
 });
 
 describe("schema evolution — scope column removed", () => {
-  it("flags an orphaned column id when a scope column is removed", () => {
+  // Under strict the same edit fails the load (loader.test.ts).
+  it("warn: flags an orphaned column id when a scope column is removed", () => {
     const schemaJson = loadFixtureJson();
     const ordersTable = schemaJson.tables.find(
       (t) => t.id === "table:public.orders",
@@ -67,7 +68,7 @@ describe("schema evolution — scope column removed", () => {
     );
 
     const { tableIds, columnIds } = buildSets(schemaJson);
-    const parsed = loadFixturePolicyMd();
+    const parsed = loadFixturePolicyMd("warn");
     const policy = normalizeTenantPolicy(parsed, tableIds, columnIds);
 
     const orphanWarnings = policy.warnings.filter(
