@@ -740,7 +740,7 @@ describe("askdb rag", () => {
 
       expect(await runRagCli(["query", schemaDir, "--question", "paid orders", "--store", "pgvector", "--pg-url", PG_URL])).toBe(0);
       expect(pgvector.options).toHaveLength(1);
-      expect(pgvector.options[0]).not.toHaveProperty("dimensions");
+      expect(pgvector.options[0]?.dimensions).toBeUndefined();
       expect(pgvector.calls).toEqual(["close"]);
       // One request: the question. No width probe.
       expect(server.requests).toEqual([{ model: "text-embedding-3-small", inputs: 1 }]);

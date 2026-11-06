@@ -1,5 +1,5 @@
 import { createAiRegistry } from "@askdb/ai";
-import { createAskDb, type DialectResolution } from "@askdb/client";
+import { createAskDb } from "@askdb/client";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   AskDbError,
@@ -121,7 +121,7 @@ async function runAsk(opts: AskOptions): Promise<number> {
     const askdb = createAskDb({
       config: runtime,
       registry: ai,
-      onResolve: (info: { dialect: DialectResolution; modelSource: "override" | "registry" | "mock" }) => {
+      onResolve: (info) => {
         if (info.dialect.note) {
           logger.info({ event: "askdb.pipeline.dialect_override", note: info.dialect.note }, info.dialect.note);
           process.stderr.write(`Note: ${info.dialect.note}\n`);
@@ -132,10 +132,10 @@ async function runAsk(opts: AskOptions): Promise<number> {
     const out = await askdb.ask(question, {
       schema: { schema },
       logger,
-      ...(mode ? { mode } : {}),
-      explain: Boolean(opts.explain),
+      mode,
+      explain: opts.explain,
       // The facade adds config `modes.omitSensitiveFromPrompt` as a floor.
-      omitSensitiveIdentifiersFromNlToSqlPrompt: Boolean(opts.omitSensitiveFromPrompt),
+      omitSensitiveIdentifiersFromNlToSqlPrompt: opts.omitSensitiveFromPrompt,
       // When --mock-sql flag is set explicitly (not just from runtime config),
       // pass it as a per-call deps override so the flag wins over config.
       ...(opts.mockSql !== undefined
@@ -189,8 +189,7 @@ function loadSchemaFromPath(schemaPath: string): ReturnType<typeof loadSchema> {
   try {
     return loadSchema(schemaPath);
   } catch (e) {
-    const err = e as unknown as { code?: unknown; message?: unknown };
-    const code = typeof err.code === "string" ? err.code : undefined;
+    const code = (e as { code?: unknown }).code;
     if (code === "ENOENT") {
       throw new AskDbError(`Schema path not found.\n${formatSchemaPathHint(schemaPath)}`, e);
     }

@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { createAiRegistry, type AiConfig } from "@askdb/ai";
 import type { AskDbLogger } from "@askdb/core";
-import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
+import { ASKDB_RAG_STORES, getAskDbRuntimeConfig, type AskDbRagStore, type AskDbRuntimeConfig } from "@askdb/config";
 import {
   aiSdkEmbedderId,
   buildSchemaIndex,
@@ -22,7 +22,7 @@ import {
 } from "@askdb/rag";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { labelled, showable } from "./error-values.js";
-import { createCliLogger, loggingFlags } from "./logger.js";
+import { createCliLogger, loggingFlags, type CliLoggingFlags } from "./logger.js";
 
 // Every built-in provider is registered and loads its @ai-sdk/* package only when first used,
 // so ai.embedding alone selects the provider.
@@ -40,11 +40,8 @@ function isCliEmbedder(value: string): value is CliEmbedder {
   return (CLI_EMBEDDERS as readonly string[]).includes(value) || Object.hasOwn(DEPRECATED_EMBEDDERS, value);
 }
 
-const CLI_STORES = ["memory", "file", "pgvector"] as const;
-type CliStoreKind = (typeof CLI_STORES)[number];
-
-function isCliStore(value: string): value is CliStoreKind {
-  return (CLI_STORES as readonly string[]).includes(value);
+function isCliStore(value: string): value is AskDbRagStore {
+  return (ASKDB_RAG_STORES as readonly string[]).includes(value);
 }
 
 /** The chunk types `--types` accepts. A record, so a new `ChunkType` doesn't compile until it's listed here. */
@@ -73,10 +70,10 @@ function isRagCommand(value: string): value is RagCommand {
   return (RAG_COMMANDS as readonly string[]).includes(value);
 }
 
-type CliOptions = {
+type CliOptions = CliLoggingFlags & {
   command?: RagCommand;
   schemaDir?: string;
-  store?: CliStoreKind;
+  store?: AskDbRagStore;
   embedder?: CliEmbedder;
   question?: string;
   k?: number;
@@ -84,11 +81,6 @@ type CliOptions = {
   pgTable?: string;
   dimensions?: number;
   filterTypes?: ChunkType[];
-  verbose?: boolean;
-  logLevel?: string;
-  logFile?: string;
-  logStdout?: boolean;
-  correlationId?: string;
   filePath?: string;
   embedderModel?: string;
   force?: boolean;
@@ -389,13 +381,10 @@ function describeWidth(opts: CliOptions, embedderConfig: EmbedderConfig, width: 
 }
 
 /**
- * Deterministic mock embedder used for tests, CI, and quick smoke-checks.
- *
- * Produces a stable lexical bag-of-words vector by hashing normalized tokens;
- * same text always yields the same vector. Not a real embedder, but useful for
- * local smoke tests because shared terms like "revenue" can rank related chunks.
+ * Deterministic mock embedder used for tests, CI, and quick smoke-checks. Shared terms such as
+ * "revenue" give chunks similar vectors, so a local smoke test still ranks related chunks first.
  */
-function createMockEmbedder(dim = DEFAULT_MOCK_DIMENSIONS): Embedder {
+function createMockEmbedder(dim: number): Embedder {
   return async (texts: string[]) => {
     return texts.map((text) => {
       const v = new Array<number>(dim).fill(0);
@@ -428,7 +417,7 @@ type PgvectorConfig = {
 type StoreConfig = { kind: "memory" } | { kind: "file"; basePath: string } | PgvectorConfig;
 
 type ConfiguredStore = {
-  kind: CliStoreKind;
+  kind: AskDbRagStore;
   /** Where `kind` came from, for error messages. */
   kindSource: string;
   fileBasePath: string | undefined;
@@ -489,7 +478,7 @@ const STORE_FLAGS = [
 ] as const;
 
 /** A flag for another store than the one this run uses would be silently ignored, so refuse it. */
-function assertStoreFlagsApply(opts: CliOptions, kind: CliStoreKind, kindSource: string): void {
+function assertStoreFlagsApply(opts: CliOptions, kind: AskDbRagStore, kindSource: string): void {
   for (const [key, flag, store] of STORE_FLAGS) {
     if (opts[key] === undefined || kind === store) continue;
     throw new Error(
@@ -566,8 +555,8 @@ async function openStore(
   const store = createPgvectorStore({
     connectionString: config.connectionString,
     table: config.table,
-    ...(dimensions !== undefined ? { dimensions } : {}),
-    ...(config.indexStrategy ? { indexStrategy: config.indexStrategy } : {}),
+    dimensions,
+    indexStrategy: config.indexStrategy,
   });
   if (!provision) return store;
   try {
@@ -590,7 +579,6 @@ async function closeStore(store: CliStore): Promise<void> {
   if (typeof store.close === "function") await store.close();
 }
 
-/** A positive integer, for `-k` and `--dimensions`. */
 function positiveInteger(flag: string, raw: string): number {
   const n = Number(raw);
   if (!Number.isInteger(n) || n <= 0) {
