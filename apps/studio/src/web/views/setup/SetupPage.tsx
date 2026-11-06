@@ -48,7 +48,8 @@ export function SetupPage({
   const [busy, setBusy] = useState<"config" | "introspect" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const needsConnectionEnv = database === "postgres" || database === "mysql" || database === "sqlserver";
+  // An engine with a default connection variable reads its URL from one (setup-engines.test.ts).
+  const needsConnectionEnv = CONNECTION_ENV_DEFAULTS[database] !== "";
   const configDone = configAlreadyExists || configResult !== null;
 
   const envVarsToFill = useMemo(() => {

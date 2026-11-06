@@ -16,12 +16,14 @@ import { POSTGRES_TEMPLATE_BUNDLE } from "./templates.js";
  * - `from-export` reads a directory of CSV/JSON files exported by an air-gapped operator
  *   running the same catalog SQL suite (`POSTGRES_TEMPLATE_BUNDLE`) in their environment.
  *
+ * In both modes, `schemaId` is the resulting `SqlSchema`'s `schemaId` (default `"introspected"`).
+ *
  * The shape is owned by `@askdb/postgres`; `@askdb/introspect` is engine-agnostic and does
  * not know about live vs. from-export modes.
  */
 export type PostgresIntrospectionInput =
-  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters }
-  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters };
+  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters; schemaId?: string }
+  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters; schemaId?: string };
 
 export function createPostgresConnector(): Connector<PostgresIntrospectionInput> {
   return {
@@ -30,11 +32,13 @@ export function createPostgresConnector(): Connector<PostgresIntrospectionInput>
         return describePostgresFromExport({
           bundlePath: input.bundlePath,
           filters: input.filters,
+          schemaId: input.schemaId,
         });
       }
       return describePostgres({
         runner: input.runner,
         filters: input.filters,
+        schemaId: input.schemaId,
       });
     },
     templates(): SqlTemplateBundle {

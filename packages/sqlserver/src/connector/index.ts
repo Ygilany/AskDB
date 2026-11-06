@@ -14,12 +14,14 @@ export type SqlServerIntrospectionInput = {
   mode: "live";
   runner: CatalogQueryRunner;
   filters?: IntrospectionFilters;
+  /** `schemaId` of the resulting `SqlSchema`. Defaults to `"introspected"`. */
+  schemaId?: string;
 };
 
 export function createSqlServerConnector(): Connector<SqlServerIntrospectionInput> {
   return {
     async describe(input: SqlServerIntrospectionInput): Promise<IntrospectionResult> {
-      return describeSqlServer({ runner: input.runner, filters: input.filters });
+      return describeSqlServer({ runner: input.runner, filters: input.filters, schemaId: input.schemaId });
     },
   };
 }
