@@ -585,8 +585,8 @@ export function findEscapeStringContinuation(sql: string, tokens: readonly SqlTo
  * continuation. This lexer reads it under the Postgres profile without them, as Postgres reads a
  * bit string, so where `\'` ends one reading's string the other's goes on. AskDB doesn't model the
  * difference. The checks refuse the string at this boundary, where both readings still agree
- * (#730, ADR 0012). What's lost: a byte string with escapes on CockroachDB, which `x'…'` can
- * write instead, and a continued lower-case bit string on Postgres, where a backslash in a bit
+ * (#730, ADR 0012). What's lost: a byte string with escapes on CockroachDB, which a hex string
+ * cast to bytes (`'\x00'::bytea`) can write instead, and a continued lower-case bit string on Postgres, where a backslash in a bit
  * string is an error. `B'…'` is a bit string on both engines and passes. Returns the `b'…'` token;
  * callers report its position, not its text, which may hold a value from the question.
  */

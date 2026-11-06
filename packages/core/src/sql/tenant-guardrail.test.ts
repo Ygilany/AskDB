@@ -29,6 +29,10 @@ const globalScope: TenantScope = {
   access: { kind: "global", reason: "super_admin" },
 };
 
+/** A dialect id that is no built-in engine, so the SQL may be read as Postgres; optionally with `backslashEscapes`. */
+const customEngine = (backslashEscapes?: boolean) =>
+  ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
+
 describe("validateTenantGuardrails — safe queries", () => {
   it("passes SQL with direct tenant predicate (P1)", () => {
     const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
@@ -666,7 +670,7 @@ describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () =
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const findings = (sql: string, dialect?: DialectSpec) =>
     validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
-  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const customDialect = customEngine();
 
   // Postgres reads U&"\006Frders" as orders: on Postgres 17 it returned both tenants' rows.
   it.each([
@@ -697,12 +701,10 @@ describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () =
     // 'a\' ends early and the name sits inside the next string. The setting adds the escapes-on
     // reading to the plain one, so the name is reported (postgresReadingProfiles, #703).
     const sql = String.raw`SELECT 'a\'' AS z, U&"\006Frders" AS y FROM agencies WHERE id = :tenant_agency_ids`;
-    const custom = (backslashEscapes: boolean) =>
-      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
-    expect(findings(sql, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
-    expect(findings(sql, custom(false))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, customEngine(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, customEngine(false))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
     // And the plain reading still runs with the setting on: here only it sees the name as code.
-    expect(findings(String.raw`SELECT 'x\' AS a, U&"\006Frders" AS y`, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(String.raw`SELECT 'x\' AS a, U&"\006Frders" AS y`, customEngine(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
   });
 });
 
@@ -710,7 +712,7 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const findings = (sql: string, dialect?: DialectSpec) =>
     validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
-  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const customDialect = customEngine();
   // Postgres reads `a'` and then an unscoped read of orders; the check saw three strings.
   const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
 
@@ -719,7 +721,7 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
     ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'\\'' AS x, o.* FROM orders o --'"],
     ["a JSON_OBJECT key's `:` before the E", "SELECT JSON_OBJECT('k':E'a'\n'\\'' || (SELECT count(*) FROM orders o)::text --'\n) AS x FROM agencies WHERE id = :tenant_agency_ids"],
   ])("reports %s under every reading that includes Postgres", (_label, sql) => {
-    const customWithEscapes = { ...customDialect, backslashEscapes: true } as unknown as DialectSpec;
+    const customWithEscapes = customEngine(true);
     for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect, customWithEscapes]) {
       expect(findings(sql, dialect), String(dialect?.id)).toContain("STRING_CONTINUATION:");
     }
@@ -733,12 +735,10 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
     // With escapes on, 'a\'' is one string and the E'…' pair after it is code; with them off,
     // 'a\' ends early and the pair sits inside the next string. Only one reading sees the pair.
     const sql = String.raw`SELECT 'a\'' AS z, E'b'` + "\n'c' AS y";
-    const custom = (backslashEscapes: boolean) =>
-      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
-    expect(findings(sql, custom(true))).toContain("STRING_CONTINUATION:");
-    expect(findings(sql, custom(false))).not.toContain("STRING_CONTINUATION:");
+    expect(findings(sql, customEngine(true))).toContain("STRING_CONTINUATION:");
+    expect(findings(sql, customEngine(false))).not.toContain("STRING_CONTINUATION:");
     // And the plain reading still runs with the setting on: here only it sees the pair as code.
-    expect(findings(String.raw`SELECT 'x\' AS a, E'b'` + "\n'c' AS y", custom(true))).toContain("STRING_CONTINUATION:");
+    expect(findings(String.raw`SELECT 'x\' AS a, E'b'` + "\n'c' AS y", customEngine(true))).toContain("STRING_CONTINUATION:");
   });
 
   it("names the string's position, not its text", () => {
@@ -762,8 +762,8 @@ describe("validateTenantGuardrails — CockroachDB b'…' byte strings (#730)", 
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const findings = (sql: string, dialect?: DialectSpec) =>
     validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
-  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
-  const customWithEscapes = { ...customDialect, backslashEscapes: true } as unknown as DialectSpec;
+  const customDialect = customEngine();
+  const customWithEscapes = customEngine(true);
   // CockroachDB reads b'…' with backslash escapes: the bytes `'`, then an unscoped read of orders.
   // The check saw one string.
   const bypass = String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`;

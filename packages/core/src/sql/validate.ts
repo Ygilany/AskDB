@@ -138,7 +138,7 @@ function checkWithProfile(
       throw validationError(
         "SQL_ESCAPED_BYTE_STRING",
         `A b'…' byte string with a backslash, or continued on a later line, is not allowed: generated SQL has one at offset ${bytes.start}.`,
-        "CockroachDB reads b'…' with backslash escapes, also across a continuation, so the check can't tell where the string ends. Write the bytes as a hex literal (x'…').",
+        "CockroachDB reads b'…' with backslash escapes, also across a continuation, so the check can't tell where the string ends. Write the bytes as a hex string cast to bytea ('\\x00'::bytea).",
       );
     }
   }

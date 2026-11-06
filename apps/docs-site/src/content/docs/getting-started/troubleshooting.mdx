@@ -113,7 +113,7 @@ On Postgres, CockroachDB, or a dialect id that is no built-in engine, the genera
 
 ### `SqlValidationError: SQL_ESCAPED_BYTE_STRING`
 
-On Postgres, CockroachDB, or a dialect id that is no built-in engine, the generated SQL has a `b'…'` byte string (lower-case `b`) that holds a backslash, such as `b'\x00'`, or continues on a later line. CockroachDB reads it with backslash escapes, while AskDB's checks don't, so they can disagree about where the string ends and miss code after it. AskDB refuses the string rather than guess. Write the bytes as a hex literal (`x'00'`). A `b'…'` string with no backslash, and a `B'…'` bit string, pass. See [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
+On Postgres, CockroachDB, or a dialect id that is no built-in engine, the generated SQL has a `b'…'` byte string (lower-case `b`) that holds a backslash, such as `b'\x00'`, or continues on a later line. CockroachDB reads it with backslash escapes, while AskDB's checks don't, so they can disagree about where the string ends and miss code after it. AskDB refuses the string rather than guess. Write the bytes as a hex string cast to `bytea` (`'\x00'::bytea`), which Postgres and CockroachDB both read as bytes. A `b'…'` string with no backslash, and a `B'…'` bit string, pass. See [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
 
 ### `SqlValidationError: SQL_UNTERMINATED`
 

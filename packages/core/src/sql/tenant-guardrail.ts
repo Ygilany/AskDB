@@ -162,7 +162,7 @@ export function tenantRuleWarnings(
     warnings.push(
       warn("ESCAPED_BYTE_STRING", "",
         `The SQL has a b'…' byte string at offset ${bytes.start} with a backslash or continued on a later line, which ` +
-        "CockroachDB reads with backslash escapes and the tenant check doesn't. Write the bytes as a hex literal (x'…')."),
+        "CockroachDB reads with backslash escapes and the tenant check doesn't. Write the bytes as a hex string cast to bytea ('\\x00'::bytea)."),
     );
   }
 
