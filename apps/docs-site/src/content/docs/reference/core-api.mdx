@@ -155,7 +155,7 @@ Tenant IDs come from `tenantScope`, never from `values`. Each `:tenant_<root>_id
 
 Every check uses the bind-time inputs, so a template refused today may have bound yesterday: a tightened policy, or a scope other than the one it was produced under, applies at the next rebind. It throws:
 
-- `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`) without the third argument or its `schema`; (`DIALECT_SPEC_REQUIRED`) without `dialect` for a `"host"` template or one stored without `dialectRules`; (`DIALECT_UNSUPPORTED`) for a `dialect` whose `id` isn't the template's; (`TENANT_VALUE_SUPPLIED`) for a `:tenant_*` key in `values`; (`TENANT_PARAM_ALIGNMENT`) when the tenant markers can't be lined up with the business params; and the existing reasons for a wrong, missing or misplaced business value.
+- `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`) without the third argument or its `schema`; (`DIALECT_SPEC_REQUIRED`) without `dialect` for a `"host"` template or one stored without `dialectRules`; (`DIALECT_UNSUPPORTED`) for a `dialect` whose `id` isn't the template's; (`TENANT_VALUE_SUPPLIED`) for a `:tenant_*` key in `values`; (`TENANT_PARAM_ALIGNMENT`) when the tenant markers can't be lined up with the business params; (`INVALID_DECLARATION`) for a parameter declaring a `type` or `cardinality` AskDB doesn't support; and the existing reasons for a wrong, missing or misplaced business value.
 - `TenantScopeError`: as in `ask()` for a missing or invalid scope; `SUBTREE_NOT_RESOLVABLE` for an unexpanded `subtree`; `UNRESOLVED_TENANT_PLACEHOLDER` for a placeholder the scope has no IDs for. That includes a template scoped through another root, any placeholder under a `global` scope, and any placeholder when the schema has no tenant policy. `UNESCAPABLE_TENANT_ID` in `"sql-only"` mode for a tenant ID that isn't printable ASCII or contains a backslash. `TENANT_SQL_MODE_REQUIRED` for a `tenantSqlMode` that is neither mode.
 - `SqlValidationError`, `TenantGuardrailError` or `SensitiveReferenceError` for a `deny` verdict (see [Guardrail verdict](#guardrail-verdict)). A refused tenant warning throws `TenantGuardrailError` with a message naming `acceptWarnings`.
 
@@ -295,7 +295,7 @@ const schema = loadSchema("./my-app.schema"); // synchronous
 
 Autodetects and loads a v2 schema artifact. Accepts:
 - A **schema directory** (`<name>.schema/`) — the output of `askdb introspect`
-- A **bundled JSON file** (`*.bundle.json` or any JSON with `bundled: true`) — the output of `askdb bundle`
+- A **bundled JSON file** (any JSON object with a `bundled` key, whatever the file's name) — the output of `askdb bundle`
 - A direct path to a `schema.json` file, matched in any case (`Schema.json` works too). This loads the enclosing directory, so sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md` apply just as they do for the directory path.
 - Any other JSON file, loaded as the physical layer only. If its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, in any case, `loadSchema()` throws `SchemaParseError` instead, because loading the file alone would ignore them: a copy such as `prod-schema.json` would load without its tenant policy. Pass the directory, or pass the file's content to `loadSchemaFromJson()` to load only the physical layer.
 
@@ -318,7 +318,7 @@ const schema = loadSchemaFromJson(bundleJsonString);
 
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
 
-The bundle's shape is exported as the `BundledSchemaV2` type: `{ bundled: true, physical, tables, concepts?, tenantPolicy? }`, where `physical` is the `schema.json` object, `tables` maps each `tables/` filename to its raw markdown, and `concepts` and `tenantPolicy` hold the raw `concepts.md` and `tenant-policy.md` when those files exist. `askdb bundle` writes it.
+The bundle's shape is exported as the `BundledSchemaV2` type: `{ bundled: true, physical, tables, concepts?, tenantPolicy? }`, where `physical` is the `schema.json` object, `tables` maps each `tables/` filename to its raw markdown, and `concepts` and `tenantPolicy` hold the raw `concepts.md` and `tenant-policy.md` when those files exist. `tables` is required (`{}` when there are no table files): a bundle without it, or whose `tables` isn't an object of strings, throws `SchemaParseError` naming `tables` and the bundle. `askdb bundle` writes it.
 
 ### `readSchemaDirectory(dir)`
 
@@ -657,7 +657,7 @@ const adminScope: TenantScope = {
 | `TenantScopeError` | `ask()`, `bindPreparedQuery()`, `expandTenantScope()`, `validateTenantScope()`, `resolveTenantSql()` and `buildTenantPromptBlock()`: a missing or invalid scope, or tenant IDs that can't be bound. | `reason` |
 | `TenantGuardrailError` | A `deny` from the tenant check in `ask()`, `generateSelectSql()` and `bindPreparedQuery()`, and `validateTenantGuardrails()` under a `strict` policy. | `warnings`, `verdict?` |
 | `SensitiveReferenceError` | `validateSensitiveReferences()` in `strict` mode, and a `deny` from the sensitive check in `ask()` and `bindPreparedQuery()`. | `rule`, `references`, `unresolvedScope?`, `verdict?` |
-| `QueryParameterError` | `bindPreparedQuery()`: missing guardrail inputs, or values that don't fit the template. | `reason` |
+| `QueryParameterError` | `bindPreparedQuery()`: missing guardrail inputs, a template that declares a parameter `type` or `cardinality` AskDB doesn't support, or values that don't fit the template. | `reason` |
 | `SensitiveEnrichmentTargetError` | `suggestEnrichment()` and `buildEnrichmentUserPrompt()`, for a sensitive target column while `omitSensitiveIdentifiersFromPrompt` is on. The message names no column. | — |
 
 `verdict` is set when the error comes from `ask()`, `generateSelectSql()` or `bindPreparedQuery()`: every finding of every check, not only the one that denied. See [Guardrail verdict](#guardrail-verdict). A direct `validateSelectSql()` or `validateSensitiveReferences()` call leaves it unset.
@@ -737,6 +737,7 @@ The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrail
 | `TENANT_VALUE_SUPPLIED` | `values` has a `:tenant_*` key. Tenant IDs come from `tenantScope` only. |
 | `TENANT_PARAM_ALIGNMENT` | The tenant markers in `unboundSql` can't be lined up with the business parameters. |
 | `DIALECT_SPEC_REQUIRED` | No `guardrails.dialect` for a template with `dialectRules: "host"`, or one stored without `dialectRules`. |
+| `INVALID_DECLARATION` | A parameter in the template declares a `type` other than `string`, `number`, `boolean`, `date` or `datetime`, or a `cardinality` other than `one` or `many`, or the template's `parameters` isn't a list of declarations. Checked before any value; regenerate the template. |
 
 ---
 

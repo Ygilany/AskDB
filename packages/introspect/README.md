@@ -46,7 +46,7 @@ const result = await introspect(
 );
 ```
 
-To get the exact `schema.json` bytes without writing anything (for previews or drift checks), use `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It is the same function `renderToSchemaV2` writes through — including the merge that carries human-set `sensitive` flags over from an existing artifact — and it backs `askdb introspect --out`, `--print`, and `--diff`.
+To get the exact `schema.json` bytes without writing anything (for previews or drift checks), use `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It is the same function `renderToSchemaV2` writes through — including the merge that carries human-set `sensitive` flags over from an existing artifact — and it backs `askdb introspect --out`, `--print`, and `--diff`. It throws `EmptyIntrospectionError` when the schema renders no tables or views, so nothing is written (ADR 0037).
 
 ## CLI
 

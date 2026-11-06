@@ -21,7 +21,16 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.50
 
-Not published yet: these changes ship with `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19 and `@askdb/client` 1.0.0-beta.12, and reach the apps in `askdb` and `@askdb/http-api` 1.0.0-beta.50 and `@askdb/studio` 0.2.0-beta.43.
+Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
+
+### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
+
+`bindPreparedQuery()` now refuses a stored template whose parameter declares a `type` or `cardinality` AskDB doesn't support. It throws `QueryParameterError` with the new `QueryParameterRejectionReason` `INVALID_DECLARATION`, naming the parameter, before it reads any value ([#789](https://github.com/Ygilany/AskDB/issues/789)).
+
+- **An unknown `type`**, anything but `string`, `number`, `boolean`, `date` or `datetime`, used to fail as a raw `TypeError`.
+- **An unknown `cardinality` is a behavior change.** A template that declared anything but `one` or `many` used to bind as `one`; it now throws.
+- **A `switch` over every `QueryParameterRejectionReason`** needs a case for the new member.
+- **Fix the template, not the value:** regenerate it with `ask()`. A template `ask()` produced always declares supported values; one edited or built by hand may not.
 
 ### Take credentials out of a model base URL
 
@@ -84,6 +93,20 @@ Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `t
 | `OpenaiRagEmbedderConfig` | `AskDbAiEmbeddingConfig` (`ai.embedding`) and a connection type |
 
 `ASKDB_RAG_EMBEDDERS` is now `["mock", "ai"]`, and the `AskDbRagEmbedder` type narrows to match.
+
+### Handle introspection that finds no tables
+
+Introspection now refuses to write an artifact with no tables ([#337](https://github.com/Ygilany/AskDB/issues/337), ADR 0037). It used to write a `schema.json` with `tables: []`, which `loadSchema()` rejects, and re-introspecting a database that had lost its tables replaced a valid artifact with it.
+
+- **`askdb introspect` exits `1`** where it exited `0`, with `--out`, `--print` and `--diff` alike, and writes nothing. A script that checks the exit code sees the failure now; the message names the schema id, the engine and the filters.
+- **`introspect()` with render options, `renderToSchemaV2()` and `renderSchemaV2Body()` throw the new `EmptyIntrospectionError`** when the schema renders no tables or views, after filters. Catch it where you introspect from code; it carries `schemaId`, `provider` and `filters`.
+- **Studio answers `422`** with the reason when its introspection or resync finds nothing, and keeps the artifact on disk.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-) for the likely causes.
+
+### Fix a bundle without a `tables` object, which now fails to load
+
+A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a non-empty string or array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. A `tables` of `[]`, `""`, `0` or `true` loaded as a schema with no table files, and now throws as well. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: set `"tables": {}`, or rebuild it with `askdb bundle`.
 
 ### Other changes you may notice in beta.50
 

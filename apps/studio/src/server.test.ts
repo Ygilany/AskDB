@@ -1372,6 +1372,35 @@ describe("AskDB Studio server", () => {
     expect(plan.error).not.toContain("--url");
   });
 
+  // #337, ADR 0037: a source with no tables is the user's to fix, so the resync answers 422 with the
+  // reason and leaves the artifact on disk as it was.
+  it("POST /api/introspect answers 422 for a source with no tables and leaves the artifact as it was", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "askdb-studio-empty-"));
+    try {
+      const dbFile = join(dbDir, "empty.db");
+      new BetterSqlite3(dbFile).close();
+      installStudioRuntime({
+        ...STUDIO_TEST_BASE,
+        introspection: { provider: "sqlite", providerConfig: { sqlite: { file: dbFile } }, outputDir: "./askdb/", schemas: ["main"] },
+      });
+      const schemaDir = copyFixture();
+      const before = readFileSync(join(schemaDir, "schema.json"));
+      const server = createStudioServer({ schema: schemaDir });
+      servers.push(server);
+      const baseUrl = await listen(server);
+
+      const response = await postRaw(`${baseUrl}/api/introspect`, {});
+
+      expect(response.status).toBe(422);
+      const body = (await response.json()) as { error: { message: string } };
+      expect(body.error.message).toContain("Introspection found no tables or views");
+      expect(body.error.message).toContain("the filters match nothing (schemas: main)");
+      expect(readFileSync(join(schemaDir, "schema.json"))).toEqual(before);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {
     const prismaConfig: AskDbConfig = {
       ...STUDIO_TEST_BASE,

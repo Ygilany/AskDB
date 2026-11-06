@@ -127,6 +127,7 @@ export default defineConfig({
                 { label: "Author your schema", slug: "guides/author-your-schema" },
                 { label: "Bring your own model", slug: "guides/bring-your-own-model" },
                 { label: "Switch engines", slug: "guides/switch-engines" },
+                { label: "Connect to SQL Server", slug: "guides/connect-to-sql-server" },
                 { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
               ],
             },
@@ -180,6 +181,10 @@ export default defineConfig({
                 { label: "HTTP API", slug: "reference/http-api" },
                 { label: "Configuration", slug: "reference/config" },
               ],
+            },
+            {
+              label: "Formats and rules",
+              items: [{ label: "Schema artifact format", slug: "reference/schema-artifact-format" }],
             },
             {
               label: "Packages and releases",
