@@ -353,7 +353,14 @@ Driver: `mssql` (optional peer, `>=12`).
 | `sqlServerConnectorProvider` | The connector provider, built with `defineLiveConnectorProvider`. Falls back to `introspection.providerConfig.sqlserver.databaseUrl`. |
 | `SQLSERVER_DIALECT`, `SqlServerDialect` | Re-exports from `@askdb/core`. |
 
-[Switch engines](/guides/switch-engines/) covers the SQL Server connection formats and TLS settings in practice.
+In the Prisma `sqlserver://` form, `resolveConnectionInput` reads curly braces as Prisma does where its earlier parser couldn't read the value, so strings that worked before keep the same values:
+
+- A value is an escape when it starts with `{`, has a `;` before its first `}`, and ends at the first `}` that is followed only by blanks and then a `;` or the end of the string, where the `;`-separated piece that ends at that `}` has no `=`. Everything between the braces is the value, read verbatim: `password={Pass:Word;}` is `Pass:Word;`, and `{{a;b}}` is `{a;b}`.
+- Any other brace is a plain character: `password={abc}` is `{abc}`, and a `{` that is never closed is part of the value.
+- Prisma reads every `{…}` as an escape, so a string shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) reaches SQL Server with its braces when AskDB connects.
+- Prisma's credential keys `username`, `uid` and `pwd` are read when `user` or `password` is absent (`username` before `uid`). The canonical key wins when both are set.
+
+[Connect to SQL Server](/guides/connect-to-sql-server/) covers the formats and TLS settings in practice.
 
 ## `@askdb/prisma`
 

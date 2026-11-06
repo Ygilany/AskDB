@@ -127,6 +127,7 @@ export default defineConfig({
                 { label: "Author your schema", slug: "guides/author-your-schema" },
                 { label: "Bring your own model", slug: "guides/bring-your-own-model" },
                 { label: "Switch engines", slug: "guides/switch-engines" },
+                { label: "Connect to SQL Server", slug: "guides/connect-to-sql-server" },
                 { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
               ],
             },
