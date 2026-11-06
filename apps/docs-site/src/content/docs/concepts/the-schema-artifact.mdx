@@ -1,149 +1,37 @@
 ---
 title: "The schema artifact"
-description: "AskDB's schema artifact — a versionable file your team owns, not a black-box prompt buried in code."
+description: "Why AskDB's schema artifact is files your team owns: two layers joined by stable IDs, sensitivity that only escalates, and a loader that fails closed."
 ---
-
-import { Aside } from "@astrojs/starlight/components";
 
 <p class="doc-eyebrow">The contract</p>
 
-<p class="doc-lede">The schema artifact is the single file (or directory) your team authors, reviews, and checks into version control. It's the context the model uses to generate SQL — and it's yours to evolve like any other piece of source code.</p>
+<p class="doc-lede">The schema artifact is the folder of files your team authors, reviews, and checks into version control. It's the model's only source of knowledge about your database, and it's yours to evolve like any other piece of source code.</p>
 
-## On disk
+This page explains how the artifact is put together and why. The [Schema artifact format](/reference/schema-artifact-format/) lists every file and field.
 
-A schema artifact is a folder with one required file and a few optional companions:
+## Two layers
 
-```
-my-app.schema/
-  schema.json           # required — physical structure
-  tables/
-    users.md            # optional — per-table descriptions, aliases, concepts
-    orders.md
-  concepts.md           # optional — cross-table business concepts
-  tenant-policy.md      # optional — multi-tenant scoping rules
-  schema.lock.json      # optional — written by @askdb/rag indexing (embedder, store, chunk hashes)
-```
+The artifact keeps two kinds of knowledge apart, because they come from different places.
 
-Only `schema.json` is required. An artifact with no markdown is valid; you can add enrichment incrementally.
+The **physical layer** is `schema.json`: the tables, columns, types, keys and relationships. It comes from the database. `askdb introspect` reads the database and writes it, and writes it again each time you run it. You rarely edit it by hand.
 
-Table markdown files are matched to tables by the `id` in their front-matter, not by filename. When AskDB creates one for you it uses `<table>.md`. It uses `<schema>.<table>.md` instead if two tables share a name (for example `public.orders` and `archive.orders`), or if `tables/` already holds a file with the same name, such as `Orders.md`. Names that a case-insensitive file system stores as one file count as the same. That covers case, Unicode normalization and case folding, such as `ß` and `SS`. The rule doesn't depend on the operating system, so the same schema and `tables/` contents get the same default names on every OS. Very long names are shortened and end in a short hash.
+The **enrichment layer** is markdown: a file for each table you describe, plus optional business concepts and a tenant policy. It comes from people: what a table means, what your users call it, and how they phrase questions about it. Introspection never touches it.
 
-AskDB looks up the names in this layout exactly. A name that matches one only when case is ignored, such as `Tenant-Policy.md`, `Tables/` or `tables/orders.MD`, makes [`loadSchema()`](/reference/core-api/#loadschemapath) throw `SchemaParseError` on every OS. On Linux, where file names are case-sensitive, AskDB would otherwise skip that file, and a skipped `tenant-policy.md` turns tenant enforcement off.
+The split lets each layer change at its own pace. Re-introspection can't erase what your team wrote. And a diff of `schema.json` shows what changed in the database, and nothing else.
 
-When you need one portable file (for distributing to a service, an agent, or a build artifact), bundle the directory:
+## Stable IDs join the layers
 
-```bash
-npx askdb bundle my-app.schema --out my-app.schema.bundle.json
-```
+The markdown doesn't repeat table or column names. It refers to them by ID, such as `table:public.orders` or `table:public.orders#status`.
 
-The bundle carries `schema.json`, every `tables/*.md`, `concepts.md`, and `tenant-policy.md`, so loading it gives the same result as loading the directory. `askdb bundle` refuses every directory that `loadSchema()` refuses: a name in the wrong case, or a file that exists but can't be read. It fails instead of leaving the file out.
+AskDB builds each ID from the names in the database, so the same database always gives the same IDs. That is what lets your markdown keep matching after every re-introspection.
 
-## The physical layer
+The cost is renames. A renamed table or column gets a new ID, and AskDB can't tell a rename from a removal plus an addition. The markdown that named the old ID stops applying, and the loader reports it as a warning instead of guessing. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps to follow after a rename.
 
-`schema.json` holds the structural facts: stable IDs, physical table and column names, types, nullability, primary keys, relationships, and sensitivity flags. Here it is for a Postgres database with `orders` and `users` tables, with `users.email` marked sensitive:
+## Sensitivity only escalates
 
-```json
-{
-  "version": 2,
-  "schemaId": "my-app",
-  "provider": "postgres",
-  "tables": [
-    {
-      "id": "table:public.orders",
-      "name": "orders",
-      "schema": "public",
-      "sensitive": false,
-      "columns": [
-        {
-          "id": "table:public.orders#id",
-          "name": "id",
-          "type": "uuid",
-          "nullable": false,
-          "primaryKey": true,
-          "sensitive": false
-        },
-        {
-          "id": "table:public.orders#user_id",
-          "name": "user_id",
-          "type": "uuid",
-          "nullable": false,
-          "sensitive": false
-        },
-        {
-          "id": "table:public.orders#status",
-          "name": "status",
-          "type": "text",
-          "nullable": false,
-          "sensitive": false
-        }
-      ],
-      "relationships": [
-        {
-          "from": "table:public.orders#user_id",
-          "to": "table:public.users#id"
-        }
-      ]
-    },
-    {
-      "id": "table:public.users",
-      "name": "users",
-      "schema": "public",
-      "sensitive": false,
-      "columns": [
-        {
-          "id": "table:public.users#id",
-          "name": "id",
-          "type": "uuid",
-          "nullable": false,
-          "primaryKey": true,
-          "sensitive": false
-        },
-        {
-          "id": "table:public.users#email",
-          "name": "email",
-          "type": "text",
-          "nullable": false,
-          "sensitive": true
-        }
-      ]
-    }
-  ]
-}
-```
+A table or column can be marked sensitive in `schema.json` or in its markdown. The two places aren't equal. Markdown can mark something sensitive, but it can't un-mark it. Only `schema.json` can.
 
-Each table records its database namespace in `schema`, and every table needs one. `provider` records the engine that introspection read. When your config doesn't set `dialect`, AskDB's config-driven entry points pick the SQL dialect from `provider` (see [Configuration](/reference/config/)).
-
-`askdb introspect` writes `schema.json`, and you can also edit it by hand, for example to un-mark a column it marks sensitive. To mark a table or column sensitive, use front-matter instead (see [The enrichment layer](#the-enrichment-layer)). Front-matter rejects a key it doesn't know, but `schema.json` ignores one: a misspelled `"sensitve": true` there loads without an error or a warning and marks nothing. When you introspect again into the same directory, AskDB rebuilds `schema.json` from the database and keeps only the `sensitive` flags from the existing file, matched by table and column ID. Every other hand edit to `schema.json` is overwritten.
-
-## The enrichment layer
-
-Per-table markdown adds the meaning the model needs to generate good SQL: descriptions, aliases, common query language, example questions, and column-level notes.
-
-```markdown
----
-id: table:public.orders
-name: orders
-schemaId: my-app
-aliases: [purchases, sales]
-columns:
-  - id: table:public.orders#status
-    enum: [pending, paid, shipped, cancelled]
-    description: Order lifecycle state.
----
-
-# Table: orders
-
-Customer purchase orders. One row per submitted order.
-
-## Common query language
-
-- "sales" usually means paid orders
-- "active customers" excludes status = cancelled
-```
-
-This layer survives re-introspection. When your database changes, `askdb introspect` updates `schema.json` and leaves your markdown intact.
-
-Front-matter can also mark a table or column sensitive. This is what Studio's Sensitivity tab writes: a table-level `sensitive: true`, or `sensitive: true` on a `columns` entry. Sensitivity is **escalate-only**. Front-matter can make a table or column sensitive on top of `schema.json`, but a front-matter `sensitive: false` never un-marks something `schema.json` marks sensitive. AskDB ignores it and reports a `sensitivity_downgrade_ignored` warning. A sensitive table makes all of its columns sensitive. To un-mark a column, edit `schema.json`. If a `columns` entry names a column from a different table, its `sensitive: true` still applies to that column, and AskDB reports a `misplaced_column_id` warning so you can move the entry to the right file. If a column is listed more than once, it is sensitive when any of its entries says `sensitive: true`. A repeat within one file is reported as a `duplicate_column_id` warning, and only the first entry's description, aliases, and enum are used. Each table gets exactly one markdown file: two files with the same front-matter `id` are an error.
+This is deliberate. Markdown is the layer many people edit, often in Studio, so a mistake there is likely. A `sensitive: false` in markdown can't expose a column that `schema.json` marks sensitive. Un-marking takes a change to `schema.json`, which is a small, visible diff for a reviewer, and re-introspection keeps it.
 
 ## What the model actually receives
 
@@ -151,37 +39,29 @@ The model never sees the directory you author. At generation time AskDB merges t
 
 So the two layers you maintain separately on disk — `schema.json` for structure, markdown for meaning — are assembled into one annotated schema description the model reads. The prompt carries that repackaged text and the question, never your rows, your credentials, or your query results. When your schema has a tenant policy, the prompt also carries a tenant policy block and the `context` from your `tenantScope`, as advisory text. The block names tenant IDs only by placeholder, such as `:tenant_agency_ids`, never by value. See [Privacy model](/concepts/privacy-model/) for the full list of what reaches the model. When a schema is too large to send whole, the same rendering is applied to only the relevant slice retrieved for the question (see [RAG for large schemas](/guides/rag-for-large-schemas/)).
 
-## Stable IDs
+## Directory or bundle
 
-Every table, column, and concept has a stable ID. The markdown files refer to tables and columns only by ID, never by name. Table and column IDs come from the names in the database, so introspecting an unchanged database again gives the same IDs.
+You author the artifact as a folder, because a folder of small files diffs and reviews well. To ship it to a service, an agent or a build, `askdb bundle` packs the folder into one JSON file. Loading the bundle gives the same result as loading the folder.
 
-| ID | Refers to |
-| --- | --- |
-| `table:public.users` | A table (always schema-qualified; engines without schemas use `public`) |
-| `table:public.users#email` | A column |
-| `concept:customer` | A cross-table business concept |
+The loader reads the artifact's file names exactly, and refuses one in the wrong case, such as `Tenant-Policy.md`, on every OS. On Linux, where file names are case-sensitive, it would otherwise skip that file without a word, and a skipped `tenant-policy.md` turns tenant enforcement off. On macOS and Windows the same folder would load. Refusing everywhere makes the mistake fail on a laptop before it can fail open in production.
 
-Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition, and doesn't map the old ID to the new one. Renaming a table changes the ID of every column in it too.
+A schema directory or bundle is input AskDB parses and puts into the model prompt, so whoever can write it can change what AskDB loads and what the model sees. Before `@askdb/core` 1.0.0-beta.48, a crafted front-matter block in a schema markdown file could also run code in the process that loaded it ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)); since beta.48, schema front-matter must be YAML. Load schema files only from sources you trust.
 
-<Aside type="caution" title="A rename drops sensitivity marks">
-After a rename, a `tables/*.md` entry that names the old ID stops applying: `loadSchema()` ignores it and reports an `orphaned_table_id` or `orphaned_column_id` warning. A `sensitive: true` on the old ID doesn't carry over either, from `schema.json` or from front-matter. In `schema.json`, re-introspection removes the old ID together with its flag and doesn't warn about the lost flag, so look for removed `"sensitive": true` lines in the diff of `schema.json` (for example `git diff schema.json`). Move your markdown entries and sensitivity marks to the new ID before you ship the schema.
-</Aside>
+## Why a file, not a prompt template
 
-## Why this matters
-
-The schema artifact is a deliberate choice. The alternative — a prompt template buried in application code — is opaque, hard to review, and tangled with the rest of your codebase.
+The schema artifact is a deliberate choice. The alternative, a prompt template buried in application code, is opaque, hard to review, and tangled with the rest of your codebase.
 
 A versionable file means:
 
 - Your data team can review changes in a PR like any other code.
 - You can see, line by line, what context the model receives.
 - Enrichment evolves at its own pace, decoupled from app deploys.
-- The same artifact powers the CLI, the library, and the HTTP API — one source of truth.
+- The same artifact powers the CLI, the library, and the HTTP API: one source of truth.
 
 ## Read next
 
 <div class="home-path-grid">
+  <a href="/reference/schema-artifact-format/"><strong>Schema artifact format</strong><span>Every file and field, the stable IDs, the loader's warnings, and the bundle format.</span></a>
   <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
   <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What reaches the model in each mode, and how sensitive columns are handled.</span></a>
-  <a href="/guides/rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>Send the model only the part of a large schema the question needs.</span></a>
 </div>

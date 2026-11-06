@@ -244,7 +244,7 @@ Both are required. Without either, `bundle` prints that usage line on stderr and
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
-It reads the directory the way `loadSchema()` does, so it refuses a directory that `loadSchema()` would refuse: a file name in the wrong case, such as `Tenant-Policy.md`, or an optional file that exists but can't be read. It exits with status 1 and the error.
+It reads the directory the way `loadSchema()` does, so it refuses the same file names and files: a file name in the wrong case, such as `Tenant-Policy.md`, an optional file that exists but can't be read, or an invalid `schema.json`. It exits with status 1 and the error. It doesn't parse the markdown files, so a front-matter error shows up only when the bundle is loaded. The [Schema artifact format](/reference/schema-artifact-format/#bundle-format) describes the bundle.
 
 ```bash
 askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
