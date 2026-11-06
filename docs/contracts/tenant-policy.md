@@ -415,7 +415,7 @@ The mode is configurable per `ask()` call (`tenantSqlMode`); the default is expo
 | SQL | Run with | Contents |
 | --- | --- | --- |
 | `result.sql` | `result.tenantParams` (`sql-params` mode; nothing in `sql-only`) | Business values inlined as literals; tenant markers numbered from the first slot. |
-| `result.unboundSql` | `result.params` | All values as markers. In `sql-params` mode `params` already includes the tenant IDs: after the business values for numbered markers (`$N`, `@pN`), interleaved in source order for `?` dialects. `parameters[].indices` point into this array. In `sql-only` mode tenant IDs are inlined literals in `unboundSql` and `params` holds business values only. |
+| `result.unboundSql` | `result.params` | All values as markers. In either mode `params` already includes the tenant IDs: after the business values for numbered markers (`$N`, `@pN`), interleaved in source order for `?` dialects. `parameters[].indices` point into this array. The mode governs `result.sql` only. |
 
 `tenantBindings` keeps its tenant-only meaning for audit.
 

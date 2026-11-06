@@ -79,7 +79,7 @@ AskDB's SQL checks catch common model mistakes but aren't a security boundary. C
 | `sql` | `string` | Always. The generated, checked SQL string. |
 | `verdict` | `GuardrailVerdict` | Always. The guardrail findings and the outcome (`"allow"` or `"warn"`; a `"deny"` throws). See [Guardrail verdict](/reference/core-api/#guardrail-verdict). |
 | `unboundSql` | `string \| undefined` | When `parameterize` is on (default) and the model returned consistent extras. Driver markers. |
-| `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order (includes tenant IDs in `tenantSqlMode: "sql-params"`, the default). |
+| `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order, tenant IDs included. |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes values). |
 | `preparedQuery` | `PreparedQuery \| undefined` | Definitions + template for `askdb.bind()` / `bindPreparedQuery()` (no values). |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). Use it for cost tracking or quota enforcement. |

@@ -132,10 +132,10 @@ function clientHasBuiltInProviders(): boolean {
  * tenant-scoped question don't load them (or the drivers). A throw is a broken install,
  * and fails the scenario.
  */
-async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extras: Record<string, unknown>) {
+async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extras: Record<string, unknown>, reply = `\`\`\`sql\n${sql}\n\`\`\``) {
   const { ask, loadSchema } = await import("@askdb/core");
   const { removeTenantArtifact, tenantArtifact } = await import("./tenant.js");
-  const generateText = (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
+  const generateText = (async () => ({ text: reply })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
   const dir = tenantArtifact(dialect);
   let schema: ReturnType<typeof loadSchema>;
   try {
@@ -214,6 +214,25 @@ async function askBindsTenantDriverMarkers(): Promise<boolean> {
   });
   const params = (result as { tenantParams?: readonly unknown[] }).tenantParams ?? [];
   return result.sql.includes("?") && !/\$\d/.test(result.sql) && params.map(String).includes("2");
+}
+
+/**
+ * Whether `unboundSql` binds the tenant IDs in `sql-only` mode too (`reference/core-api.mdx`,
+ * "Executing the result": "`tenantSqlMode` governs `sql` only"; #731): ask on SQLite in
+ * `sql-only` mode with a parameterized reply (a bound `sql`, its `sql-unbound` block and the
+ * manifest), and check the scope's ID is a value in `params`, not a literal in `unboundSql`.
+ * Releases before #743 inlined the IDs into `unboundSql` and left them out of `params`.
+ */
+async function askBindsTenantIdsInUnboundSql(): Promise<boolean> {
+  const { idsScope } = await import("./tenant.js");
+  const sql = "SELECT program_code FROM program WHERE agency_id = :tenant_agency_ids AND program_code = 'X'";
+  const unbound = "SELECT program_code FROM program WHERE agency_id = :tenant_agency_ids AND program_code = :code";
+  const manifest = JSON.stringify({ parameters: [{ name: "code", type: "string", cardinality: "one", value: "X" }] });
+  const reply = ["```sql", sql, "```", "```sql-unbound", unbound, "```", "```json", manifest, "```"].join("\n");
+  const result = await askTenantProbe("sqlite", sql, { tenantScope: idsScope("sqlite", [2]), tenantSqlMode: "sql-only" }, reply);
+  const { unboundSql, params } = result as { unboundSql?: string; params?: readonly unknown[] };
+  if (unboundSql === undefined) throw new Error("the probe's parameterized reply returned no unboundSql: a broken install");
+  return !unboundSql.includes("'2'") && (params ?? []).map(String).includes("2");
 }
 
 /**
@@ -330,6 +349,12 @@ const ASYNC_DETECTORS = {
    * #315 the guardrail accepted any mention of the tenant column.
    */
   "tenant-predicate-required": askRequiresTenantPredicate,
+  /**
+   * `unboundSql` binding tenant IDs in either `tenantSqlMode`, with them in `params`
+   * (`reference/core-api.mdx`, "Executing the result"; #731, fixed by #743). Before it,
+   * `sql-only` inlined them into `unboundSql`.
+   */
+  "tenant-unbound-binds-ids": askBindsTenantIdsInUnboundSql,
   /**
    * Studio's request guard (ADR 0009, PR #185): a per-launch session token in the served
    * page, required on `/api/*`, with the Host, Origin and content-type checks that shipped
