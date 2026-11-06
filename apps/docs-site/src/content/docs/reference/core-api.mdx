@@ -622,6 +622,8 @@ const adminScope: TenantScope = {
 };
 ```
 
+`context` goes into the prompt as advisory text, and so does a `global` scope's `reason`; the `access` IDs don't, because the prompt names only their placeholders. Keep personal data you don't want sent to your model provider out of `context` and `reason`: the example's `label` puts a person's name in the prompt.
+
 `access` is a `TenantAccess`, one of four kinds. `tenantRoot` is a root's table ID from the policy's `roots`.
 
 | Kind | Fields | Description |
@@ -631,7 +633,7 @@ const adminScope: TenantScope = {
 | `"multi_root"` (`TenantAccessMultiRoot`) | `scopes: { tenantRoot: string; ids: string[] }[]` | User has access across multiple tenant roots, each with their own id set. An entry's `ids` may be empty (a covered root with no IDs, which fails closed if read); at least one entry needs an ID. |
 | `"global"` (`TenantAccessGlobal`) | `reason: string` (non-empty) | Super / admin access. The `reason` is for audit. Binds no tenant IDs: SQL that still has a `:tenant_*` placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), in `ask()` and at rebind. |
 
-`context` is an optional `TenantScopeContext`: `role`, `label`, `department`, `region` and `description` (each a `string`), and `attributes` (`Record<string, string>`). It's advisory: the prompt shows it to the model as "User context (advisory — not enforced)", and no check enforces it. `validateTenantScope()` refuses any other key.
+`context` is an optional `TenantScopeContext`: `role`, `label`, `department`, `region` and `description` (each a `string`), and `attributes` (`Record<string, string>`). The prompt lists the fields that are set under "User context (advisory — not enforced)", and no check enforces them. `validateTenantScope()` refuses any other key.
 
 ---
 
