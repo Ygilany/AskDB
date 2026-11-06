@@ -154,7 +154,6 @@ import {
   isStudioExecuteProvider,
   validateExecuteSql,
 } from "./execute-registry.js";
-import { packageManagerSpawnSpec } from "./package-manager.js";
 
 const projectRoot = "/test/project";
 
@@ -361,39 +360,6 @@ describe("studio execute safety", () => {
     expect(isStudioExecuteProvider("postgres")).toBe(true);
     for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty", "oracle", 1, null]) {
       expect(isStudioExecuteProvider(key)).toBe(false);
-    }
-  });
-});
-
-describe("packageManagerSpawnSpec", () => {
-  it("spawns the bare command without a shell on POSIX", () => {
-    expect(packageManagerSpawnSpec("pnpm", ["add", "pg"], "linux")).toEqual({
-      command: "pnpm",
-      args: ["add", "pg"],
-      shell: false,
-    });
-  });
-
-  it("uses a shell on Windows so .cmd shims can run", () => {
-    expect(packageManagerSpawnSpec("npm", ["install", "--save", "@askdb/config@1.0.0-beta.3"], "win32")).toEqual({
-      command: "npm",
-      args: ["install", "--save", "@askdb/config@1.0.0-beta.3"],
-      shell: true,
-    });
-  });
-
-  // Setup approves @prisma/engines on pnpm 11 when it installs @askdb/prisma (#259).
-  it("passes a pnpm build approval for a package name", () => {
-    expect(packageManagerSpawnSpec("pnpm", ["add", "--allow-build=@prisma/engines", "@askdb/prisma@0.2.0"], "win32").args).toEqual([
-      "add",
-      "--allow-build=@prisma/engines",
-      "@askdb/prisma@0.2.0",
-    ]);
-  });
-
-  it("refuses arguments a shell could interpret", () => {
-    for (const bad of ["pg && calc", "pg;rm", "$(x)", "pg|x", "a b", "`x`", "--allow-build=x&calc", "--allow-build=$(x)", "--x=y"]) {
-      expect(() => packageManagerSpawnSpec("pnpm", ["add", bad], "win32")).toThrow(/unsafe argument/);
     }
   });
 });

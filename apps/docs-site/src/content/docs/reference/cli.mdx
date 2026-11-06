@@ -88,6 +88,15 @@ Commands that don't read the config work in any directory, including one with no
 
 Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently. With `--database prisma` it installs `@askdb/prisma` at the version of the `askdb` running it, and with pnpm 10.4 or later it approves the `@prisma/engines` build (`pnpm add --allow-build=@prisma/engines`). Older pnpm has no `--allow-build`, so it installs without it.
 
+`init` installs into the nearest directory above the current one that has a `package.json`. It picks the package manager from the first of these that names one:
+
+1. A lockfile in that directory or a parent: `pnpm-lock.yaml`, `bun.lock` or `bun.lockb`, `yarn.lock`, then `package-lock.json`. An existing lockfile always wins.
+2. The nearest `package.json` that declares a manager: its `packageManager` field (`pnpm@11.28.10`), then `devEngines.packageManager` (`pnpm init` writes it).
+3. The tool that ran `init`: `pnpm dlx`, `yarn dlx`, `npx` or `bunx` (from `npm_config_user_agent`).
+4. npm.
+
+`init` doesn't install at a workspace root, or when it finds no `package.json`. Then, or when the install fails, it prints the command to run yourself, for the package manager it picked and with the `@prisma/engines` approval when it applies, for example `pnpm add --allow-build=@prisma/engines @askdb/config@<version> @askdb/prisma@<version>`.
+
 ```bash
 npx askdb@latest init          # wizard in a terminal
 npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
