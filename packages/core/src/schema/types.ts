@@ -8,14 +8,14 @@ export type AskDbSchemaFile = z.infer<typeof askDbSchemaFileSchema>;
 export type NormalizedSchema = {
   tables: Array<{
     name: string;
-    /** Entire table withheld from NL→SQL prompt DDL (optional Phase 2 `sensitive`). */
+    /** Every column tagged `(sensitive)` in NL→SQL prompt DDL; with prompt omission on, a one-line stub replaces the column definitions. */
     sensitive?: boolean;
     columns: Array<{
       name: string;
       type: string;
       nullable: boolean;
       primaryKey: boolean;
-      /** Column omitted from NL→SQL prompt DDL when true. */
+      /** Column tagged `(sensitive)` in NL→SQL prompt DDL when true; withheld with prompt omission on. */
       sensitive?: boolean;
     }>;
   }>;

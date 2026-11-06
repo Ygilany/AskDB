@@ -48,7 +48,7 @@ export type ResolveTenantDescendants = (
  * The scope is validated first (`validateTenantScope`), so an unknown root fails as in `ask()`.
  *
  * Fails closed with `SUBTREE_NOT_RESOLVABLE`: no resolver; a result that is an
- * array (the old flat shape) or not a plain object; a key that isn't a root in
+ * array (a flat ID list, not IDs per root) or not a plain object; a key that isn't a root in
  * this subtree; a value that isn't an array of non-empty strings; or no IDs at all.
  */
 export async function expandTenantScope(

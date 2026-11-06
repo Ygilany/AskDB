@@ -45,7 +45,7 @@ function wrapPinoAsAskDbLogger(pinoLogger: PinoLogger): AskDbLogger {
 
 /**
  * One open destination per log file, for the life of the process. Hosts build a logger per request
- * (its correlation ID is the request ID), so opening the file for each logger leaked one descriptor
+ * (its correlation ID is the request ID), so opening the file per logger would hold one descriptor
  * per request (#693). Because the file stays open, rotate it with `copytruncate`, or restart the
  * process after a rotate.
  */

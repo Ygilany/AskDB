@@ -8,7 +8,7 @@ import {
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { ENGINE_LEXER_PROFILES, POSTGRES_LEXER, findUnicodeEscapedIdentifier, lexerProfileFor, lexSql, startsDashComment, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { ENGINE_LEXER_PROFILES, findEscapeStringContinuation, findUnicodeEscapedIdentifier, lexerProfileFor, lexSql, postgresReadingProfiles, startsDashComment, type SqlLexerProfile, type SqlToken } from "./lexer.js";
 import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
 import { denylistFor } from "./validate.js";
 
@@ -137,6 +137,19 @@ export function tenantRuleWarnings(
       warn("UNICODE_ESCAPED_IDENTIFIER", "",
         `The SQL uses the Unicode-escaped name ${escaped}, which the tenant check can't read. ` +
         'Write the name in plain double quotes ("orders") or unquoted.'),
+    );
+  }
+
+  // Past an E'…' string continued on a later line, Postgres and the checks below read different
+  // strings, so a table or call could sit in what they take for a string: refuse it (#703).
+  const continued = postgresReadingProfiles(dialect)
+    .map((profile) => findEscapeStringContinuation(sql, lexSql(sql, profile)))
+    .find((token) => token !== undefined);
+  if (continued) {
+    warnings.push(
+      warn("STRING_CONTINUATION", "",
+        `The SQL continues the E'…' string at offset ${continued.start} on a later line, which Postgres reads with backslash ` +
+        "escapes and the tenant check doesn't. Write one literal, or join the parts with ||."),
     );
   }
 
@@ -485,17 +498,18 @@ function nameOf(token: SqlToken): string | undefined {
 /**
  * The first Postgres `U&"…"` name in `sql`, as written, when the SQL may be read as Postgres:
  * a dialect on the Postgres lexer (postgres, cockroachdb), a dialect that is no built-in engine,
- * or none. An unknown dialect's `backslashEscapes` is honored, as on the read-only check.
+ * or none, under each reading `postgresReadingProfiles` gives (an unknown dialect that sets
+ * `backslashEscapes` is read both with and without escapes).
  */
 function unicodeEscapedName(
   sql: string,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
 ): string | undefined {
-  // The same gate the read-only check uses: a built-in engine on another lexer reads no U& names.
-  const known = dialect === undefined ? undefined : lexerProfileFor(dialect);
-  if (known !== undefined && known.id !== "postgres") return undefined;
-  const profile = known ?? (dialect?.backslashEscapes === true ? { ...POSTGRES_LEXER, backslashEscapes: true } : POSTGRES_LEXER);
-  return findUnicodeEscapedIdentifier(lexSql(sql, profile));
+  for (const profile of postgresReadingProfiles(dialect)) {
+    const name = findUnicodeEscapedIdentifier(lexSql(sql, profile));
+    if (name !== undefined) return name;
+  }
+  return undefined;
 }
 
 function warn(

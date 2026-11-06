@@ -2,7 +2,7 @@ import type { AskDbLogEventName } from "./log-events.js";
 import { AskDbLogEvent } from "./log-events.js";
 
 /**
- * Minimal structured-log contract intended for headless surfaces (CLI now; reused by servers later).
+ * Minimal structured-log contract for headless surfaces such as the CLI.
  *
  * This is deliberately small:
  * - Tests should fail on removal/rename of required fields/events (drift).

@@ -266,8 +266,8 @@ const tenantScopeContextSchema = z.strictObject({
   description: z.string().optional(),
 });
 
-// Deliberately z.object (not strictObject): unknown keys — including the removed,
-// never-implemented `tenantFilters` — are ignored rather than rejected.
+// Deliberately z.object (not strictObject): unknown keys, such as `tenantFilters`
+// (which AskDB never read), are ignored rather than rejected.
 export const tenantScopeSchema = z.object({
   access: tenantAccessSchema,
   context: tenantScopeContextSchema.optional(),

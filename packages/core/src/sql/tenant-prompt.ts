@@ -7,6 +7,11 @@ const NEVER_CROSS_ROOTS =
   "  The same ID value can name different tenants in different root tables: " +
   "never compare one root's placeholder with another root's column.";
 
+/** A root's label, or the id itself when the policy has no root with that id. */
+function labelOfRoot(policy: NormalizedTenantPolicy, id: string): string {
+  return policy.roots.find((r) => r.id === id)?.label ?? id;
+}
+
 /**
  * Build the tenant policy + runtime scope block for NL→SQL prompts.
  * This block is always injected when a tenant policy exists (security boundary).
@@ -28,7 +33,7 @@ export function buildTenantPromptBlock(
   lines.push("Tenant hierarchy:");
   for (const root of policy.roots) {
     const parentNote = root.parent
-      ? ` (child of ${policy.roots.find((r) => r.id === root.parent!.root)?.label ?? root.parent.root})`
+      ? ` (child of ${labelOfRoot(policy, root.parent.root)})`
       : " (top-level)";
     lines.push(`  - ${root.label} [${root.id}]${parentNote}`);
   }
@@ -39,7 +44,7 @@ export function buildTenantPromptBlock(
     lines.push("Tenant-scoped tables (MUST include tenant predicate):");
     for (const st of policy.scopedTables) {
       for (const path of st.scopeThrough) {
-        const rootLabel = policy.roots.find((r) => r.id === path.root)?.label ?? path.root;
+        const rootLabel = labelOfRoot(policy, path.root);
         if ("column" in path) {
           lines.push(`  - ${st.id} → filter via ${path.column} (${rootLabel} scope)`);
         } else {
@@ -57,7 +62,7 @@ export function buildTenantPromptBlock(
     for (const pt of policy.polymorphicTables) {
       lines.push(`  - ${pt.id}: type column = ${pt.typeColumn}, id column = ${pt.idColumn}`);
       for (const [typeVal, targetRoot] of Object.entries(pt.mapping)) {
-        const rootLabel = policy.roots.find((r) => r.id === targetRoot)?.label ?? targetRoot;
+        const rootLabel = labelOfRoot(policy, targetRoot);
         lines.push(`    - '${typeVal}' → ${rootLabel}`);
       }
     }
@@ -78,7 +83,7 @@ export function buildTenantPromptBlock(
   const access = scope.access;
   switch (access.kind) {
     case "ids": {
-      const rootLabel = policy.roots.find((r) => r.id === access.tenantRoot)?.label ?? access.tenantRoot;
+      const rootLabel = labelOfRoot(policy, access.tenantRoot);
       const placeholder = placeholderForTenantRoot({ id: access.tenantRoot, label: rootLabel });
       lines.push(`  Access: ${rootLabel} IDs = ${placeholder}`);
       // With several roots the model also sees other roots' columns (an expanded
@@ -107,7 +112,7 @@ export function buildTenantPromptBlock(
       // offer that column under the parent's placeholder.
       const covered = new Set(access.scopes.map((s) => s.tenantRoot));
       for (const s of access.scopes) {
-        const rootLabel = policy.roots.find((r) => r.id === s.tenantRoot)?.label ?? s.tenantRoot;
+        const rootLabel = labelOfRoot(policy, s.tenantRoot);
         // A level an expanded subtree covers with no IDs: its placeholder binds nothing.
         const empty = s.ids.length === 0 ? " (no IDs in this scope: don't read this table)" : "";
         lines.push(`    - ${rootLabel} IDs = ${placeholderForTenantRoot({ id: s.tenantRoot, label: rootLabel })}${empty}`);
