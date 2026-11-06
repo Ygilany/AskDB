@@ -61,7 +61,7 @@ A `DialectSpec` whose `id` is not a built-in family must pass under every built-
 Checks, in order — the first failure throws `SqlValidationError` with `rule`:
 
 1. `SQL_EMPTY` — nothing left after trimming.
-2. `SQL_STRING_CONTINUATION`, Postgres lexer only (postgres, cockroachdb, and ids that are no built-in engine) — an `E'…'` string followed by a gap that contains a newline (whitespace and comments of any kind) and then a bare `'…'`. Postgres joins them and reads the second with backslash escapes, so past that boundary its tokens and the lexer's can differ; the check runs first and refuses the pair rather than model the continuation (#703, ADR 0012).
+2. `SQL_STRING_CONTINUATION`, Postgres lexer only (postgres, cockroachdb, and ids that are no built-in engine) — an `E'…'` string followed by a gap that contains a newline (whitespace and comments of any kind) and then a bare `'…'`. Postgres joins them and reads the second with backslash escapes, so past that boundary its tokens and the lexer's can differ; the check runs first and refuses the pair rather than model the continuation (#703, ADR 0012). Right after it, on the same lexer, `SQL_ESCAPED_BYTE_STRING`: a `b'…'` byte string (lower-case `b`) that holds a backslash or is continued the same way. CockroachDB reads it with backslash escapes and the lexer doesn't, so it is refused for the same reason (#730, ADR 0012).
 3. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block comment never closes. Fails closed.
 4. `SQL_MULTI_STATEMENT` — any `;` other than one trailing `;`.
 5. `SQL_COMMENT` — any comment, including MySQL `#`. `--` and `/*` are rejected even where the dialect lexes them as operators.

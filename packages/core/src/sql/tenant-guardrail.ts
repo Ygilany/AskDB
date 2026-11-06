@@ -155,6 +155,17 @@ export function tenantRuleWarnings(
     );
   }
 
+  // CockroachDB reads a b'…' byte string with backslash escapes, and the checks below don't, so
+  // past one with a backslash or a continuation they read different strings: refuse it (#730).
+  const bytes = postgresOnly.escapedByteString;
+  if (bytes) {
+    warnings.push(
+      warn("ESCAPED_BYTE_STRING", "",
+        `The SQL has a b'…' byte string at offset ${bytes.start} with a backslash or continued on a later line, which ` +
+        "CockroachDB reads with backslash escapes and the tenant check doesn't. Write the bytes as a hex literal (x'…')."),
+    );
+  }
+
   const views = codeViews(sql, dialect);
 
   // Check the roots this scope covers: a query on the root table itself is scoped by its tenant ID column.

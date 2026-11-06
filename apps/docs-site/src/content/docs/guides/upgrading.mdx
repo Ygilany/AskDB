@@ -40,6 +40,18 @@ The sensitive check now fails closed on two Postgres forms it can't read, with t
 - **A `switch` over every `SensitiveScopeIssue`** needs cases for both.
 - **Built-in dialects reject the same SQL earlier** in the read-only check (`SQL_UNICODE_ESCAPED_IDENTIFIER`, `SQL_STRING_CONTINUATION`), so this mainly changes a custom `AskDialect` and direct calls.
 
+### Handle `SQL_ESCAPED_BYTE_STRING` for escaped `b'…'` byte strings
+
+CockroachDB reads a `b'…'` byte string (lower-case `b`) with backslash escapes, and AskDB's checks don't, so a byte string with a backslash or a continuation could hide code from them ([#730](https://github.com/Ygilany/AskDB/issues/730), ADR 0012). All three checks now refuse it whenever the SQL may be read as Postgres: Postgres, CockroachDB, a custom `AskDialect`, or no dialect.
+
+- **The read-only check** throws `SqlValidationError` with the new `SqlValidationRuleCode` `SQL_ESCAPED_BYTE_STRING`.
+- **The tenant check** reports the new `TenantGuardrailRuleCode` `ESCAPED_BYTE_STRING`, with `tableId: ""`. Your policy's `enforcement` decides whether it throws.
+- **The sensitive check** reports the new `SensitiveScopeIssue` `ESCAPED_BYTE_STRING` in `unresolvedScope`, with `passed: false`.
+- **A `switch` over any of these unions** needs a case for the new member.
+- **Write the bytes as a hex literal** (`x'00'` instead of `b'\x00'`). A `b'…'` string with no backslash, and a `B'…'` bit string, pass.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_escaped_byte_string).
+
 ### Other changes you may notice in beta.48
 
 - **The tenant check reads a dialect id that is no built-in engine and sets `backslashEscapes: true` both ways** when it looks for `U&"…"` names ([#703](https://github.com/Ygilany/AskDB/issues/703)): with and without backslash escapes, reporting a name either reading finds.

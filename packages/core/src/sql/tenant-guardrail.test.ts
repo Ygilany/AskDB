@@ -757,3 +757,46 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
     expect(findings(`SELECT E 'a'\n, 'b' AS x ${scoped}`, MYSQL_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — CockroachDB b'…' byte strings (#730)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const customWithEscapes = { ...customDialect, backslashEscapes: true } as unknown as DialectSpec;
+  // CockroachDB reads b'…' with backslash escapes: the bytes `'`, then an unscoped read of orders.
+  // The check saw one string.
+  const bypass = String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`;
+
+  it.each([
+    ["an unscoped read after a b'…' string", bypass],
+    // CockroachDB keeps the escape mode across a continuation.
+    ["an unscoped read after a continued b'…' string", "SELECT b'a'\n'\\'' AS x, o.* FROM orders o --'"],
+    ["a b'…' string after a slice's `:`", String.raw`SELECT (ARRAY[1,2])[1:b'\''] AS x, o.* FROM orders o --'`],
+  ])("reports %s under every reading that includes Postgres", (_label, sql) => {
+    for (const dialect of [COCKROACHDB_DIALECT, POSTGRES_DIALECT, undefined, customDialect, customWithEscapes]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("ESCAPED_BYTE_STRING:");
+    }
+  });
+
+  it("refuses it under strict enforcement", () => {
+    expect(() => validateTenantGuardrails(bypass, policy, agencyScope, { dialect: COCKROACHDB_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it("names the string's position, not its text", () => {
+    const [warning] = validateTenantGuardrails(String.raw`SELECT b'Jane\x20Doe' AS a`, warnPolicy, agencyScope, {
+      dialect: COCKROACHDB_DIALECT,
+    }).warnings;
+    expect(warning?.message).toContain("offset 7");
+    expect(warning?.message).not.toContain("Jane");
+  });
+
+  it("leaves byte and bit strings that keep the same reading alone", () => {
+    const scoped = "FROM agencies WHERE id = :tenant_agency_ids";
+    for (const literal of ["b'abc'", "b'it''s'", "B'01'\n'10'", "x'0a'", "b'0101'"]) {
+      expect(findings(`SELECT ${literal} AS x ${scoped}`, COCKROACHDB_DIALECT), literal).toEqual([]);
+    }
+    // MySQL's b'…' is a bit-value literal, read without escapes.
+    expect(findings(`SELECT b'0101' AS x ${scoped}`, MYSQL_DIALECT)).toEqual([]);
+  });
+});

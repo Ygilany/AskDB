@@ -122,6 +122,15 @@ describe("lexSql — a `:` before an E'…' string (#703)", () => {
   });
 });
 
+describe("lexSql — a `:` before a b'…' string (#730)", () => {
+  it("reads `:b'…'` as `:` and a byte string, not a `:b` placeholder", () => {
+    // An array slice's `:`; CockroachDB reads the b'…' string with backslash escapes, so the
+    // checks must see it as one.
+    expect(kinds("[1:b'a']", POSTGRES_LEXER)).toEqual(["punct:[", "number:1", "punct::", "string:b'a'", "punct:]"]);
+    expect(kinds("[1:B'01']", POSTGRES_LEXER)).toEqual(["punct:[", "number:1", "punct::", "string:B'01'", "punct:]"]);
+  });
+});
+
 describe("lexerProfileFor", () => {
   it("maps dialect families and honours backslashEscapes", () => {
     expect(lexerProfileFor(POSTGRES_DIALECT)).toBe(POSTGRES_LEXER);
@@ -141,22 +150,32 @@ describe("findPostgresOnlyForms", () => {
   // or only with them, where \' is a quote inside it (escapesOnly).
   const plainOnly = String.raw`SELECT 'a\' , U&"x" --'`;
   const escapesOnly = String.raw`SELECT 'a\'' , U&"x" --'`;
+  type Found = { name?: string; continuation?: string; byteString?: string };
 
-  it.each<[string, Pick<DialectSpec, "id" | "backslashEscapes"> | undefined, string, string | undefined, string | undefined]>([
-    ["postgres: a U& name", POSTGRES_DIALECT, name, String.raw`U&"p\0061ssword"`, undefined],
-    ["postgres: a continued E-string", POSTGRES_DIALECT, continued, undefined, "E'a'"],
-    ["cockroachdb", COCKROACHDB_DIALECT, name, String.raw`U&"p\0061ssword"`, undefined],
-    ["a custom id", custom(), continued, undefined, "E'a'"],
-    ["no dialect", undefined, name, String.raw`U&"p\0061ssword"`, undefined],
-    ["mysql, which has neither form", MYSQL_DIALECT, `${name}; ${continued}`, undefined, undefined],
-    ["a custom id with backslashEscapes: the plain reading", custom(true), plainOnly, 'U&"x"', undefined],
-    ["a custom id with backslashEscapes: the escapes reading", custom(true), escapesOnly, 'U&"x"', undefined],
-    ["postgres with backslashEscapes reads only with escapes", { ...POSTGRES_DIALECT, backslashEscapes: true }, plainOnly, undefined, undefined],
-  ])("%s", (_label, dialect, sql, unicodeEscapedIdentifier, continuation) => {
+  it.each<[string, Pick<DialectSpec, "id" | "backslashEscapes"> | undefined, string, Found]>([
+    ["postgres: a U& name", POSTGRES_DIALECT, name, { name: String.raw`U&"p\0061ssword"` }],
+    ["postgres: a continued E-string", POSTGRES_DIALECT, continued, { continuation: "E'a'" }],
+    ["cockroachdb", COCKROACHDB_DIALECT, name, { name: String.raw`U&"p\0061ssword"` }],
+    ["a custom id", custom(), continued, { continuation: "E'a'" }],
+    ["no dialect", undefined, name, { name: String.raw`U&"p\0061ssword"` }],
+    ["mysql, which has none of the forms", MYSQL_DIALECT, `${name}; ${continued}; SELECT b'a\\b'`, {}],
+    ["a custom id with backslashEscapes: the plain reading", custom(true), plainOnly, { name: 'U&"x"' }],
+    ["a custom id with backslashEscapes: the escapes reading", custom(true), escapesOnly, { name: 'U&"x"' }],
+    ["postgres with backslashEscapes reads only with escapes", { ...POSTGRES_DIALECT, backslashEscapes: true }, plainOnly, {}],
+    // CockroachDB reads b'…' with backslash escapes, across a continuation too (#730).
+    ["cockroachdb: a b'…' string with a backslash", COCKROACHDB_DIALECT, String.raw`SELECT b'a\b' AS x`, { byteString: String.raw`b'a\b'` }],
+    ["cockroachdb: a continued b'…' string", COCKROACHDB_DIALECT, "SELECT b'a'\n'b' AS x", { byteString: "b'a'" }],
+    ["cockroachdb: a b'…' string after a slice's `:`", COCKROACHDB_DIALECT, String.raw`SELECT a[1:b'\x01'] AS x`, { byteString: String.raw`b'\x01'` }],
+    ["postgres, which a host may point at CockroachDB", POSTGRES_DIALECT, String.raw`SELECT b'a\b' AS x`, { byteString: String.raw`b'a\b'` }],
+    ["no dialect: a b'…' string", undefined, String.raw`SELECT b'a\b' AS x`, { byteString: String.raw`b'a\b'` }],
+    ["cockroachdb: a b'…' string that reads the same either way", COCKROACHDB_DIALECT, "SELECT b'abc', b'it''s' AS x", {}],
+    ["cockroachdb: a B'…' bit string, read without escapes", COCKROACHDB_DIALECT, "SELECT B'01'\n'10' AS x", {}],
+  ])("%s", (_label, dialect, sql, expected) => {
     const forms = findPostgresOnlyForms(sql, dialect);
-    expect({ name: forms.unicodeEscapedIdentifier, continuation: forms.escapeStringContinuation?.text }).toEqual({
-      name: unicodeEscapedIdentifier,
-      continuation,
-    });
+    expect({
+      name: forms.unicodeEscapedIdentifier,
+      continuation: forms.escapeStringContinuation?.text,
+      byteString: forms.escapedByteString?.text,
+    }).toEqual({ name: undefined, continuation: undefined, byteString: undefined, ...expected });
   });
 });
