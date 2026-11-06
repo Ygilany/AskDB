@@ -123,7 +123,7 @@ The physical layer is JSON with stable IDs and relationships. The current `versi
 }
 ```
 
-Required table fields are `id`, `name`, `schema`, and `columns`. Required column fields are `id`, `name`, `type`, and `nullable`. `primaryKey`, `sensitive`, and `relationships` are optional at the schema level, though AskDB's generated artifacts currently emit `sensitive: false` for tables and columns so the physical layer remains explicit.
+`tables` has at least one entry: `loadSchema()` rejects an empty array, and introspection refuses to write one ([ADR 0037](../adrs/0037-introspection-refuses-an-empty-artifact.md)). Required table fields are `id`, `name`, `schema`, and `columns`. Required column fields are `id`, `name`, `type`, and `nullable`. `primaryKey`, `sensitive`, and `relationships` are optional at the schema level, though AskDB's generated artifacts currently emit `sensitive: false` for tables and columns so the physical layer remains explicit.
 
 ### Stable ID scheme
 
