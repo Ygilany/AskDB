@@ -69,6 +69,8 @@ A config without `ai` or `introspection` fails to load, with an error that names
 
 The sections below list every field of each block, with its type and default. **Required** in the Default column means the field must be set whenever its block is present, or under the condition the column names; every other field is optional. Old fields that still load are listed under [Deprecated keys](#deprecated-keys).
 
+AskDB checks each field's type when the config loads. A value of another type fails to load, with an error that names the file and the field, such as `askdb.config: modes.omitSensitiveFromPrompt must be a boolean (got "false")`. A `boolean` field takes only `true` or `false`, because the string `"false"` is truthy. A `number` field also takes a string that holds the number, such as `"8080"`, since `env()` returns a string. An unset field, `undefined` as an unset `env()` read gives, takes its default.
+
 ## The `ai` block
 
 `ai` separates *how to reach a provider* from *which model to use for what*: `providerConfig` holds the connections, and `language` and `embedding` each pick a model.
@@ -482,7 +484,7 @@ AskDB does **not** copy the full config into `process.env`. The runtime snapshot
 
 `getAskDbRuntimeConfig()` throws until a snapshot is installed. `isAskDbRuntimeInitialized()` returns `true` once one is, so code that may run before or after its host's bootstrap can call `bootstrapAskDbEnv()` only when it's needed. The snapshot is process-wide: when two versions of `@askdb/config` are installed, both see the one your process bootstrapped. `createAskDbHttpServer()` works this way (see [HTTP API → Config loading](/reference/http-api/#config-loading)).
 
-`rt.flat` and `rt.ai.aiEnv` hold internal keys named like environment variables (`ASKDB_STUDIO_PORT`, `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`, …). AskDB builds them from your config and never reads them from the environment, so setting one in the shell changes nothing. Treat them as read-only, and set the config key instead.
+Every `rt` field is resolved from your config when it loads: checked, with deprecated keys translated and defaults filled in. `rt.flat` and `rt.ai.aiEnv` hold internal keys named like environment variables (`ASKDB_STUDIO_PORT`, `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`, …), built from the same resolved settings. AskDB never reads them from the environment or back from the map, so setting one in the shell or in the map changes nothing. Treat them as read-only, and set the config key instead.
 
 ## Config precedence
 

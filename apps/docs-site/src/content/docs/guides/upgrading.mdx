@@ -19,6 +19,23 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.48
+
+Released with `@askdb/client` 1.0.0-beta.11 and `@askdb/config` 1.0.0-beta.17. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Fix config values of the wrong type, which now fail to load
+
+`@askdb/config` now checks each setting once, when the config loads, and builds every runtime value from your config alone ([#711](https://github.com/Ygilany/AskDB/issues/711)). A value of the wrong type fails to load in every tool that loads the config, with an error that names the file and the config key.
+
+- **A boolean setting must be `true` or `false`.** `logging.logStdout` and `modes.omitSensitiveFromPrompt` now fail on any other value, as `studio.execute.enabled`, `studio.execute.useIntrospectionConnection` and `httpApi.allowSchemaOverride` already did. Before, `omitSensitiveFromPrompt: "false"` turned the setting on, because a non-empty string is truthy. To read one from the environment, compare the string: `omitSensitiveFromPrompt: env("OMIT_SENSITIVE") === "true"`.
+- **A string setting must be a string**, such as `logging.logFile` or a `databaseUrl`. Before, a number or an object there stopped the load with a `TypeError` that named no key. `null` and `false` still count as unset.
+
+Code that reads or installs the runtime config may need a change too:
+
+- **`getAskDbRuntimeConfig().logging.level` is `AskDbLogLevel | undefined`, and `modes.askdbMode` is `AskDbModeV1 | undefined`,** not `string`. Code that builds an `AskDbRuntimeConfig` by hand with another string, for example in a test, no longer typechecks.
+- **`setAskDbRuntimeForTests()` takes an `AskDbConfig`,** the object you write in `askdb.config.ts`, and installs it as `bootstrapAskDbEnv()` installs a loaded file. Replace `setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) })` with `setAskDbRuntimeForTests(structured)`. If a test put a setting only in `flat`, set it in the config instead, such as `dev: { mockSql }` in place of `ASKDB_MOCK_SQL`.
+- **`createAskDb()` reads the default schema from `host.schemaJson`, then `host.schemaPath`, and nowhere else.** A runtime config built by hand with `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `ai.aiEnv` and no `host` block now throws `SchemaNotConfiguredError`: set `structured.host` instead. A config loaded from a file works as before.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
