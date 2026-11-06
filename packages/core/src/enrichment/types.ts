@@ -1,22 +1,21 @@
-import type { V2Table } from "../schema/v2/physical.js";
+import type { NormalizedV2Table } from "../schema/v2/normalized.js";
 
 /**
  * What to suggest for. An authoring surface (Studio) builds one of these per
  * active prompt and asks `suggestEnrichment` for 1–3 candidates the user
  * reviews and confirms.
  *
- * `table` must carry effective sensitivity: pass a table from `loadSchema()`'s
- * result, as `@askdb/enrich`'s `buildSuggestionTarget` does. A table read straight
- * from `schema.json` lacks front-matter escalation, so a column marked sensitive
- * only there would be listed untagged, and not withheld under omission.
+ * `table` is a table from `loadSchema()`'s result, as `@askdb/enrich`'s
+ * `buildSuggestionTarget` returns, so it carries effective sensitivity (front-matter
+ * escalation included), which the enrichment prompt's omission rule reads (ADR 0026).
  */
 export type EnrichmentTarget =
-  | { kind: "table-description"; table: V2Table }
-  | { kind: "table-aliases"; table: V2Table }
-  | { kind: "table-primary-entity"; table: V2Table }
-  | { kind: "column-description"; table: V2Table; columnId: string }
-  | { kind: "column-aliases"; table: V2Table; columnId: string }
-  | { kind: "common-query-language"; table: V2Table };
+  | { kind: "table-description"; table: NormalizedV2Table }
+  | { kind: "table-aliases"; table: NormalizedV2Table }
+  | { kind: "table-primary-entity"; table: NormalizedV2Table }
+  | { kind: "column-description"; table: NormalizedV2Table; columnId: string }
+  | { kind: "column-aliases"; table: NormalizedV2Table; columnId: string }
+  | { kind: "common-query-language"; table: NormalizedV2Table };
 
 /**
  * One suggestion candidate. For free-text fields, `text` is the value.
@@ -49,5 +48,5 @@ export type EnrichmentContext = {
    * Tables linked to the target table by foreign keys, from `loadSchema()`'s result
    * like the target. Capped by the caller; untracked tables are the caller's to leave out.
    */
-  neighbors?: V2Table[];
+  neighbors?: NormalizedV2Table[];
 };

@@ -4,12 +4,13 @@ import { SensitiveEnrichmentTargetError } from "../errors.js";
 import { buildEnrichmentUserPrompt } from "./prompt.js";
 import { parseCandidates, suggestEnrichment } from "./suggest.js";
 import type { EnrichmentTarget } from "./types.js";
-import type { V2Table } from "../schema/v2/physical.js";
+import type { NormalizedV2Table } from "../schema/v2/normalized.js";
 
-const usersTable: V2Table = {
+const usersTable: NormalizedV2Table = {
   id: "table:public.users",
   schema: "public",
   name: "users",
+  sensitive: false,
   columns: [
     {
       id: "column:public.users.id",
@@ -17,19 +18,24 @@ const usersTable: V2Table = {
       type: "uuid",
       nullable: false,
       primaryKey: true,
+      sensitive: false,
     },
     {
       id: "column:public.users.email",
       name: "email",
       type: "text",
       nullable: false,
+      primaryKey: false,
       sensitive: true,
     },
   ],
 };
 
-/** Sensitive as `schema.json` marks a table: the flag is on the table, not on its columns. */
-const payrollTable: V2Table = {
+/**
+ * Sensitive through the table flag only, as a table built by hand may be: `loadSchema()` also
+ * marks each column of a sensitive table sensitive.
+ */
+const payrollTable: NormalizedV2Table = {
   id: "table:public.payroll",
   schema: "public",
   name: "payroll",
@@ -40,6 +46,8 @@ const payrollTable: V2Table = {
       name: "salary_band",
       type: "text",
       nullable: false,
+      primaryKey: false,
+      sensitive: false,
     },
   ],
 };
