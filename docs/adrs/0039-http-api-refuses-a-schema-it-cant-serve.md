@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-06). The coordinator decided #716 and #720 on 2026-11-06 (the "Decision (2026-11-06)" section of each issue). Implemented in PR #806.
+Accepted (2026-11-06; amended 2026-11-06, #809). The coordinator decided #716 and #720 on 2026-11-06 (the "Decision (2026-11-06)" section of each issue). Implemented in PR #806.
 
 ## Context
 
@@ -32,13 +32,22 @@ For #716:
 2. **The status follows the schema's source.** The server's configured schema answers `500 generation_not_configured`, with a generic message, because only the operator can fix it. A request's `schemaJson` answers `400 bad_request`, with a message that names the provider and the supported ids and not the server's config.
 3. **The log names the cause.** The `askdb.run.error` line's `errName` is `DialectNotSupportedError` or `ModelNotConfiguredError`, so an operator tells the two `generation_not_configured` causes apart without a new code.
 4. **`tenant_scope_not_configured` for a missing scope only.** `TenantScopeError` with reason `MISSING_SCOPE` answers `500 tenant_scope_not_configured`, with a message that names the tenant policy and leaks no schema detail. The server never passes a scope, so other reasons can't occur; they stay the generic `500 internal_error`.
-5. **A configured `dialect` is unchanged:** it wins over every schema's `provider`, a request `schemaJson`'s included, as on every surface (`@askdb/client`'s `resolveDialect`). The docs say so. Whether a request schema should resolve its own `provider` instead is #809.
+5. **A configured `dialect` is unchanged:** it wins over every schema's `provider`, a request `schemaJson`'s included, as on every surface (`@askdb/client`'s `resolveDialect`). The docs say so. Whether a request schema should resolve its own `provider` instead is #809. *Superseded by the 2026-11-06 amendment below.*
 
 ## Consequences
 
 - **`tenant_scope_not_configured` is a new public error code** in `AskHttpErrorResponse`. A client that matched `internal_error` for a tenant-policy schema matches the new code.
 - **A server whose schema's engine AskDB doesn't ship stops returning SQL** until its operator sets `dialect` in `askdb.config.*`. The beta.50 upgrade entry says how.
 - **#343's scope hook** keeps `tenant_scope_not_configured` for a server with no resolver.
+
+## Amendments
+
+**2026-11-06 — A request schema answers for its own engine (#809):** Decision 5 let a configured `dialect` win over a request `schemaJson`'s `provider`, so a server configured for `postgres` generated and checked PostgreSQL for a request schema that recorded `mysql`, #720's bug class reached through the config. The maintainer chose option A on #809 (Q26).
+
+- **The server resolves a request schema's dialect itself.** It loads the `schemaJson` (`loadSchemaFromJson`; one that doesn't load is still `400 schema_parse_error`) and passes the artifact's `provider` to `askdb.ask()` as the per-call `dialect`. SQL is generated and checked (read-only, tenant and sensitive) under that dialect. The config's `dialect` applies to the server's own schema only.
+- **A request schema that records no `provider`, or one AskDB has no dialect for, answers `400 bad_request`** (`DialectNotSupportedError`, Decision 2's branch). The message names the provider, or says there is none, and the supported ids, and never points the caller at the server's config.
+- **`@askdb/client` doesn't change.** `resolveDialect` keeps "a configured `dialect` wins" for the CLI, Studio and hosts; the HTTP server, which knows which schema came from the request, overrides it per call.
+- **Options not taken:** refusing a request schema whose `provider` disagrees with the config (it would bar a caller from any other engine on that server), and keeping Decision 5 with the note logged (the caller still got another engine's SQL).
 
 ## Related
 

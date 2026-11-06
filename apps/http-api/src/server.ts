@@ -23,6 +23,10 @@ import {
   TenantGuardrailError,
   TenantScopeError,
   createAskDbLogger,
+  isBuiltInDialectId,
+  loadSchemaFromJson,
+  type BuiltInDialectId,
+  type NormalizedSchemaV2,
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -134,6 +138,32 @@ function causeMessage(e: unknown): string | undefined {
 }
 
 /**
+ * Load a request's `schemaJson` with the dialect it answers for (#809): its own `provider`, never
+ * the config's `dialect`, which describes the server's own schema. A schema that names no
+ * provider, or one AskDB has no dialect for, throws `DialectNotSupportedError`, which
+ * {@link mapAskError} answers with `400 bad_request`; one that doesn't load throws
+ * `SchemaLoadError`, as the client would.
+ */
+function loadRequestSchema(json: string): { schema: NormalizedSchemaV2; dialect: BuiltInDialectId } {
+  let schema: NormalizedSchemaV2;
+  try {
+    schema = loadSchemaFromJson(json);
+  } catch (e) {
+    throw new SchemaLoadError("request", e);
+  }
+  const provider = schema.provider ?? "";
+  if (!isBuiltInDialectId(provider)) {
+    throw new DialectNotSupportedError(
+      provider,
+      provider
+        ? `Request schema declares provider '${provider}', which has no AskDB dialect.`
+        : "Request schema declares no provider, so its SQL dialect is unknown.",
+    );
+  }
+  return { schema, dialect: provider };
+}
+
+/**
  * Map an error from `askdb.ask()` to an HTTP status + client-safe body. Classification is by
  * error type only. Messages from the model provider are never returned to the client (they
  * can echo request details or credential fragments); unknown errors get a generic message.
@@ -200,19 +230,20 @@ export function mapAskError(
       },
     };
   }
-  // The schema's provider has no AskDB dialect (#720). A schema the request sent is the caller's
-  // to fix, so the message names the ids to send; core's own message points at the server's
-  // config, which the caller can't edit. The server's own schema is the operator's, so it reads
-  // as a configuration error, and the log line's errName (DialectNotSupportedError, not
-  // ModelNotConfiguredError) names the cause.
+  // The schema's provider has no AskDB dialect (#720), or a request schema names none (#809). A
+  // schema the request sent is the caller's to fix, so the message names the ids to send; core's
+  // own message points at the server's config, which the caller can't edit. The server's own
+  // schema is the operator's, so it reads as a configuration error, and the log line's errName
+  // (DialectNotSupportedError, not ModelNotConfiguredError) names the cause.
   if (isErrorOf(e, DialectNotSupportedError)) {
     if (ctx.schemaFromRequest) {
+      const declared = e.provider ? `declares provider '${e.provider}', which has no AskDB dialect` : "declares no provider";
       return {
         status: 400,
         error: {
           code: "bad_request",
           message:
-            `The request's schemaJson declares provider '${e.provider}', which has no AskDB dialect. ` +
+            `The request's schemaJson ${declared}. ` +
             `Send a schema whose provider is one of: ${SUPPORTED_DIALECT_IDS.join(", ")}.`,
         },
       };
@@ -399,8 +430,9 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     const abortSignal = AbortSignal.timeout(timeoutMs);
 
     try {
+      const request = requestOverride === undefined ? undefined : loadRequestSchema(requestOverride);
       const out = await askdb.ask(body.question, {
-        schema: requestOverride ? { json: requestOverride } : undefined,
+        ...(request ? { schema: request.schema, dialect: request.dialect } : {}),
         logger,
         ...(requestedMode ? { mode: requestedMode } : {}),
         explain: body.explain === true,

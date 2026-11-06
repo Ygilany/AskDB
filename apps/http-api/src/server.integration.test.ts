@@ -2,6 +2,7 @@ import {
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
   type AskDbConfig,
+  type AskDbDialectId,
   type AskDbLogLevel,
   type AskDbModeV1,
 } from "@askdb/config";
@@ -34,6 +35,12 @@ const unsupportedProviderSchemaJson = JSON.stringify({
   ],
 });
 
+/** The Snowflake schema above under another provider, or with none. */
+function requestSchemaJson(provider: string | undefined): string {
+  const { provider: _snowflake, ...rest } = JSON.parse(unsupportedProviderSchemaJson) as Record<string, unknown>;
+  return JSON.stringify({ ...rest, schemaId: "test-request", ...(provider !== undefined ? { provider } : {}) });
+}
+
 const BASE_CONFIG: AskDbConfig = {
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "x" } }, language: { model: "gpt-4o-mini" } },
   database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
@@ -50,6 +57,7 @@ function installTestRuntime(opts: {
   httpApi?: AskDbConfig["httpApi"];
   /** Point the OpenAI adapter at a local fake provider. */
   openaiBaseUrl?: string;
+  dialect?: AskDbDialectId;
 }): void {
   const structured: AskDbConfig = {
     ...BASE_CONFIG,
@@ -67,6 +75,7 @@ function installTestRuntime(opts: {
     ...(opts.host ? { host: opts.host } : {}),
     ...(opts.modes ? { modes: opts.modes } : {}),
     ...(opts.httpApi ? { httpApi: opts.httpApi } : {}),
+    ...(opts.dialect ? { dialect: opts.dialect } : {}),
   };
   setAskDbRuntimeForTests(structured);
 }
@@ -390,20 +399,77 @@ describe("http-api", () => {
     }
   });
 
-  // #720: a schema whose provider has no AskDB dialect is refused, as the CLI refuses it, not
-  // generated as PostgreSQL. A schema the request sent is the caller's to fix: 400.
-  it("refuses a request schemaJson whose provider has no dialect with 400 bad_request, and returns no SQL", async () => {
-    installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true } });
+  // #720, #809: a request schema answers for its own engine. One whose provider has no AskDB
+  // dialect, or that names none, is the caller's to fix: 400, whether or not the server's config
+  // sets a dialect, which describes the server's own schema only.
+  it.each([
+    ["snowflake", undefined, "'snowflake'"],
+    ["snowflake", "postgres", "'snowflake'"],
+    [undefined, undefined, "no provider"],
+    [undefined, "postgres", "no provider"],
+  ] as const)(
+    "refuses a request schemaJson with provider %s (config dialect %s) with 400 bad_request, and returns no SQL",
+    async (provider, dialect, named) => {
+      installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true }, ...(dialect ? { dialect } : {}) });
+      const app = await startApp();
+      try {
+        const { status, json } = await postAsk(app.url, { question: "hi", schemaJson: requestSchemaJson(provider) });
+        expect(status).toBe(400);
+        expect(json.error.code).toBe("bad_request");
+        expect(json.error.message).toContain(named);
+        // The caller can't edit the server's config, so the message names the ids to send instead.
+        expect(json.error.message).not.toContain("askdb.config");
+        expect(json.error.message).toContain("postgres, cockroachdb, mysql, mariadb, sqlite, sqlserver");
+        expect(json.sql).toBeUndefined();
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  // #809: a request schema's own provider picks the dialect, so the model is asked for MySQL on a
+  // server whose config says postgres.
+  it("generates SQL for a request schemaJson's own provider, not the server's config dialect", async () => {
+    const provider = await startFakeProvider(respondWithSql("SELECT id FROM users"));
+    installTestRuntime({
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+      openaiBaseUrl: provider.baseUrl,
+      httpApi: { allowSchemaOverride: true },
+      dialect: "postgres",
+    });
     const app = await startApp();
     try {
-      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson: unsupportedProviderSchemaJson });
-      expect(status).toBe(400);
-      expect(json.error.code).toBe("bad_request");
-      expect(json.error.message).toContain("snowflake");
-      // The caller can't edit the server's config, so the message names the ids to send instead.
-      expect(json.error.message).not.toContain("askdb.config");
-      expect(json.error.message).toContain("postgres, cockroachdb, mysql, mariadb, sqlite, sqlserver");
-      expect(json.sql).toBeUndefined();
+      const { status, json } = await postAsk(app.url, { question: "list users", schemaJson: requestSchemaJson("mysql") });
+      expect(status).toBe(200);
+      expect(json.sql).toBe("SELECT id FROM users");
+      expect(provider.bodies).toHaveLength(1);
+      expect(provider.bodies[0]).toContain("Target MySQL.");
+      expect(provider.bodies[0]).not.toContain("Target PostgreSQL.");
+    } finally {
+      await app.close();
+      await provider.close();
+    }
+  });
+
+  // #809: the checks read the SQL the request schema's engine's way too. MySQL reads `#` as a
+  // comment, which the read-only check refuses; PostgreSQL, the server's dialect, reads an operator.
+  it.each([
+    ["the request schemaJson's mysql", requestSchemaJson("mysql"), 400],
+    ["the server's own postgres", undefined, 200],
+  ] as const)("checks SQL under %s dialect", async (_name, schemaJson, expected) => {
+    installTestRuntime({
+      mockSql: "SELECT id FROM users # note",
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+      httpApi: { allowSchemaOverride: true },
+      dialect: "postgres",
+    });
+    const app = await startApp();
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi", ...(schemaJson ? { schemaJson } : {}) });
+      expect(status).toBe(expected);
+      if (expected === 400) expect(json.error.code).toBe("sql_validation_error");
     } finally {
       await app.close();
     }

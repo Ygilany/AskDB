@@ -83,7 +83,7 @@ Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 | Code | HTTP | Source |
 | --- | --- | --- |
-| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError`, and `DialectNotSupportedError` for a request `schemaJson` (#720). A configured `dialect` wins over every schema's `provider`, a request `schemaJson`'s included, so then neither `DialectNotSupportedError` row applies. |
+| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError`, and `DialectNotSupportedError` for a request `schemaJson` that records no `provider` or one with no AskDB dialect (#720, #809). A request schema's dialect is its own `provider`, passed to `ask()` per call; a configured `dialect` applies to the server's own schema only. |
 | `schema_parse_error` | 400 | `SchemaLoadError` |
 | `sql_validation_error` | 400 | `SqlValidationError` (with `rule`) |
 | `schema_override_disabled` | 403 | `schemaJson` sent while `httpApi.allowSchemaOverride` is off |

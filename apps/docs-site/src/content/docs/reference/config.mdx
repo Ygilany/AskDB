@@ -216,7 +216,7 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `dialect` | `"postgres" \| "cockroachdb" \| "mysql" \| "mariadb" \| "sqlite" \| "sqlserver"` | The schema artifact's recorded provider, else `postgres` | The NL-to-SQL dialect `createAskDb` uses, and so the CLI and the HTTP API. `@askdb/core`'s `ask()` reads no config: pass `dialect` to it yourself. |
+| `dialect` | `"postgres" \| "cockroachdb" \| "mysql" \| "mariadb" \| "sqlite" \| "sqlserver"` | The schema artifact's recorded provider, else `postgres` | The NL-to-SQL dialect `createAskDb` uses, and so the CLI and the HTTP API. `askdb-http` applies it to its own schema only: a request `schemaJson` uses the artifact's recorded provider. `@askdb/core`'s `ask()` reads no config: pass `dialect` to it yourself. |
 
 The dialect normally resolves from the schema artifact (the engine recorded at introspection time). Set `dialect` only when that inference is wrong — for example, a Prisma schema that declares `provider = "postgresql"` while your runtime target is a different engine:
 
