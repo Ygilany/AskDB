@@ -27,6 +27,11 @@ export type SqlValidationRuleCode =
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
   /**
+   * Postgres family: a Unicode-escaped identifier (`U&"set\005fconfig"`). Its escapes can spell
+   * a name the other checks look for, such as a denylisted function, so it is refused (#692).
+   */
+  | "SQL_UNICODE_ESCAPED_IDENTIFIER"
+  /**
    * A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as
    * `UPDLOCK`; on SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in
    * parentheses after a name, which SQL Server may read as a hint.
@@ -150,7 +155,15 @@ export type TenantGuardrailRuleCode =
   | "MISSING_TENANT_PREDICATE"
   | "MISSING_TYPE_DISCRIMINATOR"
   | "UNKNOWN_TABLE_REFERENCED"
-  | "UNPROVABLE_SCOPE";
+  | "UNPROVABLE_SCOPE"
+  /**
+   * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a
+   * function. Postgres decodes it, and the tenant check matches names as written, so it can't
+   * tell what the name reads. Reported for the whole SQL, with `tableId: ""`, whenever the SQL
+   * is read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not under
+   * a `global` scope (#704, #692).
+   */
+  | "UNICODE_ESCAPED_IDENTIFIER";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;

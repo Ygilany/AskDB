@@ -2,6 +2,7 @@ import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
   ENGINE_LEXER_PROFILES,
+  findUnicodeEscapedIdentifier,
   GENERIC_LEXER,
   lexSql,
   lexerProfileFor,
@@ -63,9 +64,12 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
  *    parentheses right after a name, at any depth and with trailing spaces, and any such name
  *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
- * 8. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 8. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
+ *    dialect id that is no built-in engine) — a `U&"…"` identifier, whose escapes could spell
+ *    a blocked function or a sensitive column that the later checks match by name (#692).
+ * 9. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 9. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 10. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
@@ -193,6 +197,17 @@ function checkWithProfile(
     );
   }
 
+  if (profile.id === "postgres") {
+    const escaped = findUnicodeEscapedIdentifier(tokens);
+    if (escaped) {
+      throw validationError(
+        "SQL_UNICODE_ESCAPED_IDENTIFIER",
+        `Unicode-escaped identifiers are not allowed: generated SQL uses ${escaped}.`,
+        `Write the name in plain double quotes ("Größe"), or unquoted. A U&"…" name can spell a blocked function or a sensitive column with escapes the other checks don't decode.`,
+      );
+    }
+  }
+
   for (const t of tokens) {
     if (t.kind === "word" && keywords.has(t.lower)) {
       throw validationError(
@@ -204,10 +219,13 @@ function checkWithProfile(
   }
 
   tokens.forEach((t, idx) => {
+    // A `:name` parameter token counts too: before `(` it's no placeholder, and in an array slice
+    // (`[1:set_config(…)]`) Postgres reads the `:` as the separator and the rest as a call.
+    const colonName = t.kind === "parameter" && t.text.startsWith(":");
     const nameLike =
-      t.kind === "word" || t.kind === "quoted_identifier" || (t.kind === "string" && t.quote === '"');
+      t.kind === "word" || t.kind === "quoted_identifier" || (t.kind === "string" && t.quote === '"') || colonName;
     if (!nameLike) return;
-    const name = t.kind === "string" ? t.text.slice(1, -1).toLowerCase() : t.lower;
+    const name = t.kind === "string" ? t.text.slice(1, -1).toLowerCase() : colonName ? t.lower.slice(1) : t.lower;
     if (functions.has(name) && isPunct(tokens[idx + 1], "(")) {
       throw validationError(
         "SQL_FORBIDDEN_FUNCTION",

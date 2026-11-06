@@ -356,6 +356,55 @@ describe("validateSelectSql — locking reads", () => {
   }, 30_000);
 });
 
+describe("validateSelectSql — Unicode-escaped identifiers (#692)", () => {
+  it("rejects a denylisted function written as a U& identifier", () => {
+    // Postgres 17 runs this as set_config: the escapes hide the name from the denylist.
+    expectRule(`SELECT U&"set\\005fconfig"('app.agency_id', '2', true)`, "SQL_UNICODE_ESCAPED_IDENTIFIER");
+  });
+
+  // Each of these ran on Postgres 17.11 (read-only transaction, rolled back).
+  it.each([
+    ["a UESCAPE clause", `SELECT U&"set!005fconfig" UESCAPE '!'('app.agency_id', '2', true)`],
+    ["a lower-case u", `SELECT u&"set\\005fconfig"('app.agency_id', '2', true)`],
+    ["a schema-qualified name", `SELECT pg_catalog.U&"set\\005fconfig"('app.agency_id', '2', true)`],
+    ["the six-digit escape", `SELECT U&"set\\+00005Fconfig"('app.agency_id', '2', true)`],
+    ["another blocked function", `SELECT U&"pg\\005fsleep"(10)`],
+    ["a column name, not a call", `SELECT U&"s\\0073n" FROM people.person`],
+    // #704: Postgres reads it as orders, and it returned both tenants' rows.
+    ["a table name", `SELECT id FROM U&"\\006Frders"`],
+    // `:U` lexes as a parameter, but Postgres reads the `:` as the slice separator.
+    ["a name right after a slice's `:`", `SELECT (ARRAY[1,2,3])[1:U&"set\\005fconfig"('app.agency_id', '2', true)::int] AS x`],
+  ])("rejects %s", (_label, sql) => {
+    expectRule(sql, "SQL_UNICODE_ESCAPED_IDENTIFIER");
+  });
+
+  it("rejects a blocked function written right after a slice's `:`", () => {
+    // Postgres 17 ran set_config here: `:set_config` lexes as one parameter token.
+    expectRule(`SELECT (ARRAY[1,2,3])[1:set_config('app.agency_id', '2', true)::int] AS x`, "SQL_FORBIDDEN_FUNCTION");
+  });
+
+  it("rejects it on CockroachDB and on a dialect id that is no built-in engine", () => {
+    const sql = `SELECT U&"set\\005fconfig"('app.agency_id', '2', true)`;
+    expectRule(sql, "SQL_UNICODE_ESCAPED_IDENTIFIER", BUILT_IN_DIALECTS.cockroachdb);
+    expectRule(sql, "SQL_UNICODE_ESCAPED_IDENTIFIER", { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec);
+  });
+
+  it("accepts the & operator, a U& string, and the same text on engines without U& names", () => {
+    // With a space on either side of `&`, Postgres reads the `&` operator.
+    for (const operator of [`SELECT u & "x" FROM t`, `SELECT u& "x" FROM t`, `SELECT u &"x" FROM t`]) {
+      expect(validateSelectSql(POSTGRES_DIALECT, operator)).toBe(operator);
+    }
+    // A tenant placeholder still reads as one.
+    const placeholder = `SELECT id FROM orders WHERE agency_id = :tenant_agency_ids`;
+    expect(validateSelectSql(POSTGRES_DIALECT, placeholder)).toBe(placeholder);
+    const unicodeString = `SELECT U&'\\0041' AS a`;
+    expect(validateSelectSql(POSTGRES_DIALECT, unicodeString)).toBe(unicodeString);
+    // SQLite reads it as `u` AND the column "x".
+    const sqliteAnd = `SELECT u&"x" FROM t`;
+    expect(validateSelectSql(SQLITE_DIALECT, sqliteAnd)).toBe(sqliteAnd);
+  });
+});
+
 describe("validateSelectSql — sqlite", () => {
   it.each([
     [`SELECT load_extension('x')`],
