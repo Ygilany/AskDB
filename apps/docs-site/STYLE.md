@@ -94,7 +94,7 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 
 ## Components
 
-- `InstallTabs` (`<InstallTabs pkgs="…" />`) for every package install. The Quickstart is the exception: it uses plain npm commands until pnpm and Yarn work in a new project ([#750](https://github.com/Ygilany/AskDB/issues/750), [#748](https://github.com/Ygilany/AskDB/issues/748)).
+- `InstallTabs` (`<InstallTabs pkgs="…" />`) for every package install. The Quickstart is the exception: it uses hand-written `Tabs` (`syncKey="pkg"`) with npm and Yarn only, since its install is a dev dependency, which `InstallTabs` can't express, and pnpm can't run it in a new project until [#750](https://github.com/Ygilany/AskDB/issues/750)'s fix is released.
 - `Tabs` with a `syncKey` so choices persist site-wide: `pkg` (labels exactly npm / pnpm / yarn), `engine` (database engines), `wiring` (config-driven vs direct model).
 - `Aside` for prerequisites and real hazards — `note`, `tip`, `caution`; keep them rare.
 - `ExampleLink` to point at a runnable example in the repo.
