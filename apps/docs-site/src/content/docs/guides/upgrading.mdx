@@ -343,7 +343,7 @@ const statement = sql.replace(/;$/, "").trimEnd();
 const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
 ```
 
-[Row limits](/guides/run-safely-in-prod/#row-limits) explains why this pattern is safe.
+This wrapper works on Postgres and SQLite only. [Row limits](/guides/run-safely-in-prod/#row-limits) shows a cap that works on every engine and keeps the query's `ORDER BY`.
 
 ### Other changes you may notice in beta.44
 

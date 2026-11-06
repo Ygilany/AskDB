@@ -3,6 +3,8 @@ title: "Run safely in production"
 description: "The operator checklist for AskDB: read-only roles, statement timeouts, row limits, audit logging, and approval flows."
 ---
 
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+
 <p class="doc-eyebrow">Production checklist</p>
 
 <p class="doc-lede">AskDB runs heuristic checks on SQL before it's returned. Those checks catch common model mistakes, but they aren't a security boundary. Your application and database own everything that depends on runtime context. This page is the checklist for that side of the boundary. For what AskDB does and doesn't check, see <a href="/concepts/safety-boundaries/">Safety boundaries</a>.</p>
@@ -52,18 +54,139 @@ const pool = new Pool({
 
 ## Row limits
 
-Wrap generated SQL with a hard row cap before execution. This protects against questions like "show me every row in this 100M-row table" that are valid SQL but useless to render.
+AskDB returns SQL without a row limit, and it never adds one. Your application caps the rows, so that a question like "show me every row in this 100M-row table", which is valid SQL, doesn't load the whole table into your server and your UI.
+
+Read one row more than you show, then stop. If that extra row arrives, the result was cut: show the rows you kept and say that there are more. Stop reading in the driver, as in the tabs below, instead of rewriting the SQL. This keeps the query's `ORDER BY` on every engine, so a "top 10" question still gets the top 10.
+
+Each tab defines `runCapped(sql, params)`, which returns `{ rows, truncated }`:
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+
+Open a cursor for the statement inside a read-only transaction, and fetch one row more than the cap. `DECLARE` works only inside a transaction, and a cursor returns the rows in the statement's own order.
+
+```ts
+import { Pool } from "pg";
+
+const ROW_CAP = 1000;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+async function runCapped(sql: string, params: unknown[] = []) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN READ ONLY");
+    await client.query({ text: `DECLARE askdb_rows NO SCROLL CURSOR FOR ${sql}`, values: params });
+    const { rows } = await client.query(`FETCH ${ROW_CAP + 1} FROM askdb_rows`);
+    return { rows: rows.slice(0, ROW_CAP), truncated: rows.length > ROW_CAP };
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
+}
+```
+
+  </TabItem>
+  <TabItem label="MySQL">
+
+Stream the rows on a connection of their own, and stop at one row more than the cap. `mysql2` can't cancel a running query, so close the connection when you stop: the server then stops the query, and the read-only transaction ends with it. The same code works on MariaDB.
+
+```ts
+import mysql from "mysql2";
+
+const ROW_CAP = 1000;
+
+async function runCapped(sql: string, params: unknown[] = []) {
+  const conn = mysql.createConnection(process.env.DATABASE_URL!);
+  const rows: unknown[] = [];
+  try {
+    await conn.promise().query("START TRANSACTION READ ONLY");
+    for await (const row of conn.query(sql, params).stream()) {
+      rows.push(row);
+      if (rows.length > ROW_CAP) break;
+    }
+  } finally {
+    conn.destroy();
+  }
+  return { rows: rows.slice(0, ROW_CAP), truncated: rows.length > ROW_CAP };
+}
+```
+
+  </TabItem>
+  <TabItem label="SQLite">
+
+Step through the rows, and stop at one row more than the cap. Leaving the loop stops the statement.
+
+```ts
+import Database from "better-sqlite3";
+
+const ROW_CAP = 1000;
+const db = new Database("app.db", { readonly: true, fileMustExist: true });
+
+function runCapped(sql: string, params: unknown[] = []) {
+  const rows: unknown[] = [];
+  for (const row of db.prepare(sql).iterate(...params)) {
+    rows.push(row);
+    if (rows.length > ROW_CAP) break;
+  }
+  return { rows: rows.slice(0, ROW_CAP), truncated: rows.length > ROW_CAP };
+}
+```
+
+  </TabItem>
+  <TabItem label="SQL Server">
+
+Put `SET ROWCOUNT` in the same parameterized query as the statement. SQL Server then stops after that many rows, in the statement's `ORDER BY` order, and a `TOP` or `FETCH` the model wrote can't raise the cap. AskDB writes SQL Server parameters as `@p0`, `@p1`, and so on.
+
+```ts
+import mssql from "mssql";
+
+const ROW_CAP = 1000;
+const pool = await new mssql.ConnectionPool(process.env.DATABASE_URL!).connect();
+
+async function runCapped(sql: string, params: unknown[] = []) {
+  const request = pool.request();
+  params.forEach((value, i) => request.input(`p${i}`, value));
+  request.input("askdb_row_cap", mssql.Int, ROW_CAP + 1);
+  const { recordset } = await request.query(`SET ROWCOUNT @askdb_row_cap;\n${sql}`);
+  return { rows: recordset.slice(0, ROW_CAP), truncated: recordset.length > ROW_CAP };
+}
+```
+
+<Aside type="caution" title="Keep SET ROWCOUNT in the statement's query">
+Sent as a request of its own, `SET ROWCOUNT` stays on the connection after your query. The pool then hands that connection to your next query, which is capped without any error. A reset to `SET ROWCOUNT 0` in `finally` doesn't cover every case: in a transaction, an error that rolls the transaction back, such as a failed conversion, returns the connection to the pool before the reset can run. Inside a parameterized query, which `mssql` runs through `sp_executesql`, SQL Server restores `ROWCOUNT` when the query ends, also after an error. The `askdb_row_cap` parameter keeps the query parameterized when `params` is empty.
+</Aside>
+
+  </TabItem>
+</Tabs>
+
+Call it with the SQL and parameters you would pass to your driver, for example `result.sql` with `result.tenantParams` (see [Multi-tenancy](/guides/multi-tenancy/)):
+
+```ts
+// askdb initialized at startup with createAskDb() — see Embed in a Node app.
+const result = await askdb.ask(question, { tenantScope });
+const { rows, truncated } = await runCapped(result.sql, result.tenantParams);
+```
+
+### Wrap the SQL on Postgres and SQLite
+
+If your query helper can't open a cursor or stop part way, for example an ORM's raw-query method, you can wrap the statement in a `LIMIT` on Postgres and SQLite instead.
 
 The SQL `ask()` returns can end with a `;`, because AskDB keeps the model's single trailing `;`. A `;` inside the subquery is a syntax error on every engine, so remove it before you wrap the statement:
 
 ```ts
-// askdb initialized at startup with createAskDb() — see Embed in a Node app.
-const { sql } = await askdb.ask(question);
-const statement = sql.replace(/;$/, "").trimEnd();
-const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
+const statement = result.sql.replace(/;$/, "").trimEnd();
+const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT ${ROW_CAP + 1}`;
 ```
 
 `ask()` returns the SQL trimmed, and its read-only checks (`validateSelectSql`) allow a `;` only at the end of the statement, so this removes the terminator, and any space before it, and nothing else. Avoid a pattern such as `/\s*;$/`: it backtracks on a long run of whitespace, so a reply padded with one can stall your server.
+
+<Aside type="caution" title="The wrapper doesn't work on every engine">
+Standard SQL doesn't promise that a derived table keeps its `ORDER BY`. Postgres and SQLite keep it in practice. On the other engines the wrapper breaks:
+
+- **MariaDB** ignores the `ORDER BY` and returns the rows in another order.
+- **SQL Server** rejects an `ORDER BY` inside a derived table, so the query fails. `SELECT TOP (n) * FROM (…)` fails the same way.
+- **MySQL and MariaDB** reject a derived table with two columns of the same name, such as `a.id` and `b.id` from a join.
+</Aside>
 
 ## Audit logging
 

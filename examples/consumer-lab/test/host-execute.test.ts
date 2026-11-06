@@ -53,8 +53,9 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] ho
   });
 
   it("executes a statement that ends with a semicolon, which AskDB's output may", async () => {
-    // The NL→SQL prompt allows an optional trailing semicolon; a wrapper around the
-    // statement (the Postgres row cap) must not turn it into a syntax error.
+    // The NL→SQL prompt allows an optional trailing semicolon; a row cap that adds text
+    // around the statement (the Postgres cursor, SQL Server's SET ROWCOUNT) must not turn it
+    // into a syntax error.
     const sql = `SELECT order_id FROM ${physicalName(dialect, ORDER_LINE)} ORDER BY order_id DESC, line_no DESC;`;
     const result = await executeReadOnly(dialect, sql, { rowCap: 1 });
     expect(result.rows.map((r) => Number(r[0]))).toEqual([expectedTopLines[0]![0]]);
