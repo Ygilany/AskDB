@@ -250,7 +250,7 @@ import { loadChunkerSourcesFromBundleJson } from "@askdb/rag";
 const sources = loadChunkerSourcesFromBundleJson(bundleJsonString);
 ```
 
-Loads a bundled schema JSON (produced by `askdb bundle`) into `ChunkerSources`, for when the markdown files aren't on disk but a bundle is. Throws ``Expected a bundled schema JSON (missing `bundled: true`).`` for any other JSON.
+Loads a bundled schema JSON (produced by `askdb bundle`) into `ChunkerSources`, for when the markdown files aren't on disk but a bundle is. Throws ``Expected a bundled schema JSON (missing `bundled: true`).`` for any other JSON, and `SchemaParseError` for a bundle that [`loadSchemaFromJson()`](/reference/core-api/#loadschemafromjsonraw) refuses, such as one without a `tables` object.
 
 ### `ChunkerSources`
 

@@ -50,6 +50,10 @@ Introspection now refuses to write an artifact with no tables ([#337](https://gi
 
 See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-) for the likely causes.
 
+### Fix a bundle without a `tables` object, which now fails to load
+
+A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a non-empty string or array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. A `tables` of `[]`, `""`, `0` or `true` loaded as a schema with no table files, and now throws as well. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: set `"tables": {}`, or rebuild it with `askdb bundle`.
+
 ### Keep a built-in `id` on a `DialectSpec`
 
 `ask()` now refuses a `DialectSpec` whose `id` isn't one of the six built-in ids, with `UnknownDialectError` ([#717](https://github.com/Ygilany/AskDB/issues/717)). Core lexes, quotes and binds SQL by `id` (ADR 0029), so a spec under another `id` was checked under every engine's lexer at once: that rejected some valid column names ([#672](https://github.com/Ygilany/AskDB/issues/672)) and couldn't read the SQL the way the real engine does. `bindPreparedQuery()` already refused its templates. `ask()` refuses such a spec before any tenant check, retrieval or model call.
