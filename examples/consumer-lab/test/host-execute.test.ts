@@ -61,6 +61,14 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] ho
     expect(result.rows.map((r) => Number(r[0]))).toEqual([expectedTopLines[0]![0]]);
   });
 
+  if (dialect === "postgres") {
+    it("refuses a stacked second statement instead of running it", async () => {
+      // Sent on the simple query protocol, the second statement would run, and one such as
+      // `COMMIT; SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE` ends the read-only transaction.
+      await expect(executeReadOnly(dialect, "SELECT 1 AS a; SELECT 2 AS b")).rejects.toThrow(/cannot insert multiple commands/);
+    });
+  }
+
   it("stops a statement that runs past the timeout", async () => {
     const started = Date.now();
 

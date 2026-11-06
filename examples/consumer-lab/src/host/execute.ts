@@ -86,10 +86,9 @@ export async function executeReadOnly(dialect: SupportedDialect, sql: string, op
     timeoutMs: Math.trunc(opts.statementTimeoutMs ?? 5000),
     params: opts.params ? [...opts.params] : [],
   };
-  // A trailing semicolon is allowed in AskDB's output (the NL→SQL prompt's "optional
-  // semicolon"), but it would break a wrapper around the statement.
-  const statement = sql.trim().replace(/;\s*$/, "");
-  const read = await RUNNERS[dialect](statement, o, dialect);
+  // AskDB's output may end with a semicolon (the NL→SQL prompt's "optional semicolon").
+  // Every runner takes it as is, as the guide's row-cap recipes do.
+  const read = await RUNNERS[dialect](sql.trim(), o, dialect);
   return { columns: read.columns, rows: read.rows.slice(0, o.rowCap), truncated: read.rows.length > o.rowCap };
 }
 
@@ -120,7 +119,10 @@ async function runPostgres(sql: string, o: Resolved) {
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${o.timeoutMs}`);
     // A cursor returns the rows in the statement's own order; DECLARE needs the transaction above.
-    await client.query({ text: `DECLARE askdb_rows NO SCROLL CURSOR FOR ${sql}`, values: o.params });
+    // "extended" sends the statement on its own even with no params, so a stacked second statement
+    // fails instead of running (it could end the read-only transaction). @types/pg lacks queryMode.
+    const declare = { text: `DECLARE askdb_rows NO SCROLL CURSOR FOR ${sql}`, values: o.params, queryMode: "extended" };
+    await client.query(declare);
     const result = await client.query({ text: `FETCH ${o.rowCap + 1} FROM askdb_rows`, rowMode: "array" });
     return { columns: result.fields.map((f) => f.name), rows: result.rows as unknown[][] };
   } catch (error) {

@@ -108,13 +108,13 @@ The lab is the host, so it executes accepted SQL as `run-safely-in-prod` asks: a
 
 | Engine | Read-only | Timeout | Row cap |
 |---|---|---|---|
-| Postgres | `BEGIN READ ONLY` | `statement_timeout` | the guide's `SELECT * FROM (…) LIMIT n` wrapper |
+| Postgres | `BEGIN READ ONLY` | `statement_timeout` | a cursor, `FETCH 101`, sent on the extended protocol |
 | MySQL | `START TRANSACTION READ ONLY` | `max_execution_time` | stops reading after 101 rows |
 | MariaDB | `START TRANSACTION READ ONLY` | `max_statement_time` | stops reading after 101 rows |
-| SQL Server | the role only (no read-only transaction exists) | request timeout, which cancels the statement | `SET ROWCOUNT 101` |
+| SQL Server | the role only (no read-only transaction exists) | request timeout, which cancels the statement | `SET ROWCOUNT @askdb_row_cap` (101) in the statement's own parameterized query |
 | SQLite | read-only handle with `query_only` | the child process running it is killed (a worker thread can't be stopped inside the native driver) | stops reading after 101 rows |
 
-The guide's wrapper is invalid on SQL Server and drops the statement's `ORDER BY` on MariaDB (#266), so only Postgres uses it.
+Each row cap is the guide's recipe for that engine ("Row limits"), so the lab runs the documented code on all five engines. None wraps the statement in `SELECT * FROM (…) LIMIT n`, which is invalid on SQL Server and drops the statement's `ORDER BY` on MariaDB (#266).
 
 ## `pnpm lab ui`
 
