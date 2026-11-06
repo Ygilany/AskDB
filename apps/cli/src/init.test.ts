@@ -2,12 +2,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { select, input, confirm } from "@inquirer/prompts";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildInitInstallPlan,
-  detectPackageManager,
-  findNearestPackageJsonDir,
-  isLikelyWorkspaceRoot,
   renderInitConfig,
   resolveDefaultInitAnswers,
   resolveInitDepSpecs,
@@ -606,72 +603,6 @@ describe("runInitCli --yes --skip-install", () => {
 // ---------------------------------------------------------------------------
 
 describe("init helpers", () => {
-  it("findNearestPackageJsonDir finds parent package.json", () => {
-    const root = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
-    try {
-      writeFileSync(join(root, "package.json"), "{}\n", "utf8");
-      const nested = join(root, "a", "b");
-      mkdirSync(nested, { recursive: true });
-      expect(findNearestPackageJsonDir(nested)).toBe(root);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("findNearestPackageJsonDir returns undefined when missing", () => {
-    const root = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
-    try {
-      expect(findNearestPackageJsonDir(join(root, "x"))).toBeUndefined();
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("isLikelyWorkspaceRoot detects pnpm-workspace.yaml", () => {
-    const root = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
-    try {
-      writeFileSync(join(root, "package.json"), '{"name":"r"}\n', "utf8");
-      writeFileSync(join(root, "pnpm-workspace.yaml"), "packages: []\n", "utf8");
-      expect(isLikelyWorkspaceRoot(root)).toBe(true);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("isLikelyWorkspaceRoot detects npm workspaces field", () => {
-    const root = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
-    try {
-      writeFileSync(join(root, "package.json"), '{"workspaces":["packages/*"]}\n', "utf8");
-      expect(isLikelyWorkspaceRoot(root)).toBe(true);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("isLikelyWorkspaceRoot is false for a leaf package.json", () => {
-    const root = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
-    try {
-      writeFileSync(join(root, "package.json"), '{"name":"app","private":true}\n', "utf8");
-      expect(isLikelyWorkspaceRoot(root)).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("detectPackageManager finds lockfile in a parent directory", () => {
-    const root = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
-    try {
-      writeFileSync(join(root, "package.json"), "{}\n", "utf8");
-      writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
-      const pkg = join(root, "packages", "app");
-      mkdirSync(pkg, { recursive: true });
-      writeFileSync(join(pkg, "package.json"), "{}\n", "utf8");
-      expect(detectPackageManager(pkg)).toBe("pnpm");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it("resolveInitDepSpecs returns non-empty specs", () => {
     const s = resolveInitDepSpecs();
     expect(s.configSpec.length).toBeGreaterThan(0);
@@ -683,44 +614,102 @@ describe("init helpers", () => {
   });
 });
 
-describe("runInitCli --yes --database prisma (install)", () => {
+describe("runInitCli install", () => {
+  const prevCwd = process.cwd();
+  const prevPath = process.env.PATH;
+  let project: string;
+  let stdout: string[];
+  let stderr: string[];
+
+  /**
+   * cd into a fresh project holding `files` (none: no package.json at all), with a fake
+   * `pnpm` on PATH that reports `pnpmVersion`. `npm_config_user_agent` is cleared unless
+   * `userAgent` is given, so the test runner's own pnpm doesn't pick the manager.
+   */
+  function enterProject(files: Record<string, string>, { pnpmVersion = "11.28.10", userAgent = "" } = {}): void {
+    project = realpathSync(mkdtempSync(join(tmpdir(), "askdb-init-install-")));
+    for (const [name, contents] of Object.entries(files)) writeFileSync(join(project, name), contents, "utf8");
+    const bin = join(project, ".fake-bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho ${pnpmVersion}\n`, "utf8");
+    chmodSync(join(bin, "pnpm"), 0o755);
+    process.env.PATH = `${bin}${delimiter}${prevPath}`;
+    vi.stubEnv("npm_config_user_agent", userAgent);
+    process.chdir(project);
+  }
+
+  beforeEach(() => {
+    stdout = [];
+    stderr = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => (stdout.push(String(chunk)), true));
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => (stderr.push(String(chunk)), true));
+  });
+
+  afterEach(() => {
+    process.env.PATH = prevPath;
+    process.chdir(prevCwd);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    rmSync(project, { recursive: true, force: true });
+  });
+
+  function prismaPackages(): string[] {
+    const { prismaSpec, configSpec } = resolveInitDepSpecs();
+    return [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`];
+  }
+
   // `pnpm add --allow-build` arrived in pnpm 10.4.0; older pnpm rejects the unknown option.
-  // A fake `pnpm` on PATH reports the version.
   it.each([
     ["11.28.10", ["@prisma/engines"]],
     ["10.4.0", ["@prisma/engines"]],
     ["10.3.0", []],
     ["9.15.9", []],
   ])("in a pnpm %s project, the install it runs and the fallback command approve %j", async (pnpmVersion, allowBuilds) => {
-    const project = realpathSync(mkdtempSync(join(tmpdir(), "askdb-init-prisma-")));
-    const prevCwd = process.cwd();
-    const prevPath = process.env.PATH;
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      writeFileSync(join(project, "package.json"), '{ "name": "app", "private": true }\n', "utf8");
-      writeFileSync(join(project, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
-      const bin = join(project, ".fake-bin");
-      mkdirSync(bin);
-      writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho ${pnpmVersion}\n`, "utf8");
-      chmodSync(join(bin, "pnpm"), 0o755);
-      process.env.PATH = `${bin}${delimiter}${prevPath}`;
-      process.chdir(project);
-      const failingInstaller = vi.fn().mockReturnValue(false);
+    enterProject(
+      { "package.json": '{ "name": "app", "private": true }\n', "pnpm-lock.yaml": "lockfileVersion: '9.0'\n" },
+      { pnpmVersion },
+    );
+    const failingInstaller = vi.fn().mockReturnValue(false);
 
-      const code = await runInitCli(["--yes", "--database", "prisma", "--path", join(project, "askdb.config.ts")], failingInstaller);
+    const code = await runInitCli(["--yes", "--database", "prisma", "--path", join(project, "askdb.config.ts")], failingInstaller);
 
-      expect(code).toBe(1);
-      const { prismaSpec, configSpec } = resolveInitDepSpecs();
-      const packages = [`@askdb/config@${configSpec}`, `@askdb/prisma@${prismaSpec}`];
-      expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, packages, allowBuilds);
-      const command = ["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...packages].join(" ");
-      expect(stderr.mock.calls.join("")).toContain(`  ${command}\n`);
-    } finally {
-      process.env.PATH = prevPath;
-      process.chdir(prevCwd);
-      vi.restoreAllMocks();
-      rmSync(project, { recursive: true, force: true });
-    }
+    expect(code).toBe(1);
+    expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, prismaPackages(), allowBuilds);
+    const command = ["pnpm add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...prismaPackages()].join(" ");
+    expect(stderr.join("")).toContain(`  ${command}\n`);
+  });
+
+  // #750: `pnpm init` writes devEngines.packageManager and no lockfile, and npm refuses to
+  // install there (EBADDEVENGINES), so the install and its recovery command must use pnpm.
+  it("in a fresh `pnpm init` project with no lockfile, installs with pnpm", async () => {
+    const manifest = { name: "proj", devEngines: { packageManager: { name: "pnpm", version: "12.18.0", onFail: "download" } } };
+    enterProject({ "package.json": JSON.stringify(manifest) });
+    const failingInstaller = vi.fn().mockReturnValue(false);
+
+    await runInitCli(["--yes", "--database", "sqlite", "--sqlite-file", "./shop.db", "--path", join(project, "askdb.config.ts")], failingInstaller);
+
+    const packages = [`@askdb/config@${resolveInitDepSpecs().configSpec}`, "better-sqlite3"];
+    expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, packages, []);
+    expect(stderr.join("")).toContain(`  pnpm add ${packages.join(" ")}\n`);
+  });
+
+  // Where init won't install, the command it prints names the detected manager and
+  // carries the build approval, so following it works on pnpm 11.
+  it.each([
+    [
+      "at a workspace root",
+      { "package.json": '{ "name": "repo", "private": true, "workspaces": ["packages/*"] }\n', "pnpm-lock.yaml": "lockfileVersion: '9.0'\n" },
+      "",
+    ],
+    ["with no package.json, run by `pnpm dlx`", {}, "pnpm/11.28.10 npm/? node/v22.23.4 darwin arm64"],
+  ])("%s, prints a pnpm add command with the Prisma build approval", async (_label, files, userAgent) => {
+    enterProject(files, { userAgent });
+    const installer = vi.fn().mockReturnValue(true);
+
+    const code = await runInitCli(["--yes", "--database", "prisma", "--path", join(project, "askdb.config.ts")], installer);
+
+    expect(code).toBe(0);
+    expect(installer).not.toHaveBeenCalled();
+    expect(stdout.join("")).toContain(`  pnpm add --allow-build=@prisma/engines ${prismaPackages().join(" ")}\n`);
   });
 });

@@ -10,15 +10,17 @@ import {
   getAskDbRuntimeConfig,
   type AskDbAiProviderId,
 } from "@askdb/config";
-import { renderAskDbAiConfigScaffold } from "@askdb/config/scaffold";
 import {
+  detectPackageManager,
+  findNearestPackageJsonDir,
   formatInstallCommand,
-  lockfilePackageManager,
+  isLikelyWorkspaceRoot,
   packageManagerAddArgs,
   packageManagerSpawnSpec,
+  renderAskDbAiConfigScaffold,
   supportedBuildApprovals,
   type PackageManager,
-} from "./package-manager.js";
+} from "@askdb/config/scaffold";
 import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
@@ -504,34 +506,6 @@ function resolvePrismaSpec(): string {
   }
 }
 
-function findNearestPackageJsonDir(startDir: string): string | undefined {
-  let dir = resolve(startDir);
-  for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-  return undefined;
-}
-
-function isLikelyWorkspaceRoot(packageDir: string): boolean {
-  if (
-    existsSync(join(packageDir, "pnpm-workspace.yaml")) ||
-    existsSync(join(packageDir, "pnpm-workspace.yml"))
-  ) {
-    return true;
-  }
-  try {
-    const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
-      workspaces?: unknown;
-    };
-    return pkg.workspaces !== undefined && pkg.workspaces !== null;
-  } catch {
-    return false;
-  }
-}
-
 /** Runs the package manager's add command; `allowBuilds` are the pnpm build approvals it passes. */
 type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]) => boolean;
 
@@ -540,18 +514,6 @@ let setupInstallerForTests: SetupInstaller | undefined;
 /** @internal Tests only — replaces the real package-manager install. */
 export function setSetupInstallerForTests(installer: SetupInstaller | undefined): void {
   setupInstallerForTests = installer;
-}
-
-function detectPackageManager(packageDir: string): PackageManager {
-  let dir = packageDir;
-  for (let i = 0; i < 40; i += 1) {
-    const pm = lockfilePackageManager(dir);
-    if (pm) return pm;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return "npm";
 }
 
 function runInstall(pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]): boolean {

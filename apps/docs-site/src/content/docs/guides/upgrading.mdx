@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.49
 
-Not published yet: these changes ship with `@askdb/core` 1.0.0-beta.49.
+Not published yet: these changes ship with `askdb` 1.0.0-beta.49, `@askdb/config` 1.0.0-beta.18, `@askdb/core` 1.0.0-beta.49 and `@askdb/studio` 0.2.0-beta.42.
 
 ### Handle the new `SensitiveScopeIssue` members
 
@@ -29,6 +29,13 @@ The sensitive check now fails closed on two Postgres forms it can't read, with t
 
 - **A `switch` over every `SensitiveScopeIssue`** needs cases for both.
 - **Built-in dialects reject the same SQL earlier** in the read-only check (`SQL_UNICODE_ESCAPED_IDENTIFIER`, `SQL_STRING_CONTINUATION`), so this mainly changes a custom `AskDialect` and direct calls.
+
+### Other changes you may notice in beta.49
+
+- **`askdb init` and Studio's guided setup install with pnpm in a new pnpm project** ([#750](https://github.com/Ygilany/AskDB/issues/750)). With no lockfile, both used npm, which refuses a project that `pnpm init` started (`EBADDEVENGINES`). They now read `package.json`'s `packageManager` field, then `devEngines.packageManager`, then the tool that ran them (`pnpm dlx`, `yarn dlx`, `npx`, `bunx`), before falling back to npm. A project with a lockfile installs with that lockfile's manager, as before. See [`askdb init`](/reference/cli/#askdb-init) for the order.
+- **`askdb init` installs on Windows** ([#668](https://github.com/Ygilany/AskDB/issues/668)). Its install always failed there, because Node refuses to run a package manager's `.cmd` shim without a shell.
+- **The install command `askdb init` prints names the package manager it picked.** At a workspace root, or with no `package.json`, it printed `npm install --save …`. It now prints that manager's command, with `--allow-build=@prisma/engines` for a Prisma project on pnpm 10.4 or later. A script that matched the old text needs updating.
+- **`@askdb/config/scaffold` is experimental** ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). It now also exports the package-manager helpers `askdb init` and Studio share. A minor release of `@askdb/config` may change it. Your own `askdb.config.ts` never imports it.
 
 ## 1.0.0-beta.48
 

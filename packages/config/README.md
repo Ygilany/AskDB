@@ -98,6 +98,15 @@ const embeddingModel = config.ai.embedding
 - `mergeAskDbFlatIntoEnvMap(base, flat)` — merge AskDB flat entries into an env map for **child processes** (does not read `process.env` itself). Use `getAskDbRuntimeConfig().flat` as `flat` after bootstrap.
 - `setAskDbRuntimeForTests(config)` / `resetAskDbRuntimeForTests()` — test helpers: install an authored `AskDbConfig` as `bootstrapAskDbEnv()` installs a loaded file, without reading the disk, and remove it.
 
+## `@askdb/config/scaffold`
+
+Tooling for `askdb init` and AskDB Studio's setup wizard. It is experimental, like Studio: a minor release of `@askdb/config` may change it (ADR 0030). Your own `askdb.config.ts` never needs it.
+
+- `renderAskDbAiConfigScaffold(input)` — the `ai` block of a new `askdb.config.ts`, plus the env vars it reads.
+- `detectPackageManager(dir, env?)` — the package manager for `dir`: a lockfile in `dir` or a parent, then the nearest `package.json`'s `packageManager` or `devEngines.packageManager`, then `npm_config_user_agent`, then npm.
+- `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` — project and install-command helpers.
+- `packageManagerSpawnSpec(pm, args, platform?)` — how to spawn the package manager: allowlisted arguments, and `shell: true` on Windows, where package managers are `.cmd` shims.
+
 ## License
 
 Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

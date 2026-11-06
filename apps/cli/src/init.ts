@@ -5,7 +5,18 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getBuiltinAiProviderSetup, listBuiltinAiProviderSetups } from "@askdb/ai";
 import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "@askdb/config";
-import { renderAskDbAiConfigScaffold, type AskDbScaffoldEnvVar } from "@askdb/config/scaffold";
+import {
+  detectPackageManager,
+  findNearestPackageJsonDir,
+  formatInstallCommand,
+  isLikelyWorkspaceRoot,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+  renderAskDbAiConfigScaffold,
+  supportedBuildApprovals,
+  type AskDbScaffoldEnvVar,
+  type PackageManager,
+} from "@askdb/config/scaffold";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { showable } from "./error-values.js";
 import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
@@ -368,51 +379,10 @@ export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs):
 }
 
 // ---------------------------------------------------------------------------
-// Package manager detection
+// Dependency versions
 // ---------------------------------------------------------------------------
 
 const require = createRequire(import.meta.url);
-
-/** Walk upward from `startDir` to find a directory containing `package.json`. */
-export function findNearestPackageJsonDir(startDir: string): string | undefined {
-  let dir = resolve(startDir);
-  for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-  return undefined;
-}
-
-/** Monorepo / workspace root — avoid mutating root `package.json` from `askdb init`. */
-export function isLikelyWorkspaceRoot(packageDir: string): boolean {
-  if (existsSync(join(packageDir, "pnpm-workspace.yaml")) || existsSync(join(packageDir, "pnpm-workspace.yml"))) {
-    return true;
-  }
-  try {
-    const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as { workspaces?: unknown };
-    return pkg.workspaces !== undefined && pkg.workspaces !== null;
-  } catch {
-    return false;
-  }
-}
-
-export type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
-
-export function detectPackageManager(packageDir: string): PackageManager {
-  let dir = packageDir;
-  for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
-    if (existsSync(join(dir, "bun.lockb")) || existsSync(join(dir, "bun.lock"))) return "bun";
-    if (existsSync(join(dir, "yarn.lock"))) return "yarn";
-    if (existsSync(join(dir, "package-lock.json"))) return "npm";
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return "npm";
-}
 
 /**
  * The versions `askdb init` installs: `@askdb/config` and `@askdb/prisma` at the versions
@@ -453,53 +423,9 @@ type InstallFn = (pm: PackageManager, packageDir: string, packages: string[], al
 
 function defaultInstaller(pm: PackageManager, packageDir: string, packages: string[], allowBuilds: string[]): boolean {
   const env = { ...process.env, CI: process.env.CI ?? "true" };
-  const win = process.platform === "win32";
-  const cmd = win ? { pnpm: "pnpm.CMD", yarn: "yarn.cmd", bun: "bun.exe", npm: "npm.cmd" }[pm] : pm;
-  const r = spawnSync(cmd, installArgs(pm, packages, allowBuilds), { cwd: packageDir, stdio: "inherit", env, shell: false });
+  const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages, allowBuilds));
+  const r = spawnSync(command, args, { cwd: packageDir, stdio: "inherit", env, shell });
   return r.status === 0;
-}
-
-function formatManualInstallCommand(pm: PackageManager, packages: string[], allowBuilds: string[]): string {
-  return [pm, ...installArgs(pm, packages, allowBuilds)].join(" ");
-}
-
-/**
- * The build approvals to pass `pm` in `packageDir`: `allowBuilds`, or none for a pnpm older
- * than 10.4.0, whose `add` rejects `--allow-build` (pnpm 9 runs install scripts, and 10.0 to
- * 10.3 skip unapproved ones without failing). A pnpm whose version can't be read keeps them.
- * Studio's setup applies the same rule (`apps/studio/src/package-manager.ts`).
- */
-function supportedBuildApprovals(pm: PackageManager, packageDir: string, allowBuilds: string[]): string[] {
-  if (pm !== "pnpm" || allowBuilds.length === 0) return allowBuilds;
-  const version = spawnSync("pnpm", ["--version"], {
-    cwd: packageDir,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    // Windows runs pnpm through its `.cmd` shim, which needs a shell; the arguments are fixed.
-    shell: process.platform === "win32",
-    timeout: 15_000,
-  });
-  const match = version.status === 0 ? /^(\d+)\.(\d+)\./.exec(version.stdout.trim()) : null;
-  if (!match) return allowBuilds;
-  const [major, minor] = [Number(match[1]), Number(match[2])];
-  return major > 10 || (major === 10 && minor >= 4) ? allowBuilds : [];
-}
-
-/**
- * The add command's arguments. Build approvals apply to pnpm only: npm and Yarn run install
- * scripts, and Bun skips untrusted ones without failing. Mirrors Studio's
- * `packageManagerAddArgs` (`apps/studio/src/package-manager.ts`); change both together.
- */
-function installArgs(pm: PackageManager, packages: string[], allowBuilds: string[]): string[] {
-  switch (pm) {
-    case "pnpm":
-      return ["add", ...allowBuilds.map((name) => `--allow-build=${name}`), ...packages];
-    case "yarn":
-    case "bun":
-      return ["add", ...packages];
-    default:
-      return ["install", "--save", ...packages];
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1079,28 +1005,33 @@ async function finishInit(
     const specs = resolveInitDepSpecs();
     const plan = buildInitInstallPlan(answers, specs);
 
+    // The manager comes from the project's lockfile or package.json, else from whoever
+    // ran init (`pnpm dlx`, `npx`, …); with no package.json, from the current directory.
+    const pmDir = pkgRoot ?? process.cwd();
+    const pm = detectPackageManager(pmDir);
+    const approvedBuilds = supportedBuildApprovals(pm, pmDir, plan.allowBuilds);
+    const installCommand = formatInstallCommand(pm, plan.packages, approvedBuilds);
+
     if (!pkgRoot) {
       process.stdout.write(
         "\nNo package.json found in this directory or any parent directory.\n" +
           "Install the template imports yourself (from a project with a package.json):\n" +
-          `  npm install --save ${plan.packages.join(" ")}\n\n`,
+          `  ${installCommand}\n\n`,
       );
     } else if (isLikelyWorkspaceRoot(pkgRoot)) {
       process.stdout.write(
         "\nSkipped automatic dependency install (workspace / monorepo root).\n" +
           "Add these to the package that will load this config (or run `askdb init` from that package directory):\n" +
-          `  npm install --save ${plan.packages.join(" ")}\n\n`,
+          `  ${installCommand}\n\n`,
       );
     } else {
-      const pm = detectPackageManager(pkgRoot);
-      const approvedBuilds = supportedBuildApprovals(pm, pkgRoot, plan.allowBuilds);
       process.stdout.write(`\nInstalling dependencies with ${pm} in ${pkgRoot} …\n`);
       const ok = installer(pm, pkgRoot, plan.packages, approvedBuilds);
       if (!ok) {
         process.stderr.write(
           "Dependency install failed. The config file was written, but packages are not installed yet.\n" +
             `  cd ${pkgRoot}\n` +
-            `  ${formatManualInstallCommand(pm, plan.packages, approvedBuilds)}\n`,
+            `  ${installCommand}\n`,
         );
         return 1;
       }
