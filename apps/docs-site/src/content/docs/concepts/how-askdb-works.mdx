@@ -15,7 +15,7 @@ When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB runs these s
 
 1. **Load the schema artifact.** A directory, a bundle file, or a parsed `schema.json` — whichever you supply.
 2. **Retrieve relevant chunks (optional).** For large schemas, AskDB pulls only the slice of the artifact that's relevant to the question, using `@askdb/rag`. Smaller schemas skip this step.
-3. **Build the prompt.** Physical metadata, any table descriptions you authored, and the selected SQL dialect get assembled into the context the model sees.
+3. **Build the prompt.** The question, physical metadata, the text you authored (descriptions, aliases, `enum` values, common query language notes), and the selected SQL dialect get assembled into the context the model sees. When your schema has a tenant policy, the prompt also carries the policy and the `context` from your `tenantScope`, as advisory text; tenant IDs appear only as placeholders such as `:tenant_organization_ids`. [Privacy model](/concepts/privacy-model/) has the full list.
 4. **Generate.** AskDB calls the model you supplied — any provider compatible with the [Vercel AI SDK](/guides/bring-your-own-model/) — and the model returns SQL. AskDB does not host inference; your key, your billing.
 5. **Check.** The returned SQL goes through AskDB's heuristic guardrails: single statement (with a SQL Server caveat), must start with `SELECT` or `WITH`, no comments, no DDL/DML keywords, no locking reads, no calls to known side-effecting functions. SQL that fails these is rejected. When your artifact declares a tenant policy or `sensitive` markers, the tenant and sensitive-column checks also run. Depending on their mode, they either reject the SQL or return it with warnings. These checks catch common model mistakes but aren't a security boundary. The exact checks, and what they miss, are in [Safety boundaries](/concepts/safety-boundaries/).
 
@@ -28,7 +28,7 @@ The return value is a string of checked SQL and a parameter list. What happens n
 AskDB stops at checked SQL. Your application — the code that imports `@askdb/core` or calls the HTTP API — owns everything past that:
 
 - The database driver and connection pool.
-- Read-only roles and any further row-level security.
+- Read-only roles, and tenant isolation such as Postgres row-level security ([Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/)).
 - Query timeouts, row limits, and result pagination.
 - Whether to show the SQL to the user, log it, queue it for review, or run it immediately.
 - Audit logging and observability.
