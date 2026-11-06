@@ -618,6 +618,35 @@ export function findUnicodeEscapedIdentifier(tokens: readonly SqlToken[]): strin
   return undefined;
 }
 
+/** The forms only a Postgres reading can hold, as {@link findPostgresOnlyForms} finds them. */
+export type PostgresOnlyForms = {
+  /** The first `U&"…"` name, as written ({@link findUnicodeEscapedIdentifier}). */
+  unicodeEscapedIdentifier: string | undefined;
+  /** The `E'…'` token of the first continued escape string ({@link findEscapeStringContinuation}). */
+  escapeStringContinuation: SqlToken | undefined;
+};
+
+/**
+ * The forms only a Postgres reading of `sql` can hold, under each reading
+ * {@link postgresReadingProfiles} gives for `dialect`: a `U&"…"` name and an `E'…'` string
+ * continued on a later line. The checks match names as written and don't model the
+ * continuation, so the tenant check and the sensitive check refuse both forms through this one
+ * function (#703, #704, #707, ADR 0012). Each field holds the first match across the readings;
+ * both are `undefined` when the SQL can't be read as Postgres.
+ */
+export function findPostgresOnlyForms(
+  sql: string,
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
+): PostgresOnlyForms {
+  const forms: PostgresOnlyForms = { unicodeEscapedIdentifier: undefined, escapeStringContinuation: undefined };
+  for (const profile of postgresReadingProfiles(dialect)) {
+    const tokens = lexSql(sql, profile);
+    forms.unicodeEscapedIdentifier ??= findUnicodeEscapedIdentifier(tokens);
+    forms.escapeStringContinuation ??= findEscapeStringContinuation(sql, tokens);
+  }
+  return forms;
+}
+
 /** True when any token ran off the end of the input. */
 export function hasUnterminatedToken(tokens: readonly SqlToken[]): boolean {
   return tokens.some((t) => t.unterminated === true);

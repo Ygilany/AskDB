@@ -10,12 +10,10 @@ import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } fr
 import {
   ENGINE_LEXER_PROFILES,
   GENERIC_LEXER,
-  findEscapeStringContinuation,
-  findUnicodeEscapedIdentifier,
+  findPostgresOnlyForms,
   hasUnterminatedToken,
   lexSql,
   lexerProfileFor,
-  postgresReadingProfiles,
   type SqlToken,
 } from "./lexer.js";
 
@@ -389,21 +387,19 @@ function scanSql(
 }
 
 /**
- * `outcome` with a scope issue for each form only the Postgres reading can hold, under each reading
- * `postgresReadingProfiles` gives: a `U&"…"` name, which Postgres decodes and the check matches as
- * written, and an `E'…'` string continued on a later line, which Postgres reads with backslash
- * escapes. The check can't tell what either one reads, so it fails closed (#707, ADR 0012).
+ * `outcome` with a scope issue for each form only the Postgres reading can hold: a `U&"…"` name,
+ * which Postgres decodes and the check matches as written, and an `E'…'` string continued on a
+ * later line, which Postgres reads with backslash escapes. The check can't tell what either one
+ * reads, so it fails closed (#707, ADR 0012).
  */
 function withPostgresOnlyIssues(
   outcome: ScanOutcome,
   sql: string,
   dialect: Pick<DialectSpec, "id" | "backslashEscapes"> | undefined,
 ): ScanOutcome {
-  for (const profile of postgresReadingProfiles(dialect)) {
-    const tokens = lexSql(sql, profile);
-    if (findUnicodeEscapedIdentifier(tokens) !== undefined) outcome.issues.add("UNICODE_ESCAPED_IDENTIFIER");
-    if (findEscapeStringContinuation(sql, tokens) !== undefined) outcome.issues.add("STRING_CONTINUATION");
-  }
+  const forms = findPostgresOnlyForms(sql, dialect);
+  if (forms.unicodeEscapedIdentifier !== undefined) outcome.issues.add("UNICODE_ESCAPED_IDENTIFIER");
+  if (forms.escapeStringContinuation !== undefined) outcome.issues.add("STRING_CONTINUATION");
   return outcome;
 }
 
