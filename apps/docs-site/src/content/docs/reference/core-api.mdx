@@ -298,6 +298,8 @@ The file names `loadSchema()` looks up in a directory are exact: `schema.json`, 
 
 Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy", and the error names the file and the bundle, for example `tenant-policy.md (in /srv/prod.bundle.json)`. A broken `tenant-policy.md` never silently turns tenant enforcement off.
 
+`loadSchema()` also checks every ID in `tenant-policy.md` against `schema.json`. Under `enforcement: strict`, an orphaned column or foreign key ID, a hierarchy cycle, or a root that `roots` doesn't declare throws `SchemaParseError` naming the file and the IDs. Under `warn` these load, listed in `schema.tenantPolicy.warnings`. A table that `schema.json` doesn't have is a warning in both modes. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
+
 Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag. A column that is sensitive only because its table is also carries `sensitiveFromTable: true`; `@askdb/rag` uses it to count a mention of that column only when written as `table.column`.
 
 `loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
@@ -535,6 +537,8 @@ Returns an `AskDbLogger` that emits structured JSON for each pipeline stage. Pas
 
 The emitted log events are typed as `AskDbLogEvent` constants (e.g. `PipelineMode`, `PipelineGenerateStart`, `TenantScopeValidated`). Import `AskDbLogEvent` from `@askdb/core` to filter logs by event kind.
 
+To pass your own logger instead, implement `AskDbLogger`: `info(context, message)` and `error(context, message)`, plus optional `debug` and `warn`. `ask()` logs `TenantPolicyWarnings` (`askdb.tenant.policy_warnings`) through `warn`, or through `info` when your logger has no `warn`.
+
 ---
 
 ## Tenant types
@@ -583,6 +587,19 @@ placeholderForTenantRoot({ id: "table:public.clients", label: "Клиент" });
 Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prompt names, `ask()` and `resolveTenantSql()` bind, and the tenant guardrail checks. `<name>` is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit uses the root's table name instead. Pass a root from `schema.tenantPolicy.roots` (anything with `id` and `label`).
 
 `placeholderForRoot(label)` is deprecated. It takes the label alone, so for a label with no ASCII letter or digit it returns `:tenant___ids`, which core doesn't bind. For every other label the two agree.
+
+### `formatTenantPolicyWarning(warning)`
+
+```ts
+import { formatTenantPolicyWarning, loadSchema } from "@askdb/core";
+
+// A policy with `enforcement: warn`: under `strict`, this problem makes loadSchema() throw.
+const schema = loadSchema("./my-app.schema");
+schema.tenantPolicy?.warnings.map(formatTenantPolicyWarning);
+// ["scopeThrough column on table:public.orders: column table:public.orders#agency_ref is not in schema.json"]
+```
+
+Returns one line describing a `TenantPolicyWarning`, naming the IDs involved. The `SchemaParseError` for a strict policy, the `askdb.tenant.policy_warnings` log message and `askdb introspect` use the same wording.
 
 ### `TenantScope`
 
