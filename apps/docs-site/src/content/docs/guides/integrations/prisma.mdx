@@ -63,7 +63,7 @@ npx askdb introspect --engine prisma --prisma-schema ./prisma --print
 npx askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
-To make `--prisma-schema` optional on repeat runs, set `introspection.providerConfig.prisma.schemaPath` in `askdb.config.ts` — or rely on auto-discovery: with `provider: "prisma"` and no path configured, AskDB finds `prisma/schema.prisma` (or `schema.prisma`) in your project root automatically.
+To make `--prisma-schema` optional on repeat runs, set `introspection.providerConfig.prisma.schemaPath` in `askdb.config.ts` — or rely on auto-discovery: with `provider: "prisma"` and no path configured, AskDB looks in your project root for `prisma/schema.prisma`, then `schema.prisma`, then a `prisma/` directory (a multi-file schema), and uses the first it finds.
 
 ## Programmatic API
 
@@ -85,7 +85,7 @@ await introspect(
 | Prisma provider | `dialect` id | Engine package (live introspection) |
 | --- | --- | --- |
 | `postgresql` | `"postgres"` | `@askdb/postgres` |
-| `cockroachdb` | `"cockroachdb"` | `@askdb/postgres` |
+| `cockroachdb` | `"cockroachdb"` | none: introspect the `.prisma` file |
 | `mysql` | `"mysql"` | `@askdb/mysql` |
 | `sqlite` | `"sqlite"` | `@askdb/sqlite` |
 | `sqlserver` | `"sqlserver"` | `@askdb/sqlserver` |
