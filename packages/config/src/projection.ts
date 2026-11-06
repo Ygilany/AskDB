@@ -1,5 +1,4 @@
 import type { AskDbConfig } from "./types.js";
-import { flattenResolvedAskDbConfig } from "./flatten.js";
 import { resolveAskDbConfig } from "./resolve.js";
 
 export const ASKDB_ENV_PROJECTION = Symbol.for("askdb.envProjection");
@@ -34,13 +33,22 @@ export type AskDbEnvProjection = {
  * Throws an `askdb.config: …` error for a config that can't load.
  */
 export function defineConfig<const T extends AskDbConfig>(config: T): AskDbEnvProjection {
-  const { resolved, deprecations } = resolveAskDbConfig(config);
+  const { flat, deprecations } = resolveAskDbConfig(config);
   return {
     [ASKDB_ENV_PROJECTION]: true,
     config,
-    entries: flattenResolvedAskDbConfig(resolved, config),
+    entries: flat,
     deprecations,
   };
+}
+
+/**
+ * Flattens a nested {@link AskDbConfig} into the canonical env keys of the runtime snapshot
+ * (`AskDbEnvProjection.entries`), for example to build a child process's env. An optional key is
+ * written only when the config sets it. Throws the same `askdb.config: …` errors as `defineConfig`.
+ */
+export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> {
+  return resolveAskDbConfig(config).flat;
 }
 
 export function isAskDbEnvProjection(value: unknown): value is AskDbEnvProjection {

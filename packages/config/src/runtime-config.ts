@@ -1,20 +1,15 @@
 import type { AskDbConfig } from "./types.js";
-import { flattenResolvedAskDbConfig } from "./flatten.js";
-import { resolveAskDbConfig, type ResolvedAskDbConfig } from "./resolve.js";
+import { resolveAskDbConfig, type AskDbConfigResolution } from "./resolve.js";
 import type { AskDbRuntimeConfig } from "./runtime-types.js";
 import { getAskDbRuntimeStore } from "./runtime-store.js";
 
-type Resolution = { resolved: ResolvedAskDbConfig; flat: Readonly<Record<string, string>>; deprecations: string[] };
-
 /** Resolution is pure, so it runs once per installed config object. */
-const resolutionByConfig = new WeakMap<object, Resolution>();
+const resolutionByConfig = new WeakMap<object, AskDbConfigResolution>();
 
-function resolutionFor(structured: Readonly<AskDbConfig>): Resolution {
+function resolutionFor(structured: Readonly<AskDbConfig>): AskDbConfigResolution {
   let resolution = resolutionByConfig.get(structured);
   if (!resolution) {
-    const config = structured as AskDbConfig;
-    const { resolved, deprecations } = resolveAskDbConfig(config);
-    resolution = { resolved, flat: flattenResolvedAskDbConfig(resolved, config), deprecations };
+    resolution = resolveAskDbConfig(structured as AskDbConfig);
     resolutionByConfig.set(structured, resolution);
   }
   return resolution;

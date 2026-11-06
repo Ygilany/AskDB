@@ -1039,6 +1039,17 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
       expect(() => flattenAskDbConfig(input)).toThrow(error);
     });
 
+    it("names a wrong ai.embedding.dimensions without echoing the value it holds", () => {
+      const embedding = { model: "text-embedding-3-small", dimensions: { apiKey: "sk-live-secret" } as unknown as number };
+      let message = "";
+      try {
+        defineConfig(config({ ...OPENAI_AI, embedding }, { embedder: "ai", store: "memory", storeConfig: { memory: {} } }));
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toBe("askdb.config: ai.embedding.dimensions must be a positive integer (got an object).");
+    });
+
     it("names each legacy key once in its deprecation message, and never a value", () => {
       const legacy = {
         ai: {
@@ -1661,12 +1672,15 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     key: string;
     /** The config with this setting at `value`; `undefined` is what an unset `env()` read gives. */
     config: (value: unknown) => AskDbConfig;
-    read: (rt: AskDbRuntimeConfig) => unknown;
-    valid: readonly [authored: unknown, resolved: unknown];
+    /** Omitted for a key with no runtime section, which only the load check covers. */
+    read?: (rt: AskDbRuntimeConfig) => unknown;
+    valid?: readonly [authored: unknown, resolved: unknown];
     /** A value of the wrong type or outside the key's values. Omitted for keys AskDB doesn't check. */
     wrong?: unknown;
     /** The runtime value when the setting is unset. */
-    unset: unknown;
+    unset?: unknown;
+    /** `null` counts as unset, as a JavaScript config writes it. True for string keys. */
+    nullIsUnset?: true;
   };
 
   const withLogging = (field: string) => (value: unknown) => minimalConfig({ logging: { [field]: value } as never });
@@ -1681,14 +1695,14 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     minimalConfig({ httpApi: { listen: { [field]: value } } as never });
 
   const SETTINGS: Setting[] = [
-    { key: "logging.level", config: withLogging("level"), read: (rt) => rt.logging.level, valid: ["debug", "debug"], wrong: "verbose", unset: undefined },
-    { key: "logging.correlationId", config: withLogging("correlationId"), read: (rt) => rt.logging.correlationId, valid: [" run-1 ", "run-1"], wrong: 7, unset: undefined },
-    { key: "logging.logFile", config: withLogging("logFile"), read: (rt) => rt.logging.logFile, valid: ["./askdb.log", "./askdb.log"], wrong: true, unset: undefined },
+    { key: "logging.level", config: withLogging("level"), read: (rt) => rt.logging.level, valid: ["debug", "debug"], wrong: "verbose", unset: undefined , nullIsUnset: true },
+    { key: "logging.correlationId", config: withLogging("correlationId"), read: (rt) => rt.logging.correlationId, valid: [" run-1 ", "run-1"], wrong: 7, unset: undefined , nullIsUnset: true },
+    { key: "logging.logFile", config: withLogging("logFile"), read: (rt) => rt.logging.logFile, valid: ["./askdb.log", "./askdb.log"], wrong: true, unset: undefined , nullIsUnset: true },
     { key: "logging.logStdout", config: withLogging("logStdout"), read: (rt) => rt.logging.logStdout, valid: [true, true], wrong: "true", unset: false },
-    { key: "modes.askdbMode", config: withModes("askdbMode"), read: (rt) => rt.modes.askdbMode, valid: ["bounded_results", "bounded_results"], wrong: "results", unset: undefined },
+    { key: "modes.askdbMode", config: withModes("askdbMode"), read: (rt) => rt.modes.askdbMode, valid: ["bounded_results", "bounded_results"], wrong: "results", unset: undefined , nullIsUnset: true },
     // The string "false" is truthy: before #711 it turned omission on without a word.
     { key: "modes.omitSensitiveFromPrompt", config: withModes("omitSensitiveFromPrompt"), read: (rt) => rt.modes.omitSensitiveFromPrompt, valid: [true, true], wrong: "false", unset: false },
-    { key: "dev.mockSql", config: (value) => minimalConfig({ dev: { mockSql: value } as never }), read: (rt) => rt.dev.mockSql, valid: ["select 1", "select 1"], wrong: 1, unset: undefined },
+    { key: "dev.mockSql", config: (value) => minimalConfig({ dev: { mockSql: value } as never }), read: (rt) => rt.dev.mockSql, valid: ["select 1", "select 1"], wrong: 1, unset: undefined , nullIsUnset: true },
     { key: "dialect", config: (value) => minimalConfig({ dialect: value as never }), read: (rt) => rt.nlToSql.dialect, valid: ["mysql", "mysql"], unset: undefined },
     {
       key: "introspection.outputDir",
@@ -1697,6 +1711,7 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
       valid: ["./schema/", "./schema/"],
       wrong: 1,
       unset: "./askdb/",
+      nullIsUnset: true,
     },
     {
       key: "introspection.schemas",
@@ -1705,12 +1720,13 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
       valid: [[" public ", "sales"], ["public", "sales"]],
       wrong: "public",
       unset: undefined,
+      nullIsUnset: true,
     },
-    { key: "introspection.providerConfig.postgres.databaseUrl", config: withIntrospection("postgres", "databaseUrl"), read: (rt) => rt.introspection.postgresDatabaseUrl, valid: [" postgres://h/db ", "postgres://h/db"], wrong: 1, unset: undefined },
-    { key: "introspection.providerConfig.mysql.databaseUrl", config: withIntrospection("mysql", "databaseUrl"), read: (rt) => rt.introspection.mysqlDatabaseUrl, valid: ["mysql://h/db", "mysql://h/db"], wrong: 1, unset: undefined },
-    { key: "introspection.providerConfig.sqlite.file", config: withIntrospection("sqlite", "file"), read: (rt) => rt.introspection.sqliteFile, valid: ["./app.db", "./app.db"], wrong: 1, unset: undefined },
-    { key: "introspection.providerConfig.sqlserver.databaseUrl", config: withIntrospection("sqlserver", "databaseUrl"), read: (rt) => rt.introspection.sqlserverDatabaseUrl, valid: ["Server=h;Database=app;", "Server=h;Database=app;"], wrong: 1, unset: undefined },
-    { key: "introspection.providerConfig.prisma.schemaPath", config: withIntrospection("prisma", "schemaPath"), read: (rt) => rt.introspection.prismaSchemaPath, valid: ["./prisma/schema.prisma", "./prisma/schema.prisma"], wrong: 1, unset: undefined },
+    { key: "introspection.providerConfig.postgres.databaseUrl", config: withIntrospection("postgres", "databaseUrl"), read: (rt) => rt.introspection.postgresDatabaseUrl, valid: [" postgres://h/db ", "postgres://h/db"], wrong: 1, unset: undefined , nullIsUnset: true },
+    { key: "introspection.providerConfig.mysql.databaseUrl", config: withIntrospection("mysql", "databaseUrl"), read: (rt) => rt.introspection.mysqlDatabaseUrl, valid: ["mysql://h/db", "mysql://h/db"], wrong: 1, unset: undefined , nullIsUnset: true },
+    { key: "introspection.providerConfig.sqlite.file", config: withIntrospection("sqlite", "file"), read: (rt) => rt.introspection.sqliteFile, valid: ["./app.db", "./app.db"], wrong: 1, unset: undefined , nullIsUnset: true },
+    { key: "introspection.providerConfig.sqlserver.databaseUrl", config: withIntrospection("sqlserver", "databaseUrl"), read: (rt) => rt.introspection.sqlserverDatabaseUrl, valid: ["Server=h;Database=app;", "Server=h;Database=app;"], wrong: 1, unset: undefined , nullIsUnset: true },
+    { key: "introspection.providerConfig.prisma.schemaPath", config: withIntrospection("prisma", "schemaPath"), read: (rt) => rt.introspection.prismaSchemaPath, valid: ["./prisma/schema.prisma", "./prisma/schema.prisma"], wrong: 1, unset: undefined , nullIsUnset: true },
     {
       key: "rag.store",
       // Unset is a config without a rag block.
@@ -1722,7 +1738,7 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
       unset: "memory",
     },
     { key: "httpApi.listen.port", config: withListen("port"), read: (rt) => rt.httpApi.listen.port, valid: ["8080", 8080], wrong: "abc", unset: 3000 },
-    { key: "httpApi.listen.host", config: withListen("host"), read: (rt) => rt.httpApi.listen.host, valid: [" 0.0.0.0 ", "0.0.0.0"], wrong: 1, unset: "127.0.0.1" },
+    { key: "httpApi.listen.host", config: withListen("host"), read: (rt) => rt.httpApi.listen.host, valid: [" 0.0.0.0 ", "0.0.0.0"], wrong: 1, unset: "127.0.0.1" , nullIsUnset: true },
     { key: "httpApi.allowSchemaOverride", config: withHttpApi("allowSchemaOverride"), read: (rt) => rt.httpApi.allowSchemaOverride, valid: [true, true], wrong: "false", unset: false },
     { key: "httpApi.requestTimeoutMs", config: withHttpApi("requestTimeoutMs"), read: (rt) => rt.httpApi.requestTimeoutMs, valid: ["1500", 1500], wrong: 0, unset: 60_000 },
     { key: "studio.execute.enabled", config: withExecute("enabled"), read: (rt) => rt.studio.execute.enabled, valid: [true, true], wrong: "true", unset: false },
@@ -1730,9 +1746,14 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     { key: "studio.execute.timeoutMs", config: withExecute("timeoutMs"), read: (rt) => rt.studio.execute.timeoutMs, valid: ["1000", 1000], wrong: 0, unset: 30_000 },
     { key: "studio.execute.maxRows", config: withExecute("maxRows"), read: (rt) => rt.studio.execute.maxRows, valid: [25, 25], wrong: 1.5, unset: 500 },
     // An unknown provider falls back like an unset one; only the type is checked.
-    { key: "studio.execute.provider", config: withExecute("provider"), read: (rt) => rt.studio.execute.provider, valid: ["mysql", "mysql"], wrong: 3, unset: "postgres" },
-    { key: "studio.execute.databaseUrl", config: withExecute("databaseUrl"), read: (rt) => rt.studio.execute.databaseUrl, valid: [" postgres://ro/db ", "postgres://ro/db"], wrong: 1, unset: undefined },
-    { key: "studio.execute.file", config: withExecute("file", { provider: "sqlite" }), read: (rt) => rt.studio.execute.file, valid: ["./ro.db", "./ro.db"], wrong: 1, unset: undefined },
+    { key: "studio.execute.provider", config: withExecute("provider"), read: (rt) => rt.studio.execute.provider, valid: ["mysql", "mysql"], wrong: 3, unset: "postgres" , nullIsUnset: true },
+    { key: "studio.execute.databaseUrl", config: withExecute("databaseUrl"), read: (rt) => rt.studio.execute.databaseUrl, valid: [" postgres://ro/db ", "postgres://ro/db"], wrong: 1, unset: undefined , nullIsUnset: true },
+    { key: "studio.execute.file", config: withExecute("file", { provider: "sqlite" }), read: (rt) => rt.studio.execute.file, valid: ["./ro.db", "./ro.db"], wrong: 1, unset: undefined , nullIsUnset: true },
+    // No runtime section: `createAskDb` and Studio read these from the structured config as written,
+    // so a wrong type must fail at load rather than at the first call.
+    { key: "host.schemaJson", config: (value) => minimalConfig({ host: { schemaJson: value } as never }), wrong: false },
+    { key: "host.schemaPath", config: (value) => minimalConfig({ host: { schemaPath: value } as never }), wrong: {} },
+    { key: "studio.listen.host", config: (value) => minimalConfig({ studio: { listen: { host: value } } as never }), wrong: 42 },
   ];
 
   const runtimeFor = (config: AskDbConfig): AskDbRuntimeConfig => {
@@ -1740,12 +1761,18 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     return getAskDbRuntimeConfig();
   };
 
-  it.each(SETTINGS.map((s) => [s.key, s] as const))("resolves a valid %s", (_key, s) => {
-    expect(s.read(runtimeFor(s.config(s.valid[0])))).toEqual(s.valid[1]);
+  const WITH_RUNTIME = SETTINGS.filter((s) => s.read !== undefined).map((s) => [s.key, s] as const);
+
+  it.each(WITH_RUNTIME)("resolves a valid %s", (_key, s) => {
+    expect(s.read!(runtimeFor(s.config(s.valid![0])))).toEqual(s.valid![1]);
   });
 
-  it.each(SETTINGS.map((s) => [s.key, s] as const))("defaults an unset %s", (_key, s) => {
-    expect(s.read(runtimeFor(s.config(undefined)))).toEqual(s.unset);
+  it.each(WITH_RUNTIME)("defaults an unset %s", (_key, s) => {
+    expect(s.read!(runtimeFor(s.config(undefined)))).toEqual(s.unset);
+  });
+
+  it.each(WITH_RUNTIME.filter(([, s]) => s.nullIsUnset))("treats a null %s as unset", (_key, s) => {
+    expect(s.read!(runtimeFor(s.config(null)))).toEqual(s.unset);
   });
 
   it.each(SETTINGS.filter((s) => "wrong" in s).map((s) => [s.key, s] as const))(
@@ -1762,6 +1789,28 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
       expect(message).not.toMatch(/\b(ASKDB_[A-Z_]+|PORT|HOST)\b/);
     },
   );
+
+  // A function's text, or an object's, could hold a credential, so a load error describes it by type.
+  it.each([
+    ["a function", () => "postgres://admin:hunter2@db/prod", "a function"],
+    ["an object", { url: "postgres://admin:hunter2@db/prod" }, "an object"],
+  ])("names a databaseUrl set to %s without printing it", (_name, databaseUrl, described) => {
+    const config = minimalConfig({
+      introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: databaseUrl as never } } },
+    });
+    expect(() => defineConfig(config)).toThrow(
+      `askdb.config: invalid introspection.providerConfig.postgres.databaseUrl ${described} (expected a string).`,
+    );
+  });
+
+  it.each([undefined, "  "])("refuses a pgvector store whose databaseUrl is %j, naming the config key", (databaseUrl) => {
+    const config = minimalConfig({
+      rag: { embedder: "mock", store: "pgvector", storeConfig: { pgvector: { databaseUrl } } },
+    });
+    expect(() => defineConfig(config)).toThrow(
+      'askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector.databaseUrl` is missing; set it, for example `databaseUrl: env("PGVECTOR_URL")`.',
+    );
+  });
 
   // ADR 0005: every copy of @askdb/config in a process shares the store, and an older copy's
   // flat map can say something its structured config doesn't. This copy reads only `structured`.
