@@ -4,9 +4,21 @@ import { AskDbError } from "@askdb/core";
 import { printCliError } from "./cli-error.js";
 import { runCli } from "./dispatch.js";
 
-/** Resolves once everything written so far has reached stdout and stderr, so exiting can't cut it off. */
+/**
+ * Resolves once everything written so far has reached stdout and stderr, so exiting can't cut it
+ * off. A reader that closed early (`askdb --help | grep -q …`) leaves nothing to drain: its EPIPE
+ * resolves instead of crashing the exit.
+ */
 function drain(): Promise<unknown> {
-  return Promise.all([process.stdout, process.stderr].map((stream) => new Promise((done) => stream.write("", done))));
+  return Promise.all(
+    [process.stdout, process.stderr].map(
+      (stream) =>
+        new Promise((done) => {
+          stream.on("error", done);
+          stream.write("", done);
+        }),
+    ),
+  );
 }
 
 // Each command loads askdb.config itself, only on the path that reads it. An error that escapes a
