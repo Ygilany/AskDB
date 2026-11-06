@@ -104,7 +104,7 @@ interface AskPipelineOptions {
 interface AskPipelineResult {
   sql: string                        // model's bound SQL — never overwritten by rebind
   unboundSql?: string                // driver markers; use with params
-  params?: QueryParamSlot[]          // values for unboundSql in marker order; includes tenant IDs in 'sql-params' (default)
+  params?: QueryParamSlot[]          // values for unboundSql in marker order; includes tenant IDs in either tenantSqlMode
   parameters?: QueryParameterBinding[] // named — for form UIs (includes values)
   preparedQuery?: PreparedQuery      // definitions + template only (no values)
   explain?: unknown

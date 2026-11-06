@@ -227,7 +227,7 @@ export type AskPipelineOptions = {
    */
   tenantScope?: TenantScope;
   /**
-   * SQL output mode for tenant placeholders. Default `"sql-params"`
+   * SQL output mode for tenant placeholders in `sql`. Default `"sql-params"`
    * ({@link DEFAULT_TENANT_SQL_MODE}) replaces them with the dialect's driver
    * markers (`$N` for Postgres/CockroachDB, `?` for MySQL/MariaDB/SQLite, `@pN` for
    * SQL Server): run `sql` with `tenantParams`, or `unboundSql` with `params`, never
@@ -237,7 +237,8 @@ export type AskPipelineOptions = {
    * (`TENANT_SQL_MODE_REQUIRED`) before the model call, as it does on every dialect for
    * a value that is neither `"sql-params"` nor `"sql-only"`.
    * `"sql-only"` inlines the IDs as escaped literals, for a caller that can't bind
-   * parameters (a tool that takes one SQL string); it throws `TenantScopeError`
+   * parameters (a tool that takes one SQL string); `unboundSql` still binds them, in
+   * every mode. It throws `TenantScopeError`
    * (`UNESCAPABLE_TENANT_ID`) for a tenant ID that isn't printable ASCII or that
    * contains a backslash.
    */
@@ -288,14 +289,14 @@ export type AskPipelineResult = {
    */
   sql: string;
   /**
-   * Driver markers for every value (business and, in `"sql-params"` mode, tenant).
+   * Driver markers for every value, business and tenant, whatever `tenantSqlMode` is.
    * Execute with `params` — never with `tenantParams`.
    */
   unboundSql?: string;
   /**
    * Values for `unboundSql`, in driver-marker order (array slots on
-   * Postgres/CockroachDB listBinding). In `"sql-params"` mode this already
-   * includes the tenant values — for `?` dialects interleaved in source order,
+   * Postgres/CockroachDB listBinding). With a tenant scope this already
+   * includes the tenant values, in either `tenantSqlMode` — for `?` dialects interleaved in source order,
    * otherwise after the business values. Do not concatenate `tenantParams`.
    */
   params?: QueryParamSlot[];
@@ -508,7 +509,8 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     const tenantMode = options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
     // `sql` carries business values as inlined literals, so its only markers are
     // tenant markers, numbered from the first slot: `sql` runs with `tenantParams`
-    // alone. `unboundSql` runs with the combined `params` (handled below).
+    // alone. `unboundSql` runs with the combined `params` (handled below). The mode
+    // governs `sql` only: `unboundSql` always binds the tenant IDs, as the rebind does.
     const resolved = resolveTenantSql(result.sql, tenant.policy, tenant.scope, tenantMode, 1, dialectSpec);
     result.sql = resolved.sql;
     if (resolved.bindings.length > 0) result.tenantBindings = resolved.bindings;
@@ -517,41 +519,30 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     }
 
     if (result.preparedQuery && result.unboundSql !== undefined && result.params && result.parameters) {
-      if (tenantMode === "sql-only") {
-        result.unboundSql = resolveTenantSql(
-          result.unboundSql,
-          tenant.policy,
-          tenant.scope,
-          "sql-only",
-          1,
+      const rendered = bindTenantIntoUnboundSql(
+        { unboundSql: result.unboundSql, params: result.params, bindings: result.parameters },
+        {
+          namedSql: result.preparedQuery.namedSql,
+          tenantPolicy: tenant.policy,
+          tenantScope: tenant.scope,
           dialectSpec,
-        ).sql;
+        },
+      );
+      if (rendered) {
+        result.unboundSql = rendered.unboundSql;
+        result.params = rendered.params;
+        result.parameters = rendered.bindings;
       } else {
-        const rendered = bindTenantIntoUnboundSql(
-          { unboundSql: result.unboundSql, params: result.params, bindings: result.parameters },
+        dropParameterizeExtras(result);
+        logger?.debug?.(
           {
-            namedSql: result.preparedQuery.namedSql,
-            tenantPolicy: tenant.policy,
-            tenantScope: tenant.scope,
-            dialectSpec,
+            event: AskDbLogEvent.PipelineParameterized,
+            parameterCount: 0,
+            listParameterCount: 0,
+            reason: "tenant_param_alignment",
           },
+          "parameterize extras dropped",
         );
-        if (rendered) {
-          result.unboundSql = rendered.unboundSql;
-          result.params = rendered.params;
-          result.parameters = rendered.bindings;
-        } else {
-          dropParameterizeExtras(result);
-          logger?.debug?.(
-            {
-              event: AskDbLogEvent.PipelineParameterized,
-              parameterCount: 0,
-              listParameterCount: 0,
-              reason: "tenant_param_alignment",
-            },
-            "parameterize extras dropped",
-          );
-        }
       }
     }
   }
