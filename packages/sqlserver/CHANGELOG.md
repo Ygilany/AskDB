@@ -1,5 +1,19 @@
 # @askdb/sqlserver
 
+## 0.1.0-beta.25
+
+### Patch Changes
+
+- 82c2f94: Every built-in connector adapter now passes `ConnectorConfig.schemaId` to its connector (#775). Only the Prisma adapter did, so `createConnector({ provider: "postgres" | "mysql" | "sqlite" | "sqlserver", schemaId })` returned a `SqlSchema` with `schemaId: "introspected"`. It now returns the ID you set, and `"introspected"` only when you set none. To carry it, `LiveCatalogInput`, `PostgresIntrospectionInput`, `MysqlIntrospectionInput`, `SqliteIntrospectionInput` and `SqlServerIntrospectionInput` gain an optional `schemaId`. `schema.json` is unchanged: it takes its ID from `RenderOptions.schemaId`.
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [82c2f94]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [4437394]
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/introspect@0.3.0-beta.23
+
 ## 0.1.0-beta.24
 
 ### Patch Changes
