@@ -12,4 +12,4 @@
 - **`setAskDbRuntimeForTests(config)` takes an `AskDbConfig`** and installs it as `bootstrapAskDbEnv()` installs a loaded file. It used to take `{ structured, flat }`.
 - **A store that another copy of `@askdb/config` installed resolves from its `structured` config,** as ADR 0005 asks; its `flat` map is never read. `getAskDbRuntimeConfig().flat` and `ai.aiEnv` are this copy's projection of that config.
 
-`flattenAskDbConfig` writes the same keys as before. The configuration reference and the 1.0.0-rc.1 upgrade notes cover the type checks, the narrowed types and the test helper.
+`flattenAskDbConfig` writes the same keys as before. The configuration reference and the beta.48 upgrade notes cover the type checks, the narrowed types and the test helper.

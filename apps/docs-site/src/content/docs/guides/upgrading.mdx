@@ -45,15 +45,9 @@ A range written for a `0.x` version doesn't match `1.0.0-rc.1`. With `"@askdb/ai
 
 [Versioning and stability](/reference/versioning/) lists both sets, the experimental surfaces and the dist-tags.
 
-### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
+## 1.0.0-beta.48
 
-On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
-
-- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
-- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
-- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
-
-See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
+Released with `@askdb/client` 1.0.0-beta.11 and `@askdb/config` 1.0.0-beta.17. Other packages that got a new version list what changed in their CHANGELOG.
 
 ### Fix config values of the wrong type, which now fail to load
 
@@ -127,6 +121,16 @@ With a tenant policy and any scope but `global`, the tenant check now refuses a 
 - **A pivot the model writes with `crosstab`** is refused under a tenant policy, because the check can't read the query `crosstab` runs. Re-ask the question: a pivot written with `CASE` or `FILTER` passes, with the tenant predicate in its `WHERE` clause.
 - **A column, alias or parameter named like one of these functions** (`crosstab`, `set_config`) is refused too, because the check matches a listed name anywhere in the SQL. If your schema has such a column, every query that names it is refused under a tenant policy: rename the column, or expose it through a view under another name.
 - **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `UNCHECKABLE_FUNCTION`.
+
+### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
+
+On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
+
+- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
+- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
+- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
+
+See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
 
 ### Other changes you may notice in beta.47
 
