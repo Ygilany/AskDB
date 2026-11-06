@@ -1860,6 +1860,14 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
     expect(rt.httpApi.requestTimeoutMs).toBe(1500);
   });
 
+  it("reads the port from the flat PORT key when the structured config leaves it out, and rejects a bad one", () => {
+    const structured = minimalConfig({});
+    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), PORT: "9000" } });
+    expect(getAskDbRuntimeConfig().httpApi.listen.port).toBe(9000);
+    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), PORT: "abc" } });
+    expect(() => getAskDbRuntimeConfig()).toThrow(/askdb\.config: invalid PORT "abc"/);
+  });
+
   it("rejects an out-of-range ASKDB_HTTP_REQUEST_TIMEOUT_MS in the flat fallback", () => {
     const structured = minimalConfig({});
     setAskDbRuntimeForTests({

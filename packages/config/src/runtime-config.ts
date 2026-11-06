@@ -93,7 +93,7 @@ export type AskDbRuntimeIntrospectionConfig = {
   provider: AskDbIntrospectionProvider;
   /**
    * Resolved Postgres connection URL when `provider === "postgres"`:
-   * `providerConfig.postgres.databaseUrl` → `ASKDB_INTROSPECT_POSTGRES_URL` env.
+   * `providerConfig.postgres.databaseUrl`, or its flat key `ASKDB_INTROSPECT_POSTGRES_URL`. Never read from `process.env`.
    * `undefined` for non-Postgres providers.
    */
   postgresDatabaseUrl: string | undefined;
@@ -101,7 +101,7 @@ export type AskDbRuntimeIntrospectionConfig = {
   prismaSchemaPath: string | undefined;
   /**
    * Resolved MySQL connection URL when `provider === "mysql"`:
-   * `providerConfig.mysql.databaseUrl` → `ASKDB_INTROSPECT_MYSQL_URL` env.
+   * `providerConfig.mysql.databaseUrl`, or its flat key `ASKDB_INTROSPECT_MYSQL_URL`. Never read from `process.env`.
    * `undefined` for non-MySQL providers.
    */
   mysqlDatabaseUrl: string | undefined;
@@ -113,13 +113,13 @@ export type AskDbRuntimeIntrospectionConfig = {
   schemas: string[] | undefined;
   /**
    * Resolved SQLite file path when `provider === "sqlite"`:
-   * `providerConfig.sqlite.file` → `ASKDB_INTROSPECT_SQLITE_FILE` env.
+   * `providerConfig.sqlite.file`, or its flat key `ASKDB_INTROSPECT_SQLITE_FILE`. Never read from `process.env`.
    * `undefined` for non-SQLite providers.
    */
   sqliteFile: string | undefined;
   /**
    * Resolved SQL Server connection URL when `provider === "sqlserver"`:
-   * `providerConfig.sqlserver.databaseUrl` → `ASKDB_INTROSPECT_SQLSERVER_URL` env.
+   * `providerConfig.sqlserver.databaseUrl`, or its flat key `ASKDB_INTROSPECT_SQLSERVER_URL`. Never read from `process.env`.
    * `undefined` for non-SQL Server providers.
    */
   sqlserverDatabaseUrl: string | undefined;

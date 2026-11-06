@@ -349,7 +349,7 @@ Each execute provider requires its optional peer driver package (`pg`, `mysql2`,
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `listen.port` | `number` | `3000` | The server's port: an integer from 0 to 65535, where `0` asks the OS for a free port. `NaN` counts as unset. Another value fails to load. |
+| `listen.port` | `number` | `3000` | The server's port: an integer from 0 to 65535. `NaN` counts as unset. Another value fails to load. |
 | `listen.host` | `string` | `"127.0.0.1"` | The bind address. Bind to `0.0.0.0` only behind a gateway. |
 | `allowSchemaOverride` | `boolean` | `false` | Accept a per-request `schemaJson` on `POST /ask`. An override lets any caller send arbitrary schema and prompt content through the server's model key, so enable it only for tests or trusted multi-schema deployments. |
 | `requestTimeoutMs` | `number` | `60000` | Aborts the model call of a `POST /ask` request after this many milliseconds: a positive integer, at most `2147483647`. Another value fails to load. |

@@ -532,9 +532,9 @@ export type AskDbConfig = {
   httpApi?: {
     listen?: {
       /**
-       * An integer from 0 to 65535 (`0` asks the OS for a free port). When unset or `NaN`,
-       * servers default to `3000`. Another value fails when the config loads. For platforms
-       * that inject `PORT`, use `Number(env("PORT") ?? 3000)`: `env()` returns a string.
+       * An integer from 0 to 65535. When unset or `NaN`, servers default to `3000`. Another
+       * value fails when the config loads. For platforms that inject `PORT`, use
+       * `Number(env("PORT") ?? 3000)`: `env()` returns a string.
        */
       port?: number;
       host?: string;
