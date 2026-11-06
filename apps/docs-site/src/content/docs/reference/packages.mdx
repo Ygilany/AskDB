@@ -52,7 +52,7 @@ Config-aware facade over `@askdb/core`. `createAskDb()` resolves the schema, mod
 
 | Symbol | Purpose |
 | --- | --- |
-| `createAskDb(options)` | Build a client bound to a config. Registers every built-in AI provider by default; `providers: ["openai"]` restricts the set, adapter objects add custom providers, or pass a prebuilt `registry`. Returns `{ ask, reload }`. Options include `unknownDialect: "throw" \| "fallback-postgres"` for artifacts recorded by an unrecognized provider. |
+| `createAskDb(options)` | Build a client bound to a config. Registers every built-in AI provider by default; `providers: ["openai"]` restricts the set, adapter objects add custom providers, or pass a prebuilt `registry`. Returns an [`AskDbClient`](/reference/client-api/#askdbclient): `ask`, `bind` and `reload`. Options include `unknownDialect: "throw" \| "fallback-postgres"` for artifacts recorded by an unrecognized provider. |
 | `client.ask(question, overrides?)` | Resolve schema/model/dialect and run the pipeline. Overrides: `schema`, `model`, `dialect`, plus all `ask()` options. |
 | `AskDbClient` / `CreateAskDbOptions` / `AskOverrides` | Types for the client, constructor options, and per-call overrides. |
 | `SchemaLoadError` / `SchemaNotConfiguredError` / `ModelNotConfiguredError` / `DialectNotSupportedError` | Typed errors for the resolution steps — catch these to map failures to your own error handling. |
