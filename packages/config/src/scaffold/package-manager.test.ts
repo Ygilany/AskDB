@@ -96,6 +96,10 @@ describe("detectPackageManager", () => {
     expect(detectPackageManager(root, pnpmDlx)).toBe("npm");
   });
 
+  it.each(["null", "{ not json"])("ignores a package.json holding %s", (contents) => {
+    expect(detectPackageManager(project({ "package.json": contents }), {})).toBe("npm");
+  });
+
   it("reads the field from a parent package.json when the nearest one has none", () => {
     const root = project({
       "package.json": JSON.stringify({ name: "repo", packageManager: "pnpm@11.28.10" }),

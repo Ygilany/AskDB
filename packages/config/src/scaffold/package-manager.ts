@@ -3,8 +3,8 @@
  * Studio's setup wizard and execute-driver install. One copy, so the two front
  * ends detect, format and spawn the same way.
  *
- * @experimental Tooling for `askdb init` and AskDB Studio, outside the 1.0 stability
- * promise: these exports may change in any release.
+ * @experimental Tooling for `askdb init` and AskDB Studio: a minor release of
+ * `@askdb/config` may change these exports (ADR 0030).
  *
  * Only allowlisted package names ever reach these helpers, never user- or
  * browser-supplied strings, but {@link packageManagerSpawnSpec} re-checks every
@@ -27,14 +27,7 @@ const MAX_WALK_UP = 40;
  * @experimental See the module note.
  */
 export function findNearestPackageJsonDir(startDir: string): string | undefined {
-  let dir = resolve(startDir);
-  for (let i = 0; i < MAX_WALK_UP; i += 1) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-  return undefined;
+  return ancestors(startDir).find((dir) => existsSync(join(dir, "package.json")));
 }
 
 /**
@@ -112,12 +105,13 @@ function ancestors(dir: string): string[] {
 
 /** The manager `dir/package.json` declares in `packageManager` or `devEngines.packageManager`. */
 function declaredPackageManager(dir: string): PackageManager | null {
-  let pkg: { packageManager?: unknown; devEngines?: { packageManager?: unknown } };
+  let pkg: { packageManager?: unknown; devEngines?: { packageManager?: unknown } | null };
   try {
     pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as typeof pkg;
   } catch {
     return null;
   }
+  if (pkg === null || typeof pkg !== "object") return null;
   if (typeof pkg.packageManager === "string") {
     const pm = knownPackageManager(pkg.packageManager.split("@")[0]);
     if (pm) return pm;

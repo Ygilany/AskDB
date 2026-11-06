@@ -40,8 +40,8 @@ const AZURE_RESOURCE_NAME_ENV = "AZURE_RESOURCE_NAME";
  * Every value is emitted as a JSON string literal: the generated file is
  * executed when the config loads, so a raw quote in a name must not inject code.
  *
- * @experimental Tooling for `askdb init` and AskDB Studio, outside the 1.0 stability
- * promise: it may change in any release.
+ * @experimental Tooling for `askdb init` and AskDB Studio: a minor release of
+ * `@askdb/config` may change it (ADR 0030).
  */
 export function renderAskDbAiConfigScaffold(input: AskDbAiConfigScaffoldInput): AskDbAiConfigScaffold {
   const { provider, keyEnv, modelEnv } = input;

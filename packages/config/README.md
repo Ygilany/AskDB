@@ -100,7 +100,7 @@ const embeddingModel = config.ai.embedding
 
 ## `@askdb/config/scaffold`
 
-Tooling for `askdb init` and AskDB Studio's setup wizard, outside the 1.0 stability promise: any release may change it. Your own `askdb.config.ts` never needs it.
+Tooling for `askdb init` and AskDB Studio's setup wizard. It is experimental, like Studio: a minor release of `@askdb/config` may change it (ADR 0030). Your own `askdb.config.ts` never needs it.
 
 - `renderAskDbAiConfigScaffold(input)` — the `ai` block of a new `askdb.config.ts`, plus the env vars it reads.
 - `detectPackageManager(dir, env?)` — the package manager for `dir`: a lockfile in `dir` or a parent, then the nearest `package.json`'s `packageManager` or `devEngines.packageManager`, then `npm_config_user_agent`, then npm.

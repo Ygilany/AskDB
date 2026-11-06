@@ -10,7 +10,12 @@ import {
   bootstrapAskDbEnv,
   getAskDbRuntimeConfig,
 } from "@askdb/config";
-import { lockfilePackageManager, packageManagerAddArgs, packageManagerSpawnSpec } from "@askdb/config/scaffold";
+import {
+  findNearestPackageJsonDir,
+  lockfilePackageManager,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+} from "@askdb/config/scaffold";
 import {
   createAiRegistry,
   resolveReasoningEffort,
@@ -1739,7 +1744,7 @@ async function getExecuteStatus(schemaDir: string): Promise<ExecuteStatusRespons
   const exec = rt.studio.execute;
   const { provider, databaseUrl, file } = exec;
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const projectRoot = findNearestPackageJsonDir(schemaDir) ?? schemaDir;
   const installed = isDriverInstalled(def.packageName, projectRoot);
   const connectionKind: "url" | "file" = provider === "sqlite" ? "file" : "url";
   const configured = connectionKind === "file" ? Boolean(file) : Boolean(databaseUrl);
@@ -1833,7 +1838,7 @@ type ExecuteDriverInstaller =
  * project hasn't chosen.
  */
 function detectExecuteDriverInstaller(cwd: string, packageName: string): ExecuteDriverInstaller {
-  const projectRoot = findProjectRoot(cwd);
+  const projectRoot = findNearestPackageJsonDir(cwd);
   if (!projectRoot) {
     return { manualReason: `Could not locate a package.json above ${cwd}. Run the install manually.` };
   }
@@ -1847,17 +1852,6 @@ function detectExecuteDriverInstaller(cwd: string, packageName: string): Execute
     projectRoot,
     spawnSpec: packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, [packageName])),
   };
-}
-
-function findProjectRoot(startDir: string): string | null {
-  let current = resolve(startDir);
-  for (let i = 0; i < 20; i++) {
-    if (existsSync(join(current, "package.json"))) return current;
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
-  return null;
 }
 
 function spawnCommand(
@@ -1916,7 +1910,7 @@ async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteRe
     schemaDir,
     executeDialectFor(exec.provider, rt.nlToSql.dialect),
   );
-  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const projectRoot = findNearestPackageJsonDir(schemaDir) ?? schemaDir;
   const def = EXECUTE_DRIVER_REGISTRY[exec.provider];
   const result = await def.execute({
     connectionString: exec.databaseUrl,
