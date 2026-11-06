@@ -295,7 +295,7 @@ See [the CLI reference](/reference/cli/).
 ```d2 src="../../../assets/diagrams/d2/package-dependencies.d2"
 ```
 
-<figcaption>Each arrow points to a package's dependency or peer; dashed arrows are optional peers. An arrow is left out when the package already reaches that dependency through another one: `askdb` gets the engine packages through Studio. Every box is an `@askdb/*` package except `askdb` itself. Not drawn: `ai`, the `@ai-sdk/*` providers and the database drivers.</figcaption>
+<figcaption>Each arrow points to a package's dependency or peer. An arrow is left out when the package already reaches that dependency through another one: `askdb` gets the engine packages through Studio. Dashed arrows are optional peers, drawn for each package that declares one. Boxes name `@askdb/*` packages without the scope (`ai` is `@askdb/ai`), except `askdb` itself. Not drawn: the AI SDK package `ai`, the `@ai-sdk/*` providers and the database drivers.</figcaption>
 </figure>
 
 | Package | Depends on |
