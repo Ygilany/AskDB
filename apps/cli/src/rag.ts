@@ -29,7 +29,7 @@ import { createCliLogger, loggingFlags, type CliLoggingFlags } from "./logger.js
 const ai = createAiRegistry();
 
 const CLI_EMBEDDERS = ["mock", "ai"] as const;
-/** Aliases of `ai` that mirror the deprecated `rag.embedder` values; removed at 1.0. */
+/** Aliases of `ai` named after the `rag.embedder` values `askdb.config` no longer accepts; removed at 1.0. */
 const DEPRECATED_EMBEDDERS = {
   openai: 'askdb rag: --embedder "openai" is deprecated; use --embedder ai with ai.embedding: { provider: "openai", model }.',
   "ai-sdk": 'askdb rag: --embedder "ai-sdk" is deprecated; use --embedder ai.',
@@ -304,9 +304,8 @@ type EmbedderConfig =
     };
 
 /**
- * `rag.embedder`, normalized: the runtime resolves `ai.embedding` exactly when `rag.embedder` is
- * `"ai"` or one of its deprecated aliases (`"openai"`, `"ai-sdk"`), and leaves it undefined for
- * `"mock"`. The runtime view exposes no normalized `rag.embedder` itself.
+ * `rag.embedder`: the runtime resolves `ai.embedding` exactly when `rag.embedder` is `"ai"`, and
+ * leaves it undefined for `"mock"`.
  */
 function configuredEmbedder(runtimeConfig: AskDbRuntimeConfig): "ai" | "mock" {
   return runtimeConfig.ai.embedding ? "ai" : "mock";
@@ -342,19 +341,16 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
       `--embedder openai embeds with OpenAI, but ai.embedding.provider is "${embedding.provider}"; use --embedder ai.`,
     );
   }
-  // The registry reads ASKDB_AI_EMBEDDING_MODEL first, so --embedder-model overrides ai.embedding.model.
-  const env = opts.embedderModel
-    ? { ...embedding.env, ASKDB_AI_EMBEDDING_MODEL: opts.embedderModel }
-    : embedding.env;
-  const aiConfig = ai.resolveEmbeddingConfig(env);
+  // --embedder-model overrides ai.embedding.model.
+  const model = opts.embedderModel ?? embedding.model;
+  const aiConfig = ai.resolveEmbeddingConfigFromSection({ ...embedding, model });
   if (!aiConfig) {
     throw new Error(
       `askdb rag: embeddings need an API key on the ai.embedding connection ` +
-        `("${embedding.connection}" in ai.providerConfig.${embedding.provider}). ` +
+        `("${embedding.connection.name}" in ai.providerConfig.${embedding.provider}). ` +
         "Set it in askdb.config.*, or pass --embedder mock.",
     );
   }
-  const model = opts.embedderModel ?? embedding.model;
   const dimensions = opts.dimensions ?? embedding.dimensions;
   return {
     kind: "ai",

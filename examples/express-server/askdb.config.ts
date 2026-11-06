@@ -4,11 +4,9 @@ export default defineConfig({
   ai: {
     provider: "openai",
     providerConfig: {
-      openai: {
-        apiKey: env("OPENAI_API_KEY"),
-        model: env("OPENAI_MODEL"), // optional — defaults to gpt-4o-mini
-      },
+      openai: { apiKey: env("OPENAI_API_KEY") },
     },
+    language: { model: env("OPENAI_MODEL") }, // optional — defaults to gpt-4o-mini
   },
   introspection: {
     provider: "postgres",

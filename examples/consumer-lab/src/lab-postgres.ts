@@ -1,9 +1,10 @@
 /**
  * The lab's own Postgres (`compose.yml`): lab-only, so the lab may change it, unlike the shared
  * fixture's databases, which it only reads. It holds the fixture's Postgres schema and rows and
- * adds what the fixture doesn't have: the `lab_tenant` role and row-level security on the tenant
- * tables (`src/lab-postgres.sql`), for the `tenant-rls` scenario (`docs/specs/consumer-lab.md`,
- * "Two things are lab-only and live in the lab, not the fixture").
+ * adds what the fixture doesn't have: the `lab_tenant` role, row-level security on the tenant
+ * tables, and `set_config()` and PL/pgSQL revoked from `PUBLIC` (`src/lab-postgres.sql`), for the
+ * `tenant-rls` scenarios (`docs/specs/consumer-lab.md`, "Two things are lab-only and live in the
+ * lab, not the fixture").
  *
  * The schema and rows come from the fixture's own seeder, run through its documented interface
  * (`tsx src/seed.ts postgres`, pointed at this server with `ASKDB_FIXTURE_POSTGRES_PORT`, as for
@@ -54,17 +55,23 @@ export function labPostgresUrl(role: LabPostgresRole): string {
 }
 
 /**
- * Run one statement on the lab's Postgres the way a host using row-level security does: in a
- * read-only transaction with a statement timeout, and for `tenant`, with the request's agency
- * set for that transaction only (`set_config(…, true)`). Returns the rows as arrays.
+ * Run one statement on the lab's Postgres the way the docs' recipe has a host run it
+ * (`guides/enforce-tenancy-in-the-database.mdx`, "Run each query in its own transaction"): in a
+ * read-only transaction with a statement timeout, and for `tenant`, with the request's agency set
+ * for that transaction only by `SET LOCAL`, which needs no privilege on `set_config()`. The SQL
+ * runs through the extended protocol, so Postgres accepts exactly one statement and a reply can't
+ * stack its own `SET LOCAL`. Returns the rows as arrays.
  */
 export async function labPostgresRows(role: LabPostgresRole, sql: string, opts: { agencyId?: number } = {}): Promise<unknown[][]> {
   const client = await connect(role);
   try {
     await client.query("BEGIN READ ONLY");
     await client.query("SET LOCAL statement_timeout = 5000");
-    if (opts.agencyId !== undefined) await client.query("SELECT set_config('app.agency_id', $1, true)", [String(opts.agencyId)]);
-    const result = await client.query({ text: sql.trim().replace(/;\s*$/, ""), rowMode: "array" });
+    // SET takes no bind parameters, so the value is quoted.
+    if (opts.agencyId !== undefined) await client.query(`SET LOCAL app.agency_id = ${client.escapeLiteral(String(opts.agencyId))}`);
+    // `@types/pg` doesn't list `queryMode`, which node-postgres reads from 8.12.
+    const query = { text: sql.trim().replace(/;\s*$/, ""), rowMode: "array", queryMode: "extended" } as pg.QueryArrayConfig;
+    const result = await client.query(query);
     return result.rows as unknown[][];
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);

@@ -56,7 +56,7 @@ See the **[@askdb/client API reference](/reference/client-api/)** for the full o
 
 ### `@askdb/ai`
 
-AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsoft Foundry, Google Gemini, Anthropic, and the Vercel AI Gateway. `@askdb/client` depends on it and builds the registry for you. Import it yourself to build a model object outside the client (`createAiRegistry().createLanguageModelFromEnv(...)`), to restrict or extend the provider set, or to share one registry across several clients.
+AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsoft Foundry, Google Gemini, Anthropic, and the Vercel AI Gateway. `@askdb/client` depends on it and builds the registry for you. Import it yourself to build a model object outside the client (`createAiRegistry().createLanguageModelFromSection(rt.ai.language)`), to restrict or extend the provider set, or to share one registry across several clients.
 
 <InstallTabs pkgs="@askdb/ai ai" />
 
@@ -67,11 +67,42 @@ AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsof
 | `createAiRegistry(providers?)` | Build a registry and create language or embedding models from it. No argument: every built-in provider. Or pass built-in names (`["openai"]`) and/or `AiProviderAdapter` objects. |
 | `BUILTIN_AI_PROVIDERS` | Table of built-in providers: names, aliases, env vars, default models, and the SDK package each needs. |
 | `openaiProvider`, `azureProvider`, `googleProvider`, `anthropicProvider`, `gatewayProvider` | The built-in adapters, if you want to pass them as objects. |
-| `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)` | Resolve provider config from env without constructing a model. These are methods on the registry returned by `createAiRegistry`, not standalone exports. |
+| `registry.resolveAiConfigFromSection(section)` / `registry.resolveEmbeddingConfigFromSection(section)` | Resolve a provider's `AiConfig` from a typed config section (`getAskDbRuntimeConfig().ai.language`, `.ai.embedding`) without building a model. `undefined` when the connection has no API key. These and the methods below are on the registry `createAiRegistry` returns, not standalone exports. |
+| `registry.createLanguageModelFromSection(section)` / `registry.createEmbeddingModelFromSection(section, options?)` | Resolve a section and build its model. The embedding model asks for the section's `dimensions` unless `options.dimensions` is set. |
+| `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)`, `registry.createLanguageModelFromEnv(env)` / `registry.createEmbeddingModelFromEnv(env)` | The same from an env map, for an app without a config file. See [Env map precedence](#env-map-precedence). |
+| `resolveReasoningEffortFromSection(reasoning, purpose, override?)` | The reasoning effort for `"nlToSql"` or `"enrichment"` calls from `ai.language.reasoning`: `override`, then the purpose's own effort, then `effort`. `resolveReasoningEffort(env, purpose, override?)` reads the same from an env map. |
+| `AiLanguageSection`, `AiEmbeddingSection`, `AiConnectionSection`, `AiReasoningSection` | The section types. `@askdb/config`'s `ai.language` and `ai.embedding` fit them as they are; `@askdb/ai` doesn't depend on `@askdb/config`. |
+| `AiProviderAdapter.resolveConfigFromSection(section, { usage })`, `AiModelSection` | The optional adapter method that maps a section (`AiModelSection`: `provider`, `connection`, `model`, `modelFamily`) to the adapter's `AiConfig`, as `resolveConfig` maps an env map. Every built-in provider implements it. A custom adapter without it gets the section through the universal `ASKDB_AI_*` keys, passed to its `resolveConfig`. |
 | `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
 | `withEmbeddingProviderOptions` | Wraps an embedding model so `dimensions`/`user` reach the provider; an optional mapper renames them to the provider's own settings (e.g. Gemini's `outputDimensionality`). Shared across adapters. |
 | `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
-| `AiBaseUrlCredentialsError` | Thrown when a model base URL holds a username or password: by a provider's `resolveConfig` (its `setting` names the env variable, such as `OPENAI_BASE_URL`) and by a built-in adapter building a model from an `AiConfig` (`setting: "baseURL"`). The message never repeats the URL. |
+| `AiBaseUrlCredentialsError` | Thrown when a model base URL holds a username or password: by the section methods (`setting: "connection.baseUrl"`), by a provider's `resolveConfig` (its `setting` names the env variable, such as `OPENAI_BASE_URL`) and by a built-in adapter building a model from an `AiConfig` (`setting: "baseURL"`). The message never repeats the URL. |
+
+#### Env map precedence
+
+An app without a config file passes an env map to the registry's `*FromEnv` methods. For the selected provider, each setting comes from the first variable in the map that holds a value:
+
+| Setting | Variables, in order |
+| --- | --- |
+| Provider | `ASKDB_AI_PROVIDER`, else `openai`. A built-in name or alias, or a registered adapter's. |
+| API key | `ASKDB_AI_API_KEY`, the provider's key variables, the provider's secondary key variables, `ASKDB_AI_API_KEY_SECONDARY`. Without one, AI is off: the methods return `undefined`. |
+| Language model | `ASKDB_AI_MODEL`, `ASKDB_MODEL`, the provider's model variables, the `modelDefault` option, the provider's default model. |
+| Embedding model | The variable the `modelEnvVar` option names, `ASKDB_AI_EMBEDDING_MODEL`, `ASKDB_EMBEDDING_MODEL`, the provider's embedding model variables, the `modelDefault` option. On `openai`, `azure` and `gateway`, a default model after that, with a `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`), until 1.0. |
+| Base URL | `ASKDB_AI_BASE_URL`, the provider's base URL variables. One with a username or password throws `AiBaseUrlCredentialsError`, naming the variable. |
+| Azure and Foundry | Resource name: `ASKDB_AI_AZURE_RESOURCE_NAME`, `AZURE_RESOURCE_NAME`. API version: `ASKDB_AI_AZURE_API_VERSION`, `AZURE_OPENAI_API_VERSION`, `AZURE_API_VERSION`. Model family: `ASKDB_AI_AZURE_MODEL_FAMILY`. |
+| Reasoning effort | `resolveReasoningEffort(env, purpose)`: `ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` or `ASKDB_AI_REASONING_EFFORT_ENRICHMENT`, then `ASKDB_AI_REASONING_EFFORT`. |
+
+Each built-in provider's own variables (`BUILTIN_AI_PROVIDERS[].env` lists them):
+
+| Provider | Key | Secondary key | Model | Embedding model | Base URL |
+| --- | --- | --- | --- | --- | --- |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_API_KEY_SECONDARY` | `OPENAI_MODEL` | `OPENAI_EMBEDDING_MODEL` | `OPENAI_BASE_URL` |
+| `azure`, `azure-openai`, `foundry` | `AZURE_OPENAI_API_KEY`, `AZURE_API_KEY` | `AZURE_OPENAI_API_KEY_SECONDARY`, `AZURE_API_KEY_SECONDARY` | `AZURE_OPENAI_DEPLOYMENT`, `AZURE_DEPLOYMENT_NAME` | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `AZURE_EMBEDDING_DEPLOYMENT_NAME` | `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_ENDPOINT`, `AZURE_BASE_URL` |
+| `anthropic` | `ANTHROPIC_API_KEY` | none | `ANTHROPIC_MODEL` | none (no embeddings API) | `ANTHROPIC_BASE_URL` |
+| `google` | `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_AI_API_KEY` | none | `GOOGLE_AI_MODEL` | `GOOGLE_AI_EMBEDDING_MODEL` | `GOOGLE_AI_BASE_URL` |
+| `gateway` | `AI_GATEWAY_API_KEY` | none | none | none | none |
+
+With an `askdb.config.*` file, none of these variables matter on their own: the config reads what it needs with `env("…")`, and the section methods take its typed settings.
 
 ### Provider SDKs
 
@@ -123,12 +154,12 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | --- | --- |
 | `defineConfig(config)` | Type-safe config builder. |
 | `bootstrapAskDbEnv(options)` | Load `.env` + `askdb.config.*` and install the runtime snapshot. |
-| `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). |
+| `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). Its `ai.language` and `ai.embedding` sections go to `@askdb/ai`'s `*FromSection` methods as they are; each section's `connection` is an `AskDbRuntimeAiConnection` (`name`, `apiKey`, `apiKeySecondary`, `baseUrl`, `resourceName`, `apiVersion`). |
 | `isAskDbRuntimeInitialized()` | `true` once the runtime snapshot is installed, so code can bootstrap only when its host hasn't. |
 | `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
 | `env`, `requiredEnv` | Typed env-var accessors. |
 | `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
-| `DEFAULT_OPENAI_LANGUAGE_MODEL`, `DEFAULT_ANTHROPIC_LANGUAGE_MODEL`, `DEFAULT_GOOGLE_LANGUAGE_MODEL`, `DEFAULT_GATEWAY_LANGUAGE_MODEL` | Each provider's default `ai.language.model`. The `DEFAULT_*_CHAT_MODEL` names are deprecated aliases, removed at 1.0. |
+| `DEFAULT_OPENAI_LANGUAGE_MODEL`, `DEFAULT_ANTHROPIC_LANGUAGE_MODEL`, `DEFAULT_GOOGLE_LANGUAGE_MODEL`, `DEFAULT_GATEWAY_LANGUAGE_MODEL`, `DEFAULT_AZURE_OPENAI_DEPLOYMENT` | Each provider's default `ai.language.model`. |
 
 For tools that set up a project, the `@askdb/config/scaffold` entry point exports `planAskDbScaffold(answers, versions)`, `renderAskDbAiConfigScaffold(input)` and the package-manager helpers `askdb init` and Studio share: `detectPackageManager`, `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` and `packageManagerSpawnSpec`. `planAskDbScaffold` turns a new project's answers into its `askdb.config.ts` source, its `.env.example`, the env vars the config reads and the packages to install, and throws `AskDbScaffoldInputError` (with the answer's `field`) for a bad answer; its types are `AskDbScaffoldAnswers`, `AskDbScaffoldPlan` and `ScaffoldValue`. `isAskDbScaffoldEnvName(name)` is its env var name rule: POSIX, uppercase (`^[A-Z_][A-Z0-9_]*$`). `renderAskDbAiConfigScaffold` renders the config's `ai` block (the provider connection in `ai.providerConfig`, plus `ai.language.model` read from an env var when one is given) and lists the env vars that block reads. The entry point is tooling for `askdb init` and Studio's setup wizard. It is experimental, like Studio: a minor release of `@askdb/config` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). Your own `askdb.config.ts` never needs it.
 

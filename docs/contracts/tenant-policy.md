@@ -376,7 +376,7 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
 | Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
 | A tenant ID that isn't printable ASCII (U+0020 to U+007E) or that contains a backslash, inlined as a literal: `"sql-only"` mode on any dialect (a custom `AskDialect`, with no dialect, included), in `ask()`, `resolveTenantSql()` and `bindPreparedQuery()` | Rejected (`UNESCAPABLE_TENANT_ID`). A printable-ASCII literal with no backslash and its quotes doubled reads the same under every server string setting and ASCII-compatible connection charset; any other doesn't, whatever the dialect's `backslashEscapes` says ([ADR 0024](../adrs/0024-tenant-ids-leave-the-sql-text.md)). `"sql-params"` mode passes it as a driver parameter. |
-| `ask()` with a tenant policy, no `tenantSqlMode`, and a custom `AskDialect` or a `DialectSpec` whose `id` isn't built in | Rejected (`TENANT_SQL_MODE_REQUIRED`) before the model call. AskDB can't know a custom dialect's driver markers, and `$N` is a money constant on SQL Server. |
+| `ask()` with a tenant policy, no `tenantSqlMode`, and a custom `AskDialect` | Rejected (`TENANT_SQL_MODE_REQUIRED`) before the model call. AskDB can't know a custom dialect's driver markers, and `$N` is a money constant on SQL Server. |
 | A `tenantSqlMode` other than `"sql-params"` or `"sql-only"`: `ask()` with a tenant policy, on any dialect, and `resolveTenantSql()` | Rejected (`TENANT_SQL_MODE_REQUIRED`), in `ask()` before the model call. It's never read as either mode. |
 | Advisory `context` with unknown keys in `attributes` | Accepted (freeform). |
 
@@ -406,7 +406,7 @@ The name is the label lowercased, with every run of characters other than ASCII 
 | **SQL+params** (default for built-in dialects) | `sql` + `tenantParams` | Named placeholders replaced with the dialect's driver markers — `$1, $2` (Postgres, CockroachDB, and any other dialect that sets this mode), `?` (MySQL, MariaDB, SQLite), `@p0, @p1` (SQL Server). `tenantParams` holds the IDs in marker order. |
 | **SQL-only** | `sql` | Named placeholders replaced with escaped literal values (quotes doubled). SQL is complete and executable. A tenant ID that isn't printable ASCII or contains a backslash is rejected (`UNESCAPABLE_TENANT_ID`). |
 
-The mode is configurable per `ask()` call (`tenantSqlMode`); the default is exported as `DEFAULT_TENANT_SQL_MODE`. A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default and must set it.
+The mode is configurable per `ask()` call (`tenantSqlMode`); the default is exported as `DEFAULT_TENANT_SQL_MODE`. A custom `AskDialect` has no default and must set it.
 
 **Substitution rules.** Only placeholders in SQL code are substituted — placeholder text inside string literals or quoted identifiers is left untouched, so a tenant ID can never land inside (or close) a surrounding literal. With several IDs, `= :p` becomes `IN (…)`, `!= :p` / `<> :p` become `NOT IN (…)`, `IN (:p)` / `NOT IN (:p)` are expanded in place, and `= ANY(:p)` / `<> ALL(:p)` become `IN (…)` / `NOT IN (…)`. Any other operator or position with several IDs is rejected rather than rewritten.
 

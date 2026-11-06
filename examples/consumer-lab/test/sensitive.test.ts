@@ -511,7 +511,7 @@ export default defineConfig({
   },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
   modes: { omitSensitiveFromPrompt: true },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 });
 `,
   );

@@ -122,7 +122,7 @@ function studioConfig(execute: StudioExecute | undefined): string {
 export default defineConfig({
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },${studio}
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },${studio}
 });
 `;
 }

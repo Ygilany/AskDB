@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isReasoningEffort, REASONING_EFFORTS, resolveReasoningEffort } from "./reasoning.js";
+import {
+  isReasoningEffort,
+  REASONING_EFFORTS,
+  resolveReasoningEffort,
+  resolveReasoningEffortFromSection,
+  type AiReasoningSection,
+  type ReasoningEffort,
+} from "./reasoning.js";
 
 describe("REASONING_EFFORTS / isReasoningEffort", () => {
   it("accepts the four portable effort levels", () => {
@@ -69,5 +76,18 @@ describe("resolveReasoningEffort", () => {
         "nlToSql",
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("resolveReasoningEffortFromSection", () => {
+  it.each<[string, AiReasoningSection | undefined, "nlToSql" | "enrichment", ReasoningEffort | undefined, ReasoningEffort | undefined]>([
+    ["nothing configured: the provider/model default", undefined, "nlToSql", undefined, undefined],
+    ["the call site's own effort over the global one", { effort: "high", nlToSql: "medium" }, "nlToSql", undefined, "medium"],
+    ["the enrichment effort for enrichment calls", { effort: "high", nlToSql: "medium", enrichment: "low" }, "enrichment", undefined, "low"],
+    ["the global effort when the call site has none", { effort: "high", nlToSql: "medium" }, "enrichment", undefined, "high"],
+    ["an explicit override over the section", { effort: "high", nlToSql: "medium" }, "nlToSql", "minimal", "minimal"],
+    ["an invalid value ignored, as in env", { effort: "nope" as ReasoningEffort, nlToSql: "ultra" as ReasoningEffort }, "nlToSql", undefined, undefined],
+  ])("%s", (_name, reasoning, usage, override, expected) => {
+    expect(resolveReasoningEffortFromSection(reasoning, usage, override)).toBe(expected);
   });
 });

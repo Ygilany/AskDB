@@ -175,7 +175,7 @@ flowchart BT
 
 Boundary rules:
 
-- `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect (a built-in id, a `DialectSpec` or a custom `AskDialect`), a model, an optional retriever, and a schema; it returns SQL.
+- `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect (a built-in id, a `DialectSpec` under a built-in id, or a custom `AskDialect`), a model, an optional retriever, and a schema; it returns SQL.
 - `@askdb/core` owns the SQL rules of the built-in engine families and resolves their ids itself. It never imports an engine package: every engine package depends on core, so that import would be a cycle ([ADR 0029](adrs/0029-core-owns-built-in-dialect-specs.md)).
 - Engine packages own what talks to a database: the driver, the introspection connector, the catalog SQL and connection resolution. They re-export core's specs. `@askdb/postgres` owns Postgres catalog introspection; `@askdb/prisma` owns Prisma schema-file introspection.
 - `@askdb/introspect` does not know whether an engine reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the engine package; the registry's connection only names the three source kinds a host can supply (`url`, `fromExport`, `schemaPath`), and each engine decides what they mean (ADR 0008).

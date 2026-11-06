@@ -322,7 +322,7 @@ resolveTenantDescendants: (tenantRoot, seedIds) => ({
 
 In `sql-only` mode, `ask()` re-checks the `sql` it returns after inlining the tenant IDs, as a rebind does, and refuses a statement that reads differently once rendered with `SqlValidationError` (a Postgres or CockroachDB string that continues past the inlined literal, say).
 
-A custom `AskDialect`, or a `DialectSpec` whose `id` isn't a built-in dialect, has no default mode, because AskDB doesn't know which driver it targets: with a tenant scope, `ask()` throws `TENANT_SQL_MODE_REQUIRED` until you set `tenantSqlMode`. `"sql-params"` gives `$N` markers; if your driver uses `?` or `@p0` markers (on SQL Server, `$1` is a money constant), set `"sql-only"`. A value other than these two throws the same error, on every dialect.
+A custom `AskDialect` has no default mode, because AskDB doesn't know which driver it targets: with a tenant scope, `ask()` throws `TENANT_SQL_MODE_REQUIRED` until you set `tenantSqlMode`. `"sql-params"` gives `$N` markers; if your driver uses `?` or `@p0` markers (on SQL Server, `$1` is a money constant), set `"sql-only"`. A value other than these two throws the same error, on every dialect.
 
 In `sql-params` mode `ask()` returns two executable pairs:
 

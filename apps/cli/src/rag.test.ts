@@ -580,12 +580,16 @@ describe("askdb rag", () => {
       expect(readLock(schemaDir)).toMatchObject({ embedderId: "ai-sdk:azure:embedding-deployment:4" });
     });
 
-    it('falls back to rag.embedder, including its deprecated "openai"', async () => {
+    it('falls back to rag.embedder: "ai", leaving the width to the model', async () => {
       const server = await startEmbeddingServer();
       installRuntime({
         ...BASE_CONFIG,
-        ai: { ...BASE_CONFIG.ai, providerConfig: { openai: { apiKey: "test-key", baseUrl: server.baseUrl } } },
-        rag: { embedder: "openai", store: "file", storeConfig: { file: {} } },
+        ai: {
+          ...BASE_CONFIG.ai,
+          providerConfig: { openai: { apiKey: "test-key", baseUrl: server.baseUrl } },
+          embedding: { model: "text-embedding-3-small" },
+        },
+        rag: { embedder: "ai", store: "file", storeConfig: { file: {} } },
       });
       const schemaDir = copyFixture();
       expect(await runRagCli(["index", schemaDir])).toBe(0);

@@ -188,6 +188,15 @@ async function main(): Promise<void> {
   if (typeof aiRegistry.createEmbeddingModelFromEnv !== "function") {
     throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry with createEmbeddingModelFromEnv");
   }
+  // A host with a config file passes its typed sections instead of an env map.
+  const sectionConfig = aiRegistry.resolveAiConfigFromSection({
+    provider: "openai",
+    connection: { apiKey: "smoke-key" },
+    model: "gpt-4o-mini",
+  });
+  if (sectionConfig?.apiKey !== "smoke-key" || typeof aiRegistry.createEmbeddingModelFromSection !== "function") {
+    throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry that resolves a typed section");
+  }
   const openaiModel = await aiRegistry.createLanguageModel({
     provider: "openai",
     apiKey: "smoke-key",

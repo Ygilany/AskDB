@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ASKDB_AI_PROVIDERS, loadAskDbConfigProjectionSync, resetAskDbRuntimeForTests, type AskDbConfig } from "../index.js";
-import { linkWorkspacePackage } from "../test-utils.js";
+import { linkWorkspacePackage, resolvedRuntimeText } from "../test-utils.js";
 import { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold, type AskDbScaffoldAnswers } from "./index.js";
 
 const VERSIONS = { config: "1.2.3", prisma: "0.9.0" };
@@ -104,8 +104,8 @@ describe("planAskDbScaffold", () => {
     expect(ai.provider).toBe(answers.ai.provider);
     expect(Object.keys(ai.providerConfig ?? {})).toEqual([answers.ai.provider]);
     expect(rest).toEqual(expected);
-    const values = Object.values(projection.entries);
-    for (const { name } of plan.envVars) expect(values).toContain(`value-of-${name}`);
+    const resolved = resolvedRuntimeText(projection.config);
+    for (const { name } of plan.envVars) expect(resolved).toContain(`"value-of-${name}"`);
   });
 
   // @askdb/core needs `ai` (a peer) and `zod`. Under Yarn Plug'n'Play a Prisma project must
@@ -148,6 +148,21 @@ describe("planAskDbScaffold", () => {
       expect(planAskDbScaffold(input, VERSIONS).install).toEqual({ packages, allowBuilds });
     },
   );
+
+  // The hint is copied into production, so it keeps the certificate check; the note opts a development
+  // server out with the key spelled without spaces, the one form both AskDB and `mssql` read (#803).
+  it("hints the SQL Server URL without TrustServerCertificate, and how to add it for a development server", () => {
+    const plan = planAskDbScaffold(answers({ database: "sqlserver", connectionEnv: "DATABASE_URL" }), VERSIONS);
+    const lines = plan.envExample.split("\n");
+    const hint = lines.findIndex((line) => line.startsWith("# sqlserver"));
+    expect(lines.slice(hint, hint + 3)).toEqual([
+      "# sqlserver connection URL, for introspection. Format: Data Source=<DATABASE_HOST>,<DATABASE_PORT>;" +
+        "Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Authentication=SqlPassword;",
+      "# For a development server with a self-signed certificate (such as the SQL Server Docker image), add " +
+        "TrustServerCertificate=True; to this URL. Leave it out for a server with a CA-signed certificate.",
+      "DATABASE_URL=",
+    ]);
+  });
 
   // `docker run --env-file` reads `NAME=VALUE` per line, everything after `=` as the value, and
   // skips `#` lines. An inline `NAME= # purpose` would set NAME to "# purpose".
