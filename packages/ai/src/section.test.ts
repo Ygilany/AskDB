@@ -135,8 +135,8 @@ describe("resolveEmbeddingConfigFromSection", () => {
     expect(registry.resolveEmbeddingConfigFromSection(section)).toEqual(expected);
   });
 
-  // The embedding model is baked into an index, so the section path never falls back to the
-  // provider's deprecated default (ADR 0016), a custom adapter's included.
+  // The embedding model is baked into an index, so no layer picks one (ADR 0016), a custom
+  // adapter's included.
   it.each([
     ["openai", registry],
     ["azure", registry],
@@ -147,7 +147,7 @@ describe("resolveEmbeddingConfigFromSection", () => {
         {
           provider: "mistral",
           resolveConfig: (env, options) =>
-            resolveBaseConfig("mistral", env, { apiKeyVars: [], defaultEmbeddingModel: "mistral-embed" }, options),
+            resolveBaseConfig("mistral", env, { apiKeyVars: [] }, options),
           createLanguageModel: vi.fn(),
           createEmbeddingModel: vi.fn(),
         },

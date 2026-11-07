@@ -22,7 +22,7 @@ pnpm add @ai-sdk/openai
 | `azure` (aliases `azure-openai`, `foundry`) | `@ai-sdk/azure` | `AZURE_OPENAI_API_KEY` | `gpt-4o-mini` (deployment name) |
 | `gateway` (Vercel AI Gateway) | nothing: ships with `ai` | `AI_GATEWAY_API_KEY` | `openai/gpt-4o-mini` |
 
-Embedding models have no default in `askdb.config.*`: `rag.embedder: "ai"` requires `ai.embedding.model`, and the section path (`createEmbeddingModelFromSection`) requires a model too. An env map with no embedding model still falls back to `text-embedding-3-small` on `openai` and `azure` (`openai/text-embedding-3-small` on `gateway`), with a one-time `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`). That fallback is removed at 1.0.
+Embedding models have no default: `rag.embedder: "ai"` requires `ai.embedding.model`, the section path (`createEmbeddingModelFromSection`) requires a model, and so does an env map (`ASKDB_AI_EMBEDDING_MODEL` or the provider's embedding model variable). With an API key and no model, each throws.
 
 Each built-in provider imports its SDK package lazily, the first time it builds a model, so registering all of them costs nothing. If the package isn't installed, model creation fails with: `Provider 'google' requires the optional peer dependency @ai-sdk/google. Install it: npm i @ai-sdk/google`. The same data is exported as `BUILTIN_AI_PROVIDERS`.
 

@@ -60,7 +60,7 @@ npx askdb rag query fixtures/schemas/orders-users.schema \
   --question "How much revenue did we make last month?"
 ```
 
-See the [CLI reference](https://askdb.tools/reference/cli/#askdb-rag) for every flag. The `askdb-rag` binary this package used to ship now only points at `askdb rag`, and is removed at 1.0.
+See the [CLI reference](https://askdb.tools/reference/cli/#askdb-rag) for every flag. This package no longer ships an `askdb-rag` binary.
 
 ## Public Surface
 

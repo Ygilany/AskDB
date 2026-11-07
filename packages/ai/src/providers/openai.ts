@@ -14,7 +14,6 @@ const ENV_SPEC: BuiltinProviderEnvSpec = {
   embeddingModelVars: ["OPENAI_EMBEDDING_MODEL"],
   baseURLVars: ["OPENAI_BASE_URL"],
   defaultModel: "gpt-4o-mini",
-  defaultEmbeddingModel: "text-embedding-3-small",
 };
 
 const CONFIG_HINT =

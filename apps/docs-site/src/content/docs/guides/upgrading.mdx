@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.50
 
-Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
+Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30 and `@askdb/studio` 0.2.0-beta.43.
 
 ### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
 
@@ -94,6 +94,22 @@ Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `t
 | `OpenaiRagEmbedderConfig` | `AskDbAiEmbeddingConfig` (`ai.embedding`) and a connection type |
 
 `ASKDB_RAG_EMBEDDERS` is now `["mock", "ai"]`, and the `AskDbRagEmbedder` type narrows to match.
+
+### Set an embedding model on `@askdb/ai`'s env path
+
+`@askdb/ai` no longer picks an embedding model when you pass an env map ([#651](https://github.com/Ygilany/AskDB/issues/651)). With an API key and no embedding model, `registry.resolveEmbeddingConfig(env)` and `registry.createEmbeddingModelFromEnv(env)` now throw `<provider>: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`, as the section path already refuses a missing model. Before, `openai` and `azure` fell back to `text-embedding-3-small`, and `gateway` to `openai/text-embedding-3-small`, with a `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`). A host with an `askdb.config.*` file uses the section path, so this changes nothing for it.
+
+- **If you saw that warning,** set `ASKDB_AI_EMBEDDING_MODEL`, or the provider's embedding model variable, in the env map you pass, to the model the fallback used. An index built with that model keeps working.
+- **If your app picks the model itself,** pass it as `resolveEmbeddingConfig(env, { modelDefault })`. An env variable still wins over it.
+- **`ProviderEnvSpec` has no `defaultEmbeddingModel` field,** and the `BUILTIN_AI_PROVIDERS` entries no longer carry one. Remove it from a spec your custom adapter declares: TypeScript reports it as an unknown property.
+
+### Replace the `askdb-rag` binary with `askdb rag`
+
+`@askdb/rag` no longer ships the `askdb-rag` binary ([#651](https://github.com/Ygilany/AskDB/issues/651)). Since beta.44 it only printed the `askdb rag` command to run and exited `1`. Now a shell or `npx` can't find an `askdb-rag` command. Install `askdb` and run `npx askdb rag index …`, `query …` or `setup-store …` instead. [Run `askdb rag` instead of `askdb-rag`](#run-askdb-rag-instead-of-askdb-rag) maps its flags.
+
+### Replace the removed `--embedder` values
+
+`askdb rag --embedder openai` and `--embedder ai-sdk` are removed ([#811](https://github.com/Ygilany/AskDB/issues/811)), as the same `rag.embedder` values were. Each now fails with exit code `1` and an error naming the replacement, before the command reads the schema or opens a store. Set `rag.embedder: "ai"` and an `ai.embedding` section in `askdb.config.*`, and pass `--embedder ai` or no `--embedder`. The aliases already embedded with `ai.embedding`, so an index they built keeps its embedder id and still matches.
 
 ### Handle introspection that finds no tables
 
@@ -651,7 +667,7 @@ The `rag` block is now optional: without it, AskDB uses the mock embedder and th
 
 ### Run `askdb rag` instead of `askdb-rag`
 
-The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`'s `askdb-rag` binary now prints the `askdb rag` command to run and exits `1`, until it's removed at 1.0.
+The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`'s `askdb-rag` binary now prints the `askdb rag` command to run and exits `1`, until 1.0.0-beta.50 removes it.
 
 | Before | After |
 | --- | --- |
@@ -730,14 +746,14 @@ This wrapper works on Postgres and SQLite only. [Cap the rows a query returns](/
 | `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0.0-beta.50 |
 | `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0.0-beta.50 |
 | `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | [`DEFAULT_*_LANGUAGE_MODEL`](/reference/packages/#askdbconfig) | 1.0.0-beta.50 |
-| `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warns with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model` | 1.0 |
-| `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0 |
-| The `askdb-rag` binary | `askdb rag` | 1.0 |
+| `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warned with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model`, or `ASKDB_AI_EMBEDDING_MODEL` in an env map, as [Set an embedding model on `@askdb/ai`'s env path](#set-an-embedding-model-on-askdbais-env-path) shows | 1.0.0-beta.50 |
+| `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0.0-beta.50 |
+| The `askdb-rag` binary | `askdb rag` | 1.0.0-beta.50 |
 | `BundledSchemaV2` from `@askdb/enrich` | `BundledSchemaV2` from `@askdb/core` | not yet set |
 
 ## Check the upgrade
 
-1. **Load your config and look for deprecation warnings.** Run your app or an `askdb` command once. A config that sets a removed key fails to load and names each key's replacement. Each `DeprecationWarning` with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL` names the setting to move.
+1. **Load your config.** Run your app or an `askdb` command once. A config that sets a removed key fails to load and names each key's replacement.
 2. **Ask one question on each path** that calls `ask()` or `bind()`, with the tenant scopes you use in production.
 3. **If you use RAG**, run `askdb rag query` against the new index, or check that Studio no longer marks the index as stale.
 
