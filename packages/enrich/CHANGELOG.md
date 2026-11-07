@@ -1,5 +1,29 @@
 # @askdb/enrich
 
+## 0.2.0-beta.21
+
+### Minor Changes
+
+- 3b77292: `bundleSchemaDirectory()` checks the bundle it reads with `@askdb/core`'s loader, and throws the loader's `SchemaParseError` for a directory `loadSchema()` refuses, where it returned a bundle that didn't load (#796). That covers front-matter that isn't YAML, a tenant policy that doesn't parse or doesn't fit `schema.json`, and two table files with the same `id`. The error names the file on disk. A bundle it returns always loads.
+
+### Patch Changes
+
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [91e89ec]
+  - @askdb/core@1.0.0-beta.50
+
 ## 0.2.0-beta.20
 
 ### Patch Changes
