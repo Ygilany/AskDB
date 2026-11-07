@@ -27,7 +27,7 @@ columns:
 ---
 ```
 
-A table-level `sensitive: true` marks every column in the table. `schema.json` can carry the same marks. Front-matter can only add sensitivity, never remove it: see [Sensitivity rules](/reference/schema-artifact-format/#sensitivity-rules).
+A table-level `sensitive: true` marks every column in the table. `schema.json` can carry the same marks, and [Sensitivity rules](/reference/schema-artifact-format/#sensitivity-rules) says how the two combine.
 
 ## 2. Leave them out of the prompt
 
@@ -40,7 +40,7 @@ export default defineConfig({
 });
 ```
 
-The model then doesn't see a sensitive column, or any text you wrote that names one, such as a description, an alias, an `enum` value or a common query language note. A sensitive table keeps one line with its name, and its columns are withheld. One exception: a column your tenant policy filters on stays in the prompt's tenant rules. [Privacy model](/concepts/privacy-model/#sensitive-columns) explains what each mode sends.
+The model then sees neither the sensitive columns nor the text that names them. [Privacy model](/concepts/privacy-model/#sensitive-columns) says exactly what each mode sends, and the one exception.
 
 The config setting is a floor: a single call can turn omission on, but not off. Each surface has its own switch:
 
