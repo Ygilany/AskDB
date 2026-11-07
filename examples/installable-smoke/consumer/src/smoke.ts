@@ -166,6 +166,21 @@ async function main(): Promise<void> {
     throw new Error("smoke: @askdb/rag/stores/file sub-path export did not resolve");
   }
 
+  // createOpenAiEmbedder was removed (#844): neither the root export nor its sub-path is left.
+  const ragRoot: Record<string, unknown> = await import("@askdb/rag");
+  if ("createOpenAiEmbedder" in ragRoot) {
+    throw new Error("smoke: @askdb/rag still exports createOpenAiEmbedder");
+  }
+  const removedSubpath = "@askdb/rag/embedders/openai";
+  const subpathError: unknown = await import(removedSubpath).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  const subpathCode = (subpathError as { code?: string } | undefined)?.code;
+  if (subpathCode !== "ERR_PACKAGE_PATH_NOT_EXPORTED" && subpathCode !== "ERR_MODULE_NOT_FOUND") {
+    throw new Error(`smoke: ${removedSubpath} still resolves (${String(subpathError)})`);
+  }
+
   const ragOut = await ask({
     question: "How many users are there?",
     schema: v2Schema,

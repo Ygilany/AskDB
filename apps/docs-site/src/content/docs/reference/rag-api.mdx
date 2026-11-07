@@ -9,7 +9,7 @@ description: "Full API reference for @askdb/rag: indexing, retrieval, the lock f
 
 `@askdb/rag` stays 0.x, so a minor release may change this API ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). The [RAG for large schemas guide](/guides/rag-for-large-schemas/) covers when to use it and the whole workflow.
 
-Every export below comes from `@askdb/rag`. The stores and embedders also have their own entry points, which export the same functions and types: `@askdb/rag/stores/memory`, `@askdb/rag/stores/file`, `@askdb/rag/stores/pgvector`, `@askdb/rag/embedders/ai-sdk` and `@askdb/rag/embedders/openai`.
+Every export below comes from `@askdb/rag`. The stores and embedders also have their own entry points, which export the same functions and types: `@askdb/rag/stores/memory`, `@askdb/rag/stores/file`, `@askdb/rag/stores/pgvector` and `@askdb/rag/embedders/ai-sdk`.
 
 ## `buildSchemaIndex(options)`
 
@@ -325,20 +325,6 @@ aiSdkEmbedderId({ provider: "openai", model: "text-embedding-3-small" }); // "ai
 | `provider` | `string` | yes | The provider adapter's canonical name, such as `openai` or `azure` (`foundry` resolves to `azure`). |
 | `model` | `string` | yes | The embedding model, or the deployment name on Azure. |
 | `dimensions` | `number` | no | The width requested from the model. Omit it when the model's own width applies. |
-
-### `createOpenAiEmbedder(options?)` *(deprecated)*
-
-An `Embedder` for the OpenAI embeddings API. **Deprecated**, and removed at 1.0: build the model with `openai.embedding(...)` and use `createAiSdkEmbedder` instead. It loads `ai` and `@ai-sdk/openai` on first use, so both must be installed.
-
-`CreateOpenAiEmbedderOptions`:
-
-| Option | Type | Description |
-| --- | --- | --- |
-| `model` | `string` | Embedding model. Default `text-embedding-3-small`. |
-| `apiKey` | `string` | API key. Without it, the OpenAI provider reads `OPENAI_API_KEY`. |
-| `baseURL` | `string` | An OpenAI-compatible base URL, such as a gateway ending in `/v1`. |
-| `dimensions` | `number` | Width requested from a `text-embedding-3` model. |
-| `user` | `string` | End-user id forwarded to OpenAI. |
 
 ### `detectEmbeddingDimensions(embedder)`
 
