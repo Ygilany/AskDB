@@ -19,6 +19,32 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.51
+
+Not published yet: these changes ship with `@askdb/rag` 0.2.0-beta.31.
+
+### Replace `createOpenAiEmbedder` from `@askdb/rag`
+
+`@askdb/rag` no longer exports `createOpenAiEmbedder` or `CreateOpenAiEmbedderOptions`, and `@askdb/rag/embedders/openai` is no longer an entry point ([#844](https://github.com/Ygilany/AskDB/issues/844)). Importing either now fails. Pick the replacement by where your embedding settings live:
+
+- **`askdb rag` or Studio:** set `rag.embedder: "ai"` and an `ai.embedding` section, with `provider: "openai"` and a `model`, in `askdb.config.*`. You don't build an embedder yourself.
+- **Your own code, with an `askdb.config.*` file:** build the model from the config's `ai.embedding` section with `@askdb/ai`'s `createEmbeddingModelFromSection`, and wrap it with `createAiSdkEmbedder`:
+
+  ```ts
+  import { createAiRegistry } from "@askdb/ai";
+  import { getAskDbRuntimeConfig } from "@askdb/config";
+  import { createAiSdkEmbedder } from "@askdb/rag";
+
+  const embedding = getAskDbRuntimeConfig().ai.embedding; // set when rag.embedder is "ai"
+  const model = embedding ? await createAiRegistry().createEmbeddingModelFromSection(embedding) : undefined;
+  if (!model) throw new Error('Set rag.embedder: "ai" and ai.embedding, with an API key on its connection.');
+  const embedder = createAiSdkEmbedder({ model });
+  ```
+
+- **Your own code, without a config file:** build the AI SDK model yourself, such as `createOpenAI({ apiKey, baseURL }).embedding("text-embedding-3-small")` from `@ai-sdk/openai`, and pass it to `createAiSdkEmbedder({ model })`. The helper's `dimensions` and `user` options move to `createAiSdkEmbedder`'s `providerOptions: { openai: { dimensions, user } }`.
+
+The helper picked `text-embedding-3-small` when you set no `model`. Name that model and keep your `buildSchemaIndex()` `embedderId` as it was, left unset if you never set one, and an index you built with the helper stays valid.
+
 ## 1.0.0-beta.50
 
 Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30 and `@askdb/studio` 0.2.0-beta.43.
@@ -761,6 +787,7 @@ This wrapper works on Postgres and SQLite only. [Cap the rows a query returns](/
 | `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warned with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model`, or `ASKDB_AI_EMBEDDING_MODEL` in an env map, as [Set an embedding model on `@askdb/ai`'s env path](#set-an-embedding-model-on-askdbais-env-path) shows | 1.0.0-beta.50 |
 | `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0.0-beta.50 |
 | The `askdb-rag` binary | `askdb rag` | 1.0.0-beta.50 |
+| `createOpenAiEmbedder` from `@askdb/rag` (deprecated in `@askdb/rag` 0.2.0-beta.17) | `createAiSdkEmbedder` with an `ai.embedding` model or your own AI SDK model, as [Replace `createOpenAiEmbedder` from `@askdb/rag`](#replace-createopenaiembedder-from-askdbrag) shows | 1.0.0-beta.51 |
 | `BundledSchemaV2` from `@askdb/enrich` | `BundledSchemaV2` from `@askdb/core` | not yet set |
 
 ## Check the upgrade
