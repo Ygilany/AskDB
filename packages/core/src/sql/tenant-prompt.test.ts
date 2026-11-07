@@ -320,6 +320,22 @@ describe("buildTenantPromptBlock — only the tables the prompt shows (#771, ADR
     expect(b).not.toContain("table:public.clients");
   });
 
+  it("leaves out a column path or polymorphic column that sits on an untracked table", () => {
+    // The loader only checks that a policy column exists somewhere, so a slip can point a scoped or
+    // polymorphic table at another table's column.
+    const slipped: NormalizedTenantPolicy = structuredClone(policy);
+    slipped.scopedTables = slipped.scopedTables.map((st) =>
+      st.id === "table:public.orders"
+        ? { ...st, scopeThrough: [{ root: "table:public.agencies", column: "table:public.campaigns#owning_agency" }] }
+        : st,
+    );
+    slipped.polymorphicTables = slipped.polymorphicTables.map((pt) => ({ ...pt, idColumn: "table:public.campaigns#owning_agency" }));
+    const b = buildTenantPromptBlock(slipped, idsScope, { schema: untracking("table:public.campaigns") });
+    expect(b).not.toContain("campaigns");
+    expect(b).toContain("  - table:public.orders → no filter path this prompt can show: don't read this table");
+    expect(b).toContain("  - table:public.notes: no filter this prompt can show: don't read this table");
+  });
+
   describe("a table name holding `#` (SQL Server)", () => {
     const column = (table: string, name: string) => ({ id: `${table}#${name}`, name, type: "int", nullable: false, primaryKey: name === "Id" });
     const table = (name: string, columns: string[]) => {

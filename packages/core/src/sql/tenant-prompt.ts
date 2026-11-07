@@ -85,7 +85,11 @@ export function buildTenantPromptBlock(
       let paths = 0;
       for (const path of st.scopeThrough) {
         const rootLabel = rootName(path.root);
+        // A column path's column belongs on the scoped table itself, but the policy loader only
+        // checks that it exists somewhere, so it follows the join paths' rule: printed only when its
+        // table is tracked.
         if ("column" in path) {
+          if (!columnTracked(path.column)) continue;
           lines.push(`  - ${st.id} → filter via ${path.column} (${rootLabel} scope)`);
           paths++;
         } else if (path.join.every((j) => columnTracked(j.from) && columnTracked(j.to))) {
@@ -107,6 +111,11 @@ export function buildTenantPromptBlock(
   if (polymorphicTables.length > 0) {
     lines.push("Polymorphic tables (MUST include type discriminator AND id filter):");
     for (const pt of polymorphicTables) {
+      // As for a column path: the type and id columns belong on the table, but only their existence is checked.
+      if (!columnTracked(pt.typeColumn) || !columnTracked(pt.idColumn)) {
+        lines.push(`  - ${pt.id}: no filter this prompt can show: don't read this table`);
+        continue;
+      }
       lines.push(`  - ${pt.id}: type column = ${pt.typeColumn}, id column = ${pt.idColumn}`);
       for (const [typeVal, targetRoot] of Object.entries(pt.mapping)) {
         lines.push(`    - '${typeVal}' → ${rootName(targetRoot)}`);
