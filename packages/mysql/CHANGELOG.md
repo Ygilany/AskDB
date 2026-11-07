@@ -1,5 +1,38 @@
 # @askdb/mysql
 
+## 0.1.0-beta.26
+
+### Patch Changes
+
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+  - @askdb/introspect@0.3.0-beta.25
+
+## 0.1.0-beta.25
+
+### Patch Changes
+
+- a7f5f06: `MysqlIntrospectionInput`, `SqliteIntrospectionInput` and `SqlServerIntrospectionInput` are now aliases of `@askdb/introspect/kit`'s `LiveCatalogInput`, and each connector passes its input to `describe*` whole (#816). The shape is unchanged. A field added to `LiveCatalogInput` now reaches all three connectors, where each used to copy the fields by hand.
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [0782a06]
+- Updated dependencies [91e89ec]
+  - @askdb/core@1.0.0-beta.50
+  - @askdb/introspect@0.3.0-beta.24
+
 ## 0.1.0-beta.24
 
 ### Patch Changes

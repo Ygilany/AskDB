@@ -18,12 +18,8 @@ export const ASKDB_LOG_LEVELS = [
 ] as const;
 export type AskDbLogLevel = (typeof ASKDB_LOG_LEVELS)[number];
 
-/**
- * `rag.embedder` values: `"mock"` (a local lexical embedder) or `"ai"` (the `ai.embedding`
- * model). `"openai"` and `"ai-sdk"` are deprecated: they're translated to `"ai"` at load,
- * with a warning, and removed at 1.0.
- */
-export const ASKDB_RAG_EMBEDDERS = ["mock", "ai", "openai", "ai-sdk"] as const;
+/** `rag.embedder` values: `"mock"` (a local lexical embedder) or `"ai"` (the `ai.embedding` model). */
+export const ASKDB_RAG_EMBEDDERS = ["mock", "ai"] as const;
 export type AskDbRagEmbedder = (typeof ASKDB_RAG_EMBEDDERS)[number];
 
 export const ASKDB_RAG_STORES = ["file", "memory", "pgvector"] as const;

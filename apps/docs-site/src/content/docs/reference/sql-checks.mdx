@@ -1,0 +1,135 @@
+---
+title: "SQL checks reference"
+description: "The read-only, tenant and sensitive checks AskDB runs on generated SQL: when each runs, how each reads SQL on every engine, and what each rejects."
+---
+
+<p class="doc-eyebrow">Reference · SQL checks</p>
+
+<p class="doc-lede">AskDB runs up to three checks on the SQL a model returns, before it binds any value: the read-only check, the tenant check and the sensitive check. This page says when each runs, how each reads SQL on every engine, and what each rejects. They're heuristics, not a parser: <a href="/concepts/safety-boundaries/">Safety boundaries</a> explains why your database stays the boundary.</p>
+
+## When each check runs
+
+| Check | Runs when | With a custom `AskDialect` | On a finding |
+| --- | --- | --- | --- |
+| Read-only | The dialect is a built-in id or a `DialectSpec`. | Doesn't run. Call `validateSelectSql()` in your generator. | Always refuses: `SqlValidationError`. |
+| Tenant | The schema has a `tenant-policy.md`, and the scope isn't `global`. | Runs. | `enforcement: strict` refuses with `TenantGuardrailError`; `warn` returns the SQL and reports it. |
+| Sensitive | The schema marks a table or column `sensitive`, and `sensitiveGuardrailMode` isn't `"off"`. | Runs. | `"strict"` refuses with `SensitiveReferenceError`; `"warn"`, the default, returns the SQL and reports it. |
+
+`ask()` runs each check on the model's bound SQL and on its `sql-unbound` block, while the `:tenant_<root>_ids` placeholders are still in place, before it renders tenant IDs or binds values. `bindPreparedQuery()` and `askdb.bind()` run all three again on the stored template, under the schema, scope and dialect rules you pass then. `generateSelectSql()` runs the read-only and tenant checks. [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict) says how the findings become an outcome, and which error a refusal throws.
+
+<figure style="--d2-width: 593px">
+
+```d2 src="../../../assets/diagrams/d2/sql-checks-flow.d2"
+```
+
+<figcaption>The checks run in this order on the model's SQL. Every check runs, then one decision maps their findings to an outcome.</figcaption>
+</figure>
+
+## How the checks read SQL
+
+The checks don't parse SQL. They split it into tokens and skip strings, quoted names and comments, so a keyword inside one doesn't count. Each built-in dialect id is read with its engine's column of the table, under the engine's default string settings unless the `DialectSpec` sets `backslashEscapes`. SQL from a custom `AskDialect`, from a dialect id that is no built-in engine, or passed to a check with no dialect is read with every column, and must pass under each reading.
+
+| | `postgres`, `cockroachdb` | `mysql`, `mariadb` | `sqlite` | `sqlserver` |
+| --- | --- | --- | --- | --- |
+| Strings | `'…'`, `E'…'`, `$tag$…$tag$` | `'…'` and `"…"` | `'…'` | `'…'` |
+| A backslash in `'…'` | Plain text. With `backslashEscapes: true`, an escape. | An escape. With `backslashEscapes: false`, plain text. Unset means the server default, an escape. | Plain text | Plain text |
+| Quoted names | `"…"` | `` `…` `` | `"…"`, `` `…` ``, `[…]` | `"…"`, `[…]` |
+| Comments | `--`, `/* … */` (nested) | `--` followed by a space or a control character, `#`, `/* … */`. | `--`, `/* … */` | `--`, `/* … */` (nested) |
+| Where a `--` comment ends | At a line feed or a carriage return on Postgres, at a line feed only on CockroachDB. Both ids are read both ways. | At a line feed | At a line feed | At a line feed or a carriage return |
+| `$` | Inside a name, such as `a$$b`, part of the name. Elsewhere, `$$` or `$tag$` starts a dollar-quoted string (`$tag$…$tag$`), read only on these engines. Since 1.0.0-beta.51, a tag with non-ASCII letters (`$é$ … $é$`) is read as a string, as the engine does ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). | Inside a name, part of the name | Inside a name, part of the name | Starts a money literal such as `$1.5` |
+
+### Forms the checks refuse to read
+
+The checks refuse four forms rather than guess where they end or what they name:
+
+| Form | Refused when | Why |
+| --- | --- | --- |
+| A string, quoted name or block comment that never closes | Always | The checks can't tell where the statement ends. |
+| An `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`) | The SQL may be read as Postgres: `postgres`, `cockroachdb`, a dialect id that is no built-in engine, or no dialect | Postgres reads the continuation with backslash escapes, so the checks can't tell where the string ends. Join the parts with `\|\|`. |
+| A `b'…'` byte string (lower-case `b`) with a backslash, or continued on a later line | The same | CockroachDB reads it with backslash escapes. Write the bytes as a hex string cast to `bytea` (`'\x00'::bytea`). |
+| A Unicode-escaped name such as `U&"set\005fconfig"` | The same | Its escapes can spell a blocked function, a table or a sensitive column that the checks match by name. Write the name in plain double quotes (`"注文数"`). |
+
+The read-only check refuses each with its own rule, the tenant check reports it as a finding, and the sensitive check fails closed (`passed: false`, with `unresolvedScope`).
+
+### When your server's settings differ
+
+The readings above assume each engine's default string settings. If your server reads backslashes differently, such as MySQL with `NO_BACKSLASH_ESCAPES` or Postgres with `standard_conforming_strings = off`, set `backslashEscapes` on a `DialectSpec` to match, or the checks can read a string differently from the server. [Match your server's string settings](/guides/match-server-string-settings/) shows how.
+
+### Readings changed in 1.0.0-beta.50 and 1.0.0-beta.51
+
+[GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) found four places where the tenant check read SQL differently from the engine. In the advisory's words, since 1.0.0-beta.50:
+
+> The tenant check now reads `$` the way each engine does and reads dollar-quoted strings only where the engine may be Postgres or CockroachDB; it requires a table's predicate wherever the name appears, quoted or not, except in `ORDER BY` and `GROUP BY`; it reads an unset `backslashEscapes` on a MySQL-family spec as the server default; and each check ends a line comment where the engine does, reading a `postgres` dialect both ways since it may point at CockroachDB.
+
+Since 1.0.0-beta.51, a dollar-quote tag with non-ASCII letters (`$é$ … $é$`) is read as a string, as the engine does ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). In that advisory's words:
+
+> The tenant check's scanner now reads a dollar tag with the same character set as the shared lexer and the engine, so a `$é$ … $é$` string ends where the engine ends it.
+
+The upgrade guide says what each fix asks of your app: [GHSA-8pwj-6hfv-5pm4 in 1.0.0-beta.50](/guides/upgrading/#security-upgrade-for-ghsa-8pwj-6hfv-5pm4) and [GHSA-rmjw-pffc-5hjr in 1.0.0-beta.51](/guides/upgrading/#security-upgrade-for-ghsa-rmjw-pffc-5hjr).
+
+## The read-only check
+
+`validateSelectSql()` makes sure the SQL is one read-only query. `ask()` runs it for a built-in dialect id or a `DialectSpec`, and a finding always refuses the SQL with `SqlValidationError`, whose `rule` is one of these:
+
+| Rule | The SQL has |
+| --- | --- |
+| `SQL_EMPTY` | No statement. |
+| `SQL_NOT_SELECT_OR_WITH` | A first keyword, after any opening parentheses, other than `SELECT` or `WITH`. |
+| `SQL_MULTI_STATEMENT` | A `;` that separates a second statement. A single trailing `;` is kept, as the model wrote it, and anything after it is refused. If you wrap the SQL, for example in a row-cap subquery, remove the `;` first (see [Row limits](/guides/run-safely-in-prod/#row-limits)). On SQL Server, also a second statement written without a `;`: see [SQL Server statements](#sql-server-statements). |
+| `SQL_COMMENT` | A `--` or `/* … */` comment, or `#` on MySQL and MariaDB. |
+| `SQL_FORBIDDEN_KEYWORD` | An unquoted keyword from the shared list or the dialect's `extraForbiddenKeywords`: see [Keywords and functions](#keywords-and-functions). |
+| `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, or `NEXT VALUE FOR` on any engine. |
+| `SQL_LOCKING_READ` | A locking read: see [Locking reads](#locking-reads). |
+| `SQL_UNICODE_ESCAPED_IDENTIFIER` | A Unicode-escaped name, where the SQL may be read as Postgres. |
+| `SQL_STRING_CONTINUATION` | An `E'…'` string continued on a later line, where the SQL may be read as Postgres. |
+| `SQL_ESCAPED_BYTE_STRING` | A `b'…'` byte string with a backslash or a continuation, where the SQL may be read as Postgres. |
+| `SQL_UNTERMINATED` | A string, quoted name, dollar-quoted string or block comment that never closes. |
+
+A `DialectSpec`'s `extraValidate` runs after these, on the SQL without its trailing `;`.
+
+### Keywords and functions
+
+AskDB refuses the SQL if any of these appear as unquoted keywords: `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `VACUUM`, `ANALYZE`, `COPY`, `CALL`, `MERGE`, `INTO`. `INTO` covers `SELECT … INTO new_table` and MySQL `INTO OUTFILE`. Each built-in spec adds its own, in its `extraForbiddenKeywords`:
+
+- **MySQL and MariaDB:** `OUTFILE` and `DUMPFILE`.
+- **SQLite:** `ATTACH`, `DETACH`, `PRAGMA` and `REINDEX`.
+- **SQL Server:** `EXEC`, `EXECUTE`, `OPENROWSET`, `OPENQUERY`, `WAITFOR`, `SHUTDOWN`, `SET`, `USE`, control-flow verbs such as `DECLARE`, `BEGIN`, `IF`, `WHILE` and `RETURN`, and other T-SQL statement verbs, because T-SQL runs a batch without semicolons. `SQLSERVER_DIALECT.extraForbiddenKeywords` lists all 46.
+
+AskDB also refuses calls to known side-effecting functions, from each built-in spec's `blockedFunctions`: for example `pg_sleep`, `set_config`, `pg_read_file`, `dblink` and `nextval` on Postgres and CockroachDB (`POSTGRES_DIALECT.blockedFunctions` lists all 84), `SLEEP`, `LOAD_FILE`, and MariaDB's sequence writers `NEXTVAL` and `SETVAL` on MySQL and MariaDB, and `load_extension` on SQLite. On every engine, `NEXT VALUE FOR` is refused with the same rule code, because it advances a sequence on MariaDB and SQL Server, outside your transaction's rollback. MariaDB's `PREVIOUS VALUE FOR` and `LASTVAL()` return the value your session last drew, without changing the sequence, and pass. A dialect id that is no built-in engine gets every built-in spec's keywords and functions.
+
+Setting `extraForbiddenKeywords` or `blockedFunctions` on a `DialectSpec` replaces the built-in list, so spread a built-in spec (`{ ...POSTGRES_DIALECT, … }`) to keep it.
+
+### Locking reads
+
+A locking read can hold locks that other sessions wait on until your transaction ends, so it's refused as `SQL_LOCKING_READ`. On every engine that means `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE` and `LOCK IN SHARE MODE`, anywhere in the statement, subqueries and CTEs included.
+
+On SQL Server it also means the table hints `UPDLOCK`, `XLOCK`, `HOLDLOCK`, `PAGLOCK`, `TABLOCK`, `TABLOCKX`, `ROWLOCK`, `SERIALIZABLE` and `REPEATABLEREAD`: unquoted anywhere, inside `WITH (…)` or without it, and quoted when one stands alone in parentheses right after a name, at any depth and with trailing spaces (`FROM t ([UPDLOCK])`, `t (("UPDLOCK "))`), which SQL Server also reads as the hint. `NOLOCK`, `READUNCOMMITTED` and `READPAST` pass. SQL Server compares hint names loosely (it reads `UPDʟOCK` as `UPDLOCK`), so on SQL Server an unquoted name must also be printable ASCII, and so must a quoted name alone in parentheses right after a name. A SQL Server name that is a hint word or isn't plain ASCII must be quoted (`[rowlock]`, `[Größe]`), and the prompt lists it quoted and tells the model to quote such an alias too; when it's the only thing inside parentheses, qualify it too (`COUNT(t.[Größe])`), or, in a one-name column list (`WITH [集計] ([合計]) AS …`), name the column inside the query instead.
+
+### SQL Server statements
+
+SQL Server doesn't need `;` between statements, so the check also refuses a second statement written without one. It looks for three shapes: a `SELECT` that doesn't follow `UNION`, `EXCEPT` or `INTERSECT` and isn't the main query after a leading `WITH`; a parenthesized query right after a complete value, such as `SELECT 1 (SELECT 2)`; and a label, which is any `:` written directly against a name or value (`l:`). A subquery after a keyword, an operator, a comma or a function name still passes, but not one inside an ODBC escape such as `{fn UCASE((SELECT …))}`, which is refused.
+
+Code outside strings and quoted names must also be plain, because SQL Server may split statements anywhere else: a character that isn't printable ASCII or a Unicode letter or digit (a non-breaking space, for example), a bare `$`, a `\`, a number written against a word (`1ESELECT`), or a `?` written against a name or number is refused. A second statement that starts with `FETCH`, or with `END`, `GET` or `MOVE CONVERSATION`, isn't detected, because those words also appear in ordinary queries (`OFFSET … FETCH`, `CASE … END`) or as column names.
+
+## The tenant check
+
+With a tenant policy, `ask()` refuses to run without a `tenantScope`, and checks the model's SQL before it binds the tenant IDs. The check runs under every dialect, a custom `AskDialect` included. [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists what passes: a query that starts with `SELECT` or `WITH`, no call it can't read through, and for each tenant-scoped table and each root table the scope covers, its tenant column compared with its placeholder, ANDed into the filter. Each finding has a rule from [`TenantGuardrailError` rules](/reference/core-api/errors/#tenantguardrailerror-rules).
+
+- **Statements.** A statement ends at each `;`, and on SQL Server also at a verb such as `EXEC`.
+- **Outcome.** The policy's `enforcement` decides it: `strict` throws `TenantGuardrailError`, and `warn` returns the SQL with the findings in `result.tenantGuardrail.warnings` and `result.verdict`. At rebind, a `warn` finding refuses the template unless you pass `acceptWarnings: ["tenant"]`. AskDB never adds a missing tenant filter.
+- **`global` scope.** The tenant check doesn't run, and SQL that still has a tenant placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), since there are no IDs to bind.
+- **Known limit.** Within one statement, including its CTEs, derived tables and subqueries (only `UNION`, `INTERSECT` and `EXCEPT` branches are checked on their own), the check doesn't tie a predicate to a particular table reference, so an unfiltered reference can pass beside a filtered one: `WITH t AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders` passes ([#399](https://github.com/Ygilany/AskDB/issues/399)).
+
+## The sensitive check
+
+The sensitive check reports the tables and columns marked `sensitive: true` that the SQL reads: sensitive columns named in the SQL, sensitive tables read in `FROM` or `JOIN`, and sensitive columns reached through `SELECT *`, `t.*` or a whole-row reference such as `row_to_json(t)`. `ask()` attaches the result as `result.sensitiveGuardrail`. [`validateSensitiveReferences()`](/reference/core-api/checks/#validatesensitivereferencessql-schema-options) runs it on SQL you store and replay, and documents how it resolves names and when it fails closed.
+
+It can miss a table in some `FROM` forms, so a wildcard over it goes unreported: a parenthesized `FROM` item ([#306](https://github.com/Ygilany/AskDB/issues/306)), a comma-joined table after a `JOIN`'s `ON` or `USING` ([#307](https://github.com/Ygilany/AskDB/issues/307)), MySQL `STRAIGHT_JOIN` used as a join ([#308](https://github.com/Ygilany/AskDB/issues/308)), and Postgres `TABLE users` inside a derived table ([#309](https://github.com/Ygilany/AskDB/issues/309)). Mark sensitive data in the database too: keep it out of the read-only role's grants (see [Keep sensitive columns out of prompts](/guides/keep-sensitive-columns-out-of-prompts/)).
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>Why the checks are defense in depth, and what keeps you safe when they miss.</span></a>
+  <a href="/reference/tenant-policy/#what-the-tenant-check-requires"><strong>What the tenant check requires</strong><span>The predicate each tenant-scoped table needs.</span></a>
+  <a href="/reference/core-api/errors/"><strong>Errors</strong><span>Every rule and reason, with the error that carries it.</span></a>
+</div>

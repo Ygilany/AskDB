@@ -59,7 +59,7 @@ describe("[postgres] http-no-pg", () => {
 export default defineConfig({
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-no-key" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 });
 `,
     );

@@ -46,6 +46,11 @@ export type BundledSchemaV2 = {
   tenantPolicy?: string;
 };
 
+/** Each physical column ID → the ID of the table that owns it, read from `schema.json` (a SQL Server table name can hold `#`). */
+function columnOwnersOf(physical: Pick<V2SchemaJson, "tables">): Map<string, string> {
+  return new Map(physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)));
+}
+
 /**
  * Load a Schema v2 artifact from a raw JSON string.
  *
@@ -316,6 +321,7 @@ function loadFromDirectory(dir: string, schemaJsonPath?: string): NormalizedSche
 
 function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSchemaV2 {
   const physical = parsePhysicalLayer(bundle.physical, filePath);
+  assertBundledTables(bundle.tables, filePath);
   // Errors name the bundled file and the bundle that holds it: the user has the
   // bundle on disk, not a tenant-policy.md or concepts.md.
   return loadFromFiles(bundle, physical, (file) => `${file} (in ${filePath})`, filePath);
@@ -399,10 +405,7 @@ function loadFromFiles(
     tenantPolicy = parseOrWrap(policyFile, () => {
       const parsed = parseTenantPolicyMarkdown(policyContent, policyFile);
       const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-      const physicalColumnIds = new Set(
-        physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
-      );
-      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+      return normalizeTenantPolicy(parsed, physicalTableIds, columnOwnersOf(physical));
     });
   }
 
@@ -428,6 +431,33 @@ function addTableMarkdown(
     );
   }
   tableMarkdowns[id] = loaded;
+}
+
+/**
+ * A bundle's `tables` must map each `tables/` file name to its markdown. `askdb bundle`
+ * always writes it (`{}` when there are no table files), so anything else is a
+ * hand-made or damaged bundle. It's refused rather than loaded without its tables,
+ * which would drop every `sensitive: true` they set.
+ */
+function assertBundledTables(tables: unknown, bundlePath: string): void {
+  const dir = SCHEMA_DIRECTORY_FILES.tables;
+  if (tables === undefined) {
+    throw new SchemaParseError(
+      `Invalid bundle at ${bundlePath}: \`${dir}\` is missing; a bundle carries every ${dir}/*.md as an object keyed by file name ({} when there are none).`,
+    );
+  }
+  if (typeof tables !== "object" || tables === null || Array.isArray(tables)) {
+    throw new SchemaParseError(
+      `Invalid bundle at ${bundlePath}: \`${dir}\` must be an object keyed by ${dir}/*.md file name, with each file's raw markdown as the value.`,
+    );
+  }
+  for (const [filename, content] of Object.entries(tables)) {
+    if (typeof content !== "string") {
+      throw new SchemaParseError(
+        `Invalid bundle at ${bundlePath}: \`${dir}\` entry ${filename} must be the raw ${dir}/${filename} content (a string).`,
+      );
+    }
+  }
 }
 
 /** Read an optional bundled markdown file: `undefined` only when the key is absent. */
@@ -480,9 +510,7 @@ function buildNormalized(
 
   // Physical table ids, and each physical column id's owning table, for ID validation
   const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-  const columnOwner = new Map(
-    physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)),
-  );
+  const columnOwners = columnOwnersOf(physical);
 
   // Column ids that any front-matter entry marks `sensitive: true`: in the owning
   // table's markdown or another's, first entry or a later duplicate. Sensitivity is the
@@ -505,7 +533,7 @@ function buildNormalized(
       seenColumnIds.add(col.id);
       if (col.sensitive === true) escalatedColumnIds.add(col.id);
 
-      const owner = columnOwner.get(col.id);
+      const owner = columnOwners.get(col.id);
       if (owner === undefined) {
         warnings.push({ kind: "orphaned_column_id", tableFile, id: col.id });
       } else if (owner !== id) {

@@ -1,0 +1,175 @@
+---
+title: "@askdb/core API reference: schema loading"
+description: "Load a schema artifact with loadSchema(), read and write its files, match sensitive mentions, and ask the model for enrichment suggestions."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede">Load a schema artifact into the schema <code>ask()</code> takes, read and write the files in a schema directory, and ask the model for descriptions to review. <a href="/reference/schema-artifact-format/">Schema artifact format</a> describes the files.</p>
+
+## `loadSchema(path)`
+
+```ts
+import { loadSchema } from "@askdb/core";
+const schema = loadSchema("./my-app.schema"); // synchronous
+```
+
+Autodetects and loads a v2 schema artifact. Accepts:
+- A **schema directory** (`<name>.schema/`) — the output of `askdb introspect`
+- A **bundled JSON file** (any JSON object with a `bundled` key, whatever the file's name) — the output of `askdb bundle`
+- A direct path to a `schema.json` file, matched in any case (`Schema.json` works too). This loads the enclosing directory, so sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md` apply just as they do for the directory path.
+- Any other JSON file, loaded as the physical layer only. If its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, in any case, `loadSchema()` throws `SchemaParseError` instead, because loading the file alone would ignore them: a copy such as `prod-schema.json` would load without its tenant policy. Pass the directory, or pass the file's content to `loadSchemaFromJson()` to load only the physical layer.
+
+The file names `loadSchema()` looks up in a directory are exact: `schema.json`, `tenant-policy.md`, `concepts.md`, `tables/`, and the `.md` extension in `tables/`. A file whose name matches one only when case is ignored, such as `Tenant-Policy.md` or `tables/orders.MD`, throws `SchemaParseError` on every OS, and the error names each rename. On Linux, where file names are case-sensitive, the file would otherwise be skipped, and a skipped `tenant-policy.md` turns tenant enforcement off.
+
+Returns `NormalizedSchemaV2`. A path that doesn't exist throws Node's file system error (`code: "ENOENT"`), not `SchemaParseError`, and so does a JSON file you can't read (`EACCES`). Other failures throw `SchemaParseError`. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy", and the error names the file and the bundle, for example `tenant-policy.md (in /srv/prod.bundle.json)`. A broken `tenant-policy.md` never silently turns tenant enforcement off.
+
+`loadSchema()` also checks every ID in `tenant-policy.md` against `schema.json`. Under `enforcement: strict`, an orphaned column or foreign key ID, a column that `schema.json` has on another table than the field names (`misplaced_column_id`, with `id`, `tableId` and `context`), a hierarchy cycle, or a root that `roots` doesn't declare throws `SchemaParseError` naming the file and the IDs. Under `warn` these load, listed in `schema.tenantPolicy.warnings`. A table that `schema.json` doesn't have is a warning in both modes. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree). `normalizeTenantPolicy(parsed, physicalTableIds, columnOwners)` runs the same check on a policy you parsed with `parseTenantPolicyMarkdown()`: `physicalTableIds` is the set of table IDs in `schema.json`, and `columnOwners` maps each column ID in `schema.json` to its table's ID.
+
+Each table and column in the result has one effective `sensitive` flag, which prompt formatting, `validateSensitiveReferences()` and `@askdb/rag` chunking all read. [Sensitivity rules](/reference/schema-artifact-format/#sensitivity-rules) says how it's worked out. A column that is sensitive only because its table is also carries `sensitiveFromTable: true`; `@askdb/rag` uses it to count a mention of that column only when written as `table.column`. Problems in `tables/*.md` that don't stop the load are in `schema.warnings`, a `SchemaV2Warning[]`: [Loader warnings](/reference/schema-artifact-format/#loader-warnings) lists every kind. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files.
+
+`loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
+
+## `loadSchemaFromJson(raw)`
+
+```ts
+import { loadSchemaFromJson } from "@askdb/core";
+const schema = loadSchemaFromJson(bundleJsonString);
+```
+
+Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
+
+The bundle's shape is exported as the `BundledSchemaV2` type: `{ bundled: true, physical, tables, concepts?, tenantPolicy? }`, where `physical` is the `schema.json` object, `tables` maps each `tables/` filename to its raw markdown, and `concepts` and `tenantPolicy` hold the raw `concepts.md` and `tenant-policy.md` when those files exist. `tables` is required (`{}` when there are no table files): a bundle without it, or whose `tables` isn't an object of strings, throws `SchemaParseError` naming `tables` and the bundle. `askdb bundle` writes it.
+
+## `readSchemaDirectory(dir)`
+
+```ts
+import { readSchemaDirectory } from "@askdb/core";
+import { writeFileSync } from "node:fs";
+
+const bundle = readSchemaDirectory("./my-app.schema"); // synchronous
+writeFileSync("./my-app.schema.bundle.json", `${JSON.stringify(bundle, null, 2)}\n`);
+```
+
+Reads a schema directory into its bundle form, a `BundledSchemaV2`. `loadSchema()` reads every directory through this function, and `askdb bundle` and `@askdb/enrich`'s `bundleSchemaDirectory()` return it, so `loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir)))` gives the same schema as `loadSchema(dir)`. It follows the directory rules of `loadSchema()`: names must be spelled exactly, an optional file is absent only when the directory doesn't list it, and a listed file that can't be read throws `SchemaParseError`. It validates `schema.json` and returns the markdown files unparsed. `bundleSchemaDirectory()`, and so `askdb bundle`, also checks the bundle with the loader, and refuses one that doesn't load.
+
+## `findMentionedNames(text, names)`, `createMentionMatcher(names)` and `sensitiveMentionNames(schema)`
+
+```ts
+import { createMentionMatcher, findMentionedNames, sensitiveMentionNames } from "@askdb/core";
+findMentionedNames("Dedupe by EMAIL; see users_email", ["email", "ssn"]); // → ["email"]
+
+const sensitive = createMentionMatcher(["ssn", { table: "users", column: "org_id" }]);
+sensitive.mentionsAny('filter by "users"."org_id"'); // → true
+sensitive.find("Rows come from users. Org_id is the key"); // → []
+
+// The names the rule checks for a loaded schema: here users.email is marked sensitive,
+// and users.org_id is sensitive only because the whole users table is.
+const names = sensitiveMentionNames(schema); // → ["email", { table: "users", column: "org_id" }]
+createMentionMatcher(names).mentionsAny("Dedupe on email"); // → true
+```
+
+The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker, `@askdb/enrich`'s authoring warning and `ask()`'s prompt (with `omitSensitiveIdentifiersFromNlToSqlPrompt`) all use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`. `sensitiveMentionNames(schema)` returns the names that rule checks for a normalized schema, schema-wide: a column marked sensitive itself by its bare name, and a column that is sensitive only because its table is (`sensitiveFromTable`) only as `{ table, column }`. Columns of untracked tables count too.
+
+## `saveSchemaFile(schemaDir, relativePath, content)`
+
+```ts
+import { saveSchemaFile, writeConceptsMarkdown } from "@askdb/core";
+saveSchemaFile("./my-app.schema", "concepts.md", writeConceptsMarkdown({ concepts }, body));
+```
+
+Writes `content` (a string, written as UTF-8, or a `Uint8Array`, written as given) to one file inside a schema directory, so that no link redirects the write out of it. `@askdb/enrich`'s saves, Studio and `@askdb/introspect` all write the directory through it; use it when your own authoring tool writes there. `relativePath` names the file from `schemaDir` with `/` between parts (`schema.json`, `tables/orders.md`).
+
+- It throws, and writes nothing, when the file or a directory between it and `schemaDir` (such as `tables/`) is a symbolic link. `schemaDir` itself can be a symbolic link.
+- It throws when `relativePath` has an empty, `.` or `..` part or a NUL byte (on Windows, also a `\`), so an absolute path is refused too. It doesn't create missing directories.
+- It writes a temporary file next to the target and renames it over the target. A hard link at the target is replaced, not written through, and a reader sees the old file or the new one, never part of one. The new file keeps the target's permission bits, group and, where the process may set it, owner. It doesn't keep an access control list (ACL) or other extended attributes, so on a file with an ACL a save can widen access.
+- A target you can't write throws `EACCES`, as a plain write would. The temporary file needs write access to the target's directory.
+
+A refusal's message reads `Refusing to write <relativePath> outside the schema directory: <why>`. On Windows, the rename fails with `EPERM` while another process holds the target open; writing again usually works.
+
+## `suggestEnrichment(target, context, model, deps?)`
+
+```ts
+import { loadSchema, suggestEnrichment } from "@askdb/core";
+import { buildSuggestionContext, buildSuggestionTarget } from "@askdb/enrich";
+
+const schema = loadSchema("./my-app.schema");
+const source = { scope: "table", tableId: "table:public.users", field: "description" } as const;
+const candidates = await suggestEnrichment(
+  buildSuggestionTarget(schema, source),
+  buildSuggestionContext(schema, source.tableId),
+  model,
+  { omitSensitiveIdentifiersFromPrompt: true }, // your modes.omitSensitiveFromPrompt
+);
+// → [{ text: "Registered user accounts." }, { text: "People who can place orders." }]
+```
+
+Asks the model for up to three candidate values for one describable field, which a person reviews before anything is saved: a table's description, aliases, primary entity or common query language, or a column's description or aliases. Studio's **Suggest** buttons call it. `target` names the field and carries its table; `context` carries the schema id and up to four tables linked to it by foreign key. `@askdb/enrich`'s `buildSuggestionTarget(schema, source)` and `buildSuggestionContext(schema, tableId)` build both from `loadSchema()`'s result. The target table and the neighbors are `NormalizedV2Table`s, the table type in `loadSchema()`'s result, so a table read straight from `schema.json` doesn't typecheck. Load the schema directory or a bundle with `loadSchema()`, so the `sensitive` flags include `tables/*.md` front-matter: `loadSchemaFromJson()` of a bare `schema.json` typechecks too, but has none.
+
+The prompt lists the target table the way `ask()`'s prompt does (`TABLE public.users`, then one line per column), with no descriptions, and tags sensitive columns `(sensitive)`. `deps` takes:
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `omitSensitiveIdentifiersFromPrompt` | `false` | Leave sensitive columns out of the prompt; a sensitive table keeps only its name. `suggestEnrichment` reads no config, so pass your `modes.omitSensitiveFromPrompt`. A target that is itself a sensitive column throws `SensitiveEnrichmentTargetError` (an `AskDbError`, whose message names no column) before any model call, because the prompt would have to name it. |
+| `providerOptions` | — | Forwarded to the AI SDK's `generateText` unchanged. |
+| `temperature` | `0.4` | Sampling temperature. |
+| `maxCandidates` | `3` | The most candidates returned. |
+
+The option's type is exported as `EnrichmentPromptOptions`. `buildEnrichmentUserPrompt(target, context, options?)` returns the user prompt `suggestEnrichment` sends, with the same `options`, for hosts that call their model themselves; it throws `SensitiveEnrichmentTargetError` in the same case. `ENRICHMENT_SYSTEM_PROMPT` is the system prompt, and `parseCandidates(text, max)` splits a reply into candidates.
+
+## Markdown files
+
+```ts
+import { parseTableMarkdown, saveSchemaFile, writeTableMarkdown } from "@askdb/core";
+
+const parsed = parseTableMarkdown(content, "tables/orders.md");
+const next = writeTableMarkdown({ ...parsed.frontmatter, aliases: ["purchases"] }, parsed.body);
+saveSchemaFile("./my-app.schema", "tables/orders.md", next);
+```
+
+Each parser reads one file's text. `filePath` names the file in its errors. A file whose front-matter isn't valid YAML, or doesn't match the format, throws `SchemaParseError`: front-matter is strict, so an unknown key fails too.
+
+| Function | Returns |
+| --- | --- |
+| `parseTableMarkdown(content, filePath?)` | A `ParsedTableMarkdown`: `{ frontmatter, body, sections }`. `sections` holds the `##` sections AskDB recognizes, keyed by heading (a `RecognizedH2Section`). |
+| `parseConceptsMarkdown(content, filePath?)` | A `ParsedConceptsMarkdown`: `{ frontmatter, body }`. |
+| `parseTenantPolicyMarkdown(content, filePath?)` | A `ParsedTenantPolicyMarkdown`: `{ frontmatter, body, sections }`. It parses the file only: `loadSchema()` also checks it against `schema.json`. |
+| `writeTableMarkdown(frontmatter, body)` | The file's text: the front-matter as YAML, with its keys in a fixed order, then `body` as given. |
+| `writeConceptsMarkdown(frontmatter, body)` | The same for `concepts.md`. |
+| `writeTenantPolicyMarkdown(frontmatter, body)` | The same for `tenant-policy.md`. |
+
+[Body](/reference/schema-artifact-format/#body) lists the `##` sections AskDB reads in a table file.
+
+## Types
+
+| Type | What it is |
+| --- | --- |
+| `NormalizedSchemaV2` | `loadSchema()`'s result. |
+| `NormalizedV2Table` | One of its tables: the physical table with the describable fields from `tables/*.md` and the effective `sensitive` flag. |
+| `NormalizedV2Column` | One of a table's columns, the same way. |
+| `SchemaV2Warning` | One entry of `schema.warnings`; see [Loader warnings](/reference/schema-artifact-format/#loader-warnings). |
+| `AnyNormalizedSchema` | What `ask()` takes: a `NormalizedSchemaV2`, or the older v1 `NormalizedSchema`. |
+| `NormalizedSchema` | The older v1 schema shape. |
+| `BundledSchemaV2` | The bundle form, as in [`loadSchemaFromJson()`](#loadschemafromjsonraw). |
+| `V2SchemaJson` | `schema.json` as a type. |
+| `V2Table`, `V2Column` | A table and a column in `schema.json`. |
+| `V2TableFrontmatter`, `V2ColumnFrontmatter` | A table file's front-matter, and one of its `columns` entries. |
+| `V2ConceptsFrontmatter`, `V2Concept` | `concepts.md`'s front-matter, and one concept in it. |
+| `TenantPolicyFrontmatter` | `tenant-policy.md`'s front-matter. |
+| `ParsedTableMarkdown`, `ParsedConceptsMarkdown`, `ParsedTenantPolicyMarkdown` | The parsers' results, as above. |
+| `RecognizedH2Section` | A key of a parsed table file's `sections`: `"Common query language"`, `"Example questions"`, `"Business context"` or `"Column notes"`. |
+| `MentionName` | A name for the mention functions: a bare name, or `{ table, column }`. |
+| `MentionMatcher` | What `createMentionMatcher()` returns. |
+| `EnrichmentTarget` | `suggestEnrichment()`'s `target`: the field to suggest for, with its table. |
+| `EnrichmentContext` | Its `context`: `{ schemaId, neighbors? }`. |
+| `EnrichmentCandidate` | One suggestion: `{ text }`. |
+| `SuggestEnrichmentDeps` | Its `deps`, as in the table above. |
+| `EnrichmentPromptOptions` | The prompt option in `deps`. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/schema-artifact-format/"><strong>Schema artifact format</strong><span>Every file in a schema directory, and the sensitivity rules.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Describe tables and columns so the model gets them right.</span></a>
+  <a href="/reference/core-api/ask/"><strong>ask()</strong><span>Pass the loaded schema to <code>ask()</code>.</span></a>
+</div>

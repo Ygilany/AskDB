@@ -69,7 +69,7 @@ describe("[postgres] askdb-no-prisma", () => {
 export default defineConfig({
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-no-key" } } },
   introspection: { provider: "prisma", providerConfig: { prisma: {} } },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 });
 `,
     );

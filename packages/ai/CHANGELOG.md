@@ -1,5 +1,33 @@
 # @askdb/ai
 
+## 0.1.0-beta.11
+
+### Minor Changes
+
+- 6ea8df8: A model base URL with a username or password is refused before any request (#787, ADR 0036). `fetch` never sent such a URL: it failed with an error that quoted the whole URL, credentials included, which reached `SqlGenerationError` and the `askdb.pipeline.failed` log. `@askdb/ai` now throws the new `AiBaseUrlCredentialsError`:
+  
+  - when a provider's `resolveConfig` reads one from an env variable (`ASKDB_AI_BASE_URL` or the provider's own, such as `OPENAI_BASE_URL`);
+  - when a built-in provider builds a model from an `AiConfig` whose `baseURL` has one;
+  - when that `AiConfig` has no `baseURL` and the provider SDK would read a credentialed `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` from the environment itself.
+  
+  Its `setting` names the variable, or `baseURL`, and its message never repeats the URL. A value that doesn't parse as a URL counts when it holds an `@`.
+- 1b9468d: `@askdb/ai` resolves a typed config section as well as an env map (#711). A host with an `askdb.config.*` file passes `getAskDbRuntimeConfig().ai.language` or `.ai.embedding` from `@askdb/config` as it is, and no env map sits in between:
+  
+  - **Registry methods:** `resolveAiConfigFromSection(section)`, `resolveEmbeddingConfigFromSection(section)`, `createLanguageModelFromSection(section)` and `createEmbeddingModelFromSection(section, options?)`, which asks for the section's `dimensions` unless `options.dimensions` is set. Each returns `undefined` when the connection has no API key, as the env methods do.
+  - **`resolveReasoningEffortFromSection(reasoning, purpose, override?)`** reads `ai.language.reasoning`: the override, then the purpose's own effort (`nlToSql` or `enrichment`), then `effort`.
+  - **Section types:** `AiLanguageSection`, `AiEmbeddingSection`, `AiConnectionSection`, `AiReasoningSection` and `AiModelSection`. They're structural, so `@askdb/ai` doesn't depend on `@askdb/config`.
+  - **Adapters:** each built-in provider maps a section to its `AiConfig` next to its env spec, through the new optional `AiProviderAdapter.resolveConfigFromSection(section, { usage })`. A custom adapter without it gets the section through the universal `ASKDB_AI_*` keys, passed to its `resolveConfig`.
+  
+  The section path differs from the env path in three ways: an embedding section with a key but no model throws instead of falling back to the deprecated default embedding model; a provider the registry doesn't have fails with the message that says how to register it; and a `connection.baseUrl` with a username or password throws `AiBaseUrlCredentialsError` (`setting: "connection.baseUrl"`) whether or not the connection has a key (ADR 0036). A section and an env map holding the same settings give the same `AiConfig`. The env path (`resolveAiConfig(env)`, `createLanguageModelFromEnv(env)` and the rest) is unchanged for hosts without a config file.
+- 54e079e: **Breaking:** `@askdb/ai` no longer picks an embedding model on the env path (#651). With an API key and no embedding model, `registry.resolveEmbeddingConfig(env)` and `registry.createEmbeddingModelFromEnv(env)` throw `<provider>: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`, as the section path already refuses a missing model. Before, `openai` and `azure` fell back to `text-embedding-3-small` and `gateway` to `openai/text-embedding-3-small`, with a `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) that said the fallback goes at 1.0. Set `ASKDB_AI_EMBEDDING_MODEL`, the provider's embedding model variable or the `modelDefault` option to that model to keep the same embeddings.
+  
+  `ProviderEnvSpec.defaultEmbeddingModel` is removed from the type, and the `BUILTIN_AI_PROVIDERS` entries' `env` no longer carry it. A custom adapter's spec that sets it no longer typechecks: remove it. The upgrade guide's beta.50 section shows each step.
+
+### Patch Changes
+
+- d9ab606: README: the env-map precedence link points to the new `@askdb/ai` API reference on askdb.tools.
+- a467984: README: `@askdb/ai` is presented as one model for `ask()` and for the app's own AI SDK calls, with a `generateText()` example built from the same config section (#228).
+
 ## 0.1.0-beta.10
 
 ### Patch Changes

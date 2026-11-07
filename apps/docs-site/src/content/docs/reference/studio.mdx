@@ -1,0 +1,173 @@
+---
+title: "Studio reference"
+description: "askdb studio's flags, what the setup wizard writes and installs, the files Studio reads and writes, what each AI feature sends, the execute guards, and the security model."
+---
+
+<p class="doc-eyebrow">Reference · Studio</p>
+
+<p class="doc-lede">Studio is the local web app <code>askdb studio</code> starts. This page lists how it launches, what it reads, writes and sends, and how it guards its API. The <a href="/studio/">Studio tour</a> walks through its views.</p>
+
+`askdb studio` is experimental: a minor release of `askdb` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
+
+## Launch
+
+```bash
+npx askdb studio [--schema <dir>] [--port <n>] [--host <host>]
+```
+
+`askdb enrich` is an alias with the same flags.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-s`, `--schema <dir>` | `introspection.outputDir`, else `./askdb/` | The schema directory to open. A `--schema` directory that doesn't exist is an error. |
+| `--port <n>` | `studio.listen.port`, else `5556` | A port from 1 to 65535. |
+| `--host <host>` | `studio.listen.host`, else `127.0.0.1` | The address to listen on. A host other than loopback prints a warning (see [Security model](#security-model)). |
+| `-h`, `--help` | | Prints the help. |
+| `-V`, `--version` | | Prints the version. |
+
+A flag overrides the config for that run. Write each flag and its value as two words (`--port 5600`); `--port=5600` isn't accepted.
+
+Studio prints `AskDB Studio is running at http://<host>:<port>` and doesn't open a browser. If the port is in use, it prints the error and exits with status `1`; pick another port.
+
+Studio reads `askdb.config.*` from the directory you start it in. If the file fails to load, Studio prints a warning with the error and starts without it. With no config there, or no schema artifact in the schema directory, it opens the [guided setup](#guided-setup).
+
+## Guided setup
+
+The setup wizard writes, in the directory Studio started in:
+
+- `askdb.config.ts`, from the same planner as `askdb init`. It refuses to overwrite an existing config.
+- `.env.example`, unless one exists, naming the variables to fill in.
+- A minimal `package.json`, if there's none in that directory or above it.
+
+It never writes `.env` or any secret value: it asks only for environment variable names.
+
+It then installs what the config needs and the project doesn't have yet: `@askdb/config`; the engine's driver, or `@askdb/prisma`, `ai` and `zod` for a Prisma schema; and the [execute](/guides/enable-studio-execute/) driver, if you chose execute on another engine. On pnpm 10.4 or later, it approves `@prisma/engines`' build. It installs automatically only when the nearest `package.json` is in the start directory and that directory isn't a workspace root. Otherwise it shows the command to run.
+
+It picks the package manager the way `askdb init` does:
+
+1. A lockfile in the directory or a parent. In one directory, `pnpm-lock.yaml` wins, then `bun.lock` or `bun.lockb`, then `yarn.lock`, then `package-lock.json`.
+2. The `packageManager` or `devEngines.packageManager` field of the nearest `package.json`.
+3. The tool that started Studio, such as `pnpm dlx`, `yarn dlx` or `npx`.
+4. npm.
+
+If you choose **Studio execute**, the config points execute at the same connection variable as introspection. [Enable Studio execute](/guides/enable-studio-execute/#2-turn-on-execute) says how to give it a read-only role instead.
+
+## Files
+
+Studio reads:
+
+- `askdb.config.*` (or `.config/askdb.*`) and `.env` in the directory you start it in.
+- The schema directory: `schema.json`, `tables/*.md`, `concepts.md` and `tenant-policy.md`, plus `schema.lock.json`, `playground-history.json` and the RAG file store's files.
+
+Studio writes:
+
+| File | When |
+| --- | --- |
+| `tables/<table>.md`, `concepts.md`, `tenant-policy.md` | On **Save** in Tables, Concepts or Tenancy. |
+| `schema.json` | On **Resync schema**, and on the setup wizard's introspection. It keeps your markdown. |
+| `playground-history.json`, `.gitignore` | When the Playground saves its history. |
+| `schema.lock.json`, and the file store's `<basePath>.embeddings.json` and `.embeddings.bin` | On **Build Index**. `basePath` is `rag.storeConfig.file.basePath`, by default `<schema dir>/schema`. When the vector width changes, Studio deletes the old files first. |
+| `askdb.config.ts`, `.env.example`, `package.json` | In the [guided setup](#guided-setup) only. |
+
+The **Install** button for an execute driver runs the package manager in the project that holds the schema directory.
+
+## AI features
+
+Each AI feature needs a model in `askdb.config.ts` (`ai.provider` and its connection's key), and follows `modes.omitSensitiveFromPrompt`: a sensitive column is tagged `(sensitive)` by default, and left out when the setting is `true`.
+
+| Feature | What it sends to the model |
+| --- | --- |
+| **Suggest** (Tables) | The table's columns (names, types, nullability and primary key), and the names and column counts of up to four tracked tables it links to by foreign key. No descriptions. With omission on, **Suggest** on a sensitive column shows an error instead of a draft. |
+| **Draft with AI** (Tenancy) | Every tracked table's columns (names, types, nullability and primary keys) and the foreign keys between them. No descriptions. With omission on, the review screen names the keys it withheld under **Withheld from the model**. |
+| **Generate SQL** (Playground) | What `ask()` sends: the question, the schema text (all of it, or what retrieval picked), and, with a tenant scope, the tenant policy and the scope's context. [Privacy model](/concepts/privacy-model/#what-the-model-sees) has the full list. |
+| **Build Index**, **Query RAG**, RAG mode | With `rag.embedder: "ai"`, the embedding model receives each chunk's text when the index is built, and the question on each retrieval. The mock embedder sends nothing. |
+
+None of them sends table rows.
+
+## Execute guards
+
+Execute is off until you set `studio.execute.enabled: true` ([Enable Studio execute](/guides/enable-studio-execute/)). While it's off, Studio refuses to run SQL. When it's on, every query gets these guards:
+
+- **Validated first.** Studio runs the read-only SELECT check that `ask()` uses (`validateSelectSql`) for the execute engine's dialect, before anything reaches the driver. The dialect is `postgres`, `mysql`, `sqlite` or `sqlserver`, or `cockroachdb` or `mariadb` when your config's `dialect` names one of those. A rejected query never runs; the error names the rule, such as `SQL rejected by the read-only guardrail (SQL_MULTI_STATEMENT): …`. A query that reads a column marked sensitive runs, with a warning.
+- **One read-only statement.**
+  - Postgres runs the query as a single statement (extended query protocol) inside `BEGIN READ ONLY`, with `default_transaction_read_only` on.
+  - MySQL and MariaDB use a prepared statement inside `START TRANSACTION READ ONLY`.
+  - SQLite opens the file read-only. The driver rejects multi-statement strings, and Studio refuses a statement that returns no rows.
+  - SQL Server has no read-only transaction mode. Studio runs the query inside a transaction that it always rolls back, with `SET XACT_ABORT ON`. The query runs as part of a batch. The SELECT check rejects a second statement written without `;`, such as a second `SELECT` or a `WHILE` loop, but not one that starts with `FETCH` or with `END`, `GET` or `MOVE CONVERSATION` (see [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks)).
+- **Timeout.** `studio.execute.timeoutMs` (default 30 s) is enforced with `statement_timeout` on Postgres, `MAX_EXECUTION_TIME` on MySQL (`max_statement_time` on MariaDB), and request cancellation on SQL Server. On Postgres and MySQL it also limits how long connecting takes. SQLite queries can't be interrupted, so it doesn't apply to them.
+- **Row cap.** Studio fetches at most `studio.execute.maxRows + 1` rows (default 500) and marks the result truncated when more exist. Postgres and MySQL wrap the query as `SELECT * FROM (…) AS askdb_q LIMIT n`, so a MySQL query that returns two columns with the same name needs aliases. SQL Server uses `SET ROWCOUNT`. SQLite stops reading at the cap.
+
+A query that fails at run time, for a missing driver, a connection error, a database error or a timeout, shows its error in the Playground.
+
+These checks reduce risk, but they aren't a sandbox. The SELECT check is heuristic, and a SELECT can still call functions with side effects. Point `studio.execute` at a **read-only database role**. On SQL Server, a read-only login is the only real guarantee.
+
+## Security model
+
+Studio is a local developer tool, not a hosted service. Its API can run SQL against your database, call your model with your key, and write your schema files. Studio protects that API from other websites open in your browser:
+
+- **Per-launch session token.** Each launch generates a random token and puts it in the page it serves. The browser app sends it back as an `x-askdb-studio-token` header on every `/api/*` call, and a request without the right token gets `403`. Other websites can't read Studio's page, so they can't get the token. Restarting Studio issues a new token, so reload any open Studio tabs after a restart.
+- **Host check.** Studio accepts only a `Host` header of `localhost`, `127.0.0.1`, `[::1]` or the host you bound with `--host`, and only on its own port. If you bound to a wildcard address such as `0.0.0.0`, it also accepts this machine's own addresses. The check applies to every request, including the page itself, and blocks DNS-rebinding attacks.
+- **Origin and content type.** Studio refuses a state-changing API request whose `Origin` header names another site (`403`), and an API request whose body isn't `Content-Type: application/json` (`415`). So a web page can't reach Studio with a simple cross-site form post or a `no-cors` fetch.
+- **Guarded writes.** Table, concept and tenant-policy saves, `schema.json`, the Playground history and its `.gitignore` entry go through one writer. If the file, or `tables/` for a table file, is a symbolic link, the write fails instead of writing to the file the link points at. A linked `.gitignore` is left as it is, and the history still saves. Each write puts a temporary file next to the target and renames it over the target, so a hard link is replaced rather than written through, and nothing reads a half-written file. The schema directory itself can be a symbolic link. The RAG index's files and the setup wizard's files are written outside this writer (see [Files](#files)).
+- **Request size.** API request bodies over 1 MiB get `413`. The Playground history keeps only known fields, with length limits. When Studio creates the `.gitignore` for it, it also ignores `.env` files there, unless the schema directory is the project root.
+
+Setup, **Resync schema** and the driver **Install** button only work from loopback clients. Everything else answers any client that has the token: edits, the AI features (on your model key), RAG builds and execute.
+
+Binding to a non-loopback host (`--host 0.0.0.0` or a LAN address) prints a warning at startup. Anyone who can load Studio from that address gets the session token from the page, so on that network they can edit your schema, call your model and run queries. Keep the default `127.0.0.1` unless you're on a network you trust. Studio also expects to be reached directly: a reverse proxy that rewrites the `Host` header gets `403`.
+
+## Local API
+
+Studio's browser app talks to a JSON API under `/api/`, and a script can call it too. The API is experimental, like `askdb studio`. Every call needs:
+
+- The session token, as an `x-askdb-studio-token` header. Read it from the page Studio serves: `<meta name="askdb-studio-token" content="…">`. It changes every launch.
+- `Content-Type: application/json` on a request with a body.
+- A `Host` header Studio accepts, and no `Origin` from another site (see [Security model](#security-model)).
+
+### `POST /api/execute`
+
+Runs one statement, with the [execute guards](#execute-guards). The request:
+
+```json
+{ "sql": "SELECT id, name FROM customers WHERE id > $1 ORDER BY id", "params": [0] }
+```
+
+`params` is optional, and holds the values for the statement's parameter markers, written the execute engine's way: `$1` on Postgres, `?` on MySQL, MariaDB and SQLite. On SQL Server, Studio turns `$1` or `?` markers into `@p0`, `@p1` and so on, or takes `@p0` as written. The example is Postgres. A run returns `200`:
+
+```json
+{ "ok": true, "columns": ["id", "name"], "rows": [[1, "Ada"], [2, "Grace"]], "rowCount": 2, "durationMs": 4, "truncated": false, "rowLimit": 500 }
+```
+
+`rows` holds one array per row, in `columns` order. `truncated` is `true` when the query had more than `rowLimit` rows. `warnings` lists any sensitive identifiers the SQL reads.
+
+A failure at run time, such as a missing driver, a connection error, a database error or a timeout, also returns `200`, with the message in `error`:
+
+```json
+{ "ok": false, "error": "canceling statement due to statement timeout" }
+```
+
+### Errors
+
+Every other error returns a status and a message, with no error code:
+
+```json
+{ "error": { "message": "Studio rejected this request: missing or invalid session token. Reload Studio in the browser (the token changes every launch)." } }
+```
+
+| Status | Cause |
+| --- | --- |
+| `400` | A body that isn't valid JSON, a missing or malformed field (`` `sql` is required. ``), or SQL the read-only check rejects. The message names the rule: `SQL rejected by the read-only guardrail (SQL_NOT_SELECT_OR_WITH): …`. |
+| `403` | A missing or wrong token, a `Host` Studio doesn't accept, an `Origin` from another site, or execute is off. Only the message tells them apart. |
+| `409` | Studio is in the guided setup. |
+| `413` | A body over 1 MiB. |
+| `415` | A request that isn't `Content-Type: application/json`. |
+| `500` | Anything unexpected. The body has the same shape. |
+
+`GET /api/execute/status` reports whether execute is on and why not, the `timeoutMs` and `maxRows` in force, the engine, whether a connection is configured, and whether the driver is installed. The [Studio spec](https://github.com/Ygilany/AskDB/blob/main/docs/specs/studio.md#contracts-and-api-surface) lists the other routes.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/studio/"><strong>Studio tour</strong><span>Studio's seven views, one at a time.</span></a>
+  <a href="/guides/enable-studio-execute/"><strong>Enable Studio execute</strong><span>Run the Playground's SQL under a read-only role.</span></a>
+  <a href="/reference/config/#studio-execute-configuration"><strong>Configuration — Studio execute</strong><span>Every <code>studio.execute</code> field and its default.</span></a>
+</div>

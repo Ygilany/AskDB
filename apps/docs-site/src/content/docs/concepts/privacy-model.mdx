@@ -15,8 +15,8 @@ When `ask()` calls your model provider, the request contains:
 
 - **The user's question.** As supplied to AskDB.
 - **Schema context.** From the schema artifact: table and column names, types, primary keys and nullability, plus the text you authored, such as descriptions, aliases, `enum` values and common query language notes. For large schemas, only the chunks retrieval selected, which can also carry concepts, example questions, relationships and tenant policy text.
-- **Your tenant policy and the caller's scope**, when the schema has a tenant policy. The prompt lists the tenant roots, the tenant-scoped tables and the columns that filter them. It names a placeholder such as `:tenant_organization_ids` where the caller's IDs go, never the IDs themselves. It also carries a `global` scope's `reason` and everything in `tenantScope.context` (role, department, region, label, description and `attributes`), marked as advisory.
-- **Hints AskDB derives from the question and the schema.** For example, when the question seems to name a table the schema doesn't have, a note lists the schema's table names. Today that list includes tables marked `tracked: false` ([#677](https://github.com/Ygilany/AskDB/issues/677)).
+- **Your tenant policy and the caller's scope**, when the schema has a tenant policy. The prompt lists the tenant roots, the tenant-scoped tables and the columns that filter them, for the tables the prompt shows: a table marked `tracked: false`, or one retrieval left out, isn't named. Two exceptions keep a shown table filterable. A root whose table isn't shown appears by the label your policy gives it, with its placeholder. And a join path that runs through a tracked table retrieval left out is still printed, with that table's name and the columns the path uses. It names a placeholder such as `:tenant_organization_ids` where the caller's IDs go, never the IDs themselves. It also carries a `global` scope's `reason` and everything in `tenantScope.context` (role, department, region, label, description and `attributes`), marked as advisory.
+- **Hints AskDB derives from the question and the schema.** For example, when the question seems to name a table the schema doesn't have, a note says so. The hints name no table from the schema, so a table the prompt leaves out, one marked `tracked: false` or one retrieval didn't pick, stays out of them too.
 - **Dialect cues and output rules.** The SQL flavor AskDB expects back, and the format to answer in.
 
 That's everything `ask()` sends. The model returns SQL.
@@ -28,8 +28,8 @@ The model never receives:
 - **Your database rows.** AskDB does not read your data to construct prompts. A value reaches the prompt only as text: something you wrote into the schema artifact, such as an `enum` list or a description, or something the user typed in the question.
 - **Database credentials.** Connection strings, passwords, and roles live in your application's environment. `ask()` doesn't open a database connection. A pgvector retriever you pass in connects to its own vector store, and its credentials stay out of the prompt.
 - **Query results.** Your application runs the SQL after AskDB returns it. Results stay between your app and your database.
-- **Tenant IDs.** The prompt names a placeholder for them, and AskDB binds your IDs into the SQL after the model answers. See [Multi-tenancy](/guides/multi-tenancy/).
-- **User identifiers, session tokens, request headers.** AskDB doesn't send them unless you put one in the question or in `tenantScope.context`. Keep personal data out of `context` if it mustn't reach your model provider: a `label` such as `"Jane Smith"` goes into the prompt as written. See [`TenantScope`](/reference/core-api/#tenantscope).
+- **Tenant IDs.** The prompt names a placeholder for them, and AskDB binds your IDs into the SQL after the model answers. See [Tenant isolation](/concepts/tenant-isolation/).
+- **User identifiers, session tokens, request headers.** AskDB doesn't send them unless you put one in the question or in `tenantScope.context`. Keep personal data out of `context` if it mustn't reach your model provider: a `label` such as `"Jane Smith"` goes into the prompt as written. See [`TenantScope`](/reference/core-api/tenancy/#tenantscope).
 
 ## No middlemen
 
@@ -47,22 +47,22 @@ By default, sensitive tables and columns, and any text that names a sensitive co
 
 ## Sensitive columns
 
-The schema artifact lets you mark tables and columns as `sensitive: true`, either in `schema.json` or in a table's markdown front-matter (which is what Studio's Sensitivity tab writes). Front-matter can only **add** sensitivity. It never un-marks something `schema.json` marks sensitive. The effective flag changes how AskDB constructs the prompt:
+The schema artifact lets you mark tables and columns as `sensitive: true`, either in `schema.json` or in a table's markdown front-matter (which is what Studio's Sensitivity tab writes). [Sensitivity rules](/reference/schema-artifact-format/#sensitivity-rules) says how the effective flag is worked out. It changes how AskDB constructs the prompt:
 
 - **Tagged in prompt (default).** The model sees the column name with a sensitivity tag. Useful when you want the model to acknowledge the column but generate carefully.
-- **Omitted entirely.** With `--omit-sensitive-from-prompt` (or `modes.omitSensitiveFromPrompt: true`), sensitive columns are removed from the prompt, and so is any text in your schema artifact that names one: a description, alias, enum value, common query language note, or a retrieved concept, example question or tenant policy chunk. A sensitive table keeps a one-line placeholder with its name. The model can't propose those columns because it doesn't know they exist. One exception: when you use a tenant policy, its rules (which tables are tenant-scoped and the columns that filter them) are always in the prompt, so a sensitive column named there still reaches the model.
+- **Omitted entirely.** With `--omit-sensitive-from-prompt` (or `modes.omitSensitiveFromPrompt: true`), sensitive columns are removed from the prompt, and so is any text in your schema artifact that names one: a description, alias, enum value, common query language note, or a retrieved concept, example question or tenant policy chunk. A sensitive table keeps a one-line placeholder with its name, and its columns are withheld. The model can't propose a column it never sees. One exception: when you use a tenant policy, its rules (which tables are tenant-scoped and the columns that filter them) are always in the prompt, so a sensitive column named there still reaches the model.
 
 The setting covers every prompt AskDB sends to a language model, including Studio's Playground, its enrichment suggestions and its tenant policy draft.
 
 Either way, AskDB never reads the values in those columns. The flag is about the schema metadata, not the data.
 
-Both of those are **prompt-level**: they change what the model sees, not what can execute. SQL that reaches your database by another route — your own SQL cache, a stored or replayed statement, an artifact regenerated with the flags reset — is unaffected. For that, `@askdb/core` exports `validateSensitiveReferences(sql, schema)`, which reports the sensitive tables and columns a given statement references. `ask()` runs it for you and returns the result as `sensitiveGuardrail`, and `bindPreparedQuery()` runs it again whenever you rebind a stored `preparedQuery`; if you cache or replay SQL any other way, call it on every execution path. See [Core API](/reference/core-api/#validatesensitivereferencessql-schema-options).
+Both of those are **prompt-level**: they change what the model sees, not what can execute. SQL that reaches your database by another route — your own SQL cache, a stored or replayed statement, an artifact regenerated with the flags reset — is unaffected. That's why AskDB also checks SQL for sensitive tables and columns, and why the database role should leave them out: [Keep sensitive columns out of prompts](/guides/keep-sensitive-columns-out-of-prompts/) covers both.
 
 ## Where logging lives
 
 Audit logging is your application's job, not AskDB's. AskDB doesn't log questions, generated SQL, or model responses. If you want a record of every question that was asked and every SQL string that got generated, log them in the code that wraps `ask()`. That keeps the log inside your stack — same place your user identities and session data already live.
 
-Studio is the one place AskDB keeps them, on your machine: its Playground saves each question, its SQL and explanation, and any tenant scope with its tenant IDs to `playground-history.json` in the schema directory, and adds that file to the directory's `.gitignore`.
+Studio is the one place AskDB keeps them, on your machine: its Playground saves each question, its SQL and explanation, and any tenant scope with its tenant IDs to `playground-history.json` in the schema directory, and git-ignores it. See the [Studio reference](/reference/studio/#files).
 
 ## In one sentence
 

@@ -1,6 +1,6 @@
 import { createGateway } from "ai";
 import { withEmbeddingProviderOptions } from "../embedding.js";
-import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { resolveBaseConfig, resolveBaseConfigFromSection, type AiConfig, type AiProviderAdapter } from "../provider.js";
 import { baseURLOption } from "../base-url.js";
 import { anthropicProvider } from "./anthropic.js";
 import { googleProvider } from "./google.js";
@@ -16,7 +16,6 @@ import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 const ENV_SPEC: BuiltinProviderEnvSpec = {
   apiKeyVars: ["AI_GATEWAY_API_KEY"],
   defaultModel: "openai/gpt-4o-mini",
-  defaultEmbeddingModel: "openai/text-embedding-3-small",
 };
 
 const CONFIG_HINT =
@@ -57,6 +56,9 @@ export const gatewayProvider: AiProviderAdapter = {
   configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("gateway", env, ENV_SPEC, options);
+  },
+  resolveConfigFromSection(section, options) {
+    return resolveBaseConfigFromSection("gateway", section, ENV_SPEC, options);
   },
   createLanguageModel(config) {
     splitModelId(config.model);

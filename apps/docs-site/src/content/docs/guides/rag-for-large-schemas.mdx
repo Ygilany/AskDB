@@ -15,6 +15,14 @@ A rule of thumb: if your schema artifact has more than ~30 tables, or if rendere
 
 When you pass a retriever, `ask()` retrieves on every call, unless you also pass the schema's chunk count: see [Wire retrieval into `ask()`](#wire-retrieval-into-ask).
 
+<figure style="--d2-width: 624px">
+
+```d2 src="../../../assets/diagrams/d2/rag-index-query.d2"
+```
+
+<figcaption>Indexing chunks the schema artifact and stores the chunks' embeddings, once per schema change. Each <code>ask()</code> call embeds only the question, retrieves the nearest chunks, and lists in the prompt each table they point to.</figcaption>
+</figure>
+
 ## Install
 
 <InstallTabs pkgs="@askdb/rag ai" />
@@ -23,7 +31,7 @@ For the pgvector store (recommended), add the Postgres driver:
 
 <InstallTabs pkgs="pg" />
 
-You'll also need an embedder. The Vercel AI SDK providers from [Bring your own model](/guides/bring-your-own-model/) work as embedders too — most teams use OpenAI's embeddings.
+You'll also need an embedding model. The Vercel AI SDK providers from [Bring your own model](/guides/bring-your-own-model/) supply them too, such as OpenAI's `text-embedding-3-small`, which the examples below use.
 
 ## Set up pgvector
 
@@ -130,11 +138,13 @@ const { retriever, stats } = await buildSchemaIndex({
 });
 ```
 
-`buildSchemaIndex` chunks the artifact and embeds only the chunks the store doesn't already hold with the same content hash. It returns a ready-to-use `retriever` plus indexing stats. The lock file records the embedder id, store, and dimensions. If the embedder id changed, or the lock is missing, every chunk is re-embedded; a different store gets the chunks it doesn't already hold. Pass `force: true` to re-embed unconditionally.
+`buildSchemaIndex` chunks the artifact, embeds only the chunks the store doesn't already hold, and returns a ready-to-use `retriever` plus indexing stats. A changed `embedderId` re-embeds every chunk, and `force: true` re-embeds them unconditionally. The [lock file](/reference/rag-api/#lock-file) records the embedder, store and vector width.
 
 ## Wire retrieval into `ask()`
 
-Pass the retriever to `ask()`. AskDB calls it with the question and substitutes the retrieved chunks for the full DDL in the prompt.
+Pass the retriever to `ask()`. AskDB calls it with the question. The prompt then lists, in full, each table a retrieved chunk points to, instead of every table. Retrieved common query language goes under its table, and the retrieved relationships, concepts, example questions and tenant policy text follow the tables. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists everything that reaches the model.
+
+With a tenant policy, the prompt's tenant block names only those tables too. A table outside them appears there only on a join path a retrieved table needs, and a root whose table wasn't retrieved appears by its label and placeholder ([#771](https://github.com/Ygilany/AskDB/issues/771)).
 
 If you just ran `buildSchemaIndex` in the same process, pass its returned `retriever` directly. To retrieve in a separate process (the common production shape), rebuild one from the store:
 
@@ -151,13 +161,13 @@ With only a retriever, `ask()` retrieves on every call. To let a small schema sk
 
 ## Sensitive fields and embeddings
 
-Sensitive content stays out of the index by default. The chunker drops the describable layer (descriptions, aliases, primary entity, enum values, notes, common query language, example questions, business context) for sensitive tables and columns. It also drops any describable text that mentions a sensitive column by name (whole word, case-insensitive), wherever the text would appear, including the aliases and primary entity repeated in common query language and example question headings. All of this text, whichever table it belongs to, is checked against every sensitive column in the schema, so an `orders` note or a concept that says "filter by SSN" is not embedded when `users.ssn` is sensitive. A column that is sensitive only because its whole table is counts only when mentioned as `table.column` (for example `users.org_id`), so generic names like `id` or `org_id` don't drop unrelated text. Column identifiers and types stay available to the model through `ask()`'s prompt.
+Sensitive content stays out of the index by default. The chunker leaves out the text you wrote about sensitive tables and columns (descriptions, aliases, primary entity, enum values, notes, common query language, example questions and business context), and any text that names a sensitive column, whichever table it describes. Column names and types stay available to the model through `ask()`'s prompt. [Privacy model](/concepts/privacy-model/#large-schemas-and-the-embedding-provider) says what the embedding model receives.
 
 Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust model allows embedding that content. Chunks kept this way carry `sensitive: true`. With `omitSensitiveIdentifiersFromNlToSqlPrompt` on, `ask()` leaves the text of any retrieved chunk that carries `sensitive: true` or names a sensitive column out of the prompt, whichever retriever returned it, and still lists the tables the chunk points to. See the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) for the full rules.
 
 ## Custom table or dimensions
 
-Several schemas can share one table: chunk ids are scoped by schema id (`chunk:<schemaId>:…`, with `%` and `:` in the schema id percent-encoded), and reindexing one schema never removes another schema's chunks. Use a separate table when deployments use different embedding models or dimensions. To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
+Several schemas can share one table: [chunk ids](/reference/rag-api/#chunk) include the schema id, and reindexing one schema never removes another schema's chunks. Use a separate table when deployments use different embedding models or dimensions. To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
 
 ```bash
 npx askdb rag setup-store \
@@ -173,5 +183,5 @@ npx askdb rag setup-store \
 <div class="home-path-grid">
   <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrichment dramatically improves retrieval quality.</span></a>
   <a href="/guides/bring-your-own-model/"><strong>Bring your own model</strong><span>Embedder options and key management.</span></a>
-  <a href="/reference/packages/"><strong>Package reference</strong><span>The full @askdb/rag API surface.</span></a>
+  <a href="/reference/rag-api/"><strong>@askdb/rag API</strong><span>Every export: indexing, retrieval, the lock file, chunking, embedders and stores.</span></a>
 </div>

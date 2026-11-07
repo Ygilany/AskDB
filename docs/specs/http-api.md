@@ -83,15 +83,16 @@ Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 | Code | HTTP | Source |
 | --- | --- | --- |
-| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError` (the server builds its client with `unknownDialect: "fallback-postgres"`, so `DialectNotSupportedError` isn't raised; the mapping stays as a guard) |
-| `schema_parse_error` | 400 | `SchemaLoadError` |
+| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, retired execution field, and `DialectNotSupportedError` for a request `schemaJson` that records no `provider` or one with no AskDB dialect (#720, #809). A request schema's dialect is its own `provider`, passed to `ask()` per call; a configured `dialect` applies to the server's own schema only. |
+| `schema_parse_error` | 400 | `SchemaLoadError` for a request `schemaJson` |
 | `sql_validation_error` | 400 | `SqlValidationError` (with `rule`) |
 | `schema_override_disabled` | 403 | `schemaJson` sent while `httpApi.allowSchemaOverride` is off |
 | `not_found` | 404 | Unknown route |
 | `payload_too_large` | 413 | Body over `maxBodyBytes` |
-| `guardrail_violation` | 422 | `SensitiveReferenceError`, `TenantGuardrailError` (with `rule`). Not reachable today: the server never sets `sensitiveGuardrailMode: "strict"` and never passes a `tenantScope`, so a tenant-policy schema throws `TenantScopeError` first (→ `500 internal_error`). |
-| `generation_not_configured` | 500 | `ModelNotConfiguredError` |
-| `internal_error` | 500 | Anything else, including `TenantScopeError` for every request against a tenant-policy schema. The message is generic. |
+| `guardrail_violation` | 422 | `SensitiveReferenceError`, `TenantGuardrailError` (with `rule`). Not reachable today: the server never sets `sensitiveGuardrailMode: "strict"` and never passes a `tenantScope`, so a tenant-policy schema throws `TenantScopeError` first (→ `500 tenant_scope_not_configured`). |
+| `generation_not_configured` | 500 | `ModelNotConfiguredError`, `SchemaNotConfiguredError` (#845), and `SchemaLoadError` (#840) and `DialectNotSupportedError` (#720) for the server's configured schema, with a generic message that names no path. The server builds its client without `unknownDialect`, so an unknown provider is refused, never generated as PostgreSQL. The log's `errName` tells the two apart. |
+| `tenant_scope_not_configured` | 500 | `TenantScopeError` with reason `MISSING_SCOPE`: a tenant-policy schema, which the server can't scope (#716, #343) |
+| `internal_error` | 500 | Anything else, including a `TenantScopeError` with any other reason. The message is generic. |
 | `sql_generation_error` | 502 | `SqlGenerationError` (provider failure or timeout). The message is generic. |
 
 Provider error text is never returned to clients, because it can echo request details or credential fragments. Every non-`2xx` `POST /ask` response is logged server-side as `askdb.run.error` with `status` and `code`, under the response's `correlationId`. Rejections before `ask()` runs (body, field validation, `schema_override_disabled`) log the client-facing message, or the body parse error; failures from `ask()` log the error name, message, cause, and (for `5xx`) the stack. `404 not_found` for unknown routes is not logged, and a last-resort `500` (an error that escapes the handler) is written to stderr, not to the structured log.

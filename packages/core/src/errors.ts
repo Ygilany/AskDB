@@ -22,7 +22,10 @@ export type SqlValidationRuleCode =
   | "SQL_COMMENT"
   | "SQL_NOT_SELECT_OR_WITH"
   | "SQL_FORBIDDEN_KEYWORD"
-  /** A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`). */
+  /**
+   * A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`), or, on
+   * every dialect, `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server.
+   */
   | "SQL_FORBIDDEN_FUNCTION"
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
@@ -76,7 +79,10 @@ export class SqlGenerationError extends AskDbError {
   }
 }
 
-/** A string `dialect` passed to `ask()` that is not a built-in dialect id. */
+/**
+ * A `dialect` passed to `ask()` that isn't a built-in dialect id: a string, or a `DialectSpec`
+ * whose `id` isn't one (#717). `dialectId` is the id it got.
+ */
 export class UnknownDialectError extends AskDbError {
   constructor(
     message: string,
@@ -116,10 +122,9 @@ export type TenantScopeRejectionReason =
    */
   | "UNESCAPABLE_TENANT_ID"
   /**
-   * `ask()` got a tenant scope, no `tenantSqlMode`, and a custom `AskDialect` or a
-   * `DialectSpec` whose `id` isn't built in. AskDB can't know which driver markers such a
-   * dialect takes, and its `$N` default is a money constant on SQL Server, so the host
-   * must choose `"sql-params"` or `"sql-only"`.
+   * `ask()` got a tenant scope, no `tenantSqlMode`, and a custom `AskDialect`. AskDB can't
+   * know which driver markers such a dialect takes, and its `$N` default is a money
+   * constant on SQL Server, so the host must choose `"sql-params"` or `"sql-only"`.
    * Also thrown, on every dialect, when `ask()` (with a tenant scope) or
    * `resolveTenantSql()` gets a `tenantSqlMode` that is neither of the two.
    */
@@ -151,7 +156,12 @@ export type QueryParameterRejectionReason =
    * `bindPreparedQuery()` needs `guardrails.dialect`: the template was made under a host's
    * `DialectSpec` (`dialectRules: "host"`), or stored without `dialectRules`.
    */
-  | "DIALECT_SPEC_REQUIRED";
+  | "DIALECT_SPEC_REQUIRED"
+  /**
+   * A parameter in the stored template declares a `type` or `cardinality` AskDB doesn't support.
+   * The template is broken: regenerate it rather than passing another value.
+   */
+  | "INVALID_DECLARATION";
 
 export class QueryParameterError extends AskDbError {
   constructor(

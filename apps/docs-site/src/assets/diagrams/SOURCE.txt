@@ -3,6 +3,7 @@ astro-d2 (see STYLE.md, "Diagrams"). Current D2 sources and their pages:
 
   d2/quickstart-flow.d2           → src/content/docs/quickstart.mdx
   d2/package-dependencies.d2      → src/content/docs/reference/packages.mdx
+  d2/rag-index-query.d2           → src/content/docs/guides/rag-for-large-schemas.mdx
 
 The SVG diagrams in this folder are older, hand-drawn build artifacts. They are
 imported via the Vite `?url` suffix and rendered as <img> elements so paths

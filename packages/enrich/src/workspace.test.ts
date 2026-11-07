@@ -243,6 +243,16 @@ describe("workspace", () => {
     expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
   });
 
+  // A column on another table than the one the contract puts it on fails a strict load
+  // (#836), so Save refuses it too, checked against schema.json's own column → table map.
+  it("saveTenantPolicy refuses a root whose tenantIdColumn is on another table, and writes nothing", () => {
+    const ws = loadWorkspace(schemaDir);
+    const misplaced = { ...ACCOUNT_POLICY, roots: [{ ...ACCOUNT_POLICY.roots[0]!, tenantIdColumn: "table:public.orders#id" }] };
+
+    expect(() => saveTenantPolicy(ws, misplaced, "")).toThrow("column table:public.orders#id is on table:public.orders");
+    expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
+  });
+
   // Studio keeps its workspace in memory. When a re-introspection renames a column and
   // the strict policy then fails to load, that copy goes stale; the corrected policy must
   // be checked against schema.json on disk, or Save refuses the fix (#647 review).
@@ -385,6 +395,39 @@ describe("workspace", () => {
       expect(ws.tables.find((t) => t.physical.name === "users")!.escalatedByOtherFiles).toEqual([createdAtId]);
       expect(ws.tables.find((t) => t.physical.name === "orders")!.escalatedByOtherFiles).toEqual([]);
     });
+  });
+});
+
+// A bundle is only useful if it loads, so the bundler checks it with core's loader (#796).
+describe("bundleSchemaDirectory refuses a directory the loader refuses", () => {
+  const tmps: string[] = [];
+  afterEach(() => {
+    for (const dir of tmps.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  const copyOf = (fixture: string): string => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-enrich-bundle-"));
+    tmps.push(tmp);
+    const dir = join(tmp, "copy.schema");
+    cpSync(new URL(`../../../fixtures/schemas/${fixture}`, import.meta.url), dir, { recursive: true });
+    return dir;
+  };
+
+  it.each([
+    ["a table file whose front-matter isn't YAML", "orders-users.schema", "tables/orders.md", "---js\n{ id: 'table:public.orders' }\n---\n"],
+    ["a tenant-policy.md that doesn't parse", "agency-multi-tenant.schema", "tenant-policy.md", "---\nroots:\n  - id: [unclosed\n---\n"],
+  ])("%s: throws the loader's SchemaParseError, naming the file on disk", (_problem, fixture, file, content) => {
+    const schemaDir = copyOf(fixture);
+    writeFileSync(join(schemaDir, file), content);
+    let fromLoader: unknown;
+    try {
+      loadSchema(schemaDir);
+    } catch (error) {
+      fromLoader = error;
+    }
+    expect(fromLoader).toBeInstanceOf(SchemaParseError);
+    expect((fromLoader as Error).message).toContain(join(schemaDir, file));
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow(SchemaParseError);
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow((fromLoader as Error).message);
   });
 });
 

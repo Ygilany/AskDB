@@ -1,0 +1,352 @@
+---
+title: "Schema artifact format"
+description: "Every file in a schema artifact: the schema.json fields, the table and concept front-matter, stable IDs, sensitivity rules, the loader's warnings, and the bundle format."
+---
+
+<p class="doc-eyebrow">Reference · Schema artifact</p>
+
+<p class="doc-lede">A schema artifact is a folder of files that <code>loadSchema()</code> reads, or one bundle file that holds them. This page lists each file, every field it accepts, and what AskDB does with it. For why the artifact is split this way, see <a href="/concepts/the-schema-artifact/">The schema artifact</a>.</p>
+
+The format is Schema v2, the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
+
+## Layout
+
+```
+my-app.schema/
+  schema.json         # required: the physical layer
+  tables/
+    orders.md         # optional: one file for each table you describe
+    users.md
+  concepts.md         # optional: business concepts that span tables
+  tenant-policy.md    # optional: the tenant policy
+  schema.lock.json    # written by @askdb/rag; loadSchema() ignores it
+```
+
+Only `schema.json` is required. A folder with no markdown files loads, and each table then has only its names and types.
+
+`askdb introspect` writes only `schema.json`. It never changes or deletes `tables/*.md`, `concepts.md` or `tenant-policy.md`.
+
+### Names AskDB reads exactly
+
+AskDB looks up `schema.json` (when you pass a folder), `tables/`, `tenant-policy.md`, `concepts.md`, and the `.md` extension of each file in `tables/` by their exact names. A name that matches one of them only when case is ignored, such as `Tenant-Policy.md`, `Tables/` or `tables/orders.MD`, makes `loadSchema()` throw `SchemaParseError` on every OS:
+
+```
+Schema directory <dir> has a file name in the wrong case: rename Tenant-Policy.md to tenant-policy.md. The loader reads these names exactly. …
+```
+
+The comparison also folds Unicode the way macOS and Windows file systems do, so `tableſ` (with a long s) counts as `tables`. If both spellings exist, which only a case-sensitive file system allows, the error says `keep one of …` instead of `rename`. A name that differs in more than case, such as `tenant_policy.md`, isn't a schema file, and the loader ignores it.
+
+A file that the folder lists but AskDB can't read throws `Failed to read <path>: …`. A missing optional file is fine.
+
+### File names in `tables/`
+
+The loader reads every file in `tables/` whose name ends in `.md`, and ignores the rest. It matches a file to its table by the `id` in the file's front-matter, never by the file name.
+
+When Studio saves a table file for the first time, it picks the name:
+
+1. `<table>.md`, such as `orders.md`.
+2. `<schema>.<table>.md` when two tables in `schema.json` share a name, such as `public.orders` and `archive.orders`, or when `tables/` already holds a file with the first name.
+3. `<schema>.<table>-2.md`, then `-3` and on, if that name is taken too.
+
+Two names count as the same when they differ only in case or Unicode form, as `Orders.md` and `orders.md`, or `straße` and `STRASSE`, do. Characters that aren't safe in a file name, such as `/`, `:` and `?`, become `_`. A name longer than 200 bytes is cut to fit, and ends in `~` and 8 hex characters of a hash, before `.md`. These rules don't depend on the OS, so the same schema gets the same file names everywhere.
+
+## What `loadSchema()` accepts
+
+| You pass | AskDB loads |
+| --- | --- |
+| A folder | Its `schema.json` and each optional file beside it. A folder without `schema.json` throws `No schema.json found in directory: <dir>`. |
+| A JSON file with a `bundled` key | A bundle: the files it carries. See [Bundle format](#bundle-format). |
+| A file named `schema.json`, in any case | Its folder, as if you passed the folder. AskDB reads the physical layer from the path you gave. |
+| Any other JSON file | Its physical layer only, with no table files, concepts or tenant policy. |
+
+Another JSON file throws instead when its folder also holds `tenant-policy.md`, `tables` or `concepts.md`, in any case. Loading the file alone would skip them ([why the loader fails closed](/concepts/the-schema-artifact/#directory-or-bundle)). The error starts `Refusing to load <file> as a standalone physical layer`. To load only the physical layer of such a file, pass its text to `loadSchemaFromJson()`.
+
+`loadSchemaFromJson()` takes JSON text: a bundle, or a physical layer alone. It never reads the file system.
+
+## `schema.json`
+
+The physical layer: the tables and columns AskDB read from the database. Here it is for a Postgres database with `orders` and `users` tables, with `users.email` marked sensitive:
+
+```json
+{
+  "version": 2,
+  "schemaId": "my-app",
+  "provider": "postgres",
+  "tables": [
+    {
+      "id": "table:public.orders",
+      "name": "orders",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        { "id": "table:public.orders#id", "name": "id", "type": "uuid", "nullable": false, "primaryKey": true, "sensitive": false },
+        { "id": "table:public.orders#user_id", "name": "user_id", "type": "uuid", "nullable": false, "sensitive": false },
+        { "id": "table:public.orders#status", "name": "status", "type": "text", "nullable": false, "sensitive": false }
+      ],
+      "relationships": [
+        { "from": "table:public.orders#user_id", "to": "table:public.users#id" }
+      ]
+    },
+    {
+      "id": "table:public.users",
+      "name": "users",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        { "id": "table:public.users#id", "name": "id", "type": "uuid", "nullable": false, "primaryKey": true, "sensitive": false },
+        { "id": "table:public.users#email", "name": "email", "type": "text", "nullable": false, "sensitive": true }
+      ]
+    }
+  ]
+}
+```
+
+### Top level
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `version` | `2` | yes | The format version. It must be the number `2`. |
+| `schemaId` | string | yes | The artifact's name. |
+| `provider` | string | no | The engine that introspection read: `postgres`, `mysql`, `sqlite`, `sqlserver` or, from a Prisma schema, `cockroachdb`. When your config doesn't set `dialect`, the config-driven entry points use it as the SQL dialect (see [Configuration](/reference/config/)). |
+| `tables` | array | yes | The tables, at least one. |
+
+### Table fields
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | string | yes | The table's [stable ID](#stable-ids). |
+| `name` | string | yes | The table name in the database. |
+| `schema` | string | yes | The table's namespace. See [Stable IDs](#stable-ids) for what each engine puts here. |
+| `sensitive` | boolean | no | `true` marks the table and every column in it sensitive. Absent means not sensitive. |
+| `columns` | array | yes | The columns, at least one. |
+| `relationships` | array | no | Foreign keys, as `{ "from": <column ID>, "to": <column ID> }`. The loader doesn't check that either column exists. |
+
+### Column fields
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | string | yes | The column's [stable ID](#stable-ids). |
+| `name` | string | yes | The column name in the database. |
+| `type` | string | yes | The database type, as text. |
+| `nullable` | boolean | yes | Whether the column allows `NULL`. |
+| `primaryKey` | boolean | no | `true` for a primary-key column. Absent means `false`. |
+| `sensitive` | boolean | no | `true` marks the column sensitive. Absent means not sensitive. |
+
+### What introspection writes
+
+- `provider` when the engine is known, and `tables` sorted by schema, then name. Views appear as ordinary tables.
+- `"sensitive": false` on every table and column, so each one is explicit.
+- `"primaryKey": true` on primary-key columns only, and `relationships` only on tables with foreign keys.
+- For Postgres, the short type names: `timestamptz` for `timestamp with time zone`, `varchar(…)` for `character varying(…)`. Other engines' types are written as the engine reports them.
+
+`schema.json` holds no column comments, defaults, indexes, or unique or check constraints.
+
+### Unknown keys and errors
+
+AskDB drops a key it doesn't know without an error or a warning. A misspelled `"sensitve": true` loads and marks nothing. Table front-matter is stricter: there, an unknown key is an error.
+
+| Problem | Error (`SchemaParseError`) |
+| --- | --- |
+| `"version": 1` | ``AskDB schema format `version: 1` is not supported as of `@askdb/core@0.2.0`. Migrate to Schema v2 format. …`` |
+| Any other invalid field | `Invalid schema.json at <path>: <details>` |
+| Text that isn't JSON | `Failed to parse schema.json in <dir>` |
+
+### Re-introspection
+
+When `askdb introspect` writes into a folder that already has a `schema.json`, it builds a new one from the database. From the old file it keeps only each table's and column's `sensitive` value, `true` or `false`, matched by ID. Every other edit to `schema.json` is lost, and so is a `sensitive` value on an ID that no longer exists.
+
+`schemaId` comes from the run, not from the old file. The CLI takes it from `--schema-id`, or else from the output folder's name without `.schema`.
+
+Introspection also parses each `tables/*.md` file to find IDs that no longer exist. A table file it can't parse stops introspection with that file's error.
+
+## Stable IDs
+
+Table and column IDs come from the names in the database, so introspecting an unchanged database again gives the same IDs. The markdown files refer to tables and columns only by ID.
+
+| ID | Format | Example |
+| --- | --- | --- |
+| Table | `table:<schema>.<table>` | `table:public.users` |
+| Column | `table:<schema>.<table>#<column>` | `table:public.users#email` |
+| Concept | `concept:<slug>` | `concept:customer` |
+
+AskDB doesn't escape names, so an ID keeps each name's case, and any `.`, `#` or space in it. The loader doesn't check the format: it matches IDs as exact strings. `concept:` is a convention that Studio follows. The loader accepts any non-empty concept ID.
+
+The `<schema>` part is the table's `schema` field:
+
+| Engine | `schema` |
+| --- | --- |
+| Postgres, and CockroachDB through `@askdb/postgres` | The Postgres schema, such as `public` |
+| SQL Server | The SQL Server schema, such as `dbo` |
+| MySQL and MariaDB | `public` for the connection's database. When `introspection.schemas` lists databases, each database's name. |
+| SQLite | `public` |
+| A Prisma schema (`@askdb/prisma`) | The model's `@@schema`, or else `public`, for every datasource provider |
+
+Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition. Entries that name the old ID then report [warnings](#loader-warnings), and its `sensitive` marks don't carry over. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps after a rename.
+
+## Table files (`tables/*.md`)
+
+One markdown file describes one table: YAML front-matter, then a markdown body.
+
+```markdown
+---
+id: table:public.orders
+name: orders
+schemaId: my-app
+aliases: [purchases, sales]
+columns:
+  - id: table:public.orders#status
+    enum: [pending, paid, shipped, cancelled]
+    description: Order lifecycle state.
+---
+
+# Table: orders
+
+Customer purchase orders. One row per submitted order.
+
+## Common query language
+
+- "sales" usually means paid orders
+- "active customers" excludes status = cancelled
+```
+
+### Front-matter rules
+
+- **YAML only.** The block opens with `---`, `---yaml` or `---yml`. Since `@askdb/core` 1.0.0-beta.48, any other format, such as `---js` or `---json`, fails to load: `Malformed table front-matter YAML in <file>: front-matter must be YAML`. The same rule covers `concepts.md` and `tenant-policy.md`.
+- **Required.** A table file without front-matter, or without `id`, `name` and `schemaId`, fails to load.
+- **No unknown keys.** A key that isn't in the table below fails to load: `Invalid table front-matter in <file>: …`, with `Unrecognized key` in the details.
+- **One file per table.** Two files with the same `id` fail to load: `… both have front-matter id <id>. Each table needs exactly one markdown file; merge them.`
+
+### Table keys
+
+| Key | Type | Required | What AskDB does with it |
+| --- | --- | --- | --- |
+| `id` | string | yes | Joins the file to the table with this ID in `schema.json`. |
+| `name` | string | yes | Nothing when loading: the table's name comes from `schema.json`. |
+| `schemaId` | string | yes | Nothing when loading: AskDB doesn't compare it with `schema.json`. |
+| `primaryEntity` | string | no | The concept slug the table stands for, such as `order`. `@askdb/rag` uses it when it indexes the table. |
+| `aliases` | string[] | no | Other names for the table. The prompt shows them next to the table. |
+| `tags` | string[] | no | Free-form labels. AskDB keeps them in the file, and neither the prompt nor `@askdb/rag` reads them. |
+| `sensitive` | boolean | no | `true` marks the table and every column in it sensitive. `false` changes nothing: see [Sensitivity rules](#sensitivity-rules). |
+| `tracked` | boolean | no | `false` keeps the table in the artifact but leaves it out of the full-schema prompt and the `@askdb/rag` index. Absent means `true`. |
+| `toIgnore`, `to-ignore` | boolean | no | Another way to write `tracked`: `true` means `tracked: false`. It applies only when `tracked` is absent. If both are set and disagree, the file fails to load. |
+| `columns` | array | no | One entry for each column you describe. |
+
+### Column keys (`columns[]`)
+
+| Key | Type | Required | What AskDB does with it |
+| --- | --- | --- | --- |
+| `id` | string | yes | The column's ID. It must belong to this file's table: see [`misplaced_column_id`](#loader-warnings). |
+| `aliases` | string[] | no | Other names for the column. The prompt shows them on the column's line. |
+| `enum` | string[] | no | The values the column holds. The prompt shows them on the column's line. |
+| `description` | string | no | One or two sentences. The prompt shows it on the column's line. |
+| `sensitive` | boolean | no | `true` marks the column sensitive. `false` changes nothing. |
+
+List each column once. If a column appears again in the same file, only its first entry's `aliases`, `enum` and `description` apply.
+
+### Body
+
+- **Description.** The first paragraph after the first heading is the table's description. The prompt shows it as a comment under the table's name. The lines of the paragraph are joined with spaces.
+- **Sections.** AskDB recognizes four `##` sections by their exact heading, ignoring case. Other sections stay in the file, and AskDB doesn't use them.
+
+| Section | Used by | Format |
+| --- | --- | --- |
+| `## Common query language` | The prompt and `@askdb/rag` | Free text. The prompt shows each line as a comment under the table. |
+| `## Example questions` | `@askdb/rag` only | Each `- ` or `* ` item becomes one indexed question. |
+| `## Business context` | `@askdb/rag` only | Free text. |
+| `## Column notes` | `@askdb/rag` only | ``- `column_name`: note``, with the column's name, not its ID. `-` or `—` can replace the colon. |
+
+For a sensitive table, AskDB drops its description, aliases, `primaryEntity` and common query language when it loads the file. For a sensitive column, it drops the column's description, aliases and `enum`.
+
+## `concepts.md`
+
+Business concepts that span tables, such as a *customer* who can be in `users` or in `leads`. Concepts reach the model only through `@askdb/rag` retrieval: the full-schema prompt doesn't include them.
+
+```markdown
+---
+concepts:
+  - id: concept:customer
+    label: Customer
+    synonyms: [user, client, buyer]
+    links: [table:public.users, table:public.leads]
+    description: A person who has signed up or asked to buy.
+---
+
+# Concepts
+```
+
+| Key | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `concepts` | array | yes | The concepts. It can be empty. |
+| `concepts[].id` | string | yes | The concept's ID. |
+| `concepts[].label` | string | yes | The concept's name. |
+| `concepts[].synonyms` | string[] | no | Other words people use for it. |
+| `concepts[].links` | string[] | no | Table and column IDs the concept covers. The loader doesn't check them. Studio refuses a link to an ID that isn't in `schema.json`. |
+| `concepts[].description` | string | no | What the concept means. |
+
+The front-matter rules for table files apply here too: YAML only, and no unknown keys. AskDB doesn't read the body.
+
+## `tenant-policy.md`
+
+The tenant policy. When the artifact has one, `ask()` requires a `tenantScope`. The front-matter must be YAML. [Tenant policy format](/reference/tenant-policy/) lists its fields.
+
+## `schema.lock.json`
+
+`@askdb/rag` writes this file next to `schema.json` when it indexes the schema, as `askdb rag index` does. It records the embedder and a hash of each chunk. `loadSchema()` ignores it, and a bundle doesn't include it. See [the lock file](/reference/rag-api/#lock-file).
+
+## Sensitivity rules
+
+Each table and column ends up with one `sensitive` value:
+
+- **A table** is sensitive when `schema.json` or its file's front-matter says `sensitive: true`.
+- **A column** is sensitive when `schema.json` says `sensitive: true`, when any `columns[]` entry for it in any table file says `sensitive: true`, or when its table is sensitive.
+- **Escalate-only.** Front-matter can mark a table or column sensitive, but its `sensitive: false` never un-marks one. To un-mark one, set `"sensitive": false` in `schema.json` and remove any front-matter `sensitive: true` for it. Re-introspection keeps the `schema.json` value.
+- **Misplaced and repeated entries.** A `columns[]` entry in another table's file still applies its `sensitive: true`, and nothing else from it applies. A column listed more than once is sensitive if any entry says `sensitive: true`.
+
+[Privacy model](/concepts/privacy-model/) explains what reaches the model for a sensitive table or column.
+
+## Loader warnings
+
+`loadSchema()` returns its warnings in the loaded schema's `warnings` array (`SchemaV2Warning[]`). They never stop loading. The CLI doesn't print them. Studio lists them under **Settings → Schema Warnings**. Each warning is an object with a `kind` and the fields below.
+
+| `kind` | Fields | Cause | Fix |
+| --- | --- | --- | --- |
+| `orphaned_table_id` | `tableFile`, `id` | The file's front-matter `id` isn't a table in `schema.json`, often after a rename. AskDB ignores the file, but still checks its `columns[]` entries and still applies their `sensitive: true`. | Change `id` to the table's current ID, or delete the file. |
+| `orphaned_column_id` | `tableFile`, `id` | A `columns[]` entry names a column that isn't in `schema.json`. | Change the entry to the column's current ID, or remove it. |
+| `misplaced_column_id` | `tableFile`, `id`, `tableId` | A `columns[]` entry names a column of another table, `tableId`. (The tenant policy's warning of the same name is in `schema.tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).) Only its `sensitive: true` applies. | Move the entry to `tableId`'s file. |
+| `duplicate_column_id` | `tableFile`, `id` | The file lists the column again. One warning for each repeat. | Merge the entries into one. |
+| `sensitivity_downgrade_ignored` | `tableFile`, `id` | Front-matter says `sensitive: false` for a table or column that is sensitive anyway. | Remove the `false`. To un-mark it, edit `schema.json`. |
+
+`tableFile` is the file's path in the artifact, such as `tables/orders.md`. The same `SchemaV2Warning` type also has `missing_table_md` and `missing_column_md`. Only Studio reports those: for a table with no table file, and for a column with no `columns[]` entry in its table's file. Tenant policy warnings are separate, in `tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
+
+## Bundle format
+
+A bundle is one JSON file that holds a whole artifact. Loading it gives the same result as loading the folder.
+
+```jsonc
+{
+  "bundled": true,
+  "physical": { /* schema.json */ },
+  "tables": { "orders.md": "<raw markdown>" }, // every tables/*.md, by file name
+  "concepts": "<raw concepts.md>",              // when concepts.md exists
+  "tenantPolicy": "<raw tenant-policy.md>"      // when tenant-policy.md exists
+}
+```
+
+- `loadSchema()` and `loadSchemaFromJson()` treat any JSON object with a `bundled` key as a bundle.
+- The keys of `tables` are file names without `tables/`. The markdown is kept as raw text.
+- `tables` is required, `{}` when the artifact has no table files. A bundle without it, or whose `tables` isn't an object of strings, throws `SchemaParseError` naming `tables` and the bundle.
+- An error in a bundled file names the file and the bundle, such as `tables/orders.md (in /srv/prod.bundle.json)`.
+
+[`askdb bundle`](/reference/cli/#askdb-bundle) writes a bundle, and so do `readSchemaDirectory()` in `@askdb/core` and `bundleSchemaDirectory()` in `@askdb/enrich`. All three check the file names and `schema.json` as `loadSchema()` does. `bundleSchemaDirectory()`, and so `askdb bundle`, also checks the bundle with the loader, so it refuses whatever `loadSchema()` refuses, and a bundle it returns always loads. `readSchemaDirectory()` doesn't parse the markdown files: a front-matter error in a bundle it returns shows up when the bundle is loaded.
+
+## Versioning
+
+Schema v2 is the only format AskDB reads. Before 1.0, v2 can gain fields without a new version number. After 1.0, a breaking change to the format gets a new `version`. The [Schema v2 contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) records the policy.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>Why the artifact is files your team owns, and how its two layers fit together.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
+  <a href="/reference/core-api/schema/#loadschemapath"><strong>@askdb/core API</strong><span><code>loadSchema()</code>, <code>loadSchemaFromJson()</code> and the loaded schema's fields.</span></a>
+</div>

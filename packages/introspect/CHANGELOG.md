@@ -1,5 +1,38 @@
 # @askdb/introspect
 
+## 0.3.0-beta.25
+
+### Patch Changes
+
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+
+## 0.3.0-beta.24
+
+### Minor Changes
+
+- 0782a06: Introspection refuses to write an artifact with no tables (#337, ADR 0037). `loadSchema` rejects a `schema.json` with `tables: []`, so writing one only moved the failure to the next command, and re-introspecting a database that had lost its tables replaced a valid artifact with it. `renderSchemaV2Body`, and so `renderToSchemaV2` and `introspect()` with render options, now throw the new `EmptyIntrospectionError` when the schema renders no tables or views, after filters: an empty database, a Postgres schema with only enums or sequences, or filters that match nothing. Nothing is written, and an existing `schema.json` and `tables/*.md` stay as they were. The error carries `schemaId`, `provider` and `filters`, and its message names them and the likely causes, never the connection. `RenderOptions` gains an optional `filters`, read only to name them in that error.
+
+### Patch Changes
+
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [91e89ec]
+  - @askdb/core@1.0.0-beta.50
+
 ## 0.3.0-beta.23
 
 ### Patch Changes

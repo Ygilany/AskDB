@@ -11,11 +11,11 @@ import { Aside } from "@astrojs/starlight/components";
 
 ## Before you start
 
-- **A tenant policy and a scope.** Your schema artifact has a tenant policy, and every `ask()` call passes a `tenantScope`. See [Multi-tenancy](/guides/multi-tenancy/), and [What enforces isolation](/guides/multi-tenancy/#what-enforces-isolation) for how this guide fits with AskDB's check.
+- **A tenant policy and a scope.** Your schema artifact has a tenant policy, and every `ask()` call passes a `tenantScope`. See [Scope queries to a tenant](/guides/multi-tenancy/), and [What enforces isolation](/concepts/tenant-isolation/#what-enforces-isolation) for how this guide fits with AskDB's check.
 - **A read-only role for generated SQL.** Here it's `askdb_reader`, set up as in [Database role](/guides/run-safely-in-prod/#database-role). It must not own the tenant tables, be a superuser, or have `BYPASSRLS`: Postgres skips row-level security for all three.
 - **PostgreSQL 15 or later** if the role reads views, for `security_invoker`. The examples were tested on PostgreSQL 17.
 
-The examples build on the multi-tenancy guide's tables: `organizations` (the tenant root) and `documents`, with an `organization_id` column. They use integer IDs, and add a `comments` table that reaches its organization through `document_id`.
+The examples use tables like those in [Scope queries to a tenant](/guides/multi-tenancy/): `organizations` (the tenant root) and `documents`, with an `organization_id` column. Here the IDs are integers, not that guide's strings such as `org_abc123`, and a `comments` table reaches its organization through `document_id`.
 
 Keep `enforcement: strict` in your tenant policy. AskDB's check still stops most unscoped queries before they reach the database, so a model mistake shows up as an error you can log, and the database makes the mistakes that get past it harmless.
 
@@ -46,7 +46,7 @@ The `USING` expression keeps the policy closed:
 - **Unset matches nothing.** `current_setting(…, true)` returns `NULL` when the setting was never set in the session, instead of raising an error. A pooled connection that ran an earlier request holds `''` instead, and `NULLIF` turns that into `NULL`. `= ANY (NULL)` is never true, so a query with no tenant set gets no rows, not every row.
 - **A bad value fails loudly.** A setting such as `1,x`, which doesn't parse as the column's type, raises an error instead of matching.
 
-With a [`subtree` scope](/guides/multi-tenancy/#hierarchical-scope-subtree), the IDs come per tenant root. Use one setting per root, such as `app.agency_ids` and `app.client_ids`, read by the policies on that root's tables. Expand the scope once per request with `expandTenantScope()` from `@askdb/core`, the same expansion `ask()` runs, and use the result in both places:
+With a [`subtree` scope](/guides/tenant-hierarchy/), the IDs come per tenant root. Use one setting per root, such as `app.agency_ids` and `app.client_ids`, read by the policies on that root's tables. Expand the scope once per request with `expandTenantScope()` from `@askdb/core`, the same expansion `ask()` runs, and use the result in both places:
 
 ```ts
 import { expandTenantScope, loadSchema } from "@askdb/core";
@@ -122,7 +122,7 @@ In node-postgres, with `askdb` created by `createAskDb()` as in [Embed in a Node
 import { Pool, type QueryConfig } from "pg";
 
 // Connects as askdb_reader.
-const pool = new Pool({ connectionString: process.env.ASKDB_READER_URL, statement_timeout: 5000 });
+const pool = new Pool({ connectionString: process.env.READER_DATABASE_URL, statement_timeout: 5000 });
 
 // organizationIds: the organizations your application authorized for this user.
 export async function askForOrganizations(question: string, organizationIds: string[]) {
@@ -233,12 +233,7 @@ Run these checks against a real database before you rely on the setup, and again
 
 ## Other engines
 
-This recipe is for Postgres. On every engine, AskDB's tenant check stays a lint, so the database or your application must keep each query to its tenants. The other engines AskDB supports haven't been tested with a recipe like this one:
-
-- **CockroachDB** has row-level security from v25.2, with `FORCE ROW LEVEL SECURITY` for table owners. Its docs pass the tenant in `application_name` rather than a custom setting, and list features that skip the policies. See [Row-level security](https://www.cockroachlabs.com/docs/stable/row-level-security).
-- **SQL Server and Azure SQL** have row-level security from SQL Server 2016: a security policy with a filter predicate function, which can read a tenant ID your application sets with `sp_set_session_context` and `@read_only = 1`. Microsoft warns that crafted queries can infer filtered rows from errors, which matters for generated SQL. See [Row-level security](https://learn.microsoft.com/en-us/sql/relational-databases/security/row-level-security).
-- **MySQL and MariaDB** document no row-level security policies. A view can't read a system or user variable, so a view can't take the tenant per request ([MySQL](https://dev.mysql.com/doc/refman/8.4/en/create-view.html), [MariaDB](https://mariadb.com/docs/server/server-usage/views/create-view)). Give each tenant its own database, or its own account that can read only that tenant's views.
-- **SQLite** has no users or grants ([omitted features](https://www.sqlite.org/omitted.html)). Give each tenant its own database file. Its [authorizer](https://www.sqlite.org/c3ref/set_authorizer.html) works on tables and columns, not rows.
+This recipe is for Postgres. On every engine, AskDB's tenant check stays a lint, so the database or your application must keep each query to its tenants. [Tenant isolation](/concepts/tenant-isolation/#other-engines) says what CockroachDB, SQL Server, MySQL, MariaDB and SQLite offer.
 
 ## Read next
 

@@ -40,7 +40,7 @@ it("reports a missing @askdb/prisma as the Prisma plan's error", () => {
     const structured = {
       ai: { provider: "openai", providerConfig: { openai: { apiKey: "test-key" } } },
       introspection: { provider: "prisma", providerConfig: { prisma: { schemaPath: "./schema.prisma" } } },
-      rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+      rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
     };
     config.setAskDbRuntimeForTests(structured);
     const { resolveStudioIntrospectionPlan } = await import(${JSON.stringify(pathToFileURL(join(studioDir, "dist/introspection.js")).href)});

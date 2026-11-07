@@ -1,13 +1,19 @@
 import type {
   AiConfig,
   AiEnv,
+  AiModelSection,
   AiProvider,
   AiProviderAdapter,
   AiProviderAdapters,
   AiProviderSelector,
   AiRegistry,
+  AiUsage,
 } from "./provider.js";
-import { normalizeProvider } from "./provider.js";
+import {
+  normalizeProvider,
+  refuseSectionBaseUrlCredentials,
+  refuseSectionWithoutEmbeddingModel,
+} from "./provider.js";
 import {
   BUILTIN_AI_PROVIDERS,
   BUILTIN_AI_PROVIDER_NAMES,
@@ -73,6 +79,23 @@ export function createAiRegistry(adapters?: AiProviderAdapters): AiRegistry {
     return adapter.resolveConfig(env, { usage: "embedding", ...options });
   }
 
+  function resolveFromSection(section: AiModelSection, usage: AiUsage): AiConfig | undefined {
+    const adapter = adapterFor(section.provider);
+    refuseSectionBaseUrlCredentials(section);
+    if (usage === "embedding") refuseSectionWithoutEmbeddingModel(section);
+    if (adapter.resolveConfigFromSection) return adapter.resolveConfigFromSection(section, { usage });
+    return adapter.resolveConfig(universalEnv(section, usage), { usage });
+  }
+
+  function resolveAiConfigFromSection(section: AiModelSection): AiConfig | undefined {
+    return resolveFromSection(section, "language");
+  }
+
+  function resolveEmbeddingConfigFromSection(section: AiModelSection): AiConfig | undefined {
+    const { provider, connection, model } = section;
+    return resolveFromSection({ provider, connection, model }, "embedding");
+  }
+
   return {
     hasProvider(provider) {
       return byProvider.has(normalizeProvider(provider));
@@ -95,6 +118,22 @@ export function createAiRegistry(adapters?: AiProviderAdapters): AiRegistry {
       if (!config) return undefined;
       return adapterFor(config.provider).createEmbeddingModel(config, options);
     },
+    resolveAiConfigFromSection,
+    resolveEmbeddingConfigFromSection,
+    async createLanguageModelFromSection(section) {
+      const config = resolveAiConfigFromSection(section);
+      if (!config) return undefined;
+      return adapterFor(config.provider).createLanguageModel(config);
+    },
+    async createEmbeddingModelFromSection(section, options = {}) {
+      const config = resolveEmbeddingConfigFromSection(section);
+      if (!config) return undefined;
+      const dimensions = options.dimensions ?? section.dimensions;
+      return adapterFor(config.provider).createEmbeddingModel(config, {
+        ...options,
+        ...(dimensions !== undefined ? { dimensions } : {}),
+      });
+    },
     resolveProviderOptions(config, settings) {
       return adapterFor(config.provider).resolveProviderOptions?.(config, settings);
     },
@@ -108,6 +147,21 @@ export function createAiRegistry(adapters?: AiProviderAdapters): AiRegistry {
       }
       return `${context}: no AI API key configured. ${hints.join(" ")}`;
     },
+  };
+}
+
+/**
+ * A section as the universal `ASKDB_AI_*` env keys every adapter's `resolveBaseConfig` reads, for
+ * an adapter with no `resolveConfigFromSection`.
+ */
+function universalEnv(section: AiModelSection, usage: AiUsage): AiEnv {
+  const { connection } = section;
+  return {
+    ASKDB_AI_PROVIDER: section.provider,
+    ASKDB_AI_API_KEY: connection.apiKey,
+    ASKDB_AI_API_KEY_SECONDARY: connection.apiKeySecondary,
+    ASKDB_AI_BASE_URL: connection.baseUrl,
+    [usage === "language" ? "ASKDB_AI_MODEL" : "ASKDB_AI_EMBEDDING_MODEL"]: section.model,
   };
 }
 

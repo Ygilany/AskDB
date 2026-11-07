@@ -9,7 +9,6 @@ const spec: ProviderEnvSpec = {
   embeddingModelVars: ["NATIVE_EMBEDDING_MODEL"],
   baseURLVars: ["NATIVE_BASE_URL"],
   defaultModel: "default-language",
-  defaultEmbeddingModel: "default-embedding",
 };
 
 describe("resolveBaseConfig", () => {
@@ -199,29 +198,19 @@ describe("resolveBaseConfig", () => {
   });
 });
 
-describe("the deprecated default embedding model", () => {
-  it("warns once per process when it picks the model, and never when a model is set", async () => {
-    // A fresh module graph, so an earlier test's use of the default doesn't hide the warning.
-    vi.resetModules();
-    const { createAiRegistry: createFreshRegistry } = await import("./registry.js");
-    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
-    try {
-      const ai = createFreshRegistry(["openai"]);
-      expect(
-        ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k", ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-large" })?.model,
-      ).toBe("text-embedding-3-large");
-      expect(emitWarning).not.toHaveBeenCalled();
-
-      expect(ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k" })?.model).toBe("text-embedding-3-small");
-      expect(ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k" })?.model).toBe("text-embedding-3-small");
-      expect(emitWarning).toHaveBeenCalledTimes(1);
-      expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("set ASKDB_AI_EMBEDDING_MODEL"), {
-        type: "DeprecationWarning",
-        code: "ASKDB_AI_DEFAULT_EMBEDDING_MODEL",
-      });
-    } finally {
-      emitWarning.mockRestore();
-    }
+describe("the env path's embedding model", () => {
+  // The embedding model is baked into a persisted index, so no layer picks one (ADR 0016), on the
+  // env path as on the section path.
+  it.each([
+    ["openai", { OPENAI_API_KEY: "k" }],
+    ["azure", { AZURE_OPENAI_API_KEY: "k", AZURE_RESOURCE_NAME: "eastus" }],
+    ["gateway", { AI_GATEWAY_API_KEY: "k" }],
+  ] as const)("%s: requires a model instead of picking one", async (provider, env) => {
+    const ai = createAiRegistry([provider]);
+    const message = `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`;
+    expect(() => ai.resolveEmbeddingConfig({ ASKDB_AI_PROVIDER: provider, ...env })).toThrowError(message);
+    await expect(ai.createEmbeddingModelFromEnv({ ASKDB_AI_PROVIDER: provider, ...env })).rejects.toThrowError(message);
+    expect(ai.resolveEmbeddingConfig({ ASKDB_AI_PROVIDER: provider, ...env, ASKDB_AI_EMBEDDING_MODEL: "m" })?.model).toBe("m");
   });
 });
 

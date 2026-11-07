@@ -107,7 +107,7 @@ async function runAsk(opts: AskOptions): Promise<number> {
   const logger = createCliLogger(opts, runtime, logLevel);
 
   const mockSql = opts.mockSql ?? runtime.dev.mockSql;
-  const aiConfig = mockSql ? undefined : ai.resolveAiConfig(runtime.ai.aiEnv);
+  const aiConfig = mockSql ? undefined : ai.resolveAiConfigFromSection(runtime.ai.language);
   if (!mockSql && !aiConfig) {
     process.stderr.write(`${ai.keyMissingMessage("NL→SQL generation")}\n`);
     process.stderr.write("Tip: in tests, pass --mock-sql or set dev.mockSql in askdb.config to bypass live model calls.\n");
@@ -180,8 +180,12 @@ async function runAsk(opts: AskOptions): Promise<number> {
   }
 }
 
+/** The schema path, and a hint that names `askdb introspect` and the troubleshooting page. */
 function formatSchemaPathHint(schemaPath: string): string {
-  return `Schema path: ${schemaPath}\nHint: Try \`fixtures/schemas/orders-users.schema/\` (v2 directory) as a known-good example.`;
+  return (
+    `Schema path: ${schemaPath}\n` +
+    "Hint: Use a schema directory that `askdb introspect` wrote (it holds schema.json). See https://askdb.tools/guides/troubleshooting/."
+  );
 }
 
 function loadSchemaFromPath(schemaPath: string): ReturnType<typeof loadSchema> {

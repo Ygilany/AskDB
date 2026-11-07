@@ -21,9 +21,9 @@ import { runIntrospectCli } from "./introspect.js";
 vi.mock("./project-config.js", () => ({ requireAskDbConfig: vi.fn() }));
 
 const BASE_CONFIG: AskDbConfig = {
-  ai: { provider: "openai", providerConfig: { openai: { apiKey: "test-key", model: "gpt-4o-mini" } } },
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "test-key" } }, language: { model: "gpt-4o-mini" } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 };
 
 // A third-party engine's block rides in the structured config, which @askdb/config passes

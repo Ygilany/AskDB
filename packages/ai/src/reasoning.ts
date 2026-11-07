@@ -37,9 +37,9 @@ const CALL_PURPOSE_ENV_VAR: Record<AiCallPurpose, string> = {
  * the global `ASKDB_AI_REASONING_EFFORT` > `undefined` (provider/model
  * default — nothing configured).
  *
- * `env` is typically `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config`,
- * already populated by `flattenAskDbConfig` from `askdb.config.*`'s
- * `ai.reasoning` block.
+ * `env` is the host's own env map, for a host without an `askdb.config` file. A host with one
+ * passes `getAskDbRuntimeConfig().ai.language.reasoning` (`askdb.config.*`'s
+ * `ai.language.reasoning`) to {@link resolveReasoningEffortFromSection} instead.
  */
 export function resolveReasoningEffort(
   env: Record<string, string | undefined>,
@@ -53,5 +53,33 @@ export function resolveReasoningEffort(
   }
   const global = env.ASKDB_AI_REASONING_EFFORT?.trim();
   if (global && isReasoningEffort(global)) return global;
+  return undefined;
+}
+
+/** `ai.language.reasoning`: a default effort, and one per call purpose that overrides it. */
+export type AiReasoningSection = {
+  effort?: ReasoningEffort;
+  nlToSql?: ReasoningEffort;
+  enrichment?: ReasoningEffort;
+};
+
+/**
+ * Resolves the effective reasoning effort for a call site from a typed section, such as
+ * `getAskDbRuntimeConfig().ai.language.reasoning` from `@askdb/config`: the section counterpart of
+ * {@link resolveReasoningEffort}.
+ *
+ * Precedence: explicit `override` > the call purpose's own effort (`reasoning.nlToSql` or
+ * `reasoning.enrichment`) > `reasoning.effort` > `undefined` (provider/model default). A value
+ * that isn't a {@link ReasoningEffort} is skipped.
+ */
+export function resolveReasoningEffortFromSection(
+  reasoning: AiReasoningSection | undefined,
+  usage: AiCallPurpose,
+  override?: ReasoningEffort,
+): ReasoningEffort | undefined {
+  if (override) return override;
+  for (const value of [reasoning?.[usage], reasoning?.effort]) {
+    if (value !== undefined && isReasoningEffort(value)) return value;
+  }
   return undefined;
 }

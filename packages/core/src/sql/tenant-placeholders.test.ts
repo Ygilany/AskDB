@@ -10,7 +10,7 @@ import {
   type TenantSqlDialect,
 } from "./tenant-placeholders.js";
 import { ask, type AskDialect } from "../ask.js";
-import { SchemaParseError, TenantScopeError } from "../errors.js";
+import { SchemaParseError, TenantScopeError, UnknownDialectError } from "../errors.js";
 import { getDialectSpec, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
 import {
@@ -159,9 +159,9 @@ describe("ask() — tenant SQL output modes", () => {
     expect(chosen.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id = $1");
   });
 
-  // AskDB picks tenant markers only for an engine it knows: a built-in id, or a DialectSpec
-  // under one. Spread from SQL Server under another id, the spec's markers are unknown too,
-  // and the `$1` a default would give matches agency 1's rows there (ADR 0024).
+  // A DialectSpec must keep a built-in id (ADR 0029, #717), so a spec spread from SQL Server under
+  // another id is refused as an unknown dialect, before the tenant mode check and the model call.
+  // A spread that keeps the id keeps that engine's markers (ADR 0024).
   it("refuses a DialectSpec whose id isn't built in, and keeps the default under a built-in id", async () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
@@ -173,8 +173,8 @@ describe("ask() — tenant SQL output modes", () => {
     // "constructor" is an Object.prototype key, not a built-in id.
     for (const id of ["mssql", "constructor"]) {
       const error = await run({ ...sqlServer, id } as unknown as DialectSpec).catch((e: unknown) => e);
-      expect(error, id).toBeInstanceOf(TenantScopeError);
-      expect((error as TenantScopeError).reason).toBe("TENANT_SQL_MODE_REQUIRED");
+      expect(error, id).toBeInstanceOf(UnknownDialectError);
+      expect((error as UnknownDialectError).dialectId, id).toBe(id);
     }
     expect(generateText).not.toHaveBeenCalled();
     // A spread that keeps the built-in id is still that engine, with its own markers.

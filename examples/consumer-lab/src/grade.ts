@@ -46,7 +46,7 @@ type Failed = Exclude<Verdict, { status: "pass" }>;
 
 
 /**
- * AskDB's documented rejections of the SQL a model wrote (`getting-started/troubleshooting.mdx`).
+ * AskDB's documented rejections of the SQL a model wrote (`guides/troubleshooting.mdx`).
  * `QueryParameterError` isn't documented (#465), so it isn't here: `ask()` doesn't throw it, and a
  * rebind that does is graded where `bindPreparedQuery` is called.
  */
