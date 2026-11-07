@@ -39,6 +39,14 @@ Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/ht
 | `extractTenantPlaceholders()` | `resolveTenantSql()`, whose `bindings` name each placeholder it replaced. |
 | `parseAskDbSchemaJson()`, `normalizeAskDbSchema()` | `loadNormalizedSchemaFromJson()`, which runs both steps on a v1 schema. |
 
+### A JavaScript config loads with Node's own loader
+
+`@askdb/config` loads `askdb.config.js`, `.cjs` and `.mjs` with Node's own loader, and compiles only a TypeScript config (`.ts`, `.mts`, `.cts`) with jiti ([#833](https://github.com/Ygilany/AskDB/issues/833)). A JavaScript config now loads from inside an app's bundle, webpack included; see [Bundle an app that uses AskDB](/guides/bundle-your-app/).
+
+- **A `.js` config that relied on jiti may now fail, with Node's own error.** jiti accepted ES module syntax in a file Node reads as CommonJS, such as `export default` in `askdb.config.js` beside a `package.json` with `"type": "commonjs"`. Node now throws `SyntaxError: Unexpected token 'export'`. Rename the file to `askdb.config.mjs`, or write `module.exports = { … }`. A JavaScript config that imports TypeScript written for a compiler, such as a `.ts` file whose imports name `./other.js` for `./other.ts`, fails too: rename the config to `askdb.config.ts`.
+- **Node's rules decide the module format,** as for any file Node loads: `.cjs` is CommonJS, `.mjs` is an ES module, and `.js` follows the nearest `package.json`. A TypeScript config loads as before.
+- **An ES module config that throws while it loads loads again only after a restart.** Node keeps the failed module, so a process that loads the config again, as Studio does after you edit `.env`, gets an error that says to restart it. A CommonJS or TypeScript config loads again once fixed.
+
 ### Other changes you may notice in beta.52
 
 - **A tenant policy with a table named `order` or `group` no longer refuses every sorted query** ([#828](https://github.com/Ygilany/AskDB/issues/828)). The tenant check read the `ORDER` of `ORDER BY` (and `GROUP` of `GROUP BY`) as a reference to a table of that name, so under `strict` enforcement a sorted, tenant-scoped query was refused with `UNKNOWN_TABLE_REFERENCED` or `MISSING_TENANT_PREDICATE`. It no longer reads those keywords as a table; a quoted or qualified `"order"`, or `order` in `FROM`/`JOIN`, still counts as the table. If you worked around this by renaming the table or dropping `ORDER BY`, you can undo that.

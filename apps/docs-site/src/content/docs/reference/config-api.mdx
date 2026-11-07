@@ -87,7 +87,7 @@ It throws:
 1. `askdb.config.<ext>`
 2. `.config/askdb.<ext>`
 
-Each location tries the extensions in `ASKDB_CONFIG_EXTENSION_PRECEDENCE`: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`. The first file found wins, so any `askdb.config.*` comes before `.config/askdb.*`. JSON config files aren't supported. Every extension loads synchronously, `.mjs` included, so the file can't use top-level `await`.
+Each location tries the extensions in `ASKDB_CONFIG_EXTENSION_PRECEDENCE`: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`. The first file found wins, so any `askdb.config.*` comes before `.config/askdb.*`. JSON config files aren't supported. Every extension loads synchronously, `.mjs` included, so the file can't use top-level `await`. A JavaScript config (`js`, `mjs`, `cjs`) loads with Node's own loader, by Node's rules: `.js` is CommonJS or an ES module according to the nearest `package.json`. A TypeScript config (`ts`, `mts`, `cts`) loads with jiti, which compiles it, so only a JavaScript config loads from inside an app's bundle ([Bundle an app that uses AskDB](/guides/bundle-your-app/)).
 
 `discoverAskDbConfigPath(cwd)` returns the path this finds, or `undefined`. Its extension's type is `AskDbConfigExtension`.
 

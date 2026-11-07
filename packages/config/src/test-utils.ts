@@ -8,29 +8,22 @@ import type { AskDbConfig } from "./types.js";
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Make `@askdb/config` resolvable from `projectDir` as this package's source, so a test can
- * write an `askdb.config.ts` there and load it the way a user's project does.
+ * Make `@askdb/config` resolvable from `projectDir`, so a test can write an `askdb.config.*` there
+ * and load it the way a user's project does. jiti compiles a TypeScript config, and the package's
+ * source with it. Node loads a JavaScript config and its imports itself, so `built` links `dist`
+ * instead, as an install does; the test task builds the package first.
  */
-export function linkWorkspacePackage(projectDir: string): void {
+export function linkWorkspacePackage(projectDir: string, { built = false }: { built?: boolean } = {}): void {
   const nmAskdb = join(projectDir, "node_modules", "@askdb");
   mkdirSync(nmAskdb, { recursive: true });
   const linkedPackage = join(nmAskdb, "config");
   mkdirSync(linkedPackage, { recursive: true });
-  symlinkSync(join(pkgRoot, "src"), join(linkedPackage, "src"), "dir");
+  const folder = built ? "dist" : "src";
+  const entry = built ? "./dist/index.js" : "./src/index.ts";
+  symlinkSync(join(pkgRoot, folder), join(linkedPackage, folder), "dir");
   writeFileSync(
     join(linkedPackage, "package.json"),
-    JSON.stringify(
-      {
-        name: "@askdb/config",
-        type: "module",
-        main: "./src/index.ts",
-        exports: {
-          ".": "./src/index.ts",
-        },
-      },
-      null,
-      2,
-    ),
+    JSON.stringify({ name: "@askdb/config", type: "module", main: entry, exports: { ".": entry } }, null, 2),
     "utf8",
   );
 }

@@ -886,6 +886,34 @@ ${scaffold.source}
     expect(getAskDbRuntimeConfig().ai.language.connection.apiKey).toBe("from-cjs");
   });
 
+  // #833: Node loads a JavaScript config by its own module rules, so jiti's interop no longer
+  // rescues ES module syntax in a file Node reads as CommonJS.
+  it("fails with Node's SyntaxError for ES module syntax in a .js config of a CommonJS package", () => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    writeFileSync(join(dir, "package.json"), '{ "type": "commonjs" }\n', "utf8");
+    writeFileSync(join(dir, "askdb.config.js"), `export default { ${BLOCKS} };\n`, "utf8");
+    expect(() => loadAskDbConfigProjectionSync(dir)).toThrow(SyntaxError);
+  });
+
+  // #833: Node keeps an ES module whose evaluation threw and rethrows its error for every later
+  // load, so a host that loads the config again in one process (Studio) learns it must restart.
+  // A CommonJS config loads again once fixed.
+  it.each([
+    ["askdb.config.mjs", "export default", /this ES module failed to load earlier in this process.*Restart the process.*It failed with: ASKDB_TEST_RETRY is unset/],
+    ["askdb.config.cjs", "module.exports =", undefined],
+  ])("loads %s again in the same process after the cause of its failure is fixed", (file, exportForm, repeatedError) => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    writeFileSync(join(dir, file), `if (!process.env.ASKDB_TEST_RETRY) throw new Error("ASKDB_TEST_RETRY is unset");\n${exportForm} { ${BLOCKS} };\n`, "utf8");
+    expect(() => loadAskDbConfigProjectionSync(dir)).toThrow("ASKDB_TEST_RETRY is unset");
+    process.env.ASKDB_TEST_RETRY = "1";
+    try {
+      if (repeatedError) expect(() => loadAskDbConfigProjectionSync(dir)).toThrow(repeatedError);
+      else expect(loadAskDbConfigProjectionSync(dir).projection).toBeDefined();
+    } finally {
+      delete process.env.ASKDB_TEST_RETRY;
+    }
+  });
+
   // The async loader imports .mjs with native import(), not jiti, so its own path gets its own cases.
   it("loadAskDbConfigProjection, the async loader, loads a plain-object askdb.config.mjs", async () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
@@ -1107,11 +1135,19 @@ describe("bootstrapAskDbEnv", () => {
   // The docs list ts → mts → cts → js → mjs → cjs and show a plain `export default { … }`
   // with `env` imported from @askdb/config (guides/switch-engines, guides/bring-your-own-model).
   // Before #264 the synchronous loader threw for .mjs; before #265 it rejected any plain object.
-  it.each(["ts", "mts", "cts", "js", "mjs", "cjs"])(
+  // Node loads a JavaScript config and its import of @askdb/config itself, so those link the build.
+  it.each([
+    ["ts", false],
+    ["mts", false],
+    ["cts", false],
+    ["js", true],
+    ["mjs", true],
+    ["cjs", true],
+  ])(
     "loads a plain-object askdb.config.%s, the form the guides show",
-    (ext) => {
+    (ext, built) => {
       dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
-      linkWorkspacePackage(dir);
+      linkWorkspacePackage(dir, { built });
       const body = `{
   ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_AI") } } },
   introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/${ext}" } } },
