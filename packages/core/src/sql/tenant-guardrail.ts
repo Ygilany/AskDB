@@ -1364,7 +1364,7 @@ function equalities(a: Analysis): Proof["equalities"] {
  */
 function linksAcross(p: Proof, scope: string, on: number | undefined, l: Node, r: Node): boolean {
   const { tokens } = p.a;
-  if (on === undefined || !(isOuterJoinOn(tokens, on) || hasOuterJoin(p.a, scope))) return true;
+  if (on === undefined || !(isOuterJoinOn(tokens, on) || mayKeepUnmatchedRows(p.a, scope))) return true;
   let join = on - 1;
   while (join >= 0 && !(tokens[join]!.kw === "join" && tokens[join]!.depth === tokens[on]!.depth)) {
     if (tokens[join]!.depth < tokens[on]!.depth) return false;
@@ -1372,6 +1372,24 @@ function linksAcross(p: Proof, scope: string, on: number | undefined, l: Node, r
   }
   const joined = (n: Node) => n.at > join && n.at < on;
   return join >= 0 && joined(l) !== joined(r);
+}
+
+/**
+ * Whether a filter seeds a column's IDs in `scope`: it filters that `SELECT`, from `WHERE` or
+ * `HAVING`, or from an `ON` in a `SELECT` that no join word marks as possibly outer.
+ */
+function seedsIn(a: Analysis, f: Filter, scope: string): boolean {
+  return f.scope === scope && (f.on === undefined || !mayKeepUnmatchedRows(a, scope));
+}
+
+/**
+ * Whether a `SELECT` may keep rows a join's `ON` never matched: `LEFT`, `RIGHT`, `FULL` or `OUTER`
+ * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`). A join
+ * proof takes no seed or link from an `ON` there (#400).
+ */
+function mayKeepUnmatchedRows(a: Analysis, scope: string): boolean {
+  const { tokens, scopes } = a;
+  return tokens.some((t, i) => scopes.of[i] === scope && ["left", "right", "full", "outer"].includes(t.kw) && tokens[i + 1]?.text !== "(");
 }
 
 /**
@@ -1419,7 +1437,7 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
     const predicate = predicateAt(tokens, k);
     if (!predicate) return;
     const ref = { q: qualifierOf(tokens, predicate.column), column: tokens[predicate.column]!.lower };
-    if (!filteredScopes(a, predicate.start, predicate.end, ref.q).some((f) => f.scope === scope)) return;
+    if (!filteredScopes(a, predicate.start, predicate.end, ref.q).some((f) => seedsIn(a, f, scope))) return;
     const node = resolve(p, scope, ref);
     if (node) seed(term(node, ref.column), [t.text]);
   });
@@ -1444,7 +1462,7 @@ function inLinks(p: Proof, scope: string): Array<{ ref: ColumnRef; innerScope: s
     const column = open - 2;
     if (scopes.of[column] !== scope || scopes.branched.has(open) || subqueryUse(tokens, open) !== "in") continue;
     const ref = { q: qualifierOf(tokens, column), column: tokens[column]!.lower };
-    if (!filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q).some((f) => f.scope === scope)) continue;
+    if (!filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q).some((f) => seedsIn(p.a, f, scope))) continue;
     const item = selectedColumn(p.a, open);
     if (item === undefined) continue;
     const innerScope = scopeKey(open, 0);

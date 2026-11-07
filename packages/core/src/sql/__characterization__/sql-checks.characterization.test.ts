@@ -236,6 +236,7 @@ const HOSTILE: readonly string[] = [
   "WITH clients (id, sub_agency_id) AS (SELECT 1, 5) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id = :tenant_agency_ids",
   "SELECT a.* FROM appointments a JOIN (clients c JOIN sub_agencies s ON c.sub_agency_id = s.id) ON a.client_id = c.id WHERE s.agency_id = :tenant_agency_ids",
   "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id, appointments a WHERE a.client_id = c.id AND s.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT STRAIGHT JOIN orders o ON o.agency_id = a.id",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
