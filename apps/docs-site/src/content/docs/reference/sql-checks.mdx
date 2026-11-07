@@ -36,7 +36,7 @@ The checks don't parse SQL. They split it into tokens and skip strings, quoted n
 | Quoted names | `"…"` | `` `…` `` | `"…"`, `` `…` ``, `[…]` | `"…"`, `[…]` |
 | Comments | `--`, `/* … */` (nested) | `--` followed by a space or a control character, `#`, `/* … */`. | `--`, `/* … */` | `--`, `/* … */` (nested) |
 | Where a `--` comment ends | At a line feed or a carriage return on Postgres, at a line feed only on CockroachDB. Both ids are read both ways. | At a line feed | At a line feed | At a line feed or a carriage return |
-| `$` | Inside a name, such as `a$$b`, part of the name. Elsewhere, `$$` or `$tag$` starts a dollar-quoted string (`$tag$…$tag$`), read only on these engines. The tag may hold letters beyond ASCII (`$é$ … $é$`), and the string ends where the engine ends it. | Inside a name, part of the name | Inside a name, part of the name | Starts a money literal such as `$1.5` |
+| `$` | Inside a name, such as `a$$b`, part of the name. Elsewhere, `$$` or `$tag$` starts a dollar-quoted string (`$tag$…$tag$`), read only on these engines. Since 1.0.0-beta.51, a tag with non-ASCII letters (`$é$ … $é$`) is read as a string, as the engine does ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). | Inside a name, part of the name | Inside a name, part of the name | Starts a money literal such as `$1.5` |
 
 ### Forms the checks refuse to read
 
@@ -55,17 +55,17 @@ The read-only check refuses each with its own rule, the tenant check reports it 
 
 The readings above assume each engine's default string settings. If your server reads backslashes differently, such as MySQL with `NO_BACKSLASH_ESCAPES` or Postgres with `standard_conforming_strings = off`, set `backslashEscapes` on a `DialectSpec` to match, or the checks can read a string differently from the server. [Match your server's string settings](/guides/match-server-string-settings/) shows how.
 
-### Readings changed in 1.0.0-beta.50
+### Readings changed in 1.0.0-beta.50 and 1.0.0-beta.51
 
 [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) found four places where the tenant check read SQL differently from the engine. In the advisory's words, since 1.0.0-beta.50:
 
 > The tenant check now reads `$` the way each engine does and reads dollar-quoted strings only where the engine may be Postgres or CockroachDB; it requires a table's predicate wherever the name appears, quoted or not, except in `ORDER BY` and `GROUP BY`; it reads an unset `backslashEscapes` on a MySQL-family spec as the server default; and each check ends a line comment where the engine does, reading a `postgres` dialect both ways since it may point at CockroachDB.
 
-### Readings changed in 1.0.0-beta.51
-
-[GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr) found that the tenant check still read a dollar-quoted string whose tag holds letters beyond ASCII differently from Postgres. In the advisory's words, since 1.0.0-beta.51:
+Since 1.0.0-beta.51, a dollar-quote tag with non-ASCII letters (`$é$ … $é$`) is read as a string, as the engine does ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). In that advisory's words:
 
 > The tenant check's scanner now reads a dollar tag with the same character set as the shared lexer and the engine, so a `$é$ … $é$` string ends where the engine ends it.
+
+The upgrade guide says what each fix asks of your app: [GHSA-8pwj-6hfv-5pm4 in 1.0.0-beta.50](/guides/upgrading/#security-upgrade-for-ghsa-8pwj-6hfv-5pm4) and [GHSA-rmjw-pffc-5hjr in 1.0.0-beta.51](/guides/upgrading/#security-upgrade-for-ghsa-rmjw-pffc-5hjr).
 
 ## The read-only check
 
