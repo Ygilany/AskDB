@@ -191,6 +191,36 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 0 < $1OR TRUE",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1.0 OR 1=1",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total > 1.5 AND total < 1e3",
+  // SQL Server reads `]]` in a bracketed name as `]`; SQL Server, Postgres and CockroachDB nest block comments.
+  "SELECT * FROM orders AS [o]] WHERE agency_id = :tenant_agency_ids AND [x]",
+  "SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */",
+  // A name outside printable ASCII, which SQL Server's collation may fold to a table or column in the schema.
+  "SELECT * FROM [ｏｒｄｅｒｓ]",
+  'SELECT * FROM "ｏｒｄｅｒｓ"',
+  "SELECT * FROM ｏｒｄｅｒｓ",
+  "SELECT * FROM [ord‍ers]",
+  "SELECT * FROM public.[ord﻿ers]",
+  "SELECT [secret‍_recovery_token] FROM users",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = N'ｏｐｅｎ'",
+  // A column list after a table's alias renames the table's columns on Postgres and CockroachDB.
+  "SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders AS t (agency_id, x) WHERE agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids) d",
+  "SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids",
+  // A join with LEFT, RIGHT or FULL anywhere in it is outer, whatever hint sits beside it.
+  "SELECT o.* FROM orders o LEFT STRAIGHT JOIN lookup_states x ON x.code = o.state AND o.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o LEFT LOOKUP JOIN lookup_states x ON x.code = o.state AND o.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM lookup_states x RIGHT STRAIGHT JOIN orders o ON x.code = o.state AND o.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o INNER STRAIGHT JOIN lookup_states x ON x.code = o.state AND o.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o LEFT JOIN lookup_states x JOIN service_types s ON s.id = x.id ON x.code = o.state AND o.agency_id = :tenant_agency_ids",
+  // Postgres compares a quoted name exactly, so "AGENCY_ID" is another column.
+  'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids',
+  // A quoted name spelled like a placeholder is a name, and a U+0001 inside a quoted name is part of it.
+  'SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"',
+  "SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS `:tenant_agency_ids`) x WHERE o.agency_id = `:tenant_agency_ids`",
+  "SELECT o.* FROM orders o CROSS APPLY (SELECT o.agency_id AS [:tenant_agency_ids]) x WHERE o.agency_id = [:tenant_agency_ids]",
+  'SELECT "\u0001".a FROM orders CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = :tenant_agency_ids AND "\u0001".a = 1 OR 1=1',
+  "SELECT [\u0001].a FROM orders CROSS JOIN (SELECT 1 AS a) [\u0001] WHERE agency_id = :tenant_agency_ids AND [\u0001].a = 1 OR 1=1",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
