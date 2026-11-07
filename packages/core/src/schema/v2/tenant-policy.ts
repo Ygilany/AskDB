@@ -294,6 +294,13 @@ export type TableCoverageEntry = {
 export type TenantPolicyWarning =
   | { kind: "orphaned_root_id"; id: string }
   | { kind: "orphaned_column_id"; id: string; context: string }
+  /**
+   * A column the contract puts on its entry's own table (`tenantIdColumn`, `parent.foreignKey`,
+   * a hierarchy edge's `foreignKey` on the child, a `scopeThrough` column, a polymorphic
+   * `typeColumn` or `idColumn`) that schema.json has on another table, `tableId` (#836). The
+   * schema loader's `misplaced_column_id` means the same for a `tables/*.md` entry.
+   */
+  | { kind: "misplaced_column_id"; id: string; tableId: string; context: string }
   | { kind: "orphaned_scoped_table_id"; id: string }
   | { kind: "orphaned_polymorphic_table_id"; id: string }
   | { kind: "orphaned_global_table_id"; id: string }
@@ -321,6 +328,8 @@ export function formatTenantPolicyWarning(warning: TenantPolicyWarning): string 
       return `${warning.context}: column ${warning.id} is not in schema.json`;
     case "orphaned_fk_id":
       return `${warning.context}: foreign key column ${warning.id} is not in schema.json`;
+    case "misplaced_column_id":
+      return `${warning.context}: column ${warning.id} is on ${warning.tableId}`;
     case "hierarchy_cycle":
       return `hierarchy cycle through ${warning.ids.join(", ")}`;
     case "unknown_root_in_scope":

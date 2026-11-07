@@ -402,6 +402,8 @@ describe("loadSchema — a tenant policy that doesn't match schema.json", () => 
     );
   const renameScopeColumn = (policy: string) =>
     policy.replace("column: table:public.orders#agency_id", "column: table:public.orders#agency_ref");
+  const moveScopeColumn = (policy: string) =>
+    policy.replace("column: table:public.orders#agency_id", "column: table:public.clients#sub_agency_id");
 
   it.each([
     {
@@ -413,6 +415,11 @@ describe("loadSchema — a tenant policy that doesn't match schema.json", () => 
       problem: "a scopeThrough column missing from schema.json",
       edit: renameScopeColumn,
       ids: ["table:public.orders#agency_ref"],
+    },
+    {
+      problem: "a scopeThrough column on another table (#836)",
+      edit: moveScopeColumn,
+      ids: ["column table:public.clients#sub_agency_id is on table:public.clients"],
     },
   ])("strict: $problem throws SchemaParseError naming the file and the IDs", ({ edit, ids }) => {
     const { dir, policyPath } = editedPolicy(edit);
