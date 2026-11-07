@@ -66,8 +66,10 @@ export type SqlLexerProfile = {
    */
   tsqlLiterals: boolean;
   /**
-   * A `--` or `#` comment ends only at `\n` (MySQL, MariaDB, SQLite, CockroachDB). Unset: it ends
-   * at `\r` too, as on Postgres and SQL Server.
+   * A `--` or `#` comment ends only at `\n`, set on the MySQL and SQLite profiles (MariaDB uses the
+   * MySQL profile). Unset: it ends at `\r` too, as on Postgres and SQL Server. A `postgres` or
+   * `cockroachdb` dialect also gets an `\n`-only reading, but from `readings.ts`, not this profile,
+   * since CockroachDB is wire-compatible with Postgres.
    */
   lineCommentEndsAtLfOnly?: boolean;
   /**
