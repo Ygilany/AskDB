@@ -1,11 +1,13 @@
 /**
- * Characterization of every SQL check's verdict, for the #815 refactor (one SQL reading per
- * dialect). It runs each check over a frozen corpus and every dialect setup, and compares the
- * result with a golden file captured on `main` before the refactor. The refactor must leave every
- * verdict unchanged, except shapes its PR lists and decides (the new reading may only refuse more).
+ * Characterization of every SQL check's verdict, written for the #815 refactor (the checks' readings
+ * in one module). It runs each check over a frozen corpus and every dialect setup, and compares the
+ * result with a golden file that pins the current verdicts. The golden was captured on `main`
+ * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
+ * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
- * strings below. Regenerate the golden only on purpose: `vitest run -u` on this file.
+ * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
+ * only for a verdict change you mean, and list the changed rows in the PR.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

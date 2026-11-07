@@ -79,6 +79,11 @@ export function tenantStatementReadings(dialect: ReadingDialect | undefined): Sq
     : ENGINE_LEXER_PROFILES.flatMap((p) =>
         p.id === "postgres" || p.id === "mysql" ? [p, { ...p, backslashEscapes: !p.backslashEscapes }] : [p],
       );
+  return bothExecutableCommentReadings(profiles);
+}
+
+/** A profile that reads `/*!NNNNN … *\/` bodies as code, also read with them as comments. */
+function bothExecutableCommentReadings(profiles: readonly SqlLexerProfile[]): SqlLexerProfile[] {
   return profiles.flatMap((p) => (p.executableComments ? [p, { ...p, executableComments: false }] : [p]));
 }
 
@@ -141,8 +146,7 @@ const crEnds = (view: SqlLexerProfile): SqlLexerProfile => ({ ...view, lineComme
  */
 export function tenantCodeReadings(dialect: ReadingDialect | undefined): CodeViewReading[] {
   const views = (profiles: readonly SqlLexerProfile[]) =>
-    profiles.flatMap((p) => (p.executableComments ? [p, { ...p, executableComments: false }] : [p]))
-      .map((profile) => ({ profile, pipesAreOr: profile.id === "mysql" }));
+    bothExecutableCommentReadings(profiles).map((profile) => ({ profile, pipesAreOr: profile.id === "mysql" }));
   if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
     return views([STANDARD_VIEW, crEnds(STANDARD_VIEW), POSTGRES_VIEW, crEnds(POSTGRES_VIEW), MYSQL_VIEW]);
   }
