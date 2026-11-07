@@ -3,7 +3,8 @@ title: "Fix common errors"
 description: "Find the error AskDB shows and fix it: a missing config or API key, a schema that won't load, SQL a check rejects, Studio execute, tenant scope and RAG."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Maintain</p>
 
@@ -168,7 +169,7 @@ Set the key your config reads. The config `askdb init` writes reads it from `OPE
 The provider refused the model call. The rest of the message is the provider's own. `error.cause` is the AI SDK's `APICallError`, with the HTTP status in `statusCode`:
 
 - **401 or 403:** the key is wrong or revoked, or belongs to another provider or project. Check the value your config reads for the key.
-- **404:** the provider has no model by that name, or your account can't use it. The default OpenAI model is `gpt-4o-mini`. Set another in `ai.language.model`, which the config `askdb init` writes reads from `OPENAI_MODEL`. With `ask()`, pass another model instance.
+- **404:** the provider has no model by that name, or your account can't use it. The default OpenAI model is `gpt-4o-mini`. Set another in `ai.language.model`. The config `askdb init` writes reads it from `OPENAI_MODEL`. With `ask()`, pass another model instance.
 
 See [Bring your own model](/guides/bring-your-own-model/) for each provider's settings.
 
@@ -176,14 +177,24 @@ See [Bring your own model](/guides/bring-your-own-model/) for each provider's se
 
 ### Studio shows `pg missing` and an **Install pg** button
 
-Studio's **Execute Query** runs the generated SQL with your engine's driver package, and it isn't installed. The chip names the package: `pg`, `mysql2` (MySQL and MariaDB), `better-sqlite3` or `mssql`. Click the **Install** button, or install it yourself in the project that holds the schema directory, and reload Studio. The chip then reads `pg ready`.
+Studio's **Execute Query** runs the generated SQL with your engine's driver package, and it isn't installed. The chip names the package: `pg`, `mysql2` (MySQL and MariaDB), `better-sqlite3` or `mssql`. Install it in the project that holds the schema directory, and reload Studio. The chip then reads `pg ready`:
 
-```bash
-npm install pg              # Postgres
-npm install mysql2          # MySQL and MariaDB
-npm install better-sqlite3  # SQLite
-npm install mssql           # SQL Server
-```
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+    <InstallTabs pkgs="pg" />
+  </TabItem>
+  <TabItem label="MySQL and MariaDB">
+    <InstallTabs pkgs="mysql2" />
+  </TabItem>
+  <TabItem label="SQLite">
+    <InstallTabs pkgs="better-sqlite3" />
+  </TabItem>
+  <TabItem label="SQL Server">
+    <InstallTabs pkgs="mssql" />
+  </TabItem>
+</Tabs>
+
+The **Install** button does the same from the Playground. [Install the driver](/guides/enable-studio-execute/#3-install-the-driver) says when it works.
 
 <Aside type="note">
 Generating SQL in Studio does **not** require a driver. Only the Execute Query action does.
@@ -191,7 +202,7 @@ Generating SQL in Studio does **not** require a driver. Only the Execute Query a
 
 ### `Studio execute is off.` / `No execute connection configured.`
 
-Studio shows one of these in the Playground when **Execute Query** can't run. `Studio execute is off.` means `studio.execute.enabled` isn't `true`. `No execute connection configured.` means it is, but `studio.execute.databaseUrl` (or `studio.execute.file` for SQLite) isn't set. Set both in `askdb.config.ts`, ideally for a read-only database role, and restart Studio. Studio resolves the execute connection in this order:
+Studio shows one of these in the Playground when **Execute Query** can't run. `Studio execute is off.` means `studio.execute.enabled` isn't `true`. `No execute connection configured.` means it is, but `studio.execute.databaseUrl` (or `studio.execute.file` for SQLite) isn't set. Studio runs the generated SQL on that connection, so give it a read-only database role. Set both in `askdb.config.ts`, and restart Studio. Studio resolves the execute connection in this order:
 
 1. `studio.execute.databaseUrl` / `studio.execute.file`
 2. The introspection connection for the same engine, only when `studio.execute.useIntrospectionConnection: true`
@@ -284,7 +295,7 @@ When `ask()` skips retrieval, it puts the full schema in the prompt instead. Pas
 
 | `reason` | Why | Fix |
 | --- | --- | --- |
-| `below_threshold` | You passed a `totalSchemaChunkCount` at or below `retrievalThresholdChunks` (default 30). A schema that small fits in the prompt. | None needed. To retrieve anyway, lower `retrievalThresholdChunks`. |
+| `below_threshold` | You passed a `totalSchemaChunkCount` at or below `retrievalThresholdChunks` (default 30). With the default, a schema of 30 chunks or fewer goes into the prompt whole. | None needed. To retrieve anyway, lower `retrievalThresholdChunks`. |
 | `no_results` | The retriever found no chunks for the schema's `schemaId`: the index is empty, or you built it from a schema with another `schemaId`. | Build the index from the schema you pass to `ask()`. |
 | `schema_not_v2` | The schema object isn't Schema v2: it has no `schemaId`. | Load the schema with `loadSchema()`. |
 

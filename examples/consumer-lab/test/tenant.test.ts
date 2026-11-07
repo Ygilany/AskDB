@@ -338,8 +338,8 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   /**
    * Contract: strict enforcement rejects a reply with no tenant filter on a scoped table
    * with `TenantGuardrailError` (`docs/contracts/tenant-policy.md`, "Enforcement modes";
-   * `guides/troubleshooting.mdx`: "AskDB refuses to return SQL that could leak
-   * cross-tenant data"). The same SQL run raw returns other agencies' programs, which is
+   * `guides/troubleshooting.mdx`, "TenantGuardrailError": "AskDB throws instead of
+   * returning that SQL"). The same SQL run raw returns other agencies' programs, which is
    * what makes the rejection matter.
    * Catches: a guardrail that misses an unfiltered scoped table, or a strict mode that only
    * warns.
