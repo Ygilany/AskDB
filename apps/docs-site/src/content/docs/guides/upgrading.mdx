@@ -157,7 +157,7 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 The tenant-policy loader now checks that each column the contract puts on an entry's own table is on that table ([#836](https://github.com/Ygilany/AskDB/issues/836)): a root's `tenantIdColumn` and `parent.foreignKey`, a hierarchy edge's `foreignKey` (on the child), a `scopeThrough` column, and a polymorphic `typeColumn` and `idColumn`. Before, it only checked that `schema.json` had the column somewhere, so a `scopeThrough` column on another table loaded without a warning and broke the scoped table's filter path.
 
 - **Under `enforcement: strict`, such a policy fails to load** with `SchemaParseError`, naming the file, the column and the table it's on, in `loadSchema()`, a bundle, and `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save). Under `warn`, it loads with the warning. Point the field at the column on the entry's own table.
-- **A `switch` over every `TenantPolicyWarning`** needs a case for the new `misplaced_column_id`, with `id`, `tableId` (the table the column is on) and `context`.
+- **A `switch` over every `TenantPolicyWarning`** (in `schema.tenantPolicy.warnings`) needs a case for the new `misplaced_column_id`, with `id`, `tableId` (the table the column is on) and `context`. The schema loader's warning of the same name, in `schema.warnings`, is unchanged.
 - **If you call `normalizeTenantPolicy()` yourself,** its third argument is now a `Map` from column ID to table ID, read from `schema.json`: `new Map(tables.flatMap((t) => t.columns.map((c) => [c.id, t.id])))`.
 
 ### Other changes you may notice in beta.50

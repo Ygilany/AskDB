@@ -46,6 +46,11 @@ export type BundledSchemaV2 = {
   tenantPolicy?: string;
 };
 
+/** Each physical column ID → its table's ID, read from `schema.json` (a SQL Server table name can hold `#`). */
+function columnTables(physical: { tables: readonly { id: string; columns: readonly { id: string }[] }[] }): Map<string, string> {
+  return new Map(physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)));
+}
+
 /**
  * Load a Schema v2 artifact from a raw JSON string.
  *
@@ -400,8 +405,7 @@ function loadFromFiles(
     tenantPolicy = parseOrWrap(policyFile, () => {
       const parsed = parseTenantPolicyMarkdown(policyContent, policyFile);
       const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-      const physicalColumns = new Map(physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)));
-      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumns);
+      return normalizeTenantPolicy(parsed, physicalTableIds, columnTables(physical));
     });
   }
 
@@ -506,9 +510,7 @@ function buildNormalized(
 
   // Physical table ids, and each physical column id's owning table, for ID validation
   const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-  const columnOwner = new Map(
-    physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)),
-  );
+  const columnOwner = columnTables(physical);
 
   // Column ids that any front-matter entry marks `sensitive: true`: in the owning
   // table's markdown or another's, first entry or a later duplicate. Sensitivity is the
