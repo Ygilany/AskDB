@@ -21,7 +21,23 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.52
 
-Not published yet: these changes ship with `askdb` 1.0.0-beta.52 and `@askdb/config` 1.0.0-beta.20.
+Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, and `@askdb/config` 1.0.0-beta.20.
+
+### Replace the removed internal exports
+
+`@askdb/core` ([#852](https://github.com/Ygilany/AskDB/issues/852)) and `@askdb/config` ([#830](https://github.com/Ygilany/AskDB/issues/830)) no longer export the internal helpers below. Their API pages listed them as internal, with no stability promise, and no AskDB package outside their own imported them. They still run inside the package, so `ask()`, `loadSchema()` and `bootstrapAskDbEnv()` behave as before. If your code imports one, use the replacement in its row.
+
+| Removed | Use instead |
+| --- | --- |
+| `flattenAskDbConfig(config)` (`@askdb/config`) | `defineConfig(config).entries`, the same map. |
+| `isAskDbEnvProjection(value)`, `ASKDB_ENV_PROJECTION` (`@askdb/config`) | None. `loadAskDbConfigProjection()` loads a config file written either way and returns its projection. |
+| `v2TableSchema`, `v2ColumnSchema`, `v2TableFrontmatterSchema`, `v2ColumnFrontmatterSchema`, `v2ConceptsFrontmatterSchema`, `v2ConceptSchema`, `tenantRootSchema`, `hierarchyEdgeSchema`, `scopedTableSchema`, `polymorphicTableSchema`, `enforcementModeSchema`, `tenantAccessSchema` | `loadSchema()` or `loadSchemaFromJson()` to check a whole schema artifact. `parseTableMarkdown()`, `parseConceptsMarkdown()` or `parseTenantPolicyMarkdown()` to check one file. `validateTenantScope()` to check a `TenantScope`. The types, such as `V2Table` and `TenantRoot`, stay exported. |
+| `RECOGNIZED_H2_SECTIONS`, `TENANT_POLICY_H2_SECTIONS` | The types `RecognizedH2Section` and `TenantPolicyH2Section`, which name the keys of a parsed file's `sections`. |
+| `assertNlToSqlInputs()`, `buildNlToSqlSystemPrompt()` | None. `generateSelectSql()` checks the inputs and sends the system prompt. It's the generation step `ask()` runs for a built-in dialect or a `DialectSpec`. |
+| `buildSelectGuardrailExplanation()` | `ask({ explain: true })`, which returns the summary as `result.explain` for a built-in dialect or a `DialectSpec`. |
+| `escapeSqlLiteral()` | None. Pass values to your driver as bound parameters. |
+| `extractTenantPlaceholders()` | `resolveTenantSql()`, whose `bindings` name each placeholder it replaced. |
+| `parseAskDbSchemaJson()`, `normalizeAskDbSchema()` | `loadNormalizedSchemaFromJson()`, which runs both steps on a v1 schema. |
 
 ### Other changes you may notice in beta.52
 

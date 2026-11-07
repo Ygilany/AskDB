@@ -188,7 +188,7 @@ export type PgvectorStoreConfig = {
   /** Connection string for pgvector (maps to `ASKDB_PGVECTOR_URL`). */
   databaseUrl?: string;
   table?: string;
-  /** When unset, {@link flattenAskDbConfig} uses `hnsw`. */
+  /** When unset, AskDB uses `hnsw`. */
   indexStrategy?: string;
 };
 
@@ -244,7 +244,7 @@ export type PostgresIntrospectionConfig = {
   providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
-   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
   /**
@@ -263,7 +263,7 @@ export type PrismaIntrospectionConfig = {
   providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
-   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
   /**
@@ -282,7 +282,7 @@ export type MysqlIntrospectionConfig = {
   providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
-   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
   /**
@@ -301,7 +301,7 @@ export type SqliteIntrospectionConfig = {
   providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
-   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
   /**
@@ -320,7 +320,7 @@ export type SqlServerIntrospectionConfig = {
   providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
-   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
   /**

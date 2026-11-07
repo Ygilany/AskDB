@@ -8,7 +8,6 @@ import {
   defineConfig,
   discoverAskDbConfigPath,
   env,
-  flattenAskDbConfig,
   getAskDbRuntimeConfig,
   isAskDbRuntimeInitialized,
   loadAskDbConfigProjection,
@@ -18,6 +17,7 @@ import {
   setAskDbRuntimeForTests,
 } from "./index.js";
 import type { AskDbRuntimeConfig } from "./index.js";
+import { flattenAskDbConfig } from "./projection.js";
 import { renderAskDbAiConfigScaffold } from "./scaffold/index.js";
 import { linkWorkspacePackage, resolvedRuntimeText } from "./test-utils.js";
 import type { AskDbConfig } from "./types.js";
