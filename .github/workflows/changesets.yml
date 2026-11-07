@@ -32,40 +32,22 @@ jobs:
       - name: Self-test the publishable-paths filter
         run: bash scripts/publishable-paths.test.sh
 
+      # The guard below runs `pnpm -r ls`, which needs pnpm and Node but no install. No
+      # `cache: pnpm` here: with nothing installed, setup-node's post step fails on the
+      # missing store, so the cached setup runs only before `pnpm install`.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
       # Merging a PR that leaves an unpublished version on `main` publishes it with no
-      # further approval: approving the Version PR is the release approval (release.yml).
-      # So no other PR may add a public `name@version` that npm doesn't have: not a
-      # version bump, a new public package, or a package made public. A version already
-      # on npm passes, like a new package's first version, published by hand.
+      # further approval: approving the Version PR is the release approval (ADR 0040). So
+      # no other PR may add a public `name@version` that npm doesn't have. The script reads
+      # the public packages the way release.yml's publish list does (scripts/release-packages.mjs).
       - name: Check that only the Version PR adds unpublished versions
         if: env.IS_VERSION_PR != 'true'
-        run: |
-          base="$(git merge-base "origin/${BASE_REF}" HEAD)"
-          # `name@version` of the manifest at $1 when it's public; empty when it's private,
-          # missing, or can't be parsed.
-          public_version() {
-            git show "$1" 2>/dev/null \
-              | jq -r 'select(.private != true and .name and .version) | "\(.name)@\(.version)"' 2>/dev/null \
-              || true
-          }
-          status=0
-          for path in $(git diff --name-only "${base}" HEAD | grep -E '(^|/)package\.json$'); do
-            after="$(public_version "HEAD:${path}")"
-            if [ -z "${after}" ] || [ "${after}" = "$(public_version "${base}:${path}")" ]; then
-              continue
-            fi
-            # Only a 404 means unpublished; any other failure fails the check.
-            if out="$(npm view "${after}" version 2>&1)"; then
-              continue
-            elif ! grep -q E404 <<< "${out}"; then
-              echo "${out}"
-              echo "::error file=${path}::npm view ${after} failed"
-              exit 1
-            fi
-            echo "::error file=${path}::${after} isn't on npm, and merging this PR would publish it. Only the Version PR changes versions: revert the version and add a changeset (pnpm changeset). A new public package needs its first version published by hand (docs/release.md)."
-            status=1
-          done
-          exit "${status}"
+        run: node scripts/check-unpublished-versions.mjs --since "origin/${BASE_REF}"
 
       # The Version PR that release.yml opens applies the pending changesets, so it
       # changes every bumped package.json but adds no changeset, and
@@ -110,9 +92,6 @@ jobs:
             echo "publishable=false" >> "$GITHUB_OUTPUT"
             echo "No publishable sources changed (devDependencies don't count); no changeset required."
           fi
-
-      - if: steps.changes.outputs.publishable == 'true'
-        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - if: steps.changes.outputs.publishable == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
