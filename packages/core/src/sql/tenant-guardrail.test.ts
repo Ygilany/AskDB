@@ -1224,10 +1224,34 @@ describe("validateTenantGuardrails — a join counts only on the columns the pol
 
   it.each([
     ["the issue's join on the wrong ID column", "SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
-    ["a hop on the wrong column of the right table", "SELECT a.* FROM appointments a JOIN clients c ON a.id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a hop on the wrong column of the right table", "SELECT a.client_id FROM appointments a JOIN clients c ON a.id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    // A source named like a policy table is not that table: the policy's columns can't be trusted on it.
+    ["a derived table aliased like the hop's table", "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.id AS sub_agency_id FROM sub_agencies s WHERE s.id IN (:tenant_sub_agency_ids)) clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a CTE named like the hop's table", "WITH clients AS (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["another table aliased like the hop's table", "SELECT a.* FROM appointments a JOIN lookup_states clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
     ["the path's tables with no join between them", "SELECT a.client_id FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids)", "clients"],
   ])("rejects %s", (_label, sql, root) => {
     expect(findings(sql, root)).toEqual(appointments);
+  });
+
+  // An inner join's ON filters only the rows that join builds: a later RIGHT or FULL JOIN, or an outer join around it, keeps the rest.
+  it.each([
+    ["a RIGHT JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a FULL JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids FULL JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a LEFT JOIN around a parenthesized inner join that filters", "SELECT o.* FROM orders o LEFT JOIN (agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids) ON o.agency_id = a.id", "agencies"],
+    ["a nested join written without parentheses", "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = g.id AND g.id = :tenant_agency_ids", "agencies"],
+    ["a direct predicate in that nested join's outer ON", "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = :tenant_agency_ids", "agencies"],
+    ["a join path read on the preserved side of a RIGHT JOIN", "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id AND s.id IN (:tenant_sub_agency_ids) RIGHT JOIN appointments a ON a.client_id = c.id", "sub_agencies"],
+  ])("rejects %s", (_label, sql, root) => {
+    const found = findings(sql, root);
+    expect(found.some((f) => f === "MISSING_TENANT_PREDICATE:table:public.orders" || f === appointments[0])).toBe(true);
+  });
+
+  it.each([
+    ["a polymorphic id in IN (…) over its own filtered rows", "SELECT * FROM notes WHERE owner_type = 'agency' AND owner_id IN (SELECT owner_id FROM notes n2 WHERE n2.owner_type = 'agency' AND n2.owner_id = :tenant_agency_ids)"],
+    ["a scoped table's id in IN (…) over its own filtered rows", "SELECT * FROM orders o WHERE o.id IN (SELECT o2.id FROM orders o2 WHERE o2.agency_id = :tenant_agency_ids)"],
+  ])("now refuses %s: IN (…) no longer carries a predicate out on its own (documented)", (_label, sql) => {
+    expect(findings(sql)).toHaveLength(1);
   });
 
   it("rejects a filter only in an outer join's ON, which keeps every appointment (and leaves the covered root unfiltered)", () => {

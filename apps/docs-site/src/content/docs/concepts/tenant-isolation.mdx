@@ -44,7 +44,7 @@ The tenant check reads the SQL's tokens and doesn't parse it, so it can pass SQL
 - **Roots reached through the hierarchy.** Only the roots the scope names are checked as root tables: under an agency `ids` scope, a read of `sub_agencies` isn't. An expanded `subtree` scope names every level it covers.
 - **Joined scoped tables.** It doesn't check that two joined scoped tables share a scope.
 
-Since 1.0.0-beta.52 each read of a scoped table needs its own predicate in its own `SELECT` ([#399](https://github.com/Ygilany/AskDB/issues/399)), and a join counts only on the columns the policy declares ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+Since 1.0.0-beta.52 each read of a scoped table needs its own predicate in its own `SELECT` ([#399](https://github.com/Ygilany/AskDB/issues/399)), and a join on any other pair of columns than the policy declares doesn't count ([#400](https://github.com/Ygilany/AskDB/issues/400)).
 
 [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists what it does refuse. These limits are why the database should be the tenant boundary.
 

@@ -224,6 +224,11 @@ const HOSTILE: readonly string[] = [
   "SELECT name FROM agencies WHERE id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)",
   "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids",
   "SELECT * FROM orders o WHERE o.agency_id IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)",
+  // #400 review: an inner ON doesn't filter beside an outer join, and a source named like a policy table isn't it.
+  "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT JOIN orders o ON o.agency_id = a.id",
+  "SELECT o.* FROM orders o LEFT JOIN (agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids) ON o.agency_id = a.id",
+  "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.agency_id AS sub_agency_id FROM sub_agencies s WHERE s.agency_id = :tenant_agency_ids) clients ON a.client_id = clients.id WHERE clients.sub_agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
