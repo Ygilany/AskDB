@@ -65,9 +65,8 @@ export const azureProvider: AiProviderAdapter = {
     // Azure deployment names are arbitrary aliases chosen at deploy time
     // (e.g. "askdb-reporting") and don't necessarily match the underlying
     // model id, so the o-series/gpt-5 regex can't reliably read `config.model`
-    // alone. Callers can set ASKDB_AI_AZURE_MODEL_FAMILY (or
-    // providerConfig.azure.modelFamily in askdb.config.*) to declare the true
-    // backing model explicitly; we fall back to the deployment name otherwise.
+    // alone. Set `ai.language.modelFamily` in askdb.config.* to declare the
+    // true backing model; we fall back to the deployment name otherwise.
     const modelFamily = readStringOption(config.providerOptions, "modelFamily") ?? config.model;
     // The family also picks the effort: gpt-6 and later don't accept
     // `minimal`, and the SDK can't see the family behind a custom name.

@@ -2,7 +2,7 @@
 
 Prisma schema-file introspection for AskDB.
 
-`@askdb/prisma` reads one `schema.prisma` file or a directory of `.prisma` files and produces the same Schema v2 physical artifact used by the rest of AskDB. It does not connect to the database and does not execute generated SQL.
+`@askdb/prisma` reads one `schema.prisma` file or a directory of `.prisma` files and produces the same physical schema artifact used by the rest of AskDB. It does not connect to the database and does not execute generated SQL.
 
 ```ts
 import { introspect } from "@askdb/introspect";
@@ -23,7 +23,7 @@ askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma --print
 askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
-Supported Prisma datasource providers are `postgresql`, `mysql`, `sqlite`, `sqlserver`, and `cockroachdb`. MongoDB is not supported because AskDB Schema v2 and SQL generation are relational.
+Supported Prisma datasource providers are `postgresql`, `mysql`, `sqlite`, `sqlserver`, and `cockroachdb`. MongoDB is not supported because AskDB's schema artifact and SQL generation are relational.
 
 ## License
 

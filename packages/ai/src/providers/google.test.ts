@@ -65,7 +65,7 @@ describe("googleProvider", () => {
         { usage: "embedding" },
       ),
     ).toThrowError(
-      "google: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).",
+      "google: no embedding model configured. Set ai.embedding.model in askdb.config.* (or, in an env map, ASKDB_AI_EMBEDDING_MODEL or the provider's native embedding model variable).",
     );
   });
 

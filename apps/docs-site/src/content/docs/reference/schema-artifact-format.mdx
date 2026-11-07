@@ -7,7 +7,7 @@ description: "Every file in a schema artifact: the schema.json fields, the table
 
 <p class="doc-lede">A schema artifact is a folder of files that <code>loadSchema()</code> reads, or one bundle file that holds them. This page lists each file, every field it accepts, and what AskDB does with it. For why the artifact is split this way, see <a href="/concepts/the-schema-artifact/">The schema artifact</a>.</p>
 
-The format is Schema v2, the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
+It's the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
 
 ## Layout
 
@@ -147,7 +147,7 @@ AskDB drops a key it doesn't know without an error or a warning. A misspelled `"
 
 | Problem | Error (`SchemaParseError`) |
 | --- | --- |
-| `"version": 1` | ``AskDB schema format `version: 1` is not supported as of `@askdb/core@0.2.0`. Migrate to Schema v2 format. …`` |
+| `"version": 1` | ``AskDB schema format `version: 1` is not supported as of `@askdb/core@0.2.0`. Migrate to the schema artifact format (`"version": 2`): …`` |
 | Any other invalid field | `Invalid schema.json at <path>: <details>` |
 | Text that isn't JSON | `Failed to parse schema.json in <dir>` |
 
@@ -341,7 +341,7 @@ A bundle is one JSON file that holds a whole artifact. Loading it gives the same
 
 ## Versioning
 
-Schema v2 is the only format AskDB reads. Before 1.0, v2 can gain fields without a new version number. After 1.0, a breaking change to the format gets a new `version`. The [Schema v2 contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) records the policy.
+This is the only format AskDB reads. Before 1.0, it can gain fields without a new `version` number. After 1.0, a breaking change to the format gets a new `version`. The [schema artifact contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) records the policy.
 
 ## Read next
 

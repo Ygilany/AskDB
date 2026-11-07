@@ -176,7 +176,7 @@ describe("loadSchema — v1 rejection", () => {
   it("rejects a v1 format file with a clear error message", () => {
     expect(() => loadSchema(v1FixtureJson)).toThrow(SchemaParseError);
     expect(() => loadSchema(v1FixtureJson)).toThrow(/version: 1/);
-    expect(() => loadSchema(v1FixtureJson)).toThrow(/schema-v2\.md/);
+    expect(() => loadSchema(v1FixtureJson)).toThrow("https://askdb.tools/reference/schema-artifact-format/");
   });
 });
 

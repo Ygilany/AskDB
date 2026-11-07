@@ -419,14 +419,14 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   });
 
   /**
-   * Contract: with `enforcement: warn`, a reply with no tenant filter is "returned with
-   * `tenantWarnings`" (`docs/contracts/tenant-policy.md`, "Enforcement modes";
-   * `guides/multi-tenancy.mdx`, "Asking with a tenant scope"): `ask()` returns the SQL and
-   * reports the missing predicate in its guardrail result (`tenantGuardrail`,
+   * Contract: with `enforcement: warn`, a reply with no tenant filter is returned with its
+   * findings in `tenantGuardrail.warnings` (`docs/contracts/tenant-policy.md`, "Enforcement
+   * modes"; `guides/multi-tenancy.mdx`, "Asking with a tenant scope"): `ask()` returns the SQL
+   * and reports the missing predicate in its guardrail result (`tenantGuardrail`,
    * `reference/core-api/ask.mdx`), instead of throwing. `reference/core-api/checks.mdx` gives
    * `TenantGuardrailResult`'s fields (`passed`, `warnings[].rule`, `tableId`) and
    * `reference/core-api/errors.mdx` the rule code `MISSING_TENANT_PREDICATE`; this asserts them
-   * from the exported types. #316 still asks for warn mode's behavior to be documented.
+   * from the exported types.
    * Catches: warn mode that throws like strict, or that returns the SQL without the warning.
    * Not covered elsewhere: no other lab suite asks with a warn policy.
    */
@@ -438,30 +438,6 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 
       expectCassetteSql(result.sql, dialect, "tenant-unfiltered", QUESTIONS);
       expect(result.tenantGuardrail).toMatchObject({ passed: false, warnings: [expect.objectContaining({ rule: "MISSING_TENANT_PREDICATE", tableId: expect.stringMatching(/\.program$/) })] });
-    });
-  });
-
-  /**
-   * Contract: `docs/contracts/tenant-policy.md`, `docs/specs/multi-tenancy.md` and
-   * `guides/multi-tenancy.mdx` say warn mode returns its warnings as `tenantWarnings`.
-   * `ask()`'s result has no such field: the warnings are in `result.tenantGuardrail`, so a
-   * host that reads `tenantWarnings` sees no warning at all (#316).
-   * Catches: the docs and the product disagreeing about where a warn-mode caller finds the
-   * warnings.
-   * Not covered elsewhere: `tenant-warn` reads `tenantGuardrail`, which the docs don't name.
-   * This case is `known` only while #316 is open. If #316 is resolved by renaming the docs
-   * to `result.tenantGuardrail.warnings`, remove this test: `tenant-warn` then covers the
-   * documented field, and a `known` case left behind would assert a field nothing promises.
-   * If it is resolved by adding `tenantWarnings`, drop `.fails`.
-   * (The guide's "can't be forgotten" wording is also #316, but no test pins it: the
-   * contract says warn mode returns the unproven query, which `tenant-warn` checks.)
-   */
-  describe("tenant-warn-claims", () => {
-    it.fails(`warn mode reports the missing predicate as tenantWarnings, as the contract and the guide say (#316)`, async (ctx) => {
-      await needsTenantCapabilities(ctx, dialect);
-      const result = await ask(dialect, "tenant-unfiltered", { tenantScope: idsScope(dialect, [FLAT]) }, "warn");
-
-      expect((result as { tenantWarnings?: unknown[] }).tenantWarnings, "ask()'s result has no tenantWarnings").toEqual([expect.anything()]);
     });
   });
 });

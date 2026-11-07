@@ -116,7 +116,7 @@ Product direction and technical baseline live in **`docs/`**:
 - [`packages/ai`](packages/ai) (`@askdb/ai`) — AI provider registry and shared config helpers for AI SDK language and embedding models.
 - [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
 - [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.
-- [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — connector contract, connector registry, `@askdb/introspect/kit` engine helpers, Schema v2 renderer.
+- [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — connector contract, connector registry, `@askdb/introspect/kit` engine helpers, schema artifact renderer.
 - [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres introspection connector, catalog templates, `pg`-backed runner, and a re-export of core's Postgres dialect.
 - [`packages/mysql`](packages/mysql) (`@askdb/mysql`) — MySQL introspection connector and `mysql2`-backed catalog runner.
 - [`packages/sqlite`](packages/sqlite) (`@askdb/sqlite`) — SQLite introspection connector and `better-sqlite3`-backed catalog runner.
@@ -168,24 +168,25 @@ npx askdb introspect --engine postgres --schemas org,people,billing,ref \
 
 **Environment variables**
 
-See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets in a local **`.env`** (gitignored); the CLI **loads `.env` automatically** and then reads `process.env`.
+AskDB reads its settings from `askdb.config.ts`, not from the environment. The repo-root config reads the variables below with `env("…")`, so put them in a local **`.env`** (gitignored; [`.env.example`](.env.example) is a template). The CLI loads `.env` before it evaluates the config. The only AskDB variable read straight from the environment is `ASKDB_DEBUG`.
 
-| Variable | Purpose |
-|----------|---------|
-| `OPENAI_API_KEY` | Required for NL→SQL (BYO; OpenAI-compatible). |
-| `OPENAI_BASE_URL` | Optional custom base URL for OpenAI-compatible APIs. |
-| `ASKDB_MODEL` or `OPENAI_MODEL` | Optional model id (default `gpt-4o-mini`). |
-| `DATABASE_URL` | Optional; commonly passed to `askdb introspect --url` for live Postgres introspection. |
-| `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
-| `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
-| `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
+| Variable | Config key it fills | Purpose |
+|----------|---------------------|---------|
+| `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Needed for live NL→SQL (BYO; OpenAI-compatible). |
+| `OPENAI_MODEL` | `ai.language.model` | Optional model id (default `gpt-4o-mini`). |
+| `DATABASE_URL` | `introspection.providerConfig.postgres.databaseUrl`, `studio.execute.databaseUrl` | Optional; the Postgres URL for `askdb introspect` and Studio's Execute. |
+| `ASKDB_MOCK_SQL` | `dev.mockSql` | Optional; fixed SQL instead of a model call, for tests and local runs. |
+| `ASKDB_CORRELATION_ID` | `logging.correlationId` | Optional; the correlation id on every JSON log line for the run. |
+| `ASKDB_DEBUG` | none (read from the shell) | `1` or `true` prints stack traces. |
+
+`OPENAI_BASE_URL` points the OpenAI SDK at another OpenAI-compatible endpoint; the SDK reads it itself. The config reads a few more for RAG and Studio (`ASKDB_RAG_EMBEDDER_MODEL`, `ASKDB_PGVECTOR_URL`, `ASKDB_STUDIO_HOST`, `ASKDB_STUDIO_PORT`); see its `env("…")` calls. Set the log level with `logging.level` and the operating mode with `modes.askdbMode` in `askdb.config.ts` (formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md)).
 
 **Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL. Flags:
 
 | Flag | Purpose |
 |------|---------|
 | `-v` / `--verbose` | Sets log level to `info` (stderr). |
-| `--log-level <level>` | Explicit level (overrides `ASKDB_LOG_LEVEL`). |
+| `--log-level <level>` | Explicit level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (overrides `logging.level`; default `silent` unless `--verbose`, `--log-file` or `--log-stdout` implies `info`). |
 | `--log-file <path>` | Append the same JSON logs to a file (sync writes; parent dirs created). Implies `info` if level was `silent`. |
 | `--log-stdout` | Mirror structured logs to stdout. Implies `info` if level was `silent`. |
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |

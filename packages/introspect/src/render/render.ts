@@ -148,10 +148,10 @@ export function isSchemaV2Json(value: unknown): boolean {
 
 function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
   if (!isRecord(value) || value.version !== 2) {
-    throw new Error(`@askdb/introspect: invalid Schema v2 file at ${filePath}`);
+    throw new Error(`@askdb/introspect: invalid schema artifact file at ${filePath}`);
   }
   if (typeof value.schemaId !== "string" || !Array.isArray(value.tables)) {
-    throw new Error(`@askdb/introspect: invalid Schema v2 file at ${filePath}`);
+    throw new Error(`@askdb/introspect: invalid schema artifact file at ${filePath}`);
   }
   for (const table of value.tables) {
     if (
@@ -162,7 +162,7 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
       !isOptionalBoolean(table.sensitive) ||
       !Array.isArray(table.columns)
     ) {
-      throw new Error(`@askdb/introspect: invalid Schema v2 table in ${filePath}`);
+      throw new Error(`@askdb/introspect: invalid schema artifact table in ${filePath}`);
     }
     for (const column of table.columns) {
       if (
@@ -174,7 +174,7 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
         !isOptionalBoolean(column.sensitive)
       ) {
         throw new Error(
-          `@askdb/introspect: invalid Schema v2 column in ${filePath}`,
+          `@askdb/introspect: invalid schema artifact column in ${filePath}`,
         );
       }
     }

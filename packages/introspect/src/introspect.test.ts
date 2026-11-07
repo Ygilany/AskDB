@@ -274,7 +274,7 @@ describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
 
     expect(isSchemaV2Json(edited)).toBe(false);
     expect(() => renderSchemaV2Body(fakeSchema, { schemaId: "fake", existingArtifactDir: existingDir })).toThrow(
-      "invalid Schema v2",
+      "invalid schema artifact",
     );
   });
 });

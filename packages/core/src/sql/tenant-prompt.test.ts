@@ -421,6 +421,6 @@ describe("buildNlToSqlUserPrompt — the tenant block needs the tables the promp
 
   it("refuses a tenant policy with a v1 schema, which has no tracked tables to follow", () => {
     const v1 = { tables: [{ name: "orders", columns: [{ name: "id", type: "int", nullable: false, primaryKey: true }] }] };
-    expect(() => prompt(undefined, undefined, v1)).toThrow(/needs the v2 schema/);
+    expect(() => prompt(undefined, undefined, v1)).toThrow(/needs the schema artifact/);
   });
 });

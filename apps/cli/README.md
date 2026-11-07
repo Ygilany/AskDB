@@ -50,7 +50,7 @@ AskDB returns SQL for review. Run approved SQL outside AskDB under your own data
 
 ## Common flags
 
-- `--schema <path>` — AskDB Schema v2 directory, bundled JSON, or schema JSON file.
+- `--schema <path>` — schema directory, bundled JSON, or `schema.json` file.
 - `--mode <mode>` — one of the supported modes (see `docs/contracts/modes-v1.md`).
 - `--explain` — emit heuristic guardrail metadata alongside the SQL.
 - `--log-level <level>` — Pino log level (silent, error, warn, info, debug, trace).
@@ -78,7 +78,7 @@ In CI or scripts, pass `--yes` and use flags instead of prompts. See `askdb init
 askdb studio --schema my-app.schema
 ```
 
-`askdb studio` starts a local browser UI for browsing tables, editing Schema v2 enrichment, requesting AI suggestions, and generating sample NL-to-SQL output before shipping the schema. `askdb enrich` is an alias for the same command.
+`askdb studio` starts a local browser UI for browsing tables, editing schema enrichment, requesting AI suggestions, and generating sample NL-to-SQL output before shipping the schema. `askdb enrich` is an alias for the same command.
 
 ## Introspection
 
