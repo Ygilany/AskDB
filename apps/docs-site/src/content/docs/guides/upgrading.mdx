@@ -23,6 +23,13 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 Not published yet: these changes ship with `askdb` 1.0.0-beta.52 and `@askdb/config` 1.0.0-beta.20.
 
+### A JavaScript config loads with Node's own loader
+
+`@askdb/config` loads `askdb.config.js`, `.cjs` and `.mjs` with Node's own loader, and compiles only a TypeScript config (`.ts`, `.mts`, `.cts`) with jiti ([#833](https://github.com/Ygilany/AskDB/issues/833)). A JavaScript config now loads from inside an app's bundle, webpack included; see [Bundle an app that uses AskDB](/guides/bundle-your-app/).
+
+- **A `.js` config that relied on jiti may now fail, with Node's own error.** jiti accepted ES module syntax in a file Node reads as CommonJS, such as `export default` in `askdb.config.js` beside a `package.json` with `"type": "commonjs"`. Node now throws `SyntaxError: Unexpected token 'export'`. Rename the file to `askdb.config.mjs`, or write `module.exports = { … }`. A JavaScript config that imports a TypeScript file fails the same way: rename the config to `askdb.config.ts`.
+- **Node's rules decide the module format,** as for any file Node loads: `.cjs` is CommonJS, `.mjs` is an ES module, and `.js` follows the nearest `package.json`. A TypeScript config loads as before.
+
 ### Other changes you may notice in beta.52
 
 - **`askdb init` installs in a one-package project whose `pnpm-workspace.yaml` holds only settings** ([#863](https://github.com/Ygilany/AskDB/issues/863)), such as `minimumReleaseAgeExclude`, which pnpm also keeps in that file. It used to skip the install there and print the `pnpm add` command instead. It still skips at a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`. Studio's guided setup reads the file the same way.

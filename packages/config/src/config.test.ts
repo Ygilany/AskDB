@@ -886,6 +886,15 @@ ${scaffold.source}
     expect(getAskDbRuntimeConfig().ai.language.connection.apiKey).toBe("from-cjs");
   });
 
+  // #833: Node loads a JavaScript config by its own module rules, so jiti's interop no longer
+  // rescues ES module syntax in a file Node reads as CommonJS.
+  it("fails with Node's SyntaxError for ES module syntax in a .js config of a CommonJS package", () => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    writeFileSync(join(dir, "package.json"), '{ "type": "commonjs" }\n', "utf8");
+    writeFileSync(join(dir, "askdb.config.js"), `export default { ${BLOCKS} };\n`, "utf8");
+    expect(() => loadAskDbConfigProjectionSync(dir)).toThrow(SyntaxError);
+  });
+
   // The async loader imports .mjs with native import(), not jiti, so its own path gets its own cases.
   it("loadAskDbConfigProjection, the async loader, loads a plain-object askdb.config.mjs", async () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
@@ -1111,7 +1120,7 @@ describe("bootstrapAskDbEnv", () => {
     "loads a plain-object askdb.config.%s, the form the guides show",
     (ext) => {
       dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
-      linkWorkspacePackage(dir);
+      linkWorkspacePackage(dir, { built: !ext.endsWith("ts") });
       const body = `{
   ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_AI") } } },
   introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/${ext}" } } },

@@ -24,14 +24,28 @@ function defaultExport(mod: unknown, configPath: string): unknown {
   return mod.default;
 }
 
+/** `.ts`, `.mts` and `.cts` configs need jiti to compile them; Node loads `.js`, `.cjs` and `.mjs` itself. */
+function isTypeScriptConfig(configPath: string): boolean {
+  return /\.[cm]?ts$/i.test(configPath);
+}
+
 /**
- * Loads a config file synchronously with jiti, whatever its extension (`.mjs` included).
- * `interopDefault` stays on: it is what lets the file default-import a CommonJS package
- * (`import dotenv from "dotenv"`). jiti then returns the exports behind a proxy that merges in
- * the default export, so the default export is read from the module cache, which holds the
- * exports as the file wrote them. With jiti's module cache off, the proxy's default is used.
+ * Loads a config file synchronously. A JavaScript config loads with Node's own `require`, by
+ * Node's rules (an ES module through `require(esm)`), so it loads from inside an app's bundle,
+ * where jiti can't start (#833). `process.getBuiltinModule` gets that `require` past bundlers,
+ * which rewrite `node:module` imports and `require` calls.
+ *
+ * A TypeScript config loads with jiti. `interopDefault` stays on: it is what lets the file
+ * default-import a CommonJS package (`import dotenv from "dotenv"`). jiti then returns the
+ * exports behind a proxy that merges in the default export, so the default export is read from
+ * the module cache, which holds the exports as the file wrote them. With jiti's module cache
+ * off, the proxy's default is used.
  */
 function requireConfigModule(configPath: string): unknown {
+  if (!isTypeScriptConfig(configPath)) {
+    const { createRequire } = process.getBuiltinModule("node:module");
+    return defaultExport(createRequire(configPath)(configPath), configPath);
+  }
   const jiti = createJiti(configPath, { interopDefault: true });
   const loaded = jiti(configPath) as { default?: unknown } | null | undefined;
   const cached = jiti.cache[jiti.resolve(configPath)];
@@ -41,7 +55,7 @@ function requireConfigModule(configPath: string): unknown {
 
 async function importConfigModule(configPath: string): Promise<unknown> {
   if (configPath.toLowerCase().endsWith(".mjs")) {
-    return defaultExport(await import(pathToFileURL(configPath).href), configPath);
+    return defaultExport(await import(/* webpackIgnore: true */ pathToFileURL(configPath).href), configPath);
   }
   return requireConfigModule(configPath);
 }
