@@ -696,7 +696,8 @@ function codeView(sql: string, reading: CodeReading): string {
     }
     return sql.length;
   };
-  const dollarTag = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
+  // The tag may hold non-ASCII letters, as the shared lexer's DOLLAR_TAG and Postgres read it.
+  const dollarTag = /\$(?:[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/y;
   const executableOpener = /\/\*M?!\d*/y;
   const lineEnd = reading.lineCommentEndsAtCr ? /[\n\r]/g : /\n/g;
   let inExecutable = false;

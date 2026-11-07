@@ -344,6 +344,24 @@ describe("ask — a `$$` inside a name opens no dollar-quoted string", () => {
   });
 });
 
+describe("ask — a non-ASCII dollar tag is read as a string, like the engine", () => {
+  it.each(["postgres", "cockroachdb"] as const)("%s: refuses the OR the tag exposes", async (dialect) => {
+    // `$é$ … $é$` is a dollar-quoted string, so the OR after it is code and defeats the predicate.
+    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND $é$'$é$ = '' OR 1=1 OR 'x' = 'x'";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);

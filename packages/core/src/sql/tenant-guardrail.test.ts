@@ -862,6 +862,21 @@ describe("validateTenantGuardrails — `$` in names, and dollar quotes only wher
     expect(findings(dollarName, COCKROACHDB_DIALECT)).toEqual([]);
     expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = $q$ OR 1=1 $q$", POSTGRES_DIALECT)).toEqual([]);
   });
+
+  // A dollar tag can hold non-ASCII letters, as Postgres and the shared lexer read it. The scanner
+  // must read `$é$ … $é$` as a string too, or an OR it hides stays beside the predicate as code.
+  const nonAsciiTag = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND $é$'$é$ = '' OR 1=1 OR 'x' = 'x'";
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["no dialect", undefined],
+  ])("%s: a non-ASCII dollar tag is a string, so the OR it exposes defeats the predicate", (_label, dialect) => {
+    expect(findings(nonAsciiTag, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("postgres: a non-ASCII dollar-quoted string a real predicate sits beside still passes", () => {
+    expect(findings("SELECT $é$ a $é$ AS n, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids", POSTGRES_DIALECT)).toEqual([]);
+  });
 });
 
 describe("validateTenantGuardrails — a carriage return ends a `--` comment on Postgres and SQL Server only", () => {
