@@ -2,4 +2,4 @@
 "@askdb/config": patch
 ---
 
-A pgvector store without `rag.storeConfig.pgvector.databaseUrl` now fails with a hint naming `env("ASKDB_PGVECTOR_URL")`, the variable `askdb init` writes, where it suggested `env("PGVECTOR_URL")`. It also says that a variable the config already reads there is unset or blank, the usual cause in a project `askdb init` set up (#713).
+A pgvector store without `rag.storeConfig.pgvector.databaseUrl` now fails with a hint that says a variable the config already reads there, such as the one `askdb init` wrote to `.env.example`, is unset or blank (#713). The example stays `databaseUrl: env("PGVECTOR_URL")`. Before, a project that `askdb init` set up got only that example, which named a different variable from the one its config reads.
