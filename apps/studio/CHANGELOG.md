@@ -1,5 +1,24 @@
 # @askdb/studio
 
+## 0.2.0-beta.44
+
+### Patch Changes
+
+- 4196800: Security fix ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)), a residual of [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) finding 1. The tenant check read a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) as code, where Postgres, CockroachDB and the shared lexer read it as a string, so a tenant-scoped query could pass the check without an effective tenant predicate. The check's scanner now reads the tag with the same character set as the shared lexer and the engine. Enforce tenant isolation in the database (for example row-level security) regardless.
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [8e75d50]
+- Updated dependencies [dc398be]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+  - @askdb/enrich@0.2.0-beta.22
+  - @askdb/rag@0.2.0-beta.31
+  - @askdb/introspect@0.3.0-beta.25
+  - @askdb/mysql@0.1.0-beta.26
+  - @askdb/postgres@0.2.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.26
+  - @askdb/sqlserver@0.1.0-beta.27
+
 ## 0.2.0-beta.43
 
 ### Minor Changes

@@ -1,5 +1,20 @@
 # @askdb/http-api
 
+## 1.0.0-beta.51
+
+### Minor Changes
+
+- 4882ef5: With no schema configured server-side, `askdb-http` answers `500 generation_not_configured`, not `400 bad_request` (#845). No `--schema-path`, `host.schemaJson` or `host.schemaPath` is the operator's to fix, like a server schema that doesn't load (#840), so the message is generic and the `askdb.run.error` log line's `errName` (`SchemaNotConfiguredError`) names the cause. A request that sends its own `schemaJson` is unaffected.
+
+### Patch Changes
+
+- 4196800: Security fix ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)), a residual of [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) finding 1. The tenant check read a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) as code, where Postgres, CockroachDB and the shared lexer read it as a string, so a tenant-scoped query could pass the check without an effective tenant predicate. The check's scanner now reads the tag with the same character set as the shared lexer and the engine. Enforce tenant isolation in the database (for example row-level security) regardless.
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+  - @askdb/client@1.0.0-beta.12
+
 ## 1.0.0-beta.50
 
 ### Minor Changes

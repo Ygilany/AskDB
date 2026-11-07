@@ -1,5 +1,15 @@
 # @askdb/docs-site
 
+## 0.0.1-beta.14
+
+### Patch Changes
+
+- 901d3b6: The `@askdb/core` API reference splits into an index and eight pages under `/reference/core-api/`: `ask()`, `bindPreparedQuery()`, tenant scope, checks, schema loading, dialects, logging and errors (#713). The index keeps its URL, maps where to start, and lists the internal exports. A link to one of its old anchors, such as `#tenantscope`, forwards to the page the section moved to. Every one of core's 203 exports is now named on a page: new entries cover `generateSelectSql()`, the prompt helpers, `resolveTenantSql()`, `validateTenantScope()`, `validateSelectSql()`, `validateTenantGuardrails()`, the markdown parsers and writers, the log contract and each type. The logger's `stderr` option, `AskDialectGenerateResult`'s `unboundNamedSql` and `parameterManifest`, and every caller that throws `SchemaParseError` are now documented. The ask options' Modes link now opens `ask()`'s modes, not the sensitive check's. A new docs check, `check-export-coverage.mjs`, fails when an export of core, client, config or ai isn't named on its API page.
+- 04e1f5a: Troubleshooting moves to `/guides/troubleshooting/` as "Fix common errors", and the old URL redirects there (#713). Each heading now names a message AskDB prints: the missing-schema and invalid-`schema.json` errors show the CLI's and the library's real text, and the page adds `no AI API key configured`, the missing `@ai-sdk/*` peer, and `SqlGenerationError: Model call failed` with what 401 and 404 mean. It drops `askdb enrich` as a headless command (it opens Studio), the claim that `OPENAI_MODEL` belongs in the config file, the table `description:` key and the "expected SQL" table section, none of which exist. Studio's execute errors quote the Playground's messages. The RAG section lists each reason `ask()` skips retrieval, and its sample passes the `store` that `buildSchemaIndex()` requires.
+- 4882ef5: The HTTP API reference says a server with no schema configured answers `500 generation_not_configured`, not `400 bad_request`, in its Schema bullet and its `bad_request` and `generation_not_configured` rows, with a beta.51 upgrade note (#845).
+- dc398be: The upgrade guide's beta.51 section says how to replace `@askdb/rag`'s removed `createOpenAiEmbedder` (#844), for `askdb rag` and Studio, for code with a config file and for code without one, and its deprecation table dates the removal to 1.0.0-beta.51. The RAG API and packages references drop the helper and its entry point.
+- 8e75d50: The docs say the tenant-policy loader refuses a column on another table than its entry's under `strict`, with the new `TenantPolicyWarning` `misplaced_column_id` (#836): the tenant-policy reference's "When the policy and the schema disagree" table, the core API reference (`loadSchema()`, `SchemaParseError` and `normalizeTenantPolicy()`, which takes a column ID → table ID map), the multi-tenancy guide, troubleshooting, the schema-artifact reference and the beta.51 upgrade guide.
+
 ## 0.0.1-beta.13
 
 ### Patch Changes
