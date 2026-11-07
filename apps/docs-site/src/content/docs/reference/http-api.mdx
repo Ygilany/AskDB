@@ -1,6 +1,6 @@
 ---
 title: "HTTP API reference"
-description: "Endpoints, request and response shapes, error codes, and configuration for @askdb/http-api."
+description: "Endpoints, request and response shapes, error codes, exported types, the askdb-http binary's flags and exit codes, and configuration for @askdb/http-api."
 ---
 
 <p class="doc-eyebrow">Reference · HTTP API</p>
@@ -20,6 +20,8 @@ const server = createAskDbHttpServer({
 
 await server.listen();
 ```
+
+`createAskDbHttpServer()` takes an `AskDbHttpServerOptions` object. Every option is optional.
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -83,6 +85,7 @@ npx askdb-http --schema-path ./my-app.schema --port 3000 --host 127.0.0.1
 | `--schema-path <path>` | Server-default schema artifact path. |
 | `--port <n>` | Port to listen on. |
 | `--host <host>` | Bind address. |
+| `-h`, `--help` | Print the usage and these flags to stdout, then exit with code `0`. It doesn't load the config or start the server. |
 
 Every flag is optional. Each setting comes from its flag, then `askdb.config.ts`, then the default:
 
@@ -97,7 +100,11 @@ Every flag is optional. Each setting comes from its flag, then `askdb.config.ts`
 
 An installed `askdb-http` reads only the working directory's `.env`, and it never reads a `.env` inside `node_modules`. `createAskDbHttpServer()` reads only the working directory's `.env` too (see [Config loading](#config-loading)).
 
-If the server can't load its config (no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`) or can't bind (for example, the port is already in use), `askdb-http` prints a one-line error and exits with code `1`.
+`askdb-http` prints an error to stderr and exits with code `1` when:
+
+- **A flag is wrong:** an unknown flag, a value flag (`--schema-path`, `--port`, `--host`) with no value after it, or a `--port` that isn't a whole number from 1 to 65535. The error, such as `askdb-http: Unknown option: --verbose` or `askdb-http: Invalid --port: 70000`, is followed by the help text. It checks every flag before it reads `.env` or the config, and before it acts on `--help`, so a wrong flag beside `--help` also exits with code `1`.
+- **It can't load its config:** no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`. The error is one line.
+- **It can't bind:** for example, the port is already in use. The error is one line.
 
 ## Endpoints
 
@@ -117,7 +124,7 @@ curl http://localhost:3000/health
 
 Generate SQL from a question.
 
-**Request**
+**Request (`AskHttpRequest`)**
 
 ```json
 {
@@ -139,7 +146,7 @@ Generate SQL from a question.
 
 An optional field sent as JSON `null` counts as absent, as does an empty or whitespace-only `schemaJson`. A `null` body `mode` falls back to the `x-askdb-mode` header, then to config.
 
-**Success response (`200`)**
+**Success response (`200`, `AskHttpSuccessResponse`)**
 
 ```json
 {
@@ -165,7 +172,7 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 | `usage` | `object \| null` | Token counts for the generation call: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). `null` when the provider does not report usage. |
 | `sensitiveGuardrail` | `object`, only on some responses | Present only when the schema marks at least one table or column `sensitive`. Shows which sensitive identifiers the returned `sql` references: `passed` (`boolean`), `references` (`{ table, schema?, column, matchKind }[]`), and `unresolvedScope` when the table scope couldn't be resolved. `passed: false` is a warning. The SQL is still returned, so check it before you execute. See [`validateSensitiveReferences`](/reference/core-api/checks/#validatesensitivereferencessql-schema-options). |
 
-**Error response (`4xx` / `5xx`)**
+**Error response (`4xx` / `5xx`, `AskHttpErrorResponse`)**
 
 ```json
 {
@@ -209,6 +216,26 @@ curl -X POST http://localhost:3000/ask \
   -H "x-correlation-id: req_abc123" \
   -d '{"question":"How many users?"}'
 ```
+
+## Types
+
+`@askdb/http-api` exports four types, for a host or a client written in TypeScript:
+
+```ts
+import type {
+  AskDbHttpServerOptions,
+  AskHttpErrorResponse,
+  AskHttpRequest,
+  AskHttpSuccessResponse,
+} from "@askdb/http-api";
+```
+
+| Type | Describes |
+| --- | --- |
+| `AskDbHttpServerOptions` | The options of `createAskDbHttpServer()`: see [Server](#server). |
+| `AskHttpRequest` | The `POST /ask` body: see [`POST /ask`](#post-ask). Its fields don't include `null`, which the server reads as absent. |
+| `AskHttpSuccessResponse` | The `200` body, with `ok: true`. `explain` is typed `unknown`. |
+| `AskHttpErrorResponse` | The error body, with `ok: false`. `error.code` is a union of the codes in [Error codes](#error-codes), and `error.rule` is typed `string`. |
 
 ## What this server doesn't do
 

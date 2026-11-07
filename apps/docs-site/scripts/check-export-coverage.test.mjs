@@ -11,7 +11,7 @@ test("the check runs when started through a symbolic link, instead of exiting wi
   const link = join(mkdtempSync(join(tmpdir(), "export-coverage-")), "check.mjs");
   symlinkSync(fileURLToPath(new URL("./check-export-coverage.mjs", import.meta.url)), link);
   const output = execFileSync(process.execPath, [link], { encoding: "utf8" });
-  assert.match(output, /Every export of core, client, config and ai is named on its API page\./);
+  assert.match(output, /Every export of core, client, config, ai and http-api is named on its API page\./);
 });
 
 test("exportedNames resolves export *, named and type-only re-exports from source", () => {
@@ -42,4 +42,10 @@ test("entryPoints maps each export target to its source file, and refuses one it
   };
   assert.deepEqual(entryPoints(dir, packageJson), [join(dir, "src/index.ts"), join(dir, "src/scaffold/index.ts")]);
   assert.throws(() => entryPoints(dir, { exports: { ".": "./lib/index.cjs" } }), /can't map the export target/);
+});
+
+test("entryPoints skips a ./package.json export, which exports a file and no names", () => {
+  const dir = mkdtempSync(join(tmpdir(), "export-coverage-"));
+  const packageJson = { exports: { ".": { import: "./dist/index.js" }, "./package.json": "./package.json" } };
+  assert.deepEqual(entryPoints(dir, packageJson), [join(dir, "src/index.ts")]);
 });
