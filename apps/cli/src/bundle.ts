@@ -1,18 +1,19 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { errorMessage } from "./cli-error.js";
-import { runCommand, type CommandSpec } from "./command.js";
+import { EXPERIMENTAL_ADR_URL, runCommand, type CommandSpec } from "./command.js";
 
 const USAGE = "askdb bundle <schema-dir> --out <bundle.json>";
 
 type BundleOptions = { schemaDir?: string; out?: string };
 
-/** `askdb bundle`: one Schema v2 directory as one JSON file. It never reads askdb.config. */
+/** `askdb bundle`: one schema directory as one JSON file. It never reads askdb.config. */
 export function bundleCommand(): CommandSpec<BundleOptions> {
   return {
     name: "bundle",
-    summary: "Bundle a Schema v2 directory into a single JSON file",
+    summary: "Bundle a schema directory into a single JSON file (experimental)",
     usage: [USAGE],
+    notes: [`Experimental: a minor release of askdb may change this command (${EXPERIMENTAL_ADR_URL}).`],
     flags: [
       {
         names: ["--out"],

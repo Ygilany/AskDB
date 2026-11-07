@@ -11,14 +11,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoFixturesDir = path.resolve(__dirname, "../../../../fixtures/schemas");
 
 describe("schema-question-precheck", () => {
-  it("assertNlToSqlInputs rejects empty schema tables", () => {
-    expect(() =>
-      assertNlToSqlInputs({ tables: [] }, "hello"),
-    ).toThrowError(AskDbError);
+  // The messages name ask()'s options, not a CLI flag or a path in AskDB's repository (#719).
+  it("assertNlToSqlInputs rejects empty schema tables, naming the schema option", () => {
+    const check = () => assertNlToSqlInputs({ tables: [] }, "hello");
+    expect(check).toThrowError(AskDbError);
+    expect(check).toThrowError("Schema has no tables. Pass a `schema` with at least one table.");
   });
 
-  it("assertNlToSqlInputs rejects blank question", () => {
-    expect(() =>
+  it("assertNlToSqlInputs rejects blank question, naming the question option", () => {
+    const check = () =>
       assertNlToSqlInputs(
         {
           tables: [
@@ -29,8 +30,9 @@ describe("schema-question-precheck", () => {
           ],
         },
         "  \n",
-      ),
-    ).toThrowError(AskDbError);
+      );
+    expect(check).toThrowError(AskDbError);
+    expect(check).toThrowError("Question is empty. Pass a non-blank natural-language `question`.");
   });
 
   it("fixture orders-users: unknown FROM table yields a note naming it, and no schema table (#677)", async () => {

@@ -29,7 +29,7 @@ Runtime AI configuration helpers live in `@askdb/ai`, which has built-in provide
 
 ## Schema format
 
-`@askdb/core` uses **Schema v2** — a split artifact designed for business-context enrichment and RAG chunking. See [`docs/contracts/schema-v2.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) for the full contract.
+`@askdb/core` reads the **schema artifact**: a split format designed for business-context enrichment and RAG chunking. See the [schema artifact format](https://askdb.tools/reference/schema-artifact-format/) for the full contract.
 
 ### Directory layout
 
@@ -42,7 +42,7 @@ my-app.schema/
   concepts.md        # optional — cross-table vocabulary
 ```
 
-### Load a v2 directory
+### Load a schema directory
 
 ```ts
 import { loadSchema } from "@askdb/core";
@@ -109,9 +109,9 @@ Key rules:
 - `AskDbLanguageModel` — AskDB's public name for the AI SDK language model contract.
 - `DialectSpec` and the built-in specs (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …, `BUILT_IN_DIALECTS`) — the SQL rules for each built-in engine. The engine packages re-export them.
 - `AskDialect` — the escape-hatch contract for a fully custom generator.
-- `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.
-- `loadSchemaFromJson(raw)` — parse a Schema v2 bundled JSON string (e.g. from an env var).
-- `readSchemaDirectory(dir)` — read a Schema v2 directory into its bundle form (what `askdb bundle` writes).
+- `loadSchema(path)` — load a schema directory, bundled JSON, or `schema.json` path.
+- `loadSchemaFromJson(raw)` — parse a bundled schema artifact JSON string (e.g. from an env var).
+- `readSchemaDirectory(dir)` — read a schema directory into its bundle form (what `askdb bundle` writes).
 - `saveSchemaFile(schemaDir, relativePath, content)` — write one file inside a schema directory; refuses a symbolic link and replaces the target through a temp file.
 - `parseTableMarkdown` / `writeTableMarkdown` — round-trippable describable-layer parser/writer.
 - `extractSqlFromModelText` — generic fenced-code extractor (dialect-agnostic).

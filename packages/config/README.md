@@ -2,7 +2,7 @@
 
 Prisma-style helpers for AskDB: `env()`, `defineConfig()`, plus discovery and loading of `askdb.config.*` / `.config/askdb.*` files used by first-party apps (`askdb` CLI, `@askdb/http-api`, `@askdb/studio`).
 
-**`@askdb/config` is the single package that reads `process.env` directly** (during dotenv load, while `askdb.config.*` evaluates, for a tiny bootstrap-time overlay allowlist, and for the `ASKDB_DEBUG` diagnostics switch). All other packages obtain configuration through **`getAskDbRuntimeConfig()`**.
+**`@askdb/config` is the single package that reads `process.env` directly** (during dotenv load, while `askdb.config.*` evaluates, and for the `ASKDB_DEBUG` diagnostics switch). All other packages obtain configuration through **`getAskDbRuntimeConfig()`**.
 
 ## Install
 

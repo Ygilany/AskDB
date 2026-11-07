@@ -178,13 +178,13 @@ The generation step `ask()` runs for a built-in dialect or a `DialectSpec`. It b
 
 ### `buildNlToSqlUserPrompt(dialect, question, schema, ambiguityNotes?, logger?, nlToSqlSchemaOptions?, prebuiltDdl?, tenantPolicy?, tenantScope?, parameterize?, promptTableIds?)`
 
-Returns the NL→SQL user prompt `ask()` sends with a built-in dialect: the rules, the schema's DDL (or `prebuiltDdl`), the tenant block when `tenantPolicy` and `tenantScope` are set, and the hints. With a tenant policy, the tenant block follows the tables the prompt shows. Without `prebuiltDdl` those are the schema's tracked tables. With `prebuiltDdl`, pass `promptTableIds`, the ids of the tables it shows; leaving them out throws `AskDbError`. A tenant policy also needs a v2 schema.
+Returns the NL→SQL user prompt `ask()` sends with a built-in dialect: the rules, the schema's DDL (or `prebuiltDdl`), the tenant block when `tenantPolicy` and `tenantScope` are set, and the hints. With a tenant policy, the tenant block follows the tables the prompt shows. Without `prebuiltDdl` those are the schema's tracked tables. With `prebuiltDdl`, pass `promptTableIds`, the ids of the tables it shows; leaving them out throws `AskDbError`. A tenant policy also needs a schema artifact, not a v1 schema.
 
 ### Prompt helpers
 
 | Function | Returns |
 | --- | --- |
-| `formatSchemaV2ForNlToSql(schema, options?)` | `{ ddl, stats }`: the schema block `ask()` puts in the prompt for a v2 schema. `options` is a `FormatNlToSqlOptions`: `omitSensitiveIdentifiersFromPrompt`, `unqualifiedNamespace` and `quoteIdentifier`. `stats` is a `NlToSqlSchemaFormatStats`: counts of the sensitive columns left out or listed, the sensitive tables shown by name only, and the untracked tables. |
+| `formatSchemaV2ForNlToSql(schema, options?)` | `{ ddl, stats }`: the schema block `ask()` puts in the prompt for a schema artifact. `options` is a `FormatNlToSqlOptions`: `omitSensitiveIdentifiersFromPrompt`, `unqualifiedNamespace` and `quoteIdentifier`. `stats` is a `NlToSqlSchemaFormatStats`: counts of the sensitive columns left out or listed, the sensitive tables shown by name only, and the untracked tables. |
 | `formatSchemaForNlToSql(schema, options?)` | The same for the older v1 `NormalizedSchema`. |
 | `synthesizeRetrievedDdl(args)` | The schema block for retrieved chunks: `{ ddl, tableIds, tablesEmitted, chunksUsed, … }`. `args` takes `schema`, `results` (`RetrievedResult[]`) and the three formatting options. `@askdb/rag` re-exports it. |
 | `nlToSqlAmbiguityNotes(question, schema)` | The hints `ask()` adds to the prompt when the question and the schema look misaligned, as a `string[]`. They name no schema table ([ADR 0038](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0038-prompt-hints-name-no-schema-table.md)). |
