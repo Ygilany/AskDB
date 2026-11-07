@@ -26,6 +26,7 @@ Not published yet: these changes ship with `askdb` 1.0.0-beta.52 and `@askdb/con
 ### Other changes you may notice in beta.52
 
 - **`askdb init` installs in a one-package project whose `pnpm-workspace.yaml` holds only settings** ([#863](https://github.com/Ygilany/AskDB/issues/863)), such as `minimumReleaseAgeExclude`, which pnpm also keeps in that file. It used to skip the install there and print the `pnpm add` command instead. It still skips at a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`. Studio's guided setup reads the file the same way.
+- **`askdb init` and Studio's setup read a pgvector store's URL from `PGVECTOR_URL`,** not `ASKDB_PGVECTOR_URL`, when you don't name a variable. That's the name the rest of these docs use. `--pgvector-env`, or the variable field in Studio's setup, still picks another. A config that already reads `env("ASKDB_PGVECTOR_URL")` keeps working: the name is whatever its `env()` call passes.
 
 ## 1.0.0-beta.51
 

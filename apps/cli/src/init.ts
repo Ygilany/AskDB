@@ -104,7 +104,7 @@ function scaffoldAnswers(answers: InitAnswers): AskDbScaffoldAnswers {
       keyEnv: answers.aiKeyEnv,
       ...(answers.aiModelEnv ? { modelEnv: answers.aiModelEnv } : {}),
     },
-    rag: { store: answers.ragStore, pgvectorEnv: answers.pgvectorEnv ?? "ASKDB_PGVECTOR_URL" },
+    rag: { store: answers.ragStore, pgvectorEnv: answers.pgvectorEnv ?? "PGVECTOR_URL" },
     ...(studioExecute.enabled
       ? {
           studioExecute: {
@@ -492,7 +492,7 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers> {
     default: "file",
   });
 
-  const pgvectorEnv = ragStore === "pgvector" ? "ASKDB_PGVECTOR_URL" : undefined;
+  const pgvectorEnv = ragStore === "pgvector" ? "PGVECTOR_URL" : undefined;
 
   // Opt-in: Studio execute runs generated SQL against a live database, so it
   // defaults to off (matching `--studio-execute`'s documented default).

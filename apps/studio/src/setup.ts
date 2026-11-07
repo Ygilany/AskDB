@@ -108,7 +108,7 @@ function scaffoldAnswers(input: SetupConfigInput): AskDbScaffoldAnswers {
       keyEnv: trimmed(input.aiKeyEnv) ?? aiDefaults(input.aiProvider)?.keyEnv ?? "",
       ...(input.aiModelEnv ? { modelEnv: input.aiModelEnv.trim() } : {}),
     },
-    rag: { store: input.ragStore ?? "file", pgvectorEnv: trimmed(input.pgvectorEnv) ?? "ASKDB_PGVECTOR_URL" },
+    rag: { store: input.ragStore ?? "file", pgvectorEnv: trimmed(input.pgvectorEnv) ?? "PGVECTOR_URL" },
     ...(input.studioExecute
       ? {
           studioExecute: {
