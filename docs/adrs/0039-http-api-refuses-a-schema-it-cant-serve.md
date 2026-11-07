@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-06; amended 2026-11-06, #809, #840). The coordinator decided #716 and #720 on 2026-11-06 (the "Decision (2026-11-06)" section of each issue). Implemented in PR #806.
+Accepted (2026-11-06; amended 2026-11-06, #809, #840, #845). The coordinator decided #716 and #720 on 2026-11-06 (the "Decision (2026-11-06)" section of each issue). Implemented in PR #806.
 
 ## Context
 
@@ -53,6 +53,8 @@ For #716:
 - **Keep `400 schema_parse_error` and drop the path from the message.** It still blames the caller for the operator's configuration, Option C's reason for #720.
 - **`500 internal_error`.** It reads as a crash and tells the client nothing about the cause, the reason #716 named its own code.
 - **A new public code, such as `schema_not_loaded`.** One more public code before the 1.0 freeze, Option B's reason for #720; a client can't act differently on it, and the log's `errName` already names the cause.
+
+**2026-11-06 — No schema configured server-side (#845):** with no `--schema-path`, `host.schemaJson` or `host.schemaPath`, a request without its own `schemaJson` answered `400 bad_request`, the server's misconfiguration reported as the caller's error, the class #840 fixed for a schema that doesn't load. The maintainer chose A on #845: `SchemaNotConfiguredError` answers `500 generation_not_configured` with a generic message, and the `askdb.run.error` log line's `errName` names it, a fourth cause in Decision 3's list. A request that sends its own `schemaJson` doesn't need the server's schema and is unaffected. Keeping `400 bad_request`, on the ground that a caller can send `schemaJson` when overrides are on, was the option not taken: overrides are off by default, and the operator still has to fix the server.
 
 ## Related
 
