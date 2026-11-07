@@ -100,7 +100,7 @@ export default defineConfig({
           details:
             "AskDB is an open-source NL-to-SQL toolkit: `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact and a Vercel AI SDK `LanguageModel`, and returns SQL that has passed heuristic checks. It never executes SQL — the host application runs it through its own connection. The same pipeline powers the CLI, the `@askdb/client` library, `@askdb/http-api`, and Studio.\n" +
             "\n" +
-            "The docs site is organized as Start (quickstart, install, Studio), Guides (embedding in Node, HTTP deployment, multi-tenancy, RAG for large schemas, switching engines, bringing your own model, upgrading between releases, agent/MCP integration), Concepts (how AskDB works, the schema artifact, safety boundaries, privacy model, modes and dialects), and Reference (CLI, HTTP API, configuration, the full package map, API docs). The full per-page index is in the linked documentation sets below.\n" +
+            "The docs site is organized as Start (quickstart, install, Studio), Guides (embedding in Node, HTTP deployment, multi-tenancy, RAG for large schemas, switching engines, bringing your own model, upgrading between releases, agent/MCP integration), Concepts (how AskDB works, the schema artifact, safety boundaries, privacy model, tenant isolation, modes and dialects), and Reference (CLI, HTTP API, configuration, the full package map, API docs). The full per-page index is in the linked documentation sets below.\n" +
             "\n" +
             "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — config-driven `@askdb/client`/`@askdb/ai` (built-in providers; install the matching `@ai-sdk/*` package) vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities. AskDB validates the scope shape, binds tenant IDs, and runs heuristic checks, but never originates scope and isn't the enforcement boundary; see /concepts/safety-boundaries/, and /guides/enforce-tenancy-in-the-database/ for Postgres row-level security.\n" +
             "\n" +
@@ -146,7 +146,8 @@ export default defineConfig({
             {
               label: "Tenancy",
               items: [
-                { label: "Multi-tenancy", slug: "guides/multi-tenancy" },
+                { label: "Scope queries to a tenant", slug: "guides/multi-tenancy" },
+                { label: "Scope to a tenant hierarchy", slug: "guides/tenant-hierarchy" },
                 { label: "Enforce tenancy in the database", slug: "guides/enforce-tenancy-in-the-database" },
               ],
             },
@@ -174,6 +175,7 @@ export default defineConfig({
             { label: "Safety boundaries", slug: "concepts/safety-boundaries" },
             { label: "Modes and dialects", slug: "concepts/modes-and-dialects" },
             { label: "Privacy model", slug: "concepts/privacy-model" },
+            { label: "Tenant isolation", slug: "concepts/tenant-isolation" },
           ],
         },
         {
@@ -190,7 +192,10 @@ export default defineConfig({
             },
             {
               label: "Formats and rules",
-              items: [{ label: "Schema artifact format", slug: "reference/schema-artifact-format" }],
+              items: [
+                { label: "Schema artifact format", slug: "reference/schema-artifact-format" },
+                { label: "Tenant policy format", slug: "reference/tenant-policy" },
+              ],
             },
             {
               label: "Packages and releases",

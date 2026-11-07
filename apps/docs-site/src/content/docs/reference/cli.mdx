@@ -184,7 +184,7 @@ When the source has no tables or views to write, after `--schemas`, `--exclude-s
 
 `askdb introspect` also accepts the [shared logging flags](#shared-logging-flags).
 
-Re-introspecting doesn't change `tenant-policy.md`, so a renamed or dropped column can leave the policy naming IDs the new `schema.json` lacks. When the `--out` directory holds a `tenant-policy.md`, `askdb introspect` loads the directory after writing and prints on stderr what no longer matches. Under `enforcement: strict` that is the error `loadSchema()` will throw until you update the policy. The exit code stays `0`, because the write succeeded. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
+Re-introspecting doesn't change `tenant-policy.md`, so a renamed or dropped column can leave the policy naming IDs the new `schema.json` lacks. When the `--out` directory holds a `tenant-policy.md`, `askdb introspect` loads the directory after writing and prints on stderr what no longer matches. Under `enforcement: strict` that is the error `loadSchema()` will throw until you update the policy. The exit code stays `0`, because the write succeeded. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
 
 Live introspection requires the matching engine driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`) in the project running `askdb`, or supplied in the same one-off command:
 
