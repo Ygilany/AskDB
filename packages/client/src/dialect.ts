@@ -15,8 +15,8 @@ export type DialectResolution = {
 };
 
 /**
- * The dialect `createAskDb()`'s `ask()` uses for `schema`, as the CLI, the HTTP API and Studio
- * resolve it: `override`, then `configDialect` (askdb.config's `dialect`, or
+ * The dialect `createAskDb()`'s `ask()` uses for `schema`, as the CLI, Studio and `askdb-http` (for
+ * its configured schema) resolve it: `override`, then `configDialect` (askdb.config's `dialect`, or
  * `createAskDb({ dialect })`), then the schema's `provider` when it's a built-in dialect id,
  * then `"postgres"` for a schema with no `provider`.
  *
