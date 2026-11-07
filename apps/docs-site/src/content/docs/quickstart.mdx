@@ -113,6 +113,8 @@ It prints `Created shop.db`, and a new `shop.db` file appears in the folder. Tha
 
 Install the AskDB CLI into the project:
 
+<Aside type="note">pnpm and Yarn install only releases that are at least a day old. Within a day of a new AskDB release, they pick an older one, which can fail. To let them install AskDB's newest release, first run `pnpm config set minimumReleaseAgeExclude '["askdb","@askdb/*"]' --json`, which applies to all your projects, or, in this folder, `yarn config set npmPreapprovedPackages --json '["askdb","@askdb/*"]'`.</Aside>
+
 <Tabs syncKey="pkg">
   <TabItem label="npm">
 
@@ -190,7 +192,7 @@ Wrote:
 Installing dependencies with pnpm in …/askdb-shop …
 …
 dependencies:
-+ @askdb/config 1.0.0-beta.18
++ @askdb/config 1.0.0-beta.19
 + better-sqlite3 13.0.3
 …
 Installed: @askdb/config, better-sqlite3.
