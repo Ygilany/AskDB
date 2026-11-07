@@ -55,7 +55,8 @@ import AnchorRedirects from "../../../../components/AnchorRedirects.astro";
 | `extractTenantPlaceholders` | Lists the `:tenant_*` placeholders in SQL | `@askdb/core` only |
 | `formatAskDbModesV1` | Formats the list of modes for a message | CLI |
 | `formatSupportedAskDbLogLevels`, `isSupportedAskDbLogLevel` | Log-level helpers | CLI |
-| `parseAskDbSchemaJson`, `loadNormalizedSchemaFromJson`, `normalizeAskDbSchema`, `AskDbSchemaFile` | The older v1 schema format: parse, load and normalize it, and its file's type | `@askdb/core` only |
+| `parseAskDbSchemaJson`, `normalizeAskDbSchema` | Parse and normalize the older v1 schema format | `@askdb/core` only |
+| `loadNormalizedSchemaFromJson`, `AskDbSchemaFile` | Load a v1 schema from a JSON string, and the v1 file's type | `@askdb/core`, and the packed-install smoke tests in `examples/installable-smoke` |
 
 ## Read next
 

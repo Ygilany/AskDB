@@ -8,7 +8,7 @@
 // PascalCase or UPPER_CASE, so they don't occur as ordinary words. An internal export counts
 // once a page lists it, as the core index does under "Internal exports".
 import { createRequire } from "node:module";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -99,4 +99,5 @@ function main() {
   console.log("Every export of core, client, config and ai is named on its API page.");
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+// Compare real paths, so a run through a symbolic link (macOS's /tmp) still runs the check.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) main();

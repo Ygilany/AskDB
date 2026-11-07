@@ -1,9 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { entryPoints, exportedNames, undocumented } from "./check-export-coverage.mjs";
+
+test("the check runs when started through a symbolic link, instead of exiting without checking", () => {
+  const link = join(mkdtempSync(join(tmpdir(), "export-coverage-")), "check.mjs");
+  symlinkSync(fileURLToPath(new URL("./check-export-coverage.mjs", import.meta.url)), link);
+  const output = execFileSync(process.execPath, [link], { encoding: "utf8" });
+  assert.match(output, /Every export of core, client, config and ai is named on its API page\./);
+});
 
 test("exportedNames resolves export *, named and type-only re-exports from source", () => {
   const dir = mkdtempSync(join(tmpdir(), "export-coverage-"));

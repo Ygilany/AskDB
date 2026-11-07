@@ -190,8 +190,8 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * AskDB documents and installs (`pg`, `mysql2` `query` and `execute`, `mssql`,
    * `better-sqlite3`), that short array must fail at the driver, never return rows, so a
    * business value can't slide into a tenant marker. The same holds for `bindPreparedQuery()`'s
-   * `unboundSql`. (`node:sqlite`, which AskDB doesn't document, doesn't check the number of
-   * values it binds; `core-api.mdx` says so.)
+   * `unboundSql`. (`node:sqlite` doesn't check the number of values it binds;
+   * `reference/core-api/ask.mdx`, "Executing the result", says so.)
    * Catches: tenant markers renumbered before the business markers on `$N` or `@pN` engines, so
    * a short array binds a business value to the tenant predicate, or a driver upgrade that pads
    * a short array instead of refusing it.
@@ -423,10 +423,10 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * `tenantWarnings`" (`docs/contracts/tenant-policy.md`, "Enforcement modes";
    * `guides/multi-tenancy.mdx`, "Asking with a tenant scope"): `ask()` returns the SQL and
    * reports the missing predicate in its guardrail result (`tenantGuardrail`,
-   * `reference/core-api/ask.mdx`), instead of throwing. `reference/core-api/ask.mdx` names
-   * `tenantGuardrail` but not `TenantGuardrailResult`'s fields (`passed`, `warnings[].rule`,
-   * `tableId`) or the rule code `MISSING_TENANT_PREDICATE`; this asserts them from the
-   * exported types, and #316 asks for them to be documented.
+   * `reference/core-api/ask.mdx`), instead of throwing. `reference/core-api/checks.mdx` gives
+   * `TenantGuardrailResult`'s fields (`passed`, `warnings[].rule`, `tableId`) and
+   * `reference/core-api/errors.mdx` the rule code `MISSING_TENANT_PREDICATE`; this asserts them
+   * from the exported types. #316 still asks for warn mode's behavior to be documented.
    * Catches: warn mode that throws like strict, or that returns the SQL without the warning.
    * Not covered elsewhere: no other lab suite asks with a warn policy.
    */
