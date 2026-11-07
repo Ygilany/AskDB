@@ -1,5 +1,0 @@
----
-"@askdb/docs-site": patch
----
-
-The docs say `tenantSqlMode` defaults to `"sql-params"`, and that hosts run `result.sql` with `result.tenantParams` (the core and client API references, the multi-tenancy, embed-in-node and run-safely-in-prod guides, and `/AGENTS.md`). The `TenantSqlOutputMode` reference no longer says `sql-params` uses Postgres `$N` markers on every dialect (#320). Safety boundaries and the core API reference say an inlined tenant ID must be printable ASCII without a backslash, on every dialect, and that a custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, must set `tenantSqlMode` with a tenant scope. Safety boundaries also explains the `sjis` / `cp932` / `ujis` connection-charset case for drivers that interpolate on the client. Troubleshooting gains `UNESCAPABLE_TENANT_ID`, `TENANT_SQL_MODE_REQUIRED` and the driver error a host sees when it runs the new `sql` without its params. A new beta.46 section of the upgrade notes lists both breaking changes: running tenant-scoped SQL with its `tenantParams`, and `sql-params` for tenant IDs outside printable ASCII.

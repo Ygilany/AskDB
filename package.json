@@ -38,7 +38,7 @@
     "test:ai-floors": "bash scripts/test-ai-sdk-floors.sh",
     "preflight": "bash scripts/release-preflight.sh",
     "changeset": "changeset",
-    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "version-packages": "node scripts/prerelease-counter.mjs reset && changeset version && node scripts/prerelease-counter.mjs check && pnpm install --lockfile-only",
     "release": "pnpm -r build && pnpm -r publish --access public --tag latest",
     "doctor": "npx react-doctor@latest"
   },

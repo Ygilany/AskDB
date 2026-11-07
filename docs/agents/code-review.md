@@ -56,14 +56,14 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - **Shared lists stay exhaustive:** code with one branch per member of a list another package owns (a store, engine or provider from `@askdb/config`'s `ASKDB_*` constants) keeps a compile-time check that fails when the list grows, such as an exhaustive `switch` or a `satisfies` on the fall-through, including when it replaces a local copy of the list with the shared one (#784).
 - **Shared lists stay exhaustive** also covers a runtime copy of a union's members inside one package (an allowlist array, a `z.enum`): derive the union from one `as const` tuple, or key a `Record<Union, …>`. `satisfies Union[]` checks only that each entry is a member, not that every member is listed (#795).
 - **Public surface:** each package's `exports` map and `src/index.ts`; `askdb` publishes only its binary, so `runIntrospectCli` and similar are internal (#199).
-- **Versioning rule:** while AskDB is pre-1.0, a breaking change (removed or renamed export, raised Node floor, restrictive `exports`, changed accepted input or default) is a minor bump, not a patch (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Before Opening a PR"). Removing an export that never reached `main` is not breaking (maintainer's ruling on #199). Published ranges move on purpose (ADR 0015).
+- **Versioning rule:** a breaking change (removed or renamed export, raised Node floor, restrictive `exports`, changed accepted input or default) is a `major` changeset for the 12 packages in the `fixed` group on the 1.0 line (a `minor` naming `askdb` or `@askdb/config` when it is confined to an experimental surface in ADR 0030; between `1.0.0-rc.1` and `1.0.0` the API is frozen, so flag any breaking change there that lacks the maintainer's decision), and a `minor` for Studio, `@askdb/enrich` and `@askdb/rag`, which stay `0.x`; a `major` on one of those three would move it to 1.0 (`AGENTS.md`, "Conventions"; `docs/release.md`, "Version Posture"). Removing an export that never reached `main` is not breaking (maintainer's ruling on #199). Published ranges move on purpose (ADR 0015).
 
 ### Decision records
 
 - Records: `docs/adrs/NNNN-title.md`, each with Status, Context, Decision, Alternatives and Consequences. Numbering has gaps: 0008, 0010, 0011, 0013 and 0017 sit in open PRs (#199, #311, #189/#195, #181, #454).
-- Index: none on `main`. Draft PR #326 adds `docs/adrs/README.md` (one row per ADR: status, decision, what not to regress). Until it merges, read the Status and Decision sections of every ADR touching the changed paths.
+- Index: `docs/adrs/README.md`, one row per ADR (status, decision, what not to regress). Read it, then the Status and Decision sections of every ADR touching the changed paths.
 - Needs a record: any choice between two or more clean options, any reversal of an accepted record. A change that contradicts an ADR amends or supersedes it in the same PR (`docs/agents/domain.md`, "Flag ADR conflicts").
-- Once the index exists, a new record adds its row to the index in the same PR.
+- A new record adds its row to the index in the same PR.
 
 ## Defects
 

@@ -12,7 +12,7 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 
 > **Ask your data. Keep control of the query.**
 >
-> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client` and `@askdb/http-api` are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0.
+> **Status:** release candidate for 1.0. Every published package ships `-rc.N` prerelease versions on npm: the 12 packages listed under **At 1.0** share one version on the `1.0.0-rc` line, and Studio, `@askdb/enrich` and `@askdb/rag` are on `0.2.0-rc`. The public API of the 1.0 packages is frozen; the release candidates fix bugs before 1.0.0.
 >
 > **At 1.0:** `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. Studio, `@askdb/enrich` and `@askdb/rag` stay `0.x`, and their APIs may still move. 1.0 promises checked SQL for PostgreSQL, MySQL, MariaDB, SQLite and SQL Server; reports, result summaries and an MCP server come after 1.0 (see the [roadmap](docs/roadmap.md)).
 >
