@@ -65,6 +65,8 @@ Since 1.0.0-beta.51, a dollar-quote tag with non-ASCII letters (`$é$ … $é$`)
 
 > The tenant check's scanner now reads a dollar tag with the same character set as the shared lexer and the engine, so a `$é$ … $é$` string ends where the engine ends it.
 
+Since 1.0.0-beta.52 the tenant check has no scanner of its own: it reads SQL through the shared lexer ([#815](https://github.com/Ygilany/AskDB/issues/815)).
+
 The upgrade guide says what each fix asks of your app: [GHSA-8pwj-6hfv-5pm4 in 1.0.0-beta.50](/guides/upgrading/#security-upgrade-for-ghsa-8pwj-6hfv-5pm4) and [GHSA-rmjw-pffc-5hjr in 1.0.0-beta.51](/guides/upgrading/#security-upgrade-for-ghsa-rmjw-pffc-5hjr).
 
 ## The read-only check

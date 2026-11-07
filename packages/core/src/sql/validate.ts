@@ -1,16 +1,15 @@
 import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
-  ENGINE_LEXER_PROFILES,
   findEscapeStringContinuation,
   findEscapedByteString,
   findUnicodeEscapedIdentifier,
   GENERIC_LEXER,
   lexSql,
-  lexerProfileFor,
   type SqlLexerProfile,
   type SqlToken,
 } from "./lexer.js";
+import { isKnownEngine, readOnlyReadings } from "./readings.js";
 import { findAmbiguousTsqlText, findTsqlStatementBoundary } from "./tsql-batch.js";
 
 /**
@@ -99,17 +98,13 @@ export function validateSelectSql(dialect: DialectSpec, sql: string): string {
     );
   }
 
-  const profile = lexerProfileFor(dialect);
-  let tokens: SqlToken[];
   const keywords = denylistFor(dialect);
-  if (profile) {
-    tokens = checkWithProfile(trimmed, profile, keywords, blockedFunctionsFor(dialect));
-  } else {
-    // Unknown engine: every plausible reading of the SQL must be safe.
-    const functions = new Set([...blockedFunctionsFor(dialect), ...allBuiltInFunctions()]);
-    tokens = [];
-    for (const p of ENGINE_LEXER_PROFILES) tokens = checkWithProfile(trimmed, p, keywords, functions);
-  }
+  // Unknown engine: every plausible reading of the SQL must be safe, against every built-in spec's functions.
+  const functions = isKnownEngine(dialect)
+    ? blockedFunctionsFor(dialect)
+    : new Set([...blockedFunctionsFor(dialect), ...allBuiltInFunctions()]);
+  let tokens: SqlToken[] = [];
+  for (const profile of readOnlyReadings(dialect)) tokens = checkWithProfile(trimmed, profile, keywords, functions);
 
   const last = tokens[tokens.length - 1];
   dialect.extraValidate?.(isPunct(last, ";") ? trimmed.slice(0, last!.start).trim() : trimmed);
@@ -297,8 +292,7 @@ export function keywordsRejectedUnquoted(
  * engine's way. The NL→SQL prompt follows it (#319).
  */
 export function checkedAsTsql(dialect: Pick<DialectSpec, "id" | "backslashEscapes">): boolean {
-  const profile = lexerProfileFor(dialect);
-  return !profile || profile.id === "sqlserver";
+  return readOnlyReadings(dialect).some((profile) => profile.id === "sqlserver");
 }
 
 /**
@@ -308,7 +302,7 @@ export function checkedAsTsql(dialect: Pick<DialectSpec, "id" | "backslashEscape
  */
 export function denylistFor(dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">): Set<string> {
   const keywords = new Set([...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])].map((w) => w.toLowerCase()));
-  if (!lexerProfileFor(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
+  if (!isKnownEngine(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
   return keywords;
 }
 
