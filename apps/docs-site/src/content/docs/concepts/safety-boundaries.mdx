@@ -6,9 +6,9 @@ description: "Why AskDB's SQL checks are defense in depth and not a security bou
 import { Aside } from "@astrojs/starlight/components";
 import defenseInDepthUrl from "../../../assets/diagrams/askdb-defense-in-depth.svg?url";
 
-<p class="doc-eyebrow">Guardrails</p>
+<p class="doc-eyebrow">SQL checks</p>
 
-<p class="doc-lede">AskDB checks every SQL string the model returns before handing it back to your application. Those checks are heuristic guardrails that catch common model mistakes. They are defense in depth, not a security boundary. The database role your application uses to run the SQL is the boundary.</p>
+<p class="doc-lede">AskDB checks every SQL string the model returns before handing it back to your application. The checks are heuristics that catch common model mistakes. They are defense in depth, not a security boundary. The database role your application uses to run the SQL is the boundary.</p>
 
 <Aside type="caution" title="Generated SQL is untrusted input">
 AskDB does not parse SQL. Its checks are token- and pattern-based and can be bypassed by unusual or adversarial SQL. Before you execute anything AskDB returns, follow [Run generated SQL safely](#run-generated-sql-safely) below.
@@ -34,7 +34,7 @@ The checks split SQL into tokens and skip strings, quoted names and comments, so
 - **No control over the locks a plain read takes.** Like the other checks, the locking-read check is defense in depth: it looks for locking words, not at the locks a statement takes. Your connection's isolation level still decides what a plain `SELECT` locks. On SQL Server, `REPEATABLE READ` and `SERIALIZABLE` hold shared locks on what a `SELECT` read until the transaction ends, and on MySQL and MariaDB, `SERIALIZABLE` reads every plain `SELECT` in a transaction as `FOR SHARE`. Run generated SQL in a short transaction with a lock timeout.
 - **No complete tenant or sensitive coverage.** The tenant check doesn't tie each predicate to one table reference, so an unfiltered reference can pass beside a filtered one ([#399](https://github.com/Ygilany/AskDB/issues/399)). The sensitive check can miss a table in some `FROM` forms, so a wildcard over it goes unreported. [SQL checks reference](/reference/sql-checks/) lists the known cases.
 
-Guardrail bypasses are bugs and we fix them. Still, plan for the checks to miss things.
+A way past the checks is a bug, and we fix it. Still, plan for the checks to miss things.
 
 ## Run generated SQL safely
 

@@ -665,19 +665,6 @@ figure:has(> svg.pele) figcaption {
   margin-top: 0.4rem;
 }
 
-.home-terminal-intro {
-  color: var(--sl-color-gray-2);
-  font-size: 1rem;
-  line-height: 1.6;
-  margin: 0.5rem 0 0.75rem;
-}
-
-.home-landing .expressive-code {
-  border-radius: 0.65rem;
-  margin: 0.5rem 0 1.5rem;
-  overflow: hidden;
-}
-
 @media (max-width: 50rem) {
   .home-bento {
     grid-template-columns: 1fr;

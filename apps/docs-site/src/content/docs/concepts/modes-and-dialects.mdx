@@ -5,7 +5,7 @@ description: "How AskDB adapts to your SQL engine and the trust model you choose
 
 <p class="doc-eyebrow">Adapting to your stack</p>
 
-<p class="doc-lede">Two knobs you tune per deployment: the <strong>dialect</strong> (which SQL flavor AskDB generates and validates) and the <strong>mode</strong> (what may enter the model's context beyond the schema artifact and the question).</p>
+<p class="doc-lede">Two knobs you tune per deployment: the <strong>dialect</strong> (which SQL flavor AskDB generates and checks) and the <strong>mode</strong> (what may enter the model's context beyond the schema artifact and the question).</p>
 
 ## Dialects
 
@@ -16,65 +16,22 @@ A dialect is a `DialectSpec` built into `@askdb/core`. Six ship with the core pa
 - Bind parameters with the engine's driver markers (`$1` on Postgres, `?` on MySQL and SQLite, `@p1` on SQL Server).
 - Check that the SQL is a read-only `SELECT` under the engine's rules: its extra forbidden keywords, blocked functions and string escaping.
 
-The per-engine packages add introspection for their engine and re-export its dialect constant; `ask()` itself needs only the dialect id. The CLI resolves the id automatically: `dialect` in `askdb.config.ts` → the provider recorded in the schema artifact (for Prisma artifacts, the `datasource.provider` from your `.prisma` file) → `postgres`.
+Introspection is a separate job, and it's the one that needs an engine package and a driver: `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlite` and `@askdb/sqlserver`. Each also re-exports its engine's dialect constant, but `ask()` needs only the dialect id. CockroachDB has a dialect and no engine package, and it's outside the 1.0 support claim: AskDB's end-to-end tests don't cover it.
 
-| Engine | Engine package (introspection) | Status |
-| --- | --- | --- |
-| PostgreSQL | `@askdb/postgres` | Reference dialect. |
-| CockroachDB | none | `cockroachdb` dialect. No live introspection; an artifact from a Prisma schema with `provider = "cockroachdb"` records it. |
-| MySQL | `@askdb/mysql` | First-class dialect and introspection. |
-| MariaDB | `@askdb/mysql` | `mariadb` dialect; `@askdb/mysql` introspects MariaDB too. |
-| SQLite | `@askdb/sqlite` | First-class dialect; works with embedded files. |
-| SQL Server | `@askdb/sqlserver` | T-SQL dialect and introspection. |
-
-Switching engines is mostly a package swap. The full migration checklist lives in [Switch engines](/guides/switch-engines/).
+The CLI, Studio and the HTTP API pick the dialect for the schema you configure: the `dialect` in `askdb.config.ts`, else the engine the schema artifact records, else `postgres`. For an engine AskDB ships no dialect for, the CLI and the HTTP API refuse rather than guess, and Studio uses `postgres`: see [`dialect`](/reference/config/#dialect). A server that reads strings differently from the engine's default needs a dialect built to match: see [Match your server's string settings](/guides/match-server-string-settings/). Switching engines is mostly a package swap, and [Switch engines](/guides/switch-engines/) has the checklist.
 
 ## Modes
 
 A **mode** declares the trust boundary AskDB enforces for a run: what's allowed to enter model context beyond the schema artifact and the natural-language question. Today there are two values.
 
-The operator sets the mode with `modes.askdbMode` in `askdb.config.ts`; unset, it's `schema_only`. That value is the loosest mode any run gets, on the CLI, `@askdb/client`, and the HTTP API:
+- **`schema_only`**, the default. AskDB grounds generation in the schema artifact and returns SQL only. The model never sees rows, credentials or query results. This is the right mode for almost every production deployment.
+- **`bounded_results`.** Today it produces the exact same SQL as `schema_only`, and every AskDB surface still returns SQL only. The value is reserved for a later step, in which a host could summarize bounded tabular results back through the model. Until that ships, choosing it changes nothing you can observe. The contracts that step must honor are in [`docs/contracts/modes-v1.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
 
-- A run that names no mode uses the config mode.
-- A run can ask for a stricter mode: `askdb ask --mode schema_only`, a client call's `mode`, or an HTTP request's `mode`.
-- A run can't ask for a looser one. Asking for `bounded_results` while the config mode is `schema_only` runs `schema_only`, with no error. The `askdb.pipeline.mode` log line records the mode that ran.
-
-`modes.omitSensitiveFromPrompt` follows the same rule: a run can turn omission on, never off.
-
-### `schema_only` (default)
-
-AskDB grounds generation in the schema artifact and returns SQL only. The model never sees rows, credentials, or query results. This is the right mode for almost every production deployment.
-
-```bash
-askdb ask \
-  --question "How many orders this week?" \
-  --mode schema_only
-```
-
-### `bounded_results`
-
-Today, `bounded_results` produces the exact same SQL as `schema_only` — the NL-to-SQL pipeline does not differ, and AskDB surfaces still return SQL only. The mode value is reserved for a forward-looking extension: a post-execute step where a host application may summarize bounded tabular results back through the model. Until that branch ships, picking `bounded_results` over `schema_only` changes nothing observable.
-
-Only the config can allow it:
-
-```ts
-// askdb.config.ts
-export default defineConfig({
-  // ...
-  modes: { askdbMode: "bounded_results" },
-});
-```
-
-The versioned spec — including the contracts an eventual bounded-results implementation must honor — lives in [`docs/contracts/modes-v1.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
+The operator owns the mode, not the caller. The config's `modes.askdbMode` is the loosest mode any run gets, on the CLI, `@askdb/client` and the HTTP API. A run can ask for a stricter mode, but not a looser one: asking for `bounded_results` under a `schema_only` config runs `schema_only`, with no error. `modes.omitSensitiveFromPrompt` works the same way: a run can turn omission on, never off. [`modes`](/reference/config/#modes-and-host) in the configuration reference has the keys, and [`askdb ask`](/reference/cli/#askdb-ask) the `--mode` flag.
 
 ## Sensitive fields
 
-Columns marked `sensitive: true` in the schema artifact can be:
-
-- Included with a sensitivity tag in the prompt (default), so the model knows to handle them carefully and your application can decide whether to display them.
-- Omitted from the prompt entirely with `modes.omitSensitiveFromPrompt: true` in your config (or the `--omit-sensitive-from-prompt` flag), so the model never sees those columns, or text that names them, and can't propose them. A sensitive table keeps one line with its name. The one exception is a tenant policy: the columns it filters on stay in the prompt, so the model can write the tenant predicate.
-
-The complete behavior table is in the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md).
+Marking a table or column `sensitive` in the schema artifact works alongside the mode. By default the prompt lists a sensitive column with a tag, so the model handles it with care. With `modes.omitSensitiveFromPrompt`, the prompt leaves it out. The [privacy model](/concepts/privacy-model/#sensitive-columns) explains what each setting withholds, and [Keep sensitive columns out of prompts](/guides/keep-sensitive-columns-out-of-prompts/) sets it up.
 
 ## Picking a mode
 
@@ -87,7 +44,7 @@ For most teams:
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What the validator checks regardless of mode.</span></a>
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What the SQL checks catch in every mode, and why your database stays the boundary.</span></a>
   <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What the model sees and what stays in your stack.</span></a>
-  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>Move between Postgres, MySQL, MariaDB, SQLite and SQL Server.</span></a>
+  <a href="/reference/core-api/dialects/"><strong>Dialects reference</strong><span>Each built-in dialect, and every field of a <code>DialectSpec</code>.</span></a>
 </div>
