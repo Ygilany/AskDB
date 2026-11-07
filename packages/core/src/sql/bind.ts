@@ -7,7 +7,8 @@ import {
   type BuiltInDialectId,
   type DialectSpec,
 } from "./dialect-spec.js";
-import { GENERIC_LEXER, lexSql, lexerProfileFor } from "./lexer.js";
+import { lexSql } from "./lexer.js";
+import { placeholderReading } from "./readings.js";
 import { validateSelectSql } from "./validate.js";
 
 // ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ export function tokenizeSqlSpans(
   sql: string,
   dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
 ): SqlSpan[] {
-  const profile = (dialect && lexerProfileFor(dialect)) ?? GENERIC_LEXER;
+  const profile = placeholderReading(dialect);
   const spans: SqlSpan[] = [];
   let codeStart = 0;
   const pushCode = (end: number): void => {

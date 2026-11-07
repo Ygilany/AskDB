@@ -107,6 +107,8 @@ Tenant data exists only on v2 schemas. On a v1 schema the candidate has no `tena
 
 Parse the candidate once, through the existing lexer and `DialectSpec`: statements, table references with aliases and subquery/CTE nesting, predicates grouped by `AND`/`OR`, and placeholders. Every check (read-only, sensitive, tenant, and later #314 and #319) reads that analysis instead of doing its own regex or lexing. This keeps checks single-purpose and open to extension. It's also where a deterministic rewrite (#235, as a transform before the checks) or a real parser (as another implementation of the analysis) plugs in, without touching the pipeline. #310 doesn't depend on it.
 
+Amended 2026-11 (#815): the first step is built. One module, `packages/core/src/sql/readings.ts`, decides which lexer readings each check passes under, per dialect, and lexes each reading once per statement (`readSql`). The tenant check's code views come from the shared lexer's tokens, and its own scanner is gone, so a change to how SQL is read lands in one place. The checks keep their own reading sets, which #815 moved unchanged: merging them would tighten some checks and loosen others, a behavior change to decide on its own. The structured analysis above (table references, predicates grouped by `AND`/`OR`) is still to come.
+
 ### 2. One decision function
 
 `decide` maps findings × configured modes × enforcement point to a verdict. It is the only code that knows `strict` / `warn` / `off` for findings about the SQL, and the only code that knows what `warn` means at each enforcement point. (ADR 0023 reads a tenant policy's `enforcement` at load time too, for a different question: whether a policy that doesn't match `schema.json` loads, before any SQL exists.)
