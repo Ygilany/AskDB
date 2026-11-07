@@ -1,5 +1,41 @@
 # @askdb/studio
 
+## 0.2.0-beta.45
+
+### Patch Changes
+
+- 6320c85: The README says that an unknown `studio.execute.provider` fails to load, and that the introspection-provider fallback applies only when the key is unset (#751).
+- 30d2348: `askdb-studio --help` (and `askdb studio --help`) and the package description say "schema directory" or "schema artifact" instead of "Schema v2" (#273) and says Studio is experimental, with a link to ADR 0030 (#662). The pgvector RAG error names the config key to set, `rag.storeConfig.pgvector.databaseUrl`, instead of an internal `ASKDB_*` name (#629).
+- 2da504c: Studio's setup wizard writes a config that reads a pgvector store's connection URL from `PGVECTOR_URL` by default, not `ASKDB_PGVECTOR_URL`, matching `askdb init`. The variable field still takes another name. A config that already reads `env("ASKDB_PGVECTOR_URL")` keeps working.
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [f59a7e1]
+- Updated dependencies [30d2348]
+- Updated dependencies [dc750be]
+- Updated dependencies [6320c85]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4188c04]
+- Updated dependencies [97312e1]
+- Updated dependencies [39a4a5e]
+- Updated dependencies [8069854]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+  - @askdb/ai@0.1.0-beta.12
+  - @askdb/config@1.0.0-beta.20
+  - @askdb/core@1.0.0-beta.52
+  - @askdb/introspect@0.3.0-beta.26
+  - @askdb/enrich@0.2.0-beta.23
+  - @askdb/rag@0.2.0-beta.32
+  - @askdb/postgres@0.2.0-beta.28
+  - @askdb/mysql@0.1.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.27
+  - @askdb/sqlserver@0.1.0-beta.28
+
 ## 0.2.0-beta.44
 
 ### Patch Changes

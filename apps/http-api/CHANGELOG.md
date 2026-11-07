@@ -1,5 +1,30 @@
 # @askdb/http-api
 
+## 1.0.0-beta.52
+
+### Patch Changes
+
+- 30d2348: The READMEs and doc comments say "schema artifact" or "schema directory" instead of "Schema v2" (#273): the http-api `schemaJson` request field's doc comment and README, the enrich, prisma and rag READMEs, and the enrich and rag package descriptions. A `@askdb/postgres` connector comment no longer names an internal `ASKDB_*` key (#629).
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [f59a7e1]
+- Updated dependencies [30d2348]
+- Updated dependencies [dc750be]
+- Updated dependencies [6320c85]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4188c04]
+- Updated dependencies [97312e1]
+- Updated dependencies [39a4a5e]
+- Updated dependencies [8069854]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+  - @askdb/ai@0.1.0-beta.12
+  - @askdb/config@1.0.0-beta.20
+  - @askdb/core@1.0.0-beta.52
+  - @askdb/client@1.0.0-beta.12
+
 ## 1.0.0-beta.51
 
 ### Minor Changes

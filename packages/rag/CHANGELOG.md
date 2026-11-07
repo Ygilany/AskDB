@@ -1,5 +1,19 @@
 # @askdb/rag
 
+## 0.2.0-beta.32
+
+### Patch Changes
+
+- 30d2348: The READMEs and doc comments say "schema artifact" or "schema directory" instead of "Schema v2" (#273): the http-api `schemaJson` request field's doc comment and README, the enrich, prisma and rag READMEs, and the enrich and rag package descriptions. A `@askdb/postgres` connector comment no longer names an internal `ASKDB_*` key (#629).
+- Updated dependencies [30d2348]
+- Updated dependencies [4188c04]
+- Updated dependencies [97312e1]
+- Updated dependencies [39a4a5e]
+- Updated dependencies [8069854]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+  - @askdb/core@1.0.0-beta.52
+
 ## 0.2.0-beta.31
 
 ### Minor Changes

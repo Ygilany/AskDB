@@ -1,5 +1,29 @@
 # @askdb/core
 
+## 1.0.0-beta.52
+
+### Minor Changes
+
+- 97312e1: The read-only check refuses a `$N` parameter written against a word (`$1INTO`, `$1FOR`) with `SQL_FORBIDDEN_KEYWORD` where the SQL may be read as Postgres: under `postgres`, `cockroachdb` and a dialect id that is no built-in engine (#665). It read the whole token as one parameter, so it never saw the keyword, which a server that ends the parameter at its last digit would run.
+  
+  Upgrade notes (breaking): SQL that passed before and now throws `SQL_FORBIDDEN_KEYWORD` on those readings: a word written right after a `$N` parameter's digits. Put a space after the parameter.
+- f11909c: **Breaking:** `@askdb/core` no longer exports 21 internal helpers (#852). Nothing outside the package imported them, and its API page listed them as internal exports with no stability promise. After 1.0, removing them would need a major release. They still run inside `@askdb/core`, so `ask()` and every documented function behave as before.
+  
+  - **The zod schemas** `v2TableSchema`, `v2ColumnSchema`, `v2TableFrontmatterSchema`, `v2ColumnFrontmatterSchema`, `v2ConceptsFrontmatterSchema`, `v2ConceptSchema`, `tenantRootSchema`, `hierarchyEdgeSchema`, `scopedTableSchema`, `polymorphicTableSchema`, `enforcementModeSchema` and `tenantAccessSchema`. Their types, such as `V2Table` and `TenantRoot`, stay exported.
+  - **The heading lists** `RECOGNIZED_H2_SECTIONS` and `TENANT_POLICY_H2_SECTIONS`. The types `RecognizedH2Section` and `TenantPolicyH2Section` stay exported.
+  - **The pipeline helpers** `assertNlToSqlInputs`, `buildNlToSqlSystemPrompt`, `buildSelectGuardrailExplanation`, `escapeSqlLiteral` and `extractTenantPlaceholders`.
+  - **The v1 schema steps** `parseAskDbSchemaJson` and `normalizeAskDbSchema`. `loadNormalizedSchemaFromJson`, which runs both, stays exported.
+  
+  The seven internal exports that Studio, the CLI or `@askdb/enrich` import stay: `tenantPolicyFrontmatterSchema`, `tenantScopeSchema`, `v2SchemaJsonSchema`, `normalizeTenantPolicy`, `formatAskDbModesV1`, `formatSupportedAskDbLogLevels` and `isSupportedAskDbLogLevel`. The upgrade guide gives a replacement for each removed name.
+- 4e79c4d: **Breaking:** the deprecated `placeholderForRoot` is removed, and `ENRICHMENT_SYSTEM_PROMPT`, `buildEnrichmentUserPrompt` and `parseCandidates` are no longer exported (#654): nothing outside `@askdb/core` used them, so they leave before 1.0 (ADR 0031). Use `placeholderForTenantRoot(root)`, which `placeholderForRoot` was deprecated for, and `suggestEnrichment()`, which runs the other three. The upgrade guide's beta.52 section lists each.
+
+### Patch Changes
+
+- 30d2348: `@askdb/core`'s messages give advice any host can follow (#719, #273). An empty question now says "Pass a non-blank natural-language `question`." instead of naming the CLI's `-q / --question`, and a schema with no tables says "Pass a `schema` with at least one table." instead of pointing at a folder in AskDB's repository. A `"version": 1` schema file now points at the schema artifact format on askdb.tools instead of a file in AskDB's repository, and `buildNlToSqlUserPrompt()`'s tenant-policy error says "schema artifact" instead of "v2 schema". The `SUPPORTED_ASKDB_LOG_LEVELS` doc comment names `logging.level`, not an `ASKDB_*` variable (#629). The README says "schema artifact" instead of "Schema v2".
+- 4188c04: The tenant check no longer reads the words of `ORDER BY` or `GROUP BY` as a reference to a table named `order` or `group`. Under a policy with such a table, it refused every sorted query. A quoted or qualified name (`"order"`, `billing.order`), in `FROM`, `JOIN` or a qualifier, still counts as the table (#828).
+- 39a4a5e: Internal: the SQL checks take their readings from one module, and the tenant check reads code, strings and comments through the shared lexer instead of a scanner of its own. No check's verdict changes.
+- 8069854: The tenant check ends a name or number where SQL Server does (#623): after `0x` or `1E`, and at U+00A0, U+200B and U+0085, which SQL Server reads as whitespace. It reads them that way under `sqlserver`, and under a dialect id that is no built-in engine or no dialect, which may be SQL Server. A keyword written right after one of these is a keyword, so an `OR` written that way is required to keep the tenant predicate ANDed in, as one after a space always was.
+
 ## 1.0.0-beta.51
 
 ### Minor Changes
