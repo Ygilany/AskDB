@@ -639,29 +639,44 @@ type Token = {
   readonly depth: number;
   /** Offset of the token in the statement (a code view keeps the statement's offsets). */
   readonly offset: number;
+  /** A quoted identifier: always a name, whatever its characters. */
+  readonly quoted?: true;
 };
 
 const TOKEN = /:[A-Za-z0-9_]+|::|\|\||<>|!=|<=|>=|[A-Za-z_\u0080-\uffff][\w$\u0080-\uffff]*|\d[\w.]*|\S/g;
 /** A {@link TOKEN} match that is a word or a number. */
 const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
 
-/** Split a code view into tokens with their nesting depth. Strings and comments are already blanked. */
+/**
+ * Split a code view into tokens with their nesting depth. Strings and comments are already blanked.
+ * A quoted identifier is one token, its whole name as the lexer reads it (escapes undone), so a
+ * space, dot or bracket inside it is never read as code.
+ */
 function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
   const split = view.reading.profile.tsqlLiterals ? lexerWordEnds(view) : undefined;
   const foldsCase = view.reading.profile.id === "postgres" || view.reading.profile.id === "generic";
+  const quotedAt = new Map<number, SqlToken>();
+  for (const t of view.tokens) if (t.kind === "quoted_identifier") quotedAt.set(t.start, t);
   let depth = 0;
-  let quoted = false;
+  let skipUntil = 0;
   for (const m of view.text.matchAll(TOKEN)) {
+    if (m.index < skipUntil) continue;
     if (m[0] === QUOTE_MARK) {
-      quoted = !quoted;
+      const q = quotedAt.get(m.index);
+      if (q === undefined) continue;
+      const name = (q as { value?: string }).value ?? view.source.slice(q.start + 1, q.end - 1);
+      // A name spelled like a mark (`"."`, `[,]`) keeps a prefix, so it never reads as that mark.
+      const text = /^[^\w\u0080-\uffff]{1,2}$/.test(name) ? QUOTE_MARK + name : name;
+      tokens.push({ text, lower: name.toLowerCase(), name, kw: "", depth, offset: q.start + 1, quoted: true });
+      skipUntil = q.end;
       continue;
     }
     for (const [t, offset] of split && WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
       if (t === ")") depth = Math.max(0, depth - 1);
       const lower = t.toLowerCase();
-      const name = quoted || !foldsCase ? t : t.replace(/[A-Z]+/g, (s) => s.toLowerCase());
-      tokens.push({ text: t, lower, name, kw: quoted ? "" : lower, depth, offset });
+      const name = foldsCase ? t.replace(/[A-Z]+/g, (s) => s.toLowerCase()) : t;
+      tokens.push({ text: t, lower, name, kw: lower, depth, offset });
       if (t === "(") depth++;
     }
   }
@@ -832,7 +847,7 @@ function scopeOpen(scope: string): number {
 }
 
 function isWord(token: Token | undefined): boolean {
-  return token !== undefined && /^[A-Za-z_\u0080-￿]/.test(token.text);
+  return token !== undefined && (token.quoted === true || /^[A-Za-z_\u0080-￿]/.test(token.text));
 }
 
 /**
@@ -869,9 +884,24 @@ function aliasAt(a: Analysis, i: number): number | undefined {
  * read gets no name and only an unqualified predicate filters it.
  */
 function readNames(a: Analysis, i: number): Set<string> {
-  const alias = aliasAt(a, i);
+  const end = sourceEnd(a, i);
+  const alias = aliasAt(a, end);
   if (alias !== undefined) return new Set([a.tokens[alias]!.name]);
-  return endsSource(a, i + 1) ? new Set([a.tokens[i]!.name]) : new Set();
+  return endsSource(a, end + 1) ? new Set([a.tokens[i]!.name]) : new Set();
+}
+
+/**
+ * Where the table reference at `i` ends: past the `)` of any parentheses that hold it alone
+ * (`ONLY (orders) a`, SQLite's `(orders) a`), since its alias follows them.
+ */
+function sourceEnd(a: Analysis, i: number): number {
+  let start = qualifiedStart(a.tokens, i);
+  let end = i;
+  while (a.tokens[start - 1]?.text === "(" && a.tokens[end + 1]?.text === ")") {
+    start--;
+    end++;
+  }
+  return end;
 }
 
 /** Whether the alias of the row source ending at `i` has a column list (`x t (a, b)`), which renames its output. */
@@ -948,7 +978,9 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
   return views.every((view) => {
     const a = analyze(view);
     const reads = readsOf(a, name);
-    if (reads.length === 0) return true;
+    // A reading that sees the table's name but no read of it (the name only inside a longer quoted
+    // name, or only as a qualifier) can't tell what filters it, so it fails closed.
+    if (reads.length === 0) return !mentionsTable([view], name);
     const found = occurrences(a, targets);
     return reads.every((read) => readFiltered(a, found, targets, read, name));
   });
@@ -1038,7 +1070,7 @@ function readSourceRefs(a: Analysis, open: number): Read[] | undefined {
     for (let j = 0; j < tokens.length; j++) {
       if (j === cte.at || tokens[j]!.lower !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
       if (j > open && j < close) return undefined; // recursive
-      if (tokens[j + 1]?.text === "(" || hasColumnList(a, j)) return undefined;
+      if (tokens[j + 1]?.text === "(" || hasColumnList(a, sourceEnd(a, j))) return undefined;
       refs.push({ at: j, scope: scopes.of[j]!, names: readNames(a, j) });
     }
     return refs;
@@ -1171,7 +1203,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
 
 /** An identifier token: a word that isn't one of the predicate forms' keywords. */
 function isIdentifier(token: Token): boolean {
-  return /^[A-Za-z_\u0080-\uffff]/.test(token.text) && !PREDICATE_WORDS.has(token.kw);
+  return token.quoted === true || (/^[A-Za-z_\u0080-\uffff]/.test(token.text) && !PREDICATE_WORDS.has(token.kw));
 }
 
 /**

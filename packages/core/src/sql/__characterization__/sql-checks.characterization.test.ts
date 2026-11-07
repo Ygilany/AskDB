@@ -7,7 +7,9 @@
  * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
  * custom engines and no dialect, where SQL Server ends a name or number), and #399 (120 tenant
  * verdicts, every dialect, plus 12 for an undeclared qualifier: a predicate filters only the reads of its
- * own `SELECT`).
+ * own `SELECT`; then 11 for the plain scoped query written with U+00A0 between words, which every
+ * engine but SQL Server reads as part of the names, refused once a reading that sees a scoped table's
+ * name but no read of it fails closed).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -211,6 +213,13 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders O WHERE o.agency_id = :tenant_agency_ids",
   "SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = :tenant_agency_ids",
   "WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids",
+  // #399 review, round 3: a quoted identifier is one name, a table alone in parentheses takes the alias after them,
+  // and a reading that sees a scoped table's name but no read of it fails closed.
+  "SELECT * FROM orders [.]",
+  "SELECT \"b a\".* FROM orders \"b a\" CROSS JOIN orders b WHERE b.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT total, agency_id FROM orders) AS \"t x\" (agency_id, real_agency) WHERE agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM ONLY (orders) a, orders WHERE orders.agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders \"my alias\" WHERE \"my alias\".agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

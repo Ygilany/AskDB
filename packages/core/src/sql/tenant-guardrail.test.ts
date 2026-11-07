@@ -1147,6 +1147,41 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     expect(findings(sql, dialect)).toEqual(orders);
   });
 
+  // A quoted identifier is one name, whatever it holds: its dots, spaces and punctuation are never code.
+  it.each([
+    ["a quoted alias `.`", `SELECT * FROM orders "."`, POSTGRES_DIALECT],
+    ["a backtick-quoted alias `.`", "SELECT * FROM orders `.`", MYSQL_DIALECT],
+    ["a bracketed alias `.`", "SELECT * FROM orders [.]", SQLSERVER_DIALECT],
+    ["a quoted alias starting with `.`", `SELECT * FROM orders ".x"`, POSTGRES_DIALECT],
+    ["a bracketed alias `.` under no dialect", "SELECT * FROM orders [.]", undefined],
+    ["a CTE reference aliased `[.]`", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x [.]`, undefined],
+    ["a quoted alias with a space beside a read aliased like its first word", `SELECT "b a".* FROM orders "b a" CROSS JOIN orders b WHERE b.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the same, backtick-quoted", "SELECT `b a`.* FROM orders `b a` CROSS JOIN orders b WHERE b.agency_id = " + P, MYSQL_DIALECT],
+    ["the same, bracketed", `SELECT [b a].* FROM orders [b a] CROSS JOIN orders b WHERE b.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a quoted alias with an escaped quote", `SELECT "a""b".* FROM orders "a""b" CROSS JOIN orders a WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted alias `,` before a sibling", `SELECT ",".* FROM orders ",", orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a bracketed alias `,` before a sibling", `SELECT [,].* FROM orders [,], orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a column list after a quoted alias with a space", `SELECT * FROM (SELECT total, agency_id FROM orders) AS "t x" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a column list after a CTE reference's quoted alias with a space", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS "t y" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // A table alone in parentheses takes the alias that follows them.
+    ["`ONLY (orders) a` beside an unaliased sibling", `SELECT a.* FROM ONLY (orders) a, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["`(orders) a` beside an unaliased sibling", `SELECT a.* FROM (orders) a, orders WHERE orders.agency_id = ${P}`, SQLITE_DIALECT],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  it("rejects the scope's root table read through a bracketed alias `.`", () => {
+    expect(findings("SELECT * FROM agencies [.]", SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["a quoted alias with a space, filtered through it", `SELECT * FROM orders "my alias" WHERE "my alias".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted table name filtered through it", `SELECT * FROM "orders" WHERE "orders".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["`ONLY (orders) a`, filtered through its alias", `SELECT * FROM ONLY (orders) a WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
   it.each([
     ["an unquoted alias written in another case on Postgres", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
     ["an unquoted alias written in another case on SQLite", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, SQLITE_DIALECT],
