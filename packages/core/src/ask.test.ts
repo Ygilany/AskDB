@@ -1594,8 +1594,10 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(TenantGuardrailError);
+    // A DO body's tables also count where `$$` may be no quote (the dialect is unknown here).
     const warnings = (error as TenantGuardrailError).warnings;
-    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(warnings[0]).toMatchObject({ rule: "NOT_SELECT_OR_WITH", tableId: "" });
+    expect(warnings.filter((w) => w.rule !== "MISSING_TENANT_PREDICATE")).toHaveLength(1);
     expect(warnings[0]!.message).toContain(keyword);
   });
 
@@ -1626,7 +1628,8 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     });
 
     expect(result.tenantGuardrail?.passed).toBe(false);
-    expect(result.tenantGuardrail?.warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(result.tenantGuardrail?.warnings[0]).toMatchObject({ rule: "NOT_SELECT_OR_WITH", tableId: "" });
+    expect(result.tenantGuardrail?.warnings.filter((w) => w.rule !== "MISSING_TENANT_PREDICATE")).toHaveLength(1);
   });
 
   it.each([
