@@ -1,6 +1,6 @@
 {
   "name": "@askdb/core",
-  "version": "1.0.0-beta.49",
+  "version": "1.0.0-beta.50",
   "description": "AskDB core: NL→SQL pipeline with the built-in SQL dialects. Provides ask() orchestration, schema/IR types, modes, logging, and retrieval input. Pass a dialect id such as \"postgres\" and bring your own model.",
   "keywords": [
     "askdb",

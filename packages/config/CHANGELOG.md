@@ -1,5 +1,32 @@
 # @askdb/config
 
+## 1.0.0-beta.19
+
+### Minor Changes
+
+- 6ea8df8: A config whose `ai.providerConfig.<provider>.baseUrl` holds a username or password fails to load (#787, ADR 0036), even on a connection no section uses. The `askdb.config:` error names the key and never repeats the URL: put the key in `apiKey`, and for other credentials, such as a proxy's, build the model in code with the AI SDK provider's `headers` option. Such a URL never worked, because `fetch` refuses it with an error that quotes the URL, credentials included.
+- 1b9468d: **Breaking:** the runtime view's AI env maps are removed (#711). `getAskDbRuntimeConfig().ai.aiEnv`, `ai.language.env` and `ai.embedding.env` are gone, and the flat map (`rt.flat`, `flattenAskDbConfig()`, `defineConfig().entries`) no longer carries AI keys such as `ASKDB_AI_PROVIDER` or `OPENAI_API_KEY`. Pass the typed section to `@askdb/ai`'s new `*FromSection` methods instead: `resolveAiConfigFromSection(rt.ai.language)`, `createLanguageModelFromSection(rt.ai.language)`, `createEmbeddingModelFromSection(rt.ai.embedding)` and `resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql")`.
+  
+  - **`rt.ai.language.connection` and `rt.ai.embedding.connection` are objects:** the connection's `name` (before, the whole value) and its settings, trimmed, with unset ones left out: `apiKey`, `apiKeySecondary` (the config's `secondaryApiKey`), `baseUrl`, `resourceName` and `apiVersion`. The new `AskDbRuntimeAiConnection` type describes it.
+  - **`rt.ai.language.reasoning`** is the config's `ai.language.reasoning`.
+  - Both sections are assignable to `@askdb/ai`'s `AiLanguageSection` and `AiEmbeddingSection`; neither package depends on the other.
+  - **`rt.rag.embedder` is removed**, with its type `AskDbRuntimeRagEmbedderConfig`. It held the OpenAI embedder's key, base URL and model, and nothing in AskDB read it. It's now `undefined`: read `rt.ai.embedding` instead (`connection.apiKey`, `connection.baseUrl` and `model`), which carries the embedding model's settings for any provider.
+  
+  The upgrade guide shows each change before and after.
+- 1b9468d: **Breaking:** the deprecated config keys and exports are removed before 1.0 (#765). Each key warned at load, naming its replacement, since 1.0.0-beta.13 (`rag.storeConfig.file.autoFlush` since 1.0.0-beta.16). A config that still sets one now fails to load with an `askdb.config:` error that names each such key and its replacement, and never its value. A key counts as set whatever its value, so one that reads an unset variable with `env("…")` fails too.
+  
+  - **Keys:** `ai.reasoning` (use `ai.language.reasoning`); `model` on an `ai.providerConfig` connection (`ai.language.model`); `modelFamily` on a connection (`ai.language.modelFamily`); `ai.providerConfig.custom`, unless a section's provider is `custom` (key the connection by its provider id); `rag.embedder: "openai"` and `"ai-sdk"` (`rag.embedder: "ai"` with `ai.embedding`); `rag.embedderConfig` (`ai.embedding` and a connection); `rag.storeConfig.pgvector.dimensions` (`ai.embedding.dimensions`); `rag.storeConfig.file.autoFlush` (remove it).
+  - **Exports:** `DEFAULT_OPENAI_CHAT_MODEL`, `DEFAULT_ANTHROPIC_CHAT_MODEL`, `DEFAULT_GOOGLE_CHAT_MODEL` and `DEFAULT_GATEWAY_CHAT_MODEL` (use the `DEFAULT_*_LANGUAGE_MODEL` constant of the same provider); `DEFAULT_RAG_EMBEDDING_MODEL`; `defaultRagEmbeddingDimensions()`; and the types `OpenaiConfig`, `AzureConfig`, `FoundryConfig`, `AnthropicConfig`, `GoogleConfig`, `GatewayConfig` (use the `<Provider>Connection` types), `OpenaiAiConfig`, `AzureAiConfig`, `FoundryAiConfig`, `AnthropicAiConfig`, `GoogleAiConfig`, `GatewayAiConfig` (use `AskDbAiConfig`) and `OpenaiRagEmbedderConfig`.
+  - **`ASKDB_RAG_EMBEDDERS`** is `["mock", "ai"]`, and `AskDbRagEmbedder` narrows to match.
+  - **`getAskDbRuntimeConfig().deprecations`** is empty, since no key is deprecated now; it stays for the next deprecation.
+  
+  The upgrade guide shows each removed key before and after.
+
+### Patch Changes
+
+- 1ccc8c8: A pgvector store without `rag.storeConfig.pgvector.databaseUrl` now fails with a hint that says a variable the config already reads there, such as the one `askdb init` wrote to `.env.example`, is unset or blank (#713). The example stays `databaseUrl: env("PGVECTOR_URL")`. Before, a project that `askdb init` set up got only that example, which named a different variable from the one its config reads.
+- 3841e09: `askdb init --database sqlserver` and Studio's guided setup no longer put `Trust Server Certificate=True` in the `.env.example` hint for the SQL Server connection string (#803). That key turned the certificate check off in AskDB, and the `mssql` driver ignored it because of the spaces, so a hint copied into production trusted any certificate in AskDB but not in a host's own `mssql` pool. The hint now leaves the key out, so AskDB and `mssql` both check the certificate by default. A second comment line says to add `TrustServerCertificate=True;`, spelled without spaces so both read it, for a development server with a self-signed certificate such as the SQL Server Docker image. An `.env.example` that `init` already wrote isn't changed.
+
 ## 1.0.0-beta.18
 
 ### Minor Changes
