@@ -183,8 +183,8 @@
  * Mermaid diagrams (pele, inline SVG; plugins/remark-mermaid.mjs). pele colors a diagram from
  * these variables, so mapping them to Starlight's tokens makes it follow the theme toggle: the
  * tokens switch on `:root[data-theme="dark"]` (above), and the diagram needs no second render.
- * Nodes keep the accent tint the D2 diagrams had. A color set in the diagram source (`style`,
- * `classDef`, `linkStyle`) doesn't follow the theme: leave colors to these variables.
+ * Nodes take the accent tint. A color set in the diagram source (`style`, `classDef`,
+ * `linkStyle`) doesn't follow the theme: leave colors to these variables.
  *
  * Fonts aren't set here: the plugin passes `--sl-font` and `--sl-font-mono` to pele, which sizes
  * each node from them, and writes them into the SVG.

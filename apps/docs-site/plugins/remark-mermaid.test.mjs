@@ -33,12 +33,26 @@ test("a diagram pele can't parse fails the build with pele's code and the line i
   );
 });
 
-test("the line in the page counts the comments, directive and front matter pele drops before it numbers lines", () => {
+test("a fence inside a <figure>, as every page has it, becomes an SVG too", () => {
+  const fence = { type: "code", lang: "mermaid", value: "flowchart TB\n  a --> b", position: { start: { line: 3 } } };
+  const figure = { type: "mdxJsxFlowElement", name: "figure", attributes: [], children: [fence] };
+  const tree = { type: "root", children: [figure] };
+  remarkMermaid()(tree, { path: "src/content/docs/page.mdx" });
+  assert.equal(figure.children[0].type, "html");
+  assert.match(figure.children[0].value, /^<svg [^>]*class="pele pele-flowchart"/);
+});
+
+test("the line in the page is the broken line, whatever pele drops before it numbers lines", () => {
   const broken = "c((x] --> d";
   const sources = [
     "flowchart TB\n  %% one\n  %% two\n  a --> b\n  " + broken,
     '%%{init: {"flowchart": {"curve": "basis"}}}%%\nflowchart TB\n  a --> b\n  ' + broken,
     "---\ntitle: T\n---\nflowchart TB\n  %% note\n  a --> b\n  " + broken,
+    // pele also drops the blank lines before a comment, and blank lines at the start.
+    "flowchart TB\n  a --> b\n\n  %% the query side\n  " + broken,
+    "\nflowchart TB\n  a --> b\n  " + broken,
+    // A directive in the middle still counts as a line for pele.
+    'flowchart TB\n  a --> b\n  %%{init: {"flowchart": {"curve": "basis"}}}%%\n  ' + broken,
   ];
   for (const source of sources) {
     const brokenLine = source.split("\n").findIndex((text) => text.includes(broken)) + 1;

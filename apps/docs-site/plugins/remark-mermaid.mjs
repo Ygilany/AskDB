@@ -56,19 +56,34 @@ function renderFence(node, file, idPrefix) {
     if (!(error instanceof PeleError)) throw error;
     // The diagram's first line is the line after the opening fence.
     const fenceLine = node.position?.start.line;
-    const line = fenceLine && error.line > 0 ? fenceLine + sourceLine(node.value, error.line) : fenceLine;
+    const line = fenceLine && error.line > 0 ? fenceLine + sourceLine(node.value, error) : fenceLine;
     const where = `${file.path ?? "a page"}${line ? `:${line}` : ""}`;
     throw new DiagramRenderError(`${where}: mermaid diagram failed to render (PeleError ${error.code}): ${error.message}`, error);
   }
 }
 
 /**
- * The diagram line that pele's error `line` points to. pele drops front matter, `%%` comments
- * and `%%{…}%%` directives before it parses, and numbers the lines that remain, so this counts
- * only those. A line past the last one is the end of the diagram: the closing fence.
+ * The diagram line a `PeleError` points to, counted from the diagram's first line. pele numbers
+ * lines after it drops front matter, comments, directives and some blank lines, so its `line`
+ * can't be used as is. Its `snippet` quotes the line itself, so this finds that line, and takes
+ * the match nearest the estimate if the text occurs more than once.
  */
-export function sourceLine(source, peleLine) {
+function sourceLine(source, { line, snippet }) {
   const lines = source.split("\n");
+  const estimate = estimateLine(lines, line);
+  const quoted = snippet?.split("\n")[0] ?? "";
+  if (!quoted.trim()) return estimate;
+  const matches = lines.flatMap((text, index) => (text.trim() === quoted.trim() ? [index + 1] : []));
+  if (matches.length === 0) return estimate;
+  return matches.reduce((best, match) => (Math.abs(match - estimate) < Math.abs(best - estimate) ? match : best));
+}
+
+/**
+ * pele's `line` counted back to the source, skipping front matter and `%%` lines: right for a
+ * diagram without blank lines. With no quoted text (the end of the diagram), a line past the last
+ * one is the closing fence.
+ */
+function estimateLine(lines, peleLine) {
   let start = 0;
   if (lines[0]?.trim() === "---") {
     const close = lines.findIndex((text, index) => index > 0 && text.trim() === "---");
