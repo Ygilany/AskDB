@@ -1415,12 +1415,14 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     );
   });
 
-  it.each([undefined, "  "])("refuses a pgvector store whose databaseUrl is %j, naming the config key", (databaseUrl) => {
+  // `env()` returns undefined for an unset or blank variable, so a config `askdb init` wrote reaches
+  // this error with its variable unset: the hint says so, and names no flat key (#713 C2).
+  it.each([undefined, "  "])("refuses a pgvector store whose databaseUrl is %j, naming the config key and the unset variable", (databaseUrl) => {
     const config = minimalConfig({
       rag: { embedder: "mock", store: "pgvector", storeConfig: { pgvector: { databaseUrl } } },
     });
     expect(() => defineConfig(config)).toThrow(
-      'askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector.databaseUrl` is missing; set it, for example `databaseUrl: env("PGVECTOR_URL")`.',
+      'askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector.databaseUrl` is missing; set it, for example `databaseUrl: env("PGVECTOR_URL")`. If the config already reads a variable there, such as the one `askdb init` wrote to `.env.example`, that variable is unset or blank.',
     );
   });
 

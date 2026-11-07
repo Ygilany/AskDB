@@ -670,7 +670,7 @@ function resolveRag(rag: NormalizedAskDbConfig["rag"], ai: ResolvedAskDbConfig["
     const url = readString(pgvector.databaseUrl, "rag.storeConfig.pgvector.databaseUrl");
     if (!url) {
       throw new Error(
-        'askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector.databaseUrl` is missing; set it, for example `databaseUrl: env("PGVECTOR_URL")`.',
+        'askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector.databaseUrl` is missing; set it, for example `databaseUrl: env("PGVECTOR_URL")`. If the config already reads a variable there, such as the one `askdb init` wrote to `.env.example`, that variable is unset or blank.',
       );
     }
     setFlat(flat, "ASKDB_PGVECTOR_URL", url);
