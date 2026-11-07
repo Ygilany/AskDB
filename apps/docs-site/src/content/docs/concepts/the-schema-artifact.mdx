@@ -41,7 +41,7 @@ So the two layers you maintain separately on disk — `schema.json` for structur
 
 ## Directory or bundle
 
-You author the artifact as a folder, because a folder of small files diffs and reviews well. To ship it to a service, an agent or a build, `askdb bundle` packs the folder into one JSON file. Loading the bundle gives the same result as loading the folder.
+You author the artifact as a folder, because a folder of small files diffs and reviews well. To ship it to a service, an agent or a build, `askdb bundle` packs the folder into one JSON file. It refuses a folder the loader refuses, and loading the bundle gives the same result as loading the folder.
 
 The loader reads the artifact's file names exactly, and refuses one in the wrong case, such as `Tenant-Policy.md`, on every OS. On Linux, where file names are case-sensitive, it would otherwise skip that file without a word, and a skipped `tenant-policy.md` turns tenant enforcement off. On macOS and Windows the same folder would load. Refusing everywhere makes the mistake fail on a laptop before it can fail open in production.
 
