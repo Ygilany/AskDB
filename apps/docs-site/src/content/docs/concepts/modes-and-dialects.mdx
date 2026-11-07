@@ -5,7 +5,7 @@ description: "How AskDB adapts to your SQL engine and the trust model you choose
 
 <p class="doc-eyebrow">Adapting to your stack</p>
 
-<p class="doc-lede">Two knobs you tune per deployment: the <strong>dialect</strong> (which SQL flavor AskDB generates and validates) and the <strong>mode</strong> (what may enter the model's context beyond the schema artifact and the question).</p>
+<p class="doc-lede">Two knobs you tune per deployment: the <strong>dialect</strong> (which SQL flavor AskDB generates and checks) and the <strong>mode</strong> (what may enter the model's context beyond the schema artifact and the question).</p>
 
 ## Dialects
 
@@ -18,7 +18,7 @@ A dialect is a `DialectSpec` built into `@askdb/core`. Six ship with the core pa
 
 Introspection is a separate job, and it's the one that needs an engine package and a driver: `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlite` and `@askdb/sqlserver`. Each also re-exports its engine's dialect constant, but `ask()` needs only the dialect id. CockroachDB has a dialect and no engine package, and it's outside the 1.0 support claim: AskDB's end-to-end tests don't cover it.
 
-The CLI, Studio and the HTTP API pick the dialect for the schema you configure: the `dialect` in `askdb.config.ts`, else the engine the schema artifact records, else `postgres`. They refuse an engine AskDB ships no dialect for, rather than guess one: see [`dialect`](/reference/config/#dialect). A server that reads strings differently from the engine's default needs a dialect built to match: see [Match your server's string settings](/guides/match-server-string-settings/). Switching engines is mostly a package swap, and [Switch engines](/guides/switch-engines/) has the checklist.
+The CLI, Studio and the HTTP API pick the dialect for the schema you configure: the `dialect` in `askdb.config.ts`, else the engine the schema artifact records, else `postgres`. For an engine AskDB ships no dialect for, the CLI and the HTTP API refuse rather than guess, and Studio uses `postgres`: see [`dialect`](/reference/config/#dialect). A server that reads strings differently from the engine's default needs a dialect built to match: see [Match your server's string settings](/guides/match-server-string-settings/). Switching engines is mostly a package swap, and [Switch engines](/guides/switch-engines/) has the checklist.
 
 ## Modes
 
