@@ -61,7 +61,7 @@ The readings above assume each engine's default string settings. If your server 
 
 > The tenant check now reads `$` the way each engine does and reads dollar-quoted strings only where the engine may be Postgres or CockroachDB; it requires a table's predicate wherever the name appears, quoted or not, except in `ORDER BY` and `GROUP BY`; it reads an unset `backslashEscapes` on a MySQL-family spec as the server default; and each check ends a line comment where the engine does, reading a `postgres` dialect both ways since it may point at CockroachDB.
 
-### Reading changed in 1.0.0-beta.51
+### Readings changed in 1.0.0-beta.51
 
 [GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr) found that the tenant check still read a dollar-quoted string whose tag holds letters beyond ASCII differently from Postgres. In the advisory's words, since 1.0.0-beta.51:
 
