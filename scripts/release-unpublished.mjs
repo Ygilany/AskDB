@@ -1,33 +1,19 @@
 #!/usr/bin/env node
 // Lists the public workspace packages whose current version isn't on npm yet, as a
 // JSON array of `{ name, version }` on stdout. `release.yml` uses it to decide whether
-// there is anything to publish (so a push to `main` without a merged Version PR never
-// starts a publish) and which git tags to create afterwards.
+// there is anything to publish and which git tags to create afterwards. A push to `main`
+// without a merged Version PR has nothing to publish: `changesets.yml` keeps every other
+// PR from adding an unpublished version, and `release.yml`'s `approved` job refuses to
+// publish from any commit but a Version PR's merge.
 //
 // Only a 404 from the registry counts as "not published". Any other `npm view`
 // failure exits non-zero, so a registry outage can't read as "publish everything".
-import { execFileSync } from "node:child_process";
+import { isPublished, publicPackages } from "./release-packages.mjs";
 
-function workspacePackages() {
-  const out = execFileSync("pnpm", ["-r", "ls", "--json", "--depth", "-1"], { encoding: "utf8" });
-  return JSON.parse(out)
-    .filter((p) => !p.private && p.name && p.version)
-    .map(({ name, version }) => ({ name, version }));
+try {
+  const unpublished = publicPackages().filter((pkg) => !isPublished(pkg));
+  process.stdout.write(`${JSON.stringify(unpublished)}\n`);
+} catch (error) {
+  process.stderr.write(`release-unpublished: ${error.message}\n`);
+  process.exit(1);
 }
-
-function isPublished({ name, version }) {
-  try {
-    execFileSync("npm", ["view", `${name}@${version}`, "version", "--json"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return true;
-  } catch (error) {
-    if (/\bE404\b/.test(`${error.stdout}${error.stderr}`)) return false;
-    process.stderr.write(`release-unpublished: npm view ${name}@${version} failed:\n${error.stderr}`);
-    process.exit(1);
-  }
-}
-
-const unpublished = workspacePackages().filter((pkg) => !isPublished(pkg));
-process.stdout.write(`${JSON.stringify(unpublished)}\n`);
