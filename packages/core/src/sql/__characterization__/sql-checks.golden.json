@@ -134,7 +134,7 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
   "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
   "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph="
@@ -148,7 +148,7 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
   "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
   "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph="
@@ -330,7 +330,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-19 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph= | tph="
@@ -344,7 +344,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-21 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 | ph= | tph="
@@ -358,7 +358,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-23 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-23 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-23 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-23 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-23 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-23 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-23 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-23 | ph= | tph="
@@ -372,7 +372,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-29 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-29 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-29 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-29 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-29 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-14 c14-16 q16-27 c27-29 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-14 c14-16 q16-27 c27-29 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-14 c14-16 q16-27 c27-29 | ph= | tph="
@@ -386,7 +386,7 @@
   "mysql-unset": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-48 | ph= | tph=",
   "mariadb": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-48 | ph= | tph=",
   "sqlite": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-48 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-48 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-48 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-14 c14-41 q41-48 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-14 c14-41 q41-48 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-14 c14-41 q41-48 | ph= | tph="
@@ -400,7 +400,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph="
@@ -414,7 +414,7 @@
   "mysql-unset": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-43 | ph= | tph=",
   "mariadb": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-43 | ph= | tph=",
   "sqlite": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-43 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-43 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-43 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-38 c38-43 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-38 c38-43 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-38 c38-43 | ph= | tph="
@@ -428,7 +428,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-24 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-24 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-24 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-24 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-24 | ph= | tph=",
   "custom": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-24 | ph= | tph=",
   "custom+escapes": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-24 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-24 | ph= | tph="
@@ -442,7 +442,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-19 q19-23 c23-68 | ph=d,e,real | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-19 q19-23 c23-68 | ph=d,e,real | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-19 q19-23 c23-25 q25-29 c29-68 | ph=e,real | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-25 q25-29 c29-68 | ph=c,e,real | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-25 q25-29 c29-68 | ph=c,e,real | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-19 q19-23 c23-25 q25-29 c29-31 q31-45 c45-68 | ph=real | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-19 q19-23 c23-25 q25-29 c29-31 q31-45 c45-68 | ph=real | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-13 q13-17 c17-19 q19-23 c23-25 q25-29 c29-31 q31-45 c45-68 | ph=real | tph="
@@ -498,7 +498,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-18 q18-22 c22-33 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-11 c11-18 q18-22 c22-33 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-19 c19-20 q20-22 c22-33 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-19 c19-20 q20-22 c22-33 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-19 c19-20 q20-22 c22-33 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-19 c19-20 q20-22 c22-33 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-19 c19-20 q20-22 c22-33 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-19 c19-20 q20-22 c22-33 | ph= | tph="
@@ -582,7 +582,7 @@
   "mysql-unset": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-19 c19-42 q42-49 | ph= | tph=",
   "mariadb": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-19 c19-42 q42-49 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-11 c11-18 q18-43 c43-45 q45-49 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-11 c11-18 q18-43 c43-45 q45-49 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-11 c11-18 q18-43 c43-45 q45-49 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-11 c11-18 q18-43 c43-45 q45-49 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-11 c11-18 q18-43 c43-45 q45-49 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-11 c11-18 q18-43 c43-45 q45-49 | ph= | tph="
@@ -2318,7 +2318,7 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-49 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-49 | ph= | tph=",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-49 | ph= | tph="
@@ -3158,7 +3158,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph="
@@ -3186,7 +3186,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph="
@@ -3326,7 +3326,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph="
@@ -3396,7 +3396,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-19 | ph=SELECT | tph="
@@ -3550,7 +3550,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph="
@@ -4390,7 +4390,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph="
@@ -4404,7 +4404,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph="
@@ -4418,7 +4418,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph="
@@ -4432,7 +4432,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph="
@@ -4446,7 +4446,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph="
@@ -4558,7 +4558,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-20 | ph=SELECT | tph="
@@ -4656,7 +4656,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph="
@@ -4670,7 +4670,7 @@
   "mysql-unset": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "mariadb": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "sqlite": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "custom": "ro!SQL_FORBIDDEN_KEYWORD | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "custom+escapes": "ro!SQL_FORBIDDEN_KEYWORD | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph="
@@ -4684,7 +4684,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-14 | ph= | tph="
@@ -4698,7 +4698,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph="
@@ -4712,7 +4712,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph="
@@ -4726,7 +4726,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph="
@@ -4796,7 +4796,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph="
@@ -6140,7 +6140,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph="
@@ -9164,7 +9164,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-16 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-16 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph="
@@ -9780,7 +9780,7 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
   "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
   "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph="
@@ -9850,7 +9850,7 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
   "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
   "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph="
@@ -10102,7 +10102,7 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph=",
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-12 | ph= | tph="
@@ -10228,7 +10228,7 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-24 c24-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-24 c24-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-24 c24-73 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -10242,7 +10242,7 @@
   "mysql-unset": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-13 q13-83 | ph= | tph=",
   "mariadb": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-13 q13-83 | ph= | tph=",
   "sqlite": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-13 q13-83 | ph= | tph=",
-  "sqlserver": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-13 q13-83 | ph= | tph=",
+  "sqlserver": "ro!SQL_UNTERMINATED | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-13 q13-83 | ph= | tph=",
   "custom": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-20 c20-83 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-20 c20-83 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-20 c20-83 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -10256,7 +10256,7 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-26 c26-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-26 c26-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-26 c26-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -10270,7 +10270,7 @@
   "mysql-unset": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-65 q65-86 q86-92 q92-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-65 q65-86 q86-92 q92-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-65 q65-86 q86-92 q92-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-65 q65-86 q86-92 q92-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_UNTERMINATED | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-65 q65-86 q86-92 q92-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-62 q62-69 c69-72 q72-74 c74-85 q85-88 c88-91 q91-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-62 q62-69 c69-72 q72-74 c74-85 q85-88 c88-91 q91-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-62 q62-69 c69-72 q72-74 c74-85 q85-88 c88-91 q91-94 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -10284,7 +10284,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-16 c16-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-16 c16-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-16 c16-79 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -10648,7 +10648,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-55 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-55 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-55 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-55 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-55 | ph= | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-7 q7-55 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-7 q7-55 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:qualified] | pg=- | spans=c0-7 q7-55 | ph= | tph="
@@ -10718,7 +10718,7 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.agencies,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.agencies,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-66 q66-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-66 q66-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-66 q66-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -10732,7 +10732,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-64 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-64 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-64 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-64 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-64 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-64 | ph= | tph=",
   "custom+escapes": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-64 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-64 | ph= | tph="
@@ -10746,7 +10746,7 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "custom": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-22 | ph= | tph=",
   "custom+escapes": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-22 | ph= | tph=",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-7 q7-22 | ph= | tph="
@@ -10928,7 +10928,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph=",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph="
@@ -11180,7 +11180,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -11194,7 +11194,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -11208,7 +11208,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -11222,7 +11222,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -11236,7 +11236,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -11278,7 +11278,7 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
@@ -11292,7 +11292,7 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
   "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
   "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph="
