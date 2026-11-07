@@ -22,12 +22,12 @@ import {
   type AiConfig,
   type AiProvider,
 } from "@askdb/ai";
+import { DialectNotSupportedError, resolveDialect } from "@askdb/client";
 import {
   ask,
   DEFAULT_TENANT_SQL_MODE,
   formatSchemaV2ForNlToSql,
   formatSensitiveReference,
-  isBuiltInDialectId,
   loadSchema,
   saveSchemaFile,
   schemaHasSensitiveIdentifiers,
@@ -37,6 +37,7 @@ import {
   suggestEnrichment,
   tenantScopeSchema,
   type AskDialectInput,
+  type BuiltInDialectId,
   type AskGenerateDeps,
   type DialectSpec,
   type NormalizedSchemaV2,
@@ -403,6 +404,24 @@ export function createStudioServer(options: StudioOptions): StudioServer {
   return Object.assign(server, { sessionToken });
 }
 
+/**
+ * The workspace's dialect, by `@askdb/client`'s rule (ADR 0039). A `provider` AskDB ships no
+ * dialect for leaves it `null`, with the client's message: the workspace still loads for
+ * enrichment, and the Playground refuses to generate.
+ */
+function workspaceDialect(
+  schema: ReturnType<typeof loadSchema>,
+  configDialect: BuiltInDialectId | undefined,
+): { dialect: string | null; dialectError?: string } {
+  try {
+    // With no override, the rule answers with a dialect id, never a spec object.
+    return { dialect: resolveDialect(schema, { configDialect }).dialect as string };
+  } catch (error) {
+    if (error instanceof DialectNotSupportedError) return { dialect: null, dialectError: error.message };
+    throw error;
+  }
+}
+
 export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
   const rt = getAskDbRuntimeConfig();
   const aiConfig = (() => {
@@ -415,16 +434,13 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
     }
   })();
   const schema = loadSchema(workspace.schemaDir);
-  const schemaProvider =
-    "provider" in schema && typeof schema.provider === "string" ? schema.provider : undefined;
-  const dialect =
-    rt.nlToSql.dialect ??
-    (schemaProvider && isBuiltInDialectId(schemaProvider) ? schemaProvider : "postgres");
+  const { dialect, dialectError } = workspaceDialect(schema, rt.nlToSql.dialect);
   return {
     schemaDir: workspace.schemaDir,
     schemaPathRelative: toRelativeSchemaPath(workspace.schemaDir),
     schemaId: workspace.physical.schemaId,
     dialect,
+    ...(dialectError ? { dialectError } : {}),
     warnings: workspace.warnings,
     aiConfigured: Boolean(aiConfig),
     model: aiConfig?.model ?? rt.ai.language.model ?? "provider default",
@@ -921,6 +937,15 @@ async function askSampleQuestion(
     aiConfig && reasoningEffort ? ai.resolveProviderOptions(aiConfig, { reasoningEffort }) : undefined;
 
   const schema = loadSchema(state.schemaDir);
+  // `@askdb/client`'s rule, as the CLI and the HTTP API apply it: a provider AskDB ships no
+  // dialect for is refused, never checked under PostgreSQL's rules (ADR 0039).
+  let dialect: AskDialectInput;
+  try {
+    ({ dialect } = resolveDialect(schema, { configDialect: rt.nlToSql.dialect }));
+  } catch (error) {
+    if (error instanceof DialectNotSupportedError) throw new StudioHttpError(422, error.message);
+    throw error;
+  }
   const retrievedChunks: QueryResult[] = [];
   const usage = createRequestUsageCollector();
   const ragIndex = options.useRag
@@ -930,14 +955,6 @@ async function askSampleQuestion(
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
     : ((await ai.createLanguageModel(aiConfig!)) as AskModel);
-
-  const schemaProvider =
-    "provider" in schema && typeof schema.provider === "string"
-      ? schema.provider
-      : undefined;
-  const dialect: AskDialectInput =
-    rt.nlToSql.dialect ??
-    (schemaProvider && isBuiltInDialectId(schemaProvider) ? schemaProvider : "postgres");
 
   const result = await ask({
     question: options.question,

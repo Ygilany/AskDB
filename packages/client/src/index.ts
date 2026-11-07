@@ -5,8 +5,8 @@ export {
   type AskOverrides,
   type BindOptions,
   type SchemaSource,
-  type DialectResolution,
 } from "./client.js";
+export { resolveDialect, type DialectResolution } from "./dialect.js";
 export {
   DialectNotSupportedError,
   ModelNotConfiguredError,

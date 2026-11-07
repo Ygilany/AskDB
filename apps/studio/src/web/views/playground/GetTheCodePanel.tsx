@@ -133,14 +133,23 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
               Direct ask()
             </button>
           </fieldset>
-          <CopyButton value={snippet} />
+          {workspace.dialect !== null && <CopyButton value={snippet} />}
         </div>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 8, lineHeight: 1.5 }}>
-        This exact question, schema ({workspace.schemaPathRelative}), dialect ({workspace.dialect}), and
-        provider ({workspace.aiProvider}) — as it runs in your own Node service.
-      </p>
-      <pre className="plain-block" style={{ fontSize: 11.5, overflow: "auto" }}>{snippet}</pre>
+      {workspace.dialect === null ? (
+        // The artifact's engine has no AskDB dialect, so `ask()` would refuse this schema (ADR 0039).
+        <p className="muted" style={{ fontSize: 12, marginBottom: 8, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+          No code to copy: {workspace.dialectError}
+        </p>
+      ) : (
+        <>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 8, lineHeight: 1.5 }}>
+            This exact question, schema ({workspace.schemaPathRelative}), dialect ({workspace.dialect}), and
+            provider ({workspace.aiProvider}) — as it runs in your own Node service.
+          </p>
+          <pre className="plain-block" style={{ fontSize: 11.5, overflow: "auto" }}>{snippet}</pre>
+        </>
+      )}
       <p className="muted tiny" style={{ marginTop: 8 }}>
         Full walkthrough:{" "}
         <a href="https://askdb.tools/guides/embed-in-node/" target="_blank" rel="noreferrer">
