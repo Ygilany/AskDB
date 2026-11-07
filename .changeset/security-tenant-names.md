@@ -5,7 +5,7 @@
 "@askdb/studio": patch
 ---
 
-Security fix ([GHSA-TENANT-NAMES](https://github.com/Ygilany/AskDB/security/advisories/GHSA-TENANT-NAMES)). The tenant check read some names, comments and joins differently from the engine, so a tenant-scoped query could pass while the engine read it without its tenant filter. The check now reads them the way each engine does:
+Security fix ([GHSA-rpcp-322q-q738](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rpcp-322q-q738)). The tenant check read some names, comments and joins differently from the engine, so a tenant-scoped query could pass while the engine read it without its tenant filter. The check now reads them the way each engine does:
 
 - **`]]` and nested comments.** On SQL Server, `]]` inside a bracketed name is an escaped `]`, so `[o]] WHERE … AND [x]` is one name. On SQL Server, PostgreSQL and CockroachDB, block comments nest, so the check reads them both nested and not, and a predicate counts only when both readings see it. A predicate inside such a name or comment no longer counts.
 - **Names outside printable ASCII.** SQL Server resolves a name through the database collation, which ignores some characters (U+200D, U+FEFF, any emoji) and reads others as ASCII letters (fullwidth letters, small capitals), so `[ｏｒｄｅｒｓ]` reads `orders`. Under `sqlserver`, a dialect id that is no built-in engine, or none, the tenant check refuses a name, quoted or not, that holds a character outside printable ASCII as `UNICODE_ESCAPED_IDENTIFIER`, and the sensitive check reports it as unresolved scope, unless the schema spells it exactly. This covers aliases and CTE names too.
