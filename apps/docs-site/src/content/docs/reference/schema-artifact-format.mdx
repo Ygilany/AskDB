@@ -287,7 +287,7 @@ The front-matter rules for table files apply here too: YAML only, and no unknown
 
 ## `tenant-policy.md`
 
-The tenant policy. When the artifact has one, `ask()` requires a `tenantScope`. The front-matter must be YAML. The [Multi-tenancy guide](/guides/multi-tenancy/#field-reference) lists its fields.
+The tenant policy. When the artifact has one, `ask()` requires a `tenantScope`. The front-matter must be YAML. [Tenant policy format](/reference/tenant-policy/) lists its fields.
 
 ## `schema.lock.json`
 
@@ -316,7 +316,7 @@ Each table and column ends up with one `sensitive` value:
 | `duplicate_column_id` | `tableFile`, `id` | The file lists the column again. One warning for each repeat. | Merge the entries into one. |
 | `sensitivity_downgrade_ignored` | `tableFile`, `id` | Front-matter says `sensitive: false` for a table or column that is sensitive anyway. | Remove the `false`. To un-mark it, edit `schema.json`. |
 
-`tableFile` is the file's path in the artifact, such as `tables/orders.md`. The same `SchemaV2Warning` type also has `missing_table_md` and `missing_column_md`. Only Studio reports those: for a table with no table file, and for a column with no `columns[]` entry in its table's file. Tenant policy warnings are separate, in `tenantPolicy.warnings`: see [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
+`tableFile` is the file's path in the artifact, such as `tables/orders.md`. The same `SchemaV2Warning` type also has `missing_table_md` and `missing_column_md`. Only Studio reports those: for a table with no table file, and for a column with no `columns[]` entry in its table's file. Tenant policy warnings are separate, in `tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
 
 ## Bundle format
 

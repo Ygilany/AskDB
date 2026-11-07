@@ -146,7 +146,8 @@ export default defineConfig({
             {
               label: "Tenancy",
               items: [
-                { label: "Multi-tenancy", slug: "guides/multi-tenancy" },
+                { label: "Scope queries to a tenant", slug: "guides/multi-tenancy" },
+                { label: "Scope to a tenant hierarchy", slug: "guides/tenant-hierarchy" },
                 { label: "Enforce tenancy in the database", slug: "guides/enforce-tenancy-in-the-database" },
               ],
             },
@@ -174,6 +175,7 @@ export default defineConfig({
             { label: "Safety boundaries", slug: "concepts/safety-boundaries" },
             { label: "Modes and dialects", slug: "concepts/modes-and-dialects" },
             { label: "Privacy model", slug: "concepts/privacy-model" },
+            { label: "Tenant isolation", slug: "concepts/tenant-isolation" },
           ],
         },
         {
@@ -190,7 +192,10 @@ export default defineConfig({
             },
             {
               label: "Formats and rules",
-              items: [{ label: "Schema artifact format", slug: "reference/schema-artifact-format" }],
+              items: [
+                { label: "Schema artifact format", slug: "reference/schema-artifact-format" },
+                { label: "Tenant policy format", slug: "reference/tenant-policy" },
+              ],
             },
             {
               label: "Packages and releases",
