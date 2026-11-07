@@ -22,7 +22,10 @@ export type SqlValidationRuleCode =
   | "SQL_COMMENT"
   | "SQL_NOT_SELECT_OR_WITH"
   | "SQL_FORBIDDEN_KEYWORD"
-  /** A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`). */
+  /**
+   * A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`), or, on
+   * every dialect, `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server.
+   */
   | "SQL_FORBIDDEN_FUNCTION"
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"
@@ -32,6 +35,12 @@ export type SqlValidationRuleCode =
    * read code as a string; refused at the boundary (#703).
    */
   | "SQL_STRING_CONTINUATION"
+  /**
+   * Postgres family: a `b'…'` byte string (lower-case `b`) that holds a backslash or is continued
+   * on a later line. CockroachDB reads it with backslash escapes and the checks don't, so they
+   * could read code as a string; refused at the boundary (#730).
+   */
+  | "SQL_ESCAPED_BYTE_STRING"
   /**
    * Postgres family: a Unicode-escaped identifier (`U&"set\005fconfig"`). Its escapes can spell
    * a name the other checks look for, such as a denylisted function, so it is refused (#692).
@@ -70,7 +79,10 @@ export class SqlGenerationError extends AskDbError {
   }
 }
 
-/** A string `dialect` passed to `ask()` that is not a built-in dialect id. */
+/**
+ * A `dialect` passed to `ask()` that isn't a built-in dialect id: a string, or a `DialectSpec`
+ * whose `id` isn't one (#717). `dialectId` is the id it got.
+ */
 export class UnknownDialectError extends AskDbError {
   constructor(
     message: string,
@@ -110,10 +122,9 @@ export type TenantScopeRejectionReason =
    */
   | "UNESCAPABLE_TENANT_ID"
   /**
-   * `ask()` got a tenant scope, no `tenantSqlMode`, and a custom `AskDialect` or a
-   * `DialectSpec` whose `id` isn't built in. AskDB can't know which driver markers such a
-   * dialect takes, and its `$N` default is a money constant on SQL Server, so the host
-   * must choose `"sql-params"` or `"sql-only"`.
+   * `ask()` got a tenant scope, no `tenantSqlMode`, and a custom `AskDialect`. AskDB can't
+   * know which driver markers such a dialect takes, and its `$N` default is a money
+   * constant on SQL Server, so the host must choose `"sql-params"` or `"sql-only"`.
    * Also thrown, on every dialect, when `ask()` (with a tenant scope) or
    * `resolveTenantSql()` gets a `tenantSqlMode` that is neither of the two.
    */
@@ -145,7 +156,12 @@ export type QueryParameterRejectionReason =
    * `bindPreparedQuery()` needs `guardrails.dialect`: the template was made under a host's
    * `DialectSpec` (`dialectRules: "host"`), or stored without `dialectRules`.
    */
-  | "DIALECT_SPEC_REQUIRED";
+  | "DIALECT_SPEC_REQUIRED"
+  /**
+   * A parameter in the stored template declares a `type` or `cardinality` AskDB doesn't support.
+   * The template is broken: regenerate it rather than passing another value.
+   */
+  | "INVALID_DECLARATION";
 
 export class QueryParameterError extends AskDbError {
   constructor(
@@ -195,7 +211,15 @@ export type TenantGuardrailRuleCode =
    * whole SQL, with `tableId: ""`, whenever the SQL may be read as Postgres: postgres,
    * cockroachdb, a custom `AskDialect`, or no dialect; not under a `global` scope (#703).
    */
-  | "STRING_CONTINUATION";
+  | "STRING_CONTINUATION"
+  /**
+   * A `b'…'` byte string (lower-case `b`) that holds a backslash or is continued on a later line,
+   * which CockroachDB reads with backslash escapes and the tenant check doesn't, so a table or
+   * call after it could be hidden. Reported for the whole SQL, with `tableId: ""`, whenever the
+   * SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not
+   * under a `global` scope (#730).
+   */
+  | "ESCAPED_BYTE_STRING";
 
 export type TenantGuardrailWarning = {
   rule: TenantGuardrailRuleCode;
@@ -252,7 +276,25 @@ export type SensitiveScopeIssue =
   /** A table source that is not a relation name (table function, `VALUES`, …). */
   | "OPAQUE_TABLE_SOURCE"
   /** A string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned. */
-  | "UNTERMINATED_TOKEN";
+  | "UNTERMINATED_TOKEN"
+  /**
+   * A Postgres Unicode-escaped name (`U&"p\0061ssword"`), which Postgres decodes and the check
+   * matches as written, so it can't tell which column it names. Raised whenever the SQL may be
+   * read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect (#707, #692).
+   */
+  | "UNICODE_ESCAPED_IDENTIFIER"
+  /**
+   * An `E'…'` string continued on a later line, which Postgres reads with backslash escapes and
+   * the check doesn't, so a column after it could be hidden. Raised whenever the SQL may be read
+   * as Postgres (#707, #703).
+   */
+  | "STRING_CONTINUATION"
+  /**
+   * A `b'…'` byte string (lower-case `b`) that holds a backslash or is continued on a later line,
+   * which CockroachDB reads with backslash escapes and the check doesn't, so a column after it
+   * could be hidden. Raised whenever the SQL may be read as Postgres (#730).
+   */
+  | "ESCAPED_BYTE_STRING";
 
 /** Conservative-failure report attached when scope resolution was incomplete. */
 export type SensitiveScopeReport = {

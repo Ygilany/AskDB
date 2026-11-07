@@ -3,7 +3,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { azureProvider } from "@askdb/ai";
+import { azureProvider, createAiRegistry } from "@askdb/ai";
 import {
   getAskDbRuntimeConfig,
   resetAskDbRuntimeForTests,
@@ -819,8 +819,6 @@ describe("AskDB Studio server", () => {
           pgvector: {
             databaseUrl: "postgres://pgvector.test/askdb",
             table: "studio_rag_chunks",
-            // Ignored with the mock embedder (a load warning says so): its vectors are always 64 wide.
-            dimensions: 128,
             indexStrategy: "hnsw",
           },
         },
@@ -1374,6 +1372,35 @@ describe("AskDB Studio server", () => {
     expect(plan.error).not.toContain("--url");
   });
 
+  // #337, ADR 0037: a source with no tables is the user's to fix, so the resync answers 422 with the
+  // reason and leaves the artifact on disk as it was.
+  it("POST /api/introspect answers 422 for a source with no tables and leaves the artifact as it was", async () => {
+    const dbDir = mkdtempSync(join(tmpdir(), "askdb-studio-empty-"));
+    try {
+      const dbFile = join(dbDir, "empty.db");
+      new BetterSqlite3(dbFile).close();
+      installStudioRuntime({
+        ...STUDIO_TEST_BASE,
+        introspection: { provider: "sqlite", providerConfig: { sqlite: { file: dbFile } }, outputDir: "./askdb/", schemas: ["main"] },
+      });
+      const schemaDir = copyFixture();
+      const before = readFileSync(join(schemaDir, "schema.json"));
+      const server = createStudioServer({ schema: schemaDir });
+      servers.push(server);
+      const baseUrl = await listen(server);
+
+      const response = await postRaw(`${baseUrl}/api/introspect`, {});
+
+      expect(response.status).toBe(422);
+      const body = (await response.json()) as { error: { message: string } };
+      expect(body.error.message).toContain("Introspection found no tables or views");
+      expect(body.error.message).toContain("the filters match nothing (schemas: main)");
+      expect(readFileSync(join(schemaDir, "schema.json"))).toEqual(before);
+    } finally {
+      rmSync(dbDir, { recursive: true, force: true });
+    }
+  });
+
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {
     const prismaConfig: AskDbConfig = {
       ...STUDIO_TEST_BASE,
@@ -1514,8 +1541,8 @@ describe("AskDB Studio server", () => {
         expect(written.envVars.map((v: any) => v.name)).toContain("AZURE_RESOURCE_NAME");
         expect(readFileSync(join(projectDir, ".env.example"), "utf8")).toMatch(/^AZURE_RESOURCE_NAME=/m);
 
-        // Without a resource name (or endpoint) the adapter refuses to start.
-        const aiConfig = azureProvider.resolveConfig(getAskDbRuntimeConfig().ai.aiEnv, { usage: "language" });
+        // The scaffolded foundry connection reaches the adapter as its resource name.
+        const aiConfig = createAiRegistry([azureProvider]).resolveAiConfigFromSection(getAskDbRuntimeConfig().ai.language);
         expect(aiConfig?.providerOptions).toMatchObject({ resourceName: "my-foundry" });
       } finally {
         process.chdir(prevCwd);

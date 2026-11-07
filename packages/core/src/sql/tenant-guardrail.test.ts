@@ -6,6 +6,7 @@ import { loadSchema } from "../schema/v2/loader.js";
 import type { TenantScope, NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import {
   COCKROACHDB_DIALECT,
+  MARIADB_DIALECT,
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
   SQLITE_DIALECT,
@@ -28,6 +29,10 @@ const agencyScope: TenantScope = {
 const globalScope: TenantScope = {
   access: { kind: "global", reason: "super_admin" },
 };
+
+/** A dialect id that is no built-in engine, so the SQL may be read as Postgres; optionally with `backslashEscapes`. */
+const customEngine = (backslashEscapes?: boolean) =>
+  ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
 
 describe("validateTenantGuardrails — safe queries", () => {
   it("passes SQL with direct tenant predicate (P1)", () => {
@@ -666,7 +671,7 @@ describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () =
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const findings = (sql: string, dialect?: DialectSpec) =>
     validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
-  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const customDialect = customEngine();
 
   // Postgres reads U&"\006Frders" as orders: on Postgres 17 it returned both tenants' rows.
   it.each([
@@ -697,12 +702,10 @@ describe("validateTenantGuardrails — Unicode-escaped names (#704, #692)", () =
     // 'a\' ends early and the name sits inside the next string. The setting adds the escapes-on
     // reading to the plain one, so the name is reported (postgresReadingProfiles, #703).
     const sql = String.raw`SELECT 'a\'' AS z, U&"\006Frders" AS y FROM agencies WHERE id = :tenant_agency_ids`;
-    const custom = (backslashEscapes: boolean) =>
-      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
-    expect(findings(sql, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
-    expect(findings(sql, custom(false))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, customEngine(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(sql, customEngine(false))).not.toContain("UNICODE_ESCAPED_IDENTIFIER:");
     // And the plain reading still runs with the setting on: here only it sees the name as code.
-    expect(findings(String.raw`SELECT 'x\' AS a, U&"\006Frders" AS y`, custom(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    expect(findings(String.raw`SELECT 'x\' AS a, U&"\006Frders" AS y`, customEngine(true))).toContain("UNICODE_ESCAPED_IDENTIFIER:");
   });
 });
 
@@ -710,7 +713,7 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const findings = (sql: string, dialect?: DialectSpec) =>
     validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
-  const customDialect = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const customDialect = customEngine();
   // Postgres reads `a'` and then an unscoped read of orders; the check saw three strings.
   const bypass = "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'";
 
@@ -719,7 +722,7 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
     ["a /* */ comment in the gap", "SELECT E'a' /* note */\n'\\'' AS x, o.* FROM orders o --'"],
     ["a JSON_OBJECT key's `:` before the E", "SELECT JSON_OBJECT('k':E'a'\n'\\'' || (SELECT count(*) FROM orders o)::text --'\n) AS x FROM agencies WHERE id = :tenant_agency_ids"],
   ])("reports %s under every reading that includes Postgres", (_label, sql) => {
-    const customWithEscapes = { ...customDialect, backslashEscapes: true } as unknown as DialectSpec;
+    const customWithEscapes = customEngine(true);
     for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined, customDialect, customWithEscapes]) {
       expect(findings(sql, dialect), String(dialect?.id)).toContain("STRING_CONTINUATION:");
     }
@@ -733,12 +736,10 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
     // With escapes on, 'a\'' is one string and the E'…' pair after it is code; with them off,
     // 'a\' ends early and the pair sits inside the next string. Only one reading sees the pair.
     const sql = String.raw`SELECT 'a\'' AS z, E'b'` + "\n'c' AS y";
-    const custom = (backslashEscapes: boolean) =>
-      ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
-    expect(findings(sql, custom(true))).toContain("STRING_CONTINUATION:");
-    expect(findings(sql, custom(false))).not.toContain("STRING_CONTINUATION:");
+    expect(findings(sql, customEngine(true))).toContain("STRING_CONTINUATION:");
+    expect(findings(sql, customEngine(false))).not.toContain("STRING_CONTINUATION:");
     // And the plain reading still runs with the setting on: here only it sees the pair as code.
-    expect(findings(String.raw`SELECT 'x\' AS a, E'b'` + "\n'c' AS y", custom(true))).toContain("STRING_CONTINUATION:");
+    expect(findings(String.raw`SELECT 'x\' AS a, E'b'` + "\n'c' AS y", customEngine(true))).toContain("STRING_CONTINUATION:");
   });
 
   it("names the string's position, not its text", () => {
@@ -755,5 +756,206 @@ describe("validateTenantGuardrails — string continued after E'…' (#703)", ()
     expect(findings(`SELECT E'a' || 'b' AS x ${scoped}`, POSTGRES_DIALECT)).toEqual([]);
     // MySQL reads E as a column and has no escape-string prefix.
     expect(findings(`SELECT E 'a'\n, 'b' AS x ${scoped}`, MYSQL_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — CockroachDB b'…' byte strings (#730)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const customDialect = customEngine();
+  const customWithEscapes = customEngine(true);
+  // CockroachDB reads b'…' with backslash escapes: the bytes `'`, then an unscoped read of orders.
+  // The check saw one string.
+  const bypass = String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`;
+
+  it.each([
+    ["an unscoped read after a b'…' string", bypass],
+    // CockroachDB keeps the escape mode across a continuation.
+    ["an unscoped read after a continued b'…' string", "SELECT b'a'\n'\\'' AS x, o.* FROM orders o --'"],
+    ["a b'…' string after a slice's `:`", String.raw`SELECT (ARRAY[1,2])[1:b'\''] AS x, o.* FROM orders o --'`],
+  ])("reports %s under every reading that includes Postgres", (_label, sql) => {
+    for (const dialect of [COCKROACHDB_DIALECT, POSTGRES_DIALECT, undefined, customDialect, customWithEscapes]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("ESCAPED_BYTE_STRING:");
+    }
+  });
+
+  it("refuses it under strict enforcement", () => {
+    expect(() => validateTenantGuardrails(bypass, policy, agencyScope, { dialect: COCKROACHDB_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it("names the string's position, not its text", () => {
+    const [warning] = validateTenantGuardrails(String.raw`SELECT b'Jane\x20Doe' AS a`, warnPolicy, agencyScope, {
+      dialect: COCKROACHDB_DIALECT,
+    }).warnings;
+    expect(warning?.message).toContain("offset 7");
+    expect(warning?.message).not.toContain("Jane");
+  });
+
+  it("leaves byte and bit strings that keep the same reading alone", () => {
+    const scoped = "FROM agencies WHERE id = :tenant_agency_ids";
+    for (const literal of ["b'abc'", "b'it''s'", "B'01'\n'10'", "x'0a'", "b'0101'"]) {
+      expect(findings(`SELECT ${literal} AS x ${scoped}`, COCKROACHDB_DIALECT), literal).toEqual([]);
+    }
+    // MySQL's b'…' is a bit-value literal, read without escapes.
+    expect(findings(`SELECT b'0101' AS x ${scoped}`, MYSQL_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a MySQL dialect that leaves backslashEscapes unset", () => {
+  // MySQL's default reads `\'` as an escaped quote, so the server sees one string from 'a to the
+  // last quote and then `OR 1=1`: no tenant predicate applies.
+  const sql = String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`;
+
+  it.each([
+    ["a spec with the field unset", { ...MYSQL_DIALECT, backslashEscapes: undefined } as DialectSpec],
+    ["an id alone", { id: "mysql" } as Pick<DialectSpec, "id" | "backslashEscapes">],
+    ["a MariaDB id alone", { id: "mariadb" } as Pick<DialectSpec, "id" | "backslashEscapes">],
+  ])("reads strings with escapes on, as the server does: %s", (_label, dialect) => {
+    expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect })).toThrow(TenantGuardrailError);
+  });
+
+  it("keeps reading the built-in dialect and an explicit false as before", () => {
+    expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect: MYSQL_DIALECT })).toThrow(TenantGuardrailError);
+    // With escapes off, 'a\' ends early and the predicate is code, as the server reads it then.
+    const off = validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope, { dialect: { ...MYSQL_DIALECT, backslashEscapes: false } });
+    expect(off.warnings.map((w) => w.rule)).not.toContain("MISSING_TENANT_PREDICATE");
+  });
+});
+
+describe("validateTenantGuardrails — `$` in names, and dollar quotes only where the engine has them", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  // Every engine but SQL Server reads `x$$y` as one name, so the UNION reads every tenant's orders.
+  const dollarsInName =
+    "SELECT id AS x$$y FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY x$$y";
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a $$ inside a name opens no string", (_label, dialect) => {
+    expect(findings(dollarsInName, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  // Only Postgres and CockroachDB have dollar quotes; MariaDB reads `$a$` as a name.
+  const dollarName =
+    "SELECT id AS $a$ FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY $a$";
+  it.each([
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: $a$ … $a$ is code where the engine may have no dollar quotes", (_label, dialect) => {
+    expect(findings(dollarName, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("postgres and cockroachdb: $a$ … $a$ is still a string", () => {
+    expect(findings(dollarName, POSTGRES_DIALECT)).toEqual([]);
+    expect(findings(dollarName, COCKROACHDB_DIALECT)).toEqual([]);
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = $q$ OR 1=1 $q$", POSTGRES_DIALECT)).toEqual([]);
+  });
+
+  // A dollar tag can hold non-ASCII letters, as Postgres and the shared lexer read it. The scanner
+  // must read `$é$ … $é$` as a string too, or an OR it hides stays beside the predicate as code.
+  const nonAsciiTag = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND $é$'$é$ = '' OR 1=1 OR 'x' = 'x'";
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["no dialect", undefined],
+  ])("%s: a non-ASCII dollar tag is a string, so the OR it exposes defeats the predicate", (_label, dialect) => {
+    expect(findings(nonAsciiTag, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("postgres: a non-ASCII dollar-quoted string a real predicate sits beside still passes", () => {
+    expect(findings("SELECT $é$ a $é$ AS n, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids", POSTGRES_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a carriage return ends a `--` comment on Postgres and SQL Server only", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  // Postgres and SQL Server end the comment at the CR, so the UNION reads every tenant's orders.
+  const unionAfterCr = "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders";
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb, read both ways like postgres", COCKROACHDB_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a UNION after the CR is code", (_label, dialect) => {
+    expect(findings(unionAfterCr, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("mysql, mariadb and sqlite: the comment runs to the end of the line, as they read it", () => {
+    for (const dialect of [MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT]) expect(findings(unionAfterCr, dialect), dialect.id).toEqual([]);
+  });
+
+  // MySQL, MariaDB, SQLite and CockroachDB end the comment only at `\n`, so the predicate is commented out.
+  const predicateAfterCr = "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids";
+  it.each([
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["postgres, which a host may point at CockroachDB", POSTGRES_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a predicate after the CR doesn't count", (_label, dialect) => {
+    expect(findings(predicateAfterCr, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("sqlserver: a predicate after the CR counts, as SQL Server reads it", () => {
+    expect(findings(predicateAfterCr, SQLSERVER_DIALECT)).toEqual([]);
+  });
+
+  it("a statement on the line after the comment is a statement where only `\\n` ends it, not part of a string", () => {
+    const sql = "SELECT id FROM agencies WHERE id = :tenant_agency_ids -- \r'\n; DO SLEEP(1) -- '";
+    for (const dialect of [MYSQL_DIALECT, SQLITE_DIALECT, POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("NOT_SELECT_OR_WITH:");
+    }
+  });
+});
+
+describe("validateTenantGuardrails — a table named after a word only some engines reserve", () => {
+  // The engine reads each unquoted name as the table, so the query needs that table's predicate.
+  const scopedAs = (name: string): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [{ id: `table:app.${name}`, scopeThrough: [{ root: "table:public.agencies", column: `table:app.${name}#agency_id` }] }],
+    polymorphicTables: [],
+    globalTables: [],
+    coverage: [],
+  });
+  const findings = (name: string, sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, scopedAs(name), agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([
+    ["user", "mysql", MYSQL_DIALECT],
+    ["lock", "postgres", POSTGRES_DIALECT],
+    ["qualify", "postgres", POSTGRES_DIALECT],
+    ["by", "postgres", POSTGRES_DIALECT],
+    ["limit", "sqlserver", SQLSERVER_DIALECT],
+    ["window", "sqlite", SQLITE_DIALECT],
+    ["user", "no dialect", undefined],
+  ])("%s on %s: an unquoted name in FROM is the table", (name, _d, dialect) => {
+    expect(findings(name, `SELECT * FROM ${name} t`, dialect)).toEqual([`MISSING_TENANT_PREDICATE:table:app.${name}`]);
+    expect(findings(name, `SELECT * FROM ${name} t WHERE t.agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+  });
+
+  it("ORDER BY and GROUP BY are keywords, not a table named order, group or by", () => {
+    for (const name of ["order", "group", "by"]) {
+      expect(findings(name, "SELECT id FROM lookup_states GROUP BY id ORDER BY id", POSTGRES_DIALECT), name).toEqual([]);
+      expect(findings(name, `SELECT id FROM "${name}" GROUP BY id ORDER BY id`, POSTGRES_DIALECT), name).toEqual([`MISSING_TENANT_PREDICATE:table:app.${name}`]);
+    }
   });
 });

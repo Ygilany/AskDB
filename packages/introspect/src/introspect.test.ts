@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { EmptyIntrospectionError } from "./errors.js";
 import { introspect } from "./introspect.js";
 import { isSchemaV2Json, renderSchemaV2Body, renderToSchemaV2 } from "./render/render.js";
 import type { Connector, IntrospectionResult, SqlSchema } from "./types.js";
@@ -50,6 +51,14 @@ const fakeSchema: SqlSchema = {
     },
   ],
 };
+
+function emptyConnector(schema: SqlSchema, isEmpty = true): Connector<FakeInput> {
+  return {
+    async describe() {
+      return { schema, warnings: [], isEmpty, viewDefinitions: {} };
+    },
+  };
+}
 
 function makeFakeConnector(calls: string[]): Connector<FakeInput> {
   return {
@@ -107,34 +116,69 @@ describe("introspect() — engine-agnostic orchestrator", () => {
     expect(readFileSync(outside, "utf8")).toBe("untouched\n");
   });
 
-  // MySQL and SQLite `describe()` return `schemas: []` for a database with no tables or
-  // views, and `askdb introspect --out` renders that result. This pins today's behaviour;
-  // #337 decides whether it becomes a clear refusal instead (then flip this test).
-  it("renders an empty SqlSchema (no namespaces) to a schema.json with no tables", async () => {
-    const connector: Connector<FakeInput> = {
-      async describe() {
-        return {
-          schema: { schemaId: "empty", schemas: [] },
-          warnings: [],
-          isEmpty: true,
-          viewDefinitions: {},
-        };
-      },
-    };
+  // MySQL and SQLite `describe()` return `schemas: []` for a database with no tables or views,
+  // and an artifact with no tables can't be loaded, so introspection refuses to write one (#337,
+  // ADR 0037).
+  it("refuses an empty SqlSchema (no namespaces) and writes nothing", async () => {
     const outDir = join(workDir, "empty.schema");
 
-    const result = await introspect<FakeInput>(
-      { tag: "empty" },
-      { outDir, schemaId: "empty" },
-      { connector },
-    );
+    const error = await introspect<FakeInput>({ tag: "empty" }, { outDir, schemaId: "empty" }, { connector: emptyConnector({ schemaId: "empty", schemas: [] }) }).catch((e: unknown) => e);
 
-    expect(result.isEmpty).toBe(true);
-    expect(JSON.parse(readFileSync(result.render!.schemaJsonPath, "utf8"))).toEqual({
-      version: 2,
-      schemaId: "empty",
-      tables: [],
-    });
+    expect(error).toBeInstanceOf(EmptyIntrospectionError);
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  // Postgres reports a database with only enums or sequences as not empty, but it renders no tables.
+  it("refuses a namespace with only enums and sequences, since it renders no tables", async () => {
+    const enumsOnly: SqlSchema = {
+      schemaId: "enums",
+      schemas: [{ name: "public", tables: [], views: [], enums: [{ name: "mood", values: ["happy"] }], sequences: [{ name: "ids" }] } as unknown as SqlSchema["schemas"][number]],
+    };
+    const outDir = join(workDir, "enums.schema");
+
+    const error = await introspect<FakeInput>({ tag: "enums" }, { outDir, schemaId: "enums" }, { connector: emptyConnector(enumsOnly, false) }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(EmptyIntrospectionError);
+    expect(existsSync(join(outDir, "schema.json"))).toBe(false);
+  });
+
+  it("leaves an existing artifact as it was when re-introspection finds nothing", async () => {
+    const outDir = join(workDir, "fake.schema");
+    await introspect<FakeInput>({ tag: "first" }, { outDir, schemaId: "fake" }, { connector: makeFakeConnector([]) });
+    mkdirSync(join(outDir, "tables"), { recursive: true });
+    writeFileSync(join(outDir, "tables", "users.md"), "---\nid: table:public.users\n---\nPeople.\n", "utf8");
+    const before = [readFileSync(join(outDir, "schema.json")), readFileSync(join(outDir, "tables", "users.md"))];
+
+    const error = await introspect<FakeInput>(
+      { tag: "again" },
+      { outDir, schemaId: "fake", existingArtifactDir: outDir },
+      { connector: emptyConnector({ schemaId: "fake", schemas: [] }) },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(EmptyIntrospectionError);
+    expect([readFileSync(join(outDir, "schema.json")), readFileSync(join(outDir, "tables", "users.md"))]).toEqual(before);
+  });
+
+  it("names the schema id, the engine and the filters, and nothing from the connection", async () => {
+    const outDir = join(workDir, "shop.schema");
+    const connector: Connector<{ url: string }> = {
+      async describe() {
+        return { schema: { schemaId: "shop", schemas: [] }, warnings: [], isEmpty: true, viewDefinitions: {}, provider: "sqlite" };
+      },
+    };
+
+    const error = await introspect(
+      { url: "postgres://admin:S3cret@db.internal/shop" },
+      { outDir, schemaId: "shop", filters: { schemas: ["sales"], excludeSchemas: ["tmp"], tables: ["sales.orders*"] } },
+      { connector },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(EmptyIntrospectionError);
+    expect(error).toMatchObject({ schemaId: "shop", provider: "sqlite", filters: { schemas: ["sales"], tables: ["sales.orders*"] } });
+    const message = (error as Error).message;
+    expect(message).toContain('Introspection found no tables or views for schema "shop" (sqlite), so nothing was written.');
+    expect(message).toContain("schemas: sales; exclude schemas: tmp; tables: sales.orders*");
+    expect(message).not.toMatch(/S3cret|admin|db\.internal/);
   });
 
   it("merges connector and render warnings", async () => {
@@ -171,6 +215,10 @@ describe("introspect() — engine-agnostic orchestrator", () => {
 });
 
 describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
+  it("refuses an empty render, so --print and --diff refuse it as --out does", () => {
+    expect(() => renderSchemaV2Body({ schemaId: "empty", schemas: [] }, { schemaId: "empty" })).toThrow(EmptyIntrospectionError);
+  });
+
   it("introspect() forwards the connector's provider into the schema.json it writes", async () => {
     const connector: Connector<FakeInput> = {
       async describe() {

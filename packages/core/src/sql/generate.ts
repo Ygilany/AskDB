@@ -13,6 +13,7 @@ import {
   parseParameterManifest,
   type ParameterManifest,
 } from "./parameter-manifest.js";
+import { failureMessage } from "./failure-reason.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
 import { enforceGuardrails } from "./guardrails.js";
@@ -40,6 +41,11 @@ export type GenerateSqlDeps = {
    * directly.
    */
   prebuiltDdl?: string;
+  /**
+   * The ids of the tables `prebuiltDdl` shows, so the prompt's tenant block names no other
+   * (#771). Set by `ask({ retriever })` with `prebuiltDdl`.
+   */
+  promptTableIds?: readonly string[];
   /** Normalized tenant policy from the schema artifact. Forwarded from ask(). */
   tenantPolicy?: NormalizedTenantPolicy;
   /** Validated tenant scope from the host. Forwarded from ask(). */
@@ -177,6 +183,7 @@ async function runGenerateSelectSql(
           deps.tenantPolicy,
           deps.tenantScope,
           parameterize || undefined,
+          deps.promptTableIds,
         ),
         temperature: 0,
         // Cast: AskDB's public `providerOptions` type is a plain opaque bag
@@ -209,8 +216,7 @@ async function runGenerateSelectSql(
         };
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      throw new SqlGenerationError(`Model call failed: ${message}`, e);
+      throw new SqlGenerationError(`Model call failed: ${failureMessage(e)}`, e);
     }
     // The read-only check is a guardrail finding, decided by the caller; here the SQL is
     // only normalized (trailing `;` removed) when it passes.
@@ -246,6 +252,7 @@ async function runGenerateSelectSql(
 }
 
 function logGenerateFailed(logger: AskDbLogger | undefined, e: unknown): void {
+  // A failed model call arrives as the SqlGenerationError above, whose message already names the reason.
   const msg = e instanceof Error ? e.message : String(e);
   logger?.error(
     {

@@ -9,7 +9,7 @@ const resolutionByConfig = new WeakMap<object, AskDbConfigResolution>();
 function resolutionFor(structured: Readonly<AskDbConfig>): AskDbConfigResolution {
   let resolution = resolutionByConfig.get(structured);
   if (!resolution) {
-    resolution = resolveAskDbConfig(structured as AskDbConfig);
+    resolution = resolveAskDbConfig(structured);
     resolutionByConfig.set(structured, resolution);
   }
   return resolution;
@@ -19,8 +19,8 @@ function resolutionFor(structured: Readonly<AskDbConfig>): AskDbConfigResolution
  * Returns typed runtime configuration from the snapshot installed by {@link bootstrapAskDbEnv}.
  *
  * Every value is resolved from the snapshot's structured config. The snapshot's own flat map is
- * never read back: another copy of `@askdb/config` may have installed it (ADR 0005), so `flat`
- * and `ai.aiEnv` are this copy's projection of the same structured config.
+ * never read back: another copy of `@askdb/config` may have installed it (ADR 0005), so `flat` is
+ * this copy's projection of the same structured config.
  */
 export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const { structured } = getAskDbRuntimeStore();
@@ -29,7 +29,6 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     structured,
     flat,
     ...resolved,
-    ai: { aiEnv: { ...flat }, ...resolved.ai },
     deprecations,
   };
 }

@@ -1,0 +1,116 @@
+---
+title: "@askdb/core API reference: dialects"
+description: "The dialect option of ask(): the built-in dialect ids and their specs, DialectSpec for a variant of a built-in engine, and AskDialect for your own generator."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede">The <code>dialect</code> option of <code>ask()</code> accepts three forms: a built-in dialect id, a <code>DialectSpec</code> for a variant of a built-in engine, or an <code>AskDialect</code> that generates SQL itself. <a href="/concepts/modes-and-dialects/">Modes and dialects</a> lists the engine each id covers.</p>
+
+## Built-in dialect id
+
+```ts
+dialect: "postgres"  // or "mysql" | "sqlite" | "sqlserver" | "cockroachdb" | "mariadb"
+```
+
+| Id | Engine |
+| --- | --- |
+| `"postgres"` | PostgreSQL — `"` quotes, `ILIKE`, `::type` cast, `NOW()`, `\|\|` concat |
+| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres spec and prompt. Outside the 1.0 support claim: AskDB's end-to-end tests don't cover it. |
+| `"mysql"` | MySQL — `` ` `` quotes, `CONCAT()`, `LIKE`, `CAST()`, `NOW()` |
+| `"mariadb"` | MariaDB — MySQL-protocol-compatible; reuses the MySQL prompt |
+| `"sqlite"` | SQLite — dynamic typing, `LIKE`, `date('now')`, `\|\|` concat, `LIMIT` |
+| `"sqlserver"` | SQL Server (T-SQL) — `[bracket]` or `"` quotes, `GETDATE()`, `+`/`CONCAT()`, `CAST()`/`CONVERT()` |
+
+`@askdb/core` exports the built-in `DialectSpec` of each id: `POSTGRES_DIALECT`, `COCKROACHDB_DIALECT`, `MYSQL_DIALECT`, `MARIADB_DIALECT`, `SQLITE_DIALECT` and `SQLSERVER_DIALECT`. `BUILT_IN_DIALECTS` maps each id to its spec, `SUPPORTED_DIALECT_IDS` lists the ids, `isBuiltInDialectId(id)` checks one, and `getDialectSpec(id)` returns its spec. The engine packages re-export their own engine's constants (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`; `COCKROACHDB_DIALECT` comes only from core). Passing the string id to `ask()` is enough: you don't need an engine package for SQL generation.
+
+## `DialectSpec`
+
+Customize how one of the built-in dialects prompts and validates — for example, a PostgreSQL-compatible warehouse that needs extra guidance in the prompt or extra forbidden keywords. `id` must be one of the six built-in ids (the spec describes a variant of that engine family, not a brand-new engine — for that, use [`AskDialect`](#askdialect)). `ask()` throws `UnknownDialectError` for a spec under any other `id`: spread the built-in spec and keep its `id`, as in `{ ...MYSQL_DIALECT, displayName: "TiDB", promptBrief: "…" }`.
+
+```ts
+import { type DialectSpec } from "@askdb/core";
+
+const redshiftFlavor: DialectSpec = {
+  id: "postgres", // the built-in family this variant belongs to
+  displayName: "Amazon Redshift",
+  promptBrief: "Amazon Redshift SQL. PostgreSQL syntax with some differences: ...",
+  identifierQuote: '"',
+  extraForbiddenKeywords: ["COPY", "UNLOAD"],
+  extraValidate(sql) {
+    // throw SqlValidationError for dialect-specific rules
+  },
+};
+```
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | `DialectId` | yes | One of the six built-in ids — the engine family this spec belongs to. |
+| `displayName` | `string` | yes | Human-readable name. |
+| `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
+| `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. The prompt quotes names the way `id`'s engine does, not with this field. |
+| `reservedWords` | `readonly string[]` | no | Words the engine reserves, case-insensitive. The prompt lists a schema, table or column with one of these names quoted. The built-in specs set their engine's list; spread one to keep it, since setting the field replaces the list. |
+| `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. When it is the schema's only namespace, the prompt lists its tables without it and tells the model never to write `<namespace>.<table>`; next to other namespaces (a MySQL database list that includes a database named `public`) it stays qualified. The SQLite, MySQL and MariaDB specs set `SINGLE_NAMESPACE_LABEL` (`"public"`), the namespace their connectors give the database's tables; spread one to keep it. |
+| `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
+| `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
+| `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
+| `listBinding` | `"array" \| "expand"` | no | How a list value binds in `unboundSql`. `"array"` binds the whole list to one marker (`= ANY($1)`), so the marker count doesn't change with the list length. `"expand"` binds one marker per item (`IN (?, ?, ?)`). Default `"expand"` when unset. `POSTGRES_DIALECT` and `COCKROACHDB_DIALECT` set `"array"`, and the other built-in specs set `"expand"`. |
+| `backslashEscapes` | `boolean` | no | Whether a backslash escapes a quote inside `'…'` strings on your server. The built-in specs set the engine default (`true` for MySQL and MariaDB, `false` otherwise). Set `false` for MySQL or MariaDB with `NO_BACKSLASH_ESCAPES`, and `true` for Postgres with `standard_conforming_strings = off`. The checks lex strings this way, and the business values `bindPreparedQuery()` inlines are escaped to match. Tenant IDs are never escaped for the dialect: they are driver parameters by default, and `"sql-only"` refuses an ID that would need escaping. See [Match your server's string settings](/guides/match-server-string-settings/). |
+
+`id` also selects how the SQL checks read strings, quoted names and comments: see [How the checks read SQL](/reference/sql-checks/#how-the-checks-read-sql). The built-in specs ship their own `extraForbiddenKeywords` and `blockedFunctions`; spread one (`{ ...POSTGRES_DIALECT, … }`) to keep them, since setting either field replaces the built-in list. These checks are defense in depth — run generated SQL under a read-only database role.
+
+`id` also decides how the prompt quotes names. A schema, table or column whose name is in `reservedWords`, is a word the SQL checks reject unquoted (the shared denylist plus `extraForbiddenKeywords`, such as `copy`, and on `sqlserver` and an id that is no built-in engine the lock hints, such as `rowlock`), isn't a plain identifier (on `sqlserver` and an id that is no built-in engine, anything beyond ASCII letters, digits, `_` and `$`), or (for `postgres` and `cockroachdb`, which fold unquoted names to lowercase) has capitals, is listed quoted (`billing."order"` for `postgres` and `cockroachdb`, ``billing.`order` `` for `mysql` and `mariadb`, `billing.[order]` for `sqlserver`, `"order"` for `sqlite`; a Prisma table `Post` is `public."Post"` on Postgres). When the prompt lists tables with their schema, it also tells the model to quote each part of a qualified name separately. On `sqlserver` and an id that is no built-in engine, it tells the model to quote a non-ASCII alias (`AS [注文数]`) and to qualify a quoted column that is alone in parentheses (`SUM(o.[金額])`), because the SQL checks reject both otherwise. An id that quotes with a backtick (`` identifierQuote: "`" ``) can't use a column named like a denylisted word, a lock hint, or a name that isn't plain ASCII yet: the checks read its SQL under every engine's lexer, SQL Server's included, where a backtick doesn't quote (#672). `promptIdentifierQuoter(dialect)` returns that quoting as a function; pass it as `quoteIdentifier` when you call `formatSchemaV2ForNlToSql` or `synthesizeRetrievedDdl` yourself.
+
+## `AskDialect`
+
+Full escape hatch for custom NL→SQL generators — agentic flows, tool-calling, fine-tuned models, non-SELECT targets. Use a built-in id or a `DialectSpec` unless you need your own generator.
+
+```ts
+import { type AskDialect } from "@askdb/core";
+
+const myDialect: AskDialect = {
+  async generate(question, schema, model, options) {
+    // call your own generation logic
+    return { sql: "SELECT ...", usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 } };
+  },
+};
+```
+
+The `generate` method receives:
+- `question: string`
+- `schema: AnyNormalizedSchema`
+- `model: AskDbLanguageModel`
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, providerOptions, abortSignal, prebuiltDdl, promptTableIds, tenantPolicy, tenantScope }`. Under retrieval, `prebuiltDdl` is the retrieved DDL and `promptTableIds` the ids of the tables it shows; a dialect that builds its prompt with `buildNlToSqlUserPrompt()` passes both, so the prompt's tenant block names no other table. Pass `abortSignal` to your model call so the caller's timeout cancels it; `ask()` doesn't wrap what `generate()` throws, so an abort surfaces as your dialect's own error (typically the AI SDK's `AbortError`) unless you map it. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
+
+It must return `AskDialectGenerateResult`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `sql` | `string` | The generated SQL. |
+| `explain` | `unknown \| undefined` | Guardrail metadata when `options.explain` is true. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. With a tenant policy, each warning becomes a tenant finding with `form: "generator"` in `ask()`'s verdict, decided under the policy's `enforcement`, and `passed: false` with no warnings becomes one `UNPROVABLE_SCOPE` finding. They add to `ask()`'s own check and can't replace it. Without a tenant policy, it is passed through to `result.tenantGuardrail` unchanged. |
+| `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
+| `unboundNamedSql` | `string \| undefined` | The same statement with `:name` placeholders for the values taken from the question. `ask()` runs its tenant and sensitive checks on it too, as the `"template"` form, but builds no reuse artifacts from a custom dialect. |
+| `parameterManifest` | `ParameterManifest \| undefined` | The placeholders' declarations. `ask()` reads it only with a built-in dialect or `DialectSpec`, so a custom dialect's is ignored. The `ParameterManifest` type isn't exported. |
+
+A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run [the read-only check](/reference/sql-checks/#the-read-only-check) on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. The tenant and sensitive checks still run on what it returns: with a tenant policy, `ask()` checks the returned `sql` (and its `sql-unbound` block) with the `:tenant_<root>_ids` placeholders still in place, and then substitutes them, whatever the dialect. AskDB doesn't know how your engine reads SQL, so the checks read it every engine's way, and it must pass each: a tenant column written only as `"agency_id"` doesn't count as a predicate, since MySQL reads `"…"` as a string. See [When each check runs](/reference/sql-checks/#when-each-check-runs) and [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires). With a tenant scope, a custom `AskDialect` must set `tenantSqlMode`, because AskDB can't know its driver's markers (see [`ask()` options](/reference/core-api/ask/#options)). Under `strict`, SQL that fails the tenant check throws `TenantGuardrailError`; passing it doesn't prove the SQL is scoped.
+
+Passing an unknown string dialect id, or a `DialectSpec` whose `id` isn't one of the six built-in ids, throws `UnknownDialectError`, which extends `AskDbError`. `ask()` refuses such a spec before any tenant check, retrieval or model call.
+
+## Types
+
+| Type | What it is |
+| --- | --- |
+| `AskDialectInput` | The `dialect` option: a `BuiltInDialectId`, a `DialectSpec` or an `AskDialect`. |
+| `BuiltInDialectId` | One of the six built-in ids. |
+| `DialectId` | A `DialectSpec`'s `id`. |
+| `AskDialectGenerateOptions` | The `options` an `AskDialect`'s `generate()` receives, as above. |
+| `AskDialectGenerateResult` | What `generate()` returns, as above. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>Move a schema and its queries to another engine.</span></a>
+  <a href="/guides/match-server-string-settings/"><strong>Match your server's string settings</strong><span>Set <code>backslashEscapes</code> to match your server.</span></a>
+  <a href="/reference/core-api/ask/"><strong>ask()</strong><span>Pass the dialect to <code>ask()</code>.</span></a>
+</div>

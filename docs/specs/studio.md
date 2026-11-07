@@ -5,9 +5,9 @@
 
 ## Overview
 
-AskDB Studio is a local browser-based authoring surface for describable schema artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and opens the browser app. The UI reads and writes the standard `schema.json` + `tables/*.md` artifact, using `@askdb/enrich` for all workspace logic.
+AskDB Studio is a local browser-based authoring surface for describable schema artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and prints its URL (`AskDB Studio is running at http://127.0.0.1:5556`). Studio doesn't open a browser itself (ADR 0009). The UI reads and writes the standard `schema.json` + `tables/*.md` artifact, using `@askdb/enrich` for all workspace logic.
 
-Studio is built with Vite + React + shadcn/ui. The server is a small Express app that serves the compiled React assets and exposes a typed JSON API. All enrichment logic runs through `@askdb/enrich`.
+Studio is built with Vite + React + shadcn/ui. The server is a small `node:http` server that serves the compiled React assets and exposes a typed JSON API. All enrichment logic runs through `@askdb/enrich`.
 
 The product shape follows the Prisma Studio pattern: a CLI command starts a local server, the server opens/serves a browser app, and the UI talks to a small local API. Studio is not a hosted service; it is a local developer tool.
 
@@ -19,7 +19,7 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 - **Enrichment editor** — table description, aliases, primary entity, tags, common query language, example questions, per-column metadata; dirty state, save, revert
 - **AI suggestion workflow** — suggest controls for table and column contexts; candidates presented for selection, not auto-applied; clear UI errors for missing/misconfigured AI env
 - **RAG panel** — index status, stale state, dimensions/embedder mismatch, sensitive counts; build action; query debugger with scored chunk results
-- **Ask panel** — sample NL→SQL generation with optional RAG toggle; renders SQL, explain text, schema warnings, retrieved chunks; generation only, no live execution
+- **Playground** (formerly the Ask panel) — sample NL→SQL generation with optional RAG toggle; renders the SQL and its explain text (retrieved chunks are shown in the RAG Index view's Query Debugger); runs the SQL only through the opt-in execute path (see Execute)
 - **API** — `GET /api/workspace`, `POST /api/tables/:tableId`, `POST /api/suggest`, `GET /api/rag/status`, `POST /api/rag/index`, `POST /api/rag/query`, `POST /api/ask`
 - **Build artifacts** — server TypeScript to `dist/`, React client to `dist/client/`; package tarball includes both
 
@@ -45,6 +45,8 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 | `GET` | `/api/workspace` | Schema metadata, table drafts, warning summaries, AI config status, concepts |
 | `POST` | `/api/tables/:tableId` | Save a table draft |
 | `POST` | `/api/suggest` | Return AI suggestion candidates |
+| `POST` | `/api/tenant-policy` | Save the tenant policy (validated with `loadSchema` first; `400` on a `SchemaParseError`) |
+| `POST` | `/api/suggest-tenant-policy` | Draft a tenant policy with the model (`suggestTenantPolicyDraft()`); the user reviews it before saving |
 | `GET` | `/api/rag/status` | Index state, stale reasons, store metadata |
 | `POST` | `/api/rag/index` | Build the configured RAG index |
 | `POST` | `/api/rag/query` | Return scored chunks for a question |
@@ -56,7 +58,7 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 
 **Server startup:**
 ```bash
-askdb-studio --schema <path>   # default port 4983
+askdb-studio --schema <path>   # default port 5556
 askdb-studio --schema <path> --port 3000
 ```
 
@@ -74,7 +76,7 @@ Studio is a local dev tool whose API can execute SQL against the configured data
 - **Setup config writer:** every value interpolated into the generated `askdb.config.ts` is emitted with `JSON.stringify` (the file is later executed via jiti); env names must match `^[A-Z][A-Z0-9_]*$`, and paths reject control characters. `askdb init` uses the same escaping.
 - **Request bodies:** `readJson` rejects bodies over 1 MiB (`MAX_JSON_BODY_BYTES`) with `413`: early on a declared `Content-Length`, otherwise while streaming (the rest of the body is drained, not buffered).
 - **Playground history:** `POST /api/history` copies only the known `PlaygroundHistoryEntry` fields, with type and length checks. `id`/`timestamp` are server-assigned. Before writing `playground-history.json`, Studio makes sure the schema dir's `.gitignore` lists it. If there's no `.gitignore`, Studio writes one that also ignores `.env`, `.env.*`, and `!.env.example` (the plan-043 rules; the `.env` rules are skipped when the schema dir is the project root). If a `.gitignore` exists, Studio adds the entry at the end and keeps every existing byte. Both files are written with `@askdb/core`'s `saveSchemaFile()` ([ADR 0028](../adrs/0028-core-writes-schema-directory-files.md)), so a symbolic link at either one is refused, not followed. A refused `.gitignore` write is non-fatal: the history still saves. A refused history write (`POST /api/history` or `DELETE /api/history/:id`) fails with `500` and the refusal message.
-- **Driver install:** the requested provider must be an own key of `EXECUTE_DRIVER_REGISTRY` (`Object.hasOwn`, so `constructor`/`__proto__` → `400`). The package manager is spawned through `packageManagerSpawnSpec` (`src/package-manager.ts`, shared with the setup wizard): `shell: false` on POSIX, and `shell: true` on Windows (Node can't spawn `.cmd` shims without a shell) with every argument matched against a strict allowlist pattern.
+- **Driver install:** the requested provider must be an own key of `EXECUTE_DRIVER_REGISTRY` (`Object.hasOwn`, so `constructor`/`__proto__` → `400`). The package manager is spawned through `packageManagerSpawnSpec` (from `@askdb/config/scaffold`, shared with the setup wizard and `askdb init`): `shell: false` on POSIX, and `shell: true` on Windows (Node can't spawn `.cmd` shims without a shell) with every argument matched against a strict allowlist pattern.
 
 ### Execute
 
@@ -95,13 +97,15 @@ Each request (`apps/studio/src/server.ts` `executeQuery` → `apps/studio/src/ex
 
 These guards narrow the blast radius. They don't replace a read-only database role.
 
+**Request and reply.** The request is `{ "sql": "<statement>" }`, optionally with `"params": [...]` for the statement's parameter markers. A run returns `200 { "ok": true, "columns": [...], "rows": [[...]], "rowCount", "durationMs", "truncated", "rowLimit" }`, plus `"warnings"` when the SQL reads a sensitive identifier: `rows` holds one array per row, in `columns` order. A failure at run time (a missing driver, no connection, a database error or a timeout) is `200 { "ok": false, "error": "<message>" }`. The types are `ExecuteRequest` and `ExecuteResponse` in `apps/studio/src/shared/api.ts`.
+
 ## Test bar
 
 - `pnpm --filter @askdb/studio build` succeeds; server TypeScript to `dist/`; React client to `dist/client/`.
 - `@askdb/studio` depends on `@askdb/enrich` for all workspace logic (package assertion).
-- API contract tests: each endpoint returns the documented shape; error responses include typed `code`.
+- API contract tests: each endpoint returns the documented shape. Error responses are `{ "error": { "message": "…" } }` with no typed code, so callers tell them apart by status (#380).
 - Schema editing: `POST /api/tables/:tableId` saves draft and reloads workspace from disk; reloading Studio shows saved values.
-- AI suggestion: `POST /api/suggest` returns candidates; missing AI config returns a typed config error, not a 500.
+- AI suggestion: `POST /api/suggest` returns candidates; missing AI config returns `400` with a message naming the missing setting, not a 500.
 - RAG: `POST /api/rag/index` builds index with mock or configured embedder; `POST /api/rag/query` returns scored chunks.
 - Ask: `POST /api/ask` returns SQL and warnings; works with `ASKDB_MOCK_SQL` without a live model.
 - Request guard: spoofed `Host` → `403`; cross-origin POST → `403`; `text/plain` POST → `415`/`403`; missing or wrong token → `403`; served `index.html` contains the token.

@@ -42,6 +42,13 @@ function remarkRebaseLinks() {
 export default defineConfig({
   site: `${site}${normalizedBase}`,
   base,
+  // Pages that moved or were deleted. A static build writes each one as a page that forwards the
+  // reader (a meta refresh), so old links and bookmarks still land. Astro adds the base to the
+  // old path but not to the destination, so the destination carries it here.
+  redirects: {
+    "/reference/ask-options": `${normalizedBase}/reference/core-api/`,
+    "/getting-started/troubleshooting": `${normalizedBase}/guides/troubleshooting/`,
+  },
   markdown: {
     processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
   },
@@ -94,7 +101,7 @@ export default defineConfig({
           details:
             "AskDB is an open-source NL-to-SQL toolkit: `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact and a Vercel AI SDK `LanguageModel`, and returns SQL that has passed heuristic checks. It never executes SQL — the host application runs it through its own connection. The same pipeline powers the CLI, the `@askdb/client` library, `@askdb/http-api`, and Studio.\n" +
             "\n" +
-            "The docs site is organized as Start (quickstart, install, Studio), Guides (embedding in Node, HTTP deployment, multi-tenancy, RAG for large schemas, switching engines, bringing your own model, upgrading between releases, agent/MCP integration), Concepts (how AskDB works, the schema artifact, safety boundaries, privacy model, modes and dialects), and Reference (CLI, HTTP API, configuration, the full package map, API docs). The full per-page index is in the linked documentation sets below.\n" +
+            "The docs site is organized as Start (overview, quickstart, install, Studio tour); Guides, in five groups: Build (embed in a Node app, author your schema, introspect without a connection, bring your own model, switch engines, connect to SQL Server, RAG for large schemas, rerun a query with new values, bundle an app), Run in production (run safely, cap the rows a query returns, keep sensitive columns out of prompts, match your server's string settings, deploy as an HTTP service, enable Studio execute), Tenancy (scope queries to a tenant, tenant hierarchies, enforce tenancy in the database), Maintain (upgrade AskDB, fix common errors) and Integrations (Prisma, agents and MCP); Concepts (how AskDB works, the schema artifact, safety boundaries, modes and dialects, privacy model, tenant isolation); and Reference (CLI, HTTP API, configuration, Studio, the schema artifact and tenant policy formats, the SQL checks, packages, and the core, client, config, ai, rag and introspection APIs). The full per-page index is in the linked documentation sets below.\n" +
             "\n" +
             "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — config-driven `@askdb/client`/`@askdb/ai` (built-in providers; install the matching `@ai-sdk/*` package) vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities. AskDB validates the scope shape, binds tenant IDs, and runs heuristic checks, but never originates scope and isn't the enforcement boundary; see /concepts/safety-boundaries/, and /guides/enforce-tenancy-in-the-database/ for Postgres row-level security.\n" +
             "\n" +
@@ -108,23 +115,52 @@ export default defineConfig({
             { label: "Overview", slug: "index" },
             { label: "Quickstart", slug: "quickstart" },
             { label: "Install", slug: "install" },
-            { label: "Studio", slug: "studio" },
+            { label: "Studio tour", slug: "studio" },
           ],
         },
         {
           label: "Guides",
           items: [
-            { label: "Embed in a Node app", slug: "guides/embed-in-node" },
-            { label: "Author your schema", slug: "guides/author-your-schema" },
-            { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
-            { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
-            { label: "Multi-tenancy", slug: "guides/multi-tenancy" },
-            { label: "Enforce tenancy in the database", slug: "guides/enforce-tenancy-in-the-database" },
-            { label: "Switch engines", slug: "guides/switch-engines" },
-            { label: "Bring your own model", slug: "guides/bring-your-own-model" },
-            { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
-            { label: "Upgrade AskDB", slug: "guides/upgrading" },
-            { label: "Troubleshooting", slug: "getting-started/troubleshooting" },
+            {
+              label: "Build",
+              items: [
+                { label: "Embed in a Node app", slug: "guides/embed-in-node" },
+                { label: "Author your schema", slug: "guides/author-your-schema" },
+                { label: "Introspect without a connection", slug: "guides/introspect-without-a-connection" },
+                { label: "Bring your own model", slug: "guides/bring-your-own-model" },
+                { label: "Switch engines", slug: "guides/switch-engines" },
+                { label: "Connect to SQL Server", slug: "guides/connect-to-sql-server" },
+                { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
+                { label: "Rerun a query with new values", slug: "guides/rerun-a-query-with-new-values" },
+                { label: "Bundle an app that uses AskDB", slug: "guides/bundle-your-app" },
+              ],
+            },
+            {
+              label: "Run in production",
+              items: [
+                { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
+                { label: "Cap the rows a query returns", slug: "guides/cap-the-rows-a-query-returns" },
+                { label: "Keep sensitive columns out of prompts", slug: "guides/keep-sensitive-columns-out-of-prompts" },
+                { label: "Match your server's string settings", slug: "guides/match-server-string-settings" },
+                { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
+                { label: "Enable Studio execute", slug: "guides/enable-studio-execute" },
+              ],
+            },
+            {
+              label: "Tenancy",
+              items: [
+                { label: "Scope queries to a tenant", slug: "guides/multi-tenancy" },
+                { label: "Scope to a tenant hierarchy", slug: "guides/tenant-hierarchy" },
+                { label: "Enforce tenancy in the database", slug: "guides/enforce-tenancy-in-the-database" },
+              ],
+            },
+            {
+              label: "Maintain",
+              items: [
+                { label: "Upgrade AskDB", slug: "guides/upgrading" },
+                { label: "Fix common errors", slug: "guides/troubleshooting" },
+              ],
+            },
             {
               label: "Integrations",
               items: [
@@ -142,19 +178,61 @@ export default defineConfig({
             { label: "Safety boundaries", slug: "concepts/safety-boundaries" },
             { label: "Modes and dialects", slug: "concepts/modes-and-dialects" },
             { label: "Privacy model", slug: "concepts/privacy-model" },
+            { label: "Tenant isolation", slug: "concepts/tenant-isolation" },
           ],
         },
         {
           label: "Reference",
           items: [
-            { label: "CLI", slug: "reference/cli" },
-            { label: "HTTP API", slug: "reference/http-api" },
-            { label: "Configuration", slug: "reference/config" },
-            { label: "Packages", slug: "reference/packages" },
-            { label: "Versioning", slug: "reference/versioning" },
-            { label: "@askdb/core API", slug: "reference/core-api" },
-            { label: "@askdb/client API", slug: "reference/client-api" },
-            { label: "@askdb/rag API", slug: "reference/rag-api" },
+            {
+              label: "Surfaces",
+              items: [
+                { label: "CLI", slug: "reference/cli" },
+                { label: "HTTP API", slug: "reference/http-api" },
+                { label: "Configuration", slug: "reference/config" },
+                { label: "Studio", slug: "reference/studio" },
+              ],
+            },
+            {
+              label: "Formats and rules",
+              items: [
+                { label: "Schema artifact format", slug: "reference/schema-artifact-format" },
+                { label: "Tenant policy format", slug: "reference/tenant-policy" },
+                { label: "SQL checks", slug: "reference/sql-checks" },
+              ],
+            },
+            {
+              label: "Packages and releases",
+              items: [
+                { label: "Packages", slug: "reference/packages" },
+                { label: "Versioning", slug: "reference/versioning" },
+              ],
+            },
+            {
+              label: "APIs",
+              items: [
+                {
+                  label: "@askdb/core API",
+                  collapsed: true,
+                  items: [
+                    { label: "Overview", slug: "reference/core-api" },
+                    { label: "ask()", slug: "reference/core-api/ask" },
+                    { label: "bindPreparedQuery()", slug: "reference/core-api/rebind" },
+                    { label: "Tenant scope", slug: "reference/core-api/tenancy" },
+                    { label: "Checks", slug: "reference/core-api/checks" },
+                    { label: "Schema loading", slug: "reference/core-api/schema" },
+                    { label: "Dialects", slug: "reference/core-api/dialects" },
+                    { label: "Logging", slug: "reference/core-api/logging" },
+                    { label: "Errors", slug: "reference/core-api/errors" },
+                  ],
+                },
+                { label: "@askdb/client API", slug: "reference/client-api" },
+                { label: "@askdb/config API", slug: "reference/config-api" },
+                { label: "@askdb/ai API", slug: "reference/ai-api" },
+                { label: "@askdb/rag API", slug: "reference/rag-api" },
+                { label: "Introspection API", slug: "reference/introspect-api" },
+              ],
+            },
           ],
         },
       ],

@@ -6,7 +6,9 @@
 # check-tarballs.mjs), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace; includes @askdb/config, a peer of @askdb/client), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
-# bootstraps runtime config on startup.
+# bootstraps runtime config on startup. Last, yarn-pnp.sh checks that every packed manifest passes
+# `ai` and `zod` through, then installs the packed CLI and HTTP API with Yarn 4 Plug'n'Play and
+# strict peer resolution and runs their commands, which must load and exit 0.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -317,8 +319,10 @@ fi
 echo "smoke: askdb init --database prisma names @askdb/prisma at the packed version…"
 PRISMA_VERSION="$(tar -xOzf "$PRISMA_TARBALL" package/package.json | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0, 'utf8')).version)")"
 mkdir -p "$WORK/init-prisma"
-# No package.json above it, so init prints the install command instead of running it.
-INIT_PRISMA_OUTPUT="$(cd "$WORK/init-prisma" && "$WORK/apps/node_modules/.bin/askdb" init --yes --database prisma 2>&1)"
+# No package.json above it, so init prints the install command instead of running it. With no
+# lockfile, init picks the manager from the tool that ran it (`pnpm smoke:install` sets
+# npm_config_user_agent), so clear that to get npm's command every time.
+INIT_PRISMA_OUTPUT="$(cd "$WORK/init-prisma" && env -u npm_config_user_agent "$WORK/apps/node_modules/.bin/askdb" init --yes --database prisma 2>&1)"
 if ! grep -q "npm install --save .*@askdb/prisma@$PRISMA_VERSION" <<<"$INIT_PRISMA_OUTPUT"; then
   echo "smoke: FAILED — askdb init --database prisma should install @askdb/prisma@$PRISMA_VERSION:" >&2
   echo "$INIT_PRISMA_OUTPUT" >&2
@@ -412,21 +416,17 @@ echo "smoke: askdb-http bin…"
 echo "smoke: askdb rag…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb rag --help | grep -q 'askdb rag')
 
-echo "smoke: the deprecated askdb-rag stub exits 1 with a pointer to askdb rag, and echoes no secret…"
-RAG_STUB_STATUS=0
-RAG_STUB_STDERR="$(cd "$WORK/apps" && ./node_modules/.bin/askdb-rag index x --pg-url 'postgres://u:smoke-secret@h/db' 2>&1 >/dev/null)" ||
-  RAG_STUB_STATUS=$?
-if [ "$RAG_STUB_STATUS" -ne 1 ]; then
-  echo "smoke: FAILED — askdb-rag exited $RAG_STUB_STATUS; the stub must exit 1." >&2
+echo "smoke: @askdb/rag installs no askdb-rag bin (removed; askdb rag replaces it, #651)…"
+if [ ! -d "$WORK/apps/node_modules/@askdb/rag" ]; then
+  echo "smoke: FAILED — @askdb/rag isn't installed in the apps project, so the askdb-rag check proves nothing." >&2
   exit 1
 fi
-grep -q 'askdb rag index' <<<"$RAG_STUB_STDERR" || {
-  echo "smoke: FAILED — askdb-rag's message doesn't name askdb rag index:" >&2
-  echo "$RAG_STUB_STDERR" >&2
-  exit 1
-}
-if grep -q 'smoke-secret' <<<"$RAG_STUB_STDERR"; then
-  echo "smoke: FAILED — askdb-rag echoed a --pg-url password to stderr." >&2
+if [ -e "$WORK/apps/node_modules/.bin/askdb-rag" ]; then
+  echo "smoke: FAILED — @askdb/rag still installs an askdb-rag bin." >&2
   exit 1
 fi
+
+echo "smoke: Yarn 4 Plug'n'Play: askdb and askdb-http load with strict peer resolution (#748)…"
+bash "$SCRIPT_DIR/yarn-pnp.sh" "$WORK/tarballs" "$WORK/yarn-pnp"
+
 echo "smoke: PASSED"

@@ -3,6 +3,10 @@ export {
   type AiProvider,
   type AiConfig,
   type AiEnv,
+  type AiConnectionSection,
+  type AiLanguageSection,
+  type AiEmbeddingSection,
+  type AiModelSection,
   type AiUsage,
   type ResolveConfigOptions,
   type ProviderEnvSpec,
@@ -13,6 +17,7 @@ export {
   type CreateEmbeddingModelOptions,
 } from "./provider.js";
 export { createAiRegistry, aiKeyMissingMessage, aiProviderMissingMessage } from "./registry.js";
+export { AiBaseUrlCredentialsError } from "./base-url.js";
 export {
   BUILTIN_AI_PROVIDERS,
   getBuiltinAiProviderSetup,
@@ -31,6 +36,8 @@ export {
   REASONING_EFFORTS,
   isReasoningEffort,
   resolveReasoningEffort,
+  resolveReasoningEffortFromSection,
+  type AiReasoningSection,
   type ReasoningEffort,
   type AiCallPurpose,
   type ReasoningSettings,

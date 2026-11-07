@@ -1,0 +1,202 @@
+---
+title: "@askdb/core API reference: ask()"
+description: "ask() options and result, how to run the SQL it returns, the verdict of its checks, modes, and the lower-level functions ask() is built from."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede"><code>ask()</code> turns a question into checked SQL with one model call. This page covers its options and result, how to run what it returns, the verdict of its checks, modes, and the lower-level functions it's built from.</p>
+
+## `ask(options)`
+
+The main pipeline function. Accepts a natural-language question and a loaded schema; returns checked SQL.
+
+```ts
+import { ask } from "@askdb/core";
+
+const { sql } = await ask({
+  question: "How many users signed up last week?",
+  schema,       // from loadSchema()
+  model,        // AI SDK LanguageModel
+  dialect: "postgres",
+});
+```
+
+### Options
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `question` | `string` | yes | — | The natural-language question. |
+| `schema` | `AnyNormalizedSchema` | yes | — | Loaded schema from `loadSchema()` or `loadSchemaFromJson()`. |
+| `model` | `AskDbLanguageModel` | yes | — | An AI SDK `LanguageModel` instance (e.g. `openai("gpt-4o-mini")`). |
+| `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, a `DialectSpec` under a built-in id, or a custom `AskDialect`. See [Dialects](/reference/core-api/dialects/). |
+| `mode` | `AskDbModeV1` | no | `"schema_only"` | Trust boundary. See [Modes](#modes). |
+| `explain` | `boolean` | no | `false` | When `true`, populates `result.explain` with heuristic guardrail metadata. |
+| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, withholds sensitive columns from the NL→SQL prompt, along with any describable text that names one (a description, alias, enum value, common query language, or retrieved chunk text). A sensitive table stays as a one-line placeholder with its name. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
+| `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
+| `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-params"` | `"sql-params"` replaces the tenant placeholders with the dialect's driver markers (`$N` Postgres/CockroachDB, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. `"sql-only"` inlines them in `sql` as escaped literals, for a tool that takes one SQL string, and refuses a tenant ID that isn't printable ASCII or contains a backslash. A custom `AskDialect` has no default: with a tenant scope it must set this (`$N` markers in `"sql-params"`), or `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). With a tenant policy, any value other than these two throws the same error, on every dialect. See [Executing the result](#executing-the-result). |
+| `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => TenantIdsByRoot \| Promise<TenantIdsByRoot>`, where `TenantIdsByRoot` is `Record<rootTableId, string[]>`. Returns the subtree's IDs grouped by tenant root: the seeds and same-table descendants under `tenantRoot`, each descendant root's IDs under that root, e.g. `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. `ask()` unions the seeds in and binds each root's IDs to its own placeholder (a `multi_root` scope). Without it, or when it returns a flat array or an invalid result, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/tenant-hierarchy/). |
+| `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` reports them in `result.verdict` and `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. Any other value refuses a sensitive reference, as `"strict"` does. See [Guardrail verdict](#guardrail-verdict) and [`validateSensitiveReferences`](/reference/core-api/checks/#validatesensitivereferencessql-schema-options). |
+| `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied, retrieval replaces the full DDL in the prompt, unless `totalSchemaChunkCount` is at or below `retrievalThresholdChunks`. |
+| `retrievalK` | `number` | no | `8` | Top-k passed to the retriever. |
+| `retrievalThresholdChunks` | `number` | no | `30` | Chunk count at or below which the full DDL is used even if a retriever is supplied. Compared with `totalSchemaChunkCount`. |
+| `totalSchemaChunkCount` | `number` | no | `Infinity` | Total chunk count from `buildSchemaIndex`. Pass `result.stats.chunksTotal` here for the threshold check to be meaningful; omit to always use the retriever when one is supplied. |
+| `logger` | `AskDbLogger` | no | — | Structured logger. Attach one for observability — it emits `AskDbLogEvent` entries at each pipeline stage. |
+| `deps` | `AskGenerateDeps` | no | — | `{ generateText?, providerOptions? }`. `generateText` replaces the AI SDK's `generateText`, for unit tests. `providerOptions` is passed to the model call's `providerOptions` as is; core doesn't read or check it. Use it for provider settings such as reasoning effort, for example from an `@askdb/ai` registry's `resolveProviderOptions()` (see [Reasoning/latency effort](/guides/bring-your-own-model/#reasoninglatency-effort)). A custom `AskDialect` receives both in its `generate()` options. |
+| `abortSignal` | `AbortSignal` | no | — | Cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` for a per-request timeout. With a built-in dialect or `DialectSpec`, an aborted call rejects with `SqlGenerationError` whose `cause` is the abort reason. A custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
+
+### Result — `AskPipelineResult`
+
+| Field | Type | When present |
+| --- | --- | --- |
+| `sql` | `string` | Always. The model's bound, checked SQL — business values inlined as literals. Keeps the model's trailing `;`, if it wrote one; remove it before wrapping the statement. Its tenant markers start at the first slot (the default `tenantSqlMode: "sql-params"`); run it with `tenantParams`. In `"sql-only"` mode it has the tenant IDs inlined instead. Never overwritten by rebind failures. |
+| `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Absent, with `params`, `parameters` and `preparedQuery`, when a form `ask()` renders from that block still holds a placeholder or fails the read-only check, such as a `:tenant_<root>_ids` placeholder under a schema with no tenant policy. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. Keeps the trailing `;` of the model's `sql-unbound` block, if it has one. |
+| `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order. With a tenant scope this already includes the tenant IDs, in either `tenantSqlMode`. |
+| `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
+| `preparedQuery` | `PreparedQuery \| undefined` | Definitions + named template only (no runtime values). Input to [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails). |
+| `verdict` | `GuardrailVerdict` | Always. Every guardrail finding for the model's SQL and the outcome: `"allow"`, or `"warn"` when a check in `warn` mode found something. A `"deny"` throws instead. See [Guardrail verdict](#guardrail-verdict). |
+| `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
+| `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
+| `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references, derived from `verdict`. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. `{ passed, warnings }` from the heuristic tenant check, derived from `verdict`, run on the model's SQL (and its `sql-unbound` block) before tenant binding. [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) says what passes. Passing it doesn't prove the SQL is scoped. With `enforcement: strict`, a failure throws `TenantGuardrailError` instead. |
+| `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode` is `"sql-params"` (the default) and the SQL has tenant placeholders. The tenant IDs for the markers in `sql`, in marker order. |
+| `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active and `sql` has at least one tenant placeholder to fill. One entry per placeholder, for audit. |
+
+### Executing the result
+
+Each SQL form runs with exactly one params array — never concatenate `params` and `tenantParams`:
+
+| SQL | Run with | Contents |
+| --- | --- | --- |
+| `sql` | `tenantParams` (or nothing in `"sql-only"` mode) | Business values inlined; tenant IDs as markers numbered from the first slot (`"sql-params"`, the default) or as literals (`"sql-only"`). |
+| `unboundSql` | `params` | All values bound, tenant IDs included in either `tenantSqlMode`: after the business values for `$N` / `@pN`, interleaved in source order for `?`. `parameters[].indices` point into `params`. `tenantSqlMode` governs `sql` only. |
+
+```ts
+const result = await ask({ ...options, dialect: "mysql", tenantScope });
+if (result.unboundSql && result.params) {
+  await conn.execute(result.unboundSql, result.params);
+} else {
+  await conn.execute(result.sql, result.tenantParams ?? []);
+}
+```
+
+Always pass `params` as returned. Every driver AskDB documents (`pg`, `mysql2`'s `query` and `execute`, `mssql`, `better-sqlite3`) refuses an array shorter than the statement's markers, so `unboundSql` run with the business values alone fails instead of binding one to a tenant marker. `node:sqlite` doesn't check the number of values it binds: it binds the values it gets in order and the rest as `NULL`, so a short array can return another tenant's rows.
+
+Tenant substitution fails closed. It only replaces placeholders in SQL code (never inside string literals or quoted identifiers) and throws `TenantScopeError` when the SQL references a tenant root the scope has no IDs for (`UNRESOLVED_TENANT_PLACEHOLDER`), or when several IDs meet a predicate with no list form such as `<=` (`UNSUPPORTED_TENANT_PREDICATE`). With several IDs, `=` becomes `IN (…)` and `!=` / `<>` become `NOT IN (…)`. In `"sql-only"` mode, tenant IDs are inlined in `sql` with their quotes doubled, and a tenant ID that isn't printable ASCII (U+0020 to U+007E) or that contains a backslash throws `UNESCAPABLE_TENANT_ID` on every dialect, a custom `AskDialect` included. Any other literal can read differently on the server, depending on its string settings and connection charset (see [Match your server's string settings](/guides/match-server-string-settings/)). The default `"sql-params"` mode passes such IDs as driver parameters. In `"sql-only"` mode `ask()` also re-checks the rendered `sql`, as `bindPreparedQuery()` does, and refuses a statement that reads differently once the IDs are inlined with `SqlValidationError`.
+
+### Guardrail verdict
+
+`ask()` runs up to three checks on the model's SQL, before it renders tenant IDs or binds values: the read-only check (built-in dialects and `DialectSpec`s only), the tenant check (with a tenant policy), and the sensitive-identifier check (unless `sensitiveGuardrailMode` is `"off"`). Each check reads the model's bound `sql` and its `sql-unbound` block, and one decision maps their findings to an outcome:
+
+| Check | `ask()` returns | `bindPreparedQuery()` rebinds |
+| --- | --- | --- |
+| read-only | Always `deny`. A failing `sql-unbound` block is dropped with the reuse artifacts instead, and `sql` is still returned. | Always `deny`. |
+| tenant | Policy `enforcement: strict` → `deny`; `warn` → `warn`. | `strict` → `deny`; `warn` → `deny`, unless `acceptWarnings` includes `"tenant"`. |
+| sensitive | `sensitiveGuardrailMode: "strict"` → `deny`; `"warn"` → `warn`. | Same as `ask()`. |
+
+A `deny` throws the typed error of the highest-ranked denying check: `SqlValidationError`, then `TenantGuardrailError`, then `SensitiveReferenceError`. Every check runs first, and the error carries the whole verdict as `error.verdict`.
+
+```ts
+type GuardrailVerdict = {
+  outcome: "allow" | "warn" | "deny";
+  findings: GuardrailFinding[];
+};
+
+type GuardrailFinding =
+  | { check: "read-only"; form: "sql" | "template"; rule: SqlValidationRuleCode; message: string; hint?: string }
+  | { check: "tenant"; form: "sql" | "template" | "generator"; rule: TenantGuardrailRuleCode; message: string; tableId: string }
+  | {
+      check: "sensitive";
+      form: "sql" | "template";
+      rule: SensitiveReferenceRuleCode;
+      message: string;
+      reference?: SensitiveReference;         // SENSITIVE_TABLE_REFERENCED / SENSITIVE_COLUMN_REFERENCED
+      unresolvedScope?: SensitiveScopeReport; // UNRESOLVED_TABLE_SCOPE
+    };
+
+type GuardrailOutcome = "allow" | "warn" | "deny";
+type GuardrailCheckId = "read-only" | "tenant" | "sensitive";
+type GuardrailForm = "sql" | "template";
+```
+
+`form` says which form the finding is about: `"sql"` is the model's bound SQL, `"template"` is its `sql-unbound` block (`preparedQuery.namedSql`), and `"generator"` is a finding a custom [`AskDialect`](/reference/core-api/dialects/#askdialect) reported. `generateSelectSql()` returns the same `verdict` for its read-only and tenant checks; it runs no sensitive check. The verdict is in-memory API: AskDB doesn't store it, so a host that wants to show "had warnings" later stores `result.verdict` itself. The checks are heuristics: they catch model mistakes early, and the database stays the boundary (see [Safety boundaries](/concepts/safety-boundaries/)).
+
+### `AskUsage`
+
+```ts
+type AskUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+};
+```
+
+Populated from the model provider's usage report. All fields are `null` when the provider does not report that counter.
+
+### Types
+
+| Type | What it is |
+| --- | --- |
+| `AskPipelineOptions` | The options object, as in [Options](#options). |
+| `AskPipelineResult` | The result, as in [Result](#result--askpipelineresult). |
+| `AskGenerateDeps` | The `deps` option: `{ generateText?, providerOptions? }`. |
+| `Retriever` | The `retriever` option: `({ question, k?, filter? }) => Promise<RetrievedResult[]>`. `ask()` passes `filter: { schemaId }`. |
+| `RetrievedResult` | One retriever hit: `{ id, score, payload }`. |
+| `RetrievedChunk` | A hit's `payload`: `{ id, type, text, schemaId, refs, sensitive }`. `@askdb/rag`'s chunk payload fits it. |
+| `RetrievedChunkType` | A chunk's `type`: `"table"`, `"column"`, `"cql"`, `"question"`, `"concept"`, `"relationship"` or `"tenant-policy"`. |
+
+## Modes
+
+`AskDbModeV1` controls which post-generation guardrails are active.
+
+| Value | Description |
+| --- | --- |
+| `"schema_only"` (default) | Schema-grounding only. The model sees the DDL; no post-execute paths are activated. |
+| `"bounded_results"` | Reserved for a future post-execute extension (summarizing bounded tabular results through the model). Today it produces exactly the same SQL as `schema_only` — see [Modes and dialects](/concepts/modes-and-dialects/). |
+
+`ASKDB_MODES_V1` lists both values, and `DEFAULT_ASKDB_MODE` is `"schema_only"`. `parseAskDbModeV1()` reads a mode from your own input:
+
+```ts
+import { DEFAULT_ASKDB_MODE, parseAskDbModeV1 } from "@askdb/core";
+
+// `input.mode` is a value from your own host, such as a request field.
+function modeFor(input: { mode?: string }) {
+  return parseAskDbModeV1(input.mode); // DEFAULT_ASKDB_MODE when undefined; throws on invalid values
+}
+```
+
+## Lower-level functions
+
+`ask()` is built from these. Use them when you call the model yourself or build your own prompt.
+
+### `generateSelectSql(dialect, question, schema, model, deps?)`
+
+The generation step `ask()` runs for a built-in dialect or a `DialectSpec`. It builds the prompt, makes one model call, and runs the read-only check and, with `deps.tenantPolicy` and `deps.tenantScope`, the tenant check. A `deny` throws, as in `ask()`. It returns a `GenerateSelectSqlResult`: `{ sql, verdict, explain?, tenantGuardrail?, usage?, unboundNamedSql?, parameterManifest? }`, with any `:tenant_<root>_ids` placeholders still in `sql`. With `deps.explain`, `explain` is a `SelectGuardrailExplain`, the summary `ask()` returns as `result.explain`. It doesn't run the sensitive check, render tenant IDs or build the reuse artifacts: `ask()` does those.
+
+`deps` is a `GenerateSqlDeps`: `generateText`, `logger`, `explain`, `omitSensitiveIdentifiersFromNlToSqlPrompt`, `prebuiltDdl`, `promptTableIds`, `tenantPolicy`, `tenantScope`, `providerOptions`, `abortSignal` and `parameterize`, each as in `ask()`.
+
+### `buildNlToSqlUserPrompt(dialect, question, schema, ambiguityNotes?, logger?, nlToSqlSchemaOptions?, prebuiltDdl?, tenantPolicy?, tenantScope?, parameterize?, promptTableIds?)`
+
+Returns the NL→SQL user prompt `ask()` sends with a built-in dialect: the rules, the schema's DDL (or `prebuiltDdl`), the tenant block when `tenantPolicy` and `tenantScope` are set, and the hints. With a tenant policy, the tenant block follows the tables the prompt shows. Without `prebuiltDdl` those are the schema's tracked tables. With `prebuiltDdl`, pass `promptTableIds`, the ids of the tables it shows; leaving them out throws `AskDbError`. A tenant policy also needs a v2 schema.
+
+### Prompt helpers
+
+| Function | Returns |
+| --- | --- |
+| `formatSchemaV2ForNlToSql(schema, options?)` | `{ ddl, stats }`: the schema block `ask()` puts in the prompt for a v2 schema. `options` is a `FormatNlToSqlOptions`: `omitSensitiveIdentifiersFromPrompt`, `unqualifiedNamespace` and `quoteIdentifier`. `stats` is a `NlToSqlSchemaFormatStats`: counts of the sensitive columns left out or listed, the sensitive tables shown by name only, and the untracked tables. |
+| `formatSchemaForNlToSql(schema, options?)` | The same for the older v1 `NormalizedSchema`. |
+| `synthesizeRetrievedDdl(args)` | The schema block for retrieved chunks: `{ ddl, tableIds, tablesEmitted, chunksUsed, … }`. `args` takes `schema`, `results` (`RetrievedResult[]`) and the three formatting options. `@askdb/rag` re-exports it. |
+| `nlToSqlAmbiguityNotes(question, schema)` | The hints `ask()` adds to the prompt when the question and the schema look misaligned, as a `string[]`. They name no schema table ([ADR 0038](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0038-prompt-hints-name-no-schema-table.md)). |
+| `extractSqlFromModelText(raw)` | The SQL in a model reply: the first `sql` fence, else the first fence with no tag, else the whole reply. A reply whose only fences have another tag, such as `json`, gives `""`. |
+| `extractUnboundSqlFromModelText(raw)` | The content of the reply's `sql-unbound` fence, or `undefined` when it's missing or empty. |
+
+For the quoting `quoteIdentifier` takes, see [`promptIdentifierQuoter()`](/reference/core-api/dialects/#dialectspec).
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/core-api/rebind/"><strong>bindPreparedQuery()</strong><span>Rerun a stored query with new values, re-checked.</span></a>
+  <a href="/reference/core-api/errors/"><strong>Errors</strong><span>What <code>ask()</code> throws, with every rule and reason.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Call <code>ask()</code> from a service, end to end.</span></a>
+</div>

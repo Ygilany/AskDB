@@ -1,7 +1,9 @@
 New diagrams are D2 sources in d2/, rendered to inline SVG at build time by
 astro-d2 (see STYLE.md, "Diagrams"). Current D2 sources and their pages:
 
-  d2/quickstart-loop.d2           → src/content/docs/quickstart.mdx
+  d2/quickstart-flow.d2           → src/content/docs/quickstart.mdx
+  d2/package-dependencies.d2      → src/content/docs/reference/packages.mdx
+  d2/rag-index-query.d2           → src/content/docs/guides/rag-for-large-schemas.mdx
 
 The SVG diagrams in this folder are older, hand-drawn build artifacts. They are
 imported via the Vite `?url` suffix and rendered as <img> elements so paths
@@ -9,7 +11,6 @@ respect Astro `base`. Current page importers:
 
   askdb-runtime-boundary.svg      → src/content/docs/concepts/how-askdb-works.mdx
   askdb-defense-in-depth.svg      → src/content/docs/concepts/safety-boundaries.mdx
-  askdb-package-dependencies.svg  → src/content/docs/reference/packages.mdx
 
 The splash home hero diagram uses two editable vector files (theme toggle in
 `custom.css`): `askdb-hero-visual.svg` (light) and `askdb-hero-visual-dark.svg`

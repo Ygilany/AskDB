@@ -96,7 +96,7 @@ Hard failures (missing input file, unsupported provider, runner error) should `t
 
 ### `isEmpty` and `viewDefinitions`
 
-- `isEmpty` is `true` when no namespace contains any table. The CLI prints a clearer message when set.
+- `isEmpty` is `true` when no namespace contains any table. Rendering doesn't rely on it: `renderSchemaV2Body()` throws `EmptyIntrospectionError` whenever the rendered table list is empty (ADR 0037), which also covers a namespace with only enums or sequences, so no host writes an artifact `loadSchema()` would reject.
 - `viewDefinitions` maps `"table:<schema>.<view>"` to the view's SQL text when available. Connectors with no view support return `{}`.
 
 ---
@@ -131,8 +131,8 @@ Each integration owns its own `TInput`. There is no shared discriminated union â
 
 ```ts
 export type PostgresIntrospectionInput =
-  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters }
-  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters };
+  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters; schemaId?: string }
+  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters; schemaId?: string };
 ```
 
 `@askdb/prisma` ships a file-path shape:

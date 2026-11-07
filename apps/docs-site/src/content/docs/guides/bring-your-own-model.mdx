@@ -14,9 +14,8 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 | | What you do | Best for |
 | --- | --- | --- |
-| **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio, and the HTTP API resolve the model for you. No model code. | CLI workflows, Studio, the bundled HTTP service |
+| **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio and the HTTP API resolve the model for you. In your own code, `createAskDb({ config })` from `@askdb/client` does the same: schema, model and dialect come from config. No model code. | CLI workflows, Studio, the bundled HTTP service, and embeds where `askdb.config.ts` owns provider and model selection |
 | **In your code** | Pass any Vercel AI SDK `LanguageModel` to `ask()`. Full control. | Embedding `@askdb/core` in your own service |
-| **With `@askdb/client`** | Call `createAskDb({ config })` then `askdb.ask("question")`. Schema, model, and dialect come from config. | The shortest config-driven embed — one schema, one model |
 
 Same providers, same keys — pick per surface. You can use both in one project (for example: Studio uses your config, your embedding service constructs the model directly).
 
@@ -25,13 +24,15 @@ Same providers, same keys — pick per surface. You can use both in one project 
 `ask()`'s actual contract is `model: LanguageModel` — a plain Vercel AI SDK model object. Every path below ends up building one of those; `@askdb/ai` and `@askdb/client` are a convenience layer on top, not a separate mechanism. Neither path is more "correct." Pick based on who owns provider configuration:
 
 - **Use `@askdb/client` (built on `@askdb/ai`)** when you want `askdb.config.ts` to drive provider/model selection — one config file, no provider code, and the CLI/Studio/your app all resolve the same way. This is the right default when you're embedding AskDB as a standalone service and don't already have a provider-config system.
-- **Construct a `LanguageModel` directly with the AI SDK** when your app already owns provider/config resolution (env vars, a secrets manager, feature flags), or when you need to reuse the same model instance for calls AskDB doesn't make — for example, a separate `generateObject()` call for chart planning that sits next to `ask()` in your service. `@askdb/ai`'s registry only resolves models for AskDB's own config shape, so if you need the model object for other LLM calls too, building it with the AI SDK directly is usually less code, not more.
+- **Construct a `LanguageModel` directly with the AI SDK** when your app already owns provider/config resolution (env vars, a secrets manager, feature flags), so provider config doesn't live in two systems.
+
+Either way you get a plain AI SDK `LanguageModel`, so you can reuse it for calls AskDB doesn't make, such as a `generateObject()` call for chart planning next to `ask()`. On the config path, build it with `@askdb/ai`'s registry, as [One config driving both](#one-config-driving-both) shows.
 
 If you're an agent implementing this integration: check whether the host app already constructs AI SDK models elsewhere before reaching for `@askdb/ai` — duplicating provider config across two systems is the failure mode to avoid.
 
 ## In your config (CLI, Studio, HTTP API)
 
-Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service call `createLanguageModelFromEnv` internally.
+Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service pass the config's `ai.language` section to `@askdb/ai`'s registry, which builds the model.
 
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
@@ -97,6 +98,8 @@ export default {
 };
 ```
 
+Default model: `gemini-2.0-flash`. To use a different one, set `ai.language.model` (bind it to `GOOGLE_AI_MODEL` in your config).
+
   </TabItem>
   <TabItem label="Azure OpenAI">
 
@@ -146,7 +149,7 @@ Gateway model ids are `<upstream>/<model>`. The default is `openai/gpt-4o-mini`.
   </TabItem>
 </Tabs>
 
-`ai.providerConfig` holds only the connection (key, endpoint, resource). The model goes in `ai.language`, and the embedding model for RAG in `ai.embedding`, which can use the same provider or another one. See [The `ai` block](/reference/config/#the-ai-block) for both sections, the full env-var table, and the custom-provider escape hatch.
+`ai.providerConfig` holds only the connection (key, endpoint, resource). The model goes in `ai.language`, and the embedding model for RAG in `ai.embedding`, which can use the same provider or another one. See [The `ai` block](/reference/config/#the-ai-block) for both sections, [Environment variables](/reference/config/#environment-variables) for the names `askdb init` writes, and [A provider that isn't built in](#a-provider-that-isnt-built-in) for any other provider.
 
 ## In your code (embedding)
 
@@ -271,27 +274,111 @@ const askdb = createAskDb({
 const { sql } = await askdb.ask("Which customers signed up last week?");
 ```
 
-Every built-in provider is registered, and each loads its `@ai-sdk/*` package only when it first builds a model. If that package isn't installed, the call fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. To restrict the set, pass `providers: ["openai"]`. To add a provider that isn't built in, pass an `AiProviderAdapter` object in `providers`.
+Every built-in provider is registered, and each loads its `@ai-sdk/*` package only when it first builds a model. If that package isn't installed, the call fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. To restrict the set, pass `providers: ["openai"]`. To add a provider that isn't built in, pass an `AiProviderAdapter` object in `providers` (see [A provider that isn't built in](#a-provider-that-isnt-built-in)).
 
 The former `@askdb/ai-openai`, `@askdb/ai-anthropic`, `@askdb/ai-google`, and `@askdb/ai-azure` packages were removed before 1.0. Use `@askdb/client` (or `@askdb/ai`) and the `@ai-sdk/*` package instead ([removed packages](/reference/packages/#removed-packages)).
 
-Need the model object yourself (to pass to `ask()` directly, or to share with other code)? Build it from the same config with `@askdb/ai`'s registry — the one advanced case where you import `@askdb/ai` directly:
+Need the model object yourself, to pass to `ask()` directly or to share with your app's other AI calls? Build it once from the same config with `@askdb/ai`'s registry. It returns a plain AI SDK `LanguageModel`, so one model, from one configuration, serves AskDB and your own `generateText()` or `generateObject()` calls:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { createAiRegistry } from "@askdb/ai";
+import { ask } from "@askdb/core";
+import { generateText } from "ai";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 const rt = getAskDbRuntimeConfig();
 const ai = createAiRegistry(); // every built-in provider; or createAiRegistry(["openai"])
-const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
+const model = await ai.createLanguageModelFromSection(rt.ai.language); // undefined without an API key
+if (!model) throw new Error(ai.keyMissingMessage("my-app"));
+
+// The same model for AskDB and for your own AI SDK calls:
+const { sql } = await ask({ question, schema, dialect: "postgres", model });
+const { text } = await generateText({ model, prompt: `Explain this SQL in one sentence: ${sql}` });
 ```
 
+`rt.ai.language` is the config's typed `ai.language` section: its provider, its connection's settings and its model. The registry maps it to the provider's settings, and `rt.ai.embedding` goes to `createEmbeddingModelFromSection` the same way.
+
 `@askdb/ai` declares `ai` as a peer dependency and the `@ai-sdk/*` provider packages as optional peers. Add `ai` and the provider package you use to your own `package.json` so you control their versions.
+
+## Without a config file
+
+To use `@askdb/ai`'s built-in providers in an app that has no `askdb.config.*`, pass the registry an env map, such as `process.env`, instead of a config section:
+
+```ts
+import { createAiRegistry } from "@askdb/ai";
+
+const ai = createAiRegistry();
+const model = await ai.createLanguageModelFromEnv(process.env); // undefined without an API key
+```
+
+`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` takes its settings only from the map you pass. Its one read of `process.env` is a check: with no base URL configured, it refuses an `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` with a username or password, which the provider SDK would read itself. The [`@askdb/ai` reference](/reference/ai-api/#env-map-precedence) lists the variables it reads from the map, in order. A config section and an env map that hold the same settings give the same model.
+
+## A provider that isn't built in
+
+The built-in providers are `openai`, `azure` (with the aliases `azure-openai` and `foundry`), `google`, `anthropic` and `gateway`. For another one, you have two options.
+
+**An endpoint that speaks OpenAI's API**, such as vLLM, OpenRouter, Together or Ollama: use the built-in `openai` provider and set `baseUrl` on its connection to the endpoint. The CLI, Studio and the HTTP API can use it, since `openai` is built in.
+
+**Any other provider:** `ai.provider`, and a section's `provider`, take any id. Key the provider's connection by that id in `ai.providerConfig` (`apiKey` and `baseUrl`), and put its model in `ai.language.model`:
+
+```ts
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "mistral", // any id
+    providerConfig: {
+      mistral: { apiKey: env("MISTRAL_API_KEY") },
+    },
+    language: { model: "mistral-large-latest" },
+  },
+  // ...
+});
+```
+
+AskDB then hands the connection and the model to the adapter registered under that id, so you need your own code to register one. The CLI, Studio and the HTTP API register only the built-in providers, so they can't use a custom id. This adapter builds Mistral models with `@ai-sdk/mistral`:
+
+```ts
+import { createAiRegistry, resolveBaseConfig, type AiProviderAdapter } from "@askdb/ai";
+import { createMistral } from "@ai-sdk/mistral";
+
+const MISTRAL_ENV = { apiKeyVars: ["MISTRAL_API_KEY"], modelVars: ["MISTRAL_MODEL"], defaultModel: "mistral-large-latest" };
+
+export const mistralAdapter: AiProviderAdapter = {
+  provider: "mistral",
+  configHint: "For Mistral, set MISTRAL_API_KEY.",
+  resolveConfig: (env, options) => resolveBaseConfig("mistral", env, MISTRAL_ENV, options),
+  resolveConfigFromSection(section, { usage }) {
+    const apiKey = section.connection.apiKey ?? section.connection.apiKeySecondary;
+    if (!apiKey) return undefined;
+    const model = section.model ?? (usage === "language" ? MISTRAL_ENV.defaultModel : undefined);
+    if (!model) throw new Error("mistral: set ai.embedding.model");
+    return { provider: "mistral", apiKey, model, ...(section.connection.baseUrl ? { baseURL: section.connection.baseUrl } : {}) };
+  },
+  createLanguageModel: (config) => createMistral({ apiKey: config.apiKey, baseURL: config.baseURL })(config.model),
+  createEmbeddingModel: (config) => createMistral({ apiKey: config.apiKey, baseURL: config.baseURL }).embedding(config.model),
+};
+
+const ai = createAiRegistry(["openai", mistralAdapter]);
+```
+
+Pass it to `createAskDb({ providers: ["openai", mistralAdapter] })` the same way: list built-in names next to it to keep those. [`AiProviderAdapter`](/reference/ai-api/#aiprovideradapter) lists every field.
 
 ## Reasoning/latency effort
 
 Set `ai.language.reasoning` in `askdb.config.ts` (see the [config reference](/reference/config/#reasoning-effort)) for the config-driven path. Skip it and current behavior is unchanged — no `providerOptions` are sent, and the provider/model uses its own default.
+
+AskDB maps the portable value to each provider's own setting with the `@askdb/ai` registry's `resolveProviderOptions()` method:
+
+| Provider | What AskDB sends |
+| --- | --- |
+| OpenAI, Azure | `providerOptions.openai.reasoningEffort`. gpt-6 and later accept `low` through `max` but not `minimal`, so they get `low` for `minimal`. |
+| Google | `providerOptions.google.thinkingConfig.thinkingLevel` on Gemini 3.x, and `thinkingConfig.thinkingBudget` on Gemini 2.5. |
+| Anthropic | `thinking`: adaptive thinking plus `effort` on Claude Sonnet 4.6, Opus 4.6 and newer, and the 5.x models, with `low` for `minimal`; a `budgetTokens` budget on Claude 3.7 Sonnet and the 4.0–4.5 models. |
+| Vercel AI Gateway | The mapping of the model's upstream (`openai/…`, `google/…` or `anthropic/…`) for the id after the prefix, which the gateway passes on. A model from another upstream gets none. |
+
+A model that doesn't support reasoning tuning, such as `gpt-4o-mini`, `gpt-5-chat-latest`, `gemini-2.0-flash` or `claude-3-5-haiku`, never receives these options, even when `reasoning` is set.
 
 **With `@askdb/client`**, `createAskDb` resolves `ai.language.reasoning.nlToSql`/`effort` automatically — nothing else to wire. Override per call, or set a client-level default:
 
@@ -313,10 +400,11 @@ import { createAiRegistry } from "@askdb/ai";
 import { ask } from "@askdb/core";
 
 const ai = createAiRegistry(["openai"]);
-const config = ai.resolveAiConfig(rt.ai.aiEnv)!; // e.g. { provider: "openai", model: "o4-mini", ... }
+const config = ai.resolveAiConfigFromSection(rt.ai.language)!; // e.g. { provider: "openai", model: "o4-mini", ... }
 const model = await ai.createLanguageModel(config);
 
-// Provider-portable: "minimal" | "low" | "medium" | "high".
+// Provider-portable: "minimal" | "low" | "medium" | "high". To use the config's
+// ai.language.reasoning instead: resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql").
 // Returns undefined (nothing sent) when the model doesn't support reasoning tuning.
 const providerOptions = ai.resolveProviderOptions(config, { reasoningEffort: "low" });
 
@@ -354,7 +442,7 @@ const { sql } = await ask({ question, schema, dialect: "postgres", model });
 
 You're billed by your model provider for every `ask()` call. Cost scales with:
 
-- Schema size (larger artifacts mean more tokens in the prompt) — use [RAG for large schemas](/guides/rag-for-large-schemas/) to send only the relevant slice. AskDB handles the chunking, embedding, and retrieval; you configure the store and it takes care of the rest.
+- Schema size (larger artifacts mean more tokens in the prompt) — use [RAG for large schemas](/guides/rag-for-large-schemas/) to send only the relevant slice. You build the index with `@askdb/rag` and pass a retriever to `ask()`; AskDB chunks, embeds and retrieves.
 - Question length.
 - Model tier.
 

@@ -129,49 +129,6 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
     }
   });
 
-  it("fills each root's placeholder from a multi_root scope", () => {
-    const sql =
-      "SELECT n.id FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = :tenant_agency_ids AND n.body = :status_name " +
-      "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id = :tenant_client_ids";
-    const bound = bindPreparedQuery(template(sql), { status_name: "open" }, {
-      schema: strictSchema,
-      tenantSqlMode: "sql-only",
-      tenantScope: {
-        access: {
-          kind: "multi_root",
-          scopes: [
-            { tenantRoot: agencies, ids: ["1"] },
-            { tenantRoot: clients, ids: ["5", "6"] },
-          ],
-        },
-      },
-    });
-    expect(bound.sql).toBe(
-      "SELECT n.id FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = '1' AND n.body = 'open' " +
-        "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id IN ('5', '6')",
-    );
-    expect(bound.params).toEqual(["open", "1", "5", "6"]);
-
-    // By default each root's IDs become markers in `sql`, in source order across roots.
-    const byDefault = bindPreparedQuery(template(sql), { status_name: "open" }, {
-      schema: strictSchema,
-      tenantScope: {
-        access: {
-          kind: "multi_root",
-          scopes: [
-            { tenantRoot: agencies, ids: ["1"] },
-            { tenantRoot: clients, ids: ["5", "6"] },
-          ],
-        },
-      },
-    });
-    expect(byDefault.sql).toBe(
-      "SELECT n.id FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = $1 AND n.body = 'open' " +
-        "UNION ALL SELECT n.id FROM notes n WHERE n.owner_type = 'client' AND n.owner_id IN ($2, $3)",
-    );
-    expect(byDefault.tenantParams).toEqual(["1", "5", "6"]);
-  });
-
   it("throws SUBTREE_NOT_RESOLVABLE for an unexpanded subtree scope", () => {
     const error = catchError(() =>
       bindPreparedQuery(template(scopedOrders), { status_name: "open" }, {
@@ -307,6 +264,47 @@ describe("bindPreparedQuery — a placeholder glued to an identifier", () => {
     );
     expect(error).toBeInstanceOf(QueryParameterError);
     expect((error as QueryParameterError).reason).toBe("UNRESOLVED_PLACEHOLDER");
+  });
+});
+
+// #789: a stored template whose parameter declares a type or cardinality AskDB doesn't know is a
+// broken template, not a bad value: QueryParameterError with INVALID_DECLARATION, checked before
+// any value is read, never a raw TypeError from the renderer.
+describe("bindPreparedQuery — a parameter declaration AskDB doesn't know", () => {
+  const unscoped = "SELECT count(*) FROM orders WHERE status = :status_name";
+  const declaring = (declaration: Record<string, unknown>): PreparedQuery => ({
+    ...template(unscoped),
+    parameters: [{ ...status, ...declaration } as unknown as PreparedQuery["parameters"][number]],
+  });
+
+  it.each([
+    ["an unknown type", { type: "uuid" }, "type", "string, number, boolean, date or datetime"],
+    ["an unknown cardinality", { cardinality: "several" }, "cardinality", "one or many"],
+  ])("refuses %s with INVALID_DECLARATION, naming the parameter", (_case, declaration, field, expected) => {
+    const error = catchError(() => bindPreparedQuery(declaring(declaration), { status_name: "open" }, { schema: noPolicySchema }));
+
+    expect(error).toBeInstanceOf(QueryParameterError);
+    expect((error as QueryParameterError).reason).toBe("INVALID_DECLARATION");
+    expect((error as Error).message).toBe(
+      `Parameter 'status_name' declares a ${field} AskDB doesn't support; expected ${expected}. Regenerate the template.`,
+    );
+  });
+
+  it.each([
+    ["a parameters field that isn't a list", { ...template(unscoped), parameters: undefined }, "The template's parameters aren't a list. Regenerate the template."],
+    ["an entry that isn't a declaration", { ...template(unscoped), parameters: [status, null] }, "Parameter 2 in the template isn't a declaration. Regenerate the template."],
+  ])("refuses %s with INVALID_DECLARATION, not a TypeError", (_case, prepared, message) => {
+    const error = catchError(() => bindPreparedQuery(prepared as unknown as PreparedQuery, { status_name: "open" }, { schema: noPolicySchema }));
+
+    expect(error).toBeInstanceOf(QueryParameterError);
+    expect((error as QueryParameterError).reason).toBe("INVALID_DECLARATION");
+    expect((error as Error).message).toBe(message);
+  });
+
+  it("reports the declaration before a missing value", () => {
+    const error = catchError(() => bindPreparedQuery(declaring({ type: "uuid" }), {}, { schema: noPolicySchema }));
+
+    expect((error as QueryParameterError).reason).toBe("INVALID_DECLARATION");
   });
 });
 

@@ -45,9 +45,262 @@ A range written for a `0.x` version doesn't match `1.0.0-rc.1`. With `"@askdb/ai
 
 [Versioning and stability](/reference/versioning/) lists both sets, the experimental surfaces and the dist-tags.
 
+## 1.0.0-beta.51
+
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.51, `@askdb/studio` 0.2.0-beta.44, `@askdb/enrich` 0.2.0-beta.22, `@askdb/introspect` 0.3.0-beta.25, `@askdb/rag` 0.2.0-beta.31, `@askdb/postgres` 0.2.0-beta.27, `@askdb/prisma` 0.2.0-beta.25, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.26, and `@askdb/sqlserver` 0.1.0-beta.27.
+
+### Security: upgrade for GHSA-rmjw-pffc-5hjr
+
+A residual of [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4)'s first case. A Postgres or CockroachDB dollar-quoted string may carry non-ASCII letters in its tag (`$é$ … $é$`), and the engine and AskDB's shared lexer read it as a string. The tenant check's scanner read the tag as ASCII-only, so it read such a string as code, and a statement could pass the check while the engine read it with no effective tenant predicate, returning rows belonging to tenants outside the caller's scope ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). This reached the built-in `postgres` and `cockroachdb` dialects, a `DialectSpec` under one, a custom `AskDialect`, and direct calls to the check. The scanner now reads the tag with the same characters as the shared lexer and the engine.
+
+- **Upgrade** `@askdb/core`, `askdb` and `@askdb/http-api` to 1.0.0-beta.51, and `@askdb/studio` to 0.2.0-beta.44. These pin `@askdb/core` exactly, so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **One case now passes:** under `postgres` and `cockroachdb`, a table named only inside such a string no longer counts as read, as the engine reads it.
+- **No setting closes it on 1.0.0-beta.50 or earlier.** Enforce tenant isolation in the database (for example Postgres row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends.
+
+### Replace `createOpenAiEmbedder` from `@askdb/rag`
+
+`@askdb/rag` no longer exports `createOpenAiEmbedder` or `CreateOpenAiEmbedderOptions`, and `@askdb/rag/embedders/openai` is no longer an entry point ([#844](https://github.com/Ygilany/AskDB/issues/844)). Importing either now fails. Pick the replacement by where your embedding settings live:
+
+- **`askdb rag` or Studio:** set `rag.embedder: "ai"` and an `ai.embedding` section, with `provider: "openai"` and a `model`, in `askdb.config.*`. You don't build an embedder yourself.
+- **Your own code, with an `askdb.config.*` file:** build the model from the config's `ai.embedding` section with `@askdb/ai`'s `createEmbeddingModelFromSection`, and wrap it with `createAiSdkEmbedder`:
+
+  ```ts
+  import { createAiRegistry } from "@askdb/ai";
+  import { getAskDbRuntimeConfig } from "@askdb/config";
+  import { createAiSdkEmbedder } from "@askdb/rag";
+
+  const embedding = getAskDbRuntimeConfig().ai.embedding; // set when rag.embedder is "ai"
+  const model = embedding ? await createAiRegistry().createEmbeddingModelFromSection(embedding) : undefined;
+  if (!model) throw new Error('Set rag.embedder: "ai" and ai.embedding, with an API key on its connection.');
+  const embedder = createAiSdkEmbedder({ model });
+  ```
+
+- **Your own code, without a config file:** build the AI SDK model yourself, such as `createOpenAI({ apiKey, baseURL }).embedding("text-embedding-3-small")` from `@ai-sdk/openai`, and pass it to `createAiSdkEmbedder({ model })`. The helper's `dimensions` and `user` options move to `createAiSdkEmbedder`'s `providerOptions: { openai: { dimensions, user } }`.
+
+The helper picked `text-embedding-3-small` when you set no `model`. Name that model and keep your `buildSchemaIndex()` `embedderId` as it was, left unset if you never set one, and an index you built with the helper stays valid.
+
+### Point each tenant-policy column at its entry's own table
+
+The tenant-policy loader now checks that each column the contract puts on an entry's own table is on that table ([#836](https://github.com/Ygilany/AskDB/issues/836)): a root's `tenantIdColumn` and `parent.foreignKey`, a hierarchy edge's `foreignKey` (on the child), a `scopeThrough` column, and a polymorphic `typeColumn` and `idColumn`. Before, it only checked that `schema.json` had the column somewhere, so a `scopeThrough` column on another table loaded without a warning and broke the scoped table's filter path.
+
+- **Under `enforcement: strict`, such a policy fails to load** with `SchemaParseError`, naming the file, the column and the table it's on, in `loadSchema()`, a bundle, and `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save). Under `warn`, it loads with the warning. Point the field at the column on the entry's own table.
+- **A `switch` over every `TenantPolicyWarning`** (in `schema.tenantPolicy.warnings`) needs a case for the new `misplaced_column_id`, with `id`, `tableId` (the table the column is on) and `context`. The schema loader's warning of the same name, in `schema.warnings`, is unchanged.
+- **If you call `normalizeTenantPolicy()` yourself,** its third argument is now a `Map` from column ID to table ID, read from `schema.json`: `new Map(tables.flatMap((t) => t.columns.map((c) => [c.id, t.id])))`.
+
+### Other changes you may notice in beta.51
+
+- **No schema configured server-side answers `500 generation_not_configured`** from `askdb-http`, not `400 bad_request` ([#845](https://github.com/Ygilany/AskDB/issues/845)), with the cause in the server log (`errName` `SchemaNotConfiguredError`). A request that sends its own `schemaJson` is unaffected. If your client matched `bad_request` for this case, match `generation_not_configured`.
+
+## 1.0.0-beta.50
+
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/studio` 0.2.0-beta.43, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30, `@askdb/postgres` 0.2.0-beta.26, `@askdb/prisma` 0.2.0-beta.24, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.25, and `@askdb/sqlserver` 0.1.0-beta.26.
+
+### Security: upgrade for GHSA-8pwj-6hfv-5pm4
+
+The tenant check looks for each tenant-scoped table's predicate in the model's SQL, and skips string literals and comments to find it. In four cases it read the SQL differently from the database engine, so a statement could pass the check while the engine read a table, or dropped a predicate, that the check never saw, and returned rows belonging to tenants outside the caller's scope ([GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4)). With `enforcement: strict`, `ask()` returned the statement. Getting there needed a way to steer the model's reply, and SQL run without database-level tenant enforcement. The check now reads each case the way the engine does:
+
+- **A `$` inside a name.** Postgres, CockroachDB, MySQL, MariaDB and SQLite read `x$$y` as one name, but the check read its `$$` as the start of a dollar-quoted string, under every dialect, and read `$tag$…$tag$` as a string on engines that have no such strings. This reached the built-in `postgres`, `cockroachdb`, `mysql`, `mariadb` and `sqlite` dialects with default settings, and the CLI, the HTTP API and Studio. Beta.50 still read a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) as code: that residual is [GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr), fixed in beta.51.
+- **A table named after a keyword.** A scoped table written unquoted under a name some engine takes as a plain name, such as `user` on MySQL or `lock`, `qualify` and `by` on Postgres, wasn't checked for its predicate.
+- **An unset `backslashEscapes` on a MySQL or MariaDB `DialectSpec`.** The check read it as escapes off, while the server and the rest of AskDB read it as on. A spec that spreads `MYSQL_DIALECT` or `MARIADB_DIALECT` keeps the field and wasn't affected.
+- **Where a `--` comment ends.** Postgres and SQL Server end it at a carriage return as well as at a line feed, and the check ended it only at a line feed. This reached a custom `AskDialect`, which skips the read-only check that refuses comments, and direct calls to the checks. On MySQL, MariaDB and SQLite the sensitive-column check had the opposite difference.
+
+What to do:
+
+- **Upgrade** `@askdb/core`, `askdb` and `@askdb/http-api` to 1.0.0-beta.50, and `@askdb/studio` to 0.2.0-beta.43. These pin `@askdb/core` exactly, so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **Expect more refusals in these cases.** A scoped table named after a keyword now counts wherever its name appears outside `ORDER BY` and `GROUP BY`: with a scoped table named `limit`, a query that uses `LIMIT` needs that table's tenant predicate too. A table named after a `--` comment that a carriage return ends is now read as code on Postgres and SQL Server, so a query that reads it without a predicate is refused. Under a custom `AskDialect`, a `DO $$ … $$` block's tables are now reported beside `NOT_SELECT_OR_WITH`.
+- **One case now passes:** under `sqlserver`, a predicate written after a comment that a carriage return ends counts, as SQL Server reads it.
+- **If you can't upgrade at once,** set `backslashEscapes: true` on a MySQL-family `DialectSpec` you built yourself (`false` only for a `NO_BACKSLASH_ESCAPES` server), or spread `MYSQL_DIALECT`; and in a custom `AskDialect`, run `validateSelectSql(spec, sql)` with your engine's built-in spec before executing, since it refuses comments. No setting closes the first two cases.
+- **Enforce tenant isolation in the database** (for example Postgres row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. It limits the rows a statement can read regardless of its text.
+
+### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
+
+`bindPreparedQuery()` now refuses a stored template whose parameter declares a `type` or `cardinality` AskDB doesn't support. It throws `QueryParameterError` with the new `QueryParameterRejectionReason` `INVALID_DECLARATION`, naming the parameter, before it reads any value ([#789](https://github.com/Ygilany/AskDB/issues/789)).
+
+- **An unknown `type`**, anything but `string`, `number`, `boolean`, `date` or `datetime`, used to fail as a raw `TypeError`.
+- **An unknown `cardinality` is a behavior change.** A template that declared anything but `one` or `many` used to bind as `one`; it now throws.
+- **A `switch` over every `QueryParameterRejectionReason`** needs a case for the new member.
+- **Fix the template, not the value:** regenerate it with `ask()`. A template `ask()` produced always declares supported values; one edited or built by hand may not.
+
+### Take credentials out of a model base URL
+
+A model base URL with a username or password, such as `http://user:pass@proxy.example/v1`, now fails before any request ([#787](https://github.com/Ygilany/AskDB/issues/787), ADR 0036). Such a URL never worked: `fetch` refused it with an error that quoted the whole URL, credentials included, in `SqlGenerationError` and the `askdb.pipeline.failed` log.
+
+- **A config that sets one fails to load:** in any `ai.providerConfig.<provider>.baseUrl`, even on a connection no section uses. The `askdb.config:` error names the key.
+- **`@askdb/ai` throws the new `AiBaseUrlCredentialsError`** for one in a config section's `connection.baseUrl`, a base URL env variable, an `AiConfig`'s `baseURL`, or the `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` the provider SDK would read from the environment. Its `setting` names where the URL came from.
+- **Neither error repeats the URL.** Put the key in `apiKey`. For other credentials, such as a proxy's, build the model in code with the AI SDK provider's `headers` option (see [`ai.providerConfig`](/reference/config/#aiproviderconfig)).
+
+### Replace the removed config keys
+
+The config keys deprecated in beta.44 (`@askdb/config` 1.0.0-beta.13), and `rag.storeConfig.file.autoFlush` from beta.47, are removed ([#765](https://github.com/Ygilany/AskDB/issues/765)). A config that still sets one fails to load. The `askdb.config:` error names each such key and its replacement, and never repeats a value. A key counts as set whatever its value, so `model: env("OPENAI_MODEL")` on a connection fails even when the variable is unset. Each key, before and after:
+
+| Before | After |
+| --- | --- |
+| `ai: { reasoning: { effort: "low" } }` | `ai: { language: { reasoning: { effort: "low" } } }` |
+| `providerConfig: { openai: { apiKey, model: "gpt-4o" } }` | `providerConfig: { openai: { apiKey } }, language: { model: "gpt-4o" }`. A `model` on a connection only embeddings use goes to `ai.embedding.model`. |
+| `providerConfig: { azure: { apiKey, resourceName, modelFamily: "gpt-5" } }` (or on `foundry`) | `providerConfig: { azure: { apiKey, resourceName } }, language: { modelFamily: "gpt-5" }` |
+| `provider: "mistral", providerConfig: { custom: { apiKey } }` | `provider: "mistral", providerConfig: { mistral: { apiKey } }`. A provider whose id is `custom` keeps `providerConfig.custom`. |
+| `rag: { embedder: "openai", … }` | `ai: { embedding: { provider: "openai", model: "text-embedding-3-small" } }, rag: { embedder: "ai", … }` |
+| `rag: { embedder: "ai-sdk", … }` | `ai: { embedding: { model: "text-embedding-3-small" } }, rag: { embedder: "ai", … }`. The embedding provider is `ai.provider` unless `ai.embedding.provider` sets another. |
+| `rag: { embedderConfig: { openai: { model, dimension: 1536 } } }` | `ai: { embedding: { model, dimensions: 1536 } }` |
+| `rag: { embedderConfig: { openai: { apiKey, baseUrl } } }` | The key and base URL on a connection of the embedding provider in `ai.providerConfig`. When they differ from its `"default"` connection, add a named one and set `ai.embedding.connection` to its name. |
+| `rag: { embedderConfig: {} }`, as earlier scaffolds wrote | Remove it. |
+| `storeConfig: { pgvector: { databaseUrl, dimensions: 1536 } }` with `rag.embedder: "ai"` | `ai: { embedding: { …, dimensions: 1536 } }`, `storeConfig: { pgvector: { databaseUrl } }` |
+| `storeConfig: { pgvector: { …, dimensions } }` with `rag.embedder: "mock"` | Remove it. The mock embedder's vectors are 64 wide unless `askdb rag --dimensions` asks for another width. |
+| `storeConfig: { file: { basePath, autoFlush: true } }` | `storeConfig: { file: { basePath } }`. The file store writes its files after every change. |
+
+Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `text-embedding-3-small`: set that model in `ai.embedding` to keep the same embeddings. An index keeps working when `ai.embedding` names the same provider, model and dimensions the old keys did. Otherwise Studio reports it as stale, and you rebuild it.
+
+### Read the typed `ai` sections instead of `rt.ai.aiEnv`
+
+`getAskDbRuntimeConfig().ai.aiEnv`, `ai.language.env` and `ai.embedding.env` are removed ([#711](https://github.com/Ygilany/AskDB/issues/711)). These env maps turned the `ai` block into the env names `@askdb/ai` read back. Pass the typed section to the `@askdb/ai` registry instead. `@askdb/client`'s `createAskDb` already does, so a host that only calls `createAskDb` changes nothing.
+
+| Before | After |
+| --- | --- |
+| `ai.resolveAiConfig(rt.ai.aiEnv)` | `ai.resolveAiConfigFromSection(rt.ai.language)` |
+| `ai.createLanguageModelFromEnv(rt.ai.aiEnv)` | `ai.createLanguageModelFromSection(rt.ai.language)` |
+| `ai.resolveEmbeddingConfig(rt.ai.embedding.env)` | `ai.resolveEmbeddingConfigFromSection(rt.ai.embedding)` |
+| `ai.createEmbeddingModelFromEnv(rt.ai.embedding.env, { dimensions: rt.ai.embedding.dimensions })` | `ai.createEmbeddingModelFromSection(rt.ai.embedding)`. It asks for `dimensions` when they're set. |
+| `resolveReasoningEffort(rt.ai.aiEnv, "nlToSql")` | `resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql")` |
+| `rt.ai.language.env.OPENAI_API_KEY` (any `rt.ai.language.env` key) | `rt.ai.language.connection.apiKey` (the matching connection setting) |
+| `rt.ai.embedding.env.OPENAI_API_KEY` (any `rt.ai.embedding.env` key) | `rt.ai.embedding.connection.apiKey` (the matching connection setting) |
+| `rt.ai.language.connection`, `rt.ai.embedding.connection` (the connection name) | `rt.ai.language.connection.name`, `rt.ai.embedding.connection.name` |
+
+- **`connection` is now an object:** the connection's `name` and its settings (`apiKey`, `apiKeySecondary`, `baseUrl`, `resourceName`, `apiVersion`), with unset ones left out. The config's `secondaryApiKey` is `apiKeySecondary` here. `rt.ai.language` also gains `reasoning`.
+- **The flat map holds no AI keys.** `rt.flat`, `flattenAskDbConfig()` and `defineConfig().entries` no longer carry `ASKDB_AI_PROVIDER`, `OPENAI_API_KEY`, the reasoning keys or any other AI key. A child process that took its AI settings from `mergeAskDbFlatIntoEnvMap()` needs them another way, for example by loading the same `askdb.config.*`.
+- **`rt.rag.embedder` is removed**, with its type `AskDbRuntimeRagEmbedderConfig`. It held the OpenAI embedder's key, base URL and model, and nothing in AskDB read it. It's now `undefined`, so reading `rt.rag.embedder.apiKey` throws, and TypeScript reports the missing field. Read `rt.ai.embedding` instead: `connection.apiKey`, `connection.baseUrl` and `model`, for whichever provider `ai.embedding` names. `rt.ai.embedding` is `undefined` unless `rag.embedder` is `"ai"`.
+- **If you pass `registry` to `createAskDb`**, build it with `@askdb/ai` 0.1.0-beta.11 or newer: the client calls the new section methods. With an older one, the first `ask()` that needs the config's model throws `ModelNotConfiguredError`, which names the older `@askdb/ai`.
+- **Without a config file**, nothing changes: `resolveAiConfig(env)` and the `*FromEnv` methods read an env map as before. [Env map precedence](/reference/ai-api/#env-map-precedence) lists the variables.
+
+### Replace the removed `@askdb/config` exports
+
+| Removed | Use instead |
+| --- | --- |
+| `DEFAULT_OPENAI_CHAT_MODEL`, `DEFAULT_ANTHROPIC_CHAT_MODEL`, `DEFAULT_GOOGLE_CHAT_MODEL`, `DEFAULT_GATEWAY_CHAT_MODEL` | `DEFAULT_OPENAI_LANGUAGE_MODEL`, `DEFAULT_ANTHROPIC_LANGUAGE_MODEL`, `DEFAULT_GOOGLE_LANGUAGE_MODEL`, `DEFAULT_GATEWAY_LANGUAGE_MODEL` |
+| `DEFAULT_RAG_EMBEDDING_MODEL` | Set `ai.embedding.model`: AskDB has no default embedding model. |
+| `defaultRagEmbeddingDimensions()` | None: AskDB learns the width from the model (`detectEmbeddingDimensions` in `@askdb/rag`). |
+| `OpenaiConfig`, `AzureConfig`, `FoundryConfig`, `AnthropicConfig`, `GoogleConfig`, `GatewayConfig` | `OpenaiConnection`, `AzureConnection`, `FoundryConnection`, `AnthropicConnection`, `GoogleConnection`, `GatewayConnection` |
+| `OpenaiAiConfig`, `AzureAiConfig`, `FoundryAiConfig`, `AnthropicAiConfig`, `GoogleAiConfig`, `GatewayAiConfig` | `AskDbAiConfig` |
+| `OpenaiRagEmbedderConfig` | `AskDbAiEmbeddingConfig` (`ai.embedding`) and a connection type |
+
+`ASKDB_RAG_EMBEDDERS` is now `["mock", "ai"]`, and the `AskDbRagEmbedder` type narrows to match.
+
+### Set an embedding model on `@askdb/ai`'s env path
+
+`@askdb/ai` no longer picks an embedding model when you pass an env map ([#651](https://github.com/Ygilany/AskDB/issues/651)). With an API key and no embedding model, `registry.resolveEmbeddingConfig(env)` and `registry.createEmbeddingModelFromEnv(env)` now throw `<provider>: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`, as the section path already refuses a missing model. Before, `openai` and `azure` fell back to `text-embedding-3-small`, and `gateway` to `openai/text-embedding-3-small`, with a `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`). A host with an `askdb.config.*` file uses the section path, so this changes nothing for it.
+
+- **If you saw that warning,** set `ASKDB_AI_EMBEDDING_MODEL`, or the provider's embedding model variable, in the env map you pass, to the model the fallback used. An index built with that model keeps working.
+- **If your app picks the model itself,** pass it as `resolveEmbeddingConfig(env, { modelDefault })`. An env variable still wins over it.
+- **`ProviderEnvSpec` has no `defaultEmbeddingModel` field,** and the `BUILTIN_AI_PROVIDERS` entries no longer carry one. Remove it from a spec your custom adapter declares: TypeScript reports it as an unknown property.
+
+### Replace the `askdb-rag` binary with `askdb rag`
+
+`@askdb/rag` no longer ships the `askdb-rag` binary ([#651](https://github.com/Ygilany/AskDB/issues/651)). Since beta.44 it only printed the `askdb rag` command to run and exited `1`. Now a shell or `npx` can't find an `askdb-rag` command. Install `askdb` and run `npx askdb rag index …`, `query …` or `setup-store …` instead. [Run `askdb rag` instead of `askdb-rag`](#run-askdb-rag-instead-of-askdb-rag) maps its flags.
+
+### Replace the removed `--embedder` values
+
+`askdb rag --embedder openai` and `--embedder ai-sdk` are removed ([#811](https://github.com/Ygilany/AskDB/issues/811)), as the same `rag.embedder` values were. Each now fails with exit code `1` and an error naming the replacement, before the command reads the schema or opens a store. Set `rag.embedder: "ai"` and an `ai.embedding` section in `askdb.config.*`, and pass `--embedder ai` or no `--embedder`. The aliases already embedded with `ai.embedding`, so an index they built keeps its embedder id and still matches.
+
+### Handle introspection that finds no tables
+
+Introspection now refuses to write an artifact with no tables ([#337](https://github.com/Ygilany/AskDB/issues/337), ADR 0037). It used to write a `schema.json` with `tables: []`, which `loadSchema()` rejects, and re-introspecting a database that had lost its tables replaced a valid artifact with it.
+
+- **`askdb introspect` exits `1`** where it exited `0`, with `--out`, `--print` and `--diff` alike, and writes nothing. A script that checks the exit code sees the failure now; the message names the schema id, the engine and the filters.
+- **`introspect()` with render options, `renderToSchemaV2()` and `renderSchemaV2Body()` throw the new `EmptyIntrospectionError`** when the schema renders no tables or views, after filters. Catch it where you introspect from code; it carries `schemaId`, `provider` and `filters`.
+- **Studio answers `422`** with the reason when its introspection or resync finds nothing, and keeps the artifact on disk.
+
+See [the troubleshooting entry](/guides/troubleshooting/#introspection-found-no-tables-or-views-for-schema-) for the likely causes.
+
+### Fix a bundle without a `tables` object, which now fails to load
+
+A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a non-empty string or array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. A `tables` of `[]`, `""`, `0` or `true` loaded as a schema with no table files, and now throws as well. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: set `"tables": {}`, or rebuild it with `askdb bundle`.
+
+### Fix a schema directory that `askdb bundle` now refuses
+
+`askdb bundle`, and `bundleSchemaDirectory()` from `@askdb/enrich`, now check the bundle with the loader `ask()` uses ([#796](https://github.com/Ygilany/AskDB/issues/796)). `bundleSchemaDirectory()` throws the loader's `SchemaParseError` where it returned the bundle, and `askdb bundle` exits `1` with that error before it writes anything. A directory the loader refuses used to bundle without complaint, and the bundle failed only when your service loaded it. Examples are a `tables/*.md` whose front-matter isn't YAML, a `tenant-policy.md` that doesn't parse or doesn't fit `schema.json`, and two table files with the same `id`. Now `askdb bundle` exits `1`, where it exited `0`, and writes nothing: a file already at `--out` stays as it was. Fix the file the error names; if you call `bundleSchemaDirectory()` yourself, catch `SchemaParseError` there. A build step that runs `askdb bundle` now fails there instead of in the service.
+
+### Keep a built-in `id` on a `DialectSpec`
+
+`ask()` now refuses a `DialectSpec` whose `id` isn't one of the six built-in ids, with `UnknownDialectError` ([#717](https://github.com/Ygilany/AskDB/issues/717)). Core lexes, quotes and binds SQL by `id` (ADR 0029), so a spec under another `id` was checked under every engine's lexer at once: that rejected some valid column names ([#672](https://github.com/Ygilany/AskDB/issues/672)) and couldn't read the SQL the way the real engine does. `bindPreparedQuery()` already refused its templates. `ask()` refuses such a spec before any tenant check, retrieval or model call.
+
+- **For a variant of a built-in engine,** such as TiDB on MySQL or Redshift on Postgres, spread the built-in spec and keep its `id`: `{ ...MYSQL_DIALECT, displayName: "TiDB", promptBrief: "…" }`.
+- **For any other engine,** implement `AskDialect` and call `validateSelectSql` on its SQL yourself.
+- **With a tenant policy,** such a spec used to get `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). It now gets `UnknownDialectError` first.
+
+### Set `dialect` for `askdb-http`'s own schema when AskDB doesn't ship its engine
+
+`askdb-http` no longer generates PostgreSQL for a schema whose `provider` has no AskDB dialect ([#720](https://github.com/Ygilany/AskDB/issues/720)). It refuses the request instead, as `askdb ask` does. Checking SQL for one engine under another engine's rules can pass SQL the real engine reads differently.
+
+- **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse. That `dialect` applies to the server's own schema only.
+- **For a `schemaJson` the request sends,** the server generates and checks SQL for the artifact's own `provider`, never for the config's `dialect` ([#809](https://github.com/Ygilany/AskDB/issues/809)). A request schema that records no `provider`, or one AskDB has no dialect for, answers `400 bad_request`, with a message that names the provider and the supported ids. Send a schema whose `provider` is a built-in dialect id. A caller that relied on the server's `dialect` to cover its schema's engine, such as a MariaDB artifact, which records `mysql`, now gets that recorded engine's SQL.
+
+### Pass the prompt's schema to `buildTenantPromptBlock()`
+
+`buildTenantPromptBlock(policy, scope, prompt)` now requires `prompt`: the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows ([#771](https://github.com/Ygilany/AskDB/issues/771), ADR 0038). The block names only those tables. `ask()` passes it for you, so this only matters if you call the function yourself.
+
+- **For a prompt that shows the whole schema,** pass `{ schema }`. If no table in your schema is marked `tracked: false`, the block is the same as before. An untracked table can no longer be named in the block, even on purpose.
+- **Under retrieval,** pass `{ schema, tableIds }`, with `synthesizeRetrievedDdl()`'s `tableIds`.
+- **`buildNlToSqlUserPrompt()` throws `AskDbError`** when you pass `prebuiltDdl` and a tenant policy without `promptTableIds` (the same ids), or a tenant policy with a v1 schema.
+
+### Other changes you may notice in beta.50
+
+- **A connection's `secondaryApiKey` is used on every provider** when the connection has no `apiKey`. Before, only Azure and Foundry read it; the connection types still declare it only there.
+- **An `ai.language` or `ai.embedding` provider that no registered adapter handles** now fails with the message that says how to register it, as `createLanguageModel` already did, instead of `Unknown ASKDB_AI_PROVIDER`.
+- **`getAskDbRuntimeConfig().deprecations` is empty**, since no config key is deprecated now. It stays for the next deprecation.
+- **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
+- **The prompt's tenant-policy block names only the tables the prompt shows** ([#771](https://github.com/Ygilany/AskDB/issues/771)). It listed every table in your tenant policy, including tables marked `tracked: false` and, under retrieval, tables retrieval left out. A root whose table isn't shown now appears by its label and placeholder only. A join path through a tracked table that retrieval left out is still printed, with that table's name, since the shown table needs it. A scoped table whose only join path runs through an untracked table loses that path, and the prompt tells the model not to read it; the tenant check still requires its predicate.
+- **A schema with a tenant policy** gets `500 tenant_scope_not_configured` from `askdb-http`, not `500 internal_error` ([#716](https://github.com/Ygilany/AskDB/issues/716)). The server still can't set a tenant scope, so it still returns no SQL and never calls the model. If your client matched `internal_error` for this case, match the new code.
+- **Generated SQL that advances a sequence is refused** ([#825](https://github.com/Ygilany/AskDB/issues/825)). On MySQL and MariaDB, `NEXTVAL(…)` and `SETVAL(…)` now fail the read-only check with `SQL_FORBIDDEN_FUNCTION`, and so does `NEXT VALUE FOR …` on every dialect: MariaDB and SQL Server advance the sequence, and the change isn't rolled back with your transaction. `PREVIOUS VALUE FOR` and MariaDB's `LASTVAL()` only read and still pass, as does a column named `nextval`.
+- **`askdb-http` reads the working directory's `.env` first, and never one inside `node_modules`** ([#839](https://github.com/Ygilany/AskDB/issues/839)). In an npm install it used to read `node_modules/.env` before `./.env`. An install now reads only the working directory's `.env`, so if you kept your settings in `node_modules/.env` or the package folder, move them to the working directory's.
+- **A server schema that doesn't load answers `500 generation_not_configured`** from `askdb-http`, not `400 schema_parse_error` ([#840](https://github.com/Ygilany/AskDB/issues/840)), such as a `host.schemaPath` that doesn't exist. The message no longer includes the server's path; the server log has the full error, with `errName` `SchemaLoadError`. A request `schemaJson` that doesn't load still answers `400 schema_parse_error`. If your client matched `schema_parse_error` for a server-side schema problem, match `generation_not_configured`.
+
+## 1.0.0-beta.49
+
+Released with `askdb` 1.0.0-beta.49, `@askdb/config` 1.0.0-beta.18, `@askdb/core` 1.0.0-beta.49, `@askdb/http-api` 1.0.0-beta.49, `@askdb/studio` 0.2.0-beta.42, `@askdb/introspect` 0.3.0-beta.23, `@askdb/postgres` 0.2.0-beta.25, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.24, and `@askdb/sqlserver` 0.1.0-beta.25. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Security: upgrade for GHSA-wjgj-mf9h-6g68
+
+With `tenantSqlMode: "sql-only"` on the built-in `postgres` or `cockroachdb` dialect, `ask()` could return SQL whose tenant scoping no longer held once the tenant IDs were inlined, because it did not re-check the rendered statement. A model reply of a particular shape could then read rows belonging to tenants outside the caller's scope, and `ask()` returned it as passing its checks ([GHSA-wjgj-mf9h-6g68](https://github.com/Ygilany/AskDB/security/advisories/GHSA-wjgj-mf9h-6g68)). `ask()` now runs the read-only check on the `sql` it returns, as `bindPreparedQuery()` already did, and refuses a statement that reads differently once rendered with `SqlValidationError`.
+
+- **Upgrade** `@askdb/core`, `askdb` and `@askdb/http-api` to 1.0.0-beta.49, and `@askdb/studio` to 0.2.0-beta.42. These pin `@askdb/core` exactly, so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **The default `tenantSqlMode: "sql-params"` was never affected** — the default since 1.0.0-beta.46, it binds tenant IDs as driver parameters that never enter the SQL text. If you can't upgrade at once, use it (set it explicitly on 1.0.0-beta.45 or earlier).
+- **Enforce tenant isolation in the database** (for example Postgres row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. It limits the rows a statement can read regardless of its text.
+
+### Handle the new `SensitiveScopeIssue` members
+
+The sensitive check now fails closed on two Postgres forms it can't read, with the new `SensitiveScopeIssue` members `UNICODE_ESCAPED_IDENTIFIER` (a name such as `U&"p\0061ssword"`) and `STRING_CONTINUATION` (an `E'…'` string continued on a later line) ([#707](https://github.com/Ygilany/AskDB/issues/707), ADR 0012). They apply whenever the SQL may be read as Postgres, a custom `AskDialect` included, and come back in `sensitiveGuardrail.unresolvedScope` with `passed: false`. With `sensitiveGuardrailMode: "strict"`, `ask()` and `validateSensitiveReferences()` throw `SensitiveReferenceError`.
+
+- **A `switch` over every `SensitiveScopeIssue`** needs cases for both.
+- **Built-in dialects reject the same SQL earlier** in the read-only check (`SQL_UNICODE_ESCAPED_IDENTIFIER`, `SQL_STRING_CONTINUATION`), so this mainly changes a custom `AskDialect` and direct calls.
+
+### Handle `SQL_ESCAPED_BYTE_STRING` for escaped `b'…'` byte strings
+
+CockroachDB reads a `b'…'` byte string (lower-case `b`) with backslash escapes, and AskDB's checks don't, so a byte string with a backslash or a continuation could hide code from them ([#730](https://github.com/Ygilany/AskDB/issues/730), ADR 0012). The checks now refuse it:
+
+- **The read-only check** throws `SqlValidationError` with the new `SqlValidationRuleCode` `SQL_ESCAPED_BYTE_STRING`, on Postgres, CockroachDB and a dialect id that is no built-in engine. So do `ask()`, `bindPreparedQuery()` and Studio's Execute.
+- **The tenant check** reports the new `TenantGuardrailRuleCode` `ESCAPED_BYTE_STRING`, with `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws.
+- **The sensitive check** reports the new `SensitiveScopeIssue` `ESCAPED_BYTE_STRING` in `unresolvedScope`, with `passed: false`, under the same dialects as the tenant check, and in a `validateSensitiveReferences()` call with no dialect.
+- **A `switch` over any of these unions** needs a case for the new member.
+- **Write the bytes as a hex string cast to `bytea`** (`'\x00'::bytea` instead of `b'\x00'`), which Postgres and CockroachDB both read as bytes. A `b'…'` string with no backslash, and a `B'…'` bit string, pass.
+
+See [the troubleshooting entry](/guides/troubleshooting/#sqlvalidationerror-sql_escaped_byte_string).
+
+### Other changes you may notice in beta.49
+
+- **`askdb init` and Studio's guided setup install with pnpm in a new pnpm project** ([#750](https://github.com/Ygilany/AskDB/issues/750)). With no lockfile, both used npm, which refuses a project that `pnpm init` started (`EBADDEVENGINES`). They now read `package.json`'s `packageManager` field, then `devEngines.packageManager`, then the tool that ran them (`pnpm dlx`, `yarn dlx`, `npx`, `bunx`), before falling back to npm. A project with a lockfile installs with that lockfile's manager, as before. See [`askdb init`](/reference/cli/#askdb-init) for the order.
+- **`askdb init` installs on Windows** ([#668](https://github.com/Ygilany/AskDB/issues/668)). Its install always failed there, because Node refuses to run a package manager's `.cmd` shim without a shell.
+- **The install command `askdb init` prints names the package manager it picked.** At a workspace root, or with no `package.json`, it printed `npm install --save …`. It now prints that manager's command, with `--allow-build=@prisma/engines` for a Prisma project on pnpm 10.4 or later. A script that matched the old text needs updating.
+- **`@askdb/config/scaffold` is experimental** ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). It now also exports the package-manager helpers `askdb init` and Studio share, and `planAskDbScaffold`, which plans a new project's config, `.env.example` and installs for both ([#711](https://github.com/Ygilany/AskDB/issues/711)). A minor release of `@askdb/config` may change it. Your own `askdb.config.ts` never imports it.
+- **`askdb init` checks the env var names and paths you pass.** `askdb init --connection-env my-url` wrote `env("my-url")`, a name a shell can't `export`. A name for `--connection-env`, `--ai-key-env`, `--ai-model-env` or `--pgvector-env` must now use uppercase letters, digits and underscores, and not start with a digit, and a path must not contain control characters. Otherwise `init` exits 1 before it writes anything, with an error that names the flag. See [`askdb init`](/reference/cli/#askdb-init).
+- **`askdb init --database prisma` also installs `ai` and `zod`** ([#760](https://github.com/Ygilany/AskDB/issues/760)): `ai` at the newest major `@askdb/core` accepts, and `zod` at core's range. Under Yarn Plug'n'Play, `askdb introspect --engine prisma` failed without them (`@askdb/core tried to access ai`). Like a database driver, `init` now installs them only when your `package.json` doesn't list them yet: a project on `ai@^6` keeps it, and `init` no longer re-adds a driver you already list. Studio's guided setup installs them too when the project doesn't have them.
+- **`.env.example` leaves every value empty.** `askdb init` wrote each connection URL's format as its value (`DATABASE_URL=postgresql://<USERNAME>:…`), and Studio wrote `NAME= # purpose`, which Docker's `--env-file` reads as the value. Both now write a `# purpose` comment above each empty `NAME=`, database variables first, with a connection URL's format in the comment.
+- **Studio's guided setup writes the same files as `askdb init`** for the same answers. Its config's `rag.storeConfig` spans several lines, as `init`'s does; the config loads the same. The variables it lists come in `init`'s order, database variables first, and say what each one is for, such as `postgres connection URL, for introspection and Studio execute`. It now accepts an env var name that starts with `_`.
+- **A connector from `createConnector()` returns the `schemaId` you pass in `ConnectorConfig`** ([#775](https://github.com/Ygilany/AskDB/issues/775)). Only the Prisma adapter passed it on, so Postgres, MySQL, SQLite and SQL Server returned a `SqlSchema` with `schemaId: "introspected"`. If your code reads `SqlSchema.schemaId` from these connectors, it now gets the ID you set. `schema.json` doesn't change: it takes its ID from `RenderOptions.schemaId`, so `askdb introspect` and Studio write the same files.
+- **`askdb init --connection-env <name> --studio-execute` points Studio execute at that variable** ([#777](https://github.com/Ygilany/AskDB/issues/777)). It wrote `studio.execute.databaseUrl: env("DATABASE_URL")` whatever `--connection-env` named, so execute ran against another database unless `DATABASE_URL` was also set. A config written by an earlier `init` keeps `DATABASE_URL`; change it to your variable if it differs.
+- **A model call that fails before saying why now names the reason** ([#786](https://github.com/Ygilany/AskDB/issues/786)). When the model's server refuses the connection, such as a local OpenAI-compatible server that isn't running, reached through `localhost`, `SqlGenerationError`'s message and the `askdb.pipeline.failed` log ended in a blank: `Model call failed: … Cannot connect to API: `. They now end with each refused address, such as `ECONNREFUSED [::1]:11434; ECONNREFUSED 127.0.0.1:11434`, built from each error's code, address and port (or its name when it has no code), never from text that could quote a URL or key. A message that already gives its reason is unchanged.
+
 ## 1.0.0-beta.48
 
-Released with `@askdb/client` 1.0.0-beta.11 and `@askdb/config` 1.0.0-beta.17. Other packages that got a new version list what changed in their CHANGELOG.
+Released with `@askdb/client` 1.0.0-beta.11, `@askdb/config` 1.0.0-beta.17 and `@askdb/core` 1.0.0-beta.48. Other packages that got a new version list what changed in their CHANGELOG.
 
 ### Fix config values of the wrong type, which now fail to load
 
@@ -78,6 +331,38 @@ Code that reads or installs the runtime config may need a change too:
 - **`setAskDbRuntimeForTests()` takes an `AskDbConfig`,** the object you write in `askdb.config.ts`, and installs it as `bootstrapAskDbEnv()` installs a loaded file. Replace `setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) })` with `setAskDbRuntimeForTests(structured)`. If a test put a setting only in `flat`, set it in the config instead, such as `dev: { mockSql }` in place of `ASKDB_MOCK_SQL`.
 - **`createAskDb()` reads the default schema from `host.schemaJson`, then `host.schemaPath`, and nowhere else.** A runtime config built by hand with `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `ai.aiEnv` and no `host` block now throws `SchemaNotConfiguredError`: set `structured.host` instead. A config loaded from a file works as before.
 
+### Run `unboundSql` with the tenant IDs in `params` under `"sql-only"`
+
+`tenantSqlMode` now governs `sql` only ([#731](https://github.com/Ygilany/AskDB/issues/731)). Under `"sql-only"`, `ask()` used to inline the tenant IDs into `unboundSql` and leave them out of `params`, while `bindPreparedQuery()` and `askdb.bind()` bound them. Now `ask()` binds them too: `unboundSql` holds driver markers for the tenant IDs, and `params` holds their values, as in `"sql-params"` mode. `sql` is unchanged, with the IDs inlined as literals.
+
+```diff
+ // ask({ …, tenantScope: { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } }, tenantSqlMode: "sql-only" })
+ result.sql        // SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'   (unchanged)
+-result.unboundSql // SELECT * FROM orders WHERE agency_id = '42' AND status = $1
+-result.params     // ["open"]
++result.unboundSql // SELECT * FROM orders WHERE agency_id = $2 AND status = $1
++result.params     // ["open", "42"]
+```
+
+If you run `unboundSql` with `params`, you need no change: the pair still returns the same rows. If you run `unboundSql` with your own array of business values, switch to `params` before you upgrade, and check every place that runs `unboundSql`. With your array, the values no longer line up with the markers: the tenant markers come first in source order on `?` dialects, so your first business value can land on a tenant marker. The drivers AskDB documents (`pg`, `mysql2`, `mssql`, `better-sqlite3`) refuse the short array, so the query fails. `node:sqlite` doesn't check the number of values it binds: it binds them in order and the rest as `NULL`, which can return another tenant's rows. Always pass `params` as returned. If you need one SQL string with the IDs inlined, use `sql`.
+
+### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
+
+On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
+
+- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
+- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
+- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
+
+See [the troubleshooting entry](/guides/troubleshooting/#sqlvalidationerror-sql_string_continuation).
+
+### Other changes you may notice in beta.48
+
+- **A malformed schema markdown file reports the same error on every load** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, when one process loaded the same malformed front-matter YAML in `tables/*.md`, `concepts.md` or `tenant-policy.md` a second time, it reported `Invalid <kind> front-matter` (missing fields) instead of `Malformed <kind> front-matter YAML`. Loading failed both times. `@askdb/core` also no longer keeps every schema markdown file it reads or writes in memory for the life of the process, so a server that accepts per-request schemas (`httpApi.allowSchemaOverride`) no longer grows with each new one.
+- **A schema markdown body that starts with a `---` horizontal rule survives a save** ([#742](https://github.com/Ygilany/AskDB/issues/742)). Before, `writeTableMarkdown()`, `writeConceptsMarkdown()` and `writeTenantPolicyMarkdown()`, and the Studio saves that use them, read the rule as front-matter: the body was emptied, and the file then failed to load.
+- **Schema markdown front-matter accepts YAML only** ([GHSA-qqx9-qpw2-wcqg](https://github.com/Ygilany/AskDB/security/advisories/GHSA-qqx9-qpw2-wcqg)). A `tables/*.md`, `concepts.md` or `tenant-policy.md` file whose front-matter isn't YAML now fails to load with `SchemaParseError` (`Malformed <kind> front-matter YAML`). Front-matter that opens with a plain `---`, as Studio and `@askdb/enrich` write it, loads as before.
+- **The tenant check reads a dialect id that is no built-in engine and sets `backslashEscapes: true` both ways** when it looks for `U&"…"` names ([#703](https://github.com/Ygilany/AskDB/issues/703)): with and without backslash escapes, reporting a name either reading finds.
+
 ## 1.0.0-beta.47
 
 Released with `@askdb/config` 1.0.0-beta.16 and `@askdb/core` 1.0.0-beta.47. Other packages that got a new version list what changed in their CHANGELOG.
@@ -100,11 +385,11 @@ A `global` tenant scope whose `reason` is missing, isn't a string, or is blank n
 
 On Postgres and CockroachDB, `validateSelectSql()` now rejects a Unicode-escaped identifier such as `U&"set\005fconfig"`, and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_UNICODE_ESCAPED_IDENTIFIER` ([#692](https://github.com/Ygilany/AskDB/issues/692), ADR 0012). Postgres decodes the escapes, which could spell a blocked function, such as `set_config`, a scoped table (`U&"\006Frders"` reads `orders`) or a sensitive column, and the checks didn't decode them.
 
-- **The tenant check refuses the same names,** in any position, with the new `TenantGuardrailRuleCode` `UNICODE_ESCAPED_IDENTIFIER` and `tableId: ""` ([#704](https://github.com/Ygilany/AskDB/issues/704)). It applies whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws or warns. For a dialect id that is no built-in engine and sets `backslashEscapes: true`, it reads the SQL both with and without backslash escapes and reports a name either reading finds.
+- **The tenant check refuses the same names,** in any position, with the new `TenantGuardrailRuleCode` `UNICODE_ESCAPED_IDENTIFIER` and `tableId: ""` ([#704](https://github.com/Ygilany/AskDB/issues/704)). It applies whenever the SQL may be read as Postgres, a custom `AskDialect` included, which skips the read-only check. Your policy's `enforcement` decides whether it throws or warns.
 - **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
 - **If you store SQL with a `U&"…"` name and rebind it,** the rebind now rejects it. Write the name in plain double quotes (`"注文数"`) instead.
 
-See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_unicode_escaped_identifier) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
+See [the troubleshooting entry](/guides/troubleshooting/#sqlvalidationerror-sql_unicode_escaped_identifier) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
 
 ### Return only queries from a custom `AskDialect` under a tenant policy
 
@@ -121,16 +406,6 @@ With a tenant policy and any scope but `global`, the tenant check now refuses a 
 - **A pivot the model writes with `crosstab`** is refused under a tenant policy, because the check can't read the query `crosstab` runs. Re-ask the question: a pivot written with `CASE` or `FILTER` passes, with the tenant predicate in its `WHERE` clause.
 - **A column, alias or parameter named like one of these functions** (`crosstab`, `set_config`) is refused too, because the check matches a listed name anywhere in the SQL. If your schema has such a column, every query that names it is refused under a tenant policy: rename the column, or expose it through a view under another name.
 - **Code that handles every `TenantGuardrailRuleCode`,** such as an exhaustive `switch`, needs a case for `UNCHECKABLE_FUNCTION`.
-
-### Handle `SQL_STRING_CONTINUATION` for continued `E'…'` strings
-
-On Postgres, CockroachDB, and a dialect id that is no built-in engine, `validateSelectSql()` now rejects an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`), and so do `ask()`, `bindPreparedQuery()` and Studio's Execute. It throws `SqlValidationError` with the new rule code `SQL_STRING_CONTINUATION` ([#703](https://github.com/Ygilany/AskDB/issues/703), ADR 0012). Postgres reads the continuation with backslash escapes and the checks didn't, so code after it could pass as a string.
-
-- **The tenant check refuses the same SQL** with the new `TenantGuardrailRuleCode` `STRING_CONTINUATION` and `tableId: ""`, whenever the SQL may be read as Postgres, a custom `AskDialect` included. Your policy's `enforcement` decides whether it throws or warns.
-- **A `switch` over every `SqlValidationRuleCode` or `TenantGuardrailRuleCode`** needs a case for the new code.
-- **If you store SQL that continues an `E'…'` string and rebind it,** the rebind now rejects it. Join the parts with `||` instead.
-
-See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_string_continuation).
 
 ### Other changes you may notice in beta.47
 
@@ -180,7 +455,7 @@ if (result.unboundSql && result.params) {
 - **A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call. Set `"sql-params"` if your driver binds `$1`-style markers, or `"sql-only"`: on SQL Server, `$1` is a money constant. A value other than these two throws the same error on every dialect.
 - **`@askdb/client`'s `askdb.ask()`** forwards to `ask()`, so it changes the same way. Studio's Playground now starts in `sql-params`.
 
-[Executing the result](/reference/core-api/#executing-the-result) describes both SQL forms.
+[Executing the result](/reference/core-api/ask/#executing-the-result) describes both SQL forms.
 
 ### Use `sql-params` for tenant IDs outside printable ASCII
 
@@ -219,7 +494,7 @@ await pool.query(rebound.sql, rebound.tenantParams ?? []); // or: pool.query(reb
 
 ### Fix a strict tenant policy that doesn't match `schema.json`
 
-`loadSchema()` now checks every ID in `tenant-policy.md` against `schema.json`, and a policy with `enforcement: strict` must match it ([#332](https://github.com/Ygilany/AskDB/issues/332), ADR 0023). It throws `SchemaParseError` when the policy names a column or foreign key that `schema.json` doesn't have, has a cycle in `hierarchy` or `parent`, or names a root in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare. Before, the policy loaded, and only Studio's Tenancy page showed the problems. The error names `tenant-policy.md` and each ID: update the policy to match `schema.json`. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
+`loadSchema()` now checks every ID in `tenant-policy.md` against `schema.json`, and a policy with `enforcement: strict` must match it ([#332](https://github.com/Ygilany/AskDB/issues/332), ADR 0023). It throws `SchemaParseError` when the policy names a column or foreign key that `schema.json` doesn't have, has a cycle in `hierarchy` or `parent`, or names a root in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare. Before, the policy loaded, and only Studio's Tenancy page showed the problems. The error names `tenant-policy.md` and each ID: update the policy to match `schema.json`. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
 
 - **Every caller gets the same underlying error:** `loadSchema()` throws the `SchemaParseError`, `@askdb/client` wraps it in `SchemaLoadError` as its `cause`, and the HTTP API answers 400 `schema_parse_error`. Studio can't open the workspace until you fix the file ([#640](https://github.com/Ygilany/AskDB/issues/640)).
 - **Under `enforcement: warn`,** the policy still loads, with the problems in `schema.tenantPolicy.warnings`. `ask()` now logs them once per loaded schema as `askdb.tenant.policy_warnings`, through the `logger` you pass to it.
@@ -257,7 +532,7 @@ await suggestEnrichment(buildSuggestionTarget(schema, source), buildSuggestionCo
 - **`askdb bundle` and `bundleSchemaDirectory()`** refuse the same directories, and their read errors are now `SchemaParseError`s instead of raw Node errors. Studio can't open such a workspace until you rename the file.
 - **A path you pass is still read as given,** so `loadSchema("<dir>/Schema.json")` loads as before.
 
-See [the troubleshooting entry](/getting-started/troubleshooting/#schemaparseerror-schema-directory--has-a-file-name-in-the-wrong-case).
+See [the troubleshooting entry](/guides/troubleshooting/#schemaparseerror-schema-directory--has-a-file-name-in-the-wrong-case).
 
 ### Install `@askdb/prisma` to introspect a Prisma schema
 
@@ -281,7 +556,7 @@ See the [Prisma guide](/guides/integrations/prisma/).
 - **On SQL Server, an unquoted name must be printable ASCII and can't be one of those hint words.** Quote it (`[Größe]`, `[rowlock]`), and qualify it when it's the only thing inside parentheses (`COUNT(t.[Größe])`). The same applies to a dialect id that is no built-in engine. This narrows beta.45's plain-code rule, which let Unicode letters through.
 - **A `switch` over every `SqlValidationRuleCode`** needs a case for `SQL_LOCKING_READ`.
 
-See [the troubleshooting entry](/getting-started/troubleshooting/#sqlvalidationerror-sql_locking_read) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
+See [the troubleshooting entry](/guides/troubleshooting/#sqlvalidationerror-sql_locking_read) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks).
 
 ### Replace a symbolic link at `schema.json`
 
@@ -345,7 +620,7 @@ const rebound = bindPreparedQuery(
 - **With a tenant policy whose `enforcement` is `warn`**, a template that fails the tenant check is refused with `TenantGuardrailError`. To bind it anyway, pass `acceptWarnings: ["tenant"]`.
 - **Stored `PreparedQuery` objects keep working.** The checks use the schema and scope you pass now, so a tightened policy applies at the next rebind.
 
-With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
+With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
 
 ### Load a schema directory, not a renamed copy of its JSON file
 
@@ -365,7 +640,7 @@ On SQL Server, `validateSelectSql` and `ask({ dialect: "sqlserver" })` now refus
 - **`SQL_MULTI_STATEMENT`** for a second `SELECT` that no `UNION`, `EXCEPT` or `INTERSECT` joins, a parenthesized query right after a complete value, a `label:`, or code outside strings and quoted names that isn't plain, such as a non-breaking space or a bare `$`.
 - **The same checks for a dialect id that is no built-in engine**, because its SQL must pass every engine's checks.
 
-If you validate SQL you didn't get from `ask()`, check it against these rules. [Troubleshooting](/getting-started/troubleshooting/#sqlvalidationerror-sql_multi_statement) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks) describe the check.
+If you validate SQL you didn't get from `ask()`, check it against these rules. [Fix common errors](/guides/troubleshooting/#sqlvalidationerror-sql_multi_statement) and [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks) describe the check.
 
 ### Set `modes.askdbMode` in config to allow `bounded_results`
 
@@ -406,7 +681,7 @@ const target = buildSuggestionTarget(schema, source);
 const context = buildSuggestionContext(schema, source.tableId);
 ```
 
-The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
+The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/schema/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
 
 ### Other changes you may notice in beta.45
 
@@ -417,7 +692,7 @@ The context no longer lists an untracked table (`tracked: false`) as a neighbor,
 - **Omitting sensitive identifiers withholds more text** ([#374](https://github.com/Ygilany/AskDB/issues/374)). With `omitSensitiveIdentifiersFromNlToSqlPrompt: true`, a description, alias, enum value, common query language block or retrieved chunk that names a sensitive column no longer reaches the model. If you build an `NlToSqlSchemaFormatStats` object by hand, such as a test double, set its new `mentionDroppedCount` field (`0` keeps the old meaning).
 - **Studio follows `modes.omitSensitiveFromPrompt`** in the Playground and in **Suggest** ([#601](https://github.com/Ygilany/AskDB/issues/601)). With it on, the Playground's prompt leaves out sensitive columns and text that names one, and **Suggest** on a sensitive column shows an error (`400` from `POST /api/suggest`) instead of a draft. See [Tables and enrichment](/studio/#tables-and-enrichment).
 - **The enrichment suggestion prompt has a new format.** `buildEnrichmentUserPrompt()` lists the target table the way `ask()`'s prompt does (`TABLE public.users`, then lines such as `- email text (NOT NULL) (sensitive)`), so a test that compares the prompt text needs updating. `suggestEnrichment()` takes a new `omitSensitiveIdentifiersFromPrompt` option; pass your `modes.omitSensitiveFromPrompt`. With it on, a sensitive target column throws `SensitiveEnrichmentTargetError`.
-- **Results gain `verdict`**, which lists every guardrail finding. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/#guardrail-verdict).
+- **Results gain `verdict`**, which lists every finding of the SQL checks. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict).
 
 ## 1.0.0-beta.44
 
@@ -443,7 +718,7 @@ The OpenAI, Azure OpenAI and Foundry, Google, and Anthropic providers are now bu
 
 Without it, building the model fails with `Provider 'openai' requires the optional peer dependency @ai-sdk/openai. Install it: npm i @ai-sdk/openai`. The `gateway` provider needs no extra package. `createAskDb({ config })` and `createAiRegistry()` with no arguments now register every built-in provider, so you can drop `providers: [openaiProvider]`.
 
-If you bundle your app with webpack 5, the build fails with `Module not found` for every `@ai-sdk/*` package you didn't install. Install them, or list the ones you don't use in `externals`, as [Provider SDKs](/reference/packages/#provider-sdks) shows. esbuild needs no change.
+If you bundle your app with webpack 5, the build fails with `Module not found` for every `@ai-sdk/*` package you didn't install. Install them, or list the ones you don't use in `externals`, as [Bundle an app that uses AskDB](/guides/bundle-your-app/#3-bundle) shows. esbuild needs no change.
 
 ### Move model settings to `ai.language` and `ai.embedding`
 
@@ -477,7 +752,7 @@ rag: {
 },
 ```
 
-A config in the old shape still loads. Each old key is translated at load and reported once as a Node `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED`, naming its new location. The old keys are removed at 1.0. These old-shape configs now fail to load, with an error that says what to change:
+A config in the old shape still loaded in this release. Each old key was translated at load and reported once as a Node `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED`, naming its new location, until [beta.50 removed them](#replace-the-removed-config-keys). These old-shape configs failed to load, with an error that said what to change:
 
 - **A `rag.embedderConfig.openai.apiKey` or `.baseUrl`** whose embedding model comes from a provider other than `openai`, `azure`, `foundry` or `gateway`. Before, Studio sent that key to the language model's provider.
 - **`rag.embedder: "ai-sdk"` with no embedding model**, on a provider other than `openai`, `azure` or `foundry`. Set `ai.embedding.model`.
@@ -485,7 +760,7 @@ A config in the old shape still loads. Each old key is translated at load and re
 - **Two different widths** in `rag.embedderConfig.openai.dimension` and `rag.storeConfig.pgvector.dimensions`.
 - **An old key next to its replacement**: `ai.reasoning` with `ai.language.reasoning`, `ai.providerConfig.custom` with `ai.providerConfig.<provider id>`, or `rag.embedderConfig` with `ai.embedding`.
 
-With `rag.embedder: "ai"`, `ai.embedding.model` is required: AskDB no longer picks an embedding model for you. [Deprecated keys](/reference/config/#deprecated-keys) maps every old key to its replacement.
+With `rag.embedder: "ai"`, `ai.embedding.model` is required: AskDB no longer picks an embedding model for you. [Replace the removed config keys](#replace-the-removed-config-keys) maps every old key to its replacement.
 
 ### Handle a config without a `rag` block
 
@@ -493,7 +768,7 @@ The `rag` block is now optional: without it, AskDB uses the mock embedder and th
 
 ### Run `askdb rag` instead of `askdb-rag`
 
-The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`'s `askdb-rag` binary now prints the `askdb rag` command to run and exits `1`, until it's removed at 1.0.
+The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`'s `askdb-rag` binary now prints the `askdb rag` command to run and exits `1`, until 1.0.0-beta.50 removes it.
 
 | Before | After |
 | --- | --- |
@@ -549,7 +824,7 @@ const statement = sql.replace(/;$/, "").trimEnd();
 const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
 ```
 
-This wrapper works on Postgres and SQLite only. [Row limits](/guides/run-safely-in-prod/#row-limits) shows a cap that works on every engine and keeps the query's `ORDER BY`.
+This wrapper works on Postgres and SQLite only. [Cap the rows a query returns](/guides/cap-the-rows-a-query-returns/) shows a cap that works on every engine and keeps the query's `ORDER BY`.
 
 ### Other changes you may notice in beta.44
 
@@ -567,23 +842,24 @@ This wrapper works on Postgres and SQLite only. [Row limits](/guides/run-safely-
 | --- | --- | --- |
 | `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` and `@ai-sdk/<provider>` | 1.0.0-beta.45 |
 | `@askdb/connectors` | `@askdb/introspect` and `@askdb/introspect/kit` | 1.0.0-beta.45 |
-| The old `ai` and `rag` config keys | `ai.language`, `ai.embedding` and connections, as [Deprecated keys](/reference/config/#deprecated-keys) maps | 1.0 |
-| `OpenaiConfig`, `AzureConfig` and the other `<Provider>Config` types | `OpenaiConnection`, `AzureConnection`, … | 1.0 |
-| `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0 |
-| `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0 |
-| `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | [`DEFAULT_*_LANGUAGE_MODEL`](/reference/packages/#askdbconfig) | 1.0 |
-| `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warns with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model` | 1.0 |
-| `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0 |
-| The `askdb-rag` binary | `askdb rag` | 1.0 |
+| The old `ai` and `rag` config keys | `ai.language`, `ai.embedding` and connections, as [Replace the removed config keys](#replace-the-removed-config-keys) maps | 1.0.0-beta.50 |
+| `OpenaiConfig`, `AzureConfig` and the other `<Provider>Config` types | `OpenaiConnection`, `AzureConnection`, … | 1.0.0-beta.50 |
+| `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0.0-beta.50 |
+| `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0.0-beta.50 |
+| `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | [`DEFAULT_*_LANGUAGE_MODEL`](/reference/packages/#askdbconfig) | 1.0.0-beta.50 |
+| `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warned with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model`, or `ASKDB_AI_EMBEDDING_MODEL` in an env map, as [Set an embedding model on `@askdb/ai`'s env path](#set-an-embedding-model-on-askdbais-env-path) shows | 1.0.0-beta.50 |
+| `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0.0-beta.50 |
+| The `askdb-rag` binary | `askdb rag` | 1.0.0-beta.50 |
+| `createOpenAiEmbedder` from `@askdb/rag` (deprecated in `@askdb/rag` 0.2.0-beta.17) | `createAiSdkEmbedder` with an `ai.embedding` model or your own AI SDK model, as [Replace `createOpenAiEmbedder` from `@askdb/rag`](#replace-createopenaiembedder-from-askdbrag) shows | 1.0.0-beta.51 |
 | `BundledSchemaV2` from `@askdb/enrich` | `BundledSchemaV2` from `@askdb/core` | not yet set |
 
 ## Check the upgrade
 
-1. **Look for deprecation warnings.** Run your app or an `askdb` command once. Each `DeprecationWarning` with code `ASKDB_CONFIG_DEPRECATED` or `ASKDB_AI_DEFAULT_EMBEDDING_MODEL` names the setting to move. `getAskDbRuntimeConfig().deprecations` lists the same messages.
+1. **Load your config.** Run your app or an `askdb` command once. A config that sets a removed key fails to load and names each key's replacement.
 2. **Ask one question on each path** that calls `ask()` or `bind()`, with the tenant scopes you use in production.
 3. **If you use RAG**, run `askdb rag query` against the new index, or check that Studio no longer marks the index as stale.
 
-If something fails, [Troubleshooting](/getting-started/troubleshooting/) lists the common errors and their fixes.
+If something fails, [Fix common errors](/guides/troubleshooting/) lists the common errors and their fixes.
 
 ## Read next
 
@@ -591,5 +867,5 @@ If something fails, [Troubleshooting](/getting-started/troubleshooting/) lists t
   <a href="/reference/config/"><strong>Configuration reference</strong><span>The <code>ai</code> and <code>rag</code> blocks, and every deprecated key.</span></a>
   <a href="/reference/packages/"><strong>Packages</strong><span>What each package does, its peers, and the removed packages.</span></a>
   <a href="/reference/core-api/"><strong>@askdb/core API</strong><span><code>ask()</code>, <code>bindPreparedQuery()</code> and the guardrail verdict.</span></a>
-  <a href="/getting-started/troubleshooting/"><strong>Troubleshooting</strong><span>Common errors and how to fix them.</span></a>
+  <a href="/guides/troubleshooting/"><strong>Fix common errors</strong><span>Common errors and how to fix them.</span></a>
 </div>

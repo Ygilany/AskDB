@@ -1,13 +1,15 @@
 ---
 title: "@askdb/rag API reference"
-description: "Full API reference for @askdb/rag: buildSchemaIndex(), createRetriever(), embedders, vector stores, and chunking."
+description: "Full API reference for @askdb/rag: indexing, retrieval, the lock file, chunking, embedders, vector stores, and log events."
 ---
 
 <p class="doc-eyebrow">Reference · @askdb/rag</p>
 
-<p class="doc-lede"><code>@askdb/rag</code> chunks the schema artifact, embeds the chunks, stores them in a vector store, and retrieves relevant chunks per question. Pass the returned <code>retriever</code> to <code>ask()</code> to replace full-DDL prompts with focused context — essential for schemas above 30–50 tables.</p>
+<p class="doc-lede"><code>@askdb/rag</code> chunks the schema artifact, embeds the chunks, stores them in a vector store, and retrieves the chunks that match a question. Pass the returned <code>retriever</code> to <code>ask()</code>, and the prompt carries the retrieved part of the schema instead of all of it.</p>
 
-See the [RAG for large schemas guide](/guides/rag-for-large-schemas/) for the end-to-end workflow.
+`@askdb/rag` stays 0.x, so a minor release may change this API ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). The [RAG for large schemas guide](/guides/rag-for-large-schemas/) covers when to use it and the whole workflow.
+
+Every export below comes from `@askdb/rag`. The stores and embedders also have their own entry points, which export the same functions and types: `@askdb/rag/stores/memory`, `@askdb/rag/stores/file`, `@askdb/rag/stores/pgvector` and `@askdb/rag/embedders/ai-sdk`.
 
 ## `buildSchemaIndex(options)`
 
@@ -59,19 +61,20 @@ const { sql } = await ask({
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `schema` | `ChunkerSources \| NormalizedSchemaV2` | no† | Schema to index. Prefer `loadChunkerSourcesFromDir(path)` — it includes full table markdown, enabling richer chunks. Passing a bare `NormalizedSchemaV2` works but produces text-only chunks without markdown body. |
+| `schema` | `ChunkerSources \| NormalizedSchemaV2` | no† | Schema to index. `loadChunkerSourcesFromDir(path)` includes the table markdown, so chunks carry its text. A bare `NormalizedSchemaV2` (from `loadSchema`) produces chunks without it. |
+| `sources` | `ChunkerSources` | no† | An older alias for `schema` that takes only `ChunkerSources`. |
 | `embedder` | `Embedder` | yes | Text embedding function: `(texts: string[]) => Promise<number[][]>`. Use `createAiSdkEmbedder()` or supply your own. |
-| `store` | `VectorStore` | yes | Vector store adapter. Use `createPgvectorStore()` or supply a custom adapter. |
-| `embedderId` | `string` | no | Stable identifier for the embedder (e.g. `"openai:text-embedding-3-small"`). Stored in the lock file. Changing it, including going from unset to set, triggers a full re-embed. Strongly recommended when using a lock file. |
-| `lockFilePath` | `string` | no | Path to `schema.lock.json`. Records the embedder id, store identity, the width of the vectors written (`dimensions`), and chunk hashes. A missing lock, or one written by an older `@askdb/rag`, triggers a full re-embed. Write it inside the schema directory. |
+| `store` | `VectorStore` | yes | Vector store adapter, built in or your own. |
+| `embedderId` | `string` | no | Stable identifier for the embedder (e.g. `"openai:text-embedding-3-small"`). Stored in the lock file. Changing it, including going from unset to set or back, re-embeds every chunk. |
+| `lockFilePath` | `string` | no | Path to `schema.lock.json`. Records the embedder id, store identity, the width of the vectors written (`dimensions`), and chunk hashes. A missing or unreadable lock, or one written by an older `@askdb/rag`, re-embeds every chunk. Write it inside the schema directory. See [Lock file](#lock-file). |
 | `force` | `boolean` | no | Re-embed every chunk regardless of the lock file or stored hashes. |
-| `chunkOptions` | `ChunkOptions` | no | `includeSensitiveDescribable` (default `false`), `emitRelationships` (default `false`), `chunkSizeMaxChars` (default `1000`). |
+| `chunkOptions` | `ChunkOptions` | no | Passed to the chunker. See [`ChunkOptions`](#chunkoptions). |
 | `batchSize` | `number` | no | Number of texts per embedder call. Default `64`. |
-| `onProgress` | `(e: IndexProgressEvent) => void` | no | Called at `"started"`, `"embedded"`, and `"completed"` stages. |
-| `logger` | `AskDbLogger` | no | Structured logger. |
+| `onProgress` | `(e: IndexProgressEvent) => void` | no | Called at the `"started"`, `"embedded"`, and `"completed"` stages. |
+| `logger` | `AskDbLogger` | no | Structured logger. Events are listed under [`AskDbRagLogEvent`](#askdbraglogevent). |
 | `correlationId` | `string` | no | Correlation id attached to log lines. |
 
-†Either `schema` or the deprecated `sources` alias must be provided.
+†Pass `schema` or `sources`.
 
 ### Result — `BuildSchemaIndexResult`
 
@@ -83,7 +86,7 @@ const { sql } = await ask({
 | `stats.chunksReused` | `number` | Chunks skipped because the store already held them with the same text and embedder. |
 | `stats.sensitiveExcluded` | `number` | Chunks left out, plus chunks emitted with part of their describable text (a description, alias, primary entity, enum values, or note) dropped, because the content belongs to or mentions a sensitive table/column. A long source that would split into several chunks counts once per chunk. Exclusion is the default. |
 | `stats.sensitiveIncluded` | `number` | Chunks whose sensitive describable content was embedded only because `chunkOptions.includeSensitiveDescribable: true` was set. Always `0` by default. |
-| `chunks` | `Chunk[]` | Full chunk list sorted by id. Useful for diagnostics. |
+| `chunks` | `Chunk[]` | Full chunk list sorted by id. |
 
 ### `IndexProgressEvent`
 
@@ -98,7 +101,7 @@ type IndexProgressEvent =
 
 ## `createRetriever(options)`
 
-Builds a retriever from an existing store and embedder **without re-indexing**. Use this in serving processes when the index was built by a separate job.
+Builds a retriever from an existing store and embedder **without re-indexing**, for a process that queries an index another process built.
 
 ```ts
 import { createRetriever } from "@askdb/rag";
@@ -110,8 +113,10 @@ const retriever = createRetriever({ embedder, store });
 | --- | --- | --- | --- |
 | `embedder` | `Embedder` | yes | The same embedder used when the index was built. |
 | `store` | `VectorStore` | yes | The store that holds the indexed chunks. |
-| `logger` | `AskDbLogger` | no | Structured logger. |
+| `logger` | `AskDbLogger` | no | Structured logger. Logs `askdb.rag.retrieval_completed` (counts only) per call. |
 | `correlationId` | `string` | no | Correlation id for log lines. |
+
+The retriever embeds the question and returns the `k` best matches from the store, 8 when a call omits `k`. `ask()` always passes `k` (its `retrievalK` option, default 8) and filters on the schema's id.
 
 ### `checkIndexMatches(options)`
 
@@ -126,11 +131,156 @@ const match = checkIndexMatches({
   embedderId: "openai:text-embedding-3-small",
   dimensions: 1536, // optional
 });
-if (!match.ok) throw new Error(match.message); // match.reason: "lock-outdated" | "index-incomplete" | "embedder-changed" | "dimensions-changed"
+if (!match.ok) throw new Error(match.message);
 const retriever = createRetriever({ embedder, store });
 ```
 
 The embedder id must equal the one the lock records, since equal widths don't make two models' vectors comparable: a lock with no embedder id matches only a query without one, as in `buildSchemaIndex`. When both widths are known they must match. A lock written by an older `@askdb/rag` doesn't match until the index is rebuilt, and neither does a lock marked `incomplete` by a build that switched embedders and didn't finish (the store then holds two models' vectors). A missing or unreadable lock, or one for another schema id, has nothing to compare and returns `{ ok: true, lock: undefined }`.
+
+#### `IndexMatch`
+
+```ts
+type IndexMatch =
+  | { ok: true; lock: SchemaLockFile | undefined }
+  | {
+      ok: false;
+      reason: "lock-outdated" | "index-incomplete" | "embedder-changed" | "dimensions-changed";
+      message: string;
+    };
+```
+
+### `synthesizeRetrievedDdl(args)`
+
+Re-exported from `@askdb/core`. Builds the schema text that `ask()` sends the model from retrieved chunks. `ask()` calls it when you pass a `retriever`; call it yourself to see what a retrieval puts in the prompt.
+
+| Argument | Type | Required | Description |
+| --- | --- | --- | --- |
+| `schema` | `NormalizedSchemaV2` | yes | The schema the chunks came from. |
+| `results` | `RetrievedResult[]` | yes | The retriever's results. A `QueryResult[]` fits. |
+| `omitSensitiveIdentifiersFromPrompt` | `boolean` | no | Withholds schema text, and the text of every retrieved chunk, that names a sensitive column or is flagged `sensitive`. A withheld chunk still selects its table. |
+| `unqualifiedNamespace` | `string` | no | Tables in this namespace are listed without it (`TABLE agency`, not `TABLE public.agency`). `ask()` takes it from the dialect's `DialectSpec.unqualifiedNamespace`. |
+| `quoteIdentifier` | `(name: string) => string` | no | How names are quoted. Pass `promptIdentifierQuoter(dialect)` from `@askdb/core` to match `ask()`. |
+
+Returns `{ ddl, tablesEmitted, tableIds, chunksUsed, mentionDroppedCount }`. `tableIds` lists the ids of the tables `ddl` shows, in schema order; `ask()` passes them on so the prompt's tenant block names no other table. `ddl` has a block for each table that a retrieved chunk refers to, with all of its columns, and the table's retrieved CQL chunks under it. After the tables come the relationship, concept, example-question and tenant-policy chunks, each kind in its own block. `mentionDroppedCount` counts the texts withheld with `omitSensitiveIdentifiersFromPrompt`.
+
+---
+
+## Lock file
+
+`schema.lock.json` records what an index was built from, so `buildSchemaIndex` and `checkIndexMatches` can compare runs. `buildSchemaIndex` writes it when you pass `lockFilePath`. The built-in stores report their own content hashes, so for them the lock only guards the embedder's identity. A custom store without `hashesByPrefix` relies on the lock's `hashes` to skip unchanged chunks.
+
+### `SchemaLockFile`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `version` | `2` | File-format version, `SCHEMA_LOCK_VERSION`. A version-1 lock (unscoped chunk ids) triggers a full reindex. |
+| `schemaId` | `string` | The schema this lock belongs to. |
+| `embedderId` | `string` | The embedder the vectors came from, when one was set. |
+| `dimensions` | `number` | Width of the vectors in the store, learned from the embedder's output. |
+| `store` | `{ kind: string; location?: string }` | The store's identity, from `VectorStore.describe()`. |
+| `hashes` | `Record<string, string>` | Chunk id → `chunkContentHash` of the chunk's text. |
+| `updatedAt` | `string` | ISO 8601 time of the last successful index. |
+| `incomplete` | `true` | `buildSchemaIndex` sets it while a run that switches the embedder writes vectors, and clears it when the run finishes. A lock that still has it never matches in `checkIndexMatches`. |
+
+### `readLockFile(path)`
+
+Returns the `SchemaLockFile` at `path`, or `undefined` when the file is missing, can't be parsed, or has an older `version`.
+
+### `writeLockFile(path, lock)`
+
+Writes `lock` to `path` with its `hashes` keys sorted. It writes a temporary file and renames it into place, so a crash never leaves a half-written lock.
+
+### `SCHEMA_LOCK_VERSION`
+
+The current lock-file version: `2`.
+
+### `chunkContentHash(text)`
+
+The SHA-256 hex digest of `text`: the hash `schema.lock.json` records for each chunk.
+
+---
+
+## Chunking
+
+The chunker turns a schema artifact into chunks. It is deterministic: the same artifact gives the same chunk ids and texts on every run, sorted by id. `buildSchemaIndex` calls it for you; call it yourself to inspect the chunks.
+
+### `chunkSchema(sources, options?)`
+
+```ts
+import { chunkSchema, loadChunkerSourcesFromDir } from "@askdb/rag";
+
+const { chunks, stats } = chunkSchema(loadChunkerSourcesFromDir("./my-app.schema"));
+```
+
+Returns a `ChunkResult`: `{ chunks: Chunk[]; stats: ChunkStats }`.
+
+### `chunkSchemaDir(dir, options?)`
+
+`chunkSchema(loadChunkerSourcesFromDir(dir), options)` in one call.
+
+### `chunkSchemaBundle(raw, options?)`
+
+`chunkSchema(loadChunkerSourcesFromBundleJson(raw), options)` in one call. `raw` is the bundle's JSON text.
+
+### `loadChunkerSourcesFromDir(dir)`
+
+```ts
+import { loadChunkerSourcesFromDir } from "@askdb/rag";
+
+const sources = loadChunkerSourcesFromDir("./my-app.schema");
+```
+
+Loads a schema directory into `ChunkerSources`, including the table markdown files, concepts, and tenant policy. The markdown carries text that the normalized schema leaves out, such as example questions and business context.
+
+The directory layout expected:
+```
+<schemaId>.schema/
+  schema.json
+  tables/
+    <tableId>.md
+  concepts.md          (optional)
+  tenant-policy.md     (optional)
+```
+
+### `loadChunkerSourcesFromBundleJson(raw)`
+
+```ts
+import { loadChunkerSourcesFromBundleJson } from "@askdb/rag";
+
+const sources = loadChunkerSourcesFromBundleJson(bundleJsonString);
+```
+
+Loads a bundled schema JSON (produced by `askdb bundle`) into `ChunkerSources`, for when the markdown files aren't on disk but a bundle is. Throws ``Expected a bundled schema JSON (missing `bundled: true`).`` for any other JSON, and `SchemaParseError` for a bundle that [`loadSchemaFromJson()`](/reference/core-api/schema/#loadschemafromjsonraw) refuses, such as one without a `tables` object.
+
+### `ChunkerSources`
+
+```ts
+type ChunkerSources = {
+  schema: NormalizedSchemaV2;
+  tables: Record<string, ParsedTableMarkdown>; // keyed by table id; missing when a table has no markdown file
+  concepts?: ParsedConceptsMarkdown;
+  tenantPolicy?: ParsedTenantPolicyMarkdown;
+};
+```
+
+### `ChunkOptions`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `includeSensitiveDescribable` | `boolean` | `false` | Include describable text (descriptions, aliases, enum values, notes) for sensitive tables and columns. Turning it on logs `askdb.rag.sensitive_chunks_included`. |
+| `chunkSizeMaxChars` | `number` | `1000` (`DEFAULT_CHUNK_MAX_CHARS`) | Character limit for one chunk's text. A longer body is split on paragraph boundaries, and the parts get ids ending `#bc:1`, `#bc:2`, and so on. |
+| `emitRelationships` | `boolean` | `false` | Emit one `relationship` chunk per foreign key. Table chunks already include a summary of their relationships. |
+
+### `ChunkStats`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `totalChunks` | `number` | Number of chunks. |
+| `byType` | `Record<ChunkType, number>` | Number of chunks of each type. |
+| `sensitiveExcluded` | `number` | As `stats.sensitiveExcluded` in [`BuildSchemaIndexResult`](#result--buildschemaindexresult). |
+| `sensitiveIncluded` | `number` | As `stats.sensitiveIncluded` in `BuildSchemaIndexResult`. |
+
+`ChunkStats` holds counts only, never identifiers.
 
 ---
 
@@ -149,11 +299,13 @@ const embedder = createAiSdkEmbedder({
 });
 ```
 
+`CreateAiSdkEmbedderOptions`:
+
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
 | `model` | `EmbeddingModel` | yes | AI SDK text embedding model instance. |
 | `maxRetries` | `number` | no | Max retries per batch call. Defaults to the AI SDK behavior. |
-| `providerOptions` | `object` | no | Provider-specific options forwarded to the AI SDK call. |
+| `providerOptions` | `AiSdkProviderOptions` | no | Provider-specific options forwarded to the AI SDK call: `Record<string, Record<string, value>>`, keyed by provider name, where a value is JSON (a string, number, boolean, `null`, array or object). |
 | `onUsage` | `(usage: AiSdkEmbedderUsage) => void` | no | Called after each embedding batch with token counts. `AiSdkEmbedderUsage` has `tokens`, `promptTokens`, and `totalTokens` (each optional). |
 
 ### `aiSdkEmbedderId(options)`
@@ -166,15 +318,13 @@ import { aiSdkEmbedderId } from "@askdb/rag";
 aiSdkEmbedderId({ provider: "openai", model: "text-embedding-3-small" }); // "ai-sdk:openai:text-embedding-3-small:default"
 ```
 
+`AiSdkEmbedderIdOptions`:
+
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
 | `provider` | `string` | yes | The provider adapter's canonical name, such as `openai` or `azure` (`foundry` resolves to `azure`). |
 | `model` | `string` | yes | The embedding model, or the deployment name on Azure. |
 | `dimensions` | `number` | no | The width requested from the model. Omit it when the model's own width applies. |
-
-### `createOpenAiEmbedder(options?)` *(deprecated)*
-
-A convenience wrapper around the OpenAI embeddings API. **Deprecated** — construct the model with `openai.embedding(...)` and use `createAiSdkEmbedder` instead.
 
 ### `detectEmbeddingDimensions(embedder)`
 
@@ -190,9 +340,49 @@ const dimensions = await detectEmbeddingDimensions(embedder); // e.g. 1536 for t
 
 ## Vector stores
 
+All three built-in stores report their content hashes (`hashesByPrefix`) and their stored ids per schema (`idsBySchema`), so the indexer can skip unchanged chunks and prune removed ones.
+
+### `createMemoryStore()`
+
+An in-process store that ranks by cosine similarity. It has no dependencies and keeps nothing past the process, so `buildSchemaIndex` neither reads nor writes a lock file for it.
+
+```ts
+import { createMemoryStore } from "@askdb/rag";
+
+const store = createMemoryStore();
+```
+
+Beyond the `VectorStore` interface, the returned `MemoryStore` has:
+
+| Method | Description |
+| --- | --- |
+| `size()` | Number of vectors stored. |
+| `snapshot()` | All records and the vector width, as `{ dimensions, records }`. |
+| `restore(snapshot)` | Replaces the contents with a snapshot. |
+| `setHash(id, hash)` | Attaches a content hash to a stored id. |
+
+### `createFileStore(options)`
+
+The memory store, saved to two files next to each other: `<basePath>.embeddings.bin` holds the vectors, and `<basePath>.embeddings.json` holds the chunk payloads and hashes. It loads both files when it's created. The store writes each file to a temporary path and renames it into place. The JSON records the SHA-256 of the binary file it belongs to, so the next load detects a crash between the two writes.
+
+```ts
+import { createFileStore } from "@askdb/rag";
+
+const store = createFileStore({ basePath: "./my-app.schema/rag" });
+```
+
+`FileStoreOptions`:
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `basePath` | `string` | yes | Path prefix for the two files. |
+| `autoFlush` | `boolean` | no | Write the files after each upsert. Default `true`. |
+
+Beyond the `VectorStore` interface, the returned `FileStore` has `flush()`, which writes the files, and `size()`. To index at a new vector width, delete both files.
+
 ### `createPgvectorStore(options)`
 
-PostgreSQL vector store backed by the `pgvector` extension. The recommended production store for AskDB.
+A PostgreSQL vector store backed by the `pgvector` extension. It loads the optional `pg` peer when you pass `connectionString`.
 
 ```ts
 import { createPgvectorStore } from "@askdb/rag";
@@ -207,13 +397,15 @@ const store = createPgvectorStore({
 await store.ensureSchema(); // idempotent — safe to call on every startup
 ```
 
+`CreatePgvectorStoreOptions`:
+
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
 | `dimensions` | `number` | no | Width of the `embedding` column. Needed to create the table (`setupSql()`, or `ensureSchema()` when the table doesn't exist yet). `upsert` rejects vectors of another width, checked against `dimensions` or, without it, the existing table's width once `ensureSchema()` has read it. Take it from `detectEmbeddingDimensions(embedder)` rather than hard-coding it. |
 | `connectionString` | `string` | no† | PostgreSQL connection string. The store lazily imports and pools `pg` when this is supplied. |
-| `client` | `PgClient` | no† | Pre-built `pg.Pool` or `pg.Client`. Preferred when your app already manages a pool. The store never closes an externally supplied client. |
+| `client` | `PgClient` | no† | Pre-built `pg.Pool` or `pg.Client`. The store never closes an externally supplied client. |
 | `table` | `string` | no | Table name. Default `"askdb_rag_chunks"`. Several schemas can share one table (chunk ids are schema-scoped); use separate tables for different embedding dimensions. |
-| `indexStrategy` | `PgvectorIndexStrategy` | no | Index type: `"hnsw"` (default, better recall), `"ivfflat"` (faster at very large scale), or `"none"` (sequential scan — for small tables or testing). |
+| `indexStrategy` | `PgvectorIndexStrategy` | no | Index type: `"hnsw"` (default), `"ivfflat"`, or `"none"` (no vector index, so queries scan the table). |
 | `resolveFrom` | `string` | no | Directory to resolve the optional `pg` peer from when it isn't resolvable from `@askdb/rag` (e.g. running from an npx cache). Default `process.cwd()`. |
 
 †Either `connectionString` or `client` is required.
@@ -235,11 +427,11 @@ Beyond the `VectorStore` interface, `createPgvectorStore` returns:
 | `ensureSchema()` | Creates the extension, table, and indexes when they're missing, and adds `content_hash` to tables created by older versions. Idempotent — safe on every startup. An existing table is kept as it is, so when its width differs from `dimensions` this throws a `PgvectorDimensionMismatchError` (with `table`, `tableDimensions` and `dimensions`), instead of letting inserts fail later. Without `dimensions` it uses an existing table's width, and throws when there's no table. |
 | `tableDimensions()` | The width of the existing table's `embedding` column, or `undefined` when the table doesn't exist. |
 | `close()` | Closes the internal connection pool. No-op when an external client was supplied. |
-| `count(filter?)` | Returns the number of stored chunks matching an optional filter. Useful for diagnostics. |
+| `count(filter?)` | Returns the number of stored chunks matching an optional filter. |
 
 ### `VectorStore` interface
 
-Implement this to use a custom vector store (e.g. Qdrant, Weaviate, Pinecone, in-memory):
+Implement this to use a custom vector store (e.g. Qdrant, Weaviate, Pinecone):
 
 ```ts
 interface VectorStore {
@@ -251,45 +443,34 @@ interface VectorStore {
   // Optional — every stored id for one schema (orphan pruning).
   idsBySchema?(schemaId: string): Promise<string[]>;
   // Optional — identity recorded in schema.lock.json.
-  describe?(): { kind: string; location?: string; dimensions?: number; ephemeral?: boolean; widthHint?: string };
+  describe?(): VectorStoreDescriptor;
 }
 ```
 
-Persist `UpsertRecord.hash` and implement `hashesByPrefix` so the indexer can verify what your store holds. The hash covers the chunk text and the embedder id, and the indexer skips only chunks stored with the same hash. Without it, the indexer falls back to the hashes in `schema.lock.json`, and only trusts them when `describe()` reports the same store and dimensions as the lock. A store with neither `hashesByPrefix` nor `describe()` re-embeds every chunk on each run, because a fresh, empty instance can't be told apart from the one the lock describes. Implement `idsBySchema` so chunks removed from the schema are pruned from your store without touching other schemas. Without it, the indexer prunes only the ids listed in the previous `schema.lock.json` and logs `askdb.rag.orphan_cleanup_limited`. Keep `describe().location` free of absolute paths: it is written to `schema.lock.json`, which you usually commit. Return `ephemeral: true` from a store that keeps nothing past the process, so the indexer leaves the lock alone. `widthHint` is appended to the indexer's width-mismatch error, to say how to give your store a different vector width. If a lock was written for another schema id (a renamed schema, or a lock copied from another schema's directory), the indexer logs `askdb.rag.lock_schema_mismatch`, reindexes without it, and deletes none of the ids it lists; remove an old schema id's chunks yourself with `idsBySchema` and `delete`.
+Persist `UpsertRecord.hash` and implement `hashesByPrefix` so the indexer can verify what your store holds. The hash covers the chunk text and the embedder id, and the indexer skips only chunks stored with the same hash. Without it, the indexer falls back to the hashes in `schema.lock.json`, and only trusts them when `describe()` reports the same store and dimensions as the lock. A store with neither `hashesByPrefix` nor `describe()` re-embeds every chunk on each run, because a fresh, empty instance can't be told apart from the one the lock describes. Implement `idsBySchema` so chunks removed from the schema are pruned from your store without touching other schemas. Without it, the indexer prunes only the ids listed in the previous `schema.lock.json` and logs `askdb.rag.orphan_cleanup_limited`. If a lock was written for another schema id (a renamed schema, or a lock copied from another schema's directory), the indexer logs `askdb.rag.lock_schema_mismatch`, reindexes without it, and deletes none of the ids it lists; remove an old schema id's chunks yourself with `idsBySchema` and `delete`.
 
----
+### `VectorStoreDescriptor`
 
-## Chunking
+What `describe()` returns.
 
-### `loadChunkerSourcesFromDir(dir)`
+| Field | Type | Description |
+| --- | --- | --- |
+| `kind` | `string` | Adapter kind, such as `"memory"`, `"file"` or `"pgvector"`. |
+| `location` | `string` | Where the vectors live, such as the pgvector table name. The indexer writes it to `schema.lock.json`, which lives in the schema directory you commit, so keep it free of absolute paths and credentials. |
+| `dimensions` | `number` | The vector width the store holds or expects, when known. |
+| `ephemeral` | `boolean` | `true` for a store that keeps nothing past the process. The indexer then neither reads nor writes the lock. |
+| `widthHint` | `string` | How to give the store a different vector width. Appended to the indexer's width-mismatch error, and not written to the lock. |
 
-```ts
-import { loadChunkerSourcesFromDir } from "@askdb/rag";
-
-const sources = loadChunkerSourcesFromDir("./my-app.schema");
-```
-
-Loads a v2 schema directory into `ChunkerSources`, including table markdown files, concepts, and tenant policy. **Prefer this over passing a bare schema object to `buildSchemaIndex`** — the markdown files are the richest source of semantic content for chunking.
-
-The directory layout expected:
-```
-<schemaId>.schema/
-  schema.json
-  tables/
-    <tableId>.md
-  concepts.md          (optional)
-  tenant-policy.md     (optional)
-```
-
-### `loadChunkerSourcesFromBundleJson(raw)`
+### `UpsertRecord`
 
 ```ts
-import { loadChunkerSourcesFromBundleJson } from "@askdb/rag";
-
-const sources = loadChunkerSourcesFromBundleJson(bundleJsonString);
+type UpsertRecord = {
+  id: string;
+  vector: number[];
+  payload: ChunkPayload;
+  hash?: string; // hash of the chunk text and the embedder id that produced `vector`
+};
 ```
-
-Loads a bundled schema JSON (produced by `askdb bundle`) into `ChunkerSources`. Use when markdown files are not available on disk but a bundle is.
 
 ---
 
@@ -334,6 +515,10 @@ type Filter = {
 | `refs` | `string[]` | Schema v2 ids referenced by this chunk (table ids, column ids, etc.). |
 | `sensitive` | `boolean` | `true` when the chunk carries content that belongs to or mentions a sensitive table/column. That content is only emitted with `includeSensitiveDescribable: true`. |
 
+### `ChunkPayload`
+
+The fields a store keeps with each vector: the same fields as `Chunk` (`id`, `type`, `text`, `schemaId`, `refs`, `sensitive`).
+
 ### `ChunkType`
 
 `"table"` | `"column"` | `"cql"` | `"question"` | `"concept"` | `"relationship"` | `"tenant-policy"`
@@ -344,22 +529,33 @@ type Filter = {
 type QueryResult = {
   id: string;
   score: number;       // similarity score (higher = more relevant)
-  payload: {
-    id: string;
-    type: ChunkType;
-    text: string;
-    schemaId: string;
-    refs: string[];
-    sensitive: boolean;
-  };
+  payload: ChunkPayload;
 };
 ```
+
+---
+
+## `AskDbRagLogEvent`
+
+The `event` values `@askdb/rag` logs through an `AskDbLogger`. `AskDbRagLogEventName` is the union of these values.
+
+| Constant | Event | Logged when |
+| --- | --- | --- |
+| `IndexingStarted` | `askdb.rag.indexing_started` | Indexing starts. |
+| `ChunkIndexed` | `askdb.rag.chunk_indexed` | A chunk is embedded and upserted. |
+| `ChunksReused` | `askdb.rag.chunks_reused` | Chunks are reused without an embedding call (counts). |
+| `IndexingCompleted` | `askdb.rag.indexing_completed` | Indexing finishes (totals). |
+| `SensitiveChunksExcluded` | `askdb.rag.sensitive_chunks_excluded` | Sensitive describable content was left out (counts only). |
+| `SensitiveChunksIncluded` | `askdb.rag.sensitive_chunks_included` | `includeSensitiveDescribable: true` is in effect (counts only). |
+| `OrphanCleanupLimited` | `askdb.rag.orphan_cleanup_limited` | The store has no `idsBySchema`, so only ids in the previous lock are pruned. |
+| `LockSchemaMismatch` | `askdb.rag.lock_schema_mismatch` | The lock names another schema id; the run reindexes without it. |
+| `RetrievalCompleted` | `askdb.rag.retrieval_completed` | A retriever answered a question (counts only). |
 
 ---
 
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/guides/rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>End-to-end guide: when to use RAG, store setup, and retrieval tuning.</span></a>
+  <a href="/guides/rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>When to use retrieval, store setup, and the end-to-end workflow.</span></a>
   <a href="/reference/core-api/"><strong>@askdb/core API</strong><span><code>ask()</code> options including <code>retriever</code> and retrieval thresholds.</span></a>
 </div>

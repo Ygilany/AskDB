@@ -166,6 +166,21 @@ async function main(): Promise<void> {
     throw new Error("smoke: @askdb/rag/stores/file sub-path export did not resolve");
   }
 
+  // createOpenAiEmbedder was removed (#844): neither the root export nor its sub-path is left.
+  const ragRoot: Record<string, unknown> = await import("@askdb/rag");
+  if ("createOpenAiEmbedder" in ragRoot) {
+    throw new Error("smoke: @askdb/rag still exports createOpenAiEmbedder");
+  }
+  const removedSubpath = "@askdb/rag/embedders/openai";
+  const subpathError: unknown = await import(removedSubpath).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  const subpathCode = (subpathError as { code?: string } | undefined)?.code;
+  if (subpathCode !== "ERR_PACKAGE_PATH_NOT_EXPORTED" && subpathCode !== "ERR_MODULE_NOT_FOUND") {
+    throw new Error(`smoke: ${removedSubpath} still resolves (${String(subpathError)})`);
+  }
+
   const ragOut = await ask({
     question: "How many users are there?",
     schema: v2Schema,
@@ -187,6 +202,15 @@ async function main(): Promise<void> {
   }
   if (typeof aiRegistry.createEmbeddingModelFromEnv !== "function") {
     throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry with createEmbeddingModelFromEnv");
+  }
+  // A host with a config file passes its typed sections instead of an env map.
+  const sectionConfig = aiRegistry.resolveAiConfigFromSection({
+    provider: "openai",
+    connection: { apiKey: "smoke-key" },
+    model: "gpt-4o-mini",
+  });
+  if (sectionConfig?.apiKey !== "smoke-key" || typeof aiRegistry.createEmbeddingModelFromSection !== "function") {
+    throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry that resolves a typed section");
   }
   const openaiModel = await aiRegistry.createLanguageModel({
     provider: "openai",

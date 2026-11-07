@@ -1,5 +1,26 @@
 # @askdb/client
 
+## 1.0.0-beta.12
+
+### Minor Changes
+
+- 1b9468d: `createAskDb` resolves the model and its reasoning effort from the config's typed `ai.language` section (`registry.resolveAiConfigFromSection` and `resolveReasoningEffortFromSection`), since `@askdb/config` no longer builds the `ai.aiEnv` map it read (#711). A host that only calls `createAskDb` needs no code change, but its config must load under `@askdb/config` 1.0.0-beta.19, which removes the deprecated keys (#765). A host that passes its own `registry` builds it with `@askdb/ai` 0.1.0-beta.11 or newer, which has the section methods. With an older registry, the first `ask()` that needs the config's model throws `ModelNotConfiguredError` naming the older `@askdb/ai` and the fix, instead of a `TypeError`. A host that builds the runtime config itself passes `ai.language` with a typed `connection` object. The `reasoningEffort` JSDoc now names `ai.language.reasoning`.
+
+### Patch Changes
+
+- Updated dependencies [6ea8df8]
+- Updated dependencies [1b9468d]
+- Updated dependencies [d9ab606]
+- Updated dependencies [a467984]
+- Updated dependencies [54e079e]
+  - @askdb/ai@0.1.0-beta.11
+
+## 1.0.0-beta.11
+
+### Minor Changes
+
+- 63d45cc: `createAskDb()` reads its default schema from `host.schemaJson`, then `host.schemaPath`, and no longer falls back to `ASKDB_SCHEMA_JSON` or `ASKDB_SCHEMA_PATH` in `config.ai.aiEnv` (#711). `@askdb/config` writes those keys only from `host.*`, so the fallback mattered only for a runtime config built by hand: set `structured.host` there instead. `SchemaLoadError.source` names `host.schemaJson` or `host.schemaPath (<path>)`.
+
 ## 1.0.0-beta.10
 
 ### Patch Changes

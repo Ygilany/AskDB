@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createConnectorRegistry, type ConnectorConnectionRequest } from "@askdb/introspect";
+import { createConnectorRegistry, type CatalogQueryRunner, type ConnectorConnectionRequest } from "@askdb/introspect";
+import type { LiveCatalogInput } from "@askdb/introspect/kit";
+import { MYSQL_CATALOG_SQL } from "./describe.js";
 import { mysqlConnectorProvider } from "./provider.js";
 
 // Through the registry, which adds the label built from the adapter's parts (ADR 0011).
@@ -34,5 +36,21 @@ describe("mysqlConnectorProvider", () => {
       ok: false,
       error: "--from-export is currently supported only for --engine postgres (got mysql).",
     });
+  });
+});
+
+describe("mysqlConnectorProvider.createConnector", () => {
+  // Swap the driver-backed runner for an empty catalog, so nothing connects.
+  const emptyCatalog: CatalogQueryRunner = async (sql) => (sql === MYSQL_CATALOG_SQL.current_database
+    ? { columns: ["database_name"], rows: [["shop"]] }
+    : { columns: [], rows: [] });
+
+  it.each([
+    ["shop", "shop"],
+    [undefined, "introspected"],
+  ])("turns config.schemaId %s into SqlSchema.schemaId %s", async (schemaId, expected) => {
+    const { connector, input } = mysqlConnectorProvider.createConnector({ provider: "mysql", url: "mysql://db:3306/shop", schemaId });
+    const result = await connector.describe({ ...(input as LiveCatalogInput), runner: emptyCatalog });
+    expect(result.schema.schemaId).toBe(expected);
   });
 });

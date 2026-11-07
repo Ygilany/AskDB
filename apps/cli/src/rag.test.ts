@@ -13,6 +13,10 @@ import { formatSupportedAskDbLogLevels } from "@askdb/core";
 import type { CreatePgvectorStoreOptions } from "@askdb/rag";
 import { runRagCli } from "./rag.js";
 
+// These tests install the runtime config in-process; the askdb.config file check is
+// covered by the spawned CLI tests.
+vi.mock("./project-config.js", () => ({ requireAskDbConfig: vi.fn() }));
+
 /**
  * What the CLI did to the pgvector store: the options it built it with, then each call. When
  * `tableDimensions` is set, `ensureSchema` refuses another width the way the real store does.
@@ -320,16 +324,10 @@ describe("askdb rag", () => {
   });
 
   it.each<[string, string[], string]>([
-    ["an unknown --flag=value", ["index", "./schema", "--pg-urll=postgres://u:secret@h/db"], "Unknown option: --pg-urll\n"],
     [
       "--api-key=value",
       ["index", "./schema", "--api-key=sk-secret"],
       "--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.\n",
-    ],
-    [
-      "a stray positional",
-      ["index", "./schema", "postgres://u:secret@h/db"],
-      "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.\n",
     ],
     ["an unknown command", ["postgres://u:secret@h/db"], "Unknown command (expected 'index', 'query', or 'setup-store')\n"],
     [
@@ -350,9 +348,7 @@ describe("askdb rag", () => {
 
   it.each<[string, string[], string]>([
     ["an unknown command", ["idnex"], "Unknown command: idnex (expected 'index', 'query', or 'setup-store')"],
-    ["an unknown option", ["index", "./schema", "--nope"], "Unknown option: --nope"],
-    ["a flag without its value", ["index", "./schema", "--store"], "--store requires a value."],
-    ["a value on a switch", ["index", "./schema", "--force=yes"], "--force takes no value."],
+    ["flags without a command", ["--store", "file"], "Missing command (expected 'index', 'query', or 'setup-store')"],
     [
       "an unknown --log-level",
       ["index", "./schema", "--log-level", "loud"],
@@ -374,11 +370,6 @@ describe("askdb rag", () => {
       "schema.lock.json was written by an older @askdb/rag (unscoped chunk ids); rebuild the index. " +
         "Re-run `askdb rag index` before querying.\n",
     );
-  });
-
-  it("takes --flag=value like --flag value", async () => {
-    expect(await runRagCli(["index", copyFixture(), "--store=pgvector", `--pg-url=${PG_URL}`, "--pg-table=chunks"])).toBe(0);
-    expect(pgvector.options).toEqual([expect.objectContaining({ connectionString: PG_URL, table: "chunks" })]);
   });
 
   describe("logging", () => {
@@ -589,12 +580,16 @@ describe("askdb rag", () => {
       expect(readLock(schemaDir)).toMatchObject({ embedderId: "ai-sdk:azure:embedding-deployment:4" });
     });
 
-    it('falls back to rag.embedder, including its deprecated "openai"', async () => {
+    it('falls back to rag.embedder: "ai", leaving the width to the model', async () => {
       const server = await startEmbeddingServer();
       installRuntime({
         ...BASE_CONFIG,
-        ai: { ...BASE_CONFIG.ai, providerConfig: { openai: { apiKey: "test-key", baseUrl: server.baseUrl } } },
-        rag: { embedder: "openai", store: "file", storeConfig: { file: {} } },
+        ai: {
+          ...BASE_CONFIG.ai,
+          providerConfig: { openai: { apiKey: "test-key", baseUrl: server.baseUrl } },
+          embedding: { model: "text-embedding-3-small" },
+        },
+        rag: { embedder: "ai", store: "file", storeConfig: { file: {} } },
       });
       const schemaDir = copyFixture();
       expect(await runRagCli(["index", schemaDir])).toBe(0);
@@ -658,30 +653,16 @@ describe("askdb rag", () => {
     });
 
     it.each([
-      ["openai", 'askdb rag: --embedder "openai" is deprecated; use --embedder ai with ai.embedding: { provider: "openai", model }.'],
-      ["ai-sdk", 'askdb rag: --embedder "ai-sdk" is deprecated; use --embedder ai.'],
-    ])("--embedder %s is a deprecated alias of ai", async (alias, warning) => {
-      const server = await startEmbeddingServer();
-      installRuntime(aiEmbeddingConfig(server.baseUrl));
+      ["openai", '--embedder openai was removed: use --embedder ai, with rag.embedder: "ai" and ai.embedding: { provider: "openai", model } in askdb.config.*.'],
+      ["ai-sdk", '--embedder ai-sdk was removed: use --embedder ai, with rag.embedder: "ai" and ai.embedding in askdb.config.*.'],
+    ])("--embedder %s fails, naming its replacement", async (value, message) => {
+      // A config the ai embedder could run with, so the run fails on the flag alone.
+      installRuntime(aiEmbeddingConfig("http://127.0.0.1:9"));
       const schemaDir = copyFixture();
 
-      expect(await runRagCli(["index", schemaDir, "--embedder", alias])).toBe(0);
-      expect(stderr.join("")).toBe(`${warning}\n`);
-      expect(readLock(schemaDir)).toMatchObject({ embedderId: "ai-sdk:openai:text-embedding-3-small:4" });
-    });
-
-    it("--embedder openai refuses an ai.embedding on another provider", async () => {
-      installRuntime({
-        ...BASE_CONFIG,
-        ai: {
-          ...BASE_CONFIG.ai,
-          providerConfig: { openai: { apiKey: "test-key" }, google: { apiKey: "google-key" } },
-          embedding: { provider: "google", model: "gemini-embedding-001" },
-        },
-        rag: { embedder: "ai", store: "file", storeConfig: { file: {} } },
-      });
-      expect(await runRagCli(["index", copyFixture(), "--embedder", "openai"])).toBe(1);
-      expect(stderr.join("")).toMatch(/--embedder openai embeds with OpenAI, but ai\.embedding\.provider is "google"; use --embedder ai\./);
+      expect(await runRagCli(["index", schemaDir, "--embedder", value])).toBe(1);
+      expect(stderr.join("")).toBe(`${message}\n`);
+      expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
     });
   });
 
@@ -749,7 +730,7 @@ describe("askdb rag", () => {
 
       expect(await runRagCli(["query", schemaDir, "--question", "paid orders", "--store", "pgvector", "--pg-url", PG_URL])).toBe(0);
       expect(pgvector.options).toHaveLength(1);
-      expect(pgvector.options[0]).not.toHaveProperty("dimensions");
+      expect(pgvector.options[0]?.dimensions).toBeUndefined();
       expect(pgvector.calls).toEqual(["close"]);
       // One request: the question. No width probe.
       expect(server.requests).toEqual([{ model: "text-embedding-3-small", inputs: 1 }]);

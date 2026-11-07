@@ -132,10 +132,10 @@ function clientHasBuiltInProviders(): boolean {
  * tenant-scoped question don't load them (or the drivers). A throw is a broken install,
  * and fails the scenario.
  */
-async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extras: Record<string, unknown>) {
+async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extras: Record<string, unknown>, reply = `\`\`\`sql\n${sql}\n\`\`\``) {
   const { ask, loadSchema } = await import("@askdb/core");
   const { removeTenantArtifact, tenantArtifact } = await import("./tenant.js");
-  const generateText = (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
+  const generateText = (async () => ({ text: reply })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
   const dir = tenantArtifact(dialect);
   let schema: ReturnType<typeof loadSchema>;
   try {
@@ -156,7 +156,7 @@ async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extra
 
 /**
  * Whether `ask()` hands a `subtree` scope to the host's `resolveTenantDescendants`
- * (`reference/core-api.mdx`; `guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"):
+ * (`reference/core-api/ask.mdx`; `guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"):
  * ask about agency 1's subtree on Postgres with a resolver that only records its call, and
  * see whether it was called with the scope's root and seed. Releases before #232 was fixed
  * accept the option and never call it.
@@ -200,7 +200,7 @@ async function askRequiresTenantPredicate(): Promise<boolean> {
 
 /**
  * Whether `tenantSqlMode: "sql-params"` binds tenant IDs through the dialect's driver
- * markers (`reference/core-api.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
+ * markers (`reference/core-api/ask.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
  * SQLite and check the returned `sql` uses `?`, not Postgres `$N`, and that the scope's ID
  * comes back in `tenantParams`. Releases before the fix for #231 bound them with Postgres
  * `$N` markers on every dialect, which a `?` driver can't bind. Only the marker and the
@@ -214,6 +214,25 @@ async function askBindsTenantDriverMarkers(): Promise<boolean> {
   });
   const params = (result as { tenantParams?: readonly unknown[] }).tenantParams ?? [];
   return result.sql.includes("?") && !/\$\d/.test(result.sql) && params.map(String).includes("2");
+}
+
+/**
+ * Whether `unboundSql` binds the tenant IDs in `sql-only` mode too (`reference/core-api/ask.mdx`,
+ * "Executing the result": "`tenantSqlMode` governs `sql` only"; #731): ask on SQLite in
+ * `sql-only` mode with a parameterized reply (a bound `sql`, its `sql-unbound` block and the
+ * manifest), and check the scope's ID is a value in `params`, not a literal in `unboundSql`.
+ * Releases before #743 inlined the IDs into `unboundSql` and left them out of `params`.
+ */
+async function askBindsTenantIdsInUnboundSql(): Promise<boolean> {
+  const { idsScope } = await import("./tenant.js");
+  const sql = "SELECT program_code FROM program WHERE agency_id = :tenant_agency_ids AND program_code = 'X'";
+  const unbound = "SELECT program_code FROM program WHERE agency_id = :tenant_agency_ids AND program_code = :code";
+  const manifest = JSON.stringify({ parameters: [{ name: "code", type: "string", cardinality: "one", value: "X" }] });
+  const reply = ["```sql", sql, "```", "```sql-unbound", unbound, "```", "```json", manifest, "```"].join("\n");
+  const result = await askTenantProbe("sqlite", sql, { tenantScope: idsScope("sqlite", [2]), tenantSqlMode: "sql-only" }, reply);
+  const { unboundSql, params } = result as { unboundSql?: string; params?: readonly unknown[] };
+  if (unboundSql === undefined) throw new Error("the probe's parameterized reply returned no unboundSql: a broken install");
+  return !unboundSql.includes("'2'") && (params ?? []).map(String).includes("2");
 }
 
 /**
@@ -253,7 +272,7 @@ function probeStudio() {
 
 /**
  * Whether the sensitive guardrail expands `SELECT *` to the sensitive columns it reaches
- * (`reference/core-api.mdx`, `SensitiveReference`: "Also a bare `SELECT *`, which reaches
+ * (`reference/core-api/checks.mdx`, `SensitiveReference`: "Also a bare `SELECT *`, which reaches
  * every sensitive column of the tables in that `SELECT`'s own `FROM`/`JOIN`"): `ask()` on the
  * Postgres artifact with the lab's sensitive overlay, with `SELECT * FROM people.client` as
  * the model's reply through the documented `deps.generateText` seam, must report `ssn`.
@@ -320,7 +339,7 @@ const ASYNC_DETECTORS = {
   /**
    * Tenant IDs in `sql-params` mode bound through the dialect's driver markers (`$N`, `?`,
    * `@pN`), with `sql` + `tenantParams` and `unboundSql` + `params` each an executable pair
-   * (`reference/core-api.mdx`, "Executing the result"). Before the fix for #231, every
+   * (`reference/core-api/ask.mdx`, "Executing the result"). Before the fix for #231, every
    * dialect got Postgres `$N` markers.
    */
   "tenant-driver-markers": askBindsTenantDriverMarkers,
@@ -330,6 +349,12 @@ const ASYNC_DETECTORS = {
    * #315 the guardrail accepted any mention of the tenant column.
    */
   "tenant-predicate-required": askRequiresTenantPredicate,
+  /**
+   * `unboundSql` binding tenant IDs in either `tenantSqlMode`, with them in `params`
+   * (`reference/core-api/ask.mdx`, "Executing the result"; #731, fixed by #743). Before it,
+   * `sql-only` inlined them into `unboundSql`.
+   */
+  "tenant-unbound-binds-ids": askBindsTenantIdsInUnboundSql,
   /**
    * Studio's request guard (ADR 0009, PR #185): a per-launch session token in the served
    * page, required on `/api/*`, with the Host, Origin and content-type checks that shipped

@@ -1,179 +1,125 @@
 ---
-title: "Studio"
-description: "A local browser UI for enriching your schema and testing questions — the fastest way to see AskDB work."
+title: "Studio tour"
+description: "A tour of Studio's seven views: enrich your schema, test questions against the SQL they generate, and check the RAG index, on your own machine."
 ---
-
-import { Tabs, TabItem } from "@astrojs/starlight/components";
-import InstallTabs from "../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Visual tour</p>
 
-<p class="doc-lede">Studio is a local web app that reads and writes your schema artifact directly on your machine. Its AI features send schema text and your questions to the model provider you configure. Launch it from your project root and your browser opens a seven-view UI for enriching tables, defining concepts, configuring tenant isolation, and testing natural-language questions against the SQL they generate.</p>
+<p class="doc-lede">Studio is a local web app for enriching your schema artifact and testing questions against the SQL they generate. It reads and writes the artifact on your machine, and its AI features send schema text and your questions to the model provider you configure. This tour walks through its seven views.</p>
+
+Launch it from your project root:
 
 ```bash
 npx askdb studio
 ```
 
-Studio reads `outputDir` from `askdb.config.ts`. Pass `--schema <path>` to override for a single run. By default it serves on `http://127.0.0.1:5556` — change that with the `--port` and `--host` flags, or set `studio.listen.port` and `studio.listen.host` in `askdb.config.ts` (a CLI flag overrides the config for that run).
+Studio prints its address, `AskDB Studio is running at http://127.0.0.1:5556`. Open that in your browser. It reads the schema directory in `introspection.outputDir` from `askdb.config.ts`, or `./askdb/` when that isn't set. The [Studio reference](/reference/studio/#launch) lists the flags, such as `--schema` and `--port`.
 
 ## Guided setup
 
-Studio also works as the *first* command in a brand-new project. Run `npx askdb studio` in a directory with no `askdb.config.ts` (or no schema artifact yet) and Studio opens a setup wizard instead of erroring:
+Studio also works as the *first* command in a new project. Run `npx askdb studio` in a directory with no `askdb.config.ts`, or with no schema artifact yet, and Studio opens a setup wizard instead:
 
-1. **Pick your database engine and AI provider.** The wizard asks for environment variable *names* only — it never accepts secret values. Studio writes `askdb.config.ts` and an `.env.example` for you, and installs what the config needs, or shows the command when it can't: `@askdb/config`, plus your engine's driver, or `@askdb/prisma` for a Prisma schema (with pnpm 10.4 or later, approving its `@prisma/engines` build).
-2. **Add your secrets to `.env` yourself.** The wizard shows exactly which variables to fill in (for Azure OpenAI and Foundry, that includes `AZURE_RESOURCE_NAME`); the values stay on your disk.
-3. **Run introspection from the browser.** Studio reads your schema structure server-side (tables and columns — never rows) and opens the Overview when it's done.
+1. **Pick your database engine and AI provider.** The wizard asks for environment variable *names* only, never secret values. Studio writes `askdb.config.ts` and an `.env.example`, and installs the packages the config needs.
+2. **Add your secrets to `.env` yourself.** The wizard shows which variables to fill in. The values stay on your disk.
+3. **Run introspection from the browser.** Studio reads your schema's structure (tables and columns, never rows) and opens the Overview.
 
-If `askdb.config.ts` exists but fails to load (a syntax error, or its dependencies aren't installed yet), Studio prints a warning with the load error in the terminal and starts without it. The wizard never overwrites an existing config: fix the file and restart Studio.
-
-Setup actions (writing the config, running introspection) only work from loopback clients. If you bind Studio to a non-localhost host, it refuses setup requests from other machines. It still accepts their table, concept, and tenant-policy edits and query execution (see [Security model](#security-model)). Prefer the terminal? `npx askdb init` is the same wizard as a CLI prompt.
+`npx askdb init` asks the same questions in the terminal and writes the same files. The [Studio reference](/reference/studio/#guided-setup) says what the wizard writes and installs, and how it picks a package manager.
 
 ## The loop
 
-The core Studio workflow is **enrich → ask → re-enrich**: add descriptions, aliases, and example questions to a table, then switch to the Playground and ask a question to see the generated SQL. If the answer isn't what you expected, go back, tighten the enrichment, and re-ask — all without leaving the browser tab. Repeating this loop is what makes generation reliable for the vocabulary your team actually uses.
+The core Studio workflow is **enrich → ask → re-enrich**. Add descriptions, aliases and example questions to a table, then ask a question in the Playground and read the SQL. If it isn't what you expected, tighten the enrichment and ask again, without leaving the browser tab. Repeating this loop is what makes generation reliable for the words your team uses.
 
 ## Overview
 
 ![The Overview dashboard showing table count, enrichment progress, RAG index health, and suggested next actions](../../assets/studio/overview.png)
 
-The Overview dashboard shows the health of your schema artifact at a glance: how many tables are enriched, how many are still at the default "none" state, RAG index status (chunk count and model), tenancy configuration, and a prioritised list of suggested next actions. Use it as your starting point to see where enrichment effort will have the most impact.
+The Overview shows the state of your schema artifact:
 
-**Resync schema** re-runs introspection without leaving the browser, using the connection configured in `askdb.config.ts` — the same resolution as a flag-free `askdb introspect`. The physical layer (`schema.json`) is regenerated; your enrichment markdown is preserved, exactly as with the CLI. Like the setup wizard, resync only works from loopback clients.
+- **Stat cards:** tables (with how many are enriched and partly enriched), concepts, the RAG index's health, and sensitivity coverage.
+- **Pending enrichment:** tables that still need descriptions. Click one to open it in Tables.
+- **Recent playground queries,** and cards for the **RAG index** and **Tenancy**.
+- **Suggested next actions,** such as describing a table or building the index.
+
+**Resync schema** runs introspection again with the connection in `askdb.config.ts`, as a flag-free `askdb introspect` does. It rebuilds `schema.json` and keeps your enrichment markdown.
 
 ## Tables and enrichment
 
 ![The Tables view showing a table list on the left and the Enrichment tab on the right with description, aliases, and common query language fields](../../assets/studio/tables.png)
 
-The Tables view lists every physical table in your schema. Select a table to open its detail panel with three tabs:
+The Tables view lists every table in your schema, grouped by schema, with a search box and filters for **Complete**, **Partial** and **Not started** tables. Select a table to open it in three tabs:
 
-- **Enrichment** — write a description, set aliases (the names users actually use when asking questions), declare a primary entity, add comma-separated tags, capture business vocabulary in the Common Query Language field, and add example questions.
-- **Schema** — view the raw column list with types and nullability.
-- **Sensitivity** — mark tables, or columns like `email`, `ssn`, or `internal_notes`, as sensitive so the prompt layer can tag or omit them and `validateSensitiveReferences` flags SQL that touches them. Overrides are escalate-only: they can make something sensitive on top of the physical metadata, never less sensitive. The **Effective** column shows what AskDB will actually use, and "Not sensitive" is disabled (here and on the Enrichment tab) wherever it could not take effect.
+- **Enrichment.** For the table: a description, aliases (the names people use when they ask), a primary entity, tags, common query language and example questions. For each column: a description, aliases and enum notes.
+- **Schema.** The columns with their types, nullability, primary key and sensitivity, and the table's relationships.
+- **Sensitivity.** Whether the table is **Tracked**: an untracked table stays in the artifact but out of prompts and the RAG index. Then the table's and columns' sensitivity. A mark can only make something sensitive: "Not sensitive" is disabled wherever it couldn't take effect, and the **Effective** column shows what AskDB uses.
 
-Each field has a **Suggest** button: provide a model key and Studio drafts a proposal for your review. Suggestions are never applied automatically — a human confirms every change before it lands in the artifact. A suggestion sends the model the table's columns (names, types and keys) and the names of up to four tables it links to by foreign key, but no descriptions. It treats sensitive columns the way `ask()` does: they're tagged `(sensitive)` by default, and left out when `modes.omitSensitiveFromPrompt` is `true`, where a sensitive table keeps only its name. With that setting on, **Suggest** on a sensitive column shows an error instead of a draft, because the prompt would have to name the column.
+**Save** writes the table's markdown file, and **Revert** drops your unsaved edits.
+
+**Suggest** drafts a value with your model, for a table's description, aliases, primary entity and common query language, and for a column's description and aliases. It needs a configured model, and you confirm every draft before it lands. The [Studio reference](/reference/studio/#ai-features) says what each suggestion sends to the model.
 
 ## Concepts
 
 ![The Concepts view with an empty list and an Add concept button](../../assets/studio/concepts.png)
 
-Concepts capture cross-table business vocabulary that doesn't map to a single table — things like "active subscription", "paid order", or "customer" in a schema where that meaning spans several joined tables. Add a concept, write a description, and the model uses it when constructing prompts. Start with the terms your team reaches for most when they talk about the data.
+Concepts capture business vocabulary that spans tables, such as "active subscription" or "customer" in a schema where that meaning joins several tables. **Add concept** asks for an ID (Studio adds the `concept:` prefix), a label, synonyms, links to the tables and columns it covers, and a description. **Save** writes `concepts.md`.
 
-## Playground
-
-![The Query Playground with a natural-language input field and a Generate SQL button](../../assets/studio/playground.png)
-
-The Query Playground is where you test whether your enrichment is working. Type a question in plain language, choose between **Full schema** (send the entire enriched artifact) or **RAG** (retrieve only the relevant chunks), and click **Generate SQL**. The generated SQL appears alongside the retrieval context so you can see exactly what the model was given. If the SQL is wrong, the enrichment fields that need fixing are usually obvious from the context shown. Like the CLI and `@askdb/client`, the Playground follows `modes.omitSensitiveFromPrompt`: when it's `true`, sensitive columns, and any text that names one, stay out of the prompt, except the columns your tenant policy filters on.
-
-**RAG** mode searches the index you build on the **RAG Index** page, in the store `rag` configures. With `rag.embedder: "mock"` (what `askdb init` writes), Studio embeds with a local lexical embedder that needs no key. With `rag.embedder: "ai"`, it uses the [`ai.embedding`](/reference/config/#aiembedding) model, through that section's connection only. With the pgvector store, the first build creates the table at the width the model returns (or `ai.embedding.dimensions`), and later builds refuse a table of another width, with a message naming the table and how to resolve it: drop the table and build again, point `rag.storeConfig.pgvector.table` at a new table, or set `ai.embedding.dimensions` to the table's width if the model supports it. **Settings** shows which embedder is active. Changing the `ai.embedding` provider, model or dimensions marks the index stale: build it again before searching.
-
-Generating SQL in Studio does not require a database driver. The optional **Execute Query** action runs the generated SQL against a live database and displays the results in the Playground. Studio supports Postgres, MySQL, SQLite, and SQL Server.
-
-Execute is **off by default**. Until you turn it on, the Playground hides the Execute button and explains how to enable it, and `POST /api/execute` returns `403`. To turn it on, set `studio.execute.enabled: true` and give Studio its own connection, ideally a read-only database role, then restart Studio:
-
-```ts
-export default defineConfig({
-  studio: {
-    execute: {
-      enabled: true,
-      databaseUrl: env("STUDIO_READONLY_DATABASE_URL"), // or `file: "./data.db"` for SQLite
-      // timeoutMs: 30000, // per-query timeout (default 30 s)
-      // maxRows: 500,     // row cap (default 500)
-    },
-  },
-});
-```
-
-Studio doesn't reuse your introspection connection unless you set `studio.execute.useIntrospectionConnection: true`. Choosing **Studio execute** in `askdb init` or the setup wizard writes `enabled: true` for you.
-
-### Get the code
-
-Once the SQL looks right, the **Get the code** panel below it turns the session into an integration snippet: your exact question, schema path, resolved dialect, configured AI provider, and (when enabled) the tenant scope — rendered as ready-to-paste TypeScript. Toggle between the config-driven style (`createAskDb()` from `@askdb/client`, reading the same `askdb.config.ts` Studio uses) and the direct style (`ask()` from `@askdb/core` with an explicit model). Copy it into your service and continue with [Embed in a Node app](/guides/embed-in-node/).
-
-### Execute provider
-
-Studio automatically selects the execute provider from your config. When `studio.execute.provider` is not set, Studio uses the active introspection provider when it is a live engine (Postgres, MySQL, SQLite, or SQL Server). If the introspection provider is Prisma (schema-only), Studio defaults to Postgres for backward compatibility.
-
-You can override the provider explicitly in `askdb.config.ts`:
-
-```ts
-export default defineConfig({
-  studio: {
-    execute: {
-      enabled: true,
-      provider: "mysql",                   // "postgres" | "mysql" | "sqlite" | "sqlserver"
-      databaseUrl: env("MYSQL_READONLY_URL"), // for network databases
-      // file: "./local.db",               // for SQLite
-    },
-  },
-});
-```
-
-See [Configuration — Studio execute](/reference/config/#studio-execute-configuration) for every field.
-
-### Driver packages
-
-Each execute provider requires its database driver package. These are optional peer dependencies — you only install the one you need:
-
-<Tabs syncKey="engine">
-  <TabItem label="PostgreSQL">
-    <InstallTabs pkgs="pg" />
-  </TabItem>
-  <TabItem label="MySQL">
-    <InstallTabs pkgs="mysql2" />
-  </TabItem>
-  <TabItem label="SQLite">
-    <InstallTabs pkgs="better-sqlite3" />
-  </TabItem>
-  <TabItem label="SQL Server">
-    <InstallTabs pkgs="mssql" />
-  </TabItem>
-</Tabs>
-
-When execute is enabled, the Query Playground shows the configured provider and driver readiness near the Execute button. If the driver is missing, Studio displays an **Install** button (local Studio only) or the exact manual install command.
-
-Driver packages are optional peers, not hard dependencies. This keeps install size minimal: Postgres users do not pay for MySQL or SQL Server clients and vice versa. The packages are listed as dev dependencies in `@askdb/studio` for local package development and CI type-checking — that does not mean your application must install all of them.
+Concepts reach the model through RAG retrieval: build the index (see [RAG Index](#rag-index)) and ask in RAG mode. Start with the terms your team reaches for most.
 
 ## Tenancy
 
 ![The Tenancy view offering Draft with AI or Configure manually options for multi-tenant isolation](../../assets/studio/tenancy.png)
 
-The Tenancy view is where you declare tenant isolation for multi-tenant schemas. Choose **Draft with AI** to let Studio analyze your schema and propose a tenant policy for your review, or **Configure manually** to pick the tenant root table and column yourself. The draft sends the model your tables, columns, primary keys and foreign keys, but no descriptions. It treats sensitive columns the way `ask()` does: they're tagged `(sensitive)` by default and left out when `modes.omitSensitiveFromPrompt` is `true`. If that leaves out a primary or foreign key, the review screen names it under **Withheld from the model**: the draft can't scope through a column the model never saw, so add it to the policy yourself if it carries tenant scope. Once configured, the Playground passes a tenant scope with each generated query, runs the same tenant check as `ask()`, and lets you test with different tenant IDs. Saving runs the same validation as loading the schema, so a policy AskDB couldn't load (for example, two roots whose labels give the same placeholder) is refused with an error and nothing is written. See [Multi-tenancy](/guides/multi-tenancy/) for the full walkthrough.
+The Tenancy view declares tenant isolation for a multi-tenant schema. Choose **Draft with AI** to have your model propose a tenant policy, or **Configure manually** to pick the tenant root table, its tenant ID column and an enforcement mode (**Strict** or **Warn**) yourself. Either way, you review the policy before **Save** writes `tenant-policy.md`. A saved policy shows its table coverage and an **Edit** button.
 
-## Studio and your data
+[Scope queries to a tenant](/guides/multi-tenancy/) walks through using it, and [Tenant policy format](/reference/tenant-policy/) lists the policy's fields and what the tenant check requires.
 
-Studio binds to `127.0.0.1` by default — it is not reachable from outside your machine without an explicit host override. The model sees the question and schema text (table names, column names, descriptions, concepts). In the Playground, it also sees your tenant policy and any tenant scope context you enter. It never reads your actual rows. AI features — enrichment suggestions, tenant policy drafts, NL→SQL generation — are optional and only active when a model API key is configured in your environment. Each of them follows `modes.omitSensitiveFromPrompt`.
+## RAG Index
 
-## Security model
+![The RAG Index view with chunk counts, the index details, and the Query Debugger showing retrieved chunks](../../assets/studio/rag-index.png)
 
-Studio is a local developer tool, not a hosted service. Its API can run SQL against your configured database and write your schema files. Studio protects that API from other websites open in your browser:
+The RAG Index view builds the retrieval index and shows what retrieval returns for a question:
 
-- **Per-launch session token.** Each Studio launch generates a random token and injects it into the page it serves. The browser app sends it back as an `x-askdb-studio-token` header on every `/api/*` call; requests without the right token get `403`. Other websites can't read Studio's page, so they can't get the token. Restarting Studio issues a new token, so reload any open Studio tabs after a restart.
-- **Host check.** Studio accepts only a `Host` header of `localhost`, `127.0.0.1`, `[::1]`, or the host you bound with `--host`, and only on its own port. If you bound to `0.0.0.0`, it also accepts this machine's own IP addresses. This check applies to every request, including the page itself, and blocks DNS-rebinding attacks.
-- **Origin and content-type checks.** Studio rejects state-changing API requests whose `Origin` header points at another site, and API requests whose body isn't `Content-Type: application/json`. So a web page can't reach Studio with a simple cross-site form post or `no-cors` fetch.
-- **Edits stay in the schema directory.** Studio writes only to files inside the schema directory: table, concept, and tenant-policy saves, Playground history (`playground-history.json`) and its `.gitignore` entry, and `schema.json` on **Resync schema**. If the file, or `tables/` for a table file, is a symbolic link, the write fails with an error instead of writing to the file the link points at. A linked `.gitignore` is left as it is, and the history still saves. Each write puts a temporary file next to the target and renames it over the target, so a hard link is replaced rather than written through, and nothing ever reads a half-written file. The schema directory itself can be a symbolic link.
+- **Build Index** chunks the artifact and embeds the chunks the store doesn't already hold, so a rebuild after a small change is quick. The cards count the chunks, how many are indexed, and the sensitive chunks left out or kept.
+- **Index Details** shows the embedder the index was built with against the one your config names, the vector width, when it was built, and the store. **Stale** means the index no longer matches: the artifact's text changed since the last build, the embedder differs, or a build didn't finish. Build again.
+- **Query Debugger** retrieves for a question, with a **Top K** (8 by default) and the chunk types to search. It lists each retrieved chunk with its score and text.
 
-- **Request size.** API request bodies over 1 MiB get `413`. Playground history keeps only known fields with length limits. Studio saves it to `playground-history.json` in the schema directory and adds that file to the directory's `.gitignore` so it isn't committed. If Studio creates the `.gitignore`, it also ignores `.env` files there.
+With `rag.embedder: "mock"`, which `askdb init` writes, Studio embeds with a local lexical embedder that needs no key. To embed with a model, see [RAG for large schemas](/guides/rag-for-large-schemas/).
 
-Execute is off until you set `studio.execute.enabled: true` (see [Playground](#playground)). When it's on, every query gets these guards:
+## Playground
 
-- **Validated first.** Studio runs the same read-only SELECT check `ask()` uses (`validateSelectSql`, for the execute engine's dialect) before anything reaches the driver. Multiple statements, comments, write or DDL keywords, and locking reads are rejected with `400`. If the query reads a column marked `sensitive`, the result shows a warning but still runs.
-- **One read-only statement.**
-  - Postgres runs the query as a single statement (extended query protocol) inside `BEGIN READ ONLY`, with `default_transaction_read_only` on.
-  - MySQL and MariaDB use a prepared statement inside `START TRANSACTION READ ONLY`.
-  - SQLite opens the file read-only, and the driver rejects multi-statement strings.
-  - SQL Server has no read-only transaction mode. Studio runs the query inside a transaction that it always rolls back, with `SET XACT_ABORT ON`. The query runs as part of a batch. The SELECT check rejects a second statement written without `;`, such as a second `SELECT` or a `WHILE` loop, but not one that starts with `FETCH` or with `END`, `GET` or `MOVE CONVERSATION` (see [Safety boundaries](/concepts/safety-boundaries/#what-askdb-checks)).
-- **Timeout.** `studio.execute.timeoutMs` (default 30 s) is enforced with `statement_timeout` on Postgres, `MAX_EXECUTION_TIME` on MySQL (`max_statement_time` on MariaDB), and request cancellation on SQL Server. SQLite queries can't be interrupted, so the timeout doesn't apply to them.
-- **Row cap.** Studio fetches at most `studio.execute.maxRows + 1` rows (default 500) and marks the result truncated when more exist. Postgres and MySQL wrap the query as `SELECT * FROM (…) AS askdb_q LIMIT n`, so a MySQL query that returns two columns with the same name needs aliases. SQL Server uses `SET ROWCOUNT`. SQLite stops reading at the cap.
+![The Query Playground with a natural-language input field and a Generate SQL button](../../assets/studio/playground.png)
 
-These checks reduce risk, but they aren't a sandbox. The SELECT check is heuristic, and a SELECT can still call functions with side effects. Point `studio.execute` at a **read-only database role**. On SQL Server, a read-only login is the only real guarantee.
+The Playground is where you test whether your enrichment works:
 
-Binding to a non-loopback host (`--host 0.0.0.0` or a LAN address) prints a warning at startup. Anyone who can load Studio from that address gets the session token from the page, so on that network they can edit your schema and execute queries. Setup, **Resync schema**, and the driver **Install** button still only work from loopback clients. Keep the default `127.0.0.1` unless you're on a network you trust. Studio also expects to be reached directly: a reverse proxy that rewrites the `Host` header gets `403`.
+1. Type a question in plain language.
+2. Choose **Full schema**, which sends the whole enriched artifact, or **RAG**, which retrieves only the relevant chunks. RAG is available once the index exists.
+3. With a tenant policy, the **Tenant scope** box is ticked: set the access kind, the tenant root and IDs, and the SQL output, **$N parameters** or **Inline literals**. See [Scope queries to a tenant](/guides/multi-tenancy/#4-try-it-in-studios-playground).
+4. Click **Generate SQL**, or press ⌘↵ (Ctrl+Enter).
+
+The SQL appears with an **Explain** panel that shows the result of AskDB's SQL checks. The Playground doesn't show which chunks retrieval picked: run the same question in the [RAG Index](#rag-index) Query Debugger for that. Like the CLI, the Playground follows `modes.omitSensitiveFromPrompt`.
+
+Running the generated SQL against your database is off by default. [Enable Studio execute](/guides/enable-studio-execute/) turns it on.
+
+### Get the code
+
+Once the SQL looks right, the **Get the code** panel turns the session into TypeScript you can paste: your question, the schema path, the dialect, your AI provider and, when it's on, the tenant scope. Choose the config-driven style (`createAskDb()` from `@askdb/client`, which reads the same `askdb.config.ts`) or the direct style (`ask()` from `@askdb/core` with a model you pass). Then continue with [Embed in a Node app](/guides/embed-in-node/).
+
+## Settings
+
+![The Settings view with the Workspace, RAG Store and Schema Warnings cards](../../assets/studio/settings.png)
+
+Settings, at the bottom of the side rail, shows how Studio is set up. It changes nothing:
+
+- **Workspace:** the schema ID and path, the AI provider (`ai.provider`) and model (`ai.language.model`, or the provider's default), and whether AI suggestions are configured.
+- **RAG Store:** the embedder (`rag.embedder`, with `ai.embedding` for `"ai"`), the store (`rag.store` and `rag.storeConfig`), and whether the lock file and the store's files exist.
+- **Schema Warnings:** the warnings from loading your schema artifact, such as a table with no markdown file. [Loader warnings](/reference/schema-artifact-format/#loader-warnings) explains each kind.
+
+The rail's **Dark mode** button switches Studio's theme.
 
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Quickstart</strong><span>Scaffold config, introspect a database, and run Studio end-to-end in under five minutes.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>The full enrichment workflow — descriptions, concepts, sensitive markers, and tenant policy.</span></a>
-  <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Declare tenant roots and row-level isolation in your schema artifact.</span></a>
-  <a href="/guides/rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>When your enriched artifact is too large for a single prompt context.</span></a>
+  <a href="/guides/enable-studio-execute/"><strong>Enable Studio execute</strong><span>Run the Playground's SQL against your database under a read-only role.</span></a>
+  <a href="/reference/studio/"><strong>Studio reference</strong><span>Flags, files, what each AI feature sends, and the security model.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>The enrichment workflow, and keeping the artifact current.</span></a>
+  <a href="/quickstart/"><strong>Quickstart</strong><span>Create a sample database, ask a question from the CLI, and run the SQL.</span></a>
 </div>

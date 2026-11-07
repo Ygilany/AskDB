@@ -130,17 +130,10 @@ import { createAiRegistry } from "@askdb/ai";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
 
 const registry = createAiRegistry(["openai"]);
-const model = await registry.createEmbeddingModelFromEnv(process.env);
+// Reads OPENAI_API_KEY. AskDB picks no embedding model: ASKDB_AI_EMBEDDING_MODEL wins over
+// modelDefault, and the index records the model, so keep it fixed once you've indexed.
+const model = await registry.createEmbeddingModelFromEnv(process.env, { modelDefault: "text-embedding-3-small" });
 const embedder = createAiSdkEmbedder({ model });
-```
-
-- OpenAI via `createOpenAiEmbedder` (deprecated, removed in 1.0):
-
-```ts
-// Use the registry approach above instead.
-import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai";
-
-const embedder = createOpenAiEmbedder({ model: "text-embedding-3-small" });
 ```
 
 - Any AI SDK embedding model:

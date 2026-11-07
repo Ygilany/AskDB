@@ -11,8 +11,14 @@ import {
   getAskDbRuntimeConfig,
 } from "@askdb/config";
 import {
+  findNearestPackageJsonDir,
+  lockfilePackageManager,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+} from "@askdb/config/scaffold";
+import {
   createAiRegistry,
-  resolveReasoningEffort,
+  resolveReasoningEffortFromSection,
   type AiConfig,
   type AiProvider,
 } from "@askdb/ai";
@@ -41,6 +47,7 @@ import {
   SchemaParseError,
   tenantPolicyFrontmatterSchema,
 } from "@askdb/core";
+import { EmptyIntrospectionError } from "@askdb/introspect";
 import {
   buildSchemaIndex,
   chunkContentHash,
@@ -105,11 +112,6 @@ import {
   validateExecuteSql,
 } from "./execute-registry.js";
 import type { StudioExecuteProvider } from "./execute-registry.js";
-import {
-  lockfilePackageManager,
-  packageManagerAddArgs,
-  packageManagerSpawnSpec,
-} from "./package-manager.js";
 import { resolveStudioIntrospectionPlan, runStudioIntrospection } from "./introspection.js";
 import { probeSetupState, writeSetupConfig, SetupError, type SetupConfigInput } from "./setup.js";
 import {
@@ -405,10 +407,10 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
   const rt = getAskDbRuntimeConfig();
   const aiConfig = (() => {
     try {
-      return ai.resolveAiConfig(rt.ai.aiEnv);
+      return ai.resolveAiConfigFromSection(rt.ai.language);
     } catch {
-      // A misconfigured AI env (e.g. azure without resourceName) shouldn't crash the workspace
-      // listing — surface it as "not configured" in the UI and let the user fix .env.
+      // A misconfigured AI section (e.g. azure without resourceName) shouldn't crash the workspace
+      // listing — surface it as "not configured" in the UI and let the user fix askdb.config.
       return undefined;
     }
   })();
@@ -534,7 +536,7 @@ async function handleSetupIntrospect(state: StudioState): Promise<IntrospectRunR
     );
   }
   const outDir = probe.outputDir;
-  const run = await runStudioIntrospection({
+  const run = await introspectForRequest({
     outDir,
     hasExistingArtifact: existsSync(join(outDir, "schema.json")),
   });
@@ -559,7 +561,7 @@ async function handleResync(state: StudioState): Promise<IntrospectRunResponse> 
   } catch {
     // Keep the snapshot the server started with when the config disappeared mid-session.
   }
-  const run = await runStudioIntrospection({
+  const run = await introspectForRequest({
     outDir: state.schemaDir,
     schemaId: workspace.physical.schemaId,
     hasExistingArtifact: true,
@@ -701,12 +703,12 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 
 async function suggestForSource(state: StudioState, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const rt = getAskDbRuntimeConfig();
-  const aiConfig = ai.resolveAiConfig(rt.ai.aiEnv);
+  const aiConfig = ai.resolveAiConfigFromSection(rt.ai.language);
   if (!aiConfig) {
     throw new StudioHttpError(400, ai.keyMissingMessage("AI enrichment suggestions"));
   }
   const model = await ai.createLanguageModel(aiConfig);
-  const reasoningEffort = resolveReasoningEffort(rt.ai.aiEnv, "enrichment");
+  const reasoningEffort = resolveReasoningEffortFromSection(rt.ai.language.reasoning, "enrichment");
   const providerOptions = reasoningEffort
     ? ai.resolveProviderOptions(aiConfig, { reasoningEffort })
     : undefined;
@@ -818,7 +820,7 @@ function tenantPolicySchemaForPrompt(
 
 async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTenantPolicyResponse> {
   const rt = getAskDbRuntimeConfig();
-  const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
+  const model = await ai.createLanguageModelFromSection(rt.ai.language);
   if (!model) {
     throw new StudioHttpError(400, ai.keyMissingMessage("AI tenant policy suggestion"));
   }
@@ -907,14 +909,14 @@ async function askSampleQuestion(
 ): Promise<AskResponse> {
   const rt = getAskDbRuntimeConfig();
   const mockSql = rt.dev.mockSql;
-  const aiConfig = mockSql ? undefined : ai.resolveAiConfig(rt.ai.aiEnv);
+  const aiConfig = mockSql ? undefined : ai.resolveAiConfigFromSection(rt.ai.language);
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
       `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set dev.mockSql in askdb.config to bypass the live model.`,
     );
   }
-  const reasoningEffort = mockSql ? undefined : resolveReasoningEffort(rt.ai.aiEnv, "nlToSql");
+  const reasoningEffort = mockSql ? undefined : resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql");
   const providerOptions =
     aiConfig && reasoningEffort ? ai.resolveProviderOptions(aiConfig, { reasoningEffort }) : undefined;
 
@@ -927,7 +929,7 @@ async function askSampleQuestion(
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
-    : ((await ai.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
+    : ((await ai.createLanguageModel(aiConfig!)) as AskModel);
 
   const schemaProvider =
     "provider" in schema && typeof schema.provider === "string"
@@ -1314,8 +1316,8 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     };
   }
 
-  // The env holds the embedding connection only, so no other provider's key can reach it (#345).
-  const aiConfig = ai.resolveEmbeddingConfig(embedding.env);
+  // The section holds the embedding connection only, so no other provider's key can reach it (#345).
+  const aiConfig = ai.resolveEmbeddingConfigFromSection(embedding);
   // The adapter's canonical name (`foundry` resolves to `azure`) keeps existing index ids stable.
   const provider = aiConfig?.provider ?? embedding.provider;
   const model = embedding.model;
@@ -1324,7 +1326,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     kind: "ai-sdk",
     provider,
     configuredProvider: embedding.provider,
-    connection: embedding.connection,
+    connection: embedding.connection.name,
     embedderId: aiSdkEmbedderId({ provider, model, dimensions }),
     dimensions,
     configured: Boolean(aiConfig),
@@ -1743,7 +1745,7 @@ async function getExecuteStatus(schemaDir: string): Promise<ExecuteStatusRespons
   const exec = rt.studio.execute;
   const { provider, databaseUrl, file } = exec;
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const projectRoot = findNearestPackageJsonDir(schemaDir) ?? schemaDir;
   const installed = isDriverInstalled(def.packageName, projectRoot);
   const connectionKind: "url" | "file" = provider === "sqlite" ? "file" : "url";
   const configured = connectionKind === "file" ? Boolean(file) : Boolean(databaseUrl);
@@ -1792,7 +1794,7 @@ async function installExecuteDriver(
   }
 
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  const detection = detectPackageManager(schemaDir, def.packageName);
+  const detection = detectExecuteDriverInstaller(schemaDir, def.packageName);
 
   if (detection.manualReason !== null) {
     return {
@@ -1821,7 +1823,7 @@ async function installExecuteDriver(
   };
 }
 
-type PackageManagerDetection =
+type ExecuteDriverInstaller =
   | {
       manualReason: null;
       packageManager: string;
@@ -1830,9 +1832,14 @@ type PackageManagerDetection =
     }
   | { manualReason: string };
 
-function detectPackageManager(cwd: string, packageName: string): PackageManagerDetection {
-  // Walk up from schemaDir to find the project root's lockfile.
-  const projectRoot = findProjectRoot(cwd);
+/**
+ * How to install the execute driver: with the manager of the lockfile in the nearest
+ * `package.json` directory above `cwd`. Unlike setup's detection it doesn't walk further
+ * up or guess, so Studio never installs into a parent project or with a manager the
+ * project hasn't chosen.
+ */
+function detectExecuteDriverInstaller(cwd: string, packageName: string): ExecuteDriverInstaller {
+  const projectRoot = findNearestPackageJsonDir(cwd);
   if (!projectRoot) {
     return { manualReason: `Could not locate a package.json above ${cwd}. Run the install manually.` };
   }
@@ -1846,17 +1853,6 @@ function detectPackageManager(cwd: string, packageName: string): PackageManagerD
     projectRoot,
     spawnSpec: packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, [packageName])),
   };
-}
-
-function findProjectRoot(startDir: string): string | null {
-  let current = resolve(startDir);
-  for (let i = 0; i < 20; i++) {
-    if (existsSync(join(current, "package.json"))) return current;
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
-  return null;
 }
 
 function spawnCommand(
@@ -1915,7 +1911,7 @@ async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteRe
     schemaDir,
     executeDialectFor(exec.provider, rt.nlToSql.dialect),
   );
-  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const projectRoot = findNearestPackageJsonDir(schemaDir) ?? schemaDir;
   const def = EXECUTE_DRIVER_REGISTRY[exec.provider];
   const result = await def.execute({
     connectionString: exec.databaseUrl,
@@ -2300,6 +2296,16 @@ function contentTypeFor(path: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `runStudioIntrospection` for an HTTP route: an empty result is the user's to fix (ADR 0037), so it becomes a 422, not a 500. */
+async function introspectForRequest(options: Parameters<typeof runStudioIntrospection>[0]): ReturnType<typeof runStudioIntrospection> {
+  try {
+    return await runStudioIntrospection(options);
+  } catch (error) {
+    if (error instanceof EmptyIntrospectionError) throw new StudioHttpError(422, error.message);
+    throw error;
+  }
 }
 
 class StudioHttpError extends Error {

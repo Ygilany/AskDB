@@ -4,7 +4,7 @@
  *
  * Protects: the read-only SQL guardrail as the docs state it. `concepts/safety-boundaries.mdx`
  * ("What AskDB enforces": read-only, single statement, no system schemas) and
- * `getting-started/troubleshooting.mdx` (each rule code: `SQL_NOT_SELECT_OR_WITH`,
+ * `guides/troubleshooting.mdx` (each rule code: `SQL_NOT_SELECT_OR_WITH`,
  * `SQL_MULTI_STATEMENT`, `SQL_COMMENT`, `SQL_FORBIDDEN_KEYWORD` for `INTO`, `DELETE`, `EXEC`,
  * `WAITFOR` …, `SQL_FORBIDDEN_FUNCTION` for `pg_sleep`, `LOAD_FILE`, `SLEEP` …; keywords match
  * only as whole unquoted tokens, "so a column like `deleted_at` or `"delete"` is fine"). Each
@@ -28,7 +28,7 @@
  * Not covered elsewhere: core's validator unit tests run workspace source against strings
  * and never touch an engine, so they can't show a statement does damage, or that the packed
  * build rejects it; `lab-ask` checks only that one DELETE is reported as rejected.
- * No production seam: `ask()` with `deps.generateText` (documented in `reference/core-api.mdx`),
+ * No production seam: `ask()` with `deps.generateText` (documented in `reference/core-api/ask.mdx`),
  * `SqlValidationError` and its `rule` (documented error class). The scratch copies are lab
  * code and are only ever written by the owner, never through AskDB.
  *
@@ -104,6 +104,56 @@ async function elapsedSleep(p: ProofContext): Promise<void> {
     const start = performance.now();
     await c.run(p.statement);
     expect(performance.now() - start).toBeGreaterThanOrEqual(900);
+  });
+}
+
+/** One row of `sys.dm_exec_session_wait_stats` for wait type `WAITFOR`. */
+interface WaitforWait {
+  count: number;
+  ms: number;
+}
+
+/**
+ * The `WAITFOR` waits SQL Server records for a new owner session that runs `statement`.
+ * `observer` reads them after the batch, keyed to that session's id, before the session
+ * closes (a new session with the same id starts with empty wait stats).
+ */
+async function waitforWaits(scratch: ScratchDb, observer: ScratchConnection, statement: string): Promise<WaitforWait[]> {
+  return withOwner(scratch, async (c) => {
+    const session = await scalar(c, "SELECT @@SPID AS n");
+    expect(Number.isSafeInteger(session) && session > 0).toBe(true);
+    await c.run(statement);
+    const rows = await observer.rows(
+      `SELECT waiting_tasks_count AS tasks, wait_time_ms AS ms FROM sys.dm_exec_session_wait_stats WHERE session_id = ${session} AND wait_type = 'WAITFOR'`,
+    );
+    return rows.map((r) => ({ count: Number(r.tasks), ms: Number(r.ms) }));
+  });
+}
+
+/**
+ * SQL Server's sleep, proven by its own wait record instead of a stopwatch (#479). SQL Server
+ * times `WAITFOR` on its internal millisecond counter (`sys.dm_os_sys_info.ms_ticks`), and on
+ * CI a freshly started server's counter can run ahead of real time: the batch then ends
+ * early by the client's clock (178 ms once) although the server waited its full second by
+ * its own. The session's wait stats use that same counter, so they show the wait the
+ * statement really asked for.
+ */
+async function serverWaitforSleep(p: ProofContext): Promise<void> {
+  await withOwner(p.scratch, async (observer) => {
+    // Without this permission the DMV shows the observer only its own session: no row, no error.
+    expect(await scalar(observer, "SELECT HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE') AS n"), "the owner can read other sessions' waits").toBe(1);
+    const waits = await waitforWaits(p.scratch, observer, p.statement);
+    expect(waits, "one WAITFOR wait recorded for the statement's session").toEqual([{ count: 1, ms: expect.any(Number) }]);
+    expect(waits[0]!.ms).toBeGreaterThanOrEqual(900);
+
+    // Negative controls: the same read fails a batch whose wait is zero, and finds no wait at all without one.
+    const noDelay = p.statement.replace("WAITFOR DELAY '00:00:01'", "WAITFOR DELAY '00:00:00'");
+    const noWaitfor = p.statement.replace(/\s*WAITFOR DELAY '00:00:01'$/, "");
+    expect([noDelay, noWaitfor]).not.toContain(p.statement);
+    const zero = await waitforWaits(p.scratch, observer, noDelay);
+    expect(zero).toEqual([{ count: 1, ms: expect.any(Number) }]);
+    expect(zero[0]!.ms).toBeLessThan(900);
+    expect(await waitforWaits(p.scratch, observer, noWaitfor)).toEqual([]);
   });
 }
 
@@ -539,7 +589,8 @@ const CASES: Case[] = [
     rule: "SQL_NOT_SELECT_OR_WITH",
   },
 
-  // Bounded sleeps. Timed only on the verified isolated fixture.
+  // Bounded sleeps, proven only on the verified isolated fixture: timed by the client, or on
+  // SQL Server read from the server's own wait record (`serverWaitforSleep`, #479).
   {
     scenario: "safety-sleep",
     what: "pg_sleep()",
@@ -562,7 +613,7 @@ const CASES: Case[] = [
     dialects: ["sqlserver"],
     sql: () => `SELECT 1 AS ok WAITFOR DELAY '00:00:01'`,
     rule: "SQL_FORBIDDEN_KEYWORD",
-    isolatedProof: elapsedSleep,
+    isolatedProof: serverWaitforSleep,
   },
 ];
 
@@ -581,7 +632,7 @@ const CATALOG_CASES: { what: string; dialects: readonly SupportedDialect[]; sql:
 ];
 const CATALOG_ISSUE = 318;
 
-/** A quoted identifier, in each engine's own quoting (the dialects' prompt briefs, `reference/core-api.mdx`). */
+/** A quoted identifier, in each engine's own quoting (the dialects' prompt briefs, `reference/core-api/dialects.mdx`). */
 function quoted(dialect: SupportedDialect, name: string): string {
   if (dialect === "mysql" || dialect === "mariadb") return `\`${name}\``;
   if (dialect === "sqlserver") return `[${name}]`;

@@ -1,5 +1,65 @@
 # @askdb/enrich
 
+## 0.2.0-beta.22
+
+### Minor Changes
+
+- 8e75d50: `saveTenantPolicy()` (Studio's Save) refuses a strict tenant policy with a column on another table than its entry's, as `loadSchema()` now does (#836). It passes `normalizeTenantPolicy()` a column ID → table ID map from `schema.json` on disk.
+
+### Patch Changes
+
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+
+## 0.2.0-beta.21
+
+### Minor Changes
+
+- 3b77292: `bundleSchemaDirectory()` checks the bundle it reads with `@askdb/core`'s loader, and throws the loader's `SchemaParseError` for a directory `loadSchema()` refuses, where it returned a bundle that didn't load (#796). That covers front-matter that isn't YAML, a tenant policy that doesn't parse or doesn't fit `schema.json`, and two table files with the same `id`. The error names the file on disk. A bundle it returns always loads.
+
+### Patch Changes
+
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [91e89ec]
+  - @askdb/core@1.0.0-beta.50
+
+## 0.2.0-beta.20
+
+### Patch Changes
+
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [4437394]
+  - @askdb/core@1.0.0-beta.49
+
+## 0.2.0-beta.19
+
+### Patch Changes
+
+- c28c967: Declare `ai` as a peer, with the range `@askdb/core` requires (`^6.0.0 || ^7.0.51`), so Yarn Plug'n'Play passes your app's `ai` through to `@askdb/core` (#748). Before, core inside these packages couldn't reach `ai` under Plug'n'Play, and `yarn dlx askdb` crashed at startup. Core already required `ai` when it loads, so npm and pnpm install nothing new, and a host that already meets core's `ai` range meets this one.
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+  - @askdb/core@1.0.0-beta.48
+
 ## 0.2.0-beta.18
 
 ### Patch Changes

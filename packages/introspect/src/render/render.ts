@@ -7,6 +7,7 @@ import {
   type V2Table,
   type V2Column,
 } from "@askdb/core";
+import { EmptyIntrospectionError } from "../errors.js";
 import { makeColumnId, makeTableId } from "../kit/ids.js";
 import type {
   IntrospectionWarning,
@@ -29,8 +30,9 @@ import type {
  * Clean writes and ID-anchored re-introspection merges write `schema.json`
  * only, through `saveSchemaFile()` from `@askdb/core`: a symbolic link at
  * `schema.json` is refused, and the file is replaced by a temp file renamed
- * over it (ADR 0028). The describable layer (`tables/*.md`, `concepts.md`) is
- * read only for orphan detection when `existingArtifactDir` is supplied.
+ * over it (ADR 0028). Of the describable layer (`tables/*.md`, `concepts.md`),
+ * only `tables/*.md` is read, for orphan detection, when `existingArtifactDir`
+ * is supplied. Neither is written.
  *
  * Determinism contract (requirements.md §5):
  *   - Schemas alphabetical at the source (the connector already produces
@@ -59,7 +61,8 @@ export function renderToSchemaV2(
  * Pure (no-write) form of {@link renderToSchemaV2}: produces the exact
  * `schema.json` bytes `--out` would write, including the ID-anchored merge
  * with `existingArtifactDir` (human-set `sensitive` flags preserved) and the
- * connector-detected `provider`.
+ * connector-detected `provider`. Throws {@link EmptyIntrospectionError} when
+ * the schema renders no tables or views.
  *
  * `askdb introspect --out`, `--print`, and `--diff` all go through this one
  * function so `--diff` against an artifact produced by `--out` from the same
@@ -71,6 +74,10 @@ export function renderSchemaV2Body(
 ): RenderBodyResult {
   const warnings: IntrospectionWarning[] = [];
   const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
+  // `loadSchema` rejects an artifact with no tables, so refuse before any merge or write (ADR 0037).
+  if (fresh.tables.length === 0) {
+    throw new EmptyIntrospectionError({ schemaId: options.schemaId, provider: options.provider, filters: options.filters });
+  }
   const json = options.existingArtifactDir
     ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
     : fresh;

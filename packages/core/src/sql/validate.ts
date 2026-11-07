@@ -3,6 +3,7 @@ import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
   ENGINE_LEXER_PROFILES,
   findEscapeStringContinuation,
+  findEscapedByteString,
   findUnicodeEscapedIdentifier,
   GENERIC_LEXER,
   lexSql,
@@ -52,10 +53,11 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * Checks, in order (the first failure throws {@link SqlValidationError}):
  *
  * 1. `SQL_EMPTY` — nothing left after trimming.
- * 2. `SQL_STRING_CONTINUATION`, Postgres lexer only (postgres, cockroachdb, and a dialect id
- *    that is no built-in engine) — an `E'…'` string continued on a later line, which Postgres
- *    reads with backslash escapes; past it the tokens may not be Postgres's, so it runs first
- *    (#703).
+ * 2. `SQL_STRING_CONTINUATION` and then `SQL_ESCAPED_BYTE_STRING`, Postgres lexer only
+ *    (postgres, cockroachdb, and a dialect id that is no built-in engine) — an `E'…'` string
+ *    continued on a later line, which Postgres reads with backslash escapes, and a `b'…'` byte
+ *    string with a backslash or a continuation, which CockroachDB reads with them; past either,
+ *    the tokens may not be the server's, so they run first (#703, #730).
  * 3. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block
  *    comment never closes. Fails closed rather than guessing where it ends.
  * 4. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
@@ -75,7 +77,8 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 10. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
  * 11. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
- *    `blockedFunctions` (side-effecting or file/network/sleep functions).
+ *    `blockedFunctions` (side-effecting or file/network/sleep functions), and on every lexer
+ *    `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server (#825).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
  *
@@ -121,7 +124,7 @@ function checkWithProfile(
 ): SqlToken[] {
   const tokens = lexSql(sql, profile);
 
-  // First: past this boundary the tokens may not be the ones Postgres reads (#703).
+  // First: past these boundaries the tokens may not be the ones the server reads (#703, #730).
   if (profile.id === "postgres") {
     const continued = findEscapeStringContinuation(sql, tokens);
     if (continued) {
@@ -129,6 +132,14 @@ function checkWithProfile(
         "SQL_STRING_CONTINUATION",
         `An E'…' string continued on a later line is not allowed: generated SQL continues the E'…' string at offset ${continued.start}.`,
         "Postgres joins E'…' with the next '…' across a newline and reads both with backslash escapes, so the check can't tell where the string ends. Write one literal, or join the parts with ||.",
+      );
+    }
+    const bytes = findEscapedByteString(sql, tokens);
+    if (bytes) {
+      throw validationError(
+        "SQL_ESCAPED_BYTE_STRING",
+        `A b'…' byte string with a backslash, or continued on a later line, is not allowed: generated SQL has one at offset ${bytes.start}.`,
+        "CockroachDB reads b'…' with backslash escapes, also across a continuation, so the check can't tell where the string ends. Write the bytes as a hex string cast to bytea ('\\x00'::bytea).",
       );
     }
   }
@@ -252,6 +263,17 @@ function checkWithProfile(
     }
   });
 
+  // The standard spelling of a sequence's NEXTVAL(): MariaDB and SQL Server advance the sequence,
+  // outside the transaction's rollback (#825). Postgres and SQLite don't parse it, so no lexer
+  // loses a read by refusing it.
+  if (tokens.some((_, i) => wordsAt(tokens, i, NEXT_VALUE_FOR))) {
+    throw validationError(
+      "SQL_FORBIDDEN_FUNCTION",
+      "Forbidden function in generated SQL: NEXT VALUE FOR.",
+      `NEXT VALUE FOR advances a sequence, which a read-only query must not do. Remove it.${SEQUENCE_READ_HINT[profile.id] ?? ""}`,
+    );
+  }
+
   return tokens;
 }
 
@@ -302,6 +324,24 @@ function allBuiltInFunctions(): string[] {
   return Object.values(BUILT_IN_DIALECTS).flatMap((d) => [...(d.blockedFunctions ?? [])]);
 }
 
+/** The standard spelling of a sequence's NEXTVAL(), refused on every lexer (#825). */
+const NEXT_VALUE_FOR: readonly string[] = ["next", "value", "for"];
+
+/**
+ * What a query that only reads a sequence can use instead of `NEXT VALUE FOR`, by lexer: MariaDB's
+ * readers return the value this session last drew, without changing the sequence. Postgres and
+ * SQLite don't parse `NEXT VALUE FOR`, so they get no alternative.
+ */
+const SEQUENCE_READ_HINT: Partial<Record<SqlLexerProfile["id"], string>> = {
+  mysql: " On MariaDB, PREVIOUS VALUE FOR or LASTVAL() returns the value this session last drew from the sequence, without changing it.",
+  sqlserver: " On SQL Server, sys.sequences shows a sequence's current_value without changing it.",
+};
+
+/** Whether `words` appear as consecutive unquoted words starting at token `i`. */
+function wordsAt(tokens: readonly SqlToken[], i: number, words: readonly string[]): boolean {
+  return words.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word);
+}
+
 /**
  * Locking clauses, as the unquoted words they are written with: Postgres and CockroachDB
  * `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE`; MySQL and MariaDB
@@ -337,9 +377,7 @@ function findLockingRead(tokens: readonly SqlToken[], profile: SqlLexerProfile):
     if (hint) return hint;
     if (t.kind !== "word") continue;
     for (const clause of LOCKING_CLAUSES) {
-      if (clause.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word)) {
-        return clause.join(" ").toUpperCase();
-      }
+      if (wordsAt(tokens, i, clause)) return clause.join(" ").toUpperCase();
     }
   }
   return undefined;

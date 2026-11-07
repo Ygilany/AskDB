@@ -20,9 +20,9 @@ import InstallTabs from "../../../../components/InstallTabs.astro";
 
 For the CLI and Studio, install `@askdb/prisma` in your project next to `askdb`. `askdb` and `@askdb/studio` list it as an optional peer: they load it only to read a Prisma schema, and don't install it, because it brings in Prisma.
 
-<InstallTabs pkgs="askdb @askdb/prisma" />
+<InstallTabs pkgs="askdb @askdb/prisma ai zod" />
 
-`npx askdb@latest init --database prisma` installs it for you. `askdb` also finds the copy in your project when it runs from elsewhere, as `npx askdb` does. To run the CLI without installing anything, name both packages in the one-off command: `npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`.
+`ai` and `zod` are there for Yarn Plug'n'Play: `@askdb/prisma` loads `@askdb/core`, which can only load them from your project. `npx askdb@latest init --database prisma` installs all of them for you. `askdb` also finds the copy in your project when it runs from elsewhere, as `npx askdb` does. To run the CLI without installing anything, name both packages in the one-off command: `npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`.
 
 Without it, `askdb introspect --engine prisma` exits 1 and names the package to install, and Studio shows the same message instead of resyncing.
 
@@ -30,7 +30,7 @@ Without it, `askdb introspect --engine prisma` exits 1 and names the package to 
 `@askdb/prisma` depends on Prisma, whose `@prisma/engines` package has an install script. pnpm 11 doesn't run it until you approve it, and `pnpm add` exits 1 with `ERR_PNPM_IGNORED_BUILDS`. Approve it in the same command:
 
 ```bash
-pnpm add --allow-build=@prisma/engines @askdb/prisma
+pnpm add --allow-build=@prisma/engines @askdb/prisma ai
 ```
 
 This writes `allowBuilds` with `'@prisma/engines': true` to your `pnpm-workspace.yaml`. You can also run `pnpm approve-builds` after the install. A project that already uses Prisma has usually approved it. `askdb init` and Studio's guided setup approve it when they install `@askdb/prisma` with pnpm 10.4 or later, the first pnpm with `--allow-build`.
@@ -63,7 +63,7 @@ npx askdb introspect --engine prisma --prisma-schema ./prisma --print
 npx askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
-To make `--prisma-schema` optional on repeat runs, set `introspection.providerConfig.prisma.schemaPath` in `askdb.config.ts` — or rely on auto-discovery: with `provider: "prisma"` and no path configured, AskDB finds `prisma/schema.prisma` (or `schema.prisma`) in your project root automatically.
+To make `--prisma-schema` optional on repeat runs, set `introspection.providerConfig.prisma.schemaPath` in `askdb.config.ts` — or rely on auto-discovery: with `provider: "prisma"` and no path configured, AskDB looks in your project root for `prisma/schema.prisma`, then `schema.prisma`, then a `prisma/` directory (a multi-file schema), and uses the first it finds.
 
 ## Programmatic API
 
@@ -80,17 +80,17 @@ await introspect(
 
 ## Supported providers
 
-`@askdb/prisma` supports any Prisma relational provider. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
+`@askdb/prisma` supports the five Prisma providers below; any other `datasource.provider` throws. At generation time, use the matching `dialect` id. To introspect the live database instead of the `.prisma` file, install the matching engine package:
 
 | Prisma provider | `dialect` id | Engine package (live introspection) |
 | --- | --- | --- |
 | `postgresql` | `"postgres"` | `@askdb/postgres` |
-| `cockroachdb` | `"cockroachdb"` | `@askdb/postgres` |
+| `cockroachdb` | `"cockroachdb"` | none: introspect the `.prisma` file |
 | `mysql` | `"mysql"` | `@askdb/mysql` |
 | `sqlite` | `"sqlite"` | `@askdb/sqlite` |
 | `sqlserver` | `"sqlserver"` | `@askdb/sqlserver` |
 
-MongoDB is not supported — AskDB targets relational engines.
+MongoDB is not supported — AskDB targets relational engines. The [`@askdb/prisma` reference](/reference/introspect-api/#askdbprisma) lists the mapping with the rest of the package's API.
 
 ## What it doesn't do
 
@@ -99,6 +99,6 @@ MongoDB is not supported — AskDB targets relational engines.
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/quickstart/"><strong>Quickstart</strong><span>The full introspect → enrich → ask flow.</span></a>
+  <a href="/quickstart/"><strong>Quickstart</strong><span>A sample database, end to end: introspect, ask, and run the SQL AskDB returns.</span></a>
   <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>How to pair @askdb/prisma with each runtime engine.</span></a>
 </div>

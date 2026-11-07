@@ -9,86 +9,61 @@ import type {
   AskDbStudioExecuteProvider,
 } from "./constants.js";
 
-/**
- * Authoring-time AskDB configuration: nested groups (`ai`, `introspection`, `rag`, …)
- * passed to {@link defineConfig} in `askdb.config.*`, then flattened to canonical env keys for the runtime snapshot.
- *
- * Use with TypeScript's `satisfies` operator to validate the object literal without widening it, e.g.
- * `defineConfig({ ... } satisfies AskDbConfig)` or `const cfg = { ... } satisfies AskDbConfig`.
- *
- */
-
 // ---------------------------------------------------------------------------
 // AI provider connections
 // ---------------------------------------------------------------------------
 
-/** Legacy model fields every connection type still accepts until the 1.0 cutover. */
-type LegacyConnectionModel = {
-  /**
-   * @deprecated Use `ai.language.model`. Translated at load (with a warning) when this is the
-   * language section's connection, ignored on any other connection. Removed at 1.0.
-   */
-  model?: string;
-};
-
-/** Legacy Azure / Foundry field, also translated at load until the 1.0 cutover. */
-type LegacyConnectionModelFamily = {
-  /** @deprecated Use `ai.language.modelFamily`. Removed at 1.0. */
-  modelFamily?: string;
-};
-
 /** OpenAI connection (`ai.providerConfig.openai`). */
-export type OpenaiConnection = LegacyConnectionModel & {
-  /** Flattened to `OPENAI_API_KEY`. */
+export type OpenaiConnection = {
   apiKey?: string;
-  /** Flattened to `OPENAI_BASE_URL`; use it for an OpenAI-compatible endpoint. */
+  /** Use it for an OpenAI-compatible endpoint. */
   baseUrl?: string;
 };
 
 /** Azure OpenAI connection (`ai.providerConfig.azure`). */
-export type AzureConnection = LegacyConnectionModel &
-  LegacyConnectionModelFamily & {
-    apiKey?: string;
-    secondaryApiKey?: string;
-    /**
-     * Azure resource name — the subdomain of your endpoint, e.g. `"my-foundry"`
-     * for `https://my-foundry.openai.azure.com`. One of `resourceName` or
-     * `baseUrl` is required.
-     */
-    resourceName?: string;
-    /** Full endpoint URL. Overrides `resourceName` when both are set. */
-    baseUrl?: string;
-    apiVersion?: string;
-  };
+export type AzureConnection = {
+  apiKey?: string;
+  /** Used when `apiKey` is unset, for example while a key rotates. */
+  secondaryApiKey?: string;
+  /**
+   * Azure resource name — the subdomain of your endpoint, e.g. `"my-foundry"`
+   * for `https://my-foundry.openai.azure.com`. One of `resourceName` or
+   * `baseUrl` is required.
+   */
+  resourceName?: string;
+  /** Full endpoint URL. Overrides `resourceName` when both are set. */
+  baseUrl?: string;
+  apiVersion?: string;
+};
 
 /** Microsoft Foundry connection (`ai.providerConfig.foundry`): the same fields as {@link AzureConnection}. */
 export type FoundryConnection = AzureConnection;
 
 /** Anthropic connection (`ai.providerConfig.anthropic`). Anthropic has no embeddings API. */
-export type AnthropicConnection = LegacyConnectionModel & {
+export type AnthropicConnection = {
   apiKey?: string;
   baseUrl?: string;
 };
 
 /** Google Gemini connection (`ai.providerConfig.google`). */
-export type GoogleConnection = LegacyConnectionModel & {
+export type GoogleConnection = {
   apiKey?: string;
   baseUrl?: string;
 };
 
 /** Vercel AI Gateway connection (`ai.providerConfig.gateway`), built into `ai` — no extra provider package. */
-export type GatewayConnection = LegacyConnectionModel & {
-  /** AI Gateway API key. Flattened to `AI_GATEWAY_API_KEY`. */
+export type GatewayConnection = {
+  /** AI Gateway API key. */
   apiKey?: string;
   baseUrl?: string;
 };
 
 /**
  * Connection for a provider AskDB has no dedicated type for, keyed by its provider id
- * (`ai.providerConfig.mistral`). Flattened to the universal `ASKDB_AI_*` keys; works end to
- * end only when the consuming registry has an adapter registered under that provider id.
+ * (`ai.providerConfig.mistral`). Works end to end only when the consuming registry has an adapter
+ * registered under that provider id.
  */
-export type CustomConnection = LegacyConnectionModel & {
+export type CustomConnection = {
   apiKey?: string;
   baseUrl?: string;
 };
@@ -121,23 +96,10 @@ export type AiProviderConnections = {
   [provider: string]: AiConnections<CustomConnection> | AiConnections<AzureConnection> | undefined;
 };
 
-/** @deprecated Use {@link OpenaiConnection}. Removed at 1.0. */
-export type OpenaiConfig = OpenaiConnection;
-/** @deprecated Use {@link AzureConnection}. Removed at 1.0. */
-export type AzureConfig = AzureConnection;
-/** @deprecated Use {@link FoundryConnection}. Removed at 1.0. */
-export type FoundryConfig = FoundryConnection;
-/** @deprecated Use {@link AnthropicConnection}. Removed at 1.0. */
-export type AnthropicConfig = AnthropicConnection;
-/** @deprecated Use {@link GoogleConnection}. Removed at 1.0. */
-export type GoogleConfig = GoogleConnection;
-/** @deprecated Use {@link GatewayConnection}. Removed at 1.0. */
-export type GatewayConfig = GatewayConnection;
-
 /**
  * Provider-portable reasoning/latency effort for AskDB model calls. Unset
- * (the default) preserves current behavior: no reasoning `providerOptions`
- * are sent, so the provider/model's own default applies.
+ * (the default), no reasoning `providerOptions` are sent, so the
+ * provider/model's own default applies.
  */
 export type AskDbAiReasoningConfig = {
   /** Global default applied to every AskDB model-call site unless overridden below. */
@@ -204,38 +166,11 @@ export type AskDbAiConfig = {
   providerConfig?: AiProviderConnections;
   language?: AskDbAiLanguageConfig;
   embedding?: AskDbAiEmbeddingConfig;
-  /** @deprecated Use `ai.language.reasoning`. Removed at 1.0. */
-  reasoning?: AskDbAiReasoningConfig;
 };
-
-/** @deprecated Use {@link AskDbAiConfig}. Removed at 1.0. */
-export type OpenaiAiConfig = AskDbAiConfig;
-/** @deprecated Use {@link AskDbAiConfig}. Removed at 1.0. */
-export type AzureAiConfig = AskDbAiConfig;
-/** @deprecated Use {@link AskDbAiConfig}. Removed at 1.0. */
-export type FoundryAiConfig = AskDbAiConfig;
-/** @deprecated Use {@link AskDbAiConfig}. Removed at 1.0. */
-export type AnthropicAiConfig = AskDbAiConfig;
-/** @deprecated Use {@link AskDbAiConfig}. Removed at 1.0. */
-export type GoogleAiConfig = AskDbAiConfig;
-/** @deprecated Use {@link AskDbAiConfig}. Removed at 1.0. */
-export type GatewayAiConfig = AskDbAiConfig;
 
 // ---------------------------------------------------------------------------
 // RAG configs
 // ---------------------------------------------------------------------------
-
-/** @deprecated Use `ai.embedding` and a connection in `ai.providerConfig`. Translated at load (with a warning); removed at 1.0. */
-export type OpenaiRagEmbedderConfig = {
-  /** @deprecated Use `ai.embedding.model`. */
-  model?: string;
-  /** @deprecated Use `ai.embedding.dimensions`. */
-  dimension?: string | number;
-  /** @deprecated Put the key on a connection in `ai.providerConfig`. */
-  apiKey?: string;
-  /** @deprecated Put the base URL on a connection in `ai.providerConfig`. */
-  baseUrl?: string;
-};
 
 export type FileStoreConfig = {
   /**
@@ -244,26 +179,15 @@ export type FileStoreConfig = {
    * default `introspection.outputDir`).
    */
   basePath?: string;
-  /**
-   * @deprecated Never read: the file store writes its files after every change. Loading a
-   * config that sets it gives a deprecation warning. Remove it.
-   */
-  autoFlush?: boolean;
 };
 
-/** In-memory store has no env-backed options today. */
+/** The in-memory store has no options. */
 export type MemoryStoreConfig = Record<string, never>;
 
 export type PgvectorStoreConfig = {
   /** Connection string for pgvector (maps to `ASKDB_PGVECTOR_URL`). */
   databaseUrl?: string;
   table?: string;
-  /**
-   * @deprecated Ignored with `rag.embedder: "mock"`, whose vectors are always 64 wide (a load warning
-   * says so). With `rag.embedder: "ai"`, use `ai.embedding.dimensions` (translated at load, with a
-   * warning). Removed at 1.0.
-   */
-  dimensions?: string | number;
   /** When unset, {@link flattenAskDbConfig} uses `hnsw`. */
   indexStrategy?: string;
 };
@@ -298,7 +222,8 @@ export type IntrospectionProviderConfigs = {
   };
   sqlite?: {
     /**
-     * Path to a `.db` / `.sqlite` file (or `:memory:` for an empty DB). Required —
+     * Path to an existing `.db` / `.sqlite` file, which introspection opens
+     * read-only, so `:memory:` doesn't work. Required —
      * SQLite has no URL-shaped fallback because `DATABASE_URL` is typically a URL
      * for a network engine.
      */
@@ -424,7 +349,7 @@ export type AskDbIntrospectionConfig =
  * Root shape for `export default defineConfig({ ... })` in `askdb.config.*`.
  *
  * - **`ai`**: provider connections (`providerConfig`) plus the `language` and `embedding` model sections.
- * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — selecting `provider` determines which `providerConfig` branch is valid. Each branch holds the connection URL/path for that engine.
+ * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — `provider` picks which `providerConfig` branch is read. Each branch holds the connection URL/path for that engine.
  * - **`rag`** (optional): the embedder (`"mock"`, or `"ai"` for `ai.embedding`) and the vector store, flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths. Omitting it means the mock embedder and the in-memory store.
  * - **`logging` | `modes` | `host`**: optional operational defaults.
  */
@@ -450,12 +375,8 @@ export type AskDbConfig = {
    * nothing would use that model. When present, `embedder`, `store` and `storeConfig` are required.
    */
   rag?: {
-    /** `"mock"` (a local lexical embedder) or `"ai"` (the `ai.embedding` model). `"openai"` and `"ai-sdk"` are deprecated. */
+    /** `"mock"` (a local lexical embedder) or `"ai"` (the `ai.embedding` model). */
     embedder: AskDbRagEmbedder;
-    /** @deprecated Use `ai.embedding` and a connection in `ai.providerConfig`. Translated at load (with a warning); removed at 1.0. */
-    embedderConfig?: {
-      openai?: OpenaiRagEmbedderConfig;
-    };
     store: AskDbRagStore;
     storeConfig: {
       file?: FileStoreConfig;

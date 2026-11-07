@@ -10,7 +10,7 @@ import {
   type ConnectorProviderAdapter,
   type IntrospectionResult,
 } from "@askdb/introspect";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,9 +21,9 @@ import { runIntrospectCli } from "./introspect.js";
 vi.mock("./project-config.js", () => ({ requireAskDbConfig: vi.fn() }));
 
 const BASE_CONFIG: AskDbConfig = {
-  ai: { provider: "openai", providerConfig: { openai: { apiKey: "test-key", model: "gpt-4o-mini" } } },
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "test-key" } }, language: { model: "gpt-4o-mini" } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 };
 
 // A third-party engine's block rides in the structured config, which @askdb/config passes
@@ -189,6 +189,31 @@ describe("askdb introspect — injected connector registry", () => {
     expect(loadGamma).not.toHaveBeenCalled();
   });
 
+  // `localhost` resolves to ::1 and 127.0.0.1, so a refused connection rejects with an
+  // AggregateError whose own message is empty (#749).
+  it("prints each attempt's error when the connection fails with an empty AggregateError", async () => {
+    installRuntime();
+    const { adapter } = acmeAdapter();
+    const refused = new AggregateError(
+      [
+        Object.assign(new Error("connect ECONNREFUSED ::1:5432"), { code: "ECONNREFUSED" }),
+        Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" }),
+      ],
+      "",
+    );
+    const failing: ConnectorProviderAdapter = {
+      ...adapter,
+      createConnector: () => ({ mode: "live", input: {}, connector: { describe: async () => Promise.reject(refused) } }),
+    };
+
+    const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://u:secret@localhost/db", "--print"], {
+      connectorRegistry: createConnectorRegistry([failing]),
+    });
+
+    expect(code).toBe(1);
+    expect(stderr).toBe("connect ECONNREFUSED ::1:5432\nconnect ECONNREFUSED 127.0.0.1:5432\n");
+  });
+
   it("lists the registered engines when --engine is unknown", async () => {
     installRuntime();
     const code = await runIntrospectCli(["--engine", "nope", "--print"], {
@@ -209,6 +234,52 @@ describe("askdb introspect — injected connector registry", () => {
   });
 });
 
+// #337, ADR 0037: a source that renders no tables fails with the error that names it, in every
+// output mode, and writes nothing.
+describe("askdb introspect — a source with nothing to render", () => {
+  const emptyResult: IntrospectionResult = { ...acmeResult, schema: { schemaId: "acme", schemas: [] }, isEmpty: true };
+  function engine(result: IntrospectionResult) {
+    const adapter: ConnectorProviderAdapter = {
+      provider: "acme",
+      createConnector: () => ({ mode: "live", input: {}, connector: { describe: async () => result } }),
+      resolveConnection: () => ({ ok: true as const, connection: { url: "acme://admin:S3cret@db.internal/app" } }),
+    };
+    return { connectorRegistry: createConnectorRegistry([adapter]) };
+  }
+  let dir: string;
+  beforeEach(() => {
+    installRuntime();
+    dir = mkdtempSync(join(tmpdir(), "askdb-introspect-empty-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it.each([["--out"], ["--print"]])("%s exits 1 with the error, writes nothing and repeats no connection detail", async (mode) => {
+    const out = join(dir, "acme.schema");
+    const argv = ["--engine", "acme", "--schema-id", "acme", "--schemas", "main", "--tables", "main.nothing*", ...(mode === "--out" ? ["--out", out] : ["--print"])];
+
+    expect(await runIntrospectCli(argv, engine(emptyResult))).toBe(1);
+
+    expect(stderr).toContain('Introspection found no tables or views for schema "acme" (acme), so nothing was written.');
+    expect(stderr).toContain("the filters match nothing (schemas: main; tables: main.nothing*)");
+    expect(stderr).not.toMatch(/S3cret|admin|db\.internal/);
+    expect(stdout).toBe("");
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("--diff exits 1 and leaves the artifact it compares against as it was", async () => {
+    const out = join(dir, "acme.schema");
+    expect(await runIntrospectCli(["--engine", "acme", "--schema-id", "acme", "--out", out], engine(acmeResult))).toBe(0);
+    const before = readFileSync(join(out, "schema.json"));
+    stdout = "";
+
+    expect(await runIntrospectCli(["--engine", "acme", "--schema-id", "acme", "--diff", out], engine(emptyResult))).toBe(1);
+
+    expect(stderr).toContain("Introspection found no tables or views");
+    expect(stdout).toBe("");
+    expect(readFileSync(join(out, "schema.json"))).toEqual(before);
+  });
+});
+
 describe("askdb introspect — CLI-owned errors with the built-in registry", () => {
   it("rejects combining --url with --from-export", async () => {
     installRuntime();
@@ -218,7 +289,8 @@ describe("askdb introspect — CLI-owned errors with the built-in registry", () 
 
   it("keeps the `introspect templates` message naming postgres for the built-in registry", async () => {
     installRuntime();
-    expect(await runIntrospectCli(["templates", "--engine", "prisma"])).toBe(1);
+    // `templates` is the first positional, wherever the flags put it.
+    expect(await runIntrospectCli(["--engine", "prisma", "templates"])).toBe(1);
     expect(stderr).toContain(
       "Engine 'prisma' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.",
     );

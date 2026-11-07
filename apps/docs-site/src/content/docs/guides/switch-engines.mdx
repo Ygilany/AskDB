@@ -1,6 +1,6 @@
 ---
 title: "Switch engines"
-description: "All four engines — Postgres, MySQL, SQLite, SQL Server — are first-class. Here's what changes when you move between them and what doesn't."
+description: "Postgres, MySQL, MariaDB, SQLite and SQL Server are first-class. Here's what changes when you move between them and what doesn't."
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
@@ -20,24 +20,25 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 ## What changes
 
 - The engine package you install.
-- The `dialect` value you pass to `ask()`.
-- Engine-specific SQL features the validator allows (LIMIT vs TOP, parameter syntax, JSON path syntax).
+- The dialect. A direct `ask()` call passes it; the CLI and `@askdb/client` infer it from the schema artifact (see [step 3](#3-update-the-dialect-value-in-ask-calls)).
+- The dialect's prompt brief, which tells the model the engine's SQL (`ILIKE` and `::type` on Postgres, `TOP` on SQL Server), and the read-only check's rules for the engine (extra forbidden keywords and blocked functions).
 - How the prompt `ask()` sends quotes names. A schema, table or column whose name is one of the engine's reserved words is listed quoted the engine's way, so the model copies it quoted: `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server, `"order"` on SQLite. On Postgres, which folds unquoted names to lowercase, a name with capitals is quoted too, so a Prisma table `Post` is listed as `public."Post"`. Where tables are listed with their schema, the prompt also tells the model that when it quotes a qualified name, it quotes each part separately (`"billing"."order"`, not `"billing.order"`).
 - The driver your app uses to execute (`pg`, `mysql2`, `better-sqlite3`, `mssql`).
 - How the CLI introspects the database (connection-string format and catalog queries differ per engine).
 
 ## The matrix
 
-| Engine | Adapter package | `dialect` value | Suggested driver |
+| Engine | Engine package | `dialect` value | Suggested driver |
 | --- | --- | --- | --- |
 | PostgreSQL | `@askdb/postgres` | `"postgres"` | `pg` |
 | MySQL | `@askdb/mysql` | `"mysql"` | `mysql2` |
+| MariaDB | `@askdb/mysql` | `"mariadb"` | `mysql2` |
 | SQLite | `@askdb/sqlite` | `"sqlite"` | `better-sqlite3` |
 | SQL Server | `@askdb/sqlserver` | `"sqlserver"` | `mssql` |
 
 ## Step by step
 
-### 1. Install the new adapter
+### 1. Install the new engine package
 
 <Tabs syncKey="engine">
   <TabItem label="PostgreSQL">
@@ -78,7 +79,7 @@ If you plan to run live introspection, also add the driver:
   </TabItem>
 </Tabs>
 
-You can keep the old adapter installed during a transition. Each adapter is self-contained. Database drivers are optional peers used only by live introspection or by your own execution layer.
+You can keep the old engine package installed during a transition. Each engine package is self-contained. Database drivers are optional peers used only by live introspection or by your own execution layer.
 
 ### 2. Introspect the new database (if the schema differs)
 
@@ -106,7 +107,7 @@ npx askdb introspect \
   --schema-id my-app
 ```
 
-For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. `public` is AskDB's label, not a database, so the prompt `ask()` sends lists those tables unqualified (`orders`). The URL must name that database: if the path has no database (`mysql://user:pass@host:3306`) and you don't list databases, introspection throws an error instead of writing an empty schema. To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), listed qualified in the prompt, and foreign keys between listed databases are kept:
+For MySQL and MariaDB, the URL's database is the one introspected, and the prompt `ask()` sends lists its tables unqualified (`orders`). [Stable IDs](/reference/schema-artifact-format/#stable-ids) lists the namespace each engine writes. The URL must name that database: if the path has no database (`mysql://user:pass@host:3306`) and you don't list databases, introspection throws an error instead of writing an empty schema. To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), listed qualified in the prompt, and foreign keys between listed databases are kept:
 
 ```ts
 // askdb.config.ts
@@ -163,12 +164,12 @@ npx askdb introspect \
   --schema-id my-app
 ```
 
-SQL Server accepts three URL formats — see [SQL Server connection strings](#sql-server-connection-strings) below.
+SQL Server accepts three connection-string formats, and a server with a self-signed certificate needs a TLS option: see [Connect to SQL Server](/guides/connect-to-sql-server/).
 
   </TabItem>
 </Tabs>
 
-`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
+On Postgres and SQL Server, `introspection.schemas` lists schemas (the default is every non-system schema). On MySQL and MariaDB it lists databases, as above. SQLite has a single namespace and ignores it. `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
 
 The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
 
@@ -179,15 +180,15 @@ pnpm dlx -p askdb -p mysql2 askdb introspect --engine mysql --url "$MYSQL_URL"
 npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
 ```
 
-If the logical schema is identical and you are only swapping the adapter package, the existing artifact is already valid — skip this step and go straight to step 3.
+If the logical schema is identical and you are only swapping the engine package, the existing artifact is already valid — skip this step and go straight to step 3.
 
 ### 3. Update the `dialect` value in `ask()` calls
 
-The schema artifact records which engine it was introspected from. The CLI (`askdb ask`) and `askdb.config.ts` use that information to infer the dialect automatically — no manual update needed for those entry points.
+The schema artifact records which engine it was introspected from. The CLI (`askdb ask`) and `@askdb/client` use it to infer the dialect, so those entry points need no update. A `dialect` set in `askdb.config.ts` takes precedence over the artifact's engine: remove it, or change it, when you switch.
 
-This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `mysql`, `sqlite`, `sqlserver`) and records it, so `askdb ask` still knows the dialect without a live database.
+This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `mysql`, `sqlite`, `sqlserver`, `cockroachdb`) and records it, so `askdb ask` still knows the dialect without a live database.
 
-When using `@askdb/client`, the dialect resolves from the schema artifact's recorded provider automatically — the same inference the CLI uses. No code change needed after a dialect switch if the new artifact declares the correct provider.
+When using `@askdb/client` with no `dialect` in the config, the dialect resolves from the schema artifact's recorded provider, the same inference the CLI uses. No code change is needed after a dialect switch if the new artifact declares the correct provider.
 
 To force a specific dialect (for example, if the artifact's provider doesn't match your target engine), pass it as a per-call override:
 
@@ -250,66 +251,21 @@ const rows = db.prepare(sql).all();
 ```ts
 import mssql from "mssql";
 
+// An ADO.NET string: mssql doesn't read mssql:// or sqlserver:// URLs.
 const pool = await mssql.connect(process.env.SQLSERVER_URL);
 
 const result = await pool.request().query(sql);
 const rows = result.recordset;
 ```
 
+The driver reads fewer connection-string formats than AskDB does. [Connect your own pool](/guides/connect-to-sql-server/#4-connect-your-own-pool) shows a config object that works in development and production.
+
   </TabItem>
 </Tabs>
 
-## SQL Server connection strings
-
-`databaseUrl` in `askdb.config.ts` and `--url` on the CLI accept three formats:
-
-| Format | Example |
-|--------|---------|
-| `mssql://` URL | `mssql://sa:pass@localhost:1433/MyDb` |
-| Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass` |
-| ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
-
-In the Prisma form, wrap a value that contains `;` in curly braces, as Prisma does: `password={Pass:Word;}` is `Pass:Word;`. AskDB reads braces this way only where its earlier parser couldn't read the value, so strings that worked before keep connecting with the same values:
-
-- A value is an escape when it starts with `{`, has a `;` before its first `}`, and ends at the first `}` that is followed only by blanks and then a `;` or the end of the string, where the `;`-separated piece that ends at that `}` has no `=`. Everything between the braces is the value, read verbatim: `{{a;b}}` is `{a;b}`.
-- Any other brace is a plain character, as before: `password={abc}` is `{abc}`, and a `{` that is never closed is part of the value.
-- Prisma reads every `{…}` as an escape, so a URL shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) reaches SQL Server with its braces when AskDB connects.
-- Prisma's credential keys `username`, `uid` and `pwd` are also read when `user` or `password` is absent (`username` before `uid`); the canonical key wins when both are set.
-
-### TLS / self-signed certificates
-
-SQL Server enables TLS by default. Local or dev instances typically use a self-signed certificate, which causes this error:
-
-```
-self-signed certificate — try running Node.js with --use-system-ca
-```
-
-**Fix for development:** add the trust option for your format:
-
-```bash
-# mssql:// URL
-mssql://sa:pass@localhost:1433/MyDb?trustServerCertificate=true
-
-# Prisma URL
-sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;trustServerCertificate=true
-
-# ADO.NET — use the camelCase key without spaces
-Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;Encrypt=True;TrustServerCertificate=True;
-```
-
-> **Note:** If you copy a connection string from VS Code's mssql extension it will contain `Trust Server Certificate=True` (with spaces). AskDB normalises this automatically so it works, but you can also write it without spaces (`TrustServerCertificate=True`) to match what mssql v12 expects natively.
-
-**Fix for production:** install a properly signed certificate or install the server's CA certificate in the Node.js trust store:
-
-```bash
-NODE_EXTRA_CA_CERTS=/path/to/ca.pem npx askdb introspect
-# or (Node ≥ 24.3)
-node --use-system-ca $(which askdb) introspect
-```
-
 ## On dialect parity
 
-Postgres is the reference dialect — features ship there first and the other engines follow. For most analytical questions, the four engines this guide covers generate equivalent SQL; for engine-specific features (JSON operators, window function syntax, regex variations), behavior follows what each engine supports natively.
+Postgres is the reference dialect — features ship there first and the other engines follow. For most analytical questions, the engines this guide covers generate equivalent SQL; for engine-specific features (JSON operators, window function syntax, regex variations), behavior follows what each engine supports natively.
 
 If you hit a dialect difference that surprises you, that's a bug — file it on [the project issues](https://github.com/Ygilany/AskDB/issues).
 

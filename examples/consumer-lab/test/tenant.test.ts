@@ -14,8 +14,8 @@
  * Each scenario's contract, the regression it catches, why nothing else catches it, and its
  * seam are stated above its `describe`. None needs a production seam: the scope, the
  * enforcement mode and `resolveTenantDescendants` are documented `ask()` inputs
- * (`reference/core-api.mdx`), the policy is a documented artifact file, and the errors are
- * documented exports (`getting-started/troubleshooting.mdx`, "Tenant scope").
+ * (`reference/core-api/ask.mdx`), the policy is a documented artifact file, and the errors are
+ * documented exports (`guides/troubleshooting.mdx`, "Tenant scope").
  *
  * The scenarios that assert what the docs promise but the product doesn't do are `it.fails`
  * with their issue. Each is written so that the assertion that fails is the leak itself:
@@ -31,13 +31,14 @@
  * `sql-params` cases need `tenant-driver-markers`, and the hierarchy cases
  * `subtree-resolver` (`src/capabilities.ts`).
  */
-import { TenantGuardrailError, TenantScopeError } from "@askdb/core";
+import { bindPreparedQuery, loadSchema, TenantGuardrailError, TenantScopeError } from "@askdb/core";
+import mysql from "mysql2/promise";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { askRaw, settle, type AskExtras, type AskResult, type Settled } from "../src/ask.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
-import { normalizeRows } from "../src/fixture.js";
+import { connectionUrl, normalizeRows } from "../src/fixture.js";
 import { executeReadOnly } from "../src/host/execute.js";
 import { cassetteSql, loadQuestions, type Question } from "../src/model/catalog.js";
 import { expectCassetteSql } from "./support/cassette-sql.js";
@@ -130,7 +131,7 @@ async function run(dialect: SupportedDialect, oracleId: string, sql: string, par
 }
 
 /**
- * Every executable pair `ask()` returned (`reference/core-api.mdx`, "Executing the result"),
+ * Every executable pair `ask()` returned (`reference/core-api/ask.mdx`, "Executing the result"),
  * run as the host: `sql` with `tenantParams` (none in `sql-only` mode), and `unboundSql` with
  * `params` when the reply was parameterized. Each must return exactly the visible agencies' rows.
  */
@@ -182,10 +183,61 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   });
 
   /**
+   * Pin for the fail-closed guarantee of #731 (Round 6 Q11 A on #743). Contract: `unboundSql`
+   * runs with `params`, which holds the tenant IDs in either `tenantSqlMode`
+   * (`reference/core-api/ask.mdx`, "Executing the result"). A host still on the pre-#743 `sql-only`
+   * pattern runs `unboundSql` with its business values alone. On every engine, with the drivers
+   * AskDB documents and installs (`pg`, `mysql2` `query` and `execute`, `mssql`,
+   * `better-sqlite3`), that short array must fail at the driver, never return rows, so a
+   * business value can't slide into a tenant marker. The same holds for `bindPreparedQuery()`'s
+   * `unboundSql`. (`node:sqlite` doesn't check the number of values it binds;
+   * `reference/core-api/ask.mdx`, "Executing the result", says so.)
+   * Catches: tenant markers renumbered before the business markers on `$N` or `@pN` engines, so
+   * a short array binds a business value to the tenant predicate, or a driver upgrade that pads
+   * a short array instead of refusing it.
+   * Not covered elsewhere: core's tests check the SQL text, never what a driver does with a
+   * short array; `tenant-ids` runs only the full pair.
+   */
+  describe("tenant-unbound-business-only", () => {
+    /** The business values alone, in marker order: what a host had before #743. */
+    const businessOnly = (bindings: readonly { indices: readonly number[] }[], params: readonly unknown[]) =>
+      bindings.flatMap((b) => b.indices).sort((a, b) => a - b).map((i) => params[i]);
+
+    async function expectDriverRefuses(sql: string, params: readonly unknown[], what: string): Promise<void> {
+      await expect(executeReadOnly(dialect, sql, { params }), `${what} ran with business values only`).rejects.toThrow();
+      if (dialect === "mysql" || dialect === "mariadb") {
+        // The lab's runner uses `query`; hosts also use `execute` (server-side prepared statements).
+        const conn = await mysql.createConnection(connectionUrl(dialect, "reader"));
+        try {
+          await expect(conn.execute(sql, [...params] as mysql.ExecuteValues), `${what} via execute, business values only`).rejects.toThrow();
+        } finally {
+          await conn.end();
+        }
+      }
+    }
+
+    it.for(MODES)("tenant-unbound-business-only: in %s mode, unboundSql with business values only fails at the driver", async (mode, ctx) => {
+      await needsTenantCapabilities(ctx, dialect, mode, PARAMETERIZED);
+      await needsCapability(ctx, "tenant-unbound-binds-ids");
+      const tenantScope = idsScope(dialect, [FLAT]);
+      const result = await ask(dialect, PARAMETERIZED, { tenantScope, tenantSqlMode: mode });
+      expect(result.unboundSql, "ask() dropped unboundSql for a parameterized, tenant-scoped reply").toBeDefined();
+      // The full pair runs and is scoped, so a refusal below is the short array, not the statement.
+      expect(await run(dialect, PARAMETERIZED, result.unboundSql!, result.params)).toEqual(expected(PARAMETERIZED, [FLAT]));
+      await expectDriverRefuses(result.unboundSql!, businessOnly(result.parameters!, result.params!), "ask()'s unboundSql");
+
+      const values = Object.fromEntries(result.parameters!.map((p) => [p.name, p.value]));
+      const bound = bindPreparedQuery(result.preparedQuery!, values, { schema: loadSchema(artifact(dialect)), tenantScope, tenantSqlMode: mode });
+      expect(await run(dialect, PARAMETERIZED, bound.unboundSql, bound.params)).toEqual(expected(PARAMETERIZED, [FLAT]));
+      await expectDriverRefuses(bound.unboundSql, businessOnly(bound.bindings, bound.params), "bindPreparedQuery()'s unboundSql");
+    });
+  });
+
+  /**
    * Contract: in `sql-only` mode tenant IDs are "replaced with escaped literal values"
    * (`docs/contracts/tenant-policy.md`, "Output modes"), and a tenant ID containing a
    * backslash is refused with `TenantScopeError` (`UNESCAPABLE_TENANT_ID`) on every dialect
-   * (`reference/core-api.mdx`, "Executing the result"). Releases before the fix for #371
+   * (`reference/core-api/ask.mdx`, "Executing the result"). Releases before the fix for #371
    * escaped it for the dialect instead, with backslash escapes on for MySQL and MariaDB.
    * AskDB trusts the IDs, but an ID can never become SQL: a refused ID returns no SQL, and an
    * inlined one, run as the host, returns no row outside the agency its digits name. An
@@ -253,7 +305,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * Contract: `ask()` "unions the seed IDs into the `tenantRoot` entry (deduplicated), so an
    * ancestor never loses its own rows when a resolver returns strict descendants only", and it
    * calls the resolver with every seed in `access.rootIds` (`docs/contracts/tenant-policy.md`,
-   * "Subtree expansion"; `reference/core-api.mdx`, `resolveTenantDescendants`: "`ask()`
+   * "Subtree expansion"; `reference/core-api/ask.mdx`, `resolveTenantDescendants`: "`ask()`
    * unions the seeds in"). So a resolver that returns only 4, 5 and 6 for agency 1 still scopes
    * to 1, 4, 5 and 6; and seeds 5 and 2 together see 2, 5, 6 and 7.
    * Catches: the seed union dropped (the lab's usual resolver returns the seeds itself, so
@@ -286,8 +338,8 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   /**
    * Contract: strict enforcement rejects a reply with no tenant filter on a scoped table
    * with `TenantGuardrailError` (`docs/contracts/tenant-policy.md`, "Enforcement modes";
-   * `getting-started/troubleshooting.mdx`: "AskDB refuses to return SQL that could leak
-   * cross-tenant data"). The same SQL run raw returns other agencies' programs, which is
+   * `guides/troubleshooting.mdx`, "TenantGuardrailError": "AskDB throws instead of
+   * returning that SQL"). The same SQL run raw returns other agencies' programs, which is
    * what makes the rejection matter.
    * Catches: a guardrail that misses an unfiltered scoped table, or a strict mode that only
    * warns.
@@ -371,10 +423,10 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * `tenantWarnings`" (`docs/contracts/tenant-policy.md`, "Enforcement modes";
    * `guides/multi-tenancy.mdx`, "Asking with a tenant scope"): `ask()` returns the SQL and
    * reports the missing predicate in its guardrail result (`tenantGuardrail`,
-   * `reference/core-api.mdx`), instead of throwing. `reference/core-api.mdx` names
-   * `tenantGuardrail` but not `TenantGuardrailResult`'s fields (`passed`, `warnings[].rule`,
-   * `tableId`) or the rule code `MISSING_TENANT_PREDICATE`; this asserts them from the
-   * exported types, and #316 asks for them to be documented.
+   * `reference/core-api/ask.mdx`), instead of throwing. `reference/core-api/checks.mdx` gives
+   * `TenantGuardrailResult`'s fields (`passed`, `warnings[].rule`, `tableId`) and
+   * `reference/core-api/errors.mdx` the rule code `MISSING_TENANT_PREDICATE`; this asserts them
+   * from the exported types. #316 still asks for warn mode's behavior to be documented.
    * Catches: warn mode that throws like strict, or that returns the SQL without the warning.
    * Not covered elsewhere: no other lab suite asks with a warn policy.
    */
@@ -417,7 +469,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 /**
  * Contract: a tenant policy with no `tenantScope` fails closed before the prompt:
  * `TenantScopeError` with reason `MISSING_SCOPE` (`docs/contracts/tenant-policy.md`,
- * "Enforcement rules"; `getting-started/troubleshooting.mdx`), and the model is never called.
+ * "Enforcement rules"; `guides/troubleshooting.mdx`), and the model is never called.
  * Catches: a missing scope treated as "no tenancy", or checked only after the model call.
  * Not covered elsewhere: the HTTP suite sees this only through `POST /ask`'s `500` (#277),
  * not the error and its reason. The check runs before any SQL exists, so it's

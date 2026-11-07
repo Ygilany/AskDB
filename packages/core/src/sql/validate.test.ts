@@ -356,6 +356,70 @@ describe("validateSelectSql — locking reads", () => {
   }, 30_000);
 });
 
+describe("validateSelectSql — sequence writers (#825)", () => {
+  const unknownId = { ...POSTGRES_DIALECT, id: "x" as DialectSpec["id"] };
+  // MariaDB advances or sets a sequence from a SELECT, outside the transaction's rollback.
+  // MySQL has no sequences, so the MySQL-family dialects refuse these on both ids.
+  it.each(["mysql", "mariadb"] as const)("on %s, refuses NEXTVAL(), SETVAL() and NEXT VALUE FOR", (id) => {
+    const dialect = BUILT_IN_DIALECTS[id];
+    for (const sql of [
+      `SELECT NEXTVAL(s)`,
+      `SELECT nextval (app.s) AS id`,
+      `SELECT \`NEXTVAL\`(s)`,
+      `SELECT SETVAL(s, 100)`,
+      `SELECT setval(s, 100, 0, 1)`,
+      `SELECT NEXT VALUE FOR s`,
+      `SELECT id FROM orders WHERE id > (SELECT next value for app.s)`,
+    ]) {
+      expectRule(sql, "SQL_FORBIDDEN_FUNCTION", dialect);
+    }
+  });
+
+  // T-SQL has the same NEXT VALUE FOR; Postgres and SQLite don't parse it, so every lexer refuses it.
+  it.each([
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["postgres", POSTGRES_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["an id that is no built-in engine", unknownId],
+  ] as const)("on %s, refuses NEXT VALUE FOR", (_name, dialect) => {
+    expectRule(`SELECT NEXT VALUE FOR dbo.s`, "SQL_FORBIDDEN_FUNCTION", dialect);
+  });
+
+  // The hint names a read-only alternative only where the engine has it.
+  it.each([
+    ["mariadb", BUILT_IN_DIALECTS.mariadb, "PREVIOUS VALUE FOR"],
+    ["sqlserver", SQLSERVER_DIALECT, "sys.sequences"],
+  ] as const)("on %s, the NEXT VALUE FOR hint names that engine's reader", (_name, dialect, reader) => {
+    const hint = (() => {
+      try {
+        validateSelectSql(dialect, `SELECT NEXT VALUE FOR s`);
+      } catch (e) {
+        return (e as SqlValidationError).hint;
+      }
+      return expect.fail("expected SqlValidationError");
+    })();
+    expect(hint).toContain(reader);
+    if (reader === "sys.sequences") expect(hint).not.toContain("PREVIOUS VALUE FOR");
+  });
+
+  // The readers only return the session's last value, so they stay allowed, and so does a column
+  // or alias that is only named like a writer.
+  it.each(["mysql", "mariadb"] as const)("on %s, accepts LASTVAL(), PREVIOUS VALUE FOR and columns named like the writers", (id) => {
+    const dialect = BUILT_IN_DIALECTS[id];
+    for (const sql of [
+      `SELECT LASTVAL(s)`,
+      `SELECT PREVIOUS VALUE FOR s`,
+      `SELECT nextval, setval FROM counters`,
+      `SELECT c.nextval AS next_value FROM counters c WHERE c.setval > 0`,
+      `SELECT id AS next, total AS value FROM orders`,
+      // Quoted names aren't the keywords, even side by side.
+      "SELECT `next` `value` `for` FROM t",
+    ]) {
+      expect(validateSelectSql(dialect, sql)).toBe(sql);
+    }
+  });
+});
+
 describe("validateSelectSql — Unicode-escaped identifiers (#692)", () => {
   it("rejects a denylisted function written as a U& identifier", () => {
     // Postgres 17 runs this as set_config: the escapes hide the name from the denylist.
@@ -481,6 +545,52 @@ describe("validateSelectSql — string continued after E'…' (#703)", () => {
     // MySQL has no E'…' strings: `E` is a column there.
     const mysql = "SELECT E 'a'\n, 'b' AS x FROM t";
     expect(validateSelectSql(MYSQL_DIALECT, mysql)).toBe(mysql);
+  });
+});
+
+describe("validateSelectSql — CockroachDB b'…' byte strings (#730)", () => {
+  // CockroachDB reads b'…' with backslash escapes, so it reads the bytes `'` and then an unscoped
+  // read of orders; AskDB read one string and passed it.
+  const bypass = String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`;
+  const cockroach = BUILT_IN_DIALECTS.cockroachdb;
+  const custom = { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec;
+
+  it.each([
+    ["the bypass", bypass],
+    // CockroachDB keeps the escape mode across a continuation.
+    ["a continued b'…' string", "SELECT b'a'\n'\\'' AS x, o.* FROM orders o --'"],
+    ["a b'…' string after a slice's `:`", String.raw`SELECT (ARRAY[1,2])[1:b'\''] AS x, o.* FROM orders o --'`],
+  ])("rejects %s on CockroachDB, Postgres and a dialect id that is no built-in engine", (_label, sql) => {
+    for (const dialect of [cockroach, POSTGRES_DIALECT, custom]) {
+      expectRule(sql, "SQL_ESCAPED_BYTE_STRING", dialect);
+    }
+  });
+
+  it("names the string's position, not its text, which may hold a value from the question", () => {
+    try {
+      validateSelectSql(cockroach, String.raw`SELECT b'Jane\x20Doe' AS a`);
+      expect.fail("expected SqlValidationError");
+    } catch (e) {
+      expect((e as SqlValidationError).message).toContain("offset 7");
+      expect((e as SqlValidationError).message).not.toContain("Jane");
+    }
+  });
+
+  it("accepts byte and bit strings that keep the same reading", () => {
+    // No backslash and no continuation: both readings end the string at the same quote. A B'…'
+    // bit string and an x'…' hex string have no escapes on either engine.
+    for (const sql of ["SELECT b'abc' AS x", "SELECT b'it''s' AS x", "SELECT B'01'\n'10' AS x", "SELECT x'0a' AS x", "SELECT b'0101' AS x"]) {
+      expect(validateSelectSql(cockroach, sql), JSON.stringify(sql)).toBe(sql);
+      expect(validateSelectSql(POSTGRES_DIALECT, sql), JSON.stringify(sql)).toBe(sql);
+    }
+    // MySQL's b'…' is a bit-value literal, read without escapes.
+    expect(validateSelectSql(MYSQL_DIALECT, "SELECT b'0101' AS x")).toBe("SELECT b'0101' AS x");
+  });
+
+  it("refuses a continued lower-case bit string on postgres too, the decided cost", () => {
+    // Postgres reads b'01' + newline + '10' as one bit string, but a host may point the postgres
+    // dialect at CockroachDB, which would read it with escapes. Refused there too (ADR 0012, #730).
+    expectRule("SELECT b'01'\n'10' AS x", "SQL_ESCAPED_BYTE_STRING", POSTGRES_DIALECT);
   });
 });
 

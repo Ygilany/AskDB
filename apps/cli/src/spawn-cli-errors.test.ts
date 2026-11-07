@@ -43,7 +43,7 @@ describe("cli spawn: rich errors", () => {
     expect(exec.stdout).toContain("-- sql --\nSELECT 1\n");
   });
 
-  it("prints schema path + fixture hint when schema file is missing", () => {
+  it("prints the schema path and a hint naming askdb introspect when the schema file is missing", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
 
@@ -68,7 +68,10 @@ describe("cli spawn: rich errors", () => {
     expect(exec.status).toBe(1);
     expect(exec.stderr).toContain("Schema path not found.");
     expect(exec.stderr).toContain("Schema path:");
-    expect(exec.stderr).toContain("fixtures/schemas/orders-users.schema/");
+    // fixtures/schemas exists only in AskDB's repository, so the hint must not point there.
+    expect(exec.stderr).toContain("Hint: Use a schema directory that `askdb introspect` wrote");
+    expect(exec.stderr).toContain("https://askdb.tools/guides/troubleshooting/");
+    expect(exec.stderr).not.toContain("fixtures/schemas");
   });
 
   it("prints schema path + details when schema JSON is invalid", () => {
@@ -131,7 +134,7 @@ describe("cli spawn: rich errors", () => {
     );
 
     expect(exec.status).toBe(1);
-    expect(exec.stderr).toContain("unknown option '--execute'");
+    expect(exec.stderr).toBe("Unknown option: --execute\n");
   });
 
   it("names --mock-sql and dev.mockSql, not an environment variable, when no AI key is configured (#281)", () => {

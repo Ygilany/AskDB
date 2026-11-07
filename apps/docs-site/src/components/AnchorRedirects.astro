@@ -1,0 +1,27 @@
+---
+/**
+ * Forwards a link to an anchor that moved to another page when a page was split, such as
+ * `/reference/core-api/#tenantscope` → `/reference/core-api/tenancy/#tenantscope`.
+ *
+ * It runs only when the anchor isn't on this page. Without JavaScript the page renders as
+ * usual and the link lands at its top. The targets are relative to this page, so the site's
+ * base path needs no handling, and they sit in a script, which the link checks don't read.
+ */
+interface Props {
+  /** Old anchor, without `#`, mapped to its new location relative to this page, such as `"tenancy/#tenantscope"`. */
+  moved: Record<string, string>;
+}
+
+const { moved } = Astro.props;
+---
+
+<script is:inline define:vars={{ moved }}>
+  const forward = () => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id || document.getElementById(id) || !Object.prototype.hasOwnProperty.call(moved, id)) return;
+    const here = location.pathname.endsWith("/") ? location.pathname : `${location.pathname}/`;
+    location.replace(new URL(moved[id], location.origin + here).href);
+  };
+  forward();
+  addEventListener("hashchange", forward);
+</script>

@@ -2,10 +2,12 @@ import {
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
   type AskDbConfig,
+  type AskDbDialectId,
   type AskDbLogLevel,
   type AskDbModeV1,
 } from "@askdb/config";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readSchemaDirectory } from "@askdb/core";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,6 +35,12 @@ const unsupportedProviderSchemaJson = JSON.stringify({
   ],
 });
 
+/** The Snowflake schema above under another provider, or with none. */
+function requestSchemaJson(provider: string | undefined): string {
+  const { provider: _snowflake, ...rest } = JSON.parse(unsupportedProviderSchemaJson) as Record<string, unknown>;
+  return JSON.stringify({ ...rest, schemaId: "test-request", ...(provider !== undefined ? { provider } : {}) });
+}
+
 const BASE_CONFIG: AskDbConfig = {
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "x" } }, language: { model: "gpt-4o-mini" } },
   database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
@@ -49,6 +57,7 @@ function installTestRuntime(opts: {
   httpApi?: AskDbConfig["httpApi"];
   /** Point the OpenAI adapter at a local fake provider. */
   openaiBaseUrl?: string;
+  dialect?: AskDbDialectId;
 }): void {
   const structured: AskDbConfig = {
     ...BASE_CONFIG,
@@ -66,6 +75,7 @@ function installTestRuntime(opts: {
     ...(opts.host ? { host: opts.host } : {}),
     ...(opts.modes ? { modes: opts.modes } : {}),
     ...(opts.httpApi ? { httpApi: opts.httpApi } : {}),
+    ...(opts.dialect ? { dialect: opts.dialect } : {}),
   };
   setAskDbRuntimeForTests(structured);
 }
@@ -335,43 +345,56 @@ describe("http-api", () => {
     }
   });
 
-  it("missing schema returns bad_request", async () => {
-    installTestRuntime({
-      mockSql: "select 1",
-      logLevel: "silent",
-    });
+  // #845: no schema configured server-side is the operator's to fix, like #840's schema that
+  // doesn't load: a generic 500, with the cause in the server log. A request that brings its own
+  // schemaJson doesn't need the server's schema, so it's unaffected.
+  it("with no schema configured, answers 500 generation_not_configured, logs the cause, and still serves a request schemaJson", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "askdb-http-no-schema-"));
+    const logFile = join(dir, "askdb.log");
+    installTestRuntime({ mockSql: "select 1", logLevel: "error", logFile, httpApi: { allowSchemaOverride: true } });
     const app = await startApp();
     try {
       const { status, json } = await postAsk(app.url, { question: "hi" });
-      expect(status).toBe(400);
+      expect(status).toBe(500);
       expect(json.ok).toBe(false);
-      expect(json.error?.code).toBe("bad_request");
-      expect(String(json.error?.message ?? "")).toContain("No schema configured");
+      expect(json.error?.code).toBe("generation_not_configured");
+      expect(json.error?.message).toBe("The server has no schema configured. See server logs for this correlationId.");
+      const runError = readLogEntries(logFile).find((entry) => entry.msg === "askdb http run error");
+      expect(runError?.errName).toBe("SchemaNotConfiguredError");
+
+      const withSchema = await postAsk(app.url, { question: "hi", schemaJson: requestSchemaJson("postgres") });
+      expect(withSchema.status).toBe(200);
+      expect(withSchema.json.sql).toBe("select 1");
     } finally {
       await app.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("missing schema file returns schema_parse_error with source context", async () => {
+  // #840: the server's own schema is the operator's to fix, so a host.schemaPath that doesn't
+  // load is a 500, and its path stays in the server log, never in the response.
+  it("a server host.schemaPath that doesn't load answers 500 generation_not_configured, names no path, and logs the cause", async () => {
     const missingPath = "/nope/does-not-exist-http.schema";
-    installTestRuntime({
-      mockSql: "select 1",
-      logLevel: "silent",
-      host: { schemaPath: missingPath },
-    });
+    const dir = mkdtempSync(join(tmpdir(), "askdb-http-schema-path-"));
+    const logFile = join(dir, "askdb.log");
+    installTestRuntime({ mockSql: "select 1", logLevel: "error", logFile, host: { schemaPath: missingPath } });
     const app = await startApp();
     try {
       const { status, json } = await postAsk(app.url, { question: "hi" });
-      expect(status).toBe(400);
+      expect(status).toBe(500);
       expect(json.ok).toBe(false);
-      expect(json.error?.code).toBe("schema_parse_error");
-      expect(String(json.error?.message ?? "")).toContain(`host.schemaPath (${missingPath})`);
+      expect(json.error?.code).toBe("generation_not_configured");
+      expect(String(json.error?.message ?? "")).not.toContain("does-not-exist-http");
+      const runError = readLogEntries(logFile).find((entry) => entry.msg === "askdb http run error");
+      expect(runError?.errName).toBe("SchemaLoadError");
+      expect(String(runError?.errMessage)).toContain(`host.schemaPath (${missingPath})`);
     } finally {
       await app.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("accepts schemaJson override when allowed; unknown provider falls back to postgres", async () => {
+  it("accepts schemaJson override when allowed", async () => {
     installTestRuntime({
       mockSql: "select 1",
       logLevel: "silent",
@@ -379,7 +402,8 @@ describe("http-api", () => {
     });
     const app = await startApp();
     try {
-      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson: unsupportedProviderSchemaJson });
+      const postgresSchemaJson = JSON.stringify({ ...JSON.parse(unsupportedProviderSchemaJson), provider: "postgres" });
+      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson: postgresSchemaJson });
       expect(status).toBe(200);
       expect(json.ok).toBe(true);
       expect(json.sql).toBe("select 1");
@@ -388,9 +412,130 @@ describe("http-api", () => {
     }
   });
 
+  // #720, #809: a request schema answers for its own engine. One whose provider has no AskDB
+  // dialect, or that names none, is the caller's to fix: 400, whether or not the server's config
+  // sets a dialect, which describes the server's own schema only.
+  it.each([
+    ["snowflake", undefined, "'snowflake'"],
+    ["snowflake", "postgres", "'snowflake'"],
+    [undefined, undefined, "no provider"],
+    [undefined, "postgres", "no provider"],
+  ] as const)(
+    "refuses a request schemaJson with provider %s (config dialect %s) with 400 bad_request, and returns no SQL",
+    async (provider, dialect, named) => {
+      installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true }, ...(dialect ? { dialect } : {}) });
+      const app = await startApp();
+      try {
+        const { status, json } = await postAsk(app.url, { question: "hi", schemaJson: requestSchemaJson(provider) });
+        expect(status).toBe(400);
+        expect(json.error.code).toBe("bad_request");
+        expect(json.error.message).toContain(named);
+        // The caller can't edit the server's config, so the message names the ids to send instead.
+        expect(json.error.message).not.toContain("askdb.config");
+        expect(json.error.message).toContain("postgres, cockroachdb, mysql, mariadb, sqlite, sqlserver");
+        expect(json.sql).toBeUndefined();
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  // #809: a request schema's own provider picks the dialect, so the model is asked for MySQL on a
+  // server whose config says postgres.
+  it("generates SQL for a request schemaJson's own provider, not the server's config dialect", async () => {
+    const provider = await startFakeProvider(respondWithSql("SELECT id FROM users"));
+    installTestRuntime({
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+      openaiBaseUrl: provider.baseUrl,
+      httpApi: { allowSchemaOverride: true },
+      dialect: "postgres",
+    });
+    const app = await startApp();
+    try {
+      const { status, json } = await postAsk(app.url, { question: "list users", schemaJson: requestSchemaJson("mysql") });
+      expect(status).toBe(200);
+      expect(json.sql).toBe("SELECT id FROM users");
+      expect(provider.bodies).toHaveLength(1);
+      expect(provider.bodies[0]).toContain("Target MySQL.");
+      expect(provider.bodies[0]).not.toContain("Target PostgreSQL.");
+    } finally {
+      await app.close();
+      await provider.close();
+    }
+  });
+
+  // #809: the checks read the SQL the request schema's engine's way too. MySQL reads `#` as a
+  // comment, which the read-only check refuses; PostgreSQL, the server's dialect, reads an operator.
+  it.each([
+    ["the request schemaJson's mysql", requestSchemaJson("mysql"), 400],
+    ["the server's own postgres", undefined, 200],
+  ] as const)("checks SQL under %s dialect", async (_name, schemaJson, expected) => {
+    installTestRuntime({
+      mockSql: "SELECT id FROM users # note",
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+      httpApi: { allowSchemaOverride: true },
+      dialect: "postgres",
+    });
+    const app = await startApp();
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi", ...(schemaJson ? { schemaJson } : {}) });
+      expect(status).toBe(expected);
+      if (expected === 400) expect(json.error.code).toBe("sql_validation_error");
+    } finally {
+      await app.close();
+    }
+  });
+
+  // #720: the server's own schema is the operator's to fix: 500 generation_not_configured, with a
+  // generic message, and the log line names the cause (DialectNotSupportedError, not a missing model).
+  it("refuses the server's schema whose provider has no dialect with 500 generation_not_configured, and logs the cause", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "askdb-http-snowflake-"));
+    const schemaDir = join(dir, "snowflake.schema");
+    mkdirSync(schemaDir);
+    writeFileSync(join(schemaDir, "schema.json"), unsupportedProviderSchemaJson);
+    const logFile = join(dir, "askdb.log");
+    installTestRuntime({ mockSql: "select 1", logLevel: "error", logFile });
+    const app = await startApp({ schemaPath: schemaDir });
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi" });
+      expect(status).toBe(500);
+      expect(json.error.code).toBe("generation_not_configured");
+      expect(json.error.message).not.toContain("snowflake");
+      expect(json.sql).toBeUndefined();
+      const runError = readLogEntries(logFile).find((entry) => entry.msg === "askdb http run error");
+      expect(runError?.errName).toBe("DialectNotSupportedError");
+      expect(String(runError?.errMessage)).toContain("snowflake");
+    } finally {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a schemaJson override whose table front-matter isn't YAML, and writes no file", async () => {
+    installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true } });
+    const dir = mkdtempSync(join(tmpdir(), "askdb-front-matter-"));
+    const marker = join(dir, "marker");
+    const bundle = readSchemaDirectory(schemaPath.pathname);
+    const table = Object.keys(bundle.tables)[0]!;
+    const hostile = `---js\n(require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran"), {})\n---\nBody.\n`;
+    const schemaJson = JSON.stringify({ ...bundle, tables: { ...bundle.tables, [table]: hostile } });
+    const app = await startApp();
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson });
+      expect(status).toBe(400);
+      expect(json.error?.code).toBe("schema_parse_error");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("missing AI key with no mock returns generation_not_configured", async () => {
-    // A blank apiKey resolves to no key, so aiEnv
-    // has no OPENAI_API_KEY and createLanguageModelFromEnv returns undefined.
+    // A blank apiKey resolves to no key, so the language section's connection has none and
+    // the client reports the model as not configured.
     const noKeyConfig: AskDbConfig = {
       ...BASE_CONFIG,
       ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } }, language: { model: "gpt-4o-mini" } },
@@ -581,16 +726,17 @@ describe("http-api", () => {
     }
   });
 
-  it("unmapped errors return 500 internal_error with a generic message", async () => {
-    // A tenant-policy schema without a tenant scope makes core throw TenantScopeError,
-    // which the HTTP API does not map to a caller-facing error.
+  // #716: the server can't set a tenant scope (#343), so core refuses a tenant-policy schema before
+  // any model call. The code names that, instead of a generic 500 that reads like a crash.
+  it("a tenant-policy schema returns 500 tenant_scope_not_configured, and no SQL", async () => {
     installTestRuntime({ mockSql: "select 1", logLevel: "silent" });
     const app = await startApp({ schemaPath: tenantSchemaPath.pathname });
     try {
       const { status, json } = await postAsk(app.url, { question: "how many clients?" });
       expect(status).toBe(500);
-      expect(json.error.code).toBe("internal_error");
-      expect(json.error.message).toBe("Internal server error. See server logs for this correlationId.");
+      expect(json.error.code).toBe("tenant_scope_not_configured");
+      expect(json.error.message).toContain("tenant policy");
+      expect(json.sql).toBeUndefined();
       expect(typeof json.correlationId).toBe("string");
     } finally {
       await app.close();

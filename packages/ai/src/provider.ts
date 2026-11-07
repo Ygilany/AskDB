@@ -1,5 +1,6 @@
 import type { EmbeddingModel, LanguageModel } from "ai";
-import type { ReasoningSettings } from "./reasoning.js";
+import type { AiReasoningSection, ReasoningSettings } from "./reasoning.js";
+import { refuseBaseUrlCredentials, type AiBaseUrlCredentialsError } from "./base-url.js";
 
 /*
  * AskDB is BYO-LanguageModel at the function level (see `ask()`), but the
@@ -34,6 +35,58 @@ export type ResolveConfigOptions = {
   modelEnvVar?: string;
 };
 
+/**
+ * A provider connection's settings, as an `askdb.config` connection holds them
+ * (`getAskDbRuntimeConfig().ai.language.connection`). A blank setting counts as unset.
+ */
+export type AiConnectionSection = {
+  apiKey?: string;
+  /** Used when `apiKey` is unset, for example while a key rotates. */
+  apiKeySecondary?: string;
+  baseUrl?: string;
+  /** Azure / Foundry: the subdomain of `https://<resourceName>.openai.azure.com`. Ignored by other providers. */
+  resourceName?: string;
+  /** Azure / Foundry API version. Ignored by other providers. */
+  apiVersion?: string;
+};
+
+/**
+ * The language model's settings: `getAskDbRuntimeConfig().ai.language` from `@askdb/config`, or
+ * one a host builds itself. `provider` is a registered provider name or alias.
+ */
+export type AiLanguageSection = {
+  provider: string;
+  connection: AiConnectionSection;
+  /** Unset: the provider's default language model. On Azure, the deployment name. */
+  model?: string;
+  /** Azure / Foundry: the model behind a deployment name, for reasoning support (e.g. `"gpt-5"`). */
+  modelFamily?: string;
+  reasoning?: AiReasoningSection;
+};
+
+/**
+ * The embedding model's settings: `getAskDbRuntimeConfig().ai.embedding` from `@askdb/config`,
+ * or one a host builds itself. The model is required: no layer picks an embedding model.
+ */
+export type AiEmbeddingSection = {
+  provider: string;
+  connection: AiConnectionSection;
+  model?: string;
+  /** The vector size to request; unset leaves it to the model. */
+  dimensions?: number;
+};
+
+/** What an adapter's `resolveConfigFromSection` reads from either section. */
+export type AiModelSection = {
+  provider: string;
+  connection: AiConnectionSection;
+  model?: string;
+  modelFamily?: string;
+};
+
+/** The setting a credentialed section base URL is reported as (see {@link AiBaseUrlCredentialsError}). */
+const SECTION_BASE_URL_SETTING = "connection.baseUrl";
+
 /** Declarative description of one provider's native env vars, consumed by `resolveBaseConfig`. */
 export type ProviderEnvSpec = {
   apiKeyVars: readonly string[];
@@ -41,12 +94,8 @@ export type ProviderEnvSpec = {
   modelVars?: readonly string[];
   embeddingModelVars?: readonly string[];
   baseURLVars?: readonly string[];
+  /** The language model when no variable sets one. Embedding models have none: an index bakes its model in. */
   defaultModel?: string;
-  /**
-   * @deprecated The embedding model is baked into a persisted index, so no layer should pick
-   * one. Using it emits a `DeprecationWarning` once per process; removed at 1.0.
-   */
-  defaultEmbeddingModel?: string;
 };
 
 /**
@@ -79,16 +128,20 @@ export type ProviderEnvSpec = {
  *   3. `ASKDB_EMBEDDING_MODEL`
  *   4. provider-native embedding model vars
  *   5. `options.modelDefault`
- *   6. provider default embedding model (deprecated: warns once, removed at 1.0)
+ *
+ * No provider has a default embedding model, so with a key and none of these set it throws.
  *
  * Precedence for base URLs:
  *   1. `ASKDB_AI_BASE_URL`
  *   2. provider-native base URL vars
  *
- * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load
- * and while evaluating `askdb.config.*`). Pass
- * `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
- * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
+ * A base URL with a username or password throws {@link AiBaseUrlCredentialsError}, naming the
+ * variable it came from: `fetch` would refuse it and quote the whole URL in its error.
+ *
+ * **Important:** these settings come only from the map the host passes, never from `process.env`
+ * (whose one read in `@askdb/ai` is `baseURLOption`'s credential check, ADR 0036). A host
+ * with an `askdb.config` file passes its typed section to the registry's `*FromSection` methods
+ * instead; the env map is for hosts without one.
  */
 export function resolveBaseConfig(
   provider: string,
@@ -107,8 +160,10 @@ export function resolveBaseConfig(
     ]);
   if (!apiKey) return undefined;
 
+  const baseURLVar = firstSet(env, ["ASKDB_AI_BASE_URL", ...(spec.baseURLVars ?? [])]);
+  refuseBaseUrlCredentials(baseURLVar?.value, baseURLVar?.name ?? "");
+  const baseURL = baseURLVar?.value;
   const model = resolveModel(provider, env, spec, options);
-  const baseURL = first(env, ["ASKDB_AI_BASE_URL", ...(spec.baseURLVars ?? [])]);
 
   return {
     provider,
@@ -118,17 +173,71 @@ export function resolveBaseConfig(
   };
 }
 
-let warnedDefaultEmbeddingModel = false;
+/**
+ * Resolves the provider-neutral parts of an AI config from a section's typed settings, the
+ * section counterpart of {@link resolveBaseConfig}. Returns `undefined` when the connection has no
+ * API key ("AI is disabled").
+ *
+ * - **API key:** `connection.apiKey`, else `connection.apiKeySecondary`.
+ * - **Model:** `section.model`. A language section without one gets `spec.defaultModel`; an
+ *   embedding section without one throws, since no layer picks an embedding model (ADR 0016).
+ * - **Base URL:** `connection.baseUrl`. One with a user name or password throws
+ *   {@link AiBaseUrlCredentialsError} naming `connection.baseUrl`, key or no key.
+ *
+ * Every setting is trimmed, and a blank one counts as unset.
+ */
+export function resolveBaseConfigFromSection(
+  provider: string,
+  section: AiModelSection,
+  spec: ProviderEnvSpec,
+  options: { usage: AiUsage },
+): AiConfig | undefined {
+  const { connection } = section;
+  const baseURL = nonBlank(connection.baseUrl);
+  refuseBaseUrlCredentials(baseURL, SECTION_BASE_URL_SETTING);
+  const apiKey = nonBlank(connection.apiKey) ?? nonBlank(connection.apiKeySecondary);
+  if (!apiKey) return undefined;
 
-function warnDefaultEmbeddingModel(provider: string, model: string): void {
-  if (warnedDefaultEmbeddingModel) return;
-  warnedDefaultEmbeddingModel = true;
-  process.emitWarning(
-    `${provider}: no embedding model configured, so AskDB used its default "${model}". ` +
-      "Set ai.embedding.model in askdb.config.*, or set ASKDB_AI_EMBEDDING_MODEL or the provider's embedding model variable; " +
-      "the default is removed at 1.0.",
-    { type: "DeprecationWarning", code: "ASKDB_AI_DEFAULT_EMBEDDING_MODEL" },
+  const model = nonBlank(section.model) ?? (options.usage === "language" ? spec.defaultModel : undefined);
+  if (!model) throw sectionWithoutModel(provider, options.usage);
+  return {
+    provider,
+    apiKey,
+    model,
+    ...(baseURL ? { baseURL } : {}),
+  };
+}
+
+/**
+ * Refuses a section's credentialed `connection.baseUrl` before any adapter reads it, so a custom
+ * adapter resolving from the universal env keys reports the section's setting, not an env name.
+ */
+export function refuseSectionBaseUrlCredentials(section: AiModelSection): void {
+  refuseBaseUrlCredentials(nonBlank(section.connection.baseUrl), SECTION_BASE_URL_SETTING);
+}
+
+function sectionWithoutModel(provider: string, usage: AiUsage): Error {
+  return new Error(
+    usage === "embedding"
+      ? `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.*.`
+      : `${provider}: no language model configured. Set ai.language.model in askdb.config.*.`,
   );
+}
+
+/**
+ * Throws when an embedding section has an API key but no model, whatever its adapter: no layer
+ * picks an embedding model (ADR 0016), so a custom adapter can't pick one either.
+ */
+export function refuseSectionWithoutEmbeddingModel(section: AiModelSection): void {
+  const { connection } = section;
+  const hasKey = (nonBlank(connection.apiKey) ?? nonBlank(connection.apiKeySecondary)) !== undefined;
+  if (hasKey && nonBlank(section.model) === undefined) throw sectionWithoutModel(section.provider, "embedding");
+}
+
+/** A string trimmed, or `undefined` when it's unset or blank. */
+export function nonBlank(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function resolveModel(
@@ -146,10 +255,6 @@ function resolveModel(
         "ASKDB_EMBEDDING_MODEL",
         ...(spec.embeddingModelVars ?? []),
       ]) || options.modelDefault;
-    if (!model && spec.defaultEmbeddingModel) {
-      model = spec.defaultEmbeddingModel;
-      warnDefaultEmbeddingModel(provider, model);
-    }
   } else {
     model =
       first(env, ["ASKDB_AI_MODEL", "ASKDB_MODEL", ...(spec.modelVars ?? [])]) ||
@@ -173,9 +278,14 @@ export function normalizeProvider(provider: string): string {
 }
 
 function first(env: AiEnv, vars: readonly string[]): string | undefined {
+  return firstSet(env, vars)?.value;
+}
+
+/** The first of `vars` set to a non-blank value in `env`, with its name. */
+function firstSet(env: AiEnv, vars: readonly string[]): { name: string; value: string } | undefined {
   for (const name of vars) {
     const value = env[name]?.trim();
-    if (value) return value;
+    if (value) return { name, value };
   }
   return undefined;
 }
@@ -199,6 +309,14 @@ export type AiProviderAdapter = {
   configHint?: string;
   /** Resolve an AiConfig from env. Return undefined when no API key is configured ("AI disabled"). */
   resolveConfig(env: AiEnv, options: ResolveConfigOptions): AiConfig | undefined;
+  /**
+   * Resolve an AiConfig from a section's typed settings, the way `resolveConfig` reads env. Return
+   * undefined when the connection has no API key. Every built-in provider implements it. An
+   * adapter without it gets the section through the universal env keys instead
+   * (`ASKDB_AI_API_KEY`, `ASKDB_AI_API_KEY_SECONDARY`, `ASKDB_AI_BASE_URL`, and `ASKDB_AI_MODEL`
+   * or `ASKDB_AI_EMBEDDING_MODEL`), passed to `resolveConfig`.
+   */
+  resolveConfigFromSection?(section: AiModelSection, options: { usage: AiUsage }): AiConfig | undefined;
   createLanguageModel(config: AiConfig): Promise<LanguageModel> | LanguageModel;
   createEmbeddingModel(
     config: AiConfig,
@@ -258,6 +376,29 @@ export type AiRegistry = {
   createEmbeddingModelFromEnv(
     env: AiEnv,
     options?: { modelDefault?: string; modelEnvVar?: string } & CreateEmbeddingModelOptions,
+  ): Promise<EmbeddingModel | undefined>;
+  /**
+   * Resolves the language model's config from a typed section, such as
+   * `getAskDbRuntimeConfig().ai.language` from `@askdb/config`. Returns `undefined` when the
+   * connection has no API key. Throws for a provider the registry doesn't have, and
+   * {@link AiBaseUrlCredentialsError} for a `connection.baseUrl` with a user name or password.
+   */
+  resolveAiConfigFromSection(section: AiLanguageSection): AiConfig | undefined;
+  /**
+   * Resolves the embedding model's config from a typed section, such as
+   * `getAskDbRuntimeConfig().ai.embedding`. Throws when the section has a key but no model.
+   * Otherwise as {@link AiRegistry.resolveAiConfigFromSection}.
+   */
+  resolveEmbeddingConfigFromSection(section: AiEmbeddingSection): AiConfig | undefined;
+  /** {@link AiRegistry.resolveAiConfigFromSection}, then builds the model; `undefined` without a key. */
+  createLanguageModelFromSection(section: AiLanguageSection): Promise<LanguageModel | undefined>;
+  /**
+   * {@link AiRegistry.resolveEmbeddingConfigFromSection}, then builds the model, asking for
+   * `section.dimensions` unless `options.dimensions` is set; `undefined` without a key.
+   */
+  createEmbeddingModelFromSection(
+    section: AiEmbeddingSection,
+    options?: CreateEmbeddingModelOptions,
   ): Promise<EmbeddingModel | undefined>;
   /**
    * Maps a provider-neutral {@link ReasoningSettings} (e.g. `{ reasoningEffort: "low" }`)

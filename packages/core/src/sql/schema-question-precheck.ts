@@ -1,5 +1,6 @@
 import { AskDbError } from "../errors.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
+import { isTrackedTable } from "../schema/v2/tracked.js";
 
 const JOIN_RELATION_HINT =
   /\b(join|joined|joins|inner\s+join|left\s+join|right\s+join|full\s+join|together\s+with|along\s+with|versus|vs\.?|compare|both\s+tables|each\s+other|relationship\s+between|how\s+they\s+relate)\b/i;
@@ -20,15 +21,21 @@ export function assertNlToSqlInputs(schema: AnyNormalizedSchema, question: strin
 
 /**
  * Deterministic notes appended to the NL→SQL user prompt when the question and schema look misaligned.
+ *
+ * The notes name no schema table. The prompt's DDL already lists every table the model may use, and
+ * a list here would name tables the DDL leaves out: an untracked one (`tracked: false`), or one that
+ * retrieval didn't pick (#677, ADR 0038). The question is checked against tracked tables only, the
+ * ones the full-schema prompt can show.
  */
 export function nlToSqlAmbiguityNotes(question: string, schema: AnyNormalizedSchema): string[] {
   const notes: string[] = [];
-  const tableNames = new Set(schema.tables.map((t) => t.name.toLowerCase()));
+  // `tracked` is a v2 field; a v1 schema has none, so every table counts.
+  const tracked = "schemaId" in schema ? schema.tables.filter(isTrackedTable) : schema.tables;
+  const tableNames = new Set(tracked.map((t) => t.name.toLowerCase()));
 
-  if (schema.tables.length === 1 && JOIN_RELATION_HINT.test(question)) {
-    const only = schema.tables[0]!.name;
+  if (tracked.length === 1 && JOIN_RELATION_HINT.test(question)) {
     notes.push(
-      `The schema lists only one table (${only}). Do not invent joins to other tables unless their names appear explicitly in the schema excerpt.`,
+      "The schema lists only one table. Do not invent joins to other tables unless their names appear explicitly in the schema excerpt.",
     );
   }
 
@@ -39,10 +46,7 @@ export function nlToSqlAmbiguityNotes(question: string, schema: AnyNormalizedSch
     if (seen.has(low)) continue;
     seen.add(low);
     if (!tableNames.has(low)) {
-      const known = [...tableNames].sort().join(", ");
-      notes.push(
-        `The question mentions table "${raw}" which is not in the schema. Known tables: ${known || "(none)"}.`,
-      );
+      notes.push(`The question mentions table "${raw}" which is not in the schema.`);
     }
   }
 

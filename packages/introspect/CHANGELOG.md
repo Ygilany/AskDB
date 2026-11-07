@@ -1,5 +1,64 @@
 # @askdb/introspect
 
+## 0.3.0-beta.25
+
+### Patch Changes
+
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+
+## 0.3.0-beta.24
+
+### Minor Changes
+
+- 0782a06: Introspection refuses to write an artifact with no tables (#337, ADR 0037). `loadSchema` rejects a `schema.json` with `tables: []`, so writing one only moved the failure to the next command, and re-introspecting a database that had lost its tables replaced a valid artifact with it. `renderSchemaV2Body`, and so `renderToSchemaV2` and `introspect()` with render options, now throw the new `EmptyIntrospectionError` when the schema renders no tables or views, after filters: an empty database, a Postgres schema with only enums or sequences, or filters that match nothing. Nothing is written, and an existing `schema.json` and `tables/*.md` stay as they were. The error carries `schemaId`, `provider` and `filters`, and its message names them and the likely causes, never the connection. `RenderOptions` gains an optional `filters`, read only to name them in that error.
+
+### Patch Changes
+
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [91e89ec]
+  - @askdb/core@1.0.0-beta.50
+
+## 0.3.0-beta.23
+
+### Patch Changes
+
+- 82c2f94: Every built-in connector adapter now passes `ConnectorConfig.schemaId` to its connector (#775). Only the Prisma adapter did, so `createConnector({ provider: "postgres" | "mysql" | "sqlite" | "sqlserver", schemaId })` returned a `SqlSchema` with `schemaId: "introspected"`. It now returns the ID you set, and `"introspected"` only when you set none. To carry it, `LiveCatalogInput`, `PostgresIntrospectionInput`, `MysqlIntrospectionInput`, `SqliteIntrospectionInput` and `SqlServerIntrospectionInput` gain an optional `schemaId`. `schema.json` is unchanged: it takes its ID from `RenderOptions.schemaId`.
+- a8cef1b: `RenderOptions.existingArtifactDir`'s JSDoc now matches the code (#712): the merge reads `tables/*.md` for orphan warnings, not `concepts.md`. Behavior is unchanged.
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [4437394]
+  - @askdb/core@1.0.0-beta.49
+
+## 0.3.0-beta.22
+
+### Patch Changes
+
+- 1c31e95: `@askdb/introspect` tidies its internals before 1.0 (#712). Behavior and the public API are unchanged: rendered Schema v2 artifacts, IDs and driver-load errors are the same as before.
+- c28c967: Declare `ai` as a peer, with the range `@askdb/core` requires (`^6.0.0 || ^7.0.51`), so Yarn Plug'n'Play passes your app's `ai` through to `@askdb/core` (#748). Before, core inside these packages couldn't reach `ai` under Plug'n'Play, and `yarn dlx askdb` crashed at startup. Core already required `ai` when it loads, so npm and pnpm install nothing new, and a host that already meets core's `ai` range meets this one.
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+  - @askdb/core@1.0.0-beta.48
+
 ## 0.3.0-beta.21
 
 ### Patch Changes

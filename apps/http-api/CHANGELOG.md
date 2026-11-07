@@ -1,5 +1,102 @@
 # @askdb/http-api
 
+## 1.0.0-beta.51
+
+### Minor Changes
+
+- 4882ef5: With no schema configured server-side, `askdb-http` answers `500 generation_not_configured`, not `400 bad_request` (#845). No `--schema-path`, `host.schemaJson` or `host.schemaPath` is the operator's to fix, like a server schema that doesn't load (#840), so the message is generic and the `askdb.run.error` log line's `errName` (`SchemaNotConfiguredError`) names the cause. A request that sends its own `schemaJson` is unaffected.
+
+### Patch Changes
+
+- 4196800: Security fix ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)), a residual of [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) finding 1. The tenant check read a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) as code, where Postgres, CockroachDB and the shared lexer read it as a string, so a tenant-scoped query could pass the check without an effective tenant predicate. The check's scanner now reads the tag with the same character set as the shared lexer and the engine. Enforce tenant isolation in the database (for example row-level security) regardless.
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+  - @askdb/client@1.0.0-beta.12
+
+## 1.0.0-beta.50
+
+### Minor Changes
+
+- 1b9468d: `askdb ask`, `askdb rag` and Studio build their models from the config's typed `ai.language` and `ai.embedding` sections, since `@askdb/config` no longer builds the AI env maps they read (#711). `askdb rag --embedder-model` still overrides `ai.embedding.model`. A config that sets a key `@askdb/config` 1.0.0-beta.19 removed (#765), such as `model` on an `ai.providerConfig` connection or `rag.embedder: "openai"`, now fails to load in the CLI, Studio and the HTTP API, with an error naming each key's replacement; the upgrade guide shows each one before and after.
+- 58b4a90: `askdb-http` reads the working directory's `.env` first, and never a `.env` inside `node_modules` (#839). Its first candidate was the `.env` three directories above its `dist` folder, which in an npm install is `node_modules/.env`, so that file won over `./.env`. The working directory's `.env` now comes first. The package folder's and the repository root's follow only when the binary runs from AskDB's own source checkout, never from inside `node_modules`, so an install (or a package folder copied out of one) reads only the working directory's `.env`.
+- ccc484a: A request `schemaJson` gets SQL for its own engine (#809). The server generated and checked SQL for the `dialect` in `askdb.config.*` whatever a request schema's `provider` recorded, so a server configured for `postgres` returned PostgreSQL SQL, checked under PostgreSQL's rules, for a schema that recorded `mysql`. The server now passes a request schema's `provider` to `ask()` as its dialect, so generation and the read-only, tenant and sensitive checks run under that engine; the config's `dialect` applies to the server's own schema only. A request schema that records no `provider`, or one AskDB has no dialect for, answers `400 bad_request` with a message that names the provider (or says there is none) and the supported dialect ids, whether or not the config sets `dialect`. A caller that relied on the server's `dialect`, such as one sending a MariaDB artifact (which records `mysql`) to a server set to `mariadb`, now gets SQL for the recorded engine.
+- 58b4a90: A server schema that doesn't load answers `500 generation_not_configured`, not `400 schema_parse_error` (#840). A wrong `host.schemaPath` answered any caller with a client error whose message held the server's absolute path. The message is now generic and names no path, and the `askdb.run.error` log line keeps the full `SchemaLoadError`. A request `schemaJson` that doesn't load still answers `400 schema_parse_error`.
+- b64077c: **`askdb-http` refuses a schema whose `provider` has no AskDB dialect, and names a tenant-policy schema's error** (#720, #716). The server built its client with `unknownDialect: "fallback-postgres"`, so a schema recorded by an engine AskDB doesn't ship, such as Snowflake, got PostgreSQL SQL with `200`, checked under PostgreSQL's rules, while `askdb ask` refused it. The server now refuses it. The server's configured schema answers `500 generation_not_configured`, with a generic message, and the log's `errName` (`DialectNotSupportedError`) tells it apart from a missing model. A request `schemaJson` answers `400 bad_request`, with a message that names its provider and the supported dialect ids. A schema with a tenant policy, which the server can't scope (#343), now answers `500 tenant_scope_not_configured`, a new error code, instead of the generic `500 internal_error`. It still returns no SQL and never calls the model. A `TenantScopeError` with any other reason stays the generic `500`.
+
+### Patch Changes
+
+- 542e2eb: README: example variable names are neutral (`SCHEMA_PATH`, `MOCK_SQL`), as plan 019 requires, and the `.env` lookup order matches what the binary does.
+- 91e89ec: Security fix ([GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4)). The tenant check could read some SQL differently from the database engine — a `$` inside a name, a table named after a keyword such as `user` or `lock`, an unset `backslashEscapes` on a from-scratch MySQL-family `DialectSpec`, and where a `--` comment ends — so a tenant-scoped query could pass the check without an effective tenant predicate. The check now reads each construct the way the engine does, and a test per engine confirms it on a live database. Tenant isolation enforced in the database (for example row-level security), as `SECURITY.md` recommends, still limited what such a query could read.
+- Updated dependencies [6ea8df8]
+- Updated dependencies [1b9468d]
+- Updated dependencies [d9ab606]
+- Updated dependencies [a467984]
+- Updated dependencies [54e079e]
+- Updated dependencies [1b9468d]
+- Updated dependencies [6ea8df8]
+- Updated dependencies [1ccc8c8]
+- Updated dependencies [1b9468d]
+- Updated dependencies [1b9468d]
+- Updated dependencies [3841e09]
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [91e89ec]
+  - @askdb/ai@0.1.0-beta.11
+  - @askdb/client@1.0.0-beta.12
+  - @askdb/config@1.0.0-beta.19
+  - @askdb/core@1.0.0-beta.50
+
+## 1.0.0-beta.49
+
+### Patch Changes
+
+- 4437394: Security fix ([GHSA-wjgj-mf9h-6g68](https://github.com/Ygilany/AskDB/security/advisories/GHSA-wjgj-mf9h-6g68)). With `tenantSqlMode: "sql-only"` on the built-in `postgres` or `cockroachdb` dialect, `ask()` could return SQL whose tenant scoping no longer held once the tenant IDs were inlined, because it did not re-check the rendered statement. `ask()` now runs the read-only check on the `sql` it returns, as `bindPreparedQuery()` already does, and refuses a statement that reads differently once rendered. The default `tenantSqlMode: "sql-params"`, which binds tenant IDs as driver parameters, was never affected.
+- Updated dependencies [150a293]
+- Updated dependencies [0e5d542]
+- Updated dependencies [4a83b61]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [4437394]
+  - @askdb/config@1.0.0-beta.18
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/client@1.0.0-beta.11
+
+## 1.0.0-beta.48
+
+### Minor Changes
+
+- 63d45cc: The HTTP API server and the CLI use `logging.level` as `@askdb/config` resolves it, without checking it again (#711). Behavior is unchanged: the config already refuses a level that isn't one of `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` when it loads.
+
+### Patch Changes
+
+- c28c967: Depend on `zod` (`^4.6.7`, the same range as `@askdb/core`), the peer that `ai` and the `@ai-sdk/*` packages require, so Yarn Plug'n'Play can resolve it (#748). `yarn dlx askdb` crashed at startup because these packages install `ai` without providing its `zod`. npm and pnpm already installed `zod` through `@askdb/core`, so they install nothing new.
+- Updated dependencies [63d45cc]
+- Updated dependencies [63d45cc]
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+  - @askdb/client@1.0.0-beta.11
+  - @askdb/config@1.0.0-beta.17
+  - @askdb/core@1.0.0-beta.48
+
 ## 1.0.0-beta.47
 
 ### Patch Changes

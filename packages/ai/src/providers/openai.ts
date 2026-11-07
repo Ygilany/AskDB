@@ -1,5 +1,6 @@
 import { withEmbeddingProviderOptions } from "../embedding.js";
-import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { resolveBaseConfig, resolveBaseConfigFromSection, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { baseURLOption } from "../base-url.js";
 import { openaiReasoningEffort } from "./openai-reasoning.js";
 import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
@@ -13,19 +14,19 @@ const ENV_SPEC: BuiltinProviderEnvSpec = {
   embeddingModelVars: ["OPENAI_EMBEDDING_MODEL"],
   baseURLVars: ["OPENAI_BASE_URL"],
   defaultModel: "gpt-4o-mini",
-  defaultEmbeddingModel: "text-embedding-3-small",
 };
 
 const CONFIG_HINT =
   "For OpenAI, set ai.provider: \"openai\" and ai.providerConfig.openai.apiKey in askdb.config.*.";
 
 async function createProvider(config: AiConfig) {
+  const baseURL = baseURLOption(config, "OPENAI_BASE_URL");
   const { createOpenAI } = await import("@ai-sdk/openai").catch(
     rethrowMissingPeer("openai", PEER_PACKAGE),
   );
   return createOpenAI({
     apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...baseURL,
   });
 }
 
@@ -34,6 +35,9 @@ export const openaiProvider: AiProviderAdapter = {
   configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("openai", env, ENV_SPEC, options);
+  },
+  resolveConfigFromSection(section, options) {
+    return resolveBaseConfigFromSection("openai", section, ENV_SPEC, options);
   },
   async createLanguageModel(config) {
     const openai = await createProvider(config);

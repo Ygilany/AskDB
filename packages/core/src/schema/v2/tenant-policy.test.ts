@@ -159,8 +159,9 @@ roots: [unclosed
 ---
 `;
     expect(() => parseTenantPolicyMarkdown(content, "x/tenant-policy.md")).toThrow(SchemaParseError);
+    // A second parse of the same input reports the same YAML error (#742).
     expect(() => parseTenantPolicyMarkdown(content, "x/tenant-policy.md")).toThrow(
-      /x\/tenant-policy\.md/,
+      /^Malformed tenant-policy front-matter YAML in x\/tenant-policy\.md: /,
     );
   });
 
@@ -183,6 +184,11 @@ unknownKey: bad
 // ---------------------------------------------------------------------------
 // Cross-reference validation
 // ---------------------------------------------------------------------------
+
+/** Column id → table id for fixtures whose table names hold no `#`: the table is the id before its last `#`. */
+function columnsOf(ids: readonly string[]): Map<string, string> {
+  return new Map(ids.map((id) => [id, id.slice(0, id.lastIndexOf("#"))]));
+}
 
 // Under `warn`, every problem is collected into `warnings`. Under `strict` most of them
 // fail the load instead; the unknown-root cases below and loader.test.ts cover that.
@@ -211,7 +217,7 @@ globalTables:
       "table:public.items",
       "table:public.lookups",
     ]);
-    const colIds = new Set([
+    const colIds = columnsOf([
       "table:public.orgs#id",
       "table:public.items#org_id",
     ]);
@@ -222,7 +228,7 @@ globalTables:
   it("warns about orphaned root table IDs", () => {
     const parsed = parseTenantPolicyMarkdown(validContent);
     const tableIds = new Set(["table:public.items", "table:public.lookups"]);
-    const colIds = new Set(["table:public.orgs#id", "table:public.items#org_id"]);
+    const colIds = columnsOf(["table:public.orgs#id", "table:public.items#org_id"]);
     const result = normalizeTenantPolicy(parsed, tableIds, colIds);
     expect(result.warnings.some((w) => w.kind === "orphaned_root_id")).toBe(true);
   });
@@ -234,7 +240,7 @@ globalTables:
       "table:public.items",
       "table:public.lookups",
     ]);
-    const colIds = new Set(["table:public.items#org_id"]);
+    const colIds = columnsOf(["table:public.items#org_id"]);
     const result = normalizeTenantPolicy(parsed, tableIds, colIds);
     expect(result.warnings.some((w) => w.kind === "orphaned_column_id")).toBe(true);
   });
@@ -242,7 +248,7 @@ globalTables:
   it("warns about orphaned scoped table IDs", () => {
     const parsed = parseTenantPolicyMarkdown(validContent);
     const tableIds = new Set(["table:public.orgs", "table:public.lookups"]);
-    const colIds = new Set(["table:public.orgs#id", "table:public.items#org_id"]);
+    const colIds = columnsOf(["table:public.orgs#id", "table:public.items#org_id"]);
     const result = normalizeTenantPolicy(parsed, tableIds, colIds);
     expect(result.warnings.some((w) => w.kind === "orphaned_scoped_table_id")).toBe(true);
   });
@@ -250,7 +256,7 @@ globalTables:
   it("warns about orphaned global table IDs", () => {
     const parsed = parseTenantPolicyMarkdown(validContent);
     const tableIds = new Set(["table:public.orgs", "table:public.items"]);
-    const colIds = new Set(["table:public.orgs#id", "table:public.items#org_id"]);
+    const colIds = columnsOf(["table:public.orgs#id", "table:public.items#org_id"]);
     const result = normalizeTenantPolicy(parsed, tableIds, colIds);
     expect(result.warnings.some((w) => w.kind === "orphaned_global_table_id")).toBe(true);
   });
@@ -296,7 +302,7 @@ ${section}
 ---
 `);
     const tableIds = new Set(["table:public.orgs", "table:public.items"]);
-    const colIds = new Set([
+    const colIds = columnsOf([
       "table:public.orgs#id",
       "table:public.orgs#parent_id",
       "table:public.items#org_id",
@@ -316,6 +322,103 @@ ${section}
     expect((caught as SchemaParseError).message).toContain(
       "table:public.nonexistent is not one of the policy's roots",
     );
+  });
+});
+
+// The contract puts each of these columns on its entry's own table (#836). A column that is in
+// schema.json, but on another table, is a warning under `warn` and fails a `strict` load.
+describe("normalizeTenantPolicy — a column on another table than its entry's (#836)", () => {
+  const tableIds = new Set(["table:public.orgs", "table:public.subs", "table:public.items", "table:public.notes"]);
+  const colIds = columnsOf([
+    "table:public.orgs#id",
+    "table:public.subs#id",
+    "table:public.subs#org_id",
+    "table:public.items#org_id",
+    "table:public.notes#owner_type",
+    "table:public.notes#owner_id",
+  ]);
+  type Field = "tenantIdColumn" | "parentFk" | "edgeFk" | "scopeColumn" | "typeColumn" | "idColumn";
+  const policy = (enforcement: "warn" | "strict", moved: Partial<Record<Field, string>> = {}) =>
+    parseTenantPolicyMarkdown(`---
+schemaId: test
+enforcement: ${enforcement}
+roots:
+  - id: table:public.orgs
+    tenantIdColumn: ${moved.tenantIdColumn ?? "table:public.orgs#id"}
+    label: Org
+  - id: table:public.subs
+    tenantIdColumn: table:public.subs#id
+    label: Sub
+    parent:
+      root: table:public.orgs
+      foreignKey: ${moved.parentFk ?? "table:public.subs#org_id"}
+hierarchy:
+  - parent: table:public.orgs
+    child: table:public.subs
+    foreignKey: ${moved.edgeFk ?? "table:public.subs#org_id"}
+scopedTables:
+  - id: table:public.items
+    scopeThrough:
+      - root: table:public.orgs
+        column: ${moved.scopeColumn ?? "table:public.items#org_id"}
+polymorphicTables:
+  - id: table:public.notes
+    typeColumn: ${moved.typeColumn ?? "table:public.notes#owner_type"}
+    idColumn: ${moved.idColumn ?? "table:public.notes#owner_id"}
+    mapping:
+      org: table:public.orgs
+---
+`);
+
+  it("loads the policy with every column on its own table, with no warning", () => {
+    expect(normalizeTenantPolicy(policy("warn"), tableIds, colIds).warnings).toEqual([]);
+    expect(normalizeTenantPolicy(policy("strict"), tableIds, colIds).warnings).toEqual([]);
+  });
+
+  it.each([
+    { field: "tenantIdColumn", id: "table:public.subs#id", table: "table:public.subs", context: "root table:public.orgs" },
+    { field: "parentFk", id: "table:public.items#org_id", table: "table:public.items", context: "parent FK on root table:public.subs" },
+    { field: "edgeFk", id: "table:public.items#org_id", table: "table:public.items", context: "hierarchy edge table:public.orgs -> table:public.subs" },
+    { field: "scopeColumn", id: "table:public.subs#org_id", table: "table:public.subs", context: "scopeThrough column on table:public.items" },
+    { field: "typeColumn", id: "table:public.items#org_id", table: "table:public.items", context: "polymorphic typeColumn on table:public.notes" },
+    { field: "idColumn", id: "table:public.items#org_id", table: "table:public.items", context: "polymorphic idColumn on table:public.notes" },
+  ] as const)("$field on $table: a warning under warn, a failed load under strict", ({ field, id, table, context }) => {
+    expect(normalizeTenantPolicy(policy("warn", { [field]: id }), tableIds, colIds).warnings).toEqual([
+      { kind: "misplaced_column_id", id, tableId: table, context },
+    ]);
+    let caught: unknown;
+    try {
+      normalizeTenantPolicy(policy("strict", { [field]: id }), tableIds, colIds);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(SchemaParseError);
+    expect((caught as SchemaParseError).message).toContain(`${context}: column ${id} is on ${table}`);
+  });
+
+  // A SQL Server table name can hold `#`, so the column's table comes from schema.json, never
+  // from splitting the id: `table:dbo.a#b#c` is a column of `table:dbo.a#b`.
+  it("reads a column's table from schema.json, so a table name with # passes", () => {
+    const parsed = parseTenantPolicyMarkdown(`---
+schemaId: test
+enforcement: strict
+roots:
+  - id: table:dbo.orgs
+    tenantIdColumn: table:dbo.orgs#id
+    label: Org
+scopedTables:
+  - id: table:dbo.a#b
+    scopeThrough:
+      - root: table:dbo.orgs
+        column: table:dbo.a#b#c
+---
+`);
+    const columns = new Map([
+      ["table:dbo.orgs#id", "table:dbo.orgs"],
+      ["table:dbo.a#b#c", "table:dbo.a#b"],
+    ]);
+    const result = normalizeTenantPolicy(parsed, new Set(["table:dbo.orgs", "table:dbo.a#b"]), columns);
+    expect(result.warnings).toEqual([]);
   });
 });
 
@@ -345,7 +448,7 @@ roots:
 `;
     const parsed = parseTenantPolicyMarkdown(content);
     const tableIds = new Set(["table:public.a", "table:public.b"]);
-    const colIds = new Set([
+    const colIds = columnsOf([
       "table:public.a#id",
       "table:public.a#b_id",
       "table:public.b#id",
@@ -380,7 +483,7 @@ hierarchy:
 ---
 `);
     const tableIds = new Set(tables.map((t) => `table:public.${t}`));
-    const colIds = new Set([
+    const colIds = columnsOf([
       ...tables.map((t) => `table:public.${t}#id`),
       "table:public.a#c_id",
       "table:public.b#a_id",
@@ -425,7 +528,7 @@ roots:
 ---
 `);
     const tableIds = new Set([`table:public.${a.table}`, `table:public.${b.table}`]);
-    const colIds = new Set([`table:public.${a.table}#id`, `table:public.${b.table}#id`, `table:public.${b.table}#a_id`]);
+    const colIds = columnsOf([`table:public.${a.table}#id`, `table:public.${b.table}#id`, `table:public.${b.table}#a_id`]);
     return normalizeTenantPolicy(parsed, tableIds, colIds);
   }
 

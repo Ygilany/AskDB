@@ -18,6 +18,7 @@
  * | `[…]`                     | —        | —                      | ident (`]]`) | ident |
  * | `#` line comment          | —        | yes                    | —          | —      |
  * | `--` line comment         | yes      | only before whitespace | yes        | yes    |
+ * | `\r` ends a line comment  | yes      | no (`\n` only)          | yes        | no     |
  * | nested `/* … *\/`         | yes      | no (`/*! … *\/` runs)  | yes        | no     |
  * | `0x`, `1E`, `$`/`€` money | —        | —                      | literal    | —      |
  * | U+00A0 etc. end a name    | —        | —                      | yes        | —      |
@@ -64,6 +65,11 @@ export type SqlLexerProfile = {
    * is its own token, as it is to SQL Server.
    */
   tsqlLiterals: boolean;
+  /**
+   * A `--` or `#` comment ends only at `\n` (MySQL, MariaDB, SQLite, CockroachDB). Unset: it ends
+   * at `\r` too, as on Postgres and SQL Server.
+   */
+  lineCommentEndsAtLfOnly?: boolean;
 };
 
 export const POSTGRES_LEXER: SqlLexerProfile = {
@@ -98,6 +104,7 @@ export const MYSQL_LEXER: SqlLexerProfile = {
   atVariables: true,
   hashIdentifiers: false,
   tsqlLiterals: false,
+  lineCommentEndsAtLfOnly: true,
 };
 
 export const SQLSERVER_LEXER: SqlLexerProfile = {
@@ -132,6 +139,7 @@ export const SQLITE_LEXER: SqlLexerProfile = {
   atVariables: true,
   hashIdentifiers: false,
   tsqlLiterals: false,
+  lineCommentEndsAtLfOnly: true,
 };
 
 /**
@@ -273,6 +281,8 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     (WORD_CHAR.test(c) || (profile.tsqlLiterals && c === "@")) &&
     !(profile.tsqlLiterals && c !== "\ufeff" && isSpace(c));
 
+  const endsLineComment = (c: string): boolean => c === "\n" || (c === "\r" && !profile.lineCommentEndsAtLfOnly);
+
   const push = (
     kind: SqlTokenKind,
     start: number,
@@ -343,7 +353,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     if (ch === "-" && next === "-") {
       if (startsDashComment(sql, i, profile.dashCommentNeedsSpace)) {
         let j = i + 2;
-        while (j < n && sql[j] !== "\n" && sql[j] !== "\r") j++;
+        while (j < n && !endsLineComment(sql[j]!)) j++;
         push("comment", i, j);
         i = j;
         continue;
@@ -351,7 +361,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     }
     if (ch === "#" && profile.hashComments) {
       let j = i + 1;
-      while (j < n && sql[j] !== "\n" && sql[j] !== "\r") j++;
+      while (j < n && !endsLineComment(sql[j]!)) j++;
       push("comment", i, j);
       i = j;
       continue;
@@ -515,10 +525,11 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       continue;
     }
     // On an engine with `E'…'` strings, `:E'` is `:` then an escape string (a JSON_OBJECT key's
-    // `:`, an array slice's), never a `:name` placeholder, which a quote can't follow (#703).
-    const escapeStringAfterColon =
-      profile.escapeStrings && (next === "e" || next === "E") && sql[i + 2] === "'";
-    if (ch === ":" && next !== undefined && WORD_START.test(next) && !escapeStringAfterColon) {
+    // `:`, an array slice's), never a `:name` placeholder, which a quote can't follow (#703). So is
+    // `:b'`, which CockroachDB reads as `:` and a byte string with backslash escapes (#730).
+    const prefixedStringAfterColon =
+      profile.escapeStrings && next !== undefined && /[eEbB]/.test(next) && sql[i + 2] === "'";
+    if (ch === ":" && next !== undefined && WORD_START.test(next) && !prefixedStringAfterColon) {
       let j = i + 1;
       while (j < n && isWordChar(sql[j]!)) j++;
       push("parameter", i, j);
@@ -575,17 +586,37 @@ export function postgresReadingProfiles(
  * report its position, not its text, which may hold a value from the question.
  */
 export function findEscapeStringContinuation(sql: string, tokens: readonly SqlToken[]): SqlToken | undefined {
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i]!;
-    if (t.kind !== "string" || !/^[eE]'/.test(t.text)) continue;
-    let j = i + 1;
-    while (tokens[j]?.kind === "comment") j++;
-    const next = tokens[j];
-    if (next?.kind === "string" && next.text.startsWith("'") && /[\n\r]/.test(sql.slice(t.end, next.start))) {
-      return t;
-    }
-  }
-  return undefined;
+  return tokens.find((t, i) => t.kind === "string" && /^[eE]'/.test(t.text) && continuedOnLaterLine(sql, tokens, i));
+}
+
+/**
+ * A CockroachDB byte string, `b'…'` with a lower-case `b`, that holds a backslash or is continued
+ * on a later line. CockroachDB reads it with backslash escapes, and keeps them across the
+ * continuation. This lexer reads it under the Postgres profile without them, as Postgres reads a
+ * bit string, so where `\'` ends one reading's string the other's goes on. AskDB doesn't model the
+ * difference. The checks refuse the string at this boundary, where both readings still agree
+ * (#730, ADR 0012). What's lost: a byte string with escapes on CockroachDB, which a hex string
+ * cast to bytes (`'\x00'::bytea`) can write instead, and a continued lower-case bit string on Postgres, where a backslash in a bit
+ * string is an error. `B'…'` is a bit string on both engines and passes. Returns the `b'…'` token;
+ * callers report its position, not its text, which may hold a value from the question.
+ */
+export function findEscapedByteString(sql: string, tokens: readonly SqlToken[]): SqlToken | undefined {
+  return tokens.find(
+    (t, i) => t.kind === "string" && t.text.startsWith("b'") && (t.text.includes("\\") || continuedOnLaterLine(sql, tokens, i)),
+  );
+}
+
+/**
+ * Whether the string at `tokens[i]` is continued on a later line: a gap that contains a newline
+ * and holds only whitespace and comments, then a bare `'…'` string. Postgres and CockroachDB join
+ * the two. They allow only whitespace and `--` comments (CockroachDB only whitespace) in the gap;
+ * a `/* … *\/` comment counts too, so the callers fail closed.
+ */
+function continuedOnLaterLine(sql: string, tokens: readonly SqlToken[], i: number): boolean {
+  let j = i + 1;
+  while (tokens[j]?.kind === "comment") j++;
+  const next = tokens[j];
+  return next?.kind === "string" && next.text.startsWith("'") && /[\n\r]/.test(sql.slice(tokens[i]!.end, next.start));
 }
 
 /**
@@ -616,6 +647,44 @@ export function findUnicodeEscapedIdentifier(tokens: readonly SqlToken[]): strin
     }
   }
   return undefined;
+}
+
+/** The forms only a Postgres reading can hold, as {@link findPostgresOnlyForms} finds them. */
+export type PostgresOnlyForms = {
+  /** The first `U&"…"` name, as written ({@link findUnicodeEscapedIdentifier}). */
+  unicodeEscapedIdentifier: string | undefined;
+  /** The `E'…'` token of the first continued escape string ({@link findEscapeStringContinuation}). */
+  escapeStringContinuation: SqlToken | undefined;
+  /** The first `b'…'` byte string CockroachDB reads differently ({@link findEscapedByteString}). */
+  escapedByteString: SqlToken | undefined;
+};
+
+/**
+ * The forms only a Postgres reading of `sql` can hold, under each reading
+ * {@link postgresReadingProfiles} gives for `dialect`: a `U&"…"` name, an `E'…'` string continued
+ * on a later line, and a `b'…'` byte string that CockroachDB reads with backslash escapes. The
+ * checks match names as written and don't model the escapes, so the tenant check and the
+ * sensitive check refuse all three through this one function (#703, #704, #707, #730, ADR 0012).
+ * The byte string is found under `postgres` too, since a host may point the `postgres` dialect at
+ * CockroachDB, which is wire-compatible. Each field holds the first match across
+ * the readings; all are `undefined` when the SQL can't be read as Postgres.
+ */
+export function findPostgresOnlyForms(
+  sql: string,
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
+): PostgresOnlyForms {
+  const forms: PostgresOnlyForms = {
+    unicodeEscapedIdentifier: undefined,
+    escapeStringContinuation: undefined,
+    escapedByteString: undefined,
+  };
+  for (const profile of postgresReadingProfiles(dialect)) {
+    const tokens = lexSql(sql, profile);
+    forms.unicodeEscapedIdentifier ??= findUnicodeEscapedIdentifier(tokens);
+    forms.escapeStringContinuation ??= findEscapeStringContinuation(sql, tokens);
+    forms.escapedByteString ??= findEscapedByteString(sql, tokens);
+  }
+  return forms;
 }
 
 /** True when any token ran off the end of the input. */

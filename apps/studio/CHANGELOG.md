@@ -1,5 +1,141 @@
 # @askdb/studio
 
+## 0.2.0-beta.44
+
+### Patch Changes
+
+- 4196800: Security fix ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)), a residual of [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) finding 1. The tenant check read a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) as code, where Postgres, CockroachDB and the shared lexer read it as a string, so a tenant-scoped query could pass the check without an effective tenant predicate. The check's scanner now reads the tag with the same character set as the shared lexer and the engine. Enforce tenant isolation in the database (for example row-level security) regardless.
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [8e75d50]
+- Updated dependencies [dc398be]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+  - @askdb/enrich@0.2.0-beta.22
+  - @askdb/rag@0.2.0-beta.31
+  - @askdb/introspect@0.3.0-beta.25
+  - @askdb/mysql@0.1.0-beta.26
+  - @askdb/postgres@0.2.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.26
+  - @askdb/sqlserver@0.1.0-beta.27
+
+## 0.2.0-beta.43
+
+### Minor Changes
+
+- 1b9468d: `askdb ask`, `askdb rag` and Studio build their models from the config's typed `ai.language` and `ai.embedding` sections, since `@askdb/config` no longer builds the AI env maps they read (#711). `askdb rag --embedder-model` still overrides `ai.embedding.model`. A config that sets a key `@askdb/config` 1.0.0-beta.19 removed (#765), such as `model` on an `ai.providerConfig` connection or `rag.embedder: "openai"`, now fails to load in the CLI, Studio and the HTTP API, with an error naming each key's replacement; the upgrade guide shows each one before and after.
+
+### Patch Changes
+
+- 3841e09: `askdb init --database sqlserver` and Studio's guided setup no longer put `Trust Server Certificate=True` in the `.env.example` hint for the SQL Server connection string (#803). That key turned the certificate check off in AskDB, and the `mssql` driver ignored it because of the spaces, so a hint copied into production trusted any certificate in AskDB but not in a host's own `mssql` pool. The hint now leaves the key out, so AskDB and `mssql` both check the certificate by default. A second comment line says to add `TrustServerCertificate=True;`, spelled without spaces so both read it, for a development server with a self-signed certificate such as the SQL Server Docker image. An `.env.example` that `init` already wrote isn't changed.
+- 91e89ec: Security fix ([GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4)). The tenant check could read some SQL differently from the database engine — a `$` inside a name, a table named after a keyword such as `user` or `lock`, an unset `backslashEscapes` on a from-scratch MySQL-family `DialectSpec`, and where a `--` comment ends — so a tenant-scoped query could pass the check without an effective tenant predicate. The check now reads each construct the way the engine does, and a test per engine confirms it on a live database. Tenant isolation enforced in the database (for example row-level security), as `SECURITY.md` recommends, still limited what such a query could read.
+- 0782a06: Studio's introspection and resync answer 422 with the reason when the source has no tables or views to write (#337, ADR 0037), instead of writing an artifact Studio then can't load. The artifact on disk stays as it was.
+- 3a05107: The README's link to Studio's security model points to its new home, the Studio reference on askdb.tools (#713).
+- Updated dependencies [6ea8df8]
+- Updated dependencies [1b9468d]
+- Updated dependencies [d9ab606]
+- Updated dependencies [a467984]
+- Updated dependencies [54e079e]
+- Updated dependencies [6ea8df8]
+- Updated dependencies [1ccc8c8]
+- Updated dependencies [1b9468d]
+- Updated dependencies [1b9468d]
+- Updated dependencies [3841e09]
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [a7f5f06]
+- Updated dependencies [3b77292]
+- Updated dependencies [0782a06]
+- Updated dependencies [54e079e]
+- Updated dependencies [91e89ec]
+  - @askdb/ai@0.1.0-beta.11
+  - @askdb/config@1.0.0-beta.19
+  - @askdb/core@1.0.0-beta.50
+  - @askdb/mysql@0.1.0-beta.25
+  - @askdb/sqlite@0.1.0-beta.25
+  - @askdb/sqlserver@0.1.0-beta.26
+  - @askdb/enrich@0.2.0-beta.21
+  - @askdb/introspect@0.3.0-beta.24
+  - @askdb/rag@0.2.0-beta.30
+  - @askdb/postgres@0.2.0-beta.26
+
+## 0.2.0-beta.42
+
+### Minor Changes
+
+- ee12e92: Studio's guided setup writes its files from the scaffold planner in `@askdb/config/scaffold`, which `askdb init` shares (#711), so for the same answers the two write the same files. The config loads as before. What changes:
+  
+  - **`.env.example` has `init`'s layout:** a `# purpose` comment above each empty `NAME=`, database variables first. Studio wrote `NAME= # purpose`, which Docker's `--env-file` reads as the value, and wrote each connection URL's format as its value.
+  - **The config's `rag.storeConfig` spans several lines**, as `init`'s does.
+  - **The variables setup lists come in `init`'s order and say what each is for**, such as `postgres connection URL, for introspection and Studio execute`.
+  - **An env var name may start with `_`**, as in `init`.
+  - **A Prisma project also gets `ai` and `zod`** when it doesn't have them (#760), which Yarn Plug'n'Play needs to load `@askdb/prisma`.
+  - **Errors for a bad answer** name the request field and say what's wrong, without repeating the value.
+
+### Patch Changes
+
+- 4437394: Security fix ([GHSA-wjgj-mf9h-6g68](https://github.com/Ygilany/AskDB/security/advisories/GHSA-wjgj-mf9h-6g68)). With `tenantSqlMode: "sql-only"` on the built-in `postgres` or `cockroachdb` dialect, `ask()` could return SQL whose tenant scoping no longer held once the tenant IDs were inlined, because it did not re-check the rendered statement. `ask()` now runs the read-only check on the `sql` it returns, as `bindPreparedQuery()` already does, and refuses a statement that reads differently once rendered. The default `tenantSqlMode: "sql-params"`, which binds tenant IDs as driver parameters, was never affected.
+- 0e5d542: Studio's guided setup picks the package manager as `askdb init` does (#750): with no lockfile, from `package.json`'s `packageManager` or `devEngines.packageManager` field, then the tool that started Studio (`pnpm dlx`, `npx`, …), before falling back to npm. In a project that `pnpm init` started, setup used npm, which refuses it (`EBADDEVENGINES`). The execute-driver **Install** button still uses only the lockfile in the project's directory.
+- Updated dependencies [150a293]
+- Updated dependencies [0e5d542]
+- Updated dependencies [4a83b61]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [ca816cc]
+- Updated dependencies [29a0fc1]
+- Updated dependencies [396ad23]
+- Updated dependencies [82c2f94]
+- Updated dependencies [a8cef1b]
+- Updated dependencies [4437394]
+- Updated dependencies [a8cef1b]
+  - @askdb/config@1.0.0-beta.18
+  - @askdb/core@1.0.0-beta.49
+  - @askdb/introspect@0.3.0-beta.23
+  - @askdb/postgres@0.2.0-beta.25
+  - @askdb/mysql@0.1.0-beta.24
+  - @askdb/sqlite@0.1.0-beta.24
+  - @askdb/sqlserver@0.1.0-beta.25
+  - @askdb/enrich@0.2.0-beta.20
+  - @askdb/rag@0.2.0-beta.29
+
+## 0.2.0-beta.41
+
+### Patch Changes
+
+- c28c967: Depend on `zod` (`^4.6.7`, the same range as `@askdb/core`), the peer that `ai` and the `@ai-sdk/*` packages require, so Yarn Plug'n'Play can resolve it (#748). `yarn dlx askdb` crashed at startup because these packages install `ai` without providing its `zod`. npm and pnpm already installed `zod` through `@askdb/core`, so they install nothing new.
+- Updated dependencies [63d45cc]
+- Updated dependencies [294ef92]
+- Updated dependencies [f8f99cb]
+- Updated dependencies [180f28a]
+- Updated dependencies [9e49e34]
+- Updated dependencies [b52a89f]
+- Updated dependencies [229a592]
+- Updated dependencies [1c31e95]
+- Updated dependencies [31f90a3]
+- Updated dependencies [ca4af5b]
+- Updated dependencies [31f90a3]
+- Updated dependencies [31f90a3]
+- Updated dependencies [c28c967]
+  - @askdb/config@1.0.0-beta.17
+  - @askdb/core@1.0.0-beta.48
+  - @askdb/introspect@0.3.0-beta.22
+  - @askdb/mysql@0.1.0-beta.23
+  - @askdb/postgres@0.2.0-beta.24
+  - @askdb/sqlite@0.1.0-beta.23
+  - @askdb/sqlserver@0.1.0-beta.24
+  - @askdb/enrich@0.2.0-beta.19
+  - @askdb/rag@0.2.0-beta.28
+
 ## 0.2.0-beta.40
 
 ### Patch Changes
