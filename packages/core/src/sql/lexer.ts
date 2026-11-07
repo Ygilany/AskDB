@@ -18,6 +18,7 @@
  * | `[…]`                     | —        | —                      | ident (`]]`) | ident |
  * | `#` line comment          | —        | yes                    | —          | —      |
  * | `--` line comment         | yes      | only before whitespace | yes        | yes    |
+ * | `\r` ends a line comment  | yes      | no (`\n` only)          | yes        | no     |
  * | nested `/* … *\/`         | yes      | no (`/*! … *\/` runs)  | yes        | no     |
  * | `0x`, `1E`, `$`/`€` money | —        | —                      | literal    | —      |
  * | U+00A0 etc. end a name    | —        | —                      | yes        | —      |
@@ -64,6 +65,11 @@ export type SqlLexerProfile = {
    * is its own token, as it is to SQL Server.
    */
   tsqlLiterals: boolean;
+  /**
+   * A `--` or `#` comment ends only at `\n` (MySQL, MariaDB, SQLite, CockroachDB). Unset: it ends
+   * at `\r` too, as on Postgres and SQL Server.
+   */
+  lineCommentEndsAtLfOnly?: boolean;
 };
 
 export const POSTGRES_LEXER: SqlLexerProfile = {
@@ -98,6 +104,7 @@ export const MYSQL_LEXER: SqlLexerProfile = {
   atVariables: true,
   hashIdentifiers: false,
   tsqlLiterals: false,
+  lineCommentEndsAtLfOnly: true,
 };
 
 export const SQLSERVER_LEXER: SqlLexerProfile = {
@@ -132,6 +139,7 @@ export const SQLITE_LEXER: SqlLexerProfile = {
   atVariables: true,
   hashIdentifiers: false,
   tsqlLiterals: false,
+  lineCommentEndsAtLfOnly: true,
 };
 
 /**
@@ -273,6 +281,8 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     (WORD_CHAR.test(c) || (profile.tsqlLiterals && c === "@")) &&
     !(profile.tsqlLiterals && c !== "\ufeff" && isSpace(c));
 
+  const endsLineComment = (c: string): boolean => c === "\n" || (c === "\r" && !profile.lineCommentEndsAtLfOnly);
+
   const push = (
     kind: SqlTokenKind,
     start: number,
@@ -343,7 +353,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     if (ch === "-" && next === "-") {
       if (startsDashComment(sql, i, profile.dashCommentNeedsSpace)) {
         let j = i + 2;
-        while (j < n && sql[j] !== "\n" && sql[j] !== "\r") j++;
+        while (j < n && !endsLineComment(sql[j]!)) j++;
         push("comment", i, j);
         i = j;
         continue;
@@ -351,7 +361,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     }
     if (ch === "#" && profile.hashComments) {
       let j = i + 1;
-      while (j < n && sql[j] !== "\n" && sql[j] !== "\r") j++;
+      while (j < n && !endsLineComment(sql[j]!)) j++;
       push("comment", i, j);
       i = j;
       continue;

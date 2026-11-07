@@ -308,6 +308,42 @@ describe("ask — the tenant block names no table the prompt leaves out (#771)",
   });
 });
 
+describe("ask — a MySQL DialectSpec that leaves backslashEscapes unset", () => {
+  it("reads the model's strings with escapes on, as the server's default does", async () => {
+    // MySQL reads `status = '<one string>' OR 1=1 OR status = ''`: every tenant's rows.
+    const sql = String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`;
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { ...MYSQL_DIALECT, backslashEscapes: undefined },
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+  });
+});
+
+describe("ask — a `$$` inside a name opens no dollar-quoted string", () => {
+  it.each(["postgres", "mysql", "mariadb", "sqlite"] as const)("%s: refuses the UNION after the name", async (dialect) => {
+    // `x$$y` is one name to the engine, so the UNION reads every tenant's orders.
+    const sql = "SELECT id AS x$$y FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY x$$y";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);
@@ -1469,6 +1505,15 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "UNICODE_ESCAPED_IDENTIFIER", tableId: "" }] });
   });
 
+  it("strict: rejects a UNION after a `--` comment a carriage return ends, which the read-only check doesn't see here", async () => {
+    const schema = loadSchema(multiTenantDir);
+    // Postgres and SQL Server end the comment at the CR, so the UNION reads every tenant's orders.
+    const sql = "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders";
+    const dialect: AskDialect = { generate: async () => ({ sql }) };
+    const rejection = ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+
   it("does not trust a custom dialect's self-reported passing guardrail", async () => {
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = {
@@ -1549,8 +1594,10 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(TenantGuardrailError);
+    // A DO body's tables also count where `$$` may be no quote (the dialect is unknown here).
     const warnings = (error as TenantGuardrailError).warnings;
-    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(warnings[0]).toMatchObject({ rule: "NOT_SELECT_OR_WITH", tableId: "" });
+    expect(warnings.filter((w) => w.rule !== "MISSING_TENANT_PREDICATE")).toHaveLength(1);
     expect(warnings[0]!.message).toContain(keyword);
   });
 
@@ -1581,7 +1628,8 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     });
 
     expect(result.tenantGuardrail?.passed).toBe(false);
-    expect(result.tenantGuardrail?.warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(result.tenantGuardrail?.warnings[0]).toMatchObject({ rule: "NOT_SELECT_OR_WITH", tableId: "" });
+    expect(result.tenantGuardrail?.warnings.filter((w) => w.rule !== "MISSING_TENANT_PREDICATE")).toHaveLength(1);
   });
 
   it.each([
