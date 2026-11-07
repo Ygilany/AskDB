@@ -541,7 +541,7 @@ Chunks for tenant-scoped tables carry metadata identifying their required scope 
 | Prompt assembly (policy injection, scope formatting) | `@askdb/core` |
 | SQL guardrail validator (heuristic) | `@askdb/core` |
 | SQL output modes (SQL-only, SQL+params) | `@askdb/core` |
-| AI-assisted policy drafting | `@askdb/enrich` |
+| AI-assisted policy drafting | `@askdb/studio` (`suggestTenantPolicyDraft()`, `POST /api/suggest-tenant-policy`). Moving it into `@askdb/enrich` is #615. |
 | Setup capture UI (per-section confirmation) | `@askdb/studio` |
 | Body chunking, scope root metadata on table chunks | `@askdb/rag` |
 | Fixture | `fixtures/schemas/` |

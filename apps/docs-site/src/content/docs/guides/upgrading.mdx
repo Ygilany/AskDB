@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.50
 
-Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
+Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30 and `@askdb/studio` 0.2.0-beta.43.
 
 ### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
 
@@ -95,6 +95,22 @@ Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `t
 
 `ASKDB_RAG_EMBEDDERS` is now `["mock", "ai"]`, and the `AskDbRagEmbedder` type narrows to match.
 
+### Set an embedding model on `@askdb/ai`'s env path
+
+`@askdb/ai` no longer picks an embedding model when you pass an env map ([#651](https://github.com/Ygilany/AskDB/issues/651)). With an API key and no embedding model, `registry.resolveEmbeddingConfig(env)` and `registry.createEmbeddingModelFromEnv(env)` now throw `<provider>: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`, as the section path already refuses a missing model. Before, `openai` and `azure` fell back to `text-embedding-3-small`, and `gateway` to `openai/text-embedding-3-small`, with a `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`). A host with an `askdb.config.*` file uses the section path, so this changes nothing for it.
+
+- **If you saw that warning,** set `ASKDB_AI_EMBEDDING_MODEL`, or the provider's embedding model variable, in the env map you pass, to the model the fallback used. An index built with that model keeps working.
+- **If your app picks the model itself,** pass it as `resolveEmbeddingConfig(env, { modelDefault })`. An env variable still wins over it.
+- **`ProviderEnvSpec` has no `defaultEmbeddingModel` field,** and the `BUILTIN_AI_PROVIDERS` entries no longer carry one. Remove it from a spec your custom adapter declares: TypeScript reports it as an unknown property.
+
+### Replace the `askdb-rag` binary with `askdb rag`
+
+`@askdb/rag` no longer ships the `askdb-rag` binary ([#651](https://github.com/Ygilany/AskDB/issues/651)). Since beta.44 it only printed the `askdb rag` command to run and exited `1`. Now a shell or `npx` can't find an `askdb-rag` command. Install `askdb` and run `npx askdb rag index …`, `query …` or `setup-store …` instead. [Run `askdb rag` instead of `askdb-rag`](#run-askdb-rag-instead-of-askdb-rag) maps its flags.
+
+### Replace the removed `--embedder` values
+
+`askdb rag --embedder openai` and `--embedder ai-sdk` are removed ([#811](https://github.com/Ygilany/AskDB/issues/811)), as the same `rag.embedder` values were. Each now fails with exit code `1` and an error naming the replacement, before the command reads the schema or opens a store. Set `rag.embedder: "ai"` and an `ai.embedding` section in `askdb.config.*`, and pass `--embedder ai` or no `--embedder`. The aliases already embedded with `ai.embedding`, so an index they built keeps its embedder id and still matches.
+
 ### Handle introspection that finds no tables
 
 Introspection now refuses to write an artifact with no tables ([#337](https://github.com/Ygilany/AskDB/issues/337), ADR 0037). It used to write a `schema.json` with `tables: []`, which `loadSchema()` rejects, and re-introspecting a database that had lost its tables replaced a valid artifact with it.
@@ -109,6 +125,10 @@ See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-
 
 A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a non-empty string or array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. A `tables` of `[]`, `""`, `0` or `true` loaded as a schema with no table files, and now throws as well. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: set `"tables": {}`, or rebuild it with `askdb bundle`.
 
+### Fix a schema directory that `askdb bundle` now refuses
+
+`askdb bundle`, and `bundleSchemaDirectory()` from `@askdb/enrich`, now check the bundle with the loader `ask()` uses ([#796](https://github.com/Ygilany/AskDB/issues/796)). `bundleSchemaDirectory()` throws the loader's `SchemaParseError` where it returned the bundle, and `askdb bundle` exits `1` with that error before it writes anything. A directory the loader refuses used to bundle without complaint, and the bundle failed only when your service loaded it. Examples are a `tables/*.md` whose front-matter isn't YAML, a `tenant-policy.md` that doesn't parse or doesn't fit `schema.json`, and two table files with the same `id`. Now `askdb bundle` exits `1`, where it exited `0`, and writes nothing: a file already at `--out` stays as it was. Fix the file the error names; if you call `bundleSchemaDirectory()` yourself, catch `SchemaParseError` there. A build step that runs `askdb bundle` now fails there instead of in the service.
+
 ### Keep a built-in `id` on a `DialectSpec`
 
 `ask()` now refuses a `DialectSpec` whose `id` isn't one of the six built-in ids, with `UnknownDialectError` ([#717](https://github.com/Ygilany/AskDB/issues/717)). Core lexes, quotes and binds SQL by `id` (ADR 0029), so a spec under another `id` was checked under every engine's lexer at once: that rejected some valid column names ([#672](https://github.com/Ygilany/AskDB/issues/672)) and couldn't read the SQL the way the real engine does. `bindPreparedQuery()` already refused its templates. `ask()` refuses such a spec before any tenant check, retrieval or model call.
@@ -117,12 +137,12 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **For any other engine,** implement `AskDialect` and call `validateSelectSql` on its SQL yourself.
 - **With a tenant policy,** such a spec used to get `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). It now gets `UnknownDialectError` first.
 
-### Set `dialect` for a schema whose engine AskDB doesn't ship, when you serve it over HTTP
+### Set `dialect` for `askdb-http`'s own schema when AskDB doesn't ship its engine
 
 `askdb-http` no longer generates PostgreSQL for a schema whose `provider` has no AskDB dialect ([#720](https://github.com/Ygilany/AskDB/issues/720)). It refuses the request instead, as `askdb ask` does. Checking SQL for one engine under another engine's rules can pass SQL the real engine reads differently.
 
-- **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse. The server then uses that dialect for every schema it serves, a request `schemaJson` included, whatever its `provider` says.
-- **For a `schemaJson` the request sends,** while `dialect` isn't set, it answers `400 bad_request`. Send a schema whose `provider` is a built-in dialect id.
+- **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse. That `dialect` applies to the server's own schema only.
+- **For a `schemaJson` the request sends,** the server generates and checks SQL for the artifact's own `provider`, never for the config's `dialect` ([#809](https://github.com/Ygilany/AskDB/issues/809)). A request schema that records no `provider`, or one AskDB has no dialect for, answers `400 bad_request`, with a message that names the provider and the supported ids. Send a schema whose `provider` is a built-in dialect id. A caller that relied on the server's `dialect` to cover its schema's engine, such as a MariaDB artifact, which records `mysql`, now gets that recorded engine's SQL.
 
 ### Pass the prompt's schema to `buildTenantPromptBlock()`
 
@@ -656,7 +676,7 @@ The `rag` block is now optional: without it, AskDB uses the mock embedder and th
 
 ### Run `askdb rag` instead of `askdb-rag`
 
-The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`'s `askdb-rag` binary now prints the `askdb rag` command to run and exits `1`, until it's removed at 1.0.
+The RAG command line moved into the `askdb` package as `askdb rag`. `@askdb/rag`'s `askdb-rag` binary now prints the `askdb rag` command to run and exits `1`, until 1.0.0-beta.50 removes it.
 
 | Before | After |
 | --- | --- |
@@ -735,14 +755,14 @@ This wrapper works on Postgres and SQLite only. [Cap the rows a query returns](/
 | `OpenaiAiConfig` and the other `<Provider>AiConfig` types | `AskDbAiConfig` | 1.0.0-beta.50 |
 | `OpenaiRagEmbedderConfig` | `ai.embedding` and a connection in `ai.providerConfig` | 1.0.0-beta.50 |
 | `DEFAULT_OPENAI_CHAT_MODEL` and the other `DEFAULT_*_CHAT_MODEL` exports | [`DEFAULT_*_LANGUAGE_MODEL`](/reference/packages/#askdbconfig) | 1.0.0-beta.50 |
-| `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warns with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model` | 1.0 |
-| `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0 |
-| The `askdb-rag` binary | `askdb rag` | 1.0 |
+| `ProviderEnvSpec.defaultEmbeddingModel` (its fallback warned with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`) | `ai.embedding.model`, or `ASKDB_AI_EMBEDDING_MODEL` in an env map, as [Set an embedding model on `@askdb/ai`'s env path](#set-an-embedding-model-on-askdbais-env-path) shows | 1.0.0-beta.50 |
+| `askdb rag --embedder openai`, `--embedder ai-sdk` | `--embedder ai` | 1.0.0-beta.50 |
+| The `askdb-rag` binary | `askdb rag` | 1.0.0-beta.50 |
 | `BundledSchemaV2` from `@askdb/enrich` | `BundledSchemaV2` from `@askdb/core` | not yet set |
 
 ## Check the upgrade
 
-1. **Load your config and look for deprecation warnings.** Run your app or an `askdb` command once. A config that sets a removed key fails to load and names each key's replacement. Each `DeprecationWarning` with code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL` names the setting to move.
+1. **Load your config.** Run your app or an `askdb` command once. A config that sets a removed key fails to load and names each key's replacement.
 2. **Ask one question on each path** that calls `ask()` or `bind()`, with the tenant scopes you use in production.
 3. **If you use RAG**, run `askdb rag query` against the new index, or check that Studio no longer marks the index as stale.
 

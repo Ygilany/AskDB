@@ -16,6 +16,8 @@ import {
   ASKDB_MODES_V1,
   AskDbLogEvent,
   type AskDbModeV1,
+  type BuiltInDialectId,
+  type NormalizedSchemaV2,
   SensitiveReferenceError,
   SqlGenerationError,
   SqlValidationError,
@@ -23,6 +25,8 @@ import {
   TenantGuardrailError,
   TenantScopeError,
   createAskDbLogger,
+  isBuiltInDialectId,
+  loadSchemaFromJson,
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -133,6 +137,32 @@ function causeMessage(e: unknown): string | undefined {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+/** What's wrong with a schema's `provider` for SQL generation, worded once for the log and the 400. */
+function providerProblem(provider: string): string {
+  return provider ? `declares provider '${provider}', which has no AskDB dialect` : "declares no provider";
+}
+
+/**
+ * Load a request's `schemaJson` with the dialect it answers for (#809): its own `provider`, never
+ * the config's `dialect`, which describes the server's own schema. A schema that names no
+ * provider, or one AskDB has no dialect for, throws `DialectNotSupportedError`, which
+ * {@link mapAskError} answers with `400 bad_request`; one that doesn't load throws
+ * `SchemaLoadError`, as the client would.
+ */
+function loadRequestSchema(json: string): { schema: NormalizedSchemaV2; dialect: BuiltInDialectId } {
+  let schema: NormalizedSchemaV2;
+  try {
+    schema = loadSchemaFromJson(json);
+  } catch (e) {
+    throw new SchemaLoadError("request", e);
+  }
+  const provider = schema.provider ?? "";
+  if (!isBuiltInDialectId(provider)) {
+    throw new DialectNotSupportedError(provider, `The request's schemaJson ${providerProblem(provider)}.`);
+  }
+  return { schema, dialect: provider };
+}
+
 /**
  * Map an error from `askdb.ask()` to an HTTP status + client-safe body. Classification is by
  * error type only. Messages from the model provider are never returned to the client (they
@@ -200,11 +230,11 @@ export function mapAskError(
       },
     };
   }
-  // The schema's provider has no AskDB dialect (#720). A schema the request sent is the caller's
-  // to fix, so the message names the ids to send; core's own message points at the server's
-  // config, which the caller can't edit. The server's own schema is the operator's, so it reads
-  // as a configuration error, and the log line's errName (DialectNotSupportedError, not
-  // ModelNotConfiguredError) names the cause.
+  // The schema's provider has no AskDB dialect (#720), or a request schema names none (#809). A
+  // schema the request sent is the caller's to fix, so the message names the ids to send; core's
+  // own message points at the server's config, which the caller can't edit. The server's own
+  // schema is the operator's, so it reads as a configuration error, and the log line's errName
+  // (DialectNotSupportedError, not ModelNotConfiguredError) names the cause.
   if (isErrorOf(e, DialectNotSupportedError)) {
     if (ctx.schemaFromRequest) {
       return {
@@ -212,7 +242,7 @@ export function mapAskError(
         error: {
           code: "bad_request",
           message:
-            `The request's schemaJson declares provider '${e.provider}', which has no AskDB dialect. ` +
+            `The request's schemaJson ${providerProblem(e.provider)}. ` +
             `Send a schema whose provider is one of: ${SUPPORTED_DIALECT_IDS.join(", ")}.`,
         },
       };
@@ -399,8 +429,9 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     const abortSignal = AbortSignal.timeout(timeoutMs);
 
     try {
+      const requestSchema = requestOverride === undefined ? undefined : loadRequestSchema(requestOverride);
       const out = await askdb.ask(body.question, {
-        schema: requestOverride ? { json: requestOverride } : undefined,
+        ...(requestSchema ? { schema: requestSchema.schema, dialect: requestSchema.dialect } : {}),
         logger,
         ...(requestedMode ? { mode: requestedMode } : {}),
         explain: body.explain === true,

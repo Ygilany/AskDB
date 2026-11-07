@@ -94,12 +94,8 @@ export type ProviderEnvSpec = {
   modelVars?: readonly string[];
   embeddingModelVars?: readonly string[];
   baseURLVars?: readonly string[];
+  /** The language model when no variable sets one. Embedding models have none: an index bakes its model in. */
   defaultModel?: string;
-  /**
-   * @deprecated The embedding model is baked into a persisted index, so no layer should pick
-   * one. Using it emits a `DeprecationWarning` once per process; removed at 1.0.
-   */
-  defaultEmbeddingModel?: string;
 };
 
 /**
@@ -132,7 +128,8 @@ export type ProviderEnvSpec = {
  *   3. `ASKDB_EMBEDDING_MODEL`
  *   4. provider-native embedding model vars
  *   5. `options.modelDefault`
- *   6. provider default embedding model (deprecated: warns once, removed at 1.0)
+ *
+ * No provider has a default embedding model, so with a key and none of these set it throws.
  *
  * Precedence for base URLs:
  *   1. `ASKDB_AI_BASE_URL`
@@ -229,7 +226,7 @@ function sectionWithoutModel(provider: string, usage: AiUsage): Error {
 
 /**
  * Throws when an embedding section has an API key but no model, whatever its adapter: no layer
- * picks an embedding model (ADR 0016), so a custom adapter's deprecated default doesn't either.
+ * picks an embedding model (ADR 0016), so a custom adapter can't pick one either.
  */
 export function refuseSectionWithoutEmbeddingModel(section: AiModelSection): void {
   const { connection } = section;
@@ -241,19 +238,6 @@ export function refuseSectionWithoutEmbeddingModel(section: AiModelSection): voi
 export function nonBlank(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
-}
-
-let warnedDefaultEmbeddingModel = false;
-
-function warnDefaultEmbeddingModel(provider: string, model: string): void {
-  if (warnedDefaultEmbeddingModel) return;
-  warnedDefaultEmbeddingModel = true;
-  process.emitWarning(
-    `${provider}: no embedding model configured, so AskDB used its default "${model}". ` +
-      "Set ai.embedding.model in askdb.config.*, or set ASKDB_AI_EMBEDDING_MODEL or the provider's embedding model variable; " +
-      "the default is removed at 1.0.",
-    { type: "DeprecationWarning", code: "ASKDB_AI_DEFAULT_EMBEDDING_MODEL" },
-  );
 }
 
 function resolveModel(
@@ -271,10 +255,6 @@ function resolveModel(
         "ASKDB_EMBEDDING_MODEL",
         ...(spec.embeddingModelVars ?? []),
       ]) || options.modelDefault;
-    if (!model && spec.defaultEmbeddingModel) {
-      model = spec.defaultEmbeddingModel;
-      warnDefaultEmbeddingModel(provider, model);
-    }
   } else {
     model =
       first(env, ["ASKDB_AI_MODEL", "ASKDB_MODEL", ...(spec.modelVars ?? [])]) ||

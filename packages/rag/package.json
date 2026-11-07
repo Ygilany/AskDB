@@ -23,9 +23,7 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
-  "sideEffects": [
-    "./bin/askdb-rag.js"
-  ],
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -60,11 +58,7 @@
       "default": "./dist/embedders/ai-sdk.js"
     }
   },
-  "bin": {
-    "askdb-rag": "./bin/askdb-rag.js"
-  },
   "files": [
-    "bin",
     "dist",
     "README.md",
     "LICENSE",

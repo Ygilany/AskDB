@@ -388,6 +388,39 @@ describe("workspace", () => {
   });
 });
 
+// A bundle is only useful if it loads, so the bundler checks it with core's loader (#796).
+describe("bundleSchemaDirectory refuses a directory the loader refuses", () => {
+  const tmps: string[] = [];
+  afterEach(() => {
+    for (const dir of tmps.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  const copyOf = (fixture: string): string => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-enrich-bundle-"));
+    tmps.push(tmp);
+    const dir = join(tmp, "copy.schema");
+    cpSync(new URL(`../../../fixtures/schemas/${fixture}`, import.meta.url), dir, { recursive: true });
+    return dir;
+  };
+
+  it.each([
+    ["a table file whose front-matter isn't YAML", "orders-users.schema", "tables/orders.md", "---js\n{ id: 'table:public.orders' }\n---\n"],
+    ["a tenant-policy.md that doesn't parse", "agency-multi-tenant.schema", "tenant-policy.md", "---\nroots:\n  - id: [unclosed\n---\n"],
+  ])("%s: throws the loader's SchemaParseError, naming the file on disk", (_problem, fixture, file, content) => {
+    const schemaDir = copyOf(fixture);
+    writeFileSync(join(schemaDir, file), content);
+    let fromLoader: unknown;
+    try {
+      loadSchema(schemaDir);
+    } catch (error) {
+      fromLoader = error;
+    }
+    expect(fromLoader).toBeInstanceOf(SchemaParseError);
+    expect((fromLoader as Error).message).toContain(join(schemaDir, file));
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow(SchemaParseError);
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow((fromLoader as Error).message);
+  });
+});
+
 describe("bundleSchemaDirectory with a tenant policy", () => {
   let tmp: string;
   let schemaDir: string;

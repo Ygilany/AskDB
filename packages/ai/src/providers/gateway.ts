@@ -16,7 +16,6 @@ import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 const ENV_SPEC: BuiltinProviderEnvSpec = {
   apiKeyVars: ["AI_GATEWAY_API_KEY"],
   defaultModel: "openai/gpt-4o-mini",
-  defaultEmbeddingModel: "openai/text-embedding-3-small",
 };
 
 const CONFIG_HINT =
