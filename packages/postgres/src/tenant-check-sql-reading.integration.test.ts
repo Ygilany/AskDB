@@ -5,8 +5,8 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `$tag$` string, a table named after a keyword, and where a `--`
- * comment ends, nested block comments, and a column list after a table's alias are all read as
- * Postgres reads them.
+ * comment ends, nested block comments, a column list after a table's alias, and an `ON` that closes an
+ * earlier outer join are all read as Postgres reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -109,5 +109,16 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     ]) {
       expect(findings(sql), sql).toEqual(["MISSING_TENANT_PREDICATE"]);
     }
+  });
+
+  it("an ON that closes an earlier LEFT JOIN belongs to it, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // `o LEFT JOIN (x JOIN s ON …) ON …`: the second ON is the LEFT JOIN's, which keeps every client.
+    const rows = (await runner(
+      "SELECT count(DISTINCT o.agency_id) AS c FROM people.client o LEFT JOIN org.agency x JOIN org.program s ON s.agency_id = x.agency_id ON x.agency_id = o.agency_id AND o.agency_id = 3",
+    )).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(1);
+    expect(findings("SELECT o.* FROM orders o LEFT JOIN lookup_states x JOIN service_types s ON s.id = x.id ON x.code = o.state AND o.agency_id = :tenant_agency_ids"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });

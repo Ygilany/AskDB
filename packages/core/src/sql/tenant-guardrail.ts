@@ -1081,20 +1081,36 @@ function subqueryUse(tokens: readonly Token[], open: number): SubqueryUse {
   return "other";
 }
 
-/** SQL Server join hints, written between the join kind and `JOIN` (`LEFT HASH JOIN`). */
-const JOIN_HINTS = new Set(["loop", "hash", "merge", "remote"]);
+/** Words that make a join outer, wherever they stand in it: `LEFT HASH JOIN`, `LEFT STRAIGHT JOIN`, `FULL OUTER JOIN`. */
+const OUTER_JOIN_WORDS = new Set(["left", "right", "full", "outer"]);
+/** Words a join's own words start after, at its level: the source before it begins or ends at one of these. */
+const BEFORE_A_JOIN = new Set(["from", "join", "on", "using", "apply"]);
 
-/** Whether the `ON` at `on` belongs to an outer join, whose `ON` doesn't filter the preserved side. */
+/**
+ * Whether the `ON` at `on` belongs to an outer join, whose `ON` doesn't filter the preserved side.
+ * The join is outer when `LEFT`, `RIGHT`, `FULL` or `OUTER` stands anywhere among its words, between
+ * the source before it and `JOIN`, as a keyword (not `LEFT(…)` or a qualified name), so a hint
+ * between them (SQL Server's `HASH`, CockroachDB's `STRAIGHT`, `LOOKUP` or `INVERTED`) changes nothing.
+ * An `ON` with another `ON` or `USING` between it and the nearest `JOIN` closes an earlier join
+ * (`a LEFT JOIN b JOIN c ON … ON …`), which may be outer, so it counts as outer.
+ */
 function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
   const depth = tokens[on]!.depth;
   for (let i = on - 1; i >= 0; i--) {
     const t = tokens[i]!;
     if (t.depth < depth) return false;
-    if (t.depth > depth || t.kw !== "join") continue;
-    let kind = i - 1;
-    if (JOIN_HINTS.has(tokens[kind]?.kw ?? "")) kind--;
-    if (tokens[kind]?.kw === "outer") kind--;
-    return ["left", "right", "full"].includes(tokens[kind]?.kw ?? "");
+    if (t.depth > depth) continue;
+    if (t.kw === "on" || t.kw === "using") return true;
+    if (t.kw !== "join") continue;
+    for (let k = i - 1; k >= 0; k--) {
+      const w = tokens[k]!;
+      if (w.depth < depth) break;
+      if (w.depth > depth) continue;
+      if (BEFORE_A_JOIN.has(w.kw) || w.text === ",") break;
+      const qualified = tokens[k - 1]?.text === "." || tokens[k + 1]?.text === ".";
+      if (OUTER_JOIN_WORDS.has(w.kw) && !isFunctionCall(tokens, k) && !qualified) return true;
+    }
+    return false;
   }
   return false;
 }
