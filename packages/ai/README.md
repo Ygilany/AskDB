@@ -95,8 +95,6 @@ const providerOptions = reasoningEffort ? ai.resolveProviderOptions(config, { re
 await ask({ question, schema, dialect: "postgres", model, deps: { providerOptions } });
 ```
 
-Pass the same `providerOptions` to your own `generateText()` calls to give them the configured effort.
-
 `resolveReasoningEffortFromSection(reasoning, purpose, override)` resolves the effective effort from an explicit override, the call purpose's own effort (`ai.language.reasoning.nlToSql` / `.enrichment`), then `ai.language.reasoning.effort`. Without a config file, `resolveReasoningEffort(env, purpose, override)` reads the same from `ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` / `_ENRICHMENT`, then `ASKDB_AI_REASONING_EFFORT`. See the [config reference](https://askdb.tools/reference/config/#reasoning-effort).
 
 ## Exports
