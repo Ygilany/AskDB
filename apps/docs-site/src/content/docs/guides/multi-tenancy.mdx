@@ -51,7 +51,7 @@ direct `organization_id`; plan tiers and countries are shared lookups.
 
 Classify every table: a table in none of `scopedTables`, `polymorphicTables` or `globalTables` is **unknown**, and a query that names it triggers a warning, and in `strict` mode an error. Start with `enforcement: strict`. [Field reference](/reference/tenant-policy/#field-reference) lists every field.
 
-`loadSchema()` checks the policy against `schema.json` when it loads the artifact. Under `strict`, a policy that names IDs `schema.json` doesn't have doesn't load: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
+`loadSchema()` checks the policy against `schema.json` when it loads the artifact. Under `strict`, a policy that names IDs `schema.json` doesn't have, or a column on another table than its entry's, doesn't load: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
 
 ## 2. Pass the caller's tenant scope
 
@@ -130,7 +130,7 @@ AskDB's tenant check is a heuristic over the SQL's tokens, so a query can get pa
 | `TenantScopeError` `GLOBAL_WITHOUT_REASON` | Give the `global` scope a non-blank `reason`. |
 | `TenantScopeError` `UNRESOLVED_TENANT_PLACEHOLDER` | The SQL uses a tenant placeholder the scope has no IDs for, such as any placeholder under a `global` scope. Pass a scope that covers that root. |
 | `TenantGuardrailError` | The SQL fails the tenant check. [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists each rule. |
-| `SchemaParseError` naming `tenant-policy.md` | The policy has a key AskDB doesn't know, or, under `strict`, names IDs `schema.json` doesn't have. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree). |
+| `SchemaParseError` naming `tenant-policy.md` | The policy has a key AskDB doesn't know, or, under `strict`, names IDs `schema.json` doesn't have or a column on another table than its entry's. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree). |
 
 [`TenantScopeError` reasons](/reference/core-api/#tenantscopeerror-reasons) lists the rest.
 

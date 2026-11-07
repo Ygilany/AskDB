@@ -10,7 +10,7 @@ Deterministic retrieval over AskDB Schema v2 artifacts. `@askdb/rag` chunks the 
 pnpm add @askdb/rag @askdb/core ai
 # only if you use the pgvector adapter:
 pnpm add pg
-# only if you use the OpenAI embedder helper:
+# only if you build OpenAI embedding models with the AI SDK yourself:
 pnpm add @ai-sdk/openai
 ```
 
@@ -87,7 +87,6 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 | `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel` adapter. Requires `ai`. |
 | `detectEmbeddingDimensions` | — | Learns an embedder's vector width by embedding one short text. Use it for a new pgvector table instead of hard-coding a width. |
 | `aiSdkEmbedderId` | `@askdb/rag/embedders/ai-sdk` | The `embedderId` Studio and `askdb rag` record for an `ai.embedding` model (`ai-sdk:<provider>:<model>:<dimensions or default>`), so an index built by one is accepted by the other. |
-| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | **Deprecated.** OpenAI convenience helper. Use `createAiSdkEmbedder` with an AI SDK embedding model (e.g. from `@ai-sdk/openai`) or one built by the `@askdb/ai` registry instead. Removed in 1.0. |
 
 ### Import examples
 
@@ -105,8 +104,7 @@ import { createMemoryStore } from "@askdb/rag/stores/memory";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
-// Recommended: bring your own embedding model (e.g. @ai-sdk/openai, or @askdb/ai's registry) + createAiSdkEmbedder
-// import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai"; // deprecated, removed in 1.0
+// Bring your own embedding model (e.g. from @ai-sdk/openai, or @askdb/ai's createEmbeddingModelFromSection) + createAiSdkEmbedder
 ```
 
 ## Sensitive Fields

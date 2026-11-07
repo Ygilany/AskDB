@@ -6,6 +6,8 @@ Accepted (2026-11-06, the coordinating thread's answer on #787, option A, and Ro
 
 > **Amendment (2026-11, #711 candidate 7, #765):** Two of the paths below changed. `rag.embedderConfig` is removed, so a config that sets it fails to load as a removed key, and that error names the key, never its value. And `@askdb/config` no longer maps a connection into an env map: a host passes the typed section to `@askdb/ai`'s `*FromSection` methods, which refuse a credentialed `connection.baseUrl` with `AiBaseUrlCredentialsError` (`setting: "connection.baseUrl"`), whether or not the connection has a key. A model they build still goes through `baseURLOption()`, so the SDK fallback check holds on that path too. The config-load check is unchanged.
 
+> **Amendment (2026-11, #844):** `@askdb/rag`'s `createOpenAiEmbedder` is removed, so the uncovered path in *Consequences* is gone. A host now builds its embedding model with `@askdb/ai`'s `createEmbeddingModelFromSection`, which refuses a credentialed `connection.baseUrl`, or with the AI SDK itself.
+
 ## Context
 
 A model base URL such as `http://user:pass@proxy.example/v1` never worked: `fetch` refuses a URL with userinfo, with the error `Request cannot be constructed from a URL that includes credentials: <the whole URL>`. `@askdb/core` copied that message into `SqlGenerationError` and the `askdb.pipeline.failed` log, so the credentials reached stderr and every log sink (#787).

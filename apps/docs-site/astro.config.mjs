@@ -47,6 +47,7 @@ export default defineConfig({
   // old path but not to the destination, so the destination carries it here.
   redirects: {
     "/reference/ask-options": `${normalizedBase}/reference/core-api/`,
+    "/getting-started/troubleshooting": `${normalizedBase}/guides/troubleshooting/`,
   },
   markdown: {
     processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
@@ -156,7 +157,7 @@ export default defineConfig({
               label: "Maintain",
               items: [
                 { label: "Upgrade AskDB", slug: "guides/upgrading" },
-                { label: "Troubleshooting", slug: "getting-started/troubleshooting" },
+                { label: "Fix common errors", slug: "guides/troubleshooting" },
               ],
             },
             {

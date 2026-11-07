@@ -4,7 +4,7 @@
  *
  * Protects: the read-only SQL guardrail as the docs state it. `concepts/safety-boundaries.mdx`
  * ("What AskDB enforces": read-only, single statement, no system schemas) and
- * `getting-started/troubleshooting.mdx` (each rule code: `SQL_NOT_SELECT_OR_WITH`,
+ * `guides/troubleshooting.mdx` (each rule code: `SQL_NOT_SELECT_OR_WITH`,
  * `SQL_MULTI_STATEMENT`, `SQL_COMMENT`, `SQL_FORBIDDEN_KEYWORD` for `INTO`, `DELETE`, `EXEC`,
  * `WAITFOR` …, `SQL_FORBIDDEN_FUNCTION` for `pg_sleep`, `LOAD_FILE`, `SLEEP` …; keywords match
  * only as whole unquoted tokens, "so a column like `deleted_at` or `"delete"` is fine"). Each

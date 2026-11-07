@@ -136,15 +136,6 @@ const model = await registry.createEmbeddingModelFromEnv(process.env, { modelDef
 const embedder = createAiSdkEmbedder({ model });
 ```
 
-- OpenAI via `createOpenAiEmbedder` (deprecated, removed in 1.0):
-
-```ts
-// Use the registry approach above instead.
-import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai";
-
-const embedder = createOpenAiEmbedder({ model: "text-embedding-3-small" });
-```
-
 - Any AI SDK embedding model:
 
 ```ts
