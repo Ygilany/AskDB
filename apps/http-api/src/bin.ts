@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { bootstrapAskDbEnv } from "@askdb/config";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { dotenvCandidates } from "./dotenv-candidates.js";
 import { createAskDbHttpServer } from "./server.js";
 
 type CliOptions = {
@@ -28,13 +29,7 @@ if (cliOptions.help) {
 
 {
   const here = dirname(fileURLToPath(import.meta.url));
-  // When compiled, `here` is `.../apps/http-api/dist`, so repo root is 3 levels up.
-  const repoRootEnv = resolve(here, "../../../.env");
-  const cwdEnv = resolve(process.cwd(), ".env");
-  const pkgEnv = resolve(here, "../.env");
-
-  // Prefer repo root `.env`, but be resilient to different working directories.
-  const candidates = [repoRootEnv, cwdEnv, pkgEnv].filter((p) => existsSync(p));
+  const candidates = dotenvCandidates(here, process.cwd()).filter((p) => existsSync(p));
   try {
     bootstrapAskDbEnv({
       cwd: process.cwd(),

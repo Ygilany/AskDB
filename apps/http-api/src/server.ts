@@ -211,7 +211,19 @@ export function mapAskError(
       },
     };
   }
+  // A schema the request sent is the caller's to fix (400). The server's own schema is the
+  // operator's, and its error names a server path, so the caller gets a generic 500 and the log
+  // line keeps the full error (#840).
   if (isErrorOf(e, SchemaLoadError)) {
+    if (!ctx.schemaFromRequest) {
+      return {
+        status: 500,
+        error: {
+          code: "generation_not_configured",
+          message: "The server can't load its configured schema. See server logs for this correlationId.",
+        },
+      };
+    }
     return {
       status: 400,
       error: {

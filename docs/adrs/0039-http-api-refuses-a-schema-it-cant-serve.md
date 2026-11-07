@@ -49,6 +49,8 @@ For #716:
 - **`@askdb/client` doesn't change.** `resolveDialect` keeps "a configured `dialect` wins" for the CLI, Studio and hosts; the HTTP server, which knows which schema came from the request, overrides it per call.
 - **Options not taken:** refusing a request schema whose `provider` disagrees with the config (it would bar a caller from any other engine on that server), and keeping Decision 5 with the note logged (the caller still got another engine's SQL).
 
+**2026-11-06 — A server schema that doesn't load (#840):** a wrong `host.schemaPath` answered any caller `400 schema_parse_error`, with the server's absolute path in the message. Decision 2 now covers loading too: the server's own schema answers `500 generation_not_configured` with a generic message that names no path, and the `askdb.run.error` log line keeps the full `SchemaLoadError`. A request `schemaJson` that doesn't load keeps `400 schema_parse_error`. A third cause joins Decision 3's `errName` list: `SchemaLoadError`.
+
 ## Related
 
 - #716, #720, #343, #277, #809.

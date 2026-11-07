@@ -91,11 +91,11 @@ Every flag is optional. Each setting comes from its flag, then `askdb.config.ts`
 
 `askdb-http` loads one `.env` file before the config: the first of these that exists.
 
-1. A `.env` three directories above the package's `dist` folder: `node_modules/.env` in an npm install, or the repository root when you run it from AskDB's own repository.
-2. The `.env` in the working directory.
-3. A `.env` in the `@askdb/http-api` package folder.
+1. The `.env` in the working directory.
+2. A `.env` in the `@askdb/http-api` package folder.
+3. A `.env` three directories above the package's `dist` folder, which is the repository root when you run it from AskDB's own repository.
 
-So a `.env` inside `node_modules` is read in place of the working directory's. `createAskDbHttpServer()` reads only the working directory's `.env` (see [Config loading](#config-loading)).
+It never reads a candidate inside `node_modules`, so in an npm, pnpm or Yarn install only the working directory's `.env` is read. `createAskDbHttpServer()` reads only the working directory's `.env` too (see [Config loading](#config-loading)).
 
 If the server can't load its config (no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`) or can't bind (for example, the port is already in use), `askdb-http` prints a one-line error and exits with code `1`.
 
@@ -187,10 +187,10 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 | `bad_request` | `400` | Malformed JSON, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, a retired execution field, no schema configured server-side, or a request `schemaJson` that records no `provider` or one with no AskDB dialect. |
 | `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
 | `schema_override_disabled` | `403` | The request sent `schemaJson` but `httpApi.allowSchemaOverride` is not `true`. |
-| `schema_parse_error` | `400` | The schema artifact (inline `schemaJson` or the server's configured schema) couldn't be loaded or parsed. |
+| `schema_parse_error` | `400` | A request `schemaJson` couldn't be loaded or parsed. The server's own schema gets `500 generation_not_configured` instead. |
 | `sql_validation_error` | `400` | Model output failed the SQL checks (must start with `SELECT`/`WITH`, a single statement, no comments, no unterminated strings or quoted identifiers, no write or DDL keywords, no locking reads, no blocked side-effecting functions). Includes `rule`, the check's [`SqlValidationRuleCode`](/reference/core-api/#sqlvalidationerror-rules), such as `SQL_NOT_SELECT_OR_WITH`. |
 | `guardrail_violation` | `422` | Reserved for a tenant or sensitive-identifier guardrail rejecting the generated SQL, with `rule`. The server doesn't return it today: it runs the sensitive-identifier check in warn mode (see `sensitiveGuardrail`), and it can't pass a tenant scope, so a schema with a tenant policy fails earlier with `500 tenant_scope_not_configured`. |
-| `generation_not_configured` | `500` | The server can't generate SQL for its configured schema, for one of two reasons: no model provider is configured, or the schema's `provider` has no AskDB dialect and `dialect` isn't set in `askdb.config.*`. The server never falls back to PostgreSQL. The log line's `errName` names the cause: `ModelNotConfiguredError` or `DialectNotSupportedError`. |
+| `generation_not_configured` | `500` | The server can't generate SQL for its configured schema, for one of three reasons: no model provider is configured; the schema can't be loaded, such as a `host.schemaPath` that doesn't exist; or the schema's `provider` has no AskDB dialect and `dialect` isn't set in `askdb.config.*`. The server never falls back to PostgreSQL. The message is generic and names no path. The log line's `errName` names the cause: `ModelNotConfiguredError`, `SchemaLoadError` or `DialectNotSupportedError`, with the full error. |
 | `tenant_scope_not_configured` | `500` | The schema has a tenant policy (`tenant-policy.md`), and the server can't set a `tenantScope`, so `ask()` refuses it before any model call. No SQL is returned. To serve a tenant-scoped schema, call `ask()` with a `tenantScope` in your own server; server-side scoping for this server is planned in [#343](https://github.com/Ygilany/AskDB/issues/343). |
 | `sql_generation_error` | `502` | The model call failed (provider error, or it hit `httpApi.requestTimeoutMs`). The message is generic. The provider's own error text is logged server-side and never returned. |
 | `internal_error` | `500` | Anything else. The message is generic. The full error is logged server-side under the response's `correlationId`. |
