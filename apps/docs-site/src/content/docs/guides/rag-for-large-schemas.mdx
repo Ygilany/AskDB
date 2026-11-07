@@ -57,7 +57,7 @@ export default defineConfig({
     store: "pgvector",
     storeConfig: {
       pgvector: {
-        databaseUrl: env("PGVECTOR_URL"),
+        databaseUrl: env("ASKDB_PGVECTOR_URL"),
       },
     },
   },
@@ -75,7 +75,7 @@ One idempotent command. All DDL uses `IF NOT EXISTS` so it's safe to re-run on e
 
 ```bash
 npx askdb rag setup-store \
-  --pg-url "$PGVECTOR_URL" \
+  --pg-url "$ASKDB_PGVECTOR_URL" \
   --dimensions 1536
 ```
 
@@ -85,7 +85,7 @@ Drop it into a deploy step:
 
 ```yaml
 - name: Provision pgvector schema
-  run: npx askdb rag setup-store --pg-url "${{ secrets.PGVECTOR_URL }}" --dimensions 1536  # text-embedding-3-small's width
+  run: npx askdb rag setup-store --pg-url "${{ secrets.ASKDB_PGVECTOR_URL }}" --dimensions 1536  # text-embedding-3-small's width
 ```
 
 ### Path 3: Explicit migration (production)
@@ -124,7 +124,7 @@ const embedder = createAiSdkEmbedder({
 });
 
 const store = createPgvectorStore({
-  connectionString: process.env.PGVECTOR_URL!,
+  connectionString: process.env.ASKDB_PGVECTOR_URL!,
   dimensions: await detectEmbeddingDimensions(embedder), // the width the model returns
 });
 await store.ensureSchema(); // creates the table if needed; refuses an existing table of another width

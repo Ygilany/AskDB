@@ -21,7 +21,7 @@ The package ships an `askdb-http` binary — for most deployments you don't writ
 npx askdb-http --schema-path ./my-app.schema --port 3000
 ```
 
-All flags are optional. Each falls back to `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`). After that, the port defaults to `3000` and the host to `127.0.0.1`; the schema path falls back to the `ASKDB_SCHEMA_PATH` environment variable and has no default.
+All flags are optional. Each falls back to `askdb.config.ts`: the schema to `host.schemaJson`, then `host.schemaPath`, and the port and host to `httpApi.listen.port` and `httpApi.listen.host`. After that, the port defaults to `3000` and the host to `127.0.0.1`. The schema has no default: with none configured, `POST /ask` answers `400 bad_request`, naming the settings to set.
 
 To embed the server in your own process instead, use the programmatic API:
 
@@ -41,6 +41,24 @@ await server.listen();
 Either way, the server reads its schema and model settings from your `askdb.config.ts`, the same config file the CLI and Studio use. When you create it, the server loads `.env` and the config from the current working directory, unless your process already called `bootstrapAskDbEnv()`, in which case it uses that config. Set `host.schemaPath` to point at your schema artifact and configure the AI provider as usual — supply the provider key (`OPENAI_API_KEY`, etc.) in your environment the same way you do for the CLI.
 
 Two kinds of schema don't work with this server. A schema with a tenant policy (`tenant-policy.md`) answers every request with `500 tenant_scope_not_configured`, because the server can't set a tenant scope yet ([#343](https://github.com/Ygilany/AskDB/issues/343)): generate its SQL with `ask()` and a `tenantScope` in your own server. A schema whose `provider` has no AskDB dialect answers `500 generation_not_configured` until you set `dialect` in `askdb.config.ts`; the server doesn't fall back to PostgreSQL. The `dialect` you set applies to the server's own schema only: a request `schemaJson` gets SQL for its own `provider`, and `400 bad_request` when it records none or one AskDB has no dialect for.
+
+### On a platform that sets `PORT`
+
+Some platforms give a service its port in a `PORT` variable. Read it in `askdb.config.ts` and convert it to a number: `env()` returns a string, so `port: env("PORT")` doesn't type-check.
+
+```ts
+// askdb.config.ts
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  // ...
+  httpApi: {
+    listen: { port: Number(env("PORT") ?? 3000) },
+  },
+});
+```
+
+With `PORT` unset, `Number(env("PORT"))` is `NaN`, which counts as unset, so the server uses `3000` either way. The `?? 3000` shows the fallback in the config.
 
 ## Endpoints
 
