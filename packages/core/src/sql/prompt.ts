@@ -61,9 +61,8 @@ export function buildNlToSqlUserPrompt(
   parameterize?: boolean,
   /**
    * The ids of the tables `prebuiltDdl` shows (the retrieved ones), so the tenant block names no
-   * other table (#771, ADR 0038). Optional: this function already has the schema, so the tenant block
-   * never names a table marked `tracked: false`. Pass it with `prebuiltDdl` so the block also leaves
-   * out the tables retrieval didn't pick; without it, the block names every tracked policy table.
+   * other (#771, ADR 0038). Required with `prebuiltDdl` when there's a tenant policy; without
+   * `prebuiltDdl` the prompt shows the schema's tracked tables, and the block follows them.
    */
   promptTableIds?: readonly string[],
 ): string {
@@ -129,6 +128,9 @@ export function buildNlToSqlUserPrompt(
     // The block names only the tables this prompt shows (#771, ADR 0038), so it needs to know them.
     if (!isV2(schema)) {
       throw new AskDbError("buildNlToSqlUserPrompt(): a tenant policy needs the v2 schema it belongs to, so the tenant block can name only the tables the prompt shows.");
+    }
+    if (prebuiltDdl !== undefined && promptTableIds === undefined) {
+      throw new AskDbError("buildNlToSqlUserPrompt(): with prebuiltDdl and a tenant policy, pass promptTableIds, the ids of the tables prebuiltDdl shows, so the tenant block names no other table.");
     }
     lines.push(buildTenantPromptBlock(tenantPolicy, tenantScope, { schema, tableIds: promptTableIds }));
     lines.push("");

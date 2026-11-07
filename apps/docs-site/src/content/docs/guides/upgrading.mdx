@@ -146,11 +146,11 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 
 ### Pass the prompt's schema to `buildTenantPromptBlock()`
 
-`buildTenantPromptBlock(policy, scope, prompt)` now requires `prompt`: the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows ([#771](https://github.com/Ygilany/AskDB/issues/771), ADR 0038). The block names only those tables, plus a tracked table that retrieval left out when a shown table's join path needs it. `ask()` passes it for you, so this only matters if you call the function yourself.
+`buildTenantPromptBlock(policy, scope, prompt)` now requires `prompt`: the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows ([#771](https://github.com/Ygilany/AskDB/issues/771), ADR 0038). The block names only those tables. `ask()` passes it for you, so this only matters if you call the function yourself.
 
 - **For a prompt that shows the whole schema,** pass `{ schema }`. If no table in your schema is marked `tracked: false`, the block is the same as before. An untracked table can no longer be named in the block, even on purpose.
 - **Under retrieval,** pass `{ schema, tableIds }`, with `synthesizeRetrievedDdl()`'s `tableIds`.
-- **`buildNlToSqlUserPrompt()` takes an optional `promptTableIds`,** the same ids, to pass with `prebuiltDdl` under retrieval. Its tenant block already leaves untracked tables out. It now throws `AskDbError` for a tenant policy with a v1 schema.
+- **`buildNlToSqlUserPrompt()` throws `AskDbError`** when you pass `prebuiltDdl` and a tenant policy without `promptTableIds` (the same ids), or a tenant policy with a v1 schema.
 
 ### Other changes you may notice in beta.50
 

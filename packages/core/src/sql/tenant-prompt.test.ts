@@ -7,6 +7,7 @@ import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-po
 import { buildTenantPromptBlock } from "./tenant-prompt.js";
 import { buildNlToSqlUserPrompt } from "./prompt.js";
 import { POSTGRES_DIALECT } from "./dialect-spec.js";
+import { AskDbError } from "../errors.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../fixtures/schemas");
@@ -407,13 +408,9 @@ describe("buildNlToSqlUserPrompt — the tenant block needs the tables the promp
     expect(prompt()).toContain("table:public.campaigns");
   });
 
-  it("never names an untracked table, even with prebuilt DDL and no ids", () => {
-    const untracked = structuredClone(schema);
-    for (const t of untracked.tables) if (t.id === "table:public.campaigns") t.tracked = false;
-    const p = prompt("TABLE public.orders", undefined, untracked);
-    // Without the retrieved ids the block follows the tracked tables: orders and notes, not campaigns.
-    expect(p).toContain("table:public.notes");
-    expect(p).not.toContain("table:public.campaigns");
+  it("refuses prebuilt DDL without the ids of the tables it shows", () => {
+    expect(() => prompt("TABLE public.orders")).toThrow(AskDbError);
+    expect(() => prompt("TABLE public.orders")).toThrow(/pass promptTableIds/);
   });
 
   it("names only the retrieved tables with prebuilt DDL and their ids", () => {

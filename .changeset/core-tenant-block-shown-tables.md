@@ -8,12 +8,11 @@ The NL→SQL prompt's tenant-policy block names only the tables the prompt shows
 **Breaking for direct callers** (`ask()` passes everything for you):
 
 - `buildTenantPromptBlock(policy, scope, prompt)`: `prompt` is required, `{ schema, tableIds? }`, the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows. The block works out the tracked and shown tables from them. Pass `{ schema }` for a prompt that shows the whole schema.
-- `buildNlToSqlUserPrompt()` throws `AskDbError` for a tenant policy with a v1 schema, which has no tracked tables to follow.
+- `buildNlToSqlUserPrompt(…, promptTableIds)`: the ids of the tables `prebuiltDdl` shows. With `prebuiltDdl` and a tenant policy, leaving them out throws `AskDbError`, and so does a tenant policy with a v1 schema. `generateSelectSql()` builds its prompt the same way, so its `prebuiltDdl` dep needs the new `promptTableIds` dep with it.
 
 Additive:
 
-- `buildNlToSqlUserPrompt(…, promptTableIds?)`: the ids of the tables `prebuiltDdl` shows, so its tenant block also leaves out the tables retrieval didn't pick. Optional, since the function has the schema and its block never names an untracked table.
-- `AskDialectGenerateOptions.promptTableIds` and `generateSelectSql()`'s `promptTableIds` dep: set with `prebuiltDdl` under retrieval.
+- `AskDialectGenerateOptions.promptTableIds`: set with `prebuiltDdl` under retrieval.
 - `synthesizeRetrievedDdl()` returns `tableIds`, the ids of the tables its `ddl` shows.
 
 The docs update the privacy model, the core and RAG API references, the multi-tenancy guide and the upgrade guide.
