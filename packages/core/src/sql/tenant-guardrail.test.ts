@@ -800,3 +800,25 @@ describe("validateTenantGuardrails — CockroachDB b'…' byte strings (#730)", 
     expect(findings(`SELECT b'0101' AS x ${scoped}`, MYSQL_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a MySQL dialect that leaves backslashEscapes unset", () => {
+  // MySQL's default reads `\'` as an escaped quote, so the server sees one string from 'a to the
+  // last quote and then `OR 1=1`: no tenant predicate applies.
+  const sql = String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`;
+
+  it.each([
+    ["a spec with the field unset", { ...MYSQL_DIALECT, backslashEscapes: undefined } as DialectSpec],
+    ["an id alone", { id: "mysql" } as Pick<DialectSpec, "id" | "backslashEscapes">],
+    ["a MariaDB id alone", { id: "mariadb" } as Pick<DialectSpec, "id" | "backslashEscapes">],
+  ])("reads strings with escapes on, as the server does: %s", (_label, dialect) => {
+    expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect })).toThrow(TenantGuardrailError);
+  });
+
+  it("keeps reading the built-in dialect and an explicit false as before", () => {
+    expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect: MYSQL_DIALECT })).toThrow(TenantGuardrailError);
+    // With escapes off, 'a\' ends early and the predicate is code, as the server reads it then.
+    const off = validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope, { dialect: { ...MYSQL_DIALECT, backslashEscapes: false } });
+    expect(off.warnings.map((w) => w.rule)).not.toContain("MISSING_TENANT_PREDICATE");
+  });
+});
+

@@ -609,7 +609,10 @@ function codeViews(
   if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
     return [STANDARD_READING, POSTGRES_READING, MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE].map((r) => view(sql, r));
   }
-  const backslashEscapes = dialect.backslashEscapes === true;
+  // As the shared lexer reads it (`lexerProfileFor`): an unset value on a MySQL-family dialect is the
+  // server default, escapes on; elsewhere escapes are on only when the dialect says so.
+  const mysqlFamily = dialect.id === "mysql" || dialect.id === "mariadb";
+  const backslashEscapes = mysqlFamily ? dialect.backslashEscapes !== false : dialect.backslashEscapes === true;
   const bases =
     dialect.id === "mysql" || dialect.id === "mariadb"
       ? [MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE]
