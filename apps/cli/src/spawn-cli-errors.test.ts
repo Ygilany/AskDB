@@ -43,7 +43,7 @@ describe("cli spawn: rich errors", () => {
     expect(exec.stdout).toContain("-- sql --\nSELECT 1\n");
   });
 
-  it("prints schema path + fixture hint when schema file is missing", () => {
+  it("prints the schema path and an install-safe hint when the schema file is missing", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
 
@@ -68,7 +68,10 @@ describe("cli spawn: rich errors", () => {
     expect(exec.status).toBe(1);
     expect(exec.stderr).toContain("Schema path not found.");
     expect(exec.stderr).toContain("Schema path:");
-    expect(exec.stderr).toContain("fixtures/schemas/orders-users.schema/");
+    // The hint names what every install has, never a folder only AskDB's repository holds (#850).
+    expect(exec.stderr).toContain("Hint: Use a schema directory that `askdb introspect` wrote");
+    expect(exec.stderr).toContain("https://askdb.tools/guides/troubleshooting/");
+    expect(exec.stderr).not.toContain("fixtures/schemas");
   });
 
   it("prints schema path + details when schema JSON is invalid", () => {
