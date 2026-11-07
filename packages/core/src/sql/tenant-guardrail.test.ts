@@ -1537,3 +1537,54 @@ describe("validateTenantGuardrails — SQLite reads a single-quoted name in a ta
     },
   );
 });
+
+describe("validateTenantGuardrails — SQLite reads a single-quoted alias as the read's alias", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // SQLite takes `'o'` after a table or CTE reference as its alias, so `o.agency_id` filters that read,
+  // not orders: on SQLite 3.54, `FROM sub_agencies 'o', orders WHERE o.agency_id = 42` returned every order.
+  const quotedAlias: Array<[string, string]> = [
+    ["after a table", "SELECT orders.* FROM sub_agencies 'o', orders WHERE o.agency_id = :tenant_agency_ids"],
+    ["after AS", "SELECT orders.* FROM sub_agencies AS 'o', orders WHERE o.agency_id = :tenant_agency_ids"],
+    ["after a CTE reference", "WITH s AS (SELECT * FROM sub_agencies) SELECT orders.* FROM s 'o', orders WHERE o.agency_id = :tenant_agency_ids"],
+  ];
+
+  it.each(maybeSqlite)("reads a quoted alias that names another read under %s", (_label, dialect) => {
+    for (const [label, sql] of quotedAlias) expect(findings(sql, dialect), label).toContain(missing);
+  });
+
+  it.each(maybeSqlite)("reads it the way it reads the same plain alias under %s", (_label, dialect) => {
+    // The plain alias is refused for the same reason.
+    expect(findings("SELECT orders.* FROM sub_agencies o, orders WHERE o.agency_id = :tenant_agency_ids", dialect)).toContain(missing);
+    // On SQLite, `orders 'x', orders` and `t 'y', t` read two sources with the alias on the first, as
+    // with a plain alias, so the check gives each form the plain alias's verdict.
+    for (const [quoted, plain] of [
+      ["SELECT x.* FROM orders 'x', orders WHERE orders.agency_id = :tenant_agency_ids", "SELECT x.* FROM orders x, orders WHERE orders.agency_id = :tenant_agency_ids"],
+      [
+        "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t 'y', t WHERE t.agency_id = :tenant_agency_ids",
+        "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t y, t WHERE t.agency_id = :tenant_agency_ids",
+      ],
+    ] as const) {
+      expect(findings(quoted, dialect), quoted).toEqual(findings(plain, dialect));
+    }
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(quotedAlias[0]![1], policy, agencyScope, { dialect: SQLITE_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(maybeSqlite)("keeps a read filtered through its own quoted alias under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids",
+      "SELECT x.* FROM orders AS 'x' WHERE x.agency_id = :tenant_agency_ids",
+      "SELECT x.* FROM orders x WHERE x.agency_id = :tenant_agency_ids",
+      "SELECT count(*) AS 'n' FROM orders WHERE agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+});

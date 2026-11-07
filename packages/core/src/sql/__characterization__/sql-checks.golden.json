@@ -11898,5 +11898,61 @@
   "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-15 c15-82 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-15 c15-82 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-15 c15-82 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "SELECT orders.* FROM sub_agencies 'o', orders WHERE o.agency_id = :tenant_agency_ids": {
+  "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-34 q34-37 c37-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "SELECT x.* FROM orders 'x', orders WHERE orders.agency_id = :tenant_agency_ids": {
+  "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t 'y', t WHERE t.agency_id = :tenant_agency_ids": {
+  "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-51 q51-54 c54-96 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids": {
+  "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-23 q23-26 c26-65 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  }
 }

@@ -230,6 +230,10 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM lookup_states, main.'orders'",
   "SELECT * FROM 'users'",
   "SELECT 'orders' AS label, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT orders.* FROM sub_agencies 'o', orders WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT x.* FROM orders 'x', orders WHERE orders.agency_id = :tenant_agency_ids",
+  "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t 'y', t WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
