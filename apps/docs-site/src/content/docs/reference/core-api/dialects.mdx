@@ -53,7 +53,7 @@ const redshiftFlavor: DialectSpec = {
 | `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. When it is the schema's only namespace, the prompt lists its tables without it and tells the model never to write `<namespace>.<table>`; next to other namespaces (a MySQL database list that includes a database named `public`) it stays qualified. The SQLite, MySQL and MariaDB specs set `SINGLE_NAMESPACE_LABEL` (`"public"`), the namespace their connectors give the database's tables; spread one to keep it. |
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
-| `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
+| `extraValidate` | `(sql: string) => void` | no | A dialect-specific SQL check. Throw `SqlValidationError` for failures. |
 | `listBinding` | `"array" \| "expand"` | no | How a list value binds in `unboundSql`. `"array"` binds the whole list to one marker (`= ANY($1)`), so the marker count doesn't change with the list length. `"expand"` binds one marker per item (`IN (?, ?, ?)`). Default `"expand"` when unset. `POSTGRES_DIALECT` and `COCKROACHDB_DIALECT` set `"array"`, and the other built-in specs set `"expand"`. |
 | `backslashEscapes` | `boolean` | no | Whether a backslash escapes a quote inside `'…'` strings on your server. The built-in specs set the engine default (`true` for MySQL and MariaDB, `false` otherwise). Set `false` for MySQL or MariaDB with `NO_BACKSLASH_ESCAPES`, and `true` for Postgres with `standard_conforming_strings = off`. The checks lex strings this way, and the business values `bindPreparedQuery()` inlines are escaped to match. Tenant IDs are never escaped for the dialect: they are driver parameters by default, and `"sql-only"` refuses an ID that would need escaping. See [Match your server's string settings](/guides/match-server-string-settings/). |
 
@@ -87,7 +87,7 @@ It must return `AskDialectGenerateResult`:
 | Field | Type | Description |
 | --- | --- | --- |
 | `sql` | `string` | The generated SQL. |
-| `explain` | `unknown \| undefined` | Guardrail metadata when `options.explain` is true. |
+| `explain` | `unknown \| undefined` | Metadata on the read-only checks when `options.explain` is true. |
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. With a tenant policy, each warning becomes a tenant finding with `form: "generator"` in `ask()`'s verdict, decided under the policy's `enforcement`, and `passed: false` with no warnings becomes one `UNPROVABLE_SCOPE` finding. They add to `ask()`'s own check and can't replace it. Without a tenant policy, it is passed through to `result.tenantGuardrail` unchanged. |
 | `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
 | `unboundNamedSql` | `string \| undefined` | The same statement with `:name` placeholders for the values taken from the question. `ask()` runs its tenant and sensitive checks on it too, as the `"template"` form, but builds no reuse artifacts from a custom dialect. |

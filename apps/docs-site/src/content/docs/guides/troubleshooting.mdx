@@ -293,7 +293,7 @@ Your tenant policy uses `enforcement: strict`, and the SQL failed the tenant che
 
 ### `QueryParameterError: DIALECT_SPEC_REQUIRED`
 
-`bindPreparedQuery()` or `askdb.bind()` got a template whose dialect rules it can't recover, and no `dialect` in its guardrails. That's a template `ask()` made under your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), or one stored before 1.0.0-beta.46, which has no `dialectRules`. Pass the spec you gave `ask()` as `dialect`. If `ask()` ran with the built-in rules, the built-in id is enough, such as `dialect: "postgres"`. An app that loads two copies of `@askdb/core`, such as ESM beside CJS, gets `"host"` templates from the built-in constants of the other copy, and the same fix applies. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
+`bindPreparedQuery()` or `askdb.bind()` got a template whose dialect rules it can't recover, and no `dialect` in its `guardrails` argument. That's a template `ask()` made under your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), or one stored before 1.0.0-beta.46, which has no `dialectRules`. Pass the spec you gave `ask()` as `dialect`. If `ask()` ran with the built-in rules, the built-in id is enough, such as `dialect: "postgres"`. An app that loads two copies of `@askdb/core`, such as ESM beside CJS, gets `"host"` templates from the built-in constants of the other copy, and the same fix applies. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
 
 ### `QueryParameterError: MISSING_GUARDRAIL_CONTEXT`
 

@@ -5,11 +5,11 @@ description: "The operator checklist for AskDB: read-only roles, statement timeo
 
 <p class="doc-eyebrow">Production checklist</p>
 
-<p class="doc-lede">AskDB runs heuristic checks on SQL before it's returned. Those checks catch common model mistakes, but they aren't a security boundary. Your application and database own everything that depends on runtime context. This page is the checklist for that side of the boundary. For what AskDB does and doesn't check, see <a href="/concepts/safety-boundaries/">Safety boundaries</a>.</p>
+<p class="doc-lede">AskDB runs its SQL checks on the SQL before it's returned. Those checks catch common model mistakes, but they aren't a security boundary. Your application and database own everything that depends on runtime context. This page is the checklist for that side of the boundary. For what AskDB does and doesn't check, see <a href="/concepts/safety-boundaries/">Safety boundaries</a>.</p>
 
 ## Database role
 
-Connect under a role that <em>can't</em> write — even if AskDB's validator slips. This is the single most important defense.
+Connect under a role that <em>can't</em> write — even if AskDB's SQL checks miss something. This is the single most important defense.
 
 ```sql
 CREATE ROLE askdb_reader LOGIN PASSWORD '…';
@@ -106,7 +106,7 @@ Mark sensitive tables and columns in the schema artifact, and decide whether the
 
 If your app is multi-tenant, make the database the tenant boundary: run generated SQL under Postgres row-level security keyed on a per-request setting, or your engine's equivalent. [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/) covers the policies, the per-request transaction, and the checks that show the setup works.
 
-On AskDB's side, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs a heuristic check that each scoped table has a tenant predicate that filters. That check doesn't prove the query is scoped correctly. By default (`tenantSqlMode: "sql-params"`) the IDs are driver parameters, never part of the SQL text: run `result.sql` with `result.tenantParams`, or `result.unboundSql` with `result.params`. Keep that default in production. `sql-only` inlines the IDs as literals, for tools that take one SQL string. See [Multi-tenancy](/guides/multi-tenancy/).
+On AskDB's side, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs the tenant check, a heuristic that looks for a tenant predicate on each scoped table. That check doesn't prove the query is scoped correctly. By default (`tenantSqlMode: "sql-params"`) the IDs are driver parameters, never part of the SQL text: run `result.sql` with `result.tenantParams`, or `result.unboundSql` with `result.params`. Keep that default in production. `sql-only` inlines the IDs as literals, for tools that take one SQL string. See [Multi-tenancy](/guides/multi-tenancy/).
 
 ## Read next
 

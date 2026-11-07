@@ -21,7 +21,7 @@ description: "Every error class @askdb/core throws, what throws it, and its fiel
 | `TenantScopeError` | `ask()`, `bindPreparedQuery()`, `expandTenantScope()`, `validateTenantScope()`, `resolveTenantSql()` and `buildTenantPromptBlock()`: a missing or invalid scope, or tenant IDs that can't be bound. | `reason` |
 | `TenantGuardrailError` | A `deny` from the tenant check in `ask()`, `generateSelectSql()` and `bindPreparedQuery()`, and `validateTenantGuardrails()` under a `strict` policy. | `warnings`, `verdict?` |
 | `SensitiveReferenceError` | `validateSensitiveReferences()` in `strict` mode, and a `deny` from the sensitive check in `ask()` and `bindPreparedQuery()`. | `rule`, `references`, `unresolvedScope?`, `verdict?` |
-| `QueryParameterError` | `bindPreparedQuery()`: missing guardrail inputs, a template that declares a parameter `type` or `cardinality` AskDB doesn't support, or values that don't fit the template. | `reason` |
+| `QueryParameterError` | `bindPreparedQuery()`: missing `guardrails` inputs, a template that declares a parameter `type` or `cardinality` AskDB doesn't support, or values that don't fit the template. | `reason` |
 | `SensitiveEnrichmentTargetError` | `suggestEnrichment()`, for a sensitive target column while `omitSensitiveIdentifiersFromPrompt` is on. The message names no column. | — |
 
 `verdict` is set when the error comes from `ask()`, `generateSelectSql()` or `bindPreparedQuery()`: every finding of every check, not only the one that denied. See [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict). A direct `validateSelectSql()` or `validateSensitiveReferences()` call leaves it unset.

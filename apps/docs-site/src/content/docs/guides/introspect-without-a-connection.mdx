@@ -77,7 +77,7 @@ It writes the schema artifact to `introspection.outputDir` from your config, or 
 
 ## 5. Refresh it when the database changes
 
-When the database changes, repeat steps 3 and 4. Introspecting again into the same output folder (`introspection.outputDir` or `--out`) keeps your `tables/*.md`, `concepts.md` and `tenant-policy.md`, and the `sensitive` flags in `schema.json`. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps after a table or column is renamed.
+When the database changes, repeat steps 3 and 4. Introspecting again into the same output folder (`introspection.outputDir` or `--out`) keeps your `tables/*.md`, `concepts.md` and `tenant-policy.md`, and the `sensitive` flags in `schema.json`. [Enrich your schema](/guides/author-your-schema/#re-introspecting) has the steps after a table or column is renamed.
 
 ## If it fails
 
@@ -95,7 +95,7 @@ The [Introspection API reference](/reference/introspect-api/#export-bundles) des
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
   <a href="/reference/cli/#askdb-introspect"><strong>askdb introspect</strong><span>Every flag, including <code>--from-export</code> and the filters.</span></a>
   <a href="/reference/schema-artifact-format/"><strong>Schema artifact format</strong><span>What the artifact you just built holds.</span></a>
 </div>
