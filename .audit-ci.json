@@ -3,8 +3,5 @@
   "package-manager": "pnpm",
   "report-type": "summary",
   "show-not-found": true,
-  "allowlist": [
-    "GHSA-g3hv-75wg-m249|apps__studio>eslint-import-resolver-typescript>eslint-plugin-import-x>minimatch",
-    "GHSA-g3hv-75wg-m249|apps__studio>eslint-plugin-import-x>minimatch"
-  ]
+  "allowlist": []
 }
