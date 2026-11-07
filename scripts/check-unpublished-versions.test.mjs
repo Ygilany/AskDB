@@ -167,8 +167,8 @@ test("fails closed on a manifest pnpm can't parse", () => {
   workspace();
   pr(() => write("pkgs/core/package.json", "{ not json\n"));
   const result = run();
-  assert.notEqual(result.status, 0);
-  assert.notEqual(result.status, 2);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Could not read the public packages at HEAD/);
 });
 
 test("fails without --since", () => {

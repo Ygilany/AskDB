@@ -27,8 +27,17 @@ if (!since) {
 }
 
 const base = execFileSync("git", ["merge-base", since, "HEAD"], { encoding: "utf8" }).trim();
-const atBase = new Set(publicPackagesAt(base).map(nameAtVersion));
-const added = publicPackages().filter((pkg) => !atBase.has(nameAtVersion(pkg)));
+// A workspace pnpm can't read fails the check: the publish step couldn't read it either.
+function readPackages(where, read) {
+  try {
+    return read();
+  } catch (error) {
+    process.stderr.write(`::error::Could not read the public packages at ${where}: ${error.message.split("\n")[0]}\n`);
+    process.exit(1);
+  }
+}
+const atBase = new Set(readPackages(`the merge base ${base.slice(0, 8)}`, () => publicPackagesAt(base)).map(nameAtVersion));
+const added = readPackages("HEAD", () => publicPackages()).filter((pkg) => !atBase.has(nameAtVersion(pkg)));
 
 let unpublished = 0;
 for (const pkg of added) {

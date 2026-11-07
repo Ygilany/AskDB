@@ -111,6 +111,10 @@ test("refuses a version that was already unpublished on main before the Version 
   const result = run([versionPr()], { packages: [...BUMPED, { name: "studio", version: "0.2.1" }] });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Version PR #7 didn't add studio@0\.2\.1/);
+  // The hand publish it prints is filtered to the merge's own versions, so studio stays out.
+  assert.match(result.stderr, /publish this merge's own versions \(core@1\.0\.1\)/);
+  assert.match(result.stderr, /--filter "core" publish/);
+  assert.doesNotMatch(result.stderr, /--filter "studio/);
 });
 
 const refused = {
@@ -141,8 +145,11 @@ test("fails when gh can't read the commit's PRs", () => {
   assert.match(result.stderr, /Could not read the PRs/);
 });
 
-test("rejects a sha that isn't 40 hex characters, or a missing PACKAGES list", () => {
+test("rejects a sha that isn't 40 hex characters, or a PACKAGES list it can't check", () => {
   workspace();
   assert.equal(run([versionPr()], { sha: "main" }).status, 2);
   assert.equal(run([versionPr()], { packages: null }).status, 2);
+  // An entry without a string name and version can't be checked, so it isn't let through.
+  assert.equal(run([versionPr()], { packages: ["core@1.0.1"] }).status, 2);
+  assert.equal(run([versionPr()], { packages: [{ name: "core" }] }).status, 2);
 });
