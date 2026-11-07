@@ -125,6 +125,8 @@ const HOSTILE: readonly string[] = [
   "SELECT 'a' 'b' FROM orders WHERE agency_id = :tenant_agency_ids",
   "SELECT N'a\\' AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids --'",
   'SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND type = "agency"',
+  "SELECT * FROM orders WHERE note = $q$ AND agency_id = :tenant_agency_ids AND $q$ = note",
+  "SELECT * FROM orders WHERE note = E'\\'' AND agency_id = :tenant_agency_ids AND x = '",
   // Held (a CR ends a `--` comment on Postgres and SQL Server, not on MySQL, SQLite or CockroachDB): local only until the maintainer decides.
   "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders",
   "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids",

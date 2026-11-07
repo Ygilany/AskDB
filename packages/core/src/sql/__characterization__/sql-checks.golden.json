@@ -10891,6 +10891,34 @@
   "custom+escapes": "ro=ok | tg=ok | sens=pass[] | pg=- | spans=c0-69 q69-77 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=ok | sens=pass[] | pg=- | spans=c0-69 q69-77 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
+ "SELECT * FROM orders WHERE note = $q$ AND agency_id = :tenant_agency_ids AND $q$ = note": {
+  "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph=",
+  "postgres+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph=",
+  "cockroachdb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph=",
+  "mysql": "ro=ok | tg=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | sens=pass[] | pg=- | spans=c0-87 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-80 c80-87 | ph= | tph="
+ },
+ "SELECT * FROM orders WHERE note = E'\\'' AND agency_id = :tenant_agency_ids AND x = '": {
+  "postgres": "ro!SQL_UNTERMINATED | tg=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-34 q34-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro!SQL_UNTERMINATED | tg=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-34 q34-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro!SQL_UNTERMINATED | tg=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-34 q34-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro!SQL_UNTERMINATED | tg=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-35 q35-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-35 q35-84 | ph= | tph=",
+  "mysql-unset": "ro!SQL_UNTERMINATED | tg=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-35 q35-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro!SQL_UNTERMINATED | tg=ok | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-35 q35-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-35 q35-84 | ph= | tph=",
+  "sqlserver": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-35 q35-84 | ph= | tph=",
+  "custom": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-34 q34-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro!SQL_UNTERMINATED | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-34 q34-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNTERMINATED_TOKEN} | pg=- | spans=c0-34 q34-39 c39-83 q83-84 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
  "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders": {
   "postgres": "ro!SQL_COMMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-54 m54-56 c56-95 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "postgres+escapes": "ro!SQL_COMMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-54 m54-56 c56-95 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
