@@ -40,7 +40,7 @@ await server.listen();
 
 Either way, the server reads its schema and model settings from your `askdb.config.ts`, the same config file the CLI and Studio use. It loads the config from the current working directory. `createAskDbHttpServer()` reads that directory's `.env`, and `askdb-http` the first of several `.env` files ([HTTP API reference](/reference/http-api/#standalone-binary) lists them). If your process already called `bootstrapAskDbEnv()`, the server uses that config instead. Set `host.schemaPath` to point at your schema artifact and configure the AI provider as usual — supply the provider key (`OPENAI_API_KEY`, etc.) in your environment the same way you do for the CLI.
 
-Two kinds of schema don't work with this server. A schema with a tenant policy (`tenant-policy.md`) answers every request with `500 tenant_scope_not_configured`, because the server can't set a tenant scope yet ([#343](https://github.com/Ygilany/AskDB/issues/343)): generate its SQL with `ask()` and a `tenantScope` in your own server. A schema whose `provider` has no AskDB dialect answers `500 generation_not_configured` until you set `dialect` in `askdb.config.ts`; the server doesn't fall back to PostgreSQL. The `dialect` you set applies to the server's own schema only: a request `schemaJson` gets SQL for its own `provider`, and `400 bad_request` when it records none or one AskDB has no dialect for.
+Two kinds of schema don't work with this server. A schema with a tenant policy can't be served yet: see [Schemas with a tenant policy](#schemas-with-a-tenant-policy). A schema whose `provider` has no AskDB dialect answers `500 generation_not_configured` until you set `dialect` in `askdb.config.ts`; the server doesn't fall back to PostgreSQL. The `dialect` you set applies to the server's own schema only: a request `schemaJson` gets SQL for its own `provider`, and `400 bad_request` when it records none or one AskDB has no dialect for.
 
 ### On a platform that sets `PORT`
 
@@ -60,45 +60,11 @@ export default defineConfig({
 
 With `PORT` unset, `Number(env("PORT"))` is `NaN`, which counts as unset, so the server uses `3000` either way. The `?? 3000` shows the fallback in the config.
 
-## Endpoints
+## Ask a question
 
-The server exposes two endpoints:
+The server has two endpoints. `GET /health` answers `{"ok":true}`, for a liveness probe. `POST /ask` takes a JSON body with a `question`, and returns the checked SQL in `sql`, with a `correlationId` and the model's token `usage`. It returns SQL only: the server doesn't run it, and your client decides what to do with it. The [HTTP API reference](/reference/http-api/) lists every request field, response field and error code.
 
-### `GET /health`
-
-```bash
-curl http://localhost:3000/health
-# {"ok":true}
-```
-
-### `POST /ask`
-
-Body:
-
-```json
-{
-  "question": "Which customers signed up last week?",
-  "mode": "schema_only",
-  "explain": false
-}
-```
-
-Response (success):
-
-```json
-{
-  "ok": true,
-  "correlationId": "8f14e45f-ceea-4e7a-9f2b-1c3d5e7a9b0c",
-  "sql": "SELECT id, name, created_at FROM customers WHERE created_at >= …",
-  "usage": { "promptTokens": 812, "completionTokens": 64, "totalTokens": 876 }
-}
-```
-
-`usage` is `null` when the model provider reports no token counts. The [HTTP API reference](/reference/http-api/) lists every request and response field.
-
-The response is SQL only — the server does not run it. Your client takes the SQL and decides what to do with it.
-
-## Calling from curl
+### From curl
 
 ```bash
 curl -X POST http://localhost:3000/ask \
@@ -106,7 +72,7 @@ curl -X POST http://localhost:3000/ask \
   -d '{"question": "How many customers signed up last week?"}'
 ```
 
-## Calling from Python
+### From Python
 
 ```python
 import os
@@ -117,15 +83,14 @@ resp = httpx.post(
     json={"question": "How many customers signed up last week?"},
     timeout=30,
 )
-resp.raise_for_status()
-body = resp.json()
+body = resp.json()  # error responses are JSON too, with ok: false
 
 if body["ok"]:
     sql = body["sql"]
     correlation_id = body["correlationId"]
     # Run the SQL against your read-only role here.
 else:
-    raise RuntimeError(body["error"]["code"])
+    raise RuntimeError(f'{resp.status_code} {body["error"]["code"]}: {body["error"]["message"]}')
 ```
 
 ## Run it behind a gateway
@@ -145,7 +110,7 @@ The server does not connect to your database. It generates SQL and returns it. E
 
 ## Schemas with a tenant policy
 
-`@askdb/http-api` can't serve a schema that has a tenant policy (`tenant-policy.md`) yet. A request has no way to carry a tenant scope, and AskDB never makes one up, so it refuses every such request before calling the model. [#343](https://github.com/Ygilany/AskDB/issues/343) plans a server-side scope hook, and [#277](https://github.com/Ygilany/AskDB/issues/277) a scope for the `askdb-http` binary. Until then, serve tenant-scoped schemas from your own Node service with `ask({ tenantScope })`: see [Multi-tenancy](/guides/multi-tenancy/).
+`@askdb/http-api` can't serve a schema that has a tenant policy (`tenant-policy.md`) yet. A request has no way to carry a tenant scope, and AskDB never makes one up, so it refuses every such request before calling the model. [#343](https://github.com/Ygilany/AskDB/issues/343) plans a server-side scope hook, and [#277](https://github.com/Ygilany/AskDB/issues/277) a scope for the `askdb-http` binary. Until then, such a schema answers every request with `500 tenant_scope_not_configured`. Serve it from your own Node service with `ask({ tenantScope })` instead: see [Multi-tenancy](/guides/multi-tenancy/).
 
 ## Custom schema per request
 
