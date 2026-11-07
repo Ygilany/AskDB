@@ -613,7 +613,7 @@ Returns the tenant-policy block `ask()` adds to the NL→SQL prompt: the roots, 
 
 ### `buildNlToSqlUserPrompt(dialect, question, schema, ambiguityNotes?, logger?, nlToSqlSchemaOptions?, prebuiltDdl?, tenantPolicy?, tenantScope?, parameterize?, promptTableIds?)`
 
-Returns the NL→SQL user prompt `ask()` sends with a built-in dialect: the rules, the schema's DDL (or `prebuiltDdl`), the tenant block when `tenantPolicy` and `tenantScope` are set, and the hints. With a tenant policy, the tenant block follows the tables the prompt shows. Without `prebuiltDdl` those are the schema's tracked tables. With `prebuiltDdl`, pass `promptTableIds`, the ids of the tables it shows; leaving them out throws `AskDbError`. A tenant policy also needs a v2 schema.
+Returns the NL→SQL user prompt `ask()` sends with a built-in dialect: the rules, the schema's DDL (or `prebuiltDdl`), the tenant block when `tenantPolicy` and `tenantScope` are set, and the hints. With a tenant policy, the tenant block never names a table marked `tracked: false`, since the function has the schema. With `prebuiltDdl`, pass `promptTableIds`, the ids of the tables it shows, so the block also leaves out the tables retrieval didn't pick; without them it names every tracked policy table. A tenant policy needs a v2 schema; a v1 one throws `AskDbError`.
 
 ### `formatTenantPolicyWarning(warning)`
 
