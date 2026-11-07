@@ -35,7 +35,7 @@ const ASK_FLAGS: readonly Flag<AskOptions>[] = [
   {
     names: ["-s", "--schema"],
     value: "<path>",
-    help: "Schema v2 directory, bundled JSON, or schema.json. Default: introspection.outputDir, or ./askdb/.",
+    help: "Schema directory, bundled JSON, or schema.json. Default: introspection.outputDir, or ./askdb/.",
     apply: (opts, value) => (opts.schema = value),
   },
   {
@@ -117,6 +117,10 @@ async function runAsk(opts: AskOptions): Promise<number> {
 
   try {
     const schema = loadSchemaFromPath(opts.schema ?? runtime.introspection.outputDir);
+    // Core's own message names the `question` option; on the command line it's the flag.
+    if (!question.trim()) {
+      throw new AskDbError("Question is empty. Pass a non-blank natural-language question with -q / --question.");
+    }
 
     const askdb = createAskDb({
       config: runtime,

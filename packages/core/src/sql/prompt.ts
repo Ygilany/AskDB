@@ -127,7 +127,7 @@ export function buildNlToSqlUserPrompt(
     lines.push("");
     // The block names only the tables this prompt shows (#771, ADR 0038), so it needs to know them.
     if (!isV2(schema)) {
-      throw new AskDbError("buildNlToSqlUserPrompt(): a tenant policy needs the v2 schema it belongs to, so the tenant block can name only the tables the prompt shows.");
+      throw new AskDbError("buildNlToSqlUserPrompt(): a tenant policy needs the schema artifact it belongs to, not a v1 schema, so the tenant block can name only the tables the prompt shows.");
     }
     if (prebuiltDdl !== undefined && promptTableIds === undefined) {
       throw new AskDbError("buildNlToSqlUserPrompt(): with prebuiltDdl and a tenant policy, pass promptTableIds, the ids of the tables prebuiltDdl shows, so the tenant block names no other table.");

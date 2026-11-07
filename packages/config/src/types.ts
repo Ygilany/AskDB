@@ -185,7 +185,7 @@ export type FileStoreConfig = {
 export type MemoryStoreConfig = Record<string, never>;
 
 export type PgvectorStoreConfig = {
-  /** Connection string for pgvector (maps to `ASKDB_PGVECTOR_URL`). */
+  /** Connection string for pgvector. */
   databaseUrl?: string;
   table?: string;
   /** When unset, AskDB uses `hnsw`. */
@@ -200,7 +200,7 @@ export type PgvectorStoreConfig = {
 export type IntrospectionProviderConfigs = {
   postgres?: {
     /**
-     * Postgres connection URL for live introspection (maps to `ASKDB_INTROSPECT_POSTGRES_URL`).
+     * Postgres connection URL for live introspection.
      * When omitted, pass `--url` to `askdb introspect`.
      */
     databaseUrl?: string;
@@ -243,7 +243,7 @@ export type PostgresIntrospectionConfig = {
   provider: "postgres";
   providerConfig?: IntrospectionProviderConfigs;
   /**
-   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * Default introspection output directory.
    * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
@@ -262,7 +262,7 @@ export type PrismaIntrospectionConfig = {
   provider: "prisma";
   providerConfig?: IntrospectionProviderConfigs;
   /**
-   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * Default introspection output directory.
    * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
@@ -281,7 +281,7 @@ export type MysqlIntrospectionConfig = {
   provider: "mysql";
   providerConfig?: IntrospectionProviderConfigs;
   /**
-   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * Default introspection output directory.
    * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
@@ -300,7 +300,7 @@ export type SqliteIntrospectionConfig = {
   provider: "sqlite";
   providerConfig?: IntrospectionProviderConfigs;
   /**
-   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * Default introspection output directory.
    * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
@@ -319,7 +319,7 @@ export type SqlServerIntrospectionConfig = {
   provider: "sqlserver";
   providerConfig?: IntrospectionProviderConfigs;
   /**
-   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * Default introspection output directory.
    * When unset/blank, AskDB uses the package default `./askdb/`.
    */
   outputDir?: string;
@@ -350,8 +350,9 @@ export type AskDbIntrospectionConfig =
  *
  * - **`ai`**: provider connections (`providerConfig`) plus the `language` and `embedding` model sections.
  * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — `provider` picks which `providerConfig` branch is read. Each branch holds the connection URL/path for that engine.
- * - **`rag`** (optional): the embedder (`"mock"`, or `"ai"` for `ai.embedding`) and the vector store, flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths. Omitting it means the mock embedder and the in-memory store.
+ * - **`rag`** (optional, experimental): the embedder (`"mock"`, or `"ai"` for `ai.embedding`) and the vector store. Omitting it means the mock embedder and the in-memory store.
  * - **`logging` | `modes` | `host`**: optional operational defaults.
+ * - **`studio`** (optional, experimental): Studio's listen address and Query Playground execution.
  */
 export type AskDbConfig = {
   ai: AskDbAiConfig;
@@ -373,6 +374,9 @@ export type AskDbConfig = {
    * retrieval, and AskDB behaves as if `{ embedder: "mock", store: "memory", storeConfig: {} }`
    * were set, so no store keys are written. Setting `ai.embedding` without it is an error, since
    * nothing would use that model. When present, `embedder`, `store` and `storeConfig` are required.
+   *
+   * Experimental: `rag` follows the 0.x `@askdb/rag` package, so a minor release of
+   * `@askdb/config` may change it (https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md).
    */
   rag?: {
     /** `"mock"` (a local lexical embedder) or `"ai"` (the `ai.embedding` model). */
@@ -388,18 +392,23 @@ export type AskDbConfig = {
   logging?: {
     level?: AskDbLogLevel;
     correlationId?: string;
-    /** Maps to `ASKDB_LOG_FILE`. */
+    /** A file to append the JSON logs to. */
     logFile?: string;
-    /** When true, maps to `ASKDB_LOG_STDOUT=true`. */
+    /** When true, also writes the JSON logs to stdout. */
     logStdout?: boolean;
   };
   modes?: { askdbMode?: AskDbModeV1; omitSensitiveFromPrompt?: boolean };
   host?: { schemaPath?: string; schemaJson?: string };
 
-  /** Deterministic NL→SQL for tests / local dev (maps to `ASKDB_MOCK_SQL`). */
+  /** Deterministic NL→SQL for tests / local dev: this SQL instead of a model call. */
   dev?: { mockSql?: string };
 
-  /** Studio browser server listen and query-execution defaults. */
+  /**
+   * Studio browser server listen and query-execution defaults.
+   *
+   * Experimental: `studio` follows the 0.x `@askdb/studio` package, so a minor release of
+   * `@askdb/config` may change it (https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md).
+   */
   studio?: {
     listen?: { host?: string; port?: number };
     /**
@@ -411,39 +420,35 @@ export type AskDbConfig = {
       /**
        * Turn on `POST /api/execute` and the Playground's **Execute Query** button.
        * Default `false`: Studio generates SQL but never runs it.
-       * Maps to `ASKDB_STUDIO_EXECUTE_ENABLED`.
        */
       enabled?: boolean;
       /**
        * Reuse the introspection connection (`introspection.providerConfig.<engine>`)
        * when `databaseUrl` / `file` is not set. Default `false` — Studio execute needs
        * its own explicit connection so introspection credentials are never used to run
-       * ad-hoc SQL by accident. Maps to `ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION`.
+       * ad-hoc SQL by accident.
        */
       useIntrospectionConnection?: boolean;
       /**
        * Per-query timeout in milliseconds (positive integer). Default `30000`.
        * Enforced server-side on Postgres, MySQL/MariaDB, and SQL Server; not enforced
-       * for SQLite. Maps to `ASKDB_STUDIO_EXECUTE_TIMEOUT_MS`.
+       * for SQLite.
        */
       timeoutMs?: number;
       /**
        * Maximum rows returned per query (positive integer). Default `500`. Studio fetches
        * at most `maxRows + 1` rows and reports `truncated: true` when more exist.
-       * Maps to `ASKDB_STUDIO_EXECUTE_MAX_ROWS`.
        */
       maxRows?: number;
       /**
        * Explicit live-execute provider. When omitted, Studio falls back to the active
        * introspection provider when it is a live engine, then defaults to `"postgres"`.
-       * Maps to `ASKDB_STUDIO_EXECUTE_PROVIDER`.
        */
       provider?: AskDbStudioExecuteProvider;
-      /** Connection URL used by `POST /api/execute` for network databases (maps to `ASKDB_STUDIO_DATABASE_URL`). */
+      /** Connection URL used by `POST /api/execute` for network databases. */
       databaseUrl?: string;
       /**
        * SQLite file path used by `POST /api/execute` when `provider === "sqlite"`.
-       * Maps to `ASKDB_STUDIO_SQLITE_FILE`.
        */
       file?: string;
     };
@@ -464,13 +469,12 @@ export type AskDbConfig = {
      * Accept a per-request `schemaJson` override on `POST /ask`. Default `false`: an override
      * lets any caller send arbitrary schema/prompt content through the server's model key, so
      * enable it only for tests or trusted multi-schema deployments.
-     * Maps to `ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE`.
      */
     allowSchemaOverride?: boolean;
     /**
      * Abort the model call for a `POST /ask` request after this many milliseconds (positive
      * integer, at most `2147483647`, the Node timer maximum; larger values are a config error).
-     * Default `60000`. Maps to `ASKDB_HTTP_REQUEST_TIMEOUT_MS`.
+     * Default `60000`.
      */
     requestTimeoutMs?: number;
   };

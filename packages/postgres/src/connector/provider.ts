@@ -40,8 +40,8 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
   },
   /**
    * An explicit URL or export bundle wins; otherwise fall back to the
-   * configured `introspection.providerConfig.postgres.databaseUrl`
-   * (→ `ASKDB_INTROSPECT_POSTGRES_URL`, as resolved by `@askdb/config`).
+   * configured `introspection.providerConfig.postgres.databaseUrl`, as resolved by
+   * `@askdb/config`.
    */
   resolveConnection({ explicit = {}, runtime, surface }) {
     let url = explicit.url;

@@ -22,7 +22,7 @@ import {
   type ScaffoldValue,
 } from "@askdb/config/scaffold";
 import { errorMessage } from "./cli-error.js";
-import { runCommand, type CommandSpec, type Flag } from "./command.js";
+import { EXPERIMENTAL_ADR_URL, runCommand, type CommandSpec, type Flag } from "./command.js";
 import { showable } from "./error-values.js";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
@@ -360,26 +360,26 @@ const INIT_FLAGS: readonly Flag<InitOptions>[] = [
   {
     names: ["--rag-store"],
     value: "<name>",
-    group: "RAG options",
+    group: "RAG options (experimental)",
     help: `${ASKDB_RAG_STORES.join("|")} (default: file)`,
     apply: (opts, value) => (opts.ragStore = oneOf("--rag-store", ASKDB_RAG_STORES, value)),
   },
   {
     names: ["--pgvector-env"],
     value: "<name>",
-    group: "RAG options",
+    group: "RAG options (experimental)",
     help: "Env var name for pgvector URL",
     apply: (opts, value) => (opts.pgvectorEnv = value),
   },
   {
     names: ["--studio-execute"],
-    group: "Studio options",
+    group: "Studio options (experimental)",
     help: "Enable Studio execute (default: off)",
     apply: (opts) => (opts.studioExecute = true),
   },
   {
     names: ["--no-studio-execute"],
-    group: "Studio options",
+    group: "Studio options (experimental)",
     help: "Disable Studio execute",
     apply: (opts) => (opts.studioExecute = false),
   },
@@ -397,6 +397,10 @@ export function initCommand(installer: InstallFn = defaultInstaller): CommandSpe
       "askdb init --force            Overwrite an existing askdb.config.ts",
       "askdb init --path <file>      Write config to a custom file path",
       "askdb init --skip-install     Only write the file; do not install packages",
+    ],
+    notes: [
+      "The RAG and Studio options write the rag and studio blocks, which are experimental:",
+      `a minor release of askdb may change them (${EXPERIMENTAL_ADR_URL}).`,
     ],
     flags: INIT_FLAGS,
     initial: () => ({

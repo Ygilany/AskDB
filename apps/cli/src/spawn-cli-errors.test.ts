@@ -74,6 +74,21 @@ describe("cli spawn: rich errors", () => {
     expect(exec.stderr).not.toContain("fixtures/schemas");
   });
 
+  it("names the --question flag when the question is blank (#719)", () => {
+    const repoRoot = join(import.meta.dirname, "../../..");
+    const cliDir = join(repoRoot, "apps/cli");
+
+    const exec = run(
+      "node",
+      [join(cliDir, "dist/cli.js"), "ask", "--schema", "fixtures/schemas/orders-users.schema/", "--question", "   "],
+      { cwd: repoRoot, env: { ASKDB_MOCK_SQL: "SELECT 1" } },
+    );
+
+    expect(exec.status).toBe(1);
+    expect(exec.stderr).toContain("Question is empty. Pass a non-blank natural-language question with -q / --question.");
+    expect(exec.stdout).not.toContain("-- sql --");
+  });
+
   it("prints schema path + details when schema JSON is invalid", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");

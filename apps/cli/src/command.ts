@@ -41,6 +41,12 @@ export type CommandSpec<O> = {
   run(opts: O): Promise<number>;
 };
 
+/**
+ * ADR 0030, which keeps Studio and RAG at 0.x: the help of their experimental surfaces links it.
+ * A minor release of `askdb` may change those surfaces.
+ */
+export const EXPERIMENTAL_ADR_URL = "https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md";
+
 /** The spellings every command, and `askdb` itself, takes for its help and its version. */
 export const HELP_FLAGS: readonly string[] = ["--help", "-h"];
 export const VERSION_FLAGS: readonly string[] = ["--version", "-V"];

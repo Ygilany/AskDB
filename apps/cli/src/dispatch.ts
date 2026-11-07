@@ -1,6 +1,6 @@
 import { askCommand, runAskCli } from "./ask.js";
 import { bundleCommand, runBundleCli } from "./bundle.js";
-import { formatOptionSections, GENERAL_OPTION_LINES, HELP_FLAGS, VERSION_FLAGS } from "./command.js";
+import { EXPERIMENTAL_ADR_URL, formatOptionSections, GENERAL_OPTION_LINES, HELP_FLAGS, VERSION_FLAGS } from "./command.js";
 import { labelled } from "./error-values.js";
 import { initCommand, runInitCli } from "./init.js";
 import { introspectCommand, runIntrospectCli } from "./introspect.js";
@@ -19,8 +19,8 @@ async function runStudio(argv: readonly string[]): Promise<number> {
 const COMMANDS: readonly CliCommand[] = [
   { name: "init", summary: initCommand().summary, run: runInitCli },
   { name: "introspect", summary: introspectCommand().summary, run: runIntrospectCli },
-  { name: "studio", summary: "Start the local browser UI for Schema v2 enrichment", run: runStudio },
-  { name: "enrich", summary: "Open Studio for Schema v2 enrichment (alias of `askdb studio`)", run: runStudio },
+  { name: "studio", summary: "Start the local browser UI for schema enrichment (experimental)", run: runStudio },
+  { name: "enrich", summary: "Open Studio for schema enrichment (alias of `askdb studio`; experimental)", run: runStudio },
   { name: "bundle", summary: bundleCommand().summary, run: runBundleCli },
   { name: "ask", summary: askCommand().summary, run: runAskCli },
   { name: "rag", summary: ragCommand().summary, run: runRagCli },
@@ -40,6 +40,8 @@ function formatTopLevelHelp(): string {
         ["Options", GENERAL_OPTION_LINES],
       ]),
     ),
+    `Experimental commands may change in a minor release of askdb: ${EXPERIMENTAL_ADR_URL}`,
+    "",
   ].join("\n");
 }
 
