@@ -1,0 +1,105 @@
+---
+title: "Keep sensitive columns out of prompts"
+description: "Mark sensitive tables and columns in the schema artifact, leave them out of every prompt, check the generated SQL for them, and keep them out of the database role and the RAG index."
+---
+
+<p class="doc-eyebrow">Run in production</p>
+
+<p class="doc-lede">Some columns, such as a social security number or an email address, shouldn't reach your model provider, even by name. Mark them sensitive in the schema artifact. AskDB can then leave them out of every prompt, flag the SQL that reads them, and keep them out of the RAG index. Their values never reach the model either way: AskDB doesn't read your rows.</p>
+
+## Before you start
+
+- **A schema artifact** for your database, from `askdb introspect`.
+- **A list of the tables and columns that are sensitive.**
+
+## 1. Mark the tables and columns
+
+In Studio, open the table in **Tables** and use its **Sensitivity** tab. Or write the mark in the table's markdown front-matter:
+
+```yaml
+---
+id: table:public.users
+name: users
+schemaId: my-app
+columns:
+  - id: table:public.users#email
+    sensitive: true
+---
+```
+
+A table-level `sensitive: true` marks every column in the table. `schema.json` can carry the same marks. Front-matter can only add sensitivity, never remove it: see [Sensitivity rules](/reference/schema-artifact-format/#sensitivity-rules).
+
+## 2. Leave them out of the prompt
+
+By default, the prompt keeps sensitive columns, each tagged `(sensitive)`. To leave them out, set the floor in `askdb.config.ts`:
+
+```ts
+export default defineConfig({
+  // ...
+  modes: { omitSensitiveFromPrompt: true },
+});
+```
+
+The model then doesn't see a sensitive column, or any text you wrote that names one, such as a description, an alias, an `enum` value or a common query language note. A sensitive table keeps one line with its name, and its columns are withheld. One exception: a column your tenant policy filters on stays in the prompt's tenant rules. [Privacy model](/concepts/privacy-model/#sensitive-columns) explains what each mode sends.
+
+The config setting is a floor: a single call can turn omission on, but not off. Each surface has its own switch:
+
+| Surface | Turn omission on |
+| --- | --- |
+| `askdb.config.ts` | `modes.omitSensitiveFromPrompt: true`, for the CLI, Studio, the HTTP API and `createAskDb()` |
+| `askdb ask` | `--omit-sensitive-from-prompt` |
+| `askdb.ask()` or core's `ask()` | `omitSensitiveIdentifiersFromNlToSqlPrompt: true` |
+| HTTP API | `"omitSensitiveFromPrompt": true` in the request body |
+
+Studio's Playground, **Suggest** and **Draft with AI** follow the config setting.
+
+## 3. Check the SQL for them
+
+`ask()` checks the SQL it returns for sensitive tables and columns, and reports what it finds in `result.sensitiveGuardrail`:
+
+```ts
+// askdb initialized at startup with createAskDb() — see Embed in a Node app.
+const result = await askdb.ask(question);
+if (result.sensitiveGuardrail && !result.sensitiveGuardrail.passed) {
+  // The SQL reads a sensitive table or column: review it before you run it.
+  console.warn(result.sensitiveGuardrail.references);
+}
+```
+
+To refuse that SQL instead, pass `sensitiveGuardrailMode: "strict"`, and the call throws `SensitiveReferenceError`. A rebind with `askdb.bind()` runs the same check again.
+
+SQL that reaches your database without `ask()` or a rebind isn't checked, such as a statement you cache and replay. Run `validateSensitiveReferences()` on every such path:
+
+```ts
+import { validateSensitiveReferences } from "@askdb/core";
+
+const { passed, references } = validateSensitiveReferences(cachedSql, schema);
+if (!passed) {
+  throw new Error(`refusing to replay: ${references.map((r) => r.column).join(", ")}`);
+}
+```
+
+The check is heuristic, not a SQL parser — a review and enforcement aid, not a substitute for database-side column privileges. [Conservative failure](/reference/core-api/#conservative-failure) says how it reports a statement it can't fully read.
+
+## 4. Keep them out of the database role
+
+Leaving a column out of the prompt, and checking the SQL, don't stop a query from reading it. Leave sensitive tables out of the grants of the read-only role that runs AskDB's SQL, as [Database role](/guides/run-safely-in-prod/#database-role) shows. On Postgres you can also grant `SELECT` on chosen columns of a table only ([GRANT](https://www.postgresql.org/docs/current/sql-grant.html)).
+
+## 5. Keep them out of the RAG index
+
+With `@askdb/rag`, sensitive tables and columns, and any text that names a sensitive column, stay out of the index by default, so your embedding provider never receives them. `chunkOptions: { includeSensitiveDescribable: true }` puts them in. See [RAG for large schemas](/guides/rag-for-large-schemas/).
+
+## If it fails
+
+| Error | Fix |
+| --- | --- |
+| `SensitiveReferenceError` | With `sensitiveGuardrailMode: "strict"`, the SQL reads a sensitive table or column (`rule` is `SENSITIVE_TABLE_REFERENCED` or `SENSITIVE_COLUMN_REFERENCED`), or the check couldn't tell which tables a column belongs to (`UNRESOLVED_TABLE_SCOPE`). Ask the question another way, or review the SQL and decide whether to run it. |
+| `SensitiveEnrichmentTargetError`, or an error from Studio's **Suggest** | With omission on, AskDB won't ask the model to describe a sensitive column. Write that column's description yourself. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>Everything that reaches your model provider, in each mode.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The read-only role, timeouts and audit logging.</span></a>
+  <a href="/reference/schema-artifact-format/#sensitivity-rules"><strong>Sensitivity rules</strong><span>How a table's or column's flag is worked out.</span></a>
+</div>
