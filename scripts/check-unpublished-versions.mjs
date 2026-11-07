@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Fails a PR that adds a public `name@version` npm doesn't have: a version bump, a new
-// public package, or a package made public. Only the Version PR may do that, because
-// merging an unpublished version publishes it and approving the Version PR is the release
-// approval (ADR 0040). `changesets.yml` runs this on every PR except the Version PR.
+// public package, or a package made public. Approving the Version PR is the release
+// approval (ADR 0040), so only the Version PR may add one. Merged any other way, such a
+// version would hold up the next release: `release.yml`'s `approved` job refuses to
+// publish a version the Version PR didn't add. `changesets.yml` runs this on every PR
+// except the Version PR.
 //
 // Usage: node scripts/check-unpublished-versions.mjs --since <ref>
 //
@@ -15,10 +17,7 @@
 //
 // Self-test: `node --test scripts/check-unpublished-versions.test.mjs` (CI's `preflight` job).
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { isPublished, publicPackages } from "./release-packages.mjs";
+import { isPublished, nameAtVersion, publicPackages, publicPackagesAt } from "./release-packages.mjs";
 
 const at = process.argv.indexOf("--since");
 const since = at === -1 ? undefined : process.argv[at + 1];
@@ -27,21 +26,9 @@ if (!since) {
   process.exit(2);
 }
 
-function publicPackagesAt(commit) {
-  const dir = mkdtempSync(join(tmpdir(), "check-unpublished-versions-"));
-  try {
-    const tree = execFileSync("git", ["archive", "--format=tar", commit], { maxBuffer: 1 << 30 });
-    execFileSync("tar", ["-x", "-C", dir], { input: tree });
-    return publicPackages(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-const id = ({ name, version }) => `${name}@${version}`;
 const base = execFileSync("git", ["merge-base", since, "HEAD"], { encoding: "utf8" }).trim();
-const atBase = new Set(publicPackagesAt(base).map(id));
-const added = publicPackages().filter((pkg) => !atBase.has(id(pkg)));
+const atBase = new Set(publicPackagesAt(base).map(nameAtVersion));
+const added = publicPackages().filter((pkg) => !atBase.has(nameAtVersion(pkg)));
 
 let unpublished = 0;
 for (const pkg of added) {
@@ -53,12 +40,12 @@ for (const pkg of added) {
     process.exit(1);
   }
   if (published) {
-    process.stdout.write(`${id(pkg)}: new since the merge base, already on npm\n`);
+    process.stdout.write(`${nameAtVersion(pkg)}: new since the merge base, already on npm\n`);
     continue;
   }
   unpublished += 1;
   process.stderr.write(
-    `::error::${id(pkg)} isn't on npm, and merging this PR would publish it. Only the Version PR changes versions: revert the version and add a changeset (pnpm changeset). A new public package needs its first version published by hand (docs/release.md).\n`,
+    `::error::${nameAtVersion(pkg)} isn't on npm, and only the Version PR may add an unpublished version. Revert the version and add a changeset (pnpm changeset). A new public package needs its first version published by hand (docs/release.md).\n`,
   );
 }
 if (unpublished === 0) process.stdout.write(`No unpublished public version is new since ${base.slice(0, 8)}.\n`);

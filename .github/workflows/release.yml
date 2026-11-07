@@ -28,14 +28,16 @@ name: Release
 #   ruleset's code-owner review keep the App-authored Version PR from merging until the
 #   maintainer approves it, changesets.yml fails any other PR that adds a public
 #   `name@version` npm doesn't have, and `approved` lets only a merged Version PR's
-#   merge commit publish. So nothing here asks again. An admin can bypass the ruleset:
-#   an admin merge of another PR still can't publish, but an admin merge of the Version
-#   PR publishes without the approval.
+#   merge commit publish, and only the versions that merge added. So nothing here asks
+#   again. An admin can bypass the ruleset: a version an admin merge of another PR adds
+#   still can't publish, but an admin merge of the Version PR publishes without the
+#   approval.
 # - npm auth is trusted publishing (OIDC): no npm token is stored anywhere. Only
 #   `publish` has `id-token: write`, and it runs in the `npm-publish` environment
-#   (`main` only, no required reviewer). pnpm 11 does the OIDC exchange itself, and adds
-#   provenance because the repo and the packages are public. Each package's trusted
-#   publisher on npmjs.com must name this file (`release.yml`) and that environment.
+#   (`main` only; ADR 0040 has the maintainer remove its required reviewer). pnpm 11 does
+#   the OIDC exchange itself, and adds provenance because the repo and the packages are
+#   public. Each package's trusted publisher on npmjs.com must name this file
+#   (`release.yml`) and that environment.
 # - Prereleases (the betas, now the release candidates) publish under the `latest`
 #   dist-tag (`--tag latest`), not the pre tag from `.changeset/pre.json`, so
 #   `npm install askdb` gets the newest one (#354). That's why this runs `pnpm -r publish`
@@ -140,11 +142,11 @@ jobs:
           create-github-releases: false
 
   # `publish` ships every version npm doesn't have, built from this commit. changesets.yml
-  # keeps every PR but the Version PR from adding such a version, but when a Version PR's
-  # merge commit gets no release run (its CI failed, or a later PR merged before CI
-  # finished), a later commit would publish the approved versions with its own code. So
-  # `publish` runs only from a merged Version PR's merge commit (ADR 0040). A refused run
-  # fails here and publishes nothing; docs/release.md says how to publish those versions.
+  # keeps every PR but the Version PR from adding such a version, but a Version PR's merge
+  # can get no release run (its CI failed, or a later PR merged before CI finished), and an
+  # admin merge skips changesets.yml. So `publish` runs only from a merged Version PR's merge
+  # commit, and only when that merge added every version it would ship (ADR 0040). A refused
+  # run fails here and publishes nothing; docs/release.md says how to publish those versions.
   approved:
     needs: version
     if: needs.version.outputs.publish == 'true'
@@ -157,12 +159,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          # The merge commit and its parents: the check reads the first parent's packages.
+          fetch-depth: 2
           persist-credentials: false
 
-      - name: Check that this commit is a merged Version PR's merge
+      # `pnpm -r ls` reads the first parent's packages; it needs no install.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Check that this commit is a Version PR's merge that added every version
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          PACKAGES: ${{ needs.version.outputs.packages }}
         run: node scripts/check-version-pr-merge.mjs "${SHA}"
 
   publish:

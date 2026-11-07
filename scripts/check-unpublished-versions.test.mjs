@@ -163,6 +163,14 @@ test("fails closed when npm can't be reached", () => {
   assert.match(result.stderr, /npm view core@1\.0\.1 failed/);
 });
 
+test("fails closed on a manifest pnpm can't parse", () => {
+  workspace();
+  pr(() => write("pkgs/core/package.json", "{ not json\n"));
+  const result = run();
+  assert.notEqual(result.status, 0);
+  assert.notEqual(result.status, 2);
+});
+
 test("fails without --since", () => {
   workspace();
   const result = spawnSync("node", [SCRIPT], { cwd: dir, encoding: "utf8" });
