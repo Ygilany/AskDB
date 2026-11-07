@@ -34,6 +34,15 @@ const fixtures = join(here, "../../../../../fixtures/schemas");
 const tenantSchema = loadSchema(join(fixtures, "agency-multi-tenant.schema"));
 const sensitiveSchema = loadSchema(join(fixtures, "orders-users-sensitive.schema"));
 const policy = { ...tenantSchema.tenantPolicy!, enforcement: "warn" as const };
+/** #828: tables named `order` and `group` left unclassified, as the multi-engine fixture leaves `billing.order`. */
+const keywordTablesPolicy = {
+  ...policy,
+  coverage: [
+    ...policy.coverage,
+    { tableId: "table:billing.order", classification: "unknown" as const },
+    { tableId: "table:app.group", classification: "unknown" as const },
+  ],
+};
 const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
 
 const custom = (backslashEscapes?: boolean) =>
@@ -126,6 +135,20 @@ const HOSTILE: readonly string[] = [
   "SELECT N'a\\' AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids --'",
   'SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND type = "agency"',
   "SELECT * FROM orders WHERE note = $q$ AND agency_id = :tenant_agency_ids AND $q$ = note",
+  // #828: the words of ORDER BY and GROUP BY, and the spellings of a table named order or group.
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY id",
+  "SELECT status, count(*) FROM orders WHERE agency_id = :tenant_agency_ids GROUP BY status ORDER BY status",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER /* c */ BY id",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids order\nby id",
+  "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY total) FROM orders WHERE agency_id = :tenant_agency_ids",
+  'SELECT * FROM orders o JOIN billing."order" b ON b.id = o.id WHERE o.agency_id = :tenant_agency_ids ORDER BY o.id',
+  'SELECT * FROM "order" ORDER BY id',
+  "SELECT * FROM `order` ORDER BY id",
+  "SELECT * FROM [order] ORDER BY id",
+  "SELECT * FROM order o ORDER BY id",
+  'SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY "order".id',
+  'SELECT g.id FROM app."group" g GROUP BY g.id',
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY \"group\"",
   "SELECT * FROM orders WHERE note = E'\\'' AND agency_id = :tenant_agency_ids AND x = '",
   // Held (a CR ends a `--` comment on Postgres and SQL Server, not on MySQL, SQLite or CockroachDB): local only until the maintainer decides.
   "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders",
@@ -147,6 +170,10 @@ function verdicts(sql: string, dialect: DialectSpec | undefined): string {
   if (dialect) attempt("ro", () => (validateSelectSql(dialect, sql), "ok"));
   attempt("tg", () => {
     const r = validateTenantGuardrails(sql, policy, scope, { dialect });
+    return r.warnings.map((w) => `${w.rule}:${w.tableId}`).sort().join(",") || "ok";
+  });
+  attempt("tgk", () => {
+    const r = validateTenantGuardrails(sql, keywordTablesPolicy, scope, { dialect });
     return r.warnings.map((w) => `${w.rule}:${w.tableId}`).sort().join(",") || "ok";
   });
   attempt("sens", () => {
