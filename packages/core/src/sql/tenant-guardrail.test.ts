@@ -1138,12 +1138,24 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     ["aliases that differ in case on MySQL", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, MYSQL_DIALECT],
     ["aliases that differ in case on SQL Server", `SELECT A.* FROM orders A JOIN orders a ON 1 = 1 WHERE a.agency_id = ${P}`, SQLSERVER_DIALECT],
     ["aliases that differ in case under no dialect", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, undefined],
+    // A join word one engine doesn't reserve is an alias there, so the read has that name, not its table's.
+    ["`full` as an alias on MySQL", `SELECT full.* FROM orders full, orders WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["`natural` as an alias on SQL Server", `SELECT natural.* FROM orders natural, orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["`using` as an alias on SQL Server", `SELECT using.* FROM orders using, orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["`straight_join` as an alias on Postgres", `SELECT straight_join.* FROM orders straight_join, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
   ])("rejects %s", (_label, sql, dialect) => {
     expect(findings(sql, dialect)).toEqual(orders);
   });
 
   it.each([
     ["an unquoted alias written in another case on Postgres", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["an unquoted alias written in another case on SQLite", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, SQLITE_DIALECT],
+    ["the table's name before FULL JOIN on Postgres", `SELECT orders.* FROM orders FULL JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before NATURAL JOIN on Postgres", `SELECT orders.* FROM orders NATURAL JOIN lookup_states WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before USING on Postgres", `SELECT o.* FROM lookup_states s JOIN orders USING (state) WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before STRAIGHT_JOIN on MySQL", `SELECT orders.* FROM orders STRAIGHT_JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a MySQL USE INDEX hint", `SELECT * FROM orders USE INDEX (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a MySQL IGNORE KEY hint", `SELECT * FROM orders IGNORE KEY (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
     ["a SQL Server table hint", `SELECT * FROM orders WITH (NOLOCK) WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
     ["a MySQL index hint", `SELECT * FROM orders FORCE INDEX (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
     ["an alias spelled `force`, filtered unqualified", `SELECT * FROM orders force WHERE agency_id = ${P}`, undefined],
