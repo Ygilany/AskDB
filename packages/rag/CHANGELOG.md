@@ -1,5 +1,29 @@
 # @askdb/rag
 
+## 0.2.0-beta.30
+
+### Minor Changes
+
+- 54e079e: **Breaking:** `@askdb/rag` no longer ships the `askdb-rag` binary (#651). Since the RAG command line moved into the `askdb` package, it only printed the `askdb rag` command to run and exited `1`, and was promised for removal at 1.0. Run `npx askdb rag index`, `query` or `setup-store` from the `askdb` package instead. The package now declares `sideEffects: false`, since the binary was its only file with side effects.
+
+### Patch Changes
+
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [91e89ec]
+  - @askdb/core@1.0.0-beta.50
+
 ## 0.2.0-beta.29
 
 ### Patch Changes

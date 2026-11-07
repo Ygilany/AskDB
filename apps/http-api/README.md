@@ -28,7 +28,7 @@ Dev watch (runs with `apps/http-api` as the working directory):
 pnpm -C apps/http-api dev:watch
 ```
 
-Point the server at a schema with `--schema-path` or `host.schemaPath` in `askdb.config.ts`. The binary loads `askdb.config.*` / `.config/askdb.*` from the current working directory via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) after loading the first `.env` that exists of: `node_modules/.env` (the repository root when run inside AskDB's own repo), the working directory's, and the package folder's. Shell / `.env` variables only take effect when the config maps them with `env(...)`:
+Point the server at a schema with `--schema-path` or `host.schemaPath` in `askdb.config.ts`. The binary loads `askdb.config.*` / `.config/askdb.*` from the current working directory via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) after loading the working directory's `.env`. Only when run from AskDB's own repository does it fall back to `apps/http-api/.env` and then the repository root's; an install never reads a `.env` inside `node_modules`. Shell / `.env` variables only take effect when the config maps them with `env(...)`:
 
 ```ts
 // askdb.config.ts

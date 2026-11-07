@@ -140,6 +140,7 @@ export default defineConfig({
               items: [
                 { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
                 { label: "Cap the rows a query returns", slug: "guides/cap-the-rows-a-query-returns" },
+                { label: "Keep sensitive columns out of prompts", slug: "guides/keep-sensitive-columns-out-of-prompts" },
                 { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
                 { label: "Enable Studio execute", slug: "guides/enable-studio-execute" },
               ],
