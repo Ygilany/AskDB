@@ -1028,8 +1028,9 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
   });
 
   it.each(gluedOr)("a custom engine or no dialect, which may be SQL Server: an OR after %s is read", (_label, tail) => {
-    expect(findings(scoped + tail, customEngine())).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
-    expect(findings(scoped + tail)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    // The other readings take `\u200bOR` and `\u0085OR` for one name outside printable ASCII, which is refused too.
+    expect(findings(scoped + tail, customEngine())).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+    expect(findings(scoped + tail)).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
   });
 
   it("a strict policy refuses it", () => {

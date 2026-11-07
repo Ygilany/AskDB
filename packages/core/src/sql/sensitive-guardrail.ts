@@ -8,7 +8,7 @@ import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { DialectSpec } from "./dialect-spec.js";
 import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, hasUnterminatedToken, type SqlToken } from "./lexer.js";
-import { isKnownEngine, readSql, sensitiveReadings } from "./readings.js";
+import { isKnownEngine, readSql, sensitiveReadings, unmatchedNonAsciiName } from "./readings.js";
 
 export type SensitiveGuardrailMode = "warn" | "strict";
 
@@ -120,6 +120,8 @@ type SchemaIndex = {
   tables: TableEntry[];
   byName: Map<string, TableEntry[]>;
   hasSensitive: boolean;
+  /** Every table, namespace and column name, exactly as the schema spells it. */
+  names: ReadonlySet<string>;
 };
 
 /** Loaded schemas are long-lived and re-used across calls; index once per object. */
@@ -167,9 +169,23 @@ function indexSchema(schema: AnyNormalizedSchema): SchemaIndex {
     else byName.set(entry.lower, [entry]);
   });
 
-  const index: SchemaIndex = { tables, byName, hasSensitive };
+  const names = new Set<string>();
+  for (const t of tables) {
+    names.add(t.name);
+    if (t.schema !== undefined) names.add(t.schema);
+    for (const c of t.columns) names.add(c.name);
+  }
+  const index: SchemaIndex = { tables, byName, hasSensitive, names };
   indexCache.set(schema, index);
   return index;
+}
+
+/**
+ * Every table, namespace and column name in `schema`, exactly as it spells them. Internal to
+ * `@askdb/core`: the tenant check counts a name outside printable ASCII only when it is one of them.
+ */
+export function schemaNames(schema: AnyNormalizedSchema): ReadonlySet<string> {
+  return indexSchema(schema).names;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +391,11 @@ function scanSql(
       else if (ref.matchKind === "qualified") existing.matchKind = "qualified";
     }
   }
-  return finalize(withPostgresOnlyIssues(primary, sql, dialect));
+  const outcome = withPostgresOnlyIssues(primary, sql, dialect);
+  // SQL Server's collation may read a name outside printable ASCII as a sensitive column's, which
+  // the scan above matches by spelling: unless the schema spells it exactly, fail closed.
+  if (unmatchedNonAsciiName(read, dialect, index.names) !== undefined) outcome.issues.add("UNICODE_ESCAPED_IDENTIFIER");
+  return finalize(outcome);
 }
 
 /**
@@ -992,7 +1012,7 @@ const SCOPE_ISSUE_TEXT: Record<SensitiveScopeIssue, string> = {
   UNTERMINATED_TOKEN:
     "a string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned",
   UNICODE_ESCAPED_IDENTIFIER:
-    "a Unicode-escaped name (U&\"…\") can't be matched against sensitive columns, since Postgres decodes it",
+    "a name can't be matched against sensitive columns as written: a Unicode-escaped name (U&\"…\"), which Postgres decodes, or a name outside printable ASCII that the schema doesn't spell, which SQL Server's collation may read as another",
   STRING_CONTINUATION:
     "an E'…' string continues on a later line, which Postgres reads with backslash escapes, so where the string ends is unclear",
   ESCAPED_BYTE_STRING:

@@ -14,6 +14,7 @@
  * | tenant: statements and calls ({@link tenantStatementReadings}) | the engine's (Postgres family: both comment ends) | every engine's, Postgres and MySQL with both string settings |
  * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends |
  * | placeholders ({@link placeholderReading}) | the engine's | the generic profile |
+ * | names outside printable ASCII, tenant and sensitive ({@link unmatchedNonAsciiName}) | `sqlserver`: the engine's; any other engine: none | as for tenant statements |
  * | Postgres-only forms (`postgresReadingProfiles` in `lexer.ts`) | the engine's, when it is on the Postgres lexer | Postgres's, with backslash escapes too when set |
  *
  * Every MySQL reading is taken twice by the tenant check, with `/*! … *\/` bodies as code and as
@@ -80,6 +81,33 @@ export function tenantStatementReadings(dialect: ReadingDialect | undefined): Sq
         p.id === "postgres" || p.id === "mysql" ? [p, { ...p, backslashEscapes: !p.backslashEscapes }] : [p],
       );
   return bothExecutableCommentReadings(profiles);
+}
+
+/** Printable ASCII, the only characters a name can hold for the checks to match it by spelling everywhere. */
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+
+/**
+ * The first name in `read`, quoted or not, that holds a character outside printable ASCII and isn't
+ * one of `known` exactly, as written; undefined when there is none. SQL Server resolves a name
+ * through the database collation, which ignores some characters (U+200D, U+FEFF, any emoji) and
+ * reads others as ASCII letters (fullwidth letters, small capitals), so such a name can reach a
+ * table or column that the tenant and sensitive checks, which match names by spelling, never see.
+ * Read under `sqlserver`, and under any id that is no built-in engine or no dialect, each reading
+ * from {@link tenantStatementReadings}; the other built-in engines compare such a name as written.
+ */
+export function unmatchedNonAsciiName(
+  read: SqlRead,
+  dialect: ReadingDialect | undefined,
+  known: ReadonlySet<string>,
+): string | undefined {
+  if (dialect !== undefined && isBuiltInDialectId(dialect.id) && dialect.id !== "sqlserver") return undefined;
+  for (const profile of tenantStatementReadings(dialect)) {
+    for (const token of read.tokens(profile)) {
+      const name = token.kind === "word" ? token.text : token.kind === "quoted_identifier" ? token.value : undefined;
+      if (name !== undefined && !PRINTABLE_ASCII.test(name) && !known.has(name)) return token.text;
+    }
+  }
+  return undefined;
 }
 
 /** A profile that reads `/*!NNNNN … *\/` bodies as code, also read with them as comments. */

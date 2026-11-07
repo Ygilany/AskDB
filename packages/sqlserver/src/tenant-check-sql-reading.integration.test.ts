@@ -9,6 +9,9 @@
  * ends a number after `0x` or `1E` and a name at U+00A0, U+200B and U+0085, so an `OR` written
  * right after one is a keyword, and the tenant check sees it (#623). It reads `]]` inside a bracketed
  * name as an escaped `]` and nests block comments, so a predicate inside either is no predicate.
+ * SQL Server resolves a name through the database collation, which reads fullwidth letters as ASCII
+ * and ignores U+200D, so the tenant and sensitive checks refuse a name outside printable ASCII that
+ * the schema doesn't spell.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -16,7 +19,7 @@
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadSchema, validateTenantGuardrails } from "@askdb/core";
+import { loadSchema, validateSensitiveReferences, validateTenantGuardrails } from "@askdb/core";
 import type { NormalizedTenantPolicy, TenantScope } from "@askdb/core";
 import { expect, it } from "vitest";
 import { createSqlServerCatalogQueryRunner } from "./exec/sqlserver.js";
@@ -73,5 +76,23 @@ fixtureSuite("the tenant check reads SQL the way SQL Server does (live SQL Serve
     expect(findings("SELECT * FROM orders AS [o]] WHERE agency_id = :tenant_agency_ids AND [x]")).toEqual(["MISSING_TENANT_PREDICATE"]);
     expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */"))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("the collation resolves a fullwidth or zero-width-joined name to the table or column, so the checks refuse it", async () => {
+    const runner = createSqlServerCatalogQueryRunner(connectionUrl("sqlserver", "reader"));
+    const count = async (table: string) => Number((await runner(`SELECT count(*) AS c FROM people.${table}`)).rows[0]![0]);
+    const clients = await count("client");
+    expect(clients).toBeGreaterThan(0);
+    // `client` in fullwidth letters, and with a zero-width joiner: the same table.
+    expect(await count("[\uff43\uff4c\uff49\uff45\uff4e\uff54]")).toBe(clients);
+    expect(await count("[cli\u200dent]")).toBe(clients);
+    // `ssn` in fullwidth letters is the ssn column.
+    const same = (await runner("SELECT TOP (1) CASE WHEN [\uff53\uff53\uff4e] = ssn THEN 1 ELSE 0 END AS same FROM people.client")).rows;
+    expect(Number(same[0]![0])).toBe(1);
+    expect(findings("SELECT * FROM [\uff4f\uff52\uff44\uff45\uff52\uff53]")).toEqual(["UNICODE_ESCAPED_IDENTIFIER"]);
+    expect(findings("SELECT * FROM [ord\u200ders]")).toEqual(["UNICODE_ESCAPED_IDENTIFIER"]);
+    const sensitive = loadSchema(join(here, "../../../fixtures/schemas/orders-users-sensitive.schema"));
+    const scan = validateSensitiveReferences("SELECT [secret\u200d_recovery_token] FROM users", sensitive, { dialect });
+    expect(scan.unresolvedScope?.issues).toContain("UNICODE_ESCAPED_IDENTIFIER");
   });
 });

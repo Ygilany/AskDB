@@ -9,7 +9,14 @@ import {
 import { SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
-import { readSql, tenantCodeReadings, tenantStatementReadings, type CodeViewReading, type SqlRead } from "./readings.js";
+import {
+  readSql,
+  tenantCodeReadings,
+  tenantStatementReadings,
+  unmatchedNonAsciiName,
+  type CodeViewReading,
+  type SqlRead,
+} from "./readings.js";
 import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
 import { denylistFor } from "./validate.js";
 
@@ -90,12 +97,15 @@ export function validateTenantGuardrails(
 /**
  * The tenant rule alone: what {@link validateTenantGuardrails} finds in `sql`, with no
  * mode. Internal to `@askdb/core`; the guardrail checks and the validator share it.
+ * `schemaNames` are the schema's table, namespace and column names, when the caller has the
+ * schema: a name outside printable ASCII counts when it is one of them or a name in the policy.
  */
 export function tenantRuleWarnings(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+  schemaNames?: ReadonlySet<string>,
 ): TenantGuardrailWarning[] {
   // Global scope bypasses tenant guardrails
   if (scope.access.kind === "global") return [];
@@ -143,6 +153,19 @@ export function tenantRuleWarnings(
       warn("UNICODE_ESCAPED_IDENTIFIER", "",
         `The SQL uses the Unicode-escaped name ${escaped}, which the tenant check can't read. ` +
         'Write the name in plain double quotes ("orders") or unquoted.'),
+    );
+  }
+
+  // The checks below match names by spelling. SQL Server reads a name through the database
+  // collation, which ignores some characters and reads others as ASCII letters, so a name outside
+  // printable ASCII may reach a table they never see: unless the schema spells it exactly, refuse it.
+  const folded = unmatchedNonAsciiName(read, dialect, knownNames(policy, schemaNames));
+  if (folded !== undefined) {
+    warnings.push(
+      warn("UNICODE_ESCAPED_IDENTIFIER", "",
+        `The SQL uses the name ${folded}, which has a character outside printable ASCII and isn't spelled that way in the schema. ` +
+        "SQL Server reads names through its collation, which ignores some characters and reads others as ASCII letters, so the " +
+        "tenant check can't tell which table or column it names. Spell the name exactly as the schema does."),
     );
   }
 
@@ -357,6 +380,51 @@ function idCarriers(policy: NormalizedTenantPolicy, rootId: string): PredicateTa
     }
   }
   return carriers;
+}
+
+/**
+ * The names a statement may spell outside printable ASCII: every table the policy covers and its
+ * namespace, every column the policy names, and `schemaNames` when the caller has the schema.
+ */
+function knownNames(policy: NormalizedTenantPolicy, schemaNames: ReadonlySet<string> | undefined): ReadonlySet<string> {
+  const names = new Set(schemaNames);
+  const table = (id: string) => {
+    const path = id.replace(/^table:/, "");
+    const dot = path.lastIndexOf(".");
+    names.add(path.slice(dot + 1));
+    if (dot !== -1) names.add(path.slice(0, dot));
+  };
+  const column = (id: string) => {
+    const hash = id.lastIndexOf("#");
+    if (hash !== -1) table(id.slice(0, hash));
+    names.add(extractColumnName(id));
+  };
+  for (const entry of policy.coverage) table(entry.tableId);
+  for (const id of policy.globalTables) table(id);
+  for (const root of policy.roots) {
+    table(root.id);
+    column(root.tenantIdColumn);
+    if (root.parent) column(root.parent.foreignKey);
+  }
+  for (const edge of policy.hierarchy) column(edge.foreignKey);
+  for (const st of policy.scopedTables) {
+    table(st.id);
+    for (const path of st.scopeThrough) {
+      if ("column" in path) column(path.column);
+      else {
+        for (const step of path.join) {
+          column(step.from);
+          column(step.to);
+        }
+      }
+    }
+  }
+  for (const pt of policy.polymorphicTables) {
+    table(pt.id);
+    column(pt.typeColumn);
+    column(pt.idColumn);
+  }
+  return names;
 }
 
 /** `rootId` and every root above it in the policy's hierarchy (`hierarchy[]`, `roots[].parent`). */

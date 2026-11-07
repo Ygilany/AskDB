@@ -134,10 +134,10 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
-  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
-  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph=",
-  "none": "tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-75 | ph= | tph="
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-75 | ph= | tph=",
+  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-75 | ph= | tph=",
+  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-75 | ph= | tph=",
+  "none": "tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-75 | ph= | tph="
  },
  "0xSELECT 1ESELECT $1SELECT €SELECT a b": {
   "postgres": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
@@ -149,9 +149,9 @@
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
   "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
-  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
-  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph=",
-  "none": "tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-38 | ph= | tph="
+  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-38 | ph= | tph=",
+  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-38 | ph= | tph=",
+  "none": "tg=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-38 | ph= | tph="
  },
  "= with no surrounding spaces still yields a separated IN": {
   "postgres": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-56 | ph= | tph=",
@@ -848,10 +848,10 @@
   "mysql-unset": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE,UNTERMINATED_TOKEN} | pg=- | spans=c0-23 q23-26 c26-27 q27-31 c31-45 q45-46 | ph=E | tph=",
   "mariadb": "ro!SQL_UNTERMINATED | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE,UNTERMINATED_TOKEN} | pg=- | spans=c0-23 q23-26 c26-27 q27-31 c31-45 q45-46 | ph=E | tph=",
   "sqlite": "ro!SQL_COMMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph=",
-  "sqlserver": "ro!SQL_COMMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph=",
-  "custom": "ro!SQL_STRING_CONTINUATION | tg=STRING_CONTINUATION: | tgk=STRING_CONTINUATION: | sens=fail[]{NO_TABLE_SOURCE,STRING_CONTINUATION} | pg=E-cont | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph=",
-  "custom+escapes": "ro!SQL_STRING_CONTINUATION | tg=STRING_CONTINUATION: | tgk=STRING_CONTINUATION: | sens=fail[]{NO_TABLE_SOURCE,STRING_CONTINUATION} | pg=E-cont | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph=",
-  "none": "tg=STRING_CONTINUATION: | tgk=STRING_CONTINUATION: | sens=fail[]{NO_TABLE_SOURCE,STRING_CONTINUATION} | pg=E-cont | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph="
+  "sqlserver": "ro!SQL_COMMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph=",
+  "custom": "ro!SQL_STRING_CONTINUATION | tg=STRING_CONTINUATION:,UNICODE_ESCAPED_IDENTIFIER: | tgk=STRING_CONTINUATION:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,STRING_CONTINUATION,UNICODE_ESCAPED_IDENTIFIER} | pg=E-cont | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph=",
+  "custom+escapes": "ro!SQL_STRING_CONTINUATION | tg=STRING_CONTINUATION:,UNICODE_ESCAPED_IDENTIFIER: | tgk=STRING_CONTINUATION:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,STRING_CONTINUATION,UNICODE_ESCAPED_IDENTIFIER} | pg=E-cont | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph=",
+  "none": "tg=STRING_CONTINUATION:,UNICODE_ESCAPED_IDENTIFIER: | tgk=STRING_CONTINUATION:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,STRING_CONTINUATION,UNICODE_ESCAPED_IDENTIFIER} | pg=E-cont | spans=c0-13 q13-18 c18-19 q19-37 c37-43 m43-46 | ph= | tph="
  },
  "SELECT (ARRAY[1,2])[1:b'\\''] AS x, o.* FROM orders o --'": {
   "postgres": "ro!SQL_ESCAPED_BYTE_STRING | tg=ESCAPED_BYTE_STRING:,MISSING_TENANT_PREDICATE:table:public.orders | tgk=ESCAPED_BYTE_STRING:,MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{NO_TABLE_SOURCE,ESCAPED_BYTE_STRING} | pg=b-esc | spans=c0-22 q22-56 | ph= | tph=",
@@ -3327,9 +3327,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-25 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-25 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-25 | ph= | tph="
  },
  "SELECT 1 - (SELECT 2) AS v": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
@@ -3551,9 +3551,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-15 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-15 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-15 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-15 | ph= | tph="
  },
  "SELECT 1 AS id UNION ALL SELECT 2 EXCEPT SELECT 3 INTERSECT SELECT 4": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-68 | ph= | tph=",
@@ -4391,9 +4391,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-19 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-19 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-19 | ph= | tph="
  },
  "SELECT 1 a​SELECT 2": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
@@ -4405,9 +4405,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-19 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-19 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-19 | ph= | tph="
  },
  "SELECT 1 a PRINT 'x'": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
@@ -4419,9 +4419,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
-  "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 q17-20 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 q17-20 | ph= | tph=",
+  "none": "tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 q17-20 | ph= | tph="
  },
  "SELECT 1 a﻿from (SELECT 2)": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
@@ -4432,10 +4432,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-26 | ph= | tph="
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-26 | ph= | tph=",
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-26 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-26 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-26 | ph= | tph="
  },
  "SELECT 1 a﻿union SELECT 2": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
@@ -4446,10 +4446,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
-  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-25 | ph= | tph="
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-25 | ph= | tph=",
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-25 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-25 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-25 | ph= | tph="
  },
  "SELECT 1 first (SELECT 2)": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-25 | ph= | tph=",
@@ -4713,9 +4713,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 | ph= | tph="
  },
  "SELECT 1​SELECT 2": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
@@ -4727,9 +4727,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-17 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-17 | ph= | tph="
  },
  "SELECT 2 * (SELECT 2) / (SELECT 1) AS v": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-39 | ph= | tph=",
@@ -4797,9 +4797,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-22 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-22 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-22 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-22 | ph= | tph="
  },
  "SELECT ALL * FROM users": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:unqualified] | pg=- | spans=c0-23 | ph= | tph=",
@@ -5048,10 +5048,10 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-38 | ph= | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-38 | ph= | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph=",
-  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph=",
-  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph=",
-  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph=",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph="
+  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph=",
+  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph=",
+  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-13 q13-20 c20-38 | ph= | tph="
  },
  "SELECT COUNT([rowlock]) AS n FROM orders": {
   "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-40 | ph= | tph=",
@@ -5426,10 +5426,10 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-24 | ph= | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-24 | ph= | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-24 | ph= | tph=",
-  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-24 | ph= | tph=",
-  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-24 | ph= | tph=",
-  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-24 | ph= | tph=",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-24 | ph= | tph="
+  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-24 | ph= | tph=",
+  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-24 | ph= | tph=",
+  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-24 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-24 | ph= | tph="
  },
  "SELECT HIGH_PRIORITY * FROM users": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-33 | ph= | tph=",
@@ -5538,10 +5538,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-17 c17-52 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-7 q7-17 c17-52 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph=",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph="
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph=",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-17 c17-21 q21-28 c28-35 q35-40 c40-52 | ph= | tph="
  },
  "SELECT NEXT VALUE FOR dbo.s": {
   "postgres": "ro!SQL_FORBIDDEN_FUNCTION | tg=ok | tgk=ok | sens=fail[]{UNKNOWN_QUALIFIER,NO_TABLE_SOURCE} | pg=- | spans=c0-27 | ph= | tph=",
@@ -6966,10 +6966,10 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE} | pg=- | spans=c0-47 | ph= | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE} | pg=- | spans=c0-47 | ph= | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph=",
-  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph=",
-  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph=",
-  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph=",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph="
+  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph=",
+  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph=",
+  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{OPAQUE_TABLE_SOURCE,NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-23 q23-33 c33-47 | ph= | tph="
  },
  "SELECT id FROM orders FOR SYSTEM_TIME AS OF '2026-01-01' WHERE id = 1": {
   "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-44 q44-56 c56-69 | ph= | tph=",
@@ -7302,10 +7302,10 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
-  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
-  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
-  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph=",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-49 | ph= | tph="
+  "sqlserver": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-49 | ph= | tph=",
+  "custom": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-49 | ph= | tph=",
+  "custom+escapes": "ro!SQL_LOCKING_READ | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-49 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-49 | ph= | tph="
  },
  "SELECT id FROM orders o WHERE EXISTS (SELECT * FROM users u WHERE u.id = o.user_id)": {
   "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-83 | ph= | tph=",
@@ -8044,10 +8044,10 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-18 q18-26 c26-90 | ph= | tph=",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-18 q18-26 c26-90 | ph= | tph=",
   "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph=",
-  "sqlserver": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph=",
-  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph=",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph="
+  "sqlserver": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph=",
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-9 q9-16 c16-18 q18-26 c26-44 q44-51 c51-83 q83-90 | ph= | tph="
  },
  "SELECT o.[group] FROM [billing].[order] o": {
   "postgres": "ro=ok | tg=ok | tgk=UNKNOWN_TABLE_REFERENCED:table:app.group,UNKNOWN_TABLE_REFERENCED:table:billing.order | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-41 | ph= | tph=",
@@ -9165,9 +9165,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-16 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-16 | ph= | tph="
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-16 | ph= | tph=",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-16 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-16 | ph= | tph="
  },
  "UNION ALL SELECT id FROM notes WHERE owner_type = 'client' AND owner_id IN ('5')": {
   "postgres": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.notes,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.notes,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-50 q50-58 c58-76 q76-79 c79-80 | ph= | tph=",
@@ -9234,10 +9234,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-52 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-52 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph=",
-  "sqlserver": "ro!SQL_LOCKING_READ | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph=",
-  "custom": "ro!SQL_LOCKING_READ | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph=",
-  "custom+escapes": "ro!SQL_LOCKING_READ | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph="
+  "sqlserver": "ro!SQL_LOCKING_READ | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph=",
+  "custom": "ro!SQL_LOCKING_READ | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph=",
+  "custom+escapes": "ro!SQL_LOCKING_READ | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-5 q5-9 c9-11 q11-15 c15-38 q38-42 c42-48 q48-52 | ph= | tph="
  },
  "WITH a AS (SELECT E'\\''), d AS (DELETE FROM orders RETURNING 1) SELECT 'x'": {
   "postgres": "ro!SQL_FORBIDDEN_KEYWORD | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-18 q18-23 c23-71 q71-74 | ph= | tph=",
@@ -9445,9 +9445,9 @@
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=q0-75 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=q0-75 | ph= | tph=",
   "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-75 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=q0-75 | ph= | tph=",
-  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=q0-75 | ph= | tph=",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=q0-75 | ph= | tph="
+  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=q0-75 | ph= | tph=",
+  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=q0-75 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=q0-75 | ph= | tph="
  },
  "a FROM outside every SELECT block": {
   "postgres": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-33 | ph= | tph=",
@@ -9780,10 +9780,10 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
-  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
-  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph=",
-  "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-77 | ph= | tph="
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-77 | ph= | tph=",
+  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-77 | ph= | tph=",
+  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-77 | ph= | tph=",
+  "none": "tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-77 | ph= | tph="
  },
  "passes SQL with direct tenant predicate (P1)": {
   "postgres": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-44 | ph= | tph=",
@@ -9850,10 +9850,10 @@
   "mysql-unset": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
   "mariadb": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
   "sqlite": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
-  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
-  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
-  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph=",
-  "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-71 | ph= | tph="
+  "sqlserver": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-71 | ph= | tph=",
+  "custom": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-71 | ph= | tph=",
+  "custom+escapes": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-71 | ph= | tph=",
+  "none": "tg=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | tgk=NOT_SELECT_OR_WITH:,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{NO_TABLE_SOURCE,UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-71 | ph= | tph="
  },
  "postgres with backslashEscapes reads only with escapes": {
   "postgres": "ro!SQL_NOT_SELECT_OR_WITH | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-54 | ph= | tph=",
@@ -11195,9 +11195,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1OR 1=1": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
@@ -11209,9 +11209,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=0xOR 1=1": {
   "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-72 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
@@ -11279,9 +11279,9 @@
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "custom": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-57 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids​ANDstatus = 'open'": {
   "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-71 q71-77 | ph=tenant_agency_ids​ANDstatus | tph=",
@@ -11306,10 +11306,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-13 c13-62 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT $1INTO lab_x": {
   "postgres": "ro!SQL_FORBIDDEN_KEYWORD | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
@@ -11488,10 +11488,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-22 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-22 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph="
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph="
  },
  "SELECT * FROM \"ｏｒｄｅｒｓ\"": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
@@ -11502,10 +11502,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph="
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-22 | ph= | tph="
  },
  "SELECT * FROM ｏｒｄｅｒｓ": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
@@ -11516,10 +11516,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
-  "sqlserver": "ro!SQL_LOCKING_READ | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
-  "custom": "ro!SQL_LOCKING_READ | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
-  "custom+escapes": "ro!SQL_LOCKING_READ | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-20 | ph= | tph="
+  "sqlserver": "ro!SQL_LOCKING_READ | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-20 | ph= | tph=",
+  "custom": "ro!SQL_LOCKING_READ | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-20 | ph= | tph=",
+  "custom+escapes": "ro!SQL_LOCKING_READ | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-20 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-20 | ph= | tph="
  },
  "SELECT * FROM [ord‍ers]": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-23 | ph= | tph=",
@@ -11530,10 +11530,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-23 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-23 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-23 | ph= | tph=",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-23 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-23 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-23 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-23 | ph= | tph="
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-23 | ph= | tph=",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-23 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-23 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-14 q14-23 | ph= | tph="
  },
  "SELECT * FROM public.[ord﻿ers]": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 | ph= | tph=",
@@ -11544,10 +11544,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 q21-30 | ph= | tph=",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 q21-30 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 q21-30 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 q21-30 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-21 q21-30 | ph= | tph="
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-21 q21-30 | ph= | tph=",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-21 q21-30 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-21 q21-30 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-21 q21-30 | ph= | tph="
  },
  "SELECT [secret‍_recovery_token] FROM users": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-42 | ph= | tph=",
@@ -11558,10 +11558,10 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-42 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-42 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph=",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph="
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph=",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph=",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-31 c31-42 | ph= | tph="
  },
  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = N'ｏｐｅｎ'": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-71 q71-78 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
@@ -11768,10 +11768,10 @@
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | tgk=MISSING_TENANT_PREDICATE:table:public.orders,UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT [\u0001].a FROM orders CROSS JOIN (SELECT 1 AS a) [\u0001] WHERE agency_id = :tenant_agency_ids AND [\u0001].a = 1 OR 1=1": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
@@ -11782,9 +11782,9 @@
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "sqlserver": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=UNICODE_ESCAPED_IDENTIFIER: | tgk=UNICODE_ESCAPED_IDENTIFIER: | sens=fail[]{UNICODE_ESCAPED_IDENTIFIER} | pg=- | spans=c0-7 q7-10 c10-52 q52-55 c55-97 q97-100 c100-113 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  }
 }
