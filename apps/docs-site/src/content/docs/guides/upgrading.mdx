@@ -131,7 +131,7 @@ Where the old `"openai"` or `"ai-sdk"` embedder left the model unset, it used `t
 
 - **Your own code, without a config file:** build the AI SDK model yourself, such as `createOpenAI({ apiKey, baseURL }).embedding("text-embedding-3-small")` from `@ai-sdk/openai`, and pass it to `createAiSdkEmbedder({ model })`. The helper's `dimensions` and `user` options move to `createAiSdkEmbedder`'s `providerOptions: { openai: { dimensions, user } }`.
 
-The helper picked `text-embedding-3-small` when you set no `model`. Name that model, and keep passing the same `embedderId` to `buildSchemaIndex()`, and an index you built with the helper stays valid.
+The helper picked `text-embedding-3-small` when you set no `model`. Name that model and keep your `buildSchemaIndex()` `embedderId` as it was, left unset if you never set one, and an index you built with the helper stays valid.
 
 ### Handle introspection that finds no tables
 
