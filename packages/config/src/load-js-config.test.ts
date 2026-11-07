@@ -12,9 +12,9 @@ vi.mock("jiti", () => ({
   },
 }));
 
-const URL = "postgres://localhost/js";
+const DB_URL = "postgres://localhost/js";
 const AI = `ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } } }`;
-const BLOCKS = `${AI}, introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "${URL}" } } }`;
+const BLOCKS = `${AI}, introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "${DB_URL}" } } }`;
 
 const JS_CONFIGS: [string, Record<string, string>][] = [
   ["askdb.config.mjs", { "askdb.config.mjs": `export default { ${BLOCKS} };\n` }],
@@ -24,7 +24,7 @@ const JS_CONFIGS: [string, Record<string, string>][] = [
   [
     "askdb.config.mjs that default-imports a CommonJS module",
     {
-      "url.cjs": `module.exports = { url: "${URL}" };\n`,
+      "url.cjs": `module.exports = { url: "${DB_URL}" };\n`,
       "askdb.config.mjs": `import db from "./url.cjs";\nexport default { ${AI}, introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: db.url } } } };\n`,
     },
   ],
@@ -42,16 +42,16 @@ describe("a JavaScript config with jiti unavailable, as in an app's bundle (#833
 
   it.each(JS_CONFIGS)("loadAskDbConfigProjectionSync loads %s", (_label, files) => {
     const { projection } = loadAskDbConfigProjectionSync(project(files));
-    expect(projection?.entries.ASKDB_INTROSPECT_POSTGRES_URL).toBe(URL);
+    expect(projection?.entries.ASKDB_INTROSPECT_POSTGRES_URL).toBe(DB_URL);
   });
 
   it.each(JS_CONFIGS)("loadAskDbConfigProjection loads %s", async (_label, files) => {
     const { projection } = await loadAskDbConfigProjection(project(files));
-    expect(projection?.entries.ASKDB_INTROSPECT_POSTGRES_URL).toBe(URL);
+    expect(projection?.entries.ASKDB_INTROSPECT_POSTGRES_URL).toBe(DB_URL);
   });
 
-  // A TypeScript config still goes through jiti, so here it fails with jiti's error.
-  it("still loads a TypeScript config with jiti", () => {
+  // config.test.ts loads TypeScript configs with the real jiti; here the mock shows it's still used.
+  it("sends a TypeScript config to jiti", () => {
     expect(() => loadAskDbConfigProjectionSync(project({ "askdb.config.ts": `export default { ${BLOCKS} };\n` }))).toThrow(
       "i.createRequire is not a function",
     );

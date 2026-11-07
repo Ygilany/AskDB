@@ -1,11 +1,13 @@
 import { createJiti } from "jiti";
+import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
-import { discoverAskDbConfigPath } from "./discover.js";
+import { discoverAskDbConfigPath, type AskDbConfigExtension } from "./discover.js";
 import { isPlainObject } from "./resolve.js";
 import { defineConfig, isAskDbEnvProjection, type AskDbEnvProjection } from "./projection.js";
 import type { AskDbConfig } from "./types.js";
 
 const CONFIG_FORMS = 'export default { ... } or defineConfig({ ... }) from "@askdb/config"';
+const CONFIG_ERROR_PREFIX = "askdb.config: ";
 
 /**
  * A config module's default export. An ES module (jiti's transpiled exports or a native module
@@ -24,9 +26,39 @@ function defaultExport(mod: unknown, configPath: string): unknown {
   return mod.default;
 }
 
-/** `.ts`, `.mts` and `.cts` configs need jiti to compile them; Node loads `.js`, `.cjs` and `.mjs` itself. */
-function isTypeScriptConfig(configPath: string): boolean {
-  return /\.[cm]?ts$/i.test(configPath);
+/** How each extension discovery finds loads: jiti compiles TypeScript, and Node loads JavaScript itself. */
+const CONFIG_LOADERS = {
+  ts: "jiti",
+  mts: "jiti",
+  cts: "jiti",
+  js: "node",
+  mjs: "node",
+  cjs: "node",
+} as const satisfies Record<AskDbConfigExtension, "jiti" | "node">;
+
+function loadsWithNode(configPath: string): boolean {
+  return (CONFIG_LOADERS as Record<string, string>)[extname(configPath).slice(1).toLowerCase()] === "node";
+}
+
+/**
+ * The error each JavaScript config last failed to load with. Node keeps an ES module whose
+ * evaluation threw, and rethrows the same error object for every later load of it, so the same
+ * object again means this process can't load the file anew, whatever was fixed since.
+ */
+const failedNodeLoads = new Map<string, unknown>();
+
+/** `error` from Node loading `configPath`, or an error that says to restart when Node threw it before. */
+function nodeLoadError(configPath: string, error: unknown): unknown {
+  const repeated = typeof error === "object" && error !== null && failedNodeLoads.get(configPath) === error;
+  failedNodeLoads.set(configPath, error);
+  if (!repeated) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  const reason = message.startsWith(CONFIG_ERROR_PREFIX) ? message.slice(CONFIG_ERROR_PREFIX.length) : message;
+  return new Error(
+    `AskDB config at ${configPath}: this ES module failed to load earlier in this process, and Node doesn't load it ` +
+      `again. Restart the process to load your changes. It failed with: ${reason}`,
+    { cause: error },
+  );
 }
 
 /**
@@ -42,9 +74,16 @@ function isTypeScriptConfig(configPath: string): boolean {
  * off, the proxy's default is used.
  */
 function requireConfigModule(configPath: string): unknown {
-  if (!isTypeScriptConfig(configPath)) {
+  if (loadsWithNode(configPath)) {
     const { createRequire } = process.getBuiltinModule("node:module");
-    return defaultExport(createRequire(configPath)(configPath), configPath);
+    let mod: unknown;
+    try {
+      mod = createRequire(configPath)(configPath);
+    } catch (error) {
+      throw nodeLoadError(configPath, error);
+    }
+    failedNodeLoads.delete(configPath);
+    return defaultExport(mod, configPath);
   }
   const jiti = createJiti(configPath, { interopDefault: true });
   const loaded = jiti(configPath) as { default?: unknown } | null | undefined;
@@ -55,7 +94,14 @@ function requireConfigModule(configPath: string): unknown {
 
 async function importConfigModule(configPath: string): Promise<unknown> {
   if (configPath.toLowerCase().endsWith(".mjs")) {
-    return defaultExport(await import(/* webpackIgnore: true */ pathToFileURL(configPath).href), configPath);
+    let mod: unknown;
+    try {
+      mod = await import(/* webpackIgnore: true */ pathToFileURL(configPath).href);
+    } catch (error) {
+      throw nodeLoadError(configPath, error);
+    }
+    failedNodeLoads.delete(configPath);
+    return defaultExport(mod, configPath);
   }
   return requireConfigModule(configPath);
 }
@@ -75,8 +121,6 @@ function toProjection(exported: unknown, configPath: string): AskDbEnvProjection
   }
   throw new Error(`AskDB config at ${configPath}: the default export isn't a config object; ${CONFIG_FORMS}.`);
 }
-
-const CONFIG_ERROR_PREFIX = "askdb.config: ";
 
 /** `await` the synchronous load can't run: top-level, or anywhere outside an async function. */
 function isAwaitError(error: Error): boolean {

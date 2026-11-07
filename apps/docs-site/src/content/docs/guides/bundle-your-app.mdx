@@ -37,7 +37,7 @@ export default {
 };
 ```
 
-[Bring your own model](/guides/bring-your-own-model/#which-should-i-use) helps you choose between the two.
+[Bring your own model](/guides/bring-your-own-model/#which-should-i-use) helps you choose between them.
 
 ## 2. Install the provider SDK you use
 
@@ -55,7 +55,7 @@ Install `ai` and the AI SDK package of your provider, such as `@ai-sdk/openai`:
 With a TypeScript config, mark `@askdb/config` external. With a JavaScript config or none, drop `--external:@askdb/config`.
 
 ```bash
-# CommonJS output
+# CommonJS output. --external:@askdb/config is for a TypeScript config only.
 esbuild src/server.mjs --bundle --platform=node --format=cjs \
   --external:@askdb/config --outfile=dist/server.cjs
 ```
@@ -63,7 +63,7 @@ esbuild src/server.mjs --bundle --platform=node --format=cjs \
 ESM output also needs a banner that defines `require`. The AI SDK's `@vercel/oidc` calls `require("path")`, and without the banner the bundle stops at startup with `Dynamic require of "path" is not supported`:
 
 ```bash
-# ESM output
+# ESM output. --external:@askdb/config is for a TypeScript config only.
 esbuild src/server.mjs --bundle --platform=node --format=esm \
   --external:@askdb/config --outfile=dist/server.mjs \
   --banner:js="import { createRequire as topLevelCreateRequire } from 'node:module'; const require = topLevelCreateRequire(import.meta.url);"
@@ -159,7 +159,7 @@ It brings `jiti` and `dotenv`, which load the config. Start the service from tha
 | --- | --- |
 | `createRequire is not a function` (webpack); `The argument 'filename' must be a file URL object, file URL string, or absolute path string. Received undefined` or `Cannot find module '../dist/babel.cjs'` (esbuild) | A TypeScript config, with `@askdb/config` inside the bundle. Mark it external and install it next to the bundle, or write the config in JavaScript. On `@askdb/config` older than 1.0.0-beta.20, a JavaScript config fails this way too. |
 | `Cannot find module '@askdb/config'`, or `Cannot find package '@askdb/config'` | `@askdb/config` is external but not installed where the bundle runs: install it there. Or your JavaScript config imports it: remove the import, and read variables from `process.env`. |
-| `SyntaxError: Unexpected token 'export'` | Node reads your `askdb.config.js` as CommonJS. Rename it to `askdb.config.mjs`, or write it with `module.exports = { … }`. |
+| `SyntaxError: Unexpected token 'export'`, or `Cannot use import statement outside a module` | Node reads your `askdb.config.js` as CommonJS. Rename it to `askdb.config.mjs`, or write it with `module.exports = { … }`. |
 | `Module not found: Error: Can't resolve '@ai-sdk/<name>'` (webpack) | Install that SDK, or add it to `externals`. |
 | `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>` | The SDK of the provider your config selects isn't in the bundle. Install it and bundle again. |
 | `Dynamic require of "path" is not supported` (esbuild ESM) | Add the `createRequire` banner from step 3. |
