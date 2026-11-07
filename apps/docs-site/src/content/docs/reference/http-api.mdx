@@ -102,7 +102,7 @@ An installed `askdb-http` reads only the working directory's `.env`, and it neve
 
 `askdb-http` prints an error to stderr and exits with code `1` when:
 
-- **A flag is wrong:** an unknown flag, a value flag (`--schema-path`, `--port`, `--host`) with no value after it, or a `--port` that isn't a whole number from 1 to 65535. The error, such as `askdb-http: Unknown option: --verbose` or `askdb-http: Invalid --port: 70000`, is followed by the help text. It checks every flag before it reads `.env` or the config, and before it acts on `--help`, so a wrong flag beside `--help` also exits with code `1`.
+- **A flag is wrong:** an unknown flag, a value flag (`--schema-path`, `--port`, `--host`) with no value or with a value that starts with `--`, or a `--port` that isn't a whole number from 1 to 65535. `askdb-http` prints the error, such as `askdb-http: Unknown option: --verbose` or `askdb-http: Invalid --port: 70000`, then the help text. It checks every flag before it reads `.env` or the config. It also checks them before it acts on `--help`, so a wrong flag beside `--help` exits with code `1` too.
 - **It can't load its config:** no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`. The error is one line.
 - **It can't bind:** for example, the port is already in use. The error is one line.
 
@@ -233,9 +233,9 @@ import type {
 | Type | Describes |
 | --- | --- |
 | `AskDbHttpServerOptions` | The options of `createAskDbHttpServer()`: see [Server](#server). |
-| `AskHttpRequest` | The `POST /ask` body: see [`POST /ask`](#post-ask). Its fields don't include `null`, which the server reads as absent. |
+| `AskHttpRequest` | The `POST /ask` body: see [`POST /ask`](#post-ask). Its fields have no `null` member. The server still reads a JSON `null` as absent. |
 | `AskHttpSuccessResponse` | The `200` body, with `ok: true`. `explain` is typed `unknown`. |
-| `AskHttpErrorResponse` | The error body, with `ok: false`. `error.code` is a union of the codes in [Error codes](#error-codes), and `error.rule` is typed `string`. |
+| `AskHttpErrorResponse` | The error body, with `ok: false`. `error.code` is a union of the codes in [Error codes](#error-codes). `error.rule` is an optional `string`. |
 
 ## What this server doesn't do
 

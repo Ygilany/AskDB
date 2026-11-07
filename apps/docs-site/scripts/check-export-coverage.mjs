@@ -100,7 +100,8 @@ function main() {
     console.error("Document each one on its package's API page, or list it under the page's internal exports.");
     process.exit(1);
   }
-  console.log("Every export of core, client, config, ai and http-api is named on its API page.");
+  const names = PACKAGES.map(({ dir }) => dir.split("/").pop());
+  console.log(`Every export of ${names.slice(0, -1).join(", ")} and ${names.at(-1)} is named on its API page.`);
 }
 
 // Compare real paths, so a run through a symbolic link (macOS's /tmp) still runs the check.
