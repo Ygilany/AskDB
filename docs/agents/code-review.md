@@ -100,7 +100,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Every set-operation branch that reads a scoped table carries its own predicate at every depth, inside derived tables and CTEs too, and a parenthesized top-level operand counts as a query block (#341).
 - Hierarchy and polymorphic fallbacks accept only `path.root` and its ancestors, and tie the discriminator value to the root whose placeholder the ID predicate uses (#341; `docs/contracts/tenant-policy.md`).
 - The check runs on the model's SQL before binding; bound tenant IDs are driver parameters in `sql-params` mode (the default). Wherever they're inlined (`sql-only`, in `ask()` or a rebind) only quotes are doubled, and a tenant ID that isn't printable ASCII or contains a backslash is refused on every dialect (`UNESCAPABLE_TENANT_ID`; ADR 0024). A custom `AskDialect` has no default mode with a tenant scope (`TENANT_SQL_MODE_REQUIRED`). Hosts take the default from `DEFAULT_TENANT_SQL_MODE`, never a hard-coded mode.
-- Known gaps stay documented with their issues (for example #400) rather than described as fixed.
+- Known gaps stay documented with their issues (for example the sensitive check's `FROM` forms, #306–#309) rather than described as fixed.
 
 #### Sensitive fields
 

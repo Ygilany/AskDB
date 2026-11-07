@@ -1214,3 +1214,95 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.id = ${P})`)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a join counts only on the columns the policy declares (#400)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const scoped = (tenantRoot: string): TenantScope => ({ access: { kind: "ids", tenantRoot: `table:public.${tenantRoot}`, ids: ["5"] } });
+  const findings = (sql: string, root = "agencies") =>
+    validateTenantGuardrails(sql, warnPolicy, scoped(root)).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const appointments = ["MISSING_TENANT_PREDICATE:table:public.appointments"];
+
+  it.each([
+    ["the issue's join on the wrong ID column", "SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a hop on the wrong column of the right table", "SELECT a.client_id FROM appointments a JOIN clients c ON a.id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    // A source named like a policy table is not that table: the policy's columns can't be trusted on it.
+    ["a derived table aliased like the hop's table", "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.id AS sub_agency_id FROM sub_agencies s WHERE s.id IN (:tenant_sub_agency_ids)) clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a CTE named like the hop's table", "WITH clients AS (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["another table aliased like the hop's table", "SELECT a.* FROM appointments a JOIN lookup_states clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the path's tables with no join between them", "SELECT a.client_id FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids)", "clients"],
+    // A FROM inside a call or in IS DISTINCT FROM opens no FROM clause.
+    ["a name after IS DISTINCT FROM", "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, '5' AS sub_agency_id, 0 AS clients) clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids) AND 1 IS DISTINCT FROM clients", "sub_agencies"],
+    ["a name after FROM inside EXTRACT", "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, '5' AS sub_agency_id, 0 AS clients) clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids) AND EXTRACT(YEAR FROM clients) = 1", "sub_agencies"],
+    // A CTE named like a policy table shadows it, with or without a column list.
+    ["a CTE with a column list named like the hop's table", "WITH clients (id, sub_agency_id) AS (SELECT 1, '5') SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the same CTE over VALUES, read unaliased", "WITH clients(id, sub_agency_id) AS (VALUES (1, '5')) SELECT a.* FROM appointments a JOIN clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+  ])("rejects %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toEqual(appointments);
+  });
+
+  // An outer join keeps rows its ON doesn't match, so an equality there between two columns on the same side holds for none of them.
+  it.each([
+    ["a scoped table's tenant column equal to its own ID in an outer ON", "SELECT o.* FROM orders o LEFT JOIN lookup_states ls ON o.agency_id = o.id WHERE o.id = :tenant_agency_ids", "agencies", "MISSING_TENANT_PREDICATE:table:public.orders"],
+    ["a hop column equal to the read's own ID in an outer ON", "SELECT a.* FROM appointments a LEFT JOIN lookup_states ls ON a.client_id = a.id WHERE a.id IN (:tenant_client_ids)", "clients", appointments[0]],
+  ])("rejects %s", (_label, sql, root, finding) => {
+    expect(findings(sql, root)).toContain(finding);
+  });
+
+  // An inner join's ON filters only the rows that join builds: a later RIGHT or FULL JOIN, or an outer join around it, keeps the rest.
+  it.each([
+    ["a RIGHT JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a FULL JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids FULL JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a LEFT JOIN around a parenthesized inner join that filters", "SELECT o.* FROM orders o LEFT JOIN (agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids) ON o.agency_id = a.id", "agencies"],
+    ["a nested join written without parentheses", "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = g.id AND g.id = :tenant_agency_ids", "agencies"],
+    ["a direct predicate in that nested join's outer ON", "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = :tenant_agency_ids", "agencies"],
+    ["a join path read on the preserved side of a RIGHT JOIN", "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id AND s.id IN (:tenant_sub_agency_ids) RIGHT JOIN appointments a ON a.client_id = c.id", "sub_agencies"],
+  ])("rejects %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toContain(sql.startsWith("SELECT o.*") ? "MISSING_TENANT_PREDICATE:table:public.orders" : appointments[0]);
+  });
+
+  it.each([
+    ["a polymorphic id in IN (…) over its own filtered rows", "SELECT * FROM notes WHERE owner_type = 'agency' AND owner_id IN (SELECT owner_id FROM notes n2 WHERE n2.owner_type = 'agency' AND n2.owner_id = :tenant_agency_ids)"],
+    ["a scoped table's id in IN (…) over its own filtered rows", "SELECT * FROM orders o WHERE o.id IN (SELECT o2.id FROM orders o2 WHERE o2.agency_id = :tenant_agency_ids)"],
+  ])("now refuses %s: IN (…) no longer carries a predicate out on its own (documented)", (_label, sql) => {
+    expect(findings(sql)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${sql.includes("FROM notes") ? "notes" : "orders"}`]);
+  });
+
+  it("rejects a filter only in an outer join's ON, which keeps every appointment (and leaves the covered root unfiltered)", () => {
+    expect(findings("SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id AND c.id IN (:tenant_client_ids)", "clients"))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.clients", ...appointments]);
+  });
+
+  it.each([
+    ["the issue's correct join", "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the join written the other way round, in WHERE", "SELECT a.* FROM appointments a, clients c WHERE c.id = a.client_id AND c.id IN (:tenant_client_ids)", "clients"],
+    ["the path's root filtered through an outer join", "SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients"],
+    ["the last hop's column filtered directly", "SELECT a.* FROM appointments a WHERE a.client_id IN (:tenant_client_ids)", "clients"],
+    ["a parenthesized join group", "SELECT a.* FROM appointments a JOIN (clients c JOIN sub_agencies s ON c.sub_agency_id = s.id) ON a.client_id = c.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["MySQL's STRAIGHT_JOIN", "SELECT a.* FROM appointments a STRAIGHT_JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients"],
+    ["a FROM-list comma after a join", "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id, appointments a WHERE a.client_id = c.id AND s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+  ])("accepts %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toEqual([]);
+  });
+
+  it.each([
+    ["joined on a column that isn't its ID", "SELECT a.name FROM agencies a JOIN orders o ON a.id = o.total WHERE o.agency_id = :tenant_agency_ids"],
+    ["cross-joined to a filtered scoped table", "SELECT a.name, o.id FROM agencies a, orders o WHERE o.agency_id = :tenant_agency_ids"],
+    ["IN (…) over a column that doesn't carry its IDs", "SELECT name FROM agencies WHERE id IN (SELECT total FROM orders WHERE agency_id = :tenant_agency_ids)"],
+  ])("the scope's root table: rejects one %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["joined on the scoped table's tenant column", "SELECT o.id, a.name FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE o.agency_id IN (:tenant_agency_ids)"],
+    ["IN (…) over the scoped table's tenant column", "SELECT name FROM agencies WHERE id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)"],
+  ])("the scope's root table: accepts one %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  it.each([
+    ["equal to the filtered root's ID", "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids"],
+    ["IN (…) the filtered root's IDs", "SELECT * FROM orders o WHERE o.agency_id IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)"],
+  ])("now accepts a scoped table's tenant column %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+});

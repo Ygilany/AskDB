@@ -41,10 +41,10 @@ AskDB's layer alone isn't enough to isolate tenants that don't trust each other.
 
 The tenant check reads the SQL's tokens and doesn't parse it, so it can pass SQL that doesn't filter every read:
 
-- **A join path.** A table scoped through a join can pass with a join on the wrong ID column, and a root filtered through another table's tenant column isn't checked for the join between them ([#400](https://github.com/Ygilany/AskDB/issues/400)).
-- **An `IN (…)` subquery.** A predicate inside `col IN (SELECT …)` counts for the outer read, whichever column `col` is ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+- **Roots reached through the hierarchy.** Only the roots the scope names are checked as root tables: under an agency `ids` scope, a read of `sub_agencies` isn't. An expanded `subtree` scope names every level it covers.
+- **Joined scoped tables.** It doesn't check that two joined scoped tables share a scope.
 
-Since 1.0.0-beta.52 each read of a scoped table needs its own predicate in its own `SELECT`, so a predicate inside a CTE, derived table or subquery no longer covers a read outside it ([#399](https://github.com/Ygilany/AskDB/issues/399)).
+Since 1.0.0-beta.52 each read of a scoped table needs its own predicate in its own `SELECT` ([#399](https://github.com/Ygilany/AskDB/issues/399)), and a join on any other pair of columns than the policy declares doesn't count ([#400](https://github.com/Ygilany/AskDB/issues/400)).
 
 [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists what it does refuse. These limits are why the database should be the tenant boundary.
 

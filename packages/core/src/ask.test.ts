@@ -369,6 +369,32 @@ describe("ask — a predicate filters only the reads of its own SELECT (#399)", 
   });
 });
 
+describe("ask — a join-path table counts only when joined on the declared columns (#400)", () => {
+  const subAgencyScope = { access: { kind: "ids" as const, tenantRoot: "table:public.sub_agencies", ids: ["5"] } };
+  const run = (sql: string) =>
+    ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: subAgencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" })) as never },
+    });
+
+  it("strict: refuses appointments joined to sub_agencies on the client column", async () => {
+    await expect(run("SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)"))
+      .rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.appointments" }] });
+  });
+
+  it("strict: returns the join through clients", async () => {
+    const result = await run(
+      "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)",
+    );
+    expect(result.tenantGuardrail?.passed).toBe(true);
+  });
+});
+
 describe("ask — a non-ASCII dollar tag is read as a string, like the engine", () => {
   it.each(["postgres", "cockroachdb"] as const)("%s: refuses the OR the tag exposes", async (dialect) => {
     // `$é$ … $é$` is a dollar-quoted string, so the OR after it is code and defeats the predicate.
