@@ -85,7 +85,8 @@ describe("writeSetupConfig dependency install", () => {
    * `pnpResolves` makes it a Yarn Plug'n'Play project instead: no `node_modules`, and a
    * preload that patches Node's resolver as `.pnp.cjs` does, resolving those packages.
    * `setupJs` runs another build of the module (a published layout, say). `manifest` replaces
-   * the project's `package.json`, and `lockfile: false` leaves out its `pnpm-lock.yaml`.
+   * the project's `package.json`, `lockfile: false` leaves out its `pnpm-lock.yaml`, and
+   * `workspaceYaml` writes a `pnpm-workspace.yaml`.
    * `npm_config_user_agent` is cleared, so the test runner's own pnpm never picks the manager.
    */
   function setupInPnpmProject(
@@ -97,6 +98,7 @@ describe("writeSetupConfig dependency install", () => {
       setupJs: setupModule = setupJs,
       manifest = { name: "app", private: true },
       lockfile = true,
+      workspaceYaml,
     }: {
       pnpmVersion?: string;
       writes?: string[];
@@ -104,12 +106,14 @@ describe("writeSetupConfig dependency install", () => {
       setupJs?: string;
       manifest?: Record<string, unknown>;
       lockfile?: boolean;
+      workspaceYaml?: string;
     } = {},
   ): { dir: string; calls: unknown[][]; manualInstallCommand: string | null; resolvable: boolean[] } {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "askdb-setup-install-")));
     dirs.push(dir);
     writeFileSync(join(dir, "package.json"), `${JSON.stringify(manifest)}\n`);
     if (lockfile) writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    if (workspaceYaml !== undefined) writeFileSync(join(dir, "pnpm-workspace.yaml"), workspaceYaml);
     const preload: string[] = [];
     if (pnpResolves) {
       writeFileSync(
@@ -239,6 +243,17 @@ describe("writeSetupConfig dependency install", () => {
     const packages = [`@askdb/config@${version("config")}`, "pg"];
     expect(calls).toEqual([["pnpm", dir, packages, []]]);
     expect(manualInstallCommand).toBe(`pnpm add ${packages.join(" ")}`);
+  });
+
+  // #863: pnpm also keeps settings such as minimumReleaseAgeExclude in pnpm-workspace.yaml.
+  it.each([
+    ["holds only settings, installs", "minimumReleaseAgeExclude:\n  - askdb\n  - '@askdb/*'\n", 1],
+    ["lists packages, shows the command instead", "packages:\n  - packages/*\n", 0],
+  ])("in a project whose pnpm-workspace.yaml %s", (_label, workspaceYaml, installs) => {
+    const { calls, manualInstallCommand } = setupInPnpmProject({ database: "postgres", aiProvider: "openai" }, { workspaceYaml });
+
+    expect(calls).toHaveLength(installs);
+    expect(manualInstallCommand).toBe(`pnpm add @askdb/config@${version("config")} pg`);
   });
 
   it("installs no engine package and approves no build for a live engine", () => {

@@ -74,5 +74,4 @@ export {
   type CreateAiSdkEmbedderOptions,
   type AiSdkEmbedderUsage,
 } from "./embedders/ai-sdk.js";
-export { createOpenAiEmbedder, type CreateOpenAiEmbedderOptions } from "./embedders/openai.js";
 export { detectEmbeddingDimensions } from "./embedders/dimensions.js";

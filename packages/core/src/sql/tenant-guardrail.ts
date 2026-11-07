@@ -403,8 +403,9 @@ function continuesExpression(prev: SqlToken | undefined): boolean {
  */
 function statementReadings(dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): SqlLexerProfile[] {
   const known = dialect?.id !== undefined ? lexerProfileFor(dialect) : undefined;
+  // A `postgres` dialect may point at CockroachDB, where only `\n` ends a line comment: read both ways.
   const profiles = known
-    ? [known]
+    ? known.id === "postgres" ? [known, { ...known, lineCommentEndsAtLfOnly: true }] : [known]
     : ENGINE_LEXER_PROFILES.flatMap((p) =>
         p.id === "postgres" || p.id === "mysql" ? [p, { ...p, backslashEscapes: !p.backslashEscapes }] : [p],
       );
@@ -551,10 +552,17 @@ type CodeReading = {
    * inside it even when `backslashEscapes` is off.
    */
   eStrings: boolean;
+  /**
+   * `$tag$…$tag$` is a string (Postgres, CockroachDB). Elsewhere `$` is a name character
+   * (MySQL, MariaDB, SQLite) or starts a money literal (SQL Server).
+   */
+  dollarQuotes: boolean;
   /** `||` is logical OR (MySQL/MariaDB without `PIPES_AS_CONCAT`), not string concatenation. */
   pipesAreOr: boolean;
   /** `--` starts a comment only before whitespace, a control character, or the end (MySQL/MariaDB). */
   dashCommentNeedsSpace: boolean;
+  /** A `--` or `#` comment ends at `\r` too (Postgres, SQL Server), not only at `\n`. */
+  lineCommentEndsAtCr: boolean;
   /**
    * The body of a `/*! … *\/` (or MariaDB `/*M! … *\/`) executable comment is code. MySQL
    * runs it only on a server at least as new as its version number, so a MySQL dialect is
@@ -568,18 +576,22 @@ const STANDARD_READING: CodeReading = {
   backslashEscapes: false,
   hashComments: false,
   eStrings: false,
+  dollarQuotes: false,
   pipesAreOr: false,
   dashCommentNeedsSpace: false,
+  lineCommentEndsAtCr: false,
   executableComments: false,
 };
-const POSTGRES_READING: CodeReading = { ...STANDARD_READING, eStrings: true };
+const POSTGRES_READING: CodeReading = { ...STANDARD_READING, eStrings: true, dollarQuotes: true };
 const MYSQL_READING: CodeReading = {
   doubleQuoted: "string",
   backslashEscapes: true,
   hashComments: true,
   eStrings: false,
+  dollarQuotes: false,
   pipesAreOr: true,
   dashCommentNeedsSpace: true,
+  lineCommentEndsAtCr: false,
   executableComments: true,
 };
 /** MySQL with its executable comments read as comments: a server too old for their version skips them. */
@@ -606,16 +618,26 @@ function codeViews(
   sql: string,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
 ): CodeViews {
+  // A CR ends a line comment on Postgres and SQL Server, not on MySQL, MariaDB, SQLite or CockroachDB.
+  const crEnds = (r: CodeReading): CodeReading => ({ ...r, lineCommentEndsAtCr: true });
   if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
-    return [STANDARD_READING, POSTGRES_READING, MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE].map((r) => view(sql, r));
+    return [
+      STANDARD_READING, crEnds(STANDARD_READING), POSTGRES_READING, crEnds(POSTGRES_READING), MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE,
+    ].map((r) => view(sql, r));
   }
-  const backslashEscapes = dialect.backslashEscapes === true;
+  // As the shared lexer reads it (`lexerProfileFor`): an unset value on a MySQL-family dialect is the
+  // server default, escapes on; elsewhere escapes are on only when the dialect says so.
+  const mysqlFamily = dialect.id === "mysql" || dialect.id === "mariadb";
+  const backslashEscapes = mysqlFamily ? dialect.backslashEscapes !== false : dialect.backslashEscapes === true;
+  // A `postgres` dialect may point at CockroachDB, which is wire-compatible: read both ways.
   const bases =
     dialect.id === "mysql" || dialect.id === "mariadb"
       ? [MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE]
       : dialect.id === "postgres" || dialect.id === "cockroachdb"
-        ? [POSTGRES_READING]
-        : [STANDARD_READING];
+        ? [POSTGRES_READING, crEnds(POSTGRES_READING)]
+        : dialect.id === "sqlserver"
+          ? [crEnds(STANDARD_READING)]
+          : [STANDARD_READING];
   return bases.map((base) => view(sql, { ...base, backslashEscapes }));
 }
 
@@ -635,7 +657,7 @@ const IDENTIFIER_CONTINUE = /[A-Za-z0-9_$\u0080-\uffff]/;
 
 /**
  * Blank out everything that is not SQL code, so identifier checks only see code
- * regions. String literals (`'…'`, `$tag$…$tag$` bodies, and `"…"` when the
+ * regions. String literals (`'…'`, and `$tag$…$tag$` bodies and `"…"` when the
  * reading says so) and comments become spaces. A comment starts where the reading
  * says (`--` only before whitespace on MySQL, see `startsDashComment` in the shared
  * lexer), and an executable comment's body stays code when the reading says so. The output has the same length
@@ -674,16 +696,18 @@ function codeView(sql: string, reading: CodeReading): string {
     }
     return sql.length;
   };
-  const dollarTag = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
+  // The tag may hold non-ASCII letters, as the shared lexer's DOLLAR_TAG and Postgres read it.
+  const dollarTag = /\$(?:[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/y;
   const executableOpener = /\/\*M?!\d*/y;
+  const lineEnd = reading.lineCommentEndsAtCr ? /[\n\r]/g : /\n/g;
   let inExecutable = false;
   let i = 0;
   while (i < sql.length) {
     const ch = sql[i]!;
     const next = sql[i + 1];
     if (startsDashComment(sql, i, reading.dashCommentNeedsSpace) || (ch === "#" && reading.hashComments)) {
-      const newline = sql.indexOf("\n", i);
-      const end = newline === -1 ? sql.length : newline;
+      lineEnd.lastIndex = i;
+      const end = lineEnd.exec(sql)?.index ?? sql.length;
       blank(i, end);
       i = end;
       continue;
@@ -718,7 +742,8 @@ function codeView(sql: string, reading: CodeReading): string {
       i = end;
       continue;
     }
-    if (ch === "$") {
+    // A `$` right after a name character continues the name (`x$$y`), as every engine reads it.
+    if (ch === "$" && reading.dollarQuotes && !IDENTIFIER_CONTINUE.test(out[i - 1] ?? "")) {
       dollarTag.lastIndex = i;
       const tag = dollarTag.exec(sql);
       const close = tag ? sql.indexOf(tag[0], i + tag[0].length) : -1;
@@ -824,11 +849,17 @@ const SET_OPERATORS = new Set(["union", "intersect", "except", "minus"]);
 /** Words other than identifiers that the predicate forms use. */
 const PREDICATE_WORDS = new Set(["in", "any", "and", "or", "not", "xor"]);
 
-/** Keywords a table can be named after only when quoted (`"order"`, `[group]`). */
-const RESERVED = new Set([
-  ...FILTER_CLAUSE, ...CLAUSE_END, ...NOT_A_FILTER, ...SET_OPERATORS, ...PREDICATE_WORDS,
-  "order", "group", "user", "table", "limit", "offset", "all", "exists",
-]);
+/**
+ * Whether the unquoted word at `i` is part of `ORDER BY` or `GROUP BY`. `ORDER` and `GROUP` are
+ * reserved on every engine, so a table named after one is written quoted. Any other keyword may
+ * name a table, unquoted, on some engine (`user` on MySQL, `lock` on Postgres), so its spelling
+ * always counts as the table.
+ */
+function isOrderOrGroupBy(tokens: readonly Token[], i: number): boolean {
+  const kw = tokens[i]!.kw;
+  if (kw === "order" || kw === "group") return tokens[i + 1]?.kw === "by";
+  return kw === "by" && (tokens[i - 1]?.kw === "order" || tokens[i - 1]?.kw === "group");
+}
 
 /**
  * What a tenant predicate compares: `column` (of `table`) with `placeholder`. With a
@@ -851,13 +882,15 @@ type PredicateTarget = {
  */
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[]): boolean {
   const name = table.toLowerCase();
-  // A table named after a keyword (`order`) can only be written quoted, so its unquoted
-  // spelling (`ORDER BY`) is the keyword, not the table.
-  const mentions = (t: Token) => t.lower === name && (t.kw === "" || !RESERVED.has(t.kw));
   return views.every((view) => {
     const tokens = tokenize(view.text);
+    // Every spelling of the name counts as the table, quoted or not, except the words of `ORDER BY`.
+    const mentions = (from: number, to: number) => {
+      for (let i = from; i < to; i++) if (tokens[i]!.lower === name && !isOrderOrGroupBy(tokens, i)) return true;
+      return false;
+    };
     return queryBlocks(tokens)
-      .filter(([from, to]) => tokens.slice(from, to).some(mentions))
+      .filter(([from, to]) => mentions(from, to))
       .every(([from, to]) => {
         for (let k = from; k < to; k++) {
           for (const target of targets) {

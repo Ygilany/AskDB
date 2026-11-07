@@ -1,4 +1,4 @@
-import { resolveBaseConfig, type AiProviderAdapter } from "../provider.js";
+import { resolveBaseConfig, resolveBaseConfigFromSection, type AiProviderAdapter } from "../provider.js";
 import { baseURLOption } from "../base-url.js";
 import type { ReasoningEffort } from "../reasoning.js";
 import { rethrowMissingPeer } from "./optional-peer.js";
@@ -66,6 +66,9 @@ export const anthropicProvider: AiProviderAdapter = {
   configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("anthropic", env, ENV_SPEC, options);
+  },
+  resolveConfigFromSection(section, options) {
+    return resolveBaseConfigFromSection("anthropic", section, ENV_SPEC, options);
   },
   async createLanguageModel(config) {
     const baseURL = baseURLOption(config, "ANTHROPIC_BASE_URL");

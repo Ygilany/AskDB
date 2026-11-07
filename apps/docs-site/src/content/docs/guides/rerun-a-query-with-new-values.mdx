@@ -1,0 +1,77 @@
+---
+title: "Rerun a query with new values"
+description: "Rerun a query AskDB generated with new values, such as another month or another tenant, without calling the model again."
+---
+
+<p class="doc-eyebrow">Integrator guide</p>
+
+<p class="doc-lede">When a user asks the same question with a new value, such as another month, rebind the query AskDB already generated instead of calling the model again. AskDB checks the stored template again and takes the tenant IDs from the scope you pass now.</p>
+
+## Before you start
+
+- A service that calls `ask()`, through `@askdb/client` or `@askdb/core`. [Embed in a Node app](/guides/embed-in-node/) sets one up.
+- `parameterize` left on, which is the default. `ask()` then asks the model for a template of the query as well, at the cost of some extra output tokens.
+
+## 1. Keep the prepared query
+
+`ask()` returns a `preparedQuery` when the query has at least one value to change, such as a date or a name, and the model's template matches its SQL. It holds the template and the definition of each parameter, but no values. It's plain JSON, so you can store it with the question:
+
+```ts
+// askdb initialized at startup with createAskDb() — see Embed in a Node app.
+const result = await askdb.ask("How many orders shipped in March?", { tenantScope });
+
+if (result.preparedQuery) {
+  await savedQueries.save({ question, preparedQuery: result.preparedQuery });
+}
+```
+
+Without a `preparedQuery`, call `ask()` again for the new value. It's also absent with a custom `AskDialect`.
+
+## 2. Bind the new values
+
+Pass the stored `preparedQuery`, the new values and the caller's tenant scope:
+
+```ts
+const rebound = await askdb.bind(preparedQuery, { month: "2026-04" }, { tenantScope });
+```
+
+Key each value by a parameter's `name`. Pass one for each entry in `preparedQuery.parameters` whose `source` is `"question"`, of its `type`. The entries with `source: "tenant"` are the tenant placeholders: AskDB fills them from the scope.
+
+`askdb.bind()` makes no model call. It checks the template again, the way `ask()` checks the model's SQL:
+
+- **The SQL checks run again** on the stored template, under the schema, tenant scope and tenant policy you pass now. A template that bound yesterday can be refused today, for example after you tighten the policy.
+- **Tenant IDs come only from `tenantScope`.** A value keyed `tenant_*` throws. A query first generated for one tenant gets the IDs of the scope you pass now, so you can rebind it for another caller. Authorizing that scope stays your job, as for `ask()`.
+- **A tenant check that fails throws**, also under a policy whose `enforcement` is `warn`, unless you pass `acceptWarnings: ["tenant"]`.
+
+If you call `@askdb/core` directly, `bindPreparedQuery(preparedQuery, values, { schema, dialect, tenantScope })` does the same. If `ask()` ran with your own `DialectSpec`, pass the same spec as `dialect` to either function. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options) and [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails) for every option.
+
+## 3. Run the rebound SQL
+
+Run `rebound.sql` with `rebound.tenantParams`, the tenant IDs for its markers, the way you run `ask()`'s result. With the `runCapped` from [Cap the rows a query returns](/guides/cap-the-rows-a-query-returns/):
+
+```ts
+const { rows, truncated } = await runCapped(rebound.sql, rebound.tenantParams);
+```
+
+`rebound.unboundSql` with `rebound.params` is the other pair, with every value as a parameter. Run one pair or the other: never mix their arrays.
+
+## If it fails
+
+| Error | Fix |
+| --- | --- |
+| `QueryParameterError` `MISSING_VALUE`: `Missing value for parameter '<name>'.` | Pass a value for each parameter whose `source` is `"question"`. |
+| `QueryParameterError` `INVALID_VALUE` | The value doesn't fit the parameter's `type` or `cardinality`. Convert it first, for example a string from a form to a number. |
+| `QueryParameterError` `TENANT_VALUE_SUPPLIED` | Remove the `tenant_*` key from the values, and pass the scope as `tenantScope`. |
+| `QueryParameterError` `DIALECT_SPEC_REQUIRED` | `ask()` ran with your own `DialectSpec`, or the template was stored before 1.0.0-beta.46. Pass the spec `ask()` ran with as `dialect`, or the built-in id, such as `"postgres"`, if it ran with the built-in rules. |
+| `TenantScopeError` `MISSING_SCOPE` | Pass the caller's `tenantScope`. |
+| `TenantGuardrailError` | The template fails the tenant check under this scope or the current policy. Under `enforcement: warn`, pass `acceptWarnings: ["tenant"]` if you accept the warning. Otherwise call `ask()` again for this caller. |
+
+[`QueryParameterError` reasons](/reference/core-api/errors/#queryparametererror-reasons) lists the rest.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>The service that calls <code>ask()</code> and runs its SQL.</span></a>
+  <a href="/reference/tenant-policy/#what-the-tenant-check-requires"><strong>What the tenant check requires</strong><span>The rules a rebind checks again under the scope you pass.</span></a>
+  <a href="/reference/client-api/#clientbindprepared-values-options"><strong><code>client.bind()</code></strong><span>Every bind option.</span></a>
+</div>

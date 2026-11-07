@@ -1,5 +1,6 @@
 import { AskDbError } from "../errors.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
+import { isTrackedTable } from "../schema/v2/tracked.js";
 
 const JOIN_RELATION_HINT =
   /\b(join|joined|joins|inner\s+join|left\s+join|right\s+join|full\s+join|together\s+with|along\s+with|versus|vs\.?|compare|both\s+tables|each\s+other|relationship\s+between|how\s+they\s+relate)\b/i;
@@ -29,7 +30,7 @@ export function assertNlToSqlInputs(schema: AnyNormalizedSchema, question: strin
 export function nlToSqlAmbiguityNotes(question: string, schema: AnyNormalizedSchema): string[] {
   const notes: string[] = [];
   // `tracked` is a v2 field; a v1 schema has none, so every table counts.
-  const tracked = "schemaId" in schema ? schema.tables.filter((t) => t.tracked !== false) : schema.tables;
+  const tracked = "schemaId" in schema ? schema.tables.filter(isTrackedTable) : schema.tables;
   const tableNames = new Set(tracked.map((t) => t.name.toLowerCase()));
 
   if (tracked.length === 1 && JOIN_RELATION_HINT.test(question)) {

@@ -260,6 +260,108 @@ describe("ask — the prompt hint names no table the prompt leaves out (#677)", 
   });
 });
 
+describe("ask — the tenant block names no table the prompt leaves out (#771)", () => {
+  async function promptFor(untracked: string[], extra: Partial<Parameters<typeof ask>[0]> = {}): Promise<string> {
+    const schema = loadSchema(multiTenantDir);
+    for (const t of schema.tables) if (untracked.includes(t.name)) t.tracked = false;
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM orders WHERE agency_id = :tenant_agency_ids\n```" }));
+    await ask({
+      question: "how many orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: { generateText: generateText as never },
+      ...extra,
+    }).catch(() => undefined);
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+  // The tenant block's lines that name `name`, so a failure shows where it leaked.
+  const linesNaming = (prompt: string, name: string) => prompt.split("\n").filter((l) => l.includes(name));
+
+  it.each([
+    ["a scoped table", "campaigns", "public.campaigns"],
+    ["a polymorphic table", "notes", "public.notes"],
+    ["a global table", "lookup_states", "public.lookup_states"],
+    ["a tenant root's table", "agencies", "public.agencies"],
+  ])("leaves out %s marked tracked: false", async (_label, table, id) => {
+    expect(linesNaming(await promptFor([]), id), "named while tracked").not.toEqual([]);
+    expect(linesNaming(await promptFor([table]), id)).toEqual([]);
+  });
+
+  it("names no table that retrieval left out", async () => {
+    const retriever = vi.fn(async () => [
+      {
+        id: "chunk:table:public.orders",
+        score: 1,
+        payload: { id: "chunk:table:public.orders", type: "table" as const, text: "# public.orders", schemaId: "agency-multi-tenant", refs: ["table:public.orders"], sensitive: false },
+      },
+    ]);
+    const prompt = await promptFor([], { retriever, totalSchemaChunkCount: 100 });
+    expect(retriever).toHaveBeenCalledOnce();
+    expect(prompt).toContain("TABLE public.orders");
+    // The retrieved table keeps its tenant scope.
+    expect(prompt).toContain("  - table:public.orders → filter via table:public.orders#agency_id (Agency scope)");
+    for (const id of ["public.campaigns", "public.appointments", "public.notes", "public.lookup_states", "public.service_types"]) {
+      expect(linesNaming(prompt, id), id).toEqual([]);
+    }
+  });
+});
+
+describe("ask — a MySQL DialectSpec that leaves backslashEscapes unset", () => {
+  it("reads the model's strings with escapes on, as the server's default does", async () => {
+    // MySQL reads `status = '<one string>' OR 1=1 OR status = ''`: every tenant's rows.
+    const sql = String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`;
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { ...MYSQL_DIALECT, backslashEscapes: undefined },
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+  });
+});
+
+describe("ask — a `$$` inside a name opens no dollar-quoted string", () => {
+  it.each(["postgres", "mysql", "mariadb", "sqlite"] as const)("%s: refuses the UNION after the name", async (dialect) => {
+    // `x$$y` is one name to the engine, so the UNION reads every tenant's orders.
+    const sql = "SELECT id AS x$$y FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY x$$y";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+});
+
+describe("ask — a non-ASCII dollar tag is read as a string, like the engine", () => {
+  it.each(["postgres", "cockroachdb"] as const)("%s: refuses the OR the tag exposes", async (dialect) => {
+    // `$é$ … $é$` is a dollar-quoted string, so the OR after it is code and defeats the predicate.
+    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND $é$'$é$ = '' OR 1=1 OR 'x' = 'x'";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);
@@ -1421,6 +1523,15 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "UNICODE_ESCAPED_IDENTIFIER", tableId: "" }] });
   });
 
+  it("strict: rejects a UNION after a `--` comment a carriage return ends, which the read-only check doesn't see here", async () => {
+    const schema = loadSchema(multiTenantDir);
+    // Postgres and SQL Server end the comment at the CR, so the UNION reads every tenant's orders.
+    const sql = "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders";
+    const dialect: AskDialect = { generate: async () => ({ sql }) };
+    const rejection = ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+
   it("does not trust a custom dialect's self-reported passing guardrail", async () => {
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = {
@@ -1501,8 +1612,10 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(TenantGuardrailError);
+    // A DO body's tables also count where `$$` may be no quote (the dialect is unknown here).
     const warnings = (error as TenantGuardrailError).warnings;
-    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(warnings[0]).toMatchObject({ rule: "NOT_SELECT_OR_WITH", tableId: "" });
+    expect(warnings.filter((w) => w.rule !== "MISSING_TENANT_PREDICATE")).toHaveLength(1);
     expect(warnings[0]!.message).toContain(keyword);
   });
 
@@ -1533,7 +1646,8 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     });
 
     expect(result.tenantGuardrail?.passed).toBe(false);
-    expect(result.tenantGuardrail?.warnings.map((w) => [w.rule, w.tableId])).toEqual([["NOT_SELECT_OR_WITH", ""]]);
+    expect(result.tenantGuardrail?.warnings[0]).toMatchObject({ rule: "NOT_SELECT_OR_WITH", tableId: "" });
+    expect(result.tenantGuardrail?.warnings.filter((w) => w.rule !== "MISSING_TENANT_PREDICATE")).toHaveLength(1);
   });
 
   it.each([

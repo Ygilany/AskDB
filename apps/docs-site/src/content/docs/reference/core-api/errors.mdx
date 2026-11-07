@@ -1,0 +1,112 @@
+---
+title: "@askdb/core API reference: errors"
+description: "Every error class @askdb/core throws, what throws it, and its fields, with each SqlValidationError, TenantScopeError, TenantGuardrailError, SensitiveReferenceError and QueryParameterError code."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede">What <code>@askdb/core</code> throws, what throws it, and the code each error carries.</p>
+
+## Errors
+
+`@askdb/core`'s errors are `AskDbError` or one of its subclasses, so `instanceof AskDbError` catches them, except the few plain `Error`s listed after the table. Each class sets `name` to its class name. `@askdb/client` adds four more; see [@askdb/client API → Errors](/reference/client-api/#errors). [Fix common errors](/guides/troubleshooting/) has fixes for the common codes.
+
+| Class | Thrown by | Fields |
+| --- | --- | --- |
+| `AskDbError` | The base class. Thrown as is by `parseAskDbModeV1()` for an unknown mode, and by `ask()` and `generateSelectSql()` with a built-in dialect or `DialectSpec` for an empty question or a schema with no tables. | `message`, `cause?` |
+| `SchemaParseError` | `loadSchema()`, `loadSchemaFromJson()`, `readSchemaDirectory()` and the markdown parsers (`parseTableMarkdown()`, `parseConceptsMarkdown()`, `parseTenantPolicyMarkdown()`): a file that can't be read or parsed, a name in the wrong case, a standalone JSON file in a schema directory, an invalid tenant policy, or, under `enforcement: strict`, a tenant policy that names IDs `schema.json` doesn't have or a column on another table than its entry's. See [`loadSchema(path)`](/reference/core-api/schema/#loadschemapath). Also `ask()`, `resolveTenantSql()` and `validateTenantScope()` for a policy built in code whose two roots share a placeholder. | `cause?` |
+| `UnknownDialectError` | `ask()` with a string `dialect` that isn't a built-in id, or a `DialectSpec` whose `id` isn't one. | `dialectId` |
+| `SqlGenerationError` | `ask()` and `generateSelectSql()` with a built-in dialect or `DialectSpec`, when the model call fails or is aborted. Its message is `Model call failed: ` followed by the failure's message. When that message gives no reason, as for a refused connection, AskDB adds the code and address of each error under it, such as `ECONNREFUSED 127.0.0.1:11434`, or the error's name when it has no code. | `cause`: the AI SDK's error or the abort reason. |
+| `SqlValidationError` | `validateSelectSql()`, and a `deny` from the read-only check in `ask()`, `generateSelectSql()` and `bindPreparedQuery()`. | `rule`, `hint?`, `verdict?` |
+| `TenantScopeError` | `ask()`, `bindPreparedQuery()`, `expandTenantScope()`, `validateTenantScope()`, `resolveTenantSql()` and `buildTenantPromptBlock()`: a missing or invalid scope, or tenant IDs that can't be bound. | `reason` |
+| `TenantGuardrailError` | A `deny` from the tenant check in `ask()`, `generateSelectSql()` and `bindPreparedQuery()`, and `validateTenantGuardrails()` under a `strict` policy. | `warnings`, `verdict?` |
+| `SensitiveReferenceError` | `validateSensitiveReferences()` in `strict` mode, and a `deny` from the sensitive check in `ask()` and `bindPreparedQuery()`. | `rule`, `references`, `unresolvedScope?`, `verdict?` |
+| `QueryParameterError` | `bindPreparedQuery()`: missing guardrail inputs, a template that declares a parameter `type` or `cardinality` AskDB doesn't support, or values that don't fit the template. | `reason` |
+| `SensitiveEnrichmentTargetError` | `suggestEnrichment()` and `buildEnrichmentUserPrompt()`, for a sensitive target column while `omitSensitiveIdentifiersFromPrompt` is on. The message names no column. | — |
+
+`verdict` is set when the error comes from `ask()`, `generateSelectSql()` or `bindPreparedQuery()`: every finding of every check, not only the one that denied. See [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict). A direct `validateSelectSql()` or `validateSensitiveReferences()` call leaves it unset.
+
+Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with no spec, `saveSchemaFile()` for a path it refuses (see [`saveSchemaFile`](/reference/core-api/schema/#saveschemafileschemadir-relativepath-content)), and `buildEnrichmentUserPrompt()` and `suggestEnrichment()` for a target column the table doesn't have. A custom `AskDialect`'s errors pass through `ask()` unchanged.
+
+### `SqlValidationError` rules
+
+`rule` is a `SqlValidationRuleCode`:
+
+| Rule | The SQL has |
+| --- | --- |
+| `SQL_EMPTY` | No statement. |
+| `SQL_MULTI_STATEMENT` | More than one statement. |
+| `SQL_COMMENT` | A `--`, `/* */` or (MySQL) `#` comment. |
+| `SQL_NOT_SELECT_OR_WITH` | A first keyword other than `SELECT` or `WITH`. |
+| `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. |
+| `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, such as `pg_sleep(` or, on MySQL and MariaDB, `NEXTVAL(`. On every dialect, also `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server. |
+| `SQL_UNICODE_ESCAPED_IDENTIFIER` | On Postgres and CockroachDB, a Unicode-escaped identifier such as `U&"set\005fconfig"`, whose escapes could spell a blocked function or a sensitive column. |
+| `SQL_UNTERMINATED` | A string, quoted identifier, dollar-quoted string or block comment that never closes. |
+| `SQL_STRING_CONTINUATION` | On Postgres, CockroachDB, or a dialect id that is no built-in engine, an `E'…'` string continued on a later line (`E'a'`, a newline, then `'b'`). Postgres reads the continuation with backslash escapes, so the checks can't tell where the string ends. |
+| `SQL_ESCAPED_BYTE_STRING` | On Postgres, CockroachDB, or a dialect id that is no built-in engine, a `b'…'` byte string (lower-case `b`) with a backslash, or continued on a later line. CockroachDB reads it with backslash escapes, so the checks can't tell where the string ends. Write the bytes as a hex string cast to `bytea` (`'\x00'::bytea`). |
+| `SQL_LOCKING_READ` | A locking read: `FOR UPDATE`, `FOR SHARE`, `LOCK IN SHARE MODE`, or a T-SQL lock hint such as `UPDLOCK`. On SQL Server, also a name that isn't printable ASCII, unquoted or quoted alone in parentheses after a name, which SQL Server can read as a hint. |
+
+`hint` explains why the rule exists and how to fix the SQL. [The read-only check](/reference/sql-checks/#the-read-only-check) says what each rule rejects on each engine.
+
+### `TenantScopeError` reasons
+
+`reason` is a `TenantScopeRejectionReason`:
+
+| Reason | Cause |
+| --- | --- |
+| `MISSING_SCOPE` | The schema has a tenant policy and no `tenantScope` was passed. |
+| `INVALID_SCOPE_SHAPE` | `tenantScope` doesn't match [`TenantScope`](/reference/core-api/tenancy/#tenantscope), for example an `ids` scope with no IDs. |
+| `UNKNOWN_TENANT_ROOT` | `tenantRoot` isn't a root in the policy. |
+| `GLOBAL_WITHOUT_REASON` | A `global` scope whose `reason` is missing, isn't a string, or is blank. It's checked before the shape, so such a scope never throws `INVALID_SCOPE_SHAPE`. |
+| `SUBTREE_NOT_RESOLVABLE` | A `subtree` scope can't be expanded: no `resolveTenantDescendants`, or it returned something other than IDs per root in the subtree. Also an unexpanded `subtree` passed to `bindPreparedQuery()`, `resolveTenantSql()` or `buildTenantPromptBlock()`. |
+| `UNRESOLVED_TENANT_PLACEHOLDER` | The SQL has a `:tenant_<root>_ids` placeholder the scope has no IDs for, including any placeholder under a `global` scope. |
+| `UNSUPPORTED_TENANT_PREDICATE` | A scope with several IDs meets a tenant predicate with no list form, such as `<=`. |
+| `UNESCAPABLE_TENANT_ID` | A tenant ID that isn't printable ASCII (U+0020 to U+007E), or that contains a backslash, would be inlined as a literal: in `"sql-only"` mode, by `ask()`, `resolveTenantSql()` or `bindPreparedQuery()`. |
+| `TENANT_SQL_MODE_REQUIRED` | `ask()` has a tenant scope, no `tenantSqlMode`, and a custom `AskDialect`. Also a `tenantSqlMode` other than `"sql-params"` or `"sql-only"`, on every dialect, in `ask()` (with a tenant scope), `bindPreparedQuery()` and `resolveTenantSql()`. |
+
+### `TenantGuardrailError` rules
+
+`warnings` is a `TenantGuardrailWarning[]`, each `{ rule, tableId, message }`. `rule` is a `TenantGuardrailRuleCode`:
+
+| Rule | The SQL |
+| --- | --- |
+| `MISSING_TENANT_PREDICATE` | Reads a tenant-scoped table, or a root table the scope covers, with no tenant predicate that filters it. See [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires). |
+| `MISSING_TYPE_DISCRIMINATOR` | Reads a polymorphic table without its type column compared with the mapping key of the root whose placeholder filters its ID column, ANDed into the same clause (`owner_type = 'agency' AND owner_id = :tenant_agency_ids`). |
+| `UNKNOWN_TABLE_REFERENCED` | Reads a table that `tenant-policy.md` doesn't classify. |
+| `UNICODE_ESCAPED_IDENTIFIER` | Uses a Postgres Unicode-escaped name, such as `U&"\006Frders"`, as a table, column or function. Postgres decodes it, so the check can't tell what it reads. Reported with `tableId: ""` when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect` or no dialect. |
+| `UNPROVABLE_SCOPE` | Reported for a custom `AskDialect` whose `tenantGuardrail` has `passed: false` and no warnings. |
+| `NOT_SELECT_OR_WITH` | Has a statement that doesn't start with `SELECT` or `WITH` (after any comments and opening parentheses), such as a `DO` block, `CALL`, `EXPLAIN` or `SHOW`, so the check can't read what it touches. Every statement counts: each one after a `;`, and on SQL Server each one a verb such as `EXEC` starts with no `;`. For a custom `AskDialect`, every engine's reading counts. Not checked under a `global` scope. Reported for the whole SQL (`tableId: ""`), under every dialect, a custom `AskDialect` included. |
+| `UNCHECKABLE_FUNCTION` | Names a function whose reads the check can't see: one that runs a query passed as a string (`query_to_xml`, `ts_stat`, `crosstab`), reads a table named in a string (`table_to_xml`, `schema_to_xml`, `connectby`), runs SQL over another connection (`dblink`, `OPENQUERY`, `OPENROWSET`), or sets a value row-level security may read (`set_config`). The [tenant policy contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#what-the-check-requires) lists the 32 functions, each built into Postgres or SQL Server or from the `tablefunc`, `dblink` or `xml2` extension; a function from any other extension, such as pgRouting's, passes. A listed name counts in any code position, so a column, alias or parameter named like one (`crosstab`, `set_config`) is refused too. Only the first listed name is reported. Not checked under a `global` scope. Reported for the whole SQL (`tableId: ""`), under every dialect, a custom `AskDialect` included. |
+| `STRING_CONTINUATION` | Continues an `E'…'` string on a later line, which Postgres reads with backslash escapes and the check doesn't, so a table or call after it could be hidden. Reported with `tableId: ""` when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect` or no dialect. |
+| `ESCAPED_BYTE_STRING` | Has a `b'…'` byte string (lower-case `b`) with a backslash, or continued on a later line, which CockroachDB reads with backslash escapes and the check doesn't, so a table or call after it could be hidden. Reported with `tableId: ""` when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect` or no dialect. |
+
+The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrailError`, and `warn` returns the findings in `result.verdict`. At rebind, a `warn` finding throws too, unless `acceptWarnings` includes `"tenant"`. [The tenant check](/reference/sql-checks/#the-tenant-check) says when it runs and how it reads SQL on each engine.
+
+### `SensitiveReferenceError` rules
+
+`rule` is a `SensitiveReferenceRuleCode`: `SENSITIVE_TABLE_REFERENCED`, `SENSITIVE_COLUMN_REFERENCED`, or `UNRESOLVED_TABLE_SCOPE` when no sensitive reference was found but the table scope couldn't be resolved. `references` lists each [`SensitiveReference`](/reference/core-api/checks/#result--sensitiveguardrailresult), and `unresolvedScope` is set when scope resolution was incomplete (see [Conservative failure](/reference/core-api/checks/#conservative-failure)). [The sensitive check](/reference/sql-checks/#the-sensitive-check) says what it reports and the forms it can miss.
+
+### `QueryParameterError` reasons
+
+`reason` is a `QueryParameterRejectionReason`. [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails) throws every one:
+
+| Reason | Cause |
+| --- | --- |
+| `INVALID_VALUE` | A value doesn't match its parameter's `type` or `cardinality`: a list for a scalar, a non-finite number, a date that isn't `YYYY-MM-DD`, or `null`. |
+| `MISSING_VALUE` | `values` has no entry for a declared parameter. |
+| `UNRESOLVED_PLACEHOLDER` | A declared parameter doesn't appear in `namedSql`, a placeholder has no declaration, or a placeholder is left after binding. |
+| `INVALID_LIST_CONTEXT` | A list parameter isn't alone inside `IN (…)`, or `= ANY(…)` on a dialect with `listBinding: "array"`. |
+| `DIALECT_UNSUPPORTED` | The template's `dialect` isn't a built-in id, or `guardrails.dialect` has a different `id`. |
+| `MISSING_GUARDRAIL_CONTEXT` | No third argument, or no `schema` in it. |
+| `TENANT_VALUE_SUPPLIED` | `values` has a `:tenant_*` key. Tenant IDs come from `tenantScope` only. |
+| `TENANT_PARAM_ALIGNMENT` | The tenant markers in `unboundSql` can't be lined up with the business parameters. |
+| `DIALECT_SPEC_REQUIRED` | No `guardrails.dialect` for a template with `dialectRules: "host"`, or one stored without `dialectRules`. |
+| `INVALID_DECLARATION` | A parameter in the template declares a `type` other than `string`, `number`, `boolean`, `date` or `datetime`, or a `cardinality` other than `one` or `many`, or the template's `parameters` isn't a list of declarations. Checked before any value; regenerate the template. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/troubleshooting/"><strong>Fix common errors</strong><span>The fix for each common message.</span></a>
+  <a href="/reference/client-api/#errors"><strong>@askdb/client errors</strong><span>The four errors <code>createAskDb()</code> adds.</span></a>
+  <a href="/reference/core-api/ask/#guardrail-verdict"><strong>Guardrail verdict</strong><span>How the checks' findings become an outcome, and which error a <code>deny</code> throws.</span></a>
+</div>

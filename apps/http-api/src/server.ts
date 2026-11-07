@@ -16,11 +16,17 @@ import {
   ASKDB_MODES_V1,
   AskDbLogEvent,
   type AskDbModeV1,
+  type BuiltInDialectId,
+  type NormalizedSchemaV2,
   SensitiveReferenceError,
   SqlGenerationError,
   SqlValidationError,
+  SUPPORTED_DIALECT_IDS,
   TenantGuardrailError,
+  TenantScopeError,
   createAskDbLogger,
+  isBuiltInDialectId,
+  loadSchemaFromJson,
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -131,6 +137,32 @@ function causeMessage(e: unknown): string | undefined {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+/** What's wrong with a schema's `provider` for SQL generation, worded once for the log and the 400. */
+function providerProblem(provider: string): string {
+  return provider ? `declares provider '${provider}', which has no AskDB dialect` : "declares no provider";
+}
+
+/**
+ * Load a request's `schemaJson` with the dialect it answers for (#809): its own `provider`, never
+ * the config's `dialect`, which describes the server's own schema. A schema that names no
+ * provider, or one AskDB has no dialect for, throws `DialectNotSupportedError`, which
+ * {@link mapAskError} answers with `400 bad_request`; one that doesn't load throws
+ * `SchemaLoadError`, as the client would.
+ */
+function loadRequestSchema(json: string): { schema: NormalizedSchemaV2; dialect: BuiltInDialectId } {
+  let schema: NormalizedSchemaV2;
+  try {
+    schema = loadSchemaFromJson(json);
+  } catch (e) {
+    throw new SchemaLoadError("request", e);
+  }
+  const provider = schema.provider ?? "";
+  if (!isBuiltInDialectId(provider)) {
+    throw new DialectNotSupportedError(provider, `The request's schemaJson ${providerProblem(provider)}.`);
+  }
+  return { schema, dialect: provider };
+}
+
 /**
  * Map an error from `askdb.ask()` to an HTTP status + client-safe body. Classification is by
  * error type only. Messages from the model provider are never returned to the client (they
@@ -138,7 +170,10 @@ function causeMessage(e: unknown): string | undefined {
  *
  * @internal Exported for unit tests; not re-exported from the package entry point.
  */
-export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: number }): MappedError {
+export function mapAskError(
+  e: unknown,
+  ctx: { timedOut: boolean; timeoutMs: number; schemaFromRequest?: boolean },
+): MappedError {
   if (isErrorOf(e, SqlGenerationError)) {
     return {
       status: 502,
@@ -166,17 +201,31 @@ export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: num
       },
     };
   }
+  // No schema configured server-side is the operator's to fix, as a schema that doesn't load is
+  // (#840): a generic 500, and the log line's errName (SchemaNotConfiguredError) names the cause
+  // (#845). A request that sends its own schemaJson never reaches this.
   if (isErrorOf(e, SchemaNotConfiguredError)) {
     return {
-      status: 400,
+      status: 500,
       error: {
-        code: "bad_request",
-        message:
-          "No schema configured. Set host.schemaPath / host.schemaJson in askdb.config.* (or start askdb-http with --schema-path).",
+        code: "generation_not_configured",
+        message: "The server has no schema configured. See server logs for this correlationId.",
       },
     };
   }
+  // A schema the request sent is the caller's to fix (400). The server's own schema is the
+  // operator's, and its error names a server path, so the caller gets a generic 500 and the log
+  // line keeps the full error (#840).
   if (isErrorOf(e, SchemaLoadError)) {
+    if (!ctx.schemaFromRequest) {
+      return {
+        status: 500,
+        error: {
+          code: "generation_not_configured",
+          message: "The server can't load its configured schema. See server logs for this correlationId.",
+        },
+      };
+    }
     return {
       status: 400,
       error: {
@@ -195,8 +244,45 @@ export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: num
       },
     };
   }
+  // The schema's provider has no AskDB dialect (#720), or a request schema names none (#809). A
+  // schema the request sent is the caller's to fix, so the message names the ids to send; core's
+  // own message points at the server's config, which the caller can't edit. The server's own
+  // schema is the operator's, so it reads as a configuration error, and the log line's errName
+  // (DialectNotSupportedError, not ModelNotConfiguredError) names the cause.
   if (isErrorOf(e, DialectNotSupportedError)) {
-    return { status: 400, error: { code: "bad_request", message: e.message } };
+    if (ctx.schemaFromRequest) {
+      return {
+        status: 400,
+        error: {
+          code: "bad_request",
+          message:
+            `The request's schemaJson ${providerProblem(e.provider)}. ` +
+            `Send a schema whose provider is one of: ${SUPPORTED_DIALECT_IDS.join(", ")}.`,
+        },
+      };
+    }
+    return {
+      status: 500,
+      error: {
+        code: "generation_not_configured",
+        message:
+          "The server can't generate SQL for its schema: the schema's database engine has no AskDB dialect. See server logs for this correlationId.",
+      },
+    };
+  }
+  // The server can't set a tenant scope (#343), so core refuses a tenant-policy schema before any
+  // model call (#716). Only a missing scope gets this code; any other reason is unexpected here
+  // and stays the generic 500 below.
+  if (isErrorOf(e, TenantScopeError) && e.reason === "MISSING_SCOPE") {
+    return {
+      status: 500,
+      error: {
+        code: "tenant_scope_not_configured",
+        message:
+          "This schema has a tenant policy, and askdb-http can't set a tenant scope yet, so it can't serve this schema. " +
+          "Generate its SQL with ask() and a tenantScope in your own server.",
+      },
+    };
   }
   return {
     status: 500,
@@ -348,7 +434,6 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         config: rt,
         registry: ai,
         schema: optionSchemaPath ? { path: optionSchemaPath } : undefined,
-        unknownDialect: "fallback-postgres",
       });
     }
 
@@ -358,8 +443,9 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     const abortSignal = AbortSignal.timeout(timeoutMs);
 
     try {
+      const requestSchema = requestOverride === undefined ? undefined : loadRequestSchema(requestOverride);
       const out = await askdb.ask(body.question, {
-        schema: requestOverride ? { json: requestOverride } : undefined,
+        ...(requestSchema ? { schema: requestSchema.schema, dialect: requestSchema.dialect } : {}),
         logger,
         ...(requestedMode ? { mode: requestedMode } : {}),
         explain: body.explain === true,
@@ -381,7 +467,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       writeJson(res, 200, payload);
       return;
     } catch (e) {
-      const mapped = mapAskError(e, { timedOut: abortSignal.aborted, timeoutMs });
+      const mapped = mapAskError(e, { timedOut: abortSignal.aborted, timeoutMs, schemaFromRequest: requestOverride !== undefined });
       const cause = causeMessage(e);
       // Always log the full error server-side; the client only sees `mapped.error`.
       logger.error(

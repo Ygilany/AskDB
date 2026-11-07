@@ -1,7 +1,14 @@
 import { join, resolve } from "node:path";
 import { createAiRegistry, type AiConfig } from "@askdb/ai";
 import type { AskDbLogger } from "@askdb/core";
-import { ASKDB_RAG_STORES, getAskDbRuntimeConfig, type AskDbRagStore, type AskDbRuntimeConfig } from "@askdb/config";
+import {
+  ASKDB_RAG_EMBEDDERS,
+  ASKDB_RAG_STORES,
+  getAskDbRuntimeConfig,
+  type AskDbRagEmbedder,
+  type AskDbRagStore,
+  type AskDbRuntimeConfig,
+} from "@askdb/config";
 import {
   aiSdkEmbedderId,
   buildSchemaIndex,
@@ -28,16 +35,14 @@ import { createCliLogger, loggingFlags, type CliLoggingFlags } from "./logger.js
 // so ai.embedding alone selects the provider.
 const ai = createAiRegistry();
 
-const CLI_EMBEDDERS = ["mock", "ai"] as const;
-/** Aliases of `ai` that mirror the deprecated `rag.embedder` values; removed at 1.0. */
-const DEPRECATED_EMBEDDERS = {
-  openai: 'askdb rag: --embedder "openai" is deprecated; use --embedder ai with ai.embedding: { provider: "openai", model }.',
-  "ai-sdk": 'askdb rag: --embedder "ai-sdk" is deprecated; use --embedder ai.',
-} as const;
-type CliEmbedder = (typeof CLI_EMBEDDERS)[number] | keyof typeof DEPRECATED_EMBEDDERS;
+/** The removed aliases of `ai` (#811), each refused with its replacement. */
+const REMOVED_EMBEDDERS: Readonly<Record<string, string>> = {
+  openai: '--embedder openai was removed: use --embedder ai, with rag.embedder: "ai" and ai.embedding: { provider: "openai", model } in askdb.config.*.',
+  "ai-sdk": '--embedder ai-sdk was removed: use --embedder ai, with rag.embedder: "ai" and ai.embedding in askdb.config.*.',
+};
 
-function isCliEmbedder(value: string): value is CliEmbedder {
-  return (CLI_EMBEDDERS as readonly string[]).includes(value) || Object.hasOwn(DEPRECATED_EMBEDDERS, value);
+function isCliEmbedder(value: string): value is AskDbRagEmbedder {
+  return (ASKDB_RAG_EMBEDDERS as readonly string[]).includes(value);
 }
 
 function isCliStore(value: string): value is AskDbRagStore {
@@ -74,7 +79,7 @@ type CliOptions = CliLoggingFlags & {
   command?: RagCommand;
   schemaDir?: string;
   store?: AskDbRagStore;
-  embedder?: CliEmbedder;
+  embedder?: AskDbRagEmbedder;
   question?: string;
   k?: number;
   pgUrl?: string;
@@ -304,9 +309,8 @@ type EmbedderConfig =
     };
 
 /**
- * `rag.embedder`, normalized: the runtime resolves `ai.embedding` exactly when `rag.embedder` is
- * `"ai"` or one of its deprecated aliases (`"openai"`, `"ai-sdk"`), and leaves it undefined for
- * `"mock"`. The runtime view exposes no normalized `rag.embedder` itself.
+ * `rag.embedder`: the runtime resolves `ai.embedding` exactly when `rag.embedder` is `"ai"`, and
+ * leaves it undefined for `"mock"`.
  */
 function configuredEmbedder(runtimeConfig: AskDbRuntimeConfig): "ai" | "mock" {
   return runtimeConfig.ai.embedding ? "ai" : "mock";
@@ -331,30 +335,23 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
     const dimensions = opts.dimensions ?? DEFAULT_MOCK_DIMENSIONS;
     return { kind: "mock", id: `mock:lexical-${dimensions}`, dimensions };
   }
-  if (choice !== "ai") process.stderr.write(`${DEPRECATED_EMBEDDERS[choice]}\n`);
+  // A new rag.embedder value fails to compile here until it has a branch of its own.
+  choice satisfies "ai";
   if (!embedding) {
     throw new Error(
       `--embedder ${choice} needs ai.embedding in askdb.config.*: set rag.embedder: "ai" and ai.embedding.model.`,
     );
   }
-  if (choice === "openai" && embedding.provider !== "openai") {
-    throw new Error(
-      `--embedder openai embeds with OpenAI, but ai.embedding.provider is "${embedding.provider}"; use --embedder ai.`,
-    );
-  }
-  // The registry reads ASKDB_AI_EMBEDDING_MODEL first, so --embedder-model overrides ai.embedding.model.
-  const env = opts.embedderModel
-    ? { ...embedding.env, ASKDB_AI_EMBEDDING_MODEL: opts.embedderModel }
-    : embedding.env;
-  const aiConfig = ai.resolveEmbeddingConfig(env);
+  // --embedder-model overrides ai.embedding.model.
+  const model = opts.embedderModel ?? embedding.model;
+  const aiConfig = ai.resolveEmbeddingConfigFromSection({ ...embedding, model });
   if (!aiConfig) {
     throw new Error(
       `askdb rag: embeddings need an API key on the ai.embedding connection ` +
-        `("${embedding.connection}" in ai.providerConfig.${embedding.provider}). ` +
+        `("${embedding.connection.name}" in ai.providerConfig.${embedding.provider}). ` +
         "Set it in askdb.config.*, or pass --embedder mock.",
     );
   }
-  const model = opts.embedderModel ?? embedding.model;
   const dimensions = opts.dimensions ?? embedding.dimensions;
   return {
     kind: "ai",
@@ -605,8 +602,9 @@ const RAG_FLAGS: readonly Flag<CliOptions>[] = [
     value: "<mock|ai>",
     help: "Embedder. Default: rag.embedder.",
     apply(opts, raw) {
+      if (Object.hasOwn(REMOVED_EMBEDDERS, raw)) throw new Error(REMOVED_EMBEDDERS[raw]);
       if (!isCliEmbedder(raw)) {
-        throw new Error(`${labelled("Unknown embedder", raw)} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`);
+        throw new Error(`${labelled("Unknown embedder", raw)} (expected ${ASKDB_RAG_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`);
       }
       opts.embedder = raw;
     },

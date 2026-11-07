@@ -284,7 +284,7 @@ Each engine package exports the same set of pieces:
 - `load<Driver>Driver(options?)`, which resolves the driver the same way (for hosts that need the driver directly), and `is<Driver>DriverInstalled(options?)`, a synchronous check. `options` is the kit's `DriverLoadOptions`.
 - Its connector provider adapter, for the registry.
 - Type re-exports of `CatalogQueryResult` and `CatalogQueryRunner` from `@askdb/introspect`.
-- Re-exports of its dialect from `@askdb/core`, listed by name below. The dialect specs live in `@askdb/core`, and `ask()` needs only the dialect id. See [`DialectSpec`](/reference/core-api/#dialectspec).
+- Re-exports of its dialect from `@askdb/core`, listed by name below. The dialect specs live in `@askdb/core`, and `ask()` needs only the dialect id. See [`DialectSpec`](/reference/core-api/dialects/#dialectspec).
 
 Every live connector sets `IntrospectionResult.provider` to its dialect id (`"postgres"`, `"mysql"`, `"sqlite"`, `"sqlserver"`).
 
@@ -319,7 +319,7 @@ Driver: `mysql2` (optional peer, `>=3`). MariaDB uses the same package and the `
 | Export | Description |
 | --- | --- |
 | `createMysqlConnector()` | A `Connector<MysqlIntrospectionInput>`, live only, with no templates. |
-| `MysqlIntrospectionInput` | `{ mode: "live"; runner; filters?; schemaId? }`. |
+| `MysqlIntrospectionInput` | An alias of the kit's [`LiveCatalogInput`](#askdbintrospectkit), `{ mode: "live"; runner; filters?; schemaId? }`. |
 | `describeMysql(input)` | `DescribeMysqlInput` (`{ runner, filters?, schemaId? }`). Without `filters.schemas`, it reads the connection's database and files its tables under `public`. With `filters.schemas`, each listed database becomes its own namespace, and `excludeSchemas` removes entries from the list. A foreign key into a database that wasn't read gives a `cross_database_fk` warning. When the connection has no database selected and no list is given, it throws an `AskDbError` asking for the database name in the URL. |
 | `createMysqlCatalogQueryRunner(connectionString, options?)` | Takes a `mysql://user:password@host:port/database` URL and opens one connection per query, with no transaction. |
 | `loadMysql2Driver(options?)`, `isMysql2DriverInstalled(options?)` | Load `mysql2/promise`, or check `mysql2`. |
@@ -333,7 +333,7 @@ Driver: `better-sqlite3` (optional peer, `>=12`).
 | Export | Description |
 | --- | --- |
 | `createSqliteConnector()` | A `Connector<SqliteIntrospectionInput>`, live only. |
-| `SqliteIntrospectionInput` | `{ mode: "live"; runner; filters?; schemaId? }`. |
+| `SqliteIntrospectionInput` | An alias of the kit's [`LiveCatalogInput`](#askdbintrospectkit), `{ mode: "live"; runner; filters?; schemaId? }`. |
 | `describeSqlite(input)` | `DescribeSqliteInput` (`{ runner, filters?, schemaId? }`). Files every table under `public`. Only `filters.tables` applies, and `sqlite_` internal objects are skipped. Needs SQLite 3.16 or later. |
 | `createSqliteCatalogQueryRunner(filename, options?)` | Opens the file read-only on each query, and the file must exist: a missing file rejects with `better-sqlite3`'s own error. A relative path resolves against the process's working directory. `:memory:` doesn't work: `better-sqlite3` can't open an in-memory database read-only. |
 | `loadBetterSqlite3Driver(options?)`, `isBetterSqlite3DriverInstalled(options?)`, `Bs3Namespace` | Load or check `better-sqlite3`. `Bs3Namespace` is the loaded module, whose `default` is the constructor. |
@@ -347,7 +347,7 @@ Driver: `mssql` (optional peer, `>=12`).
 | Export | Description |
 | --- | --- |
 | `createSqlServerConnector()` | A `Connector<SqlServerIntrospectionInput>`, live only. |
-| `SqlServerIntrospectionInput` | `{ mode: "live"; runner; filters?; schemaId? }`. |
+| `SqlServerIntrospectionInput` | An alias of the kit's [`LiveCatalogInput`](#askdbintrospectkit), `{ mode: "live"; runner; filters?; schemaId? }`. |
 | `describeSqlServer(input)` | `DescribeSqlServerInput` (`{ runner, filters?, schemaId? }`). Default: every schema except `sys`, `INFORMATION_SCHEMA`, `guest` and the `db_*` role schemas. |
 | `createSqlServerCatalogQueryRunner(connectionString, options?)` | Accepts an ADO.NET string (`Server=host,1433;Database=db;User Id=u;Password=p;`), an `mssql://user:pass@host:1433/database` URL, or a Prisma-style `sqlserver://host:1433;database=db;user=u;password=p`. Opens a pool per query; a connection failure rejects with the driver's own error. AskDB sets no TLS options of its own, so the driver's defaults apply unless the string sets `encrypt` or `trustServerCertificate`. |
 | `resolveConnectionInput(connectionString)` | The conversion the runner applies: a URL becomes an `MssqlConfigInput` (`{ server, port?, database?, user?, password?, options?: { encrypt?, trustServerCertificate? } }`), and an ADO.NET string comes back with spaced keys such as `Trust Server Certificate` normalized. A URL without a host throws an `AskDbError`. |

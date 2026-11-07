@@ -95,7 +95,7 @@ Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup
 3. The tool that ran `init`: `pnpm dlx`, `yarn dlx`, `npx` or `bunx` (from `npm_config_user_agent`).
 4. npm.
 
-`init` doesn't install at a workspace root, or when it finds no `package.json`. Then, or when the install fails, it prints the command to run yourself, for the package manager it picked and with the `@prisma/engines` approval when it applies, for example `pnpm add --allow-build=@prisma/engines @askdb/config@<version> @askdb/prisma@<version> ai@<range> zod@<range>`.
+`init` doesn't install at a workspace root, or when it finds no `package.json`. A workspace root is a directory whose `pnpm-workspace.yaml` lists at least one package under `packages`, or whose `package.json` has `workspaces`. A `pnpm-workspace.yaml` that holds only settings, such as pnpm's `minimumReleaseAgeExclude`, doesn't make one. `init` reads the file as plain block YAML, and one written in another form, such as JSON, counts as a workspace root. Where `init` doesn't install, or when the install fails, it prints the command to run yourself, for the package manager it picked and with the `@prisma/engines` approval when it applies, for example `pnpm add --allow-build=@prisma/engines @askdb/config@<version> @askdb/prisma@<version> ai@<range> zod@<range>`.
 
 ```bash
 npx askdb@latest init          # wizard in a terminal
@@ -180,11 +180,11 @@ askdb introspect \
 
 Pass exactly one of `--out`, `--print` and `--diff`. With none of them, `--out` falls back to `introspection.outputDir`.
 
-When the source has no tables or views to write, after `--schemas`, `--exclude-schemas` and `--tables`, `askdb introspect` exits `1` and writes nothing, with `--out`, `--print` and `--diff` alike. An artifact with no tables can't be loaded, so an existing `schema.json` and `tables/*.md` stay as they were. The message names the schema id, the engine and the filters you passed, and lists the likely causes. See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-).
+When the source has no tables or views to write, after `--schemas`, `--exclude-schemas` and `--tables`, `askdb introspect` exits `1` and writes nothing, with `--out`, `--print` and `--diff` alike. An artifact with no tables can't be loaded, so an existing `schema.json` and `tables/*.md` stay as they were. The message names the schema id, the engine and the filters you passed, and lists the likely causes. See [the troubleshooting entry](/guides/troubleshooting/#introspection-found-no-tables-or-views-for-schema-).
 
 `askdb introspect` also accepts the [shared logging flags](#shared-logging-flags).
 
-Re-introspecting doesn't change `tenant-policy.md`, so a renamed or dropped column can leave the policy naming IDs the new `schema.json` lacks. When the `--out` directory holds a `tenant-policy.md`, `askdb introspect` loads the directory after writing and prints on stderr what no longer matches. Under `enforcement: strict` that is the error `loadSchema()` will throw until you update the policy. The exit code stays `0`, because the write succeeded. See [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
+Re-introspecting doesn't change `tenant-policy.md`, so a renamed or dropped column can leave the policy naming IDs the new `schema.json` lacks. When the `--out` directory holds a `tenant-policy.md`, `askdb introspect` loads the directory after writing and prints on stderr what no longer matches. Under `enforcement: strict` that is the error `loadSchema()` will throw until you update the policy. The exit code stays `0`, because the write succeeded. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
 
 Live introspection requires the matching engine driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`) in the project running `askdb`, or supplied in the same one-off command:
 
@@ -248,7 +248,7 @@ Both are required. Without either, `bundle` prints that usage line on stderr and
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
-It reads the directory the way `loadSchema()` does, so it refuses the same file names and files: a file name in the wrong case, such as `Tenant-Policy.md`, an optional file that exists but can't be read, or an invalid `schema.json`. It exits with status 1 and the error. It doesn't parse the markdown files, so a front-matter error shows up only when the bundle is loaded. The [Schema artifact format](/reference/schema-artifact-format/#bundle-format) describes the bundle.
+Before it writes anything, it checks the bundle with the loader `ask()` uses (through `@askdb/enrich`'s `bundleSchemaDirectory()`), so it refuses whatever `loadSchema()` refuses. That includes a file name in the wrong case, such as `Tenant-Policy.md`, an optional file that exists but can't be read, an invalid `schema.json`, front-matter that isn't YAML or doesn't parse, a tenant policy that doesn't fit `schema.json`, and two table files with the same `id`. It then exits with status 1 and the loader's error, and writes nothing: a file already at `--out` stays as it was. So a bundle it writes always loads. The [Schema artifact format](/reference/schema-artifact-format/#bundle-format) describes the bundle.
 
 ```bash
 askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
@@ -288,7 +288,7 @@ SELECT customer_id, SUM(total) AS lifetime_value FROM orders GROUP BY customer_i
 
 Everything else goes to stderr, so stdout stays parseable: errors, `Note:` lines (a dialect note, or a sensitive-scope note), and the sensitive warning. Execution is not part of the CLI.
 
-If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict`, rely on `bindPreparedQuery()` re-running it on a rebind, or call it directly on cached SQL.
+If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/checks/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict`, rely on `bindPreparedQuery()` re-running it on a rebind, or call it directly on cached SQL.
 
 #### Dialect
 
@@ -312,7 +312,7 @@ Experimental: `@askdb/rag` stays 0.x, so a minor release of `askdb` may change t
 
 Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-large-schemas/), with three commands: `setup-store`, `index`, and `query`.
 
-**`askdb-rag` moved here.** The `askdb-rag` binary that `@askdb/rag` shipped is now `askdb rag`. Until 1.0, `askdb-rag` prints the `askdb rag` command to run and exits `1`; it doesn't run it for you, because `askdb rag` reads its store from `askdb.config.*` where `askdb-rag` always defaulted to the file store.
+**It replaces `askdb-rag`.** `@askdb/rag` no longer ships the `askdb-rag` binary: run `askdb rag` from the `askdb` package. `askdb rag` reads its store from `askdb.config.*`, where `askdb-rag` always defaulted to the file store, so pass `--store file` or set `rag.store` to keep that store. See [Replace the `askdb-rag` binary with `askdb rag`](/guides/upgrading/#replace-the-askdb-rag-binary-with-askdb-rag).
 
 ### Config and flags
 
@@ -325,7 +325,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 | `--file-path <path>` | `rag.storeConfig.file.basePath`, else `<schema-dir>/schema` |
 | `--pg-url <connstr>` | `rag.storeConfig.pgvector.databaseUrl`, read even when `rag.store` is another store |
 | `--pg-table <name>` | `rag.storeConfig.pgvector.table`, else `askdb_rag_chunks` |
-| `--embedder mock\|ai` | `rag.embedder`: `"ai"` (or its deprecated `"openai"` and `"ai-sdk"`) selects `ai`, and `"mock"` selects `mock` |
+| `--embedder mock\|ai` | `rag.embedder`: `"ai"` selects `ai`, and `"mock"` selects `mock` |
 | `--embedder-model <id>` | `ai.embedding.model` |
 | `--dimensions <n>` | See [Vector width](#vector-width) |
 
@@ -334,11 +334,11 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 ### Embedders
 
 - **`mock`**: a deterministic lexical hash, 64 dimensions unless `--dimensions`. It needs no API key, so it's the one to use in CI.
-- **`ai`**: the [`ai.embedding`](/reference/config/#aiembedding) model, with the key from its connection in `ai.providerConfig`. It needs `rag.embedder: "ai"` (or a deprecated alias of it), since that's the only setting under which AskDB resolves `ai.embedding`, so `--embedder ai` can't override `rag.embedder: "mock"`. `--embedder-model` overrides `ai.embedding.model`, and `--dimensions` requests a width. `--embedder-model` with the `mock` embedder is an error.
+- **`ai`**: the [`ai.embedding`](/reference/config/#aiembedding) model, with the key from its connection in `ai.providerConfig`. It needs `rag.embedder: "ai"`, since that's the only setting under which AskDB resolves `ai.embedding`, so `--embedder ai` can't override `rag.embedder: "mock"`. `--embedder-model` overrides `ai.embedding.model`, and `--dimensions` requests a width. `--embedder-model` with the `mock` embedder is an error.
 
 An index built with `ai` records the embedder id `ai-sdk:<provider>:<model>:<dimensions>`, ending in `default` when no width was requested. Studio uses the same id, so either accepts an index the other built.
 
-`--embedder openai` and `--embedder ai-sdk` are deprecated aliases of `ai` until 1.0, as the same values are for `rag.embedder`, and print a warning. `--embedder openai` also requires `ai.embedding.provider` to be `openai`.
+`--embedder openai` and `--embedder ai-sdk` were removed, as the same `rag.embedder` values were. Each fails with an error naming `--embedder ai` and `ai.embedding`: see [Replace the removed `--embedder` values](/guides/upgrading/#replace-the-removed---embedder-values).
 
 `--api-key` was removed: a key on the command line leaks through shell history and the process list. Set the key on a connection in `ai.providerConfig` instead.
 
@@ -416,7 +416,7 @@ Stdout is one JSON object: `question`, `k`, and `results`, best match first. Eac
 
 Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command prints its usage to stderr and exits `1`.
 
-Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line.
+Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/logging/). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line.
 
 An unexpected error, such as a config file that fails to load, prints its message and the hint `Set ASKDB_DEBUG=1 to print the stack trace.` Set `ASKDB_DEBUG` to `1` or `true` to add the stack trace. Any other value, including `0`, leaves it off, and the `DEBUG` variable used by the `debug` package has no effect.
 

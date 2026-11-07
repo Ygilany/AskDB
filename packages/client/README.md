@@ -32,7 +32,7 @@ Each resolution axis accepts an optional per-call override:
 | Override | Type | Default |
 |---|---|---|
 | `schema` | `{ path }` \| `{ json }` \| `{ schema }` \| `NormalizedSchema` | From `createAskDb({ schema })` → config `host.schemaJson` → `host.schemaPath` |
-| `model` | `AskDbLanguageModel` | From registry via config `ai.aiEnv` |
+| `model` | `AskDbLanguageModel` | From the registry, via config `ai.language` |
 | `dialect` | `AskDialectInput` | Config `dialect` → schema `provider` → `"postgres"` |
 | `mode` | `AskDbModeV1` | Config `modes.askdbMode` → `"schema_only"`. A per-call mode can only tighten it: `"bounded_results"` runs the config mode (ADR 0025). |
 

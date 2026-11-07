@@ -16,7 +16,7 @@ pnpm dlx askdb --help
 pnpm dlx askdb init
 ```
 
-The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs. `askdb init` installs `@askdb/config`, `dotenv`, and the driver for your selected database — only for the path you chose.
+The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs. `askdb init` installs `@askdb/config` and the driver for your selected database — only for the path you chose.
 
 ## Live introspection drivers
 
@@ -112,7 +112,7 @@ See the [CLI reference](https://askdb.tools/reference/cli/#askdb-rag) for every 
 
 The CLI loads `.env` from the current working directory (via dotenv), then evaluates an optional AskDB config file (`askdb.config.*` or `.config/askdb.*`) via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) (`bootstrapAskDbEnv`), which installs the **runtime snapshot** used by `getAskDbRuntimeConfig()` — AskDB does **not** copy the full flattened map into `process.env`. Run `askdb init` to create **`askdb.config.ts`** with nested `defineConfig` and `env()` examples; optional `.env` guidance is in comments in that file (no `.env` is generated).
 
-`askdb init` **skips** loading config so a broken template never blocks scaffolding. In a normal app directory (not a workspace root), it also runs your package manager to add **`@askdb/config`** and **`dotenv`** so `askdb.config.ts` imports resolve immediately.
+`askdb init` **skips** loading config so a broken template never blocks scaffolding. In an app directory, it also runs your package manager to add **`@askdb/config`** and the database driver the config connects with, so `askdb.config.ts` imports resolve immediately. At a workspace root, whose `pnpm-workspace.yaml` lists at least one package under `packages` or whose `package.json` has `workspaces`, it prints the command to run in the right package instead. A `pnpm-workspace.yaml` that holds only settings doesn't make a workspace root.
 
 Settings come from `askdb.config.ts`; bind any of them to an environment variable of your choosing with `env("NAME")`. The one AskDB variable the CLI reads from the environment is `ASKDB_DEBUG`, which prints the stack trace of an unexpected error.
 

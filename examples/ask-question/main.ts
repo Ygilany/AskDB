@@ -95,7 +95,7 @@ async function main(): Promise<void> {
   //
   // For the advanced paths below, the model is wired explicitly. The fast path
   // above handles this internally via the AI registry.
-  const model = await ai.createLanguageModelFromEnv(runtimeConfig.ai.aiEnv);
+  const model = await ai.createLanguageModelFromSection(runtimeConfig.ai.language);
 
   if (!model) {
     console.error(
@@ -124,13 +124,10 @@ async function main(): Promise<void> {
   //
   // For larger schemas (many tables / columns), build a vector index and pass
   // a retriever so only the relevant schema chunks are sent to the model.
-  // `ai.embedding` in askdb.config.ts picks the embedding model; its env view
-  // holds that section's connection only. The width isn't in the env view, so
-  // it's passed as an option.
+  // `ai.embedding` in askdb.config.ts picks the embedding model, its connection
+  // and, when set, the width to ask for.
   const embedding = runtimeConfig.ai.embedding;
-  const embeddingModel = embedding
-    ? await ai.createEmbeddingModelFromEnv(embedding.env, { dimensions: embedding.dimensions })
-    : undefined;
+  const embeddingModel = embedding ? await ai.createEmbeddingModelFromSection(embedding) : undefined;
 
   if (!embeddingModel) {
     console.log("\nSkipping RAG path — no embedding model or key configured.");

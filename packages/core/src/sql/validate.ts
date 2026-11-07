@@ -77,7 +77,8 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 10. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
  * 11. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
- *    `blockedFunctions` (side-effecting or file/network/sleep functions).
+ *    `blockedFunctions` (side-effecting or file/network/sleep functions), and on every lexer
+ *    `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server (#825).
  *
  * Then the dialect's `extraValidate` runs on the statement without its trailing `;`.
  *
@@ -262,6 +263,17 @@ function checkWithProfile(
     }
   });
 
+  // The standard spelling of a sequence's NEXTVAL(): MariaDB and SQL Server advance the sequence,
+  // outside the transaction's rollback (#825). Postgres and SQLite don't parse it, so no lexer
+  // loses a read by refusing it.
+  if (tokens.some((_, i) => wordsAt(tokens, i, NEXT_VALUE_FOR))) {
+    throw validationError(
+      "SQL_FORBIDDEN_FUNCTION",
+      "Forbidden function in generated SQL: NEXT VALUE FOR.",
+      `NEXT VALUE FOR advances a sequence, which a read-only query must not do. Remove it.${SEQUENCE_READ_HINT[profile.id] ?? ""}`,
+    );
+  }
+
   return tokens;
 }
 
@@ -312,6 +324,24 @@ function allBuiltInFunctions(): string[] {
   return Object.values(BUILT_IN_DIALECTS).flatMap((d) => [...(d.blockedFunctions ?? [])]);
 }
 
+/** The standard spelling of a sequence's NEXTVAL(), refused on every lexer (#825). */
+const NEXT_VALUE_FOR: readonly string[] = ["next", "value", "for"];
+
+/**
+ * What a query that only reads a sequence can use instead of `NEXT VALUE FOR`, by lexer: MariaDB's
+ * readers return the value this session last drew, without changing the sequence. Postgres and
+ * SQLite don't parse `NEXT VALUE FOR`, so they get no alternative.
+ */
+const SEQUENCE_READ_HINT: Partial<Record<SqlLexerProfile["id"], string>> = {
+  mysql: " On MariaDB, PREVIOUS VALUE FOR or LASTVAL() returns the value this session last drew from the sequence, without changing it.",
+  sqlserver: " On SQL Server, sys.sequences shows a sequence's current_value without changing it.",
+};
+
+/** Whether `words` appear as consecutive unquoted words starting at token `i`. */
+function wordsAt(tokens: readonly SqlToken[], i: number, words: readonly string[]): boolean {
+  return words.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word);
+}
+
 /**
  * Locking clauses, as the unquoted words they are written with: Postgres and CockroachDB
  * `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE`; MySQL and MariaDB
@@ -347,9 +377,7 @@ function findLockingRead(tokens: readonly SqlToken[], profile: SqlLexerProfile):
     if (hint) return hint;
     if (t.kind !== "word") continue;
     for (const clause of LOCKING_CLAUSES) {
-      if (clause.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word)) {
-        return clause.join(" ").toUpperCase();
-      }
+      if (wordsAt(tokens, i, clause)) return clause.join(" ").toUpperCase();
     }
   }
   return undefined;

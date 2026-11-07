@@ -7,7 +7,7 @@ description: "Every file in a schema artifact: the schema.json fields, the table
 
 <p class="doc-lede">A schema artifact is a folder of files that <code>loadSchema()</code> reads, or one bundle file that holds them. This page lists each file, every field it accepts, and what AskDB does with it. For why the artifact is split this way, see <a href="/concepts/the-schema-artifact/">The schema artifact</a>.</p>
 
-The format is Schema v2, the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/#loadschemapath).
+The format is Schema v2, the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
 
 ## Layout
 
@@ -287,7 +287,7 @@ The front-matter rules for table files apply here too: YAML only, and no unknown
 
 ## `tenant-policy.md`
 
-The tenant policy. When the artifact has one, `ask()` requires a `tenantScope`. The front-matter must be YAML. The [Multi-tenancy guide](/guides/multi-tenancy/#field-reference) lists its fields.
+The tenant policy. When the artifact has one, `ask()` requires a `tenantScope`. The front-matter must be YAML. [Tenant policy format](/reference/tenant-policy/) lists its fields.
 
 ## `schema.lock.json`
 
@@ -312,11 +312,11 @@ Each table and column ends up with one `sensitive` value:
 | --- | --- | --- | --- |
 | `orphaned_table_id` | `tableFile`, `id` | The file's front-matter `id` isn't a table in `schema.json`, often after a rename. AskDB ignores the file, but still checks its `columns[]` entries and still applies their `sensitive: true`. | Change `id` to the table's current ID, or delete the file. |
 | `orphaned_column_id` | `tableFile`, `id` | A `columns[]` entry names a column that isn't in `schema.json`. | Change the entry to the column's current ID, or remove it. |
-| `misplaced_column_id` | `tableFile`, `id`, `tableId` | A `columns[]` entry names a column of another table, `tableId`. Only its `sensitive: true` applies. | Move the entry to `tableId`'s file. |
+| `misplaced_column_id` | `tableFile`, `id`, `tableId` | A `columns[]` entry names a column of another table, `tableId`. (The tenant policy's warning of the same name is in `schema.tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).) Only its `sensitive: true` applies. | Move the entry to `tableId`'s file. |
 | `duplicate_column_id` | `tableFile`, `id` | The file lists the column again. One warning for each repeat. | Merge the entries into one. |
 | `sensitivity_downgrade_ignored` | `tableFile`, `id` | Front-matter says `sensitive: false` for a table or column that is sensitive anyway. | Remove the `false`. To un-mark it, edit `schema.json`. |
 
-`tableFile` is the file's path in the artifact, such as `tables/orders.md`. The same `SchemaV2Warning` type also has `missing_table_md` and `missing_column_md`. Only Studio reports those: for a table with no table file, and for a column with no `columns[]` entry in its table's file. Tenant policy warnings are separate, in `tenantPolicy.warnings`: see [When the policy and the schema disagree](/guides/multi-tenancy/#when-the-policy-and-the-schema-disagree).
+`tableFile` is the file's path in the artifact, such as `tables/orders.md`. The same `SchemaV2Warning` type also has `missing_table_md` and `missing_column_md`. Only Studio reports those: for a table with no table file, and for a column with no `columns[]` entry in its table's file. Tenant policy warnings are separate, in `tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
 
 ## Bundle format
 
@@ -337,7 +337,7 @@ A bundle is one JSON file that holds a whole artifact. Loading it gives the same
 - `tables` is required, `{}` when the artifact has no table files. A bundle without it, or whose `tables` isn't an object of strings, throws `SchemaParseError` naming `tables` and the bundle.
 - An error in a bundled file names the file and the bundle, such as `tables/orders.md (in /srv/prod.bundle.json)`.
 
-[`askdb bundle`](/reference/cli/#askdb-bundle) writes a bundle, and so do `readSchemaDirectory()` in `@askdb/core` and `bundleSchemaDirectory()` in `@askdb/enrich`. They check the file names and `schema.json` as `loadSchema()` does, but they don't parse the markdown files. A front-matter error in a bundled file shows up when the bundle is loaded.
+[`askdb bundle`](/reference/cli/#askdb-bundle) writes a bundle, and so do `readSchemaDirectory()` in `@askdb/core` and `bundleSchemaDirectory()` in `@askdb/enrich`. All three check the file names and `schema.json` as `loadSchema()` does. `bundleSchemaDirectory()`, and so `askdb bundle`, also checks the bundle with the loader, so it refuses whatever `loadSchema()` refuses, and a bundle it returns always loads. `readSchemaDirectory()` doesn't parse the markdown files: a front-matter error in a bundle it returns shows up when the bundle is loaded.
 
 ## Versioning
 
@@ -348,5 +348,5 @@ Schema v2 is the only format AskDB reads. Before 1.0, v2 can gain fields without
 <div class="home-path-grid">
   <a href="/concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>Why the artifact is files your team owns, and how its two layers fit together.</span></a>
   <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
-  <a href="/reference/core-api/#loadschemapath"><strong>@askdb/core API</strong><span><code>loadSchema()</code>, <code>loadSchemaFromJson()</code> and the loaded schema's fields.</span></a>
+  <a href="/reference/core-api/schema/#loadschemapath"><strong>@askdb/core API</strong><span><code>loadSchema()</code>, <code>loadSchemaFromJson()</code> and the loaded schema's fields.</span></a>
 </div>

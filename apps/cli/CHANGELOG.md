@@ -1,5 +1,84 @@
 # askdb
 
+## 1.0.0-beta.51
+
+### Patch Changes
+
+- 4196800: Security fix ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)), a residual of [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) finding 1. The tenant check read a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) as code, where Postgres, CockroachDB and the shared lexer read it as a string, so a tenant-scoped query could pass the check without an effective tenant predicate. The check's scanner now reads the tag with the same character set as the shared lexer and the engine. Enforce tenant isolation in the database (for example row-level security) regardless.
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [8e75d50]
+- Updated dependencies [dc398be]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+  - @askdb/enrich@0.2.0-beta.22
+  - @askdb/rag@0.2.0-beta.31
+  - @askdb/studio@0.2.0-beta.44
+  - @askdb/client@1.0.0-beta.12
+  - @askdb/introspect@0.3.0-beta.25
+  - @askdb/mysql@0.1.0-beta.26
+  - @askdb/postgres@0.2.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.26
+  - @askdb/sqlserver@0.1.0-beta.27
+
+## 1.0.0-beta.50
+
+### Minor Changes
+
+- 1b9468d: `askdb ask`, `askdb rag` and Studio build their models from the config's typed `ai.language` and `ai.embedding` sections, since `@askdb/config` no longer builds the AI env maps they read (#711). `askdb rag --embedder-model` still overrides `ai.embedding.model`. A config that sets a key `@askdb/config` 1.0.0-beta.19 removed (#765), such as `model` on an `ai.providerConfig` connection or `rag.embedder: "openai"`, now fails to load in the CLI, Studio and the HTTP API, with an error naming each key's replacement; the upgrade guide shows each one before and after.
+- db7dad6: `askdb bundle` refuses a schema directory `loadSchema()` refuses, and exits 1 with the loader's error before it writes anything (#796). It used to bundle markdown the loader refuses, such as front-matter that isn't YAML, a tenant policy that doesn't parse, or two table files with the same `id`, and exit 0, so the bundle failed only when a service loaded it. On a failure it writes nothing, and a file already at `--out` stays as it was. A bundle it writes always loads. The check is `@askdb/enrich`'s `bundleSchemaDirectory()`, which the command calls.
+- 0782a06: `askdb introspect` exits 1 when the source has no tables or views to write (#337, ADR 0037), with `--out`, `--print` and `--diff` alike, where it used to exit 0 and write a `schema.json` with `tables: []` that `loadSchema` rejects. The message names the schema id, the engine and any `--schemas`, `--exclude-schemas` or `--tables` filters, and lists the likely causes. Nothing is written, so an existing artifact stays as it was.
+- 54e079e: **Breaking:** `askdb rag --embedder openai` and `--embedder ai-sdk` are removed (#811), as the same `rag.embedder` values were in 1.0.0-beta.50 (#765). They were deprecated aliases of `--embedder ai` since 1.0.0-beta.44, promised for removal at 1.0. Each now fails with exit code `1` before the command reads the schema or opens a store, with an error naming the replacement: `--embedder ai`, with `rag.embedder: "ai"` and an `ai.embedding` section in `askdb.config.*`. An index the aliases built keeps its embedder id, since they embedded with `ai.embedding` too.
+
+### Patch Changes
+
+- 3841e09: `askdb init --database sqlserver` and Studio's guided setup no longer put `Trust Server Certificate=True` in the `.env.example` hint for the SQL Server connection string (#803). That key turned the certificate check off in AskDB, and the `mssql` driver ignored it because of the spaces, so a hint copied into production trusted any certificate in AskDB but not in a host's own `mssql` pool. The hint now leaves the key out, so AskDB and `mssql` both check the certificate by default. A second comment line says to add `TrustServerCertificate=True;`, spelled without spaces so both read it, for a development server with a self-signed certificate such as the SQL Server Docker image. An `.env.example` that `init` already wrote isn't changed.
+- 91e89ec: Security fix ([GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4)). The tenant check could read some SQL differently from the database engine — a `$` inside a name, a table named after a keyword such as `user` or `lock`, an unset `backslashEscapes` on a from-scratch MySQL-family `DialectSpec`, and where a `--` comment ends — so a tenant-scoped query could pass the check without an effective tenant predicate. The check now reads each construct the way the engine does, and a test per engine confirms it on a live database. Tenant isolation enforced in the database (for example row-level security), as `SECURITY.md` recommends, still limited what such a query could read.
+- Updated dependencies [6ea8df8]
+- Updated dependencies [1b9468d]
+- Updated dependencies [d9ab606]
+- Updated dependencies [a467984]
+- Updated dependencies [54e079e]
+- Updated dependencies [1b9468d]
+- Updated dependencies [1b9468d]
+- Updated dependencies [6ea8df8]
+- Updated dependencies [1ccc8c8]
+- Updated dependencies [1b9468d]
+- Updated dependencies [1b9468d]
+- Updated dependencies [3841e09]
+- Updated dependencies [88fe1c3]
+- Updated dependencies [c501c5b]
+- Updated dependencies [4b7f0d3]
+- Updated dependencies [3797a5a]
+- Updated dependencies [df612e9]
+- Updated dependencies [42f9078]
+- Updated dependencies [659cb75]
+- Updated dependencies [7c00370]
+- Updated dependencies [6ea4e72]
+- Updated dependencies [ca606c2]
+- Updated dependencies [dfc3716]
+- Updated dependencies [a0d2ec2]
+- Updated dependencies [1b9468d]
+- Updated dependencies [a7f5f06]
+- Updated dependencies [3b77292]
+- Updated dependencies [0782a06]
+- Updated dependencies [54e079e]
+- Updated dependencies [91e89ec]
+- Updated dependencies [0782a06]
+- Updated dependencies [3a05107]
+  - @askdb/ai@0.1.0-beta.11
+  - @askdb/studio@0.2.0-beta.43
+  - @askdb/client@1.0.0-beta.12
+  - @askdb/config@1.0.0-beta.19
+  - @askdb/core@1.0.0-beta.50
+  - @askdb/mysql@0.1.0-beta.25
+  - @askdb/sqlite@0.1.0-beta.25
+  - @askdb/sqlserver@0.1.0-beta.26
+  - @askdb/enrich@0.2.0-beta.21
+  - @askdb/introspect@0.3.0-beta.24
+  - @askdb/rag@0.2.0-beta.30
+  - @askdb/postgres@0.2.0-beta.26
+
 ## 1.0.0-beta.49
 
 ### Minor Changes

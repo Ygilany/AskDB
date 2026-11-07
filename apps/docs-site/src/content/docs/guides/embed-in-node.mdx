@@ -9,9 +9,16 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Integrator guide</p>
 
-<p class="doc-lede">Drop <code>@askdb/client</code> into a TypeScript service. It reads the same <code>askdb.config.ts</code> the CLI and Studio use, generates checked SQL from a question, and hands it back. Your service runs it through its own connection pool against a read-only role.</p>
+<p class="doc-lede">Add AskDB to a TypeScript service. It generates checked SQL from a question and hands it back. Your service runs it through its own connection pool against a read-only role.</p>
 
-## Install
+## Wire it into a handler
+
+There are two ways to give AskDB a model, and both return the same result. Pick by who owns your provider configuration ([Bring your own model](/guides/bring-your-own-model/#which-should-i-use) compares them):
+
+- **With your config:** `createAskDb()` from `@askdb/client` resolves the schema, model and dialect from `askdb.config.ts`, the file `askdb init` scaffolded and the CLI and Studio read.
+- **With your own model:** `ask()` from `@askdb/core` takes a Vercel AI SDK model that your app builds, and reads no config.
+
+### With your config: `createAskDb()`
 
 <InstallTabs pkgs="@askdb/client @askdb/core @askdb/config ai @ai-sdk/openai pg" />
 
@@ -23,9 +30,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 | `@askdb/core`, `ai` | With `@askdb/config`, the required peer dependencies of `@askdb/client` (`ai` at AI SDK 7). npm and pnpm add them for you; Yarn doesn't, so list them. |
 | `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
 
-## Wire it into a handler
-
-Call `createAskDb` once at startup, then `askdb.ask(question)` per request. Schema, model, and dialect all resolve from `askdb.config.ts` — the same file `askdb init` scaffolded.
+Call `createAskDb` once at startup, then `askdb.ask(question)` per request:
 
 ```ts
 // ask-handler.ts
@@ -83,64 +88,17 @@ export async function askQuestion(question: string) {
 
 `./my-app.schema` is a **directory**, not a file — `<name>.schema/` is AskDB's convention for the introspected-and-enriched artifact. The schema loads on the first `ask()` and stays in memory on the client; call `askdb.reload()` if the artifact changes while the process runs.
 
-<Aside type="note">
-This example uses `pg` to run the SQL, but the driver is your choice — AskDB never opens a connection. If you already use an ORM or query builder (Prisma, Drizzle, Sequelize, Knex, …), skip `pg` entirely and pass the returned `sql` string and its values (`tenantParams ?? []`) to your existing client, e.g. `prisma.$queryRawUnsafe(sql, ...values)` or `db.execute(sql, values)`.
-</Aside>
+To serve several schemas from one client, pass `schema` per call.
 
-AskDB returns checked SQL; your handler logs it, runs it, and returns the result. `runReadOnly` reads every row the query returns. To cap the rows, use `runCapped` from [Row limits](/guides/run-safely-in-prod/#row-limits), as the [Express example](#complete-example-express-server) below does.
-
-<Aside type="caution">
-AskDB's SQL checks catch common model mistakes but aren't a security boundary. Connect `DATABASE_URL` as a read-only, least-privilege role and keep `statement_timeout` set. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
-</Aside>
-
-## What the call returns
-
-`askdb.ask()` (and the direct `ask()` below) return `AskPipelineResult`. All fields except `sql` and `verdict` are optional:
-
-| Field | Type | When present |
-| --- | --- | --- |
-| `sql` | `string` | Always. The generated, checked SQL string. |
-| `verdict` | `GuardrailVerdict` | Always. The guardrail findings and the outcome (`"allow"` or `"warn"`; a `"deny"` throws). See [Guardrail verdict](/reference/core-api/#guardrail-verdict). |
-| `unboundSql` | `string \| undefined` | When `parameterize` is on (default) and the model returned consistent extras. Driver markers. |
-| `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order, tenant IDs included. |
-| `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes values). |
-| `preparedQuery` | `PreparedQuery \| undefined` | Definitions + template for `askdb.bind()` / `bindPreparedQuery()` (no values). |
-| `usage` | `AskUsage \| undefined` | When the model provider reports token counts: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). Use it for cost tracking or quota enforcement. |
-| `explain` | `unknown \| undefined` | When `explain: true` is passed. Heuristic guardrail metadata — which read-only rules fired and why. |
-| `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema marks at least one table or column `sensitive` and `sensitiveGuardrailMode` isn't `"off"`. Whether the SQL references a sensitive table or column. |
-| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Whether the SQL references tenant-scoped tables correctly. |
-| `tenantParams` | `unknown[] \| undefined` | When a tenant scope binds IDs in `tenantSqlMode: "sql-params"`, the default. Tenant IDs for the markers in `sql` — run `sql` with `tenantParams`, or `unboundSql` with `params`; never concatenate them. |
-| `tenantBindings` | `TenantBinding[] \| undefined` | When tenant scope bindings were resolved. Structured binding metadata for audit logging. |
-
-```ts
-const result = await askdb.ask(question, { tenantScope });
-
-// Two executable pairs; each runs with its own params array.
-await pool.query(result.sql, result.tenantParams);
-await pool.query(result.unboundSql!, result.params);
-
-// A new value, no model call: re-checked under the client's schema and this scope.
-const rebound = await askdb.bind(result.preparedQuery!, { state_name: "Utah" }, { tenantScope });
-await pool.query(rebound.sql, rebound.tenantParams ?? []);
-
-if (result.usage) {
-  console.log(`Tokens — prompt: ${result.usage.promptTokens}, completion: ${result.usage.completionTokens}`);
-}
-```
-
-Every `ask()` is still one model call. Set `{ parameterize: false }` to skip the extra output tokens. `askdb.bind()` re-runs the guardrails on the stored template and renders tenant IDs from the `tenantScope` you pass, so authorizing that scope stays your job, as for `ask()`. If `askdb.ask()` ran with your own `DialectSpec`, pass the same spec as `dialect` to `askdb.bind()`, or it refuses. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options).
-
-The full result and option types are in the [@askdb/core API reference](/reference/core-api/).
-
-## Advanced: call `ask()` directly
-
-`createAskDb` is a convenience layer over `@askdb/core`'s pure `ask()` — not a replacement. Drop down to `ask()` when you construct the model yourself, or want zero dependency on `@askdb/config` / `@askdb/ai`. (The client serves several schemas too: pass `schema` per call.)
+### With your own model: `ask()`
 
 <InstallTabs pkgs="@askdb/core ai @ai-sdk/openai pg" />
 
 `ai` is a required peer dependency of `@askdb/core` (AI SDK 6 or 7) — your app owns its version.
 
 All six built-in dialects are built into `@askdb/core` — install `@askdb/postgres` only if this service also runs `askdb introspect` programmatically.
+
+Load the schema and build the model once at startup, then call `ask()` per request:
 
 ```ts
 // ask-handler.ts
@@ -173,15 +131,31 @@ export async function askQuestion(question: string) {
 
 Every option `ask()` takes — modes, tenant scope, retrieval, sensitive-field handling — is in the [@askdb/core API reference](/reference/core-api/). On `askdb.ask(question, overrides)`, the question is the first argument and the other options are per-call overrides. `schema`, `model` and `dialect` take the client's forms, and `mode` and `omitSensitiveIdentifiersFromNlToSqlPrompt` can only tighten what the config sets. See [`AskOverrides`](/reference/client-api/#overrides--askoverrides).
 
+## Run the SQL it returns
+
+AskDB returns checked SQL; your handler logs it, runs it, and returns the result. `runReadOnly` reads every row the query returns. To cap the rows, use `runCapped` from [Cap the rows a query returns](/guides/cap-the-rows-a-query-returns/), as the [Express example](#complete-example-express-server) below does.
+
+`askdb.ask()` and `ask()` both return the query in two forms, each with its own array. Run `sql` with `tenantParams`, the tenant IDs for its markers, which it has only when you pass a tenant scope. Or run `unboundSql` with `params`, which binds every value as a parameter. Never mix the two arrays. `unboundSql` comes with `parameterize` on, the default; set `parameterize: false` to save the output tokens it costs. The result also has `verdict`, what AskDB's SQL checks found, and `usage`, the token counts when your provider reports them. [Result — `AskPipelineResult`](/reference/core-api/ask/#result--askpipelineresult) lists every field.
+
+<Aside type="note">
+This example uses `pg` to run the SQL, but the driver is your choice — AskDB never opens a connection. If you already use an ORM or query builder (Prisma, Drizzle, Sequelize, Knex, …), skip `pg` entirely and pass the returned `sql` string and its values (`tenantParams ?? []`) to your existing client, e.g. `prisma.$queryRawUnsafe(sql, ...values)` or `db.execute(sql, values)`.
+</Aside>
+
+To run the same query again with a new value, such as another month, without a model call, see [Rerun a query with new values](/guides/rerun-a-query-with-new-values/).
+
+<Aside type="caution">
+AskDB's SQL checks catch common model mistakes but aren't a security boundary. Connect `DATABASE_URL` as a read-only, least-privilege role and keep `statement_timeout` set. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
+</Aside>
+
 ## Switching engines
 
-Same `ask()` call, different dialect string. Change `dialect: "postgres"` to `"cockroachdb"`, `"mysql"`, `"mariadb"`, `"sqlite"` or `"sqlserver"`. See [Switch engines](/guides/switch-engines/) for the full migration matrix.
+With `createAskDb()`, the dialect follows the engine the schema artifact recorded at introspection, unless `askdb.config.ts` sets `dialect`. With `ask()`, change `dialect: "postgres"` to `"cockroachdb"`, `"mysql"`, `"mariadb"`, `"sqlite"` or `"sqlserver"`. See [Switch engines](/guides/switch-engines/) for the full migration matrix.
 
 ## Complete example: Express server
 
 The snippet below is a copy-paste-ready Express server. Schema, model, and dialect are fully config-driven — `askdb.config.ts` sets `host.schemaPath` and the AI provider; `server.ts` only handles HTTP.
 
-The `/ask` endpoint accepts an optional `execute` flag: `false` (default) returns just the SQL; `true` also runs it and returns the rows. It runs the SQL the way [Run safely in production](/guides/run-safely-in-prod/) describes: under a read-only role with a statement timeout, inside a read-only transaction, and capped at 1,000 rows ([Row limits](/guides/run-safely-in-prod/#row-limits)). Errors go to the server log under a correlation ID; the caller gets that ID and a generic message, because an error can carry provider or schema details.
+The `/ask` endpoint accepts an optional `execute` flag: `false` (default) returns just the SQL; `true` also runs it and returns the rows. It runs the SQL the way [Run safely in production](/guides/run-safely-in-prod/) describes: under a read-only role with a statement timeout, inside a read-only transaction, and capped at 1,000 rows ([Cap the rows a query returns](/guides/cap-the-rows-a-query-returns/)). Errors go to the server log under a correlation ID; the caller gets that ID and a generic message, because an error can carry provider or schema details.
 
 ```ts
 // server.ts
@@ -298,7 +272,7 @@ export default defineConfig({
     providerConfig: { postgres: { databaseUrl: env("DATABASE_URL") } },
   },
   host: {
-    schemaPath: env("ASKDB_SCHEMA_PATH"),
+    schemaPath: env("SCHEMA_PATH"),
   },
 } satisfies AskDbConfig);
 ```

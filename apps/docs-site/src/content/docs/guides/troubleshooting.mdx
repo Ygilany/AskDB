@@ -1,0 +1,340 @@
+---
+title: "Fix common errors"
+description: "Find the error AskDB shows and fix it: a missing config or API key, a schema that won't load, SQL a check rejects, Studio execute, tenant scope and RAG."
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
+
+<p class="doc-eyebrow">Maintain</p>
+
+<p class="doc-lede">Find the message you see, and follow its fix. Errors are grouped by where they appear. If yours isn't here, ask in a <a href="https://github.com/Ygilany/AskDB/discussions/categories/q-a">Discussion</a>.</p>
+
+## Config
+
+### `No askdb.config.* or .config/askdb.* found in …`
+
+`askdb ask` and `askdb introspect` print this when the current directory has no config. `bootstrapAskDbEnv()` throws a similar error (`… found under <cwd>`) when you embed the libraries.
+
+AskDB looks for `askdb.config.<ext>` (then `.config/askdb.<ext>`) in the **current working directory only** — in a monorepo it won't find a config in a parent directory. Supported extensions, in precedence order: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`.
+
+If the project has no config yet, create one with `npx askdb init`. If it has one, run the CLI from the directory that holds the config.
+
+```bash
+cd apps/api && npx askdb ask --question "..."
+```
+
+When embedding the libraries, the equivalent knob is the `cwd` option: `bootstrapAskDbEnv({ cwd: "/path/to/project" })`.
+
+### `AskDB config at <path>: the config has no ai block`
+
+The config file loaded, but it has no `ai` block. Every config needs one, even when you only run `askdb introspect`: add the provider and its connection, as [The `ai` block](/reference/config/#the-ai-block) shows. A config without an `introspection` block fails the same way, and the message names that block.
+
+Other `AskDB config at <path>: …` errors say what can't load, such as an unknown `rag.store`, a file with no default export, or top-level `await`, which the synchronous load can't run. Fix it in the file the message names.
+
+### `Set ASKDB_DEBUG=1 to print the stack trace.`
+
+The CLI hit an unexpected error, most often a config file that exists but fails to load: a syntax error, a missing import, or dependencies that aren't installed yet. The line above the hint is the error message, and it usually names the file and line.
+
+Rerun with `ASKDB_DEBUG=1` to see the stack trace:
+
+```bash
+ASKDB_DEBUG=1 npx askdb ask --question "..."
+```
+
+`askdb studio` doesn't stop on a config that fails to load: it prints `askdb-studio: warning: <path> could not be loaded, so Studio is ignoring it: …` and starts without it. Fix the file and restart Studio; the setup wizard never overwrites it.
+
+## Schema
+
+### `Schema path not found.` / `ENOENT: no such file or directory`
+
+Nothing exists at the schema path. `askdb ask --schema` prints `Schema path not found.`, and `loadSchema()` throws Node's `ENOENT: no such file or directory, stat '…'`. A relative path is read from the current directory. Pass one of:
+
+- A schema directory, such as `my-app.schema/`
+- A bundle file from [`askdb bundle`](/reference/cli/#askdb-bundle)
+- The `schema.json` inside a schema directory (the name matches in any case, so `Schema.json` works too)
+
+Run `ls my-app.schema/` to check that `askdb introspect` wrote the directory. If it holds no `schema.json`, introspection didn't finish.
+
+### `Schema path is not readable (permission denied).`
+
+`askdb ask` can't read the file at the schema path, or can't enter a directory above it. Check the owner and mode of the path and each directory on the way to it:
+
+```bash
+ls -ld my-app.schema my-app.schema/schema.json
+```
+
+The user that runs `askdb` needs read access to the files and execute access to every directory above them, such as `chmod -R u+rX my-app.schema` when that user owns it. In a container, the mounted schema directory must be readable by the container's user, which may not be yours. A schema directory that exists but can't be listed prints `Failed to parse schema.` instead, with `EACCES: permission denied, scandir '…'` after `Details:`. The same fix applies.
+
+### `SchemaParseError: Refusing to load … as a standalone physical layer`
+
+You passed a JSON file that isn't named `schema.json`, such as `prod-schema.json`, and its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, in any case (`Tenant-Policy.md` counts). Loading the file alone would ignore those files, so `ask()` would run without your tenant policy and without the `sensitive: true` marks in `tables/*.md`. AskDB refuses instead.
+
+Pass the directory to `--schema` or `loadSchema()`, or rename the file to `schema.json`. To load only the physical layer, pass the file's content to `loadSchemaFromJson()`.
+
+### `SchemaParseError: Schema directory … has a file name in the wrong case`
+
+A file in the schema directory has the right name in the wrong case, such as `Tenant-Policy.md`, `Concepts.md`, `Tables/` or `tables/orders.MD`. AskDB reads these names exactly. On Linux, where file names are case-sensitive, it would skip the file: a skipped `tenant-policy.md` means `ask()` runs with no tenant policy, and a skipped table file drops its `sensitive: true` marks. macOS and Windows would load the same directory, so AskDB refuses it on every OS, and you find out before you deploy.
+
+Rename each file the error names, for example `git mv Tenant-Policy.md tenant-policy.md`. If the error says `keep one of Tenant-Policy.md, tenant-policy.md`, the directory holds both spellings, which only a case-sensitive filesystem allows. Merge them into the correctly named file and delete the other; a rename would overwrite it. `askdb bundle` refuses the directory the same way.
+
+### `Failed to parse schema.` / `SchemaParseError: Invalid schema.json at …`
+
+`schema.json` doesn't have the shape AskDB reads. `askdb ask` prints `Failed to parse schema.`, followed by the loader's message after `Details:`. That message, `Invalid schema.json at <path>:`, lists each field that's missing or has the wrong type, with its `path`, such as `["schemaId"]`.
+
+`askdb introspect` writes `schema.json`, so the usual cause is a hand edit or a merge. Fix the field the message names. Or write the file again: `askdb introspect` won't overwrite a `schema.json` it can't read (`@askdb/introspect: invalid Schema v2 file at …`), so delete it first. Your `tables/*.md`, `concepts.md` and `tenant-policy.md` stay as they are.
+
+```bash
+rm my-app.schema/schema.json
+npx askdb introspect --out my-app.schema --schema-id my-app
+```
+
+### `Failed to load schema.`
+
+Reading the schema path failed with a file system error other than a missing path or a permission. Node's error follows `Details:`. The usual one is `ENOTDIR: not a directory`, which means a part of the path is a file, as in `my-app.schema/schema.json/tables`. Pass a schema directory, the `schema.json` inside one, or a bundle file from [`askdb bundle`](/reference/cli/#askdb-bundle).
+
+### `Refusing to write … outside the schema directory: "…" is a symbolic link`
+
+A file AskDB writes in the schema directory is a symbolic link: `schema.json` (from `askdb introspect --out` or Studio's **Resync schema**), a `tables/*.md` file or `tables/` itself, `concepts.md`, `tenant-policy.md`, or Studio's `playground-history.json`. Writing through it would change the file it points at, which can be outside the schema directory, so AskDB refuses. A repository can carry symbolic links, so this can come from a checkout.
+
+Replace the link with a regular file that holds the content you want, then run the command or save again. The schema directory itself can be a symbolic link. A linked `.gitignore` doesn't stop Studio: it skips adding `playground-history.json` there and still saves the history, so add that line yourself.
+
+### `Introspection found no tables or views for schema "…"`
+
+`askdb introspect`, or Studio's introspection, found nothing to write after filters, so it wrote nothing and exited `1` (Studio answers `422`). An artifact with no tables can't be loaded, and an existing `schema.json` stays as it was. Check, in this order:
+
+1. **The connection names the right database.** A URL that points at an empty database gives this error, and so does a SQLite path to a file that exists but has no tables. A SQLite path to a file that doesn't exist fails earlier, with a different error.
+2. **The schema or database holds tables or views.** A Postgres schema with only enums or sequences counts as empty, because the artifact describes tables and views.
+3. **The filters match something.** The message names the `--schemas`, `--exclude-schemas` and `--tables` values (or `introspection.schemas`) it ran with. `--tables` patterns match `<schema>.<table>`, such as `public.orders*`.
+4. **The database user can read the catalog.** A role without access to the tables' metadata sees none.
+
+## SQL generation
+
+### `SqlValidationError: SQL_NOT_SELECT_OR_WITH`
+
+The model wrote a statement that isn't a query, such as `INSERT` or `DROP`. AskDB returns only `SELECT` or `WITH … SELECT` statements. If you see this on read questions, the model may be misreading the schema: check that your table and column descriptions don't imply write operations.
+
+### `SqlValidationError: SQL_MULTI_STATEMENT`
+
+The model wrote more than one statement. Ask for a single result, or split the question into two `ask()` calls. On SQL Server it also fires on a second statement written without a `;`, and on code SQL Server may split anywhere, such as a non-breaking space or a bare `$` outside a string: the message names the character. See [SQL Server statements](/reference/sql-checks/#sql-server-statements).
+
+### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
+
+The SQL has a comment, a forbidden keyword or a call to a blocked function. Keywords count only as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword, such as `update`, trips the check. [Keywords and functions](/reference/sql-checks/#keywords-and-functions) lists them for each engine. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+
+### `SqlValidationError: SQL_LOCKING_READ`
+
+The SQL is a locking read, such as `FOR UPDATE` or a SQL Server lock hint like `WITH (UPDLOCK)`. AskDB returns plain reads only. If the question asks to lock or reserve rows, rephrase it as a plain read, and write any locking statement your application needs in your own code. On SQL Server it also fires on a name like a lock hint, such as `rowlock`, or one that isn't plain ASCII, such as `Größe`: write it quoted, and qualified when it's the only thing inside parentheses. See [Locking reads](/reference/sql-checks/#locking-reads).
+
+### `SqlValidationError: SQL_UNICODE_ESCAPED_IDENTIFIER`
+
+On Postgres or CockroachDB, the SQL uses a Unicode-escaped name such as `U&"set\005fconfig"`, which AskDB refuses rather than decode. AskDB never asks the model for this form. Write a name that isn't plain ASCII in plain double quotes (`"注文数"`). See [Forms the checks refuse to read](/reference/sql-checks/#forms-the-checks-refuse-to-read).
+
+### `SqlValidationError: SQL_STRING_CONTINUATION`
+
+The SQL continues an `E'…'` string on a later line, which Postgres reads differently from the checks. Join the parts with `||`, or write one literal. A plain `'…'` string continued on the next line passes. See [Forms the checks refuse to read](/reference/sql-checks/#forms-the-checks-refuse-to-read).
+
+### `SqlValidationError: SQL_ESCAPED_BYTE_STRING`
+
+The SQL has a `b'…'` byte string (lower-case `b`) with a backslash, or one continued on a later line, which CockroachDB reads differently from the checks. Write the bytes as a hex string cast to `bytea` (`'\x00'::bytea`). A `b'…'` string with no backslash, and a `B'…'` bit string, pass. See [Forms the checks refuse to read](/reference/sql-checks/#forms-the-checks-refuse-to-read).
+
+### `SqlValidationError: SQL_UNTERMINATED`
+
+A string, quoted name, dollar-quoted string or block comment never closes, so the check can't tell where the statement ends. On MySQL or MariaDB, check that the dialect's `backslashEscapes` matches the server: a mismatch also lets SQL through that the server reads differently. See [Match your server's string settings](/guides/match-server-string-settings/).
+
+### Generated SQL references a column or table that doesn't exist
+
+This is the most common failure mode. The model hallucinated an identifier that isn't in your schema. AskDB doesn't check generated identifiers against the schema, so your database reports these when you run the query.
+
+**Fix:** Enrich the relevant tables in your schema artifact with plain-English descriptions. The more context the model has, the less it invents. Studio's enrichment views do this:
+
+```bash
+npx askdb studio
+```
+
+If the column exists in the database but the model keeps getting it wrong, check that `askdb introspect` has been re-run since the column was added, and that its description in the schema artifact isn't ambiguous.
+
+### The SQL is syntactically valid but logically wrong
+
+SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords, locking reads and side-effecting functions, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
+
+Checklist:
+1. Does the relevant table have a description? It's the first paragraph of the table's `tables/*.md` file, after its heading.
+2. Do column names match how users phrase questions? Add `aliases` to the table or column in its `tables/*.md` file.
+3. Does the question use your own terms, such as "active customer"? Explain them in the table file's `## Common query language` section, which the prompt shows. See [Body](/reference/schema-artifact-format/#body).
+4. Try a more capable model — `gpt-4o` vs `gpt-4o-mini` makes a meaningful difference on complex schemas.
+
+## Model and API keys
+
+### `… no AI API key configured`
+
+The config names a provider but no API key for it. `askdb ask` and `createAskDb()` stop with this message before they call the model. It starts with what was running, such as `NL→SQL generation:`, and then names the key setting for each provider, such as `ai.providerConfig.openai.apiKey`.
+
+Set the key your config reads. The config `askdb init` writes reads it from `OPENAI_API_KEY` (or your provider's variable) in `.env` or your shell, so run the command from the directory that holds `.env`. To try the CLI without a model, pass `--mock-sql`, as the message says.
+
+### `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>`
+
+`@askdb/ai` loads your provider's AI SDK package when it first builds a model, and that package isn't installed. Install the one the message names, such as `npm i @ai-sdk/anthropic`. In a bundled app, see [Bundle an app that uses AskDB](/guides/bundle-your-app/).
+
+### `SqlGenerationError: Model call failed: …`
+
+The provider refused the model call. The rest of the message is the provider's own. `error.cause` is the AI SDK's `APICallError`, with the HTTP status in `statusCode`:
+
+- **401 or 403:** the key is wrong or revoked, or belongs to another provider or project. Check the value your config reads for the key.
+- **404:** the provider has no model by that name, or your account can't use it. The default OpenAI model is `gpt-4o-mini`. Set another in `ai.language.model`. The config `askdb init` writes reads it from `OPENAI_MODEL`. With `ask()`, pass another model instance.
+
+See [Bring your own model](/guides/bring-your-own-model/) for each provider's settings.
+
+## Studio
+
+### Studio shows `pg missing` and an **Install pg** button
+
+Studio's **Execute Query** runs the generated SQL with your engine's driver package, and it isn't installed. The chip names the package: `pg`, `mysql2` (MySQL and MariaDB), `better-sqlite3` or `mssql`. Install it in the project that holds the schema directory, and reload Studio. The chip then reads `pg ready`:
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+    <InstallTabs pkgs="pg" />
+  </TabItem>
+  <TabItem label="MySQL and MariaDB">
+    <InstallTabs pkgs="mysql2" />
+  </TabItem>
+  <TabItem label="SQLite">
+    <InstallTabs pkgs="better-sqlite3" />
+  </TabItem>
+  <TabItem label="SQL Server">
+    <InstallTabs pkgs="mssql" />
+  </TabItem>
+</Tabs>
+
+The **Install** button does the same from the Playground. [Install the driver](/guides/enable-studio-execute/#3-install-the-driver) says when it works.
+
+<Aside type="note">
+Generating SQL in Studio does **not** require a driver. Only the Execute Query action does.
+</Aside>
+
+### `Studio execute is off.` / `No execute connection configured.`
+
+Studio shows one of these in the Playground when **Execute Query** can't run. `Studio execute is off.` means `studio.execute.enabled` isn't `true`. `No execute connection configured.` means it is, but `studio.execute.databaseUrl` (or `studio.execute.file` for SQLite) isn't set. Studio runs the generated SQL on that connection, so give it a read-only database role. Set both in `askdb.config.ts`, and restart Studio. Studio resolves the execute connection in this order:
+
+1. `studio.execute.databaseUrl` / `studio.execute.file`
+2. The introspection connection for the same engine, only when `studio.execute.useIntrospectionConnection: true`
+
+The provider comes from `studio.execute.provider`, or the active `introspection.provider` when it's a live engine. If both are set and the query still can't connect, check that the database is reachable from your machine.
+
+See [Configuration — Studio execute](/reference/config/#studio-execute-configuration) for the full resolution order.
+
+## SQL Server
+
+### `self-signed certificate` / TLS error on connection
+
+Node.js rejects a SQL Server whose certificate is self-signed, as on many development servers. [Connect to SQL Server](/guides/connect-to-sql-server/#3-fix-the-self-signed-certificate-error) has the fix for each connection-string format, and for production.
+
+## Tenant scope
+
+### `TenantScopeError: MISSING_SCOPE`
+
+Your schema has a `tenant-policy.md` file, which means AskDB requires a `tenantScope` on every `ask()` call. Pass one:
+
+```ts
+const { sql } = await ask({
+  question,
+  schema,
+  model,
+  dialect,
+  tenantScope: {
+    access: {
+      kind: "ids",
+      tenantRoot: "table:public.organizations",
+      ids: [currentUser.orgId],
+    },
+  },
+});
+```
+
+See [`TenantScope`](/reference/core-api/tenancy/#tenantscope) for the full scope shape.
+
+### `TenantScopeError: UNKNOWN_TENANT_ROOT`
+
+The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.md`. Check the `id:` field of each root in the policy file — the scope must use the same stable table ID (e.g. `table:public.organizations`).
+
+### `TenantScopeError: SUBTREE_NOT_RESOLVABLE`
+
+The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback didn't return IDs per tenant root. The message says which: it returned an array (the flat shape from before per-root IDs), something other than a plain object, a key that isn't a tenant root in the subtree, a value that isn't an array of non-empty string IDs, or no IDs at all. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Return an object keyed by root table ID, with the seeds and same-table descendants under the scope's `tenantRoot` and each descendant root's IDs under that root: `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. Or send a `multi_root` access with each root's IDs already expanded. Calling `resolveTenantSql()`, `buildTenantPromptBlock()` or `bindPreparedQuery()` directly with an unexpanded `subtree` scope throws the same error, because none of them walks the hierarchy: expand it first with `expandTenantScope()`, or rebind through `askdb.bind()`, which does. See [Hierarchical scope](/guides/tenant-hierarchy/).
+
+### `TenantScopeError: UNRESOLVED_TENANT_PLACEHOLDER`
+
+The SQL uses a `:tenant_<root>_ids` placeholder that the scope has no IDs for, so AskDB refuses to return it with the placeholder unfilled. Common causes: the scope covers another root than the one the SQL filters on (a template stored under an agency scope, rebound under a client scope); a covered root has `ids: []`; the placeholder is written in another casing (`:TENANT_AGENCY_IDS`) or runs into the next word (`:tenant_agency_idsOR`); or the scope is `global`, which binds no IDs at all, so SQL under it must not use a tenant placeholder. At rebind, a template with a placeholder also throws this when the schema has no tenant policy. Re-ask the question under the right scope.
+
+### `TenantScopeError: UNESCAPABLE_TENANT_ID`
+
+A tenant ID in the scope contains a backslash or a character outside printable ASCII (an accented letter, `¥`, CJK), and AskDB was asked to inline it as a literal: `ask()`, `bindPreparedQuery()` or `askdb.bind()` with `tenantSqlMode: "sql-only"`. Such a literal can read differently on the server: a backslash depends on its string settings, and a non-ASCII character's bytes depend on the connection charset (`¥` is a backslash under `sjis`). So AskDB refuses it on every dialect instead of returning SQL whose tenant filter a server could read differently. Use the default `tenantSqlMode: "sql-params"`, which passes tenant IDs as driver parameters, and run `sql` with `tenantParams` (or `unboundSql` with `params`). A rebind takes the same option.
+
+### `TenantScopeError: TENANT_SQL_MODE_REQUIRED`
+
+`ask()` got a schema with a tenant policy, no `tenantSqlMode`, and a dialect whose markers AskDB doesn't know: a custom `AskDialect`. AskDB can't tell which parameter markers a custom dialect's driver takes, so it doesn't guess: the default `$1, $2, …` would be read as money constants on SQL Server and filter to the wrong tenant. Set `tenantSqlMode: "sql-params"` if your driver binds `$1`-style markers, or `tenantSqlMode: "sql-only"` to get the tenant IDs inlined as escaped literals. Built-in dialect ids, and `DialectSpec`s under one (such as `{ ...POSTGRES_DIALECT, backslashEscapes: true }`), don't need it.
+
+The same error comes from a `tenantSqlMode` that is neither `"sql-params"` nor `"sql-only"` (a typo such as `"sql_only"`, or an empty string), on any dialect: AskDB refuses it rather than read it as either mode.
+
+### Driver error: `there is no parameter $1` / `Too few parameter values` after upgrading
+
+`ask()` binds tenant IDs through driver markers by default (releases up to 1.0.0-beta.45 inlined them): with a `tenantScope`, `result.sql` holds `$1`, `?` or `@p0` where the IDs used to be inlined, and the IDs are in `result.tenantParams`. Running `result.sql` without them fails at the driver (on MySQL, as a syntax error); it never returns other tenants' rows. Pass `result.tenantParams` with `result.sql`, or run `result.unboundSql` with `result.params`. To keep inlined IDs, set `tenantSqlMode: "sql-only"`. See [Executing the result](/reference/core-api/ask/#executing-the-result). A rebind does the same since 1.0.0-beta.46: run `bindPreparedQuery()`'s or `askdb.bind()`'s `sql` with its `tenantParams`, or its `unboundSql` with its `params`, or pass `tenantSqlMode: "sql-only"`.
+
+### `SchemaParseError: Invalid tenant policy: roots … both map to the placeholder …`
+
+Two roots in `tenant-policy.md` derive the same placeholder. A placeholder is the label lowercased, with every run of characters other than ASCII letters and digits turned into `_`, so `Agency` and `agency` both give `:tenant_agency_ids`. A label with no ASCII letter or digit (Cyrillic, CJK and so on) uses the root's table name instead: `Клиент` on `table:public.clients` gives `:tenant_clients_ids`. That fallback can still collide, for example when both table names are non-ASCII too, or when it meets another root's label. Each root's IDs are bound through its own placeholder, so a shared one would bind one root's IDs where the other root's column is compared. AskDB rejects the policy when it loads, `ask()` and `resolveTenantSql()` reject a policy built in code the same way, and Studio refuses to save it. Rename one of the two roots named in the message, using a label with ASCII letters or digits if the fallback collides. See the `label` row in the [field reference](/reference/tenant-policy/#field-reference).
+
+### `SchemaParseError: … the tenant policy doesn't match schema.json, and enforcement is strict`
+
+`tenant-policy.md` has `enforcement: strict`, and it names something `schema.json` doesn't have, or its roots form a cycle. The usual cause is a column renamed in the database and then re-introspected. The other causes are a `hierarchy` or `parent` edge that loops back, a root in `scopeThrough`, `hierarchy`, `parent` or a polymorphic `mapping` that `roots` doesn't declare, or a column that `schema.json` has on another table than the field names, such as a `scopeThrough` column of a different table: the message then says `column … is on <table>`. A strict policy that doesn't match its schema fails the load instead of running tenant checks against the wrong columns. The message lists every problem with its IDs. Update `tenant-policy.md` to match `schema.json`. Until you do, the schema doesn't load anywhere, and a freshly started Studio can't open it either. Setting `enforcement: warn` loads it with each problem in `schema.tenantPolicy.warnings`, but `warn` also returns SQL that fails the tenant check instead of throwing, so use it only while you fix the file. `askdb introspect --out` prints the same list after it writes. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
+
+### `TenantGuardrailError`
+
+Your tenant policy uses `enforcement: strict`, and the SQL failed the tenant check, so AskDB throws instead of returning it. Inspect the `warnings` array on the error to see which table and which rule triggered it ([`TenantGuardrailError` rules](/reference/core-api/errors/#tenantguardrailerror-rules)), then re-ask the question or narrow it. [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists what passes. Under a `subtree` scope, each covered root the query reads needs its own placeholder (see [Hierarchical scope](/guides/tenant-hierarchy/)). `bindPreparedQuery()` and `askdb.bind()` run the same check on a stored template under the scope you rebind with, and with `enforcement: warn` they refuse a failing template unless you pass `acceptWarnings: ["tenant"]`; the message says so. The check is heuristic: passing it doesn't prove the query is tenant-safe, so keep tenant isolation enforced in the database. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
+
+### `QueryParameterError: DIALECT_SPEC_REQUIRED`
+
+`bindPreparedQuery()` or `askdb.bind()` got a template whose dialect rules it can't recover, and no `dialect` in its guardrails. That's a template `ask()` made under your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), or one stored before 1.0.0-beta.46, which has no `dialectRules`. Pass the spec you gave `ask()` as `dialect`. If `ask()` ran with the built-in rules, the built-in id is enough, such as `dialect: "postgres"`. An app that loads two copies of `@askdb/core`, such as ESM beside CJS, gets `"host"` templates from the built-in constants of the other copy, and the same fix applies. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
+
+### `QueryParameterError: MISSING_GUARDRAIL_CONTEXT`
+
+`bindPreparedQuery()` was called with two arguments. Since it re-checks the stored template before binding, it needs a third: `{ schema, tenantScope? }`, the same schema and the caller's scope you pass to `ask()`. With `@askdb/client`, call `askdb.bind(prepared, values, { tenantScope })` instead; it supplies the schema. A `:tenant_*` key in the values throws `TENANT_VALUE_SUPPLIED`: tenant IDs now come from `tenantScope`. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
+
+## RAG
+
+### The retriever is set, but the prompt has the full schema
+
+When `ask()` skips retrieval, it puts the full schema in the prompt instead. Pass a `logger` to see why: each skip logs `askdb.pipeline.retrieval.skipped` with a `reason`.
+
+| `reason` | Why | Fix |
+| --- | --- | --- |
+| `below_threshold` | You passed a `totalSchemaChunkCount` at or below `retrievalThresholdChunks` (default 30). With the default, a schema of 30 chunks or fewer goes into the prompt whole. | None needed. To retrieve anyway, lower `retrievalThresholdChunks`. |
+| `no_results` | The retriever found no chunks for the schema's `schemaId`: the index is empty, or you built it from a schema with another `schemaId`. | Build the index from the schema you pass to `ask()`. |
+| `schema_not_v2` | The schema object isn't Schema v2: it has no `schemaId`. | Load the schema with `loadSchema()`. |
+
+```ts
+import { createAskDbLogger } from "@askdb/core";
+import { buildSchemaIndex, createMemoryStore } from "@askdb/rag";
+
+const index = await buildSchemaIndex({ schema, embedder, store: createMemoryStore() });
+const { sql } = await ask({
+  question,
+  schema,
+  model,
+  dialect: "postgres",
+  retriever: index.retriever,
+  totalSchemaChunkCount: index.stats.chunksTotal,
+  logger: createAskDbLogger({ correlationId: "rag-check", level: "info" }),
+});
+```
+
+### Retrieval misses the tables a question needs
+
+The retriever returns the chunks nearest the question, `retrievalK` of them (default 8). Sparse descriptions make the wrong tables look nearest. Enrich the tables' descriptions, list the questions people ask in each table file's `## Example questions` section, and build the index again. Raising `retrievalK` also helps. See [RAG for large schemas](/guides/rag-for-large-schemas/).
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/core-api/errors/#errors"><strong>Errors</strong><span>Every error class <code>@askdb/core</code> throws, with its rules and reasons.</span></a>
+  <a href="/guides/upgrading/"><strong>Upgrade AskDB</strong><span>What changed in each release, and what to do about it.</span></a>
+  <a href="/reference/cli/"><strong>CLI reference</strong><span>Every <code>askdb</code> command, flag and exit code.</span></a>
+</div>

@@ -356,6 +356,70 @@ describe("validateSelectSql — locking reads", () => {
   }, 30_000);
 });
 
+describe("validateSelectSql — sequence writers (#825)", () => {
+  const unknownId = { ...POSTGRES_DIALECT, id: "x" as DialectSpec["id"] };
+  // MariaDB advances or sets a sequence from a SELECT, outside the transaction's rollback.
+  // MySQL has no sequences, so the MySQL-family dialects refuse these on both ids.
+  it.each(["mysql", "mariadb"] as const)("on %s, refuses NEXTVAL(), SETVAL() and NEXT VALUE FOR", (id) => {
+    const dialect = BUILT_IN_DIALECTS[id];
+    for (const sql of [
+      `SELECT NEXTVAL(s)`,
+      `SELECT nextval (app.s) AS id`,
+      `SELECT \`NEXTVAL\`(s)`,
+      `SELECT SETVAL(s, 100)`,
+      `SELECT setval(s, 100, 0, 1)`,
+      `SELECT NEXT VALUE FOR s`,
+      `SELECT id FROM orders WHERE id > (SELECT next value for app.s)`,
+    ]) {
+      expectRule(sql, "SQL_FORBIDDEN_FUNCTION", dialect);
+    }
+  });
+
+  // T-SQL has the same NEXT VALUE FOR; Postgres and SQLite don't parse it, so every lexer refuses it.
+  it.each([
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["postgres", POSTGRES_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["an id that is no built-in engine", unknownId],
+  ] as const)("on %s, refuses NEXT VALUE FOR", (_name, dialect) => {
+    expectRule(`SELECT NEXT VALUE FOR dbo.s`, "SQL_FORBIDDEN_FUNCTION", dialect);
+  });
+
+  // The hint names a read-only alternative only where the engine has it.
+  it.each([
+    ["mariadb", BUILT_IN_DIALECTS.mariadb, "PREVIOUS VALUE FOR"],
+    ["sqlserver", SQLSERVER_DIALECT, "sys.sequences"],
+  ] as const)("on %s, the NEXT VALUE FOR hint names that engine's reader", (_name, dialect, reader) => {
+    const hint = (() => {
+      try {
+        validateSelectSql(dialect, `SELECT NEXT VALUE FOR s`);
+      } catch (e) {
+        return (e as SqlValidationError).hint;
+      }
+      return expect.fail("expected SqlValidationError");
+    })();
+    expect(hint).toContain(reader);
+    if (reader === "sys.sequences") expect(hint).not.toContain("PREVIOUS VALUE FOR");
+  });
+
+  // The readers only return the session's last value, so they stay allowed, and so does a column
+  // or alias that is only named like a writer.
+  it.each(["mysql", "mariadb"] as const)("on %s, accepts LASTVAL(), PREVIOUS VALUE FOR and columns named like the writers", (id) => {
+    const dialect = BUILT_IN_DIALECTS[id];
+    for (const sql of [
+      `SELECT LASTVAL(s)`,
+      `SELECT PREVIOUS VALUE FOR s`,
+      `SELECT nextval, setval FROM counters`,
+      `SELECT c.nextval AS next_value FROM counters c WHERE c.setval > 0`,
+      `SELECT id AS next, total AS value FROM orders`,
+      // Quoted names aren't the keywords, even side by side.
+      "SELECT `next` `value` `for` FROM t",
+    ]) {
+      expect(validateSelectSql(dialect, sql)).toBe(sql);
+    }
+  });
+});
+
 describe("validateSelectSql — Unicode-escaped identifiers (#692)", () => {
   it("rejects a denylisted function written as a U& identifier", () => {
     // Postgres 17 runs this as set_config: the escapes hide the name from the denylist.

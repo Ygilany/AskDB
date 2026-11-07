@@ -16,7 +16,7 @@
  * Each scenario's contract, the regression it catches, and why nothing else catches it are
  * stated above its `describe`. None needs a production seam: the `sensitive` flag is a
  * documented `schema.json` field (`docs/contracts/schema-v2.md`); the omission switches, the
- * guardrail mode and `SensitiveReferenceError` are documented (`reference/core-api.mdx`,
+ * guardrail mode and `SensitiveReferenceError` are documented (`reference/core-api/checks.mdx`,
  * `reference/client-api.mdx`, `reference/cli.mdx`, `reference/http-api.mdx`,
  * `reference/config.mdx`); the replay server and its request log are lab code.
  *
@@ -62,7 +62,7 @@ interface Reading {
   id: string;
   /** How the reply reads the column, for the test name. */
   shape: string;
-  /** What the guardrail must report: `[column, matchKind]` (`reference/core-api.mdx`, `SensitiveReference`). */
+  /** What the guardrail must report: `[column, matchKind]` (`reference/core-api/checks.mdx`, `SensitiveReference`). */
   references: [string, MatchKind][];
   /** The sensitive columns whose every seeded value the reply returns when run; it returns none of the others'. */
   returns: string[];
@@ -249,7 +249,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   /**
    * Contract: the default NL→SQL prompt "includes sensitive identifiers (column names, types,
    * nullability) … tagged `(sensitive)` on each line" (`docs/contracts/sensitive-fields-and-modes.md`,
-   * "Current behavior"; `reference/core-api.mdx`, `omitSensitiveIdentifiersFromNlToSqlPrompt`:
+   * "Current behavior"; `reference/core-api/ask.mdx`, `omitSensitiveIdentifiersFromNlToSqlPrompt`:
    * "Default (`false`) includes them with a `(sensitive)` tag").
    * Catches: the tag lost (the model is no longer warned), the columns dropped by default (the
    * model can't ground a question about them), the flag not read from `schema.json`, or the
@@ -269,7 +269,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 
   /**
    * Contract: with `omitSensitiveIdentifiersFromNlToSqlPrompt: true`, `ask()` "strips
-   * sensitive table/column names from the NL→SQL DDL entirely" (`reference/core-api.mdx`).
+   * sensitive table/column names from the NL→SQL DDL entirely" (`reference/core-api/ask.mdx`).
    * The same call without it is the control: the columns are there, tagged.
    * Catches: the option ignored, or omission that drops the whole table instead of its
    * sensitive columns.
@@ -290,7 +290,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   /**
    * Contract: in the default `sensitiveGuardrailMode: "warn"`, `ask()` returns the SQL and
    * attaches `sensitiveGuardrail`, "the sensitive identifiers the returned SQL references",
-   * with `passed: false` (`reference/core-api.mdx`, "Result", `validateSensitiveReferences`).
+   * with `passed: false` (`reference/core-api/checks.mdx`, "Result", `validateSensitiveReferences`).
    * Each `SensitiveReference` names the table, schema, column and `matchKind`: `qualified`
    * for `alias.column`, `unqualified` for a bare column. The reference counts wherever the
    * column is read, a `WHERE` filter included, and whatever quoting the dialect uses (the
@@ -340,7 +340,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 
   /**
    * Contract: with `sensitiveGuardrailMode: "strict"`, `ask()` "throws
-   * `SensitiveReferenceError`" (`reference/core-api.mdx`) whenever `passed` would be
+   * `SensitiveReferenceError`" (`reference/core-api/checks.mdx`) whenever `passed` would be
    * `false`, carrying `.rule` `SENSITIVE_COLUMN_REFERENCED` for a sensitive column and
    * `.references` (`docs/contracts/sensitive-fields-and-modes.md`, "Modes"). The model is
    * called, and the SQL it wrote is never returned. The control reply is returned, with a
@@ -373,7 +373,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * Contract: `SELECT *` and `alias.*` "reach every column of that table, so they are
    * reported as referencing each of its sensitive columns": `SELECT *` as `unqualified`,
    * `alias.*` as `qualified` (`docs/contracts/sensitive-fields-and-modes.md`, "Wildcards and
-   * whole rows"; `reference/core-api.mdx`, `SensitiveReference`). So warn mode flags them with
+   * whole rows"; `reference/core-api/checks.mdx`, `SensitiveReference`). So warn mode flags them with
    * both columns and strict mode rejects them, as for a named column. Run as the host, each
    * returns the seeded emails and SSNs it reaches.
    * Catches: a wildcard read as naming no column (the reply returns the data and passes);
@@ -511,7 +511,7 @@ export default defineConfig({
   },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
   modes: { omitSensitiveFromPrompt: true },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 });
 `,
   );

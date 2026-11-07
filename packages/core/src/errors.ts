@@ -22,7 +22,10 @@ export type SqlValidationRuleCode =
   | "SQL_COMMENT"
   | "SQL_NOT_SELECT_OR_WITH"
   | "SQL_FORBIDDEN_KEYWORD"
-  /** A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`). */
+  /**
+   * A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`), or, on
+   * every dialect, `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server.
+   */
   | "SQL_FORBIDDEN_FUNCTION"
   /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
   | "SQL_UNTERMINATED"

@@ -33,9 +33,6 @@ describe("gatewayProvider — real ai gateway contract", () => {
     expect(
       gatewayProvider.resolveConfig({ AI_GATEWAY_API_KEY: "gw-key" }, { usage: "language" }),
     ).toEqual({ provider: "gateway", apiKey: "gw-key", model: "openai/gpt-4o-mini" });
-    expect(
-      gatewayProvider.resolveConfig({ AI_GATEWAY_API_KEY: "gw-key" }, { usage: "embedding" }),
-    ).toEqual({ provider: "gateway", apiKey: "gw-key", model: "openai/text-embedding-3-small" });
     expect(gatewayProvider.resolveConfig({}, { usage: "language" })).toBeUndefined();
   });
 

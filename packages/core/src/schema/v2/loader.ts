@@ -46,6 +46,11 @@ export type BundledSchemaV2 = {
   tenantPolicy?: string;
 };
 
+/** Each physical column ID → the ID of the table that owns it, read from `schema.json` (a SQL Server table name can hold `#`). */
+function columnOwnersOf(physical: Pick<V2SchemaJson, "tables">): Map<string, string> {
+  return new Map(physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)));
+}
+
 /**
  * Load a Schema v2 artifact from a raw JSON string.
  *
@@ -400,10 +405,7 @@ function loadFromFiles(
     tenantPolicy = parseOrWrap(policyFile, () => {
       const parsed = parseTenantPolicyMarkdown(policyContent, policyFile);
       const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-      const physicalColumnIds = new Set(
-        physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
-      );
-      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+      return normalizeTenantPolicy(parsed, physicalTableIds, columnOwnersOf(physical));
     });
   }
 
@@ -508,9 +510,7 @@ function buildNormalized(
 
   // Physical table ids, and each physical column id's owning table, for ID validation
   const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-  const columnOwner = new Map(
-    physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)),
-  );
+  const columnOwners = columnOwnersOf(physical);
 
   // Column ids that any front-matter entry marks `sensitive: true`: in the owning
   // table's markdown or another's, first entry or a later duplicate. Sensitivity is the
@@ -533,7 +533,7 @@ function buildNormalized(
       seenColumnIds.add(col.id);
       if (col.sensitive === true) escalatedColumnIds.add(col.id);
 
-      const owner = columnOwner.get(col.id);
+      const owner = columnOwners.get(col.id);
       if (owner === undefined) {
         warnings.push({ kind: "orphaned_column_id", tableFile, id: col.id });
       } else if (owner !== id) {

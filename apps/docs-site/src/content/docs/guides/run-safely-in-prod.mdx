@@ -61,6 +61,7 @@ The SQL `ask()` returns has no row limit, so a question like "show me every row 
 Log every question, every generated SQL string, the user who asked, and the outcome. Keep it in your existing logging system — AskDB doesn't log on your behalf.
 
 ```ts
+import { createAskDbLogger } from "@askdb/core";
 import { logger } from "./logger.js";
 
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
@@ -68,11 +69,14 @@ const correlationId = crypto.randomUUID();
 logger.info({ correlationId, userId, question }, "askdb.question");
 
 try {
-  const { sql } = await askdb.ask(question);
+  // AskDB's own pipeline events, under the same correlation ID.
+  const askdbLogger = createAskDbLogger({ correlationId, level: "info" });
+  const { sql, tenantParams } = await askdb.ask(question, { logger: askdbLogger });
   logger.info({ correlationId, sql }, "askdb.generated");
 
-  const rows = await pool.query(sql);
-  logger.info({ correlationId, rowCount: rows.rowCount }, "askdb.executed");
+  // runCapped: see Cap the rows a query returns.
+  const { rows } = await runCapped(sql, tenantParams);
+  logger.info({ correlationId, rowCount: rows.length }, "askdb.executed");
   return rows;
 } catch (error) {
   logger.error({ correlationId, error }, "askdb.error");
@@ -80,7 +84,7 @@ try {
 }
 ```
 
-The optional structured logger in `@askdb/core` (`createAskDbLogger`) emits standard events you can wire into Pino.
+`createAskDbLogger` writes AskDB's structured pipeline events as JSON to stderr, each tagged with the correlation ID; [`createAskDbLogger`](/reference/core-api/logging/#createaskdbloggeroptions) lists its options. To send them to your own Pino logger instead, pass that as `logger`: it fits `AskDbLogger`.
 
 ## Approval flows
 
@@ -96,22 +100,7 @@ This works because AskDB returns checked SQL as a value — your application con
 
 ## Sensitive columns
 
-Mark sensitive columns in the schema artifact, either in Studio's Sensitivity tab or directly in the table's markdown front-matter:
-
-```yaml
-columns:
-  - id: table:public.users#email
-    sensitive: true
-```
-
-Front-matter sensitivity is escalate-only. It can mark a column sensitive (or a whole table, with a table-level `sensitive: true`) on top of `schema.json`, but `sensitive: false` never un-marks something `schema.json` marks sensitive.
-
-Then choose the prompt-construction behavior per deployment:
-
-- **Default** — sensitive columns appear in the prompt with a sensitivity tag. The model knows to be cautious.
-- **Strict** — set `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` (or pass `--omit-sensitive-from-prompt`) to omit sensitive columns from the prompt entirely. The model can't propose them because it doesn't know they exist. The exception is a column your tenant policy filters on, which stays in the prompt so the tenant check can work.
-
-See [Privacy model](/concepts/privacy-model/) for what crosses the boundary in each mode.
+Mark sensitive tables and columns in the schema artifact, and decide whether the prompt tags them or leaves them out. [Keep sensitive columns out of prompts](/guides/keep-sensitive-columns-out-of-prompts/) covers marking them, the prompt setting, checking the SQL, the database role and the RAG index.
 
 ## Multi-tenancy
 

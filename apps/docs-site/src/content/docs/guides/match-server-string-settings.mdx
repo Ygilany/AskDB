@@ -1,0 +1,69 @@
+---
+title: "Match your server's string settings"
+description: "Tell AskDB how your MySQL, MariaDB or Postgres server reads backslashes in strings, with backslashEscapes on a DialectSpec, so the SQL checks read strings the way your server does."
+---
+
+<p class="doc-eyebrow">Run in production</p>
+
+<p class="doc-lede">AskDB's SQL checks read a backslash inside a <code>'…'</code> string the way each engine does by default. If your server reads it differently, AskDB and the server disagree about where a string ends, and SQL the checks accept can run code they never saw. Set <code>backslashEscapes</code> to match your server.</p>
+
+## Before you start
+
+- **A MySQL, MariaDB or Postgres server.** SQL Server and SQLite never read a backslash in `'…'` as an escape, so they need nothing here.
+- **Code that passes a dialect to `ask()`,** or to `@askdb/client`'s `askdb.ask()`. `askdb.config.ts` takes a built-in dialect id only: see [Limits](#limits).
+
+## 1. Check your server's setting
+
+| Engine | Run | Set `backslashEscapes` when |
+| --- | --- | --- |
+| MySQL, MariaDB | `SELECT @@sql_mode;` | The result includes `NO_BACKSLASH_ESCAPES`: set `false`. The default reads a backslash as an escape, and so does a MySQL-family `DialectSpec` with `backslashEscapes` unset. |
+| Postgres | `SHOW standard_conforming_strings;` | The result is `off`: set `true`. The default, `on`, reads a backslash as plain text. |
+
+Check the setting your application's connections get. A role, a database or the connection string can change it.
+
+## 2. Make a dialect that matches
+
+Spread the built-in spec for your engine, and set `backslashEscapes`:
+
+```ts
+import { MYSQL_DIALECT, POSTGRES_DIALECT, type DialectSpec } from "@askdb/core";
+
+// MySQL or MariaDB with NO_BACKSLASH_ESCAPES in sql_mode (spread MARIADB_DIALECT for MariaDB).
+export const mysqlNoBackslashEscapes: DialectSpec = { ...MYSQL_DIALECT, backslashEscapes: false };
+
+// Postgres with standard_conforming_strings = off.
+export const postgresLegacyStrings: DialectSpec = { ...POSTGRES_DIALECT, backslashEscapes: true };
+```
+
+Spreading keeps the built-in spec's keywords, blocked functions and `id`. `@askdb/mysql` re-exports `MYSQL_DIALECT` and `MARIADB_DIALECT` from `@askdb/core`, so you can import them from either package.
+
+## 3. Pass it everywhere you pass a dialect
+
+```ts
+const result = await ask({ question, schema, model, dialect: mysqlNoBackslashEscapes });
+```
+
+- **`ask()`:** as `dialect`.
+- **`@askdb/client`:** per call, as `askdb.ask(question, { dialect: mysqlNoBackslashEscapes })`.
+- **`validateSelectSql()`:** as its first argument, for SQL you check yourself.
+- **A rebind:** as `dialect` in `bindPreparedQuery(prepared, values, { schema, dialect: mysqlNoBackslashEscapes })`, or to `askdb.bind()`. A rebind refuses a template `ask()` made under your spec unless you pass the spec again, so your setting can't drop out at rebind.
+
+## 4. Run user-typed values as parameters
+
+The same setting decides how `bindPreparedQuery()` escapes the business values it inlines into its `sql`: with a mismatched dialect, a value containing a backslash can escape its literal. For values your users type, run `unboundSql` with `params` instead.
+
+Tenant IDs don't depend on the setting. By default (`tenantSqlMode: "sql-params"`) they're driver parameters, in `ask()` and at rebind. Where AskDB inlines them (`tenantSqlMode: "sql-only"`), a tenant ID must be printable ASCII without a backslash, or it's refused (`UNESCAPABLE_TENANT_ID`).
+
+## Limits
+
+- **`askdb.config.ts` takes a built-in dialect id only,** so the CLI, the HTTP API and Studio always assume the default settings ([#340](https://github.com/Ygilany/AskDB/issues/340)). Run them against a server with its default string settings.
+- **The connection charset matters for parameters too.** Under a MySQL or MariaDB connection charset of `sjis`, `cp932` or `ujis`, the client sends `¥` as byte 0x5C, which the server reads as a backslash. A driver that interpolates parameters into the SQL text on the client, such as mysql2's `query()` with params, is affected; server-side prepared statements (mysql2's `execute()`) aren't. Use a `utf8mb4` connection, or `execute()`.
+- **MySQL's `ANSI_QUOTES` mode isn't supported** (it's also part of the `ANSI` mode). It makes `"…"` an identifier, which the MySQL dialect reads as a string with backslash escapes, and no `DialectSpec` setting matches it. Run AskDB's SQL on a connection without `ANSI_QUOTES`.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/sql-checks/#how-the-checks-read-sql"><strong>How the checks read SQL</strong><span>Each engine's strings, quoted names and comments.</span></a>
+  <a href="/reference/core-api/dialects/#dialectspec"><strong>DialectSpec</strong><span>Every field of a dialect spec.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The read-only role, timeouts and audit logging.</span></a>
+</div>

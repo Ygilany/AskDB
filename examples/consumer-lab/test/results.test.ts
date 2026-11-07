@@ -3,7 +3,7 @@
  * oracle computed from the seed data.
  *
  * Protects: packed AskDB passes a correct model reply through to `result.sql` without
- * corrupting it (`reference/core-api.mdx`, "Result — AskPipelineResult": `sql` is "the
+ * corrupting it (`reference/core-api/ask.mdx`, "Result — AskPipelineResult": `sql` is "the
  * model's bound, validated SQL"): extraction, validation and parameter binding keep a
  * statement that returns the right rows. And the lab, as the host, gets the right answer by
  * running it the way `guides/run-safely-in-prod` says (the read-only role, a statement
