@@ -1053,3 +1053,53 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
     }
   });
 });
+
+describe("validateTenantGuardrails — each read of a scoped table needs a predicate in its own SELECT (#399)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+  const P = ":tenant_agency_ids";
+
+  it.each([
+    ["a CTE's predicate, for an unfiltered outer read", `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders`],
+    ["a derived table's predicate, for an unfiltered outer read", `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f`],
+    ["an outer predicate, for an unfiltered read inside EXISTS", `SELECT * FROM orders WHERE agency_id = ${P} AND EXISTS (SELECT 1 FROM orders o2 WHERE o2.total > 5)`],
+    ["an outer predicate, for an unfiltered read inside IN (…)", `SELECT * FROM orders WHERE agency_id = ${P} AND id IN (SELECT id FROM orders)`],
+    ["a predicate on another source's alias", `SELECT o.* FROM orders o, (SELECT agency_id FROM orders WHERE agency_id = ${P}) t WHERE t.agency_id = ${P}`],
+    ["a self-join that filters one side", `SELECT b.* FROM orders a JOIN orders b ON a.id <> b.id WHERE a.agency_id = ${P}`],
+    ["a derived table that renames another column to the tenant column", `SELECT * FROM (SELECT id, total AS agency_id FROM orders) t WHERE t.agency_id = ${P}`],
+    ["a derived table that doesn't expose the tenant column", `SELECT * FROM (SELECT id FROM orders) t WHERE agency_id = ${P}`],
+    ["a CTE read twice, filtered once", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x`],
+  ])("rejects %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it("refuses the issue's shapes under a strict policy", () => {
+    for (const sql of [
+      `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders`,
+      `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f`,
+    ]) {
+      expect(() => validateTenantGuardrails(sql, policy, agencyScope), sql).toThrow(TenantGuardrailError);
+    }
+  });
+
+  it.each([
+    ["the CTE shape, with the outer read filtered too", `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders WHERE agency_id = ${P}`],
+    ["the derived-table shape, with the outer read filtered too", `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f WHERE o.agency_id = ${P}`],
+    ["an IN (…) read with its own predicate", `SELECT * FROM orders WHERE agency_id = ${P} AND id IN (SELECT id FROM orders WHERE agency_id = ${P})`],
+    ["a filter on a derived table's output that names the column", `SELECT * FROM (SELECT o.id, o.agency_id FROM orders o) t WHERE t.agency_id = ${P}`],
+    ["a filter on a CTE's output at its one reference", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE x.agency_id = ${P}`],
+    ["a correlated subquery that only names the outer read's alias", `SELECT * FROM orders o WHERE o.agency_id = ${P} AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = o.state)`],
+    ["a correlated subquery that names the outer table", `SELECT * FROM orders WHERE agency_id = ${P} AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = orders.state)`],
+    ["a self-join that filters both sides", `SELECT b.* FROM orders a JOIN orders b ON a.id = b.parent_id WHERE a.agency_id = ${P} AND b.agency_id = ${P}`],
+  ])("accepts %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  it("the scope's root table: a read inside a subquery needs its own predicate too", () => {
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.name = 'x')`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.id = ${P})`)).toEqual([]);
+  });
+});
