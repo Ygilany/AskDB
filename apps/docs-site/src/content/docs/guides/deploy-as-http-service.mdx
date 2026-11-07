@@ -101,14 +101,28 @@ else:
 
 A typical production shape:
 
-```
-client  ──►  your API gateway  ──►  @askdb/http-api  ──►  model + schema
-                  │                          │
-                  │                          ▼
-                  └────────────────►  read-only DB role  ◄─── (execution happens in your gateway service, not here)
+<figure>
+
+```mermaid
+flowchart TB
+  %% The server generates SQL and never connects to the database: the gateway runs the SQL.
+  %% Source of truth: apps/http-api/src/server.ts (POST /ask returns SQL only).
+  client["client"]
+  gateway["your API gateway<br/>auth, rate limits, TLS"]
+  http["@askdb/http-api"]
+  model["your model provider"]
+  db["read-only database role"]
+  client --> gateway
+  gateway -- "question" --> http
+  http -- "checked SQL" --> gateway
+  http -- "prompt" --> model
+  gateway -- "runs the SQL" --> db
 ```
 
-The server does not connect to your database. It generates SQL and returns it. Execution is your gateway service's job — that's where your auth context lives.
+<figcaption>Your gateway authenticates the caller, asks <code>@askdb/http-api</code> for SQL, and runs it under a read-only role. The server never connects to your database.</figcaption>
+</figure>
+
+Execution is your gateway service's job, because that's where your auth context lives.
 
 ## Schemas with a tenant policy
 
