@@ -1175,3 +1175,68 @@ describe("validateTenantGuardrails — `]]` in a bracketed name, and nested bloc
     expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a name outside printable ASCII that the schema doesn't spell", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec, p: NormalizedTenantPolicy = warnPolicy) =>
+    validateTenantGuardrails(sql, p, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  /** `orders` in fullwidth letters. */
+  const orders = "ｏｒｄｅｒｓ";
+  const folding = [["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+
+  // SQL Server resolves a name through the database collation, which ignores some characters and reads
+  // others as ASCII letters: on SQL Server 2022 each of these spellings of people.client read all 25
+  // clients across 7 agencies, so the table they name is the scoped one.
+  const quoted: Array<[string, string]> = [
+    ["fullwidth letters", `SELECT * FROM [${orders}]`],
+    ["fullwidth letters in double quotes", `SELECT * FROM "${orders}"`],
+    ["a zero-width joiner", "SELECT * FROM [ord‍ers]"],
+    ["U+FEFF", "SELECT * FROM public.[ord﻿ers]"],
+    ["a word joiner", "SELECT * FROM [ord⁠ers]"],
+    ["small capitals", "SELECT * FROM [oʀdeʀs]"],
+    ["an emoji", "SELECT * FROM [ord\u{1f600}ers]"],
+    ["the root table in fullwidth letters", "SELECT * FROM [ａｇｅｎｃｉｅｓ]"],
+  ];
+
+  it.each(folding)("refuses a quoted name the collation may fold under %s", (_label, dialect) => {
+    for (const [label, sql] of quoted) expect(findings(sql, dialect), label).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+
+  it.each(folding)("refuses an unquoted name outside printable ASCII under %s", (_label, dialect) => {
+    expect(findings(`SELECT * FROM ${orders}`, dialect)).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(`SELECT * FROM [${orders}]`, policy, agencyScope, { dialect: SQLSERVER_DIALECT }))
+      .toThrow(TenantGuardrailError);
+  });
+
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+  ] as const)("leaves %s alone, which compares such a name as written", (_label, dialect) => {
+    expect(findings(`SELECT * FROM [${orders}]`, dialect)).toEqual([]);
+    expect(findings('SELECT * FROM "ord‍ers"', dialect)).toEqual([]);
+  });
+
+  it.each(folding)("accepts a non-ASCII name the schema spells exactly under %s, and refuses another spelling of it", (_label, dialect) => {
+    const withTable: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      coverage: [...warnPolicy.coverage, { tableId: "table:public.Größe", classification: "global" }],
+    };
+    expect(findings("SELECT * FROM [Größe]", dialect, withTable)).toEqual([]);
+    expect(findings("SELECT * FROM [GRÖSSE]", dialect, withTable)).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+
+  it.each(folding)("reads non-ASCII text in strings and comments as text under %s", (_label, dialect) => {
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = N'ｏｐｅｎ'", dialect)).toEqual([]);
+    expect(findings("SELECT * FROM orders /* ｎｏｔｅ */ WHERE agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+
+  it.each(folding)("keeps ASCII quoted names under %s", (_label, dialect) => {
+    expect(findings("SELECT [agency_id] FROM [orders] WHERE [agency_id] = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+});
