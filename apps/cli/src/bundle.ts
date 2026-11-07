@@ -36,6 +36,8 @@ export function bundleCommand(): CommandSpec<BundleOptions> {
       const { bundleSchemaDirectory } = await import("@askdb/enrich");
       const outPath = resolve(opts.out!);
       try {
+        // Throws the loader's error for a directory `loadSchema()` refuses, before anything is
+        // written, so a bundle this command writes always loads (#796).
         const bundle = bundleSchemaDirectory(resolve(opts.schemaDir!));
         writeFileSync(outPath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
       } catch (error) {

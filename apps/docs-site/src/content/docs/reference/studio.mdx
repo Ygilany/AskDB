@@ -115,6 +115,55 @@ Setup, **Resync schema** and the driver **Install** button only work from loopba
 
 Binding to a non-loopback host (`--host 0.0.0.0` or a LAN address) prints a warning at startup. Anyone who can load Studio from that address gets the session token from the page, so on that network they can edit your schema, call your model and run queries. Keep the default `127.0.0.1` unless you're on a network you trust. Studio also expects to be reached directly: a reverse proxy that rewrites the `Host` header gets `403`.
 
+## Local API
+
+Studio's browser app talks to a JSON API under `/api/`, and a script can call it too. The API is experimental, like `askdb studio`. Every call needs:
+
+- The session token, as an `x-askdb-studio-token` header. Read it from the page Studio serves: `<meta name="askdb-studio-token" content="…">`. It changes every launch.
+- `Content-Type: application/json` on a request with a body.
+- A `Host` header Studio accepts, and no `Origin` from another site (see [Security model](#security-model)).
+
+### `POST /api/execute`
+
+Runs one statement, with the [execute guards](#execute-guards). The request:
+
+```json
+{ "sql": "SELECT id, name FROM customers WHERE id > $1 ORDER BY id", "params": [0] }
+```
+
+`params` is optional, and holds the values for the statement's parameter markers, written the execute engine's way: `$1` on Postgres, `?` on MySQL, MariaDB and SQLite. On SQL Server, Studio turns `$1` or `?` markers into `@p0`, `@p1` and so on, or takes `@p0` as written. The example is Postgres. A run returns `200`:
+
+```json
+{ "ok": true, "columns": ["id", "name"], "rows": [[1, "Ada"], [2, "Grace"]], "rowCount": 2, "durationMs": 4, "truncated": false, "rowLimit": 500 }
+```
+
+`rows` holds one array per row, in `columns` order. `truncated` is `true` when the query had more than `rowLimit` rows. `warnings` lists any sensitive identifiers the SQL reads.
+
+A failure at run time, such as a missing driver, a connection error, a database error or a timeout, also returns `200`, with the message in `error`:
+
+```json
+{ "ok": false, "error": "canceling statement due to statement timeout" }
+```
+
+### Errors
+
+Every other error returns a status and a message, with no error code:
+
+```json
+{ "error": { "message": "Studio rejected this request: missing or invalid session token. Reload Studio in the browser (the token changes every launch)." } }
+```
+
+| Status | Cause |
+| --- | --- |
+| `400` | A body that isn't valid JSON, a missing or malformed field (`` `sql` is required. ``), or SQL the read-only check rejects. The message names the rule: `SQL rejected by the read-only guardrail (SQL_NOT_SELECT_OR_WITH): …`. |
+| `403` | A missing or wrong token, a `Host` Studio doesn't accept, an `Origin` from another site, or execute is off. Only the message tells them apart. |
+| `409` | Studio is in the guided setup. |
+| `413` | A body over 1 MiB. |
+| `415` | A request that isn't `Content-Type: application/json`. |
+| `500` | Anything unexpected. The body has the same shape. |
+
+`GET /api/execute/status` reports whether execute is on and why not, the `timeoutMs` and `maxRows` in force, the engine, whether a connection is configured, and whether the driver is installed. The [Studio spec](https://github.com/Ygilany/AskDB/blob/main/docs/specs/studio.md#contracts-and-api-surface) lists the other routes.
+
 ## Read next
 
 <div class="home-path-grid">

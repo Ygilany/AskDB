@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.50
 
-Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
+Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24 and `@askdb/studio` 0.2.0-beta.43.
 
 ### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
 
@@ -108,6 +108,10 @@ See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-
 ### Fix a bundle without a `tables` object, which now fails to load
 
 A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file name, `{}` when there are none ([#797](https://github.com/Ygilany/AskDB/issues/797)). `loadSchema()` and `loadSchemaFromJson()` now throw `SchemaParseError` naming `tables` and the bundle when it's missing, isn't an object, or holds a value that isn't a string. Before, a missing or `null` `tables` threw a raw `TypeError`, and a non-empty string or array was read as if each character or item were a file, so the error named a `tables/0` that doesn't exist. A `tables` of `[]`, `""`, `0` or `true` loaded as a schema with no table files, and now throws as well. `askdb bundle` always writes `tables`, so only a bundle made or edited by hand is affected: set `"tables": {}`, or rebuild it with `askdb bundle`.
+
+### Fix a schema directory that `askdb bundle` now refuses
+
+`askdb bundle`, and `bundleSchemaDirectory()` from `@askdb/enrich`, now check the bundle with the loader `ask()` uses ([#796](https://github.com/Ygilany/AskDB/issues/796)). `bundleSchemaDirectory()` throws the loader's `SchemaParseError` where it returned the bundle, and `askdb bundle` exits `1` with that error before it writes anything. A directory the loader refuses used to bundle without complaint, and the bundle failed only when your service loaded it. Examples are a `tables/*.md` whose front-matter isn't YAML, a `tenant-policy.md` that doesn't parse or doesn't fit `schema.json`, and two table files with the same `id`. Now `askdb bundle` exits `1`, where it exited `0`, and writes nothing: a file already at `--out` stays as it was. Fix the file the error names; if you call `bundleSchemaDirectory()` yourself, catch `SchemaParseError` there. A build step that runs `askdb bundle` now fails there instead of in the service.
 
 ### Keep a built-in `id` on a `DialectSpec`
 
