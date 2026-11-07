@@ -185,7 +185,7 @@ The loader checks every ID in the front-matter against `schema.json` when it loa
 | Problem | `warn` | `strict` |
 |---|---|---|
 | A column or foreign key ID that `schema.json` doesn't have: `tenantIdColumn`, `parent.foreignKey`, `hierarchy[].foreignKey`, a `scopeThrough` column or join step, a polymorphic `typeColumn` or `idColumn` | Warning | Error |
-| A column that `schema.json` has on another table than the field names: a root's `tenantIdColumn` or `parent.foreignKey` off the root's table, a `hierarchy[].foreignKey` off the child's, a `scopeThrough` column off the scoped table, a polymorphic `typeColumn` or `idColumn` off the polymorphic table (`misplaced_column_id`, #836) | Warning | Error |
+| A column that `schema.json` has on another table than the field names: a root's `tenantIdColumn` or `parent.foreignKey` off the root's table, a `hierarchy[].foreignKey` off the child's, a `scopeThrough` column off the scoped table, a polymorphic `typeColumn` or `idColumn` off the polymorphic table (`misplaced_column_id`, #836). A `scopeThrough` join step's columns are checked for existence only, not yet for where the path runs (#837). | Warning | Error |
 | A hierarchy cycle | Warning | Error |
 | A root named in `parent.root`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare | Warning | Error |
 | A root, scoped, polymorphic or global table that `schema.json` doesn't have | Warning | Warning |

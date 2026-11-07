@@ -419,7 +419,7 @@ describe("loadSchema — a tenant policy that doesn't match schema.json", () => 
     {
       problem: "a scopeThrough column on another table (#836)",
       edit: moveScopeColumn,
-      ids: ["table:public.clients#sub_agency_id", "table:public.clients"],
+      ids: ["column table:public.clients#sub_agency_id is on table:public.clients"],
     },
   ])("strict: $problem throws SchemaParseError naming the file and the IDs", ({ edit, ids }) => {
     const { dir, policyPath } = editedPolicy(edit);

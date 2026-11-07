@@ -45,14 +45,14 @@ const TABLE_REMOVED_KINDS: ReadonlySet<TenantPolicyWarning["kind"]> = new Set([
 ]);
 
 /**
- * Check a parsed tenant policy against schema.json and normalize it. `physicalColumns` maps each
+ * Check a parsed tenant policy against schema.json and normalize it. `columnOwners` maps each
  * column ID in schema.json to its table's ID, read from schema.json rather than split from the
  * column ID, since a SQL Server table name can hold `#`.
  */
 export function normalizeTenantPolicy(
   parsed: ParsedTenantPolicyMarkdown,
   physicalTableIds: Set<string>,
-  physicalColumns: ReadonlyMap<string, string>,
+  columnOwners: ReadonlyMap<string, string>,
 ): NormalizedTenantPolicy {
   const fm = parsed.frontmatter;
   const warnings: TenantPolicyWarning[] = [];
@@ -64,7 +64,7 @@ export function normalizeTenantPolicy(
     orphaned: "orphaned_column_id" | "orphaned_fk_id",
     context: string,
   ): void => {
-    const actual = physicalColumns.get(id);
+    const actual = columnOwners.get(id);
     if (actual === undefined) warnings.push({ kind: orphaned, id, context });
     else if (actual !== table) warnings.push({ kind: "misplaced_column_id", id, tableId: actual, context });
   };
@@ -146,14 +146,14 @@ export function normalizeTenantPolicy(
         checkColumnOn(path.column, st.id, "orphaned_column_id", `scopeThrough column on ${st.id}`);
       } else {
         for (const step of path.join) {
-          if (!physicalColumns.has(step.from)) {
+          if (!columnOwners.has(step.from)) {
             warnings.push({
               kind: "orphaned_fk_id",
               id: step.from,
               context: `scopeThrough join on ${st.id}`,
             });
           }
-          if (!physicalColumns.has(step.to)) {
+          if (!columnOwners.has(step.to)) {
             warnings.push({
               kind: "orphaned_fk_id",
               id: step.to,
