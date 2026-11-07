@@ -180,7 +180,7 @@ askdb introspect \
 
 Pass exactly one of `--out`, `--print` and `--diff`. With none of them, `--out` falls back to `introspection.outputDir`.
 
-When the source has no tables or views to write, after `--schemas`, `--exclude-schemas` and `--tables`, `askdb introspect` exits `1` and writes nothing, with `--out`, `--print` and `--diff` alike. An artifact with no tables can't be loaded, so an existing `schema.json` and `tables/*.md` stay as they were. The message names the schema id, the engine and the filters you passed, and lists the likely causes. See [the troubleshooting entry](/getting-started/troubleshooting/#introspection-found-no-tables-or-views-for-schema-).
+When the source has no tables or views to write, after `--schemas`, `--exclude-schemas` and `--tables`, `askdb introspect` exits `1` and writes nothing, with `--out`, `--print` and `--diff` alike. An artifact with no tables can't be loaded, so an existing `schema.json` and `tables/*.md` stay as they were. The message names the schema id, the engine and the filters you passed, and lists the likely causes. See [the troubleshooting entry](/guides/troubleshooting/#introspection-found-no-tables-or-views-for-schema-).
 
 `askdb introspect` also accepts the [shared logging flags](#shared-logging-flags).
 

@@ -1,17 +1,16 @@
 ---
-title: "Troubleshooting"
-description: "Common errors and fixes: schema not found, SQL validation failures, missing drivers, TLS issues, tenant scope rejections, and poor SQL quality."
+title: "Fix common errors"
+description: "Find the error AskDB shows and fix it: a missing config or API key, a schema that won't load, SQL a check rejects, Studio execute, tenant scope and RAG."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
 
-<p class="doc-eyebrow">Guides · Troubleshooting</p>
+<p class="doc-eyebrow">Maintain</p>
 
-<p class="doc-lede">Errors grouped by where they surface. If you hit something not listed here, open a <a href="https://github.com/Ygilany/AskDB/discussions/categories/q-a">Discussion</a>.</p>
+<p class="doc-lede">Find the message you see, and follow its fix. Errors are grouped by where they appear. If yours isn't here, ask in a <a href="https://github.com/Ygilany/AskDB/discussions/categories/q-a">Discussion</a>.</p>
 
----
-
-## Schema and config
+## Config
 
 ### `No askdb.config.* or .config/askdb.* found in …`
 
@@ -45,15 +44,17 @@ ASKDB_DEBUG=1 npx askdb ask --question "..."
 
 `askdb studio` doesn't stop on a config that fails to load: it prints `askdb-studio: warning: <path> could not be loaded, so Studio is ignoring it: …` and starts without it. Fix the file and restart Studio; the setup wizard never overwrites it.
 
-### `SchemaParseError: Cannot read schema at …`
+## Schema
 
-The path passed to `--schema` (CLI) or `loadSchema()` (library) doesn't exist or isn't a valid schema artifact. Valid inputs are:
+### `Schema path not found.` / `ENOENT: no such file or directory`
 
-- A schema directory (e.g. `my-app.schema/`)
-- A bundled JSON file (e.g. `my-app.schema.json`)
-- A `schema.json` file inside a directory (the name matches in any case, so `Schema.json` works too)
+Nothing exists at the schema path. `askdb ask --schema` prints `Schema path not found.`, and `loadSchema()` throws Node's `ENOENT: no such file or directory, stat '…'`. A relative path is read from the current directory. Pass one of:
 
-Run `ls my-app.schema/` to confirm the directory was created by `askdb introspect`. If it's empty, the introspection step didn't complete successfully.
+- A schema directory, such as `my-app.schema/`
+- A bundle file from [`askdb bundle`](/reference/cli/#askdb-bundle)
+- The `schema.json` inside a schema directory (the name matches in any case, so `Schema.json` works too)
+
+Run `ls my-app.schema/` to check that `askdb introspect` wrote the directory. If it holds no `schema.json`, introspection didn't finish.
 
 ### `SchemaParseError: Refusing to load … as a standalone physical layer`
 
@@ -66,6 +67,17 @@ Pass the directory to `--schema` or `loadSchema()`, or rename the file to `schem
 A file in the schema directory has the right name in the wrong case, such as `Tenant-Policy.md`, `Concepts.md`, `Tables/` or `tables/orders.MD`. AskDB reads these names exactly. On Linux, where file names are case-sensitive, it would skip the file: a skipped `tenant-policy.md` means `ask()` runs with no tenant policy, and a skipped table file drops its `sensitive: true` marks. macOS and Windows would load the same directory, so AskDB refuses it on every OS, and you find out before you deploy.
 
 Rename each file the error names, for example `git mv Tenant-Policy.md tenant-policy.md`. If the error says `keep one of Tenant-Policy.md, tenant-policy.md`, the directory holds both spellings, which only a case-sensitive filesystem allows. Merge them into the correctly named file and delete the other; a rename would overwrite it. `askdb bundle` refuses the directory the same way.
+
+### `Failed to parse schema.` / `SchemaParseError: Invalid schema.json at …`
+
+`schema.json` doesn't have the shape AskDB reads. `askdb ask` prints `Failed to parse schema.`, followed by the loader's message after `Details:`. That message, `Invalid schema.json at <path>:`, lists each field that's missing or has the wrong type, with its `path`, such as `["schemaId"]`.
+
+`askdb introspect` writes `schema.json`, so the usual cause is a hand edit or a merge. Fix the field the message names. Or write the file again: `askdb introspect` won't overwrite a `schema.json` it can't read (`@askdb/introspect: invalid Schema v2 file at …`), so delete it first. Your `tables/*.md`, `concepts.md` and `tenant-policy.md` stay as they are.
+
+```bash
+rm my-app.schema/schema.json
+npx askdb introspect --out my-app.schema --schema-id my-app
+```
 
 ### `Refusing to write … outside the schema directory: "…" is a symbolic link`
 
@@ -81,16 +93,6 @@ Replace the link with a regular file that holds the content you want, then run t
 2. **The schema or database holds tables or views.** A Postgres schema with only enums or sequences counts as empty, because the artifact describes tables and views.
 3. **The filters match something.** The message names the `--schemas`, `--exclude-schemas` and `--tables` values (or `introspection.schemas`) it ran with. `--tables` patterns match `<schema>.<table>`, such as `public.orders*`.
 4. **The database user can read the catalog.** A role without access to the tables' metadata sees none.
-
-### `SchemaParseError: Missing required field …`
-
-The schema artifact is from an older format. Re-run introspection to regenerate it:
-
-```bash
-npx askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
-```
-
----
 
 ## SQL generation
 
@@ -132,12 +134,10 @@ A string literal, quoted identifier, dollar-quoted string, or block comment in t
 
 This is the most common failure mode. The model hallucinated an identifier that isn't in your schema. AskDB doesn't check generated identifiers against the schema, so your database reports these when you run the query.
 
-**Fix:** Enrich the relevant tables in your schema artifact with plain-English descriptions. The more context the model has, the less it invents:
+**Fix:** Enrich the relevant tables in your schema artifact with plain-English descriptions. The more context the model has, the less it invents. Studio's enrichment views do this:
 
 ```bash
-npx askdb studio   # open the enrichment UI
-# or
-npx askdb enrich   # headless AI-assisted enrichment
+npx askdb studio
 ```
 
 If the column exists in the database but the model keeps getting it wrong, check that `askdb introspect` has been re-run since the column was added, and that its description in the schema artifact isn't ambiguous.
@@ -147,76 +147,75 @@ If the column exists in the database but the model keeps getting it wrong, check
 SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords, locking reads and side-effecting functions, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
 
 Checklist:
-1. Does the relevant table have a description? (`description:` field in the table's `.md` file)
-2. Do column names match how users phrase questions? Add aliases in the schema artifact.
-3. Is this a complex aggregation or join? Add an example question + expected SQL to the table file.
+1. Does the relevant table have a description? It's the first paragraph of the table's `tables/*.md` file, after its heading.
+2. Do column names match how users phrase questions? Add `aliases` to the table or column in its `tables/*.md` file.
+3. Does the question use your own terms, such as "active customer"? Explain them in the table file's `## Common query language` section, which the prompt shows. See [Body](/reference/schema-artifact-format/#body).
 4. Try a more capable model — `gpt-4o` vs `gpt-4o-mini` makes a meaningful difference on complex schemas.
-
----
 
 ## Model and API keys
 
-### `Error: API key not found` / `AuthenticationError`
+### `… no AI API key configured`
 
-The model provider didn't receive a key. For the CLI, set the environment variable before running:
+The config names a provider but no API key for it. `askdb ask` and `createAskDb()` stop with this message before they call the model. It starts with what was running, such as `NL→SQL generation:`, and then names the key setting for each provider, such as `ai.providerConfig.openai.apiKey`.
 
-```bash
-OPENAI_API_KEY=sk-... npx askdb ask --question "..."
-```
+Set the key your config reads. The config `askdb init` writes reads it from `OPENAI_API_KEY` (or your provider's variable) in `.env` or your shell, so run the command from the directory that holds `.env`. To try the CLI without a model, pass `--mock-sql`, as the message says.
 
-For the library, verify the key is passed when constructing the provider:
+### `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>`
 
-```ts
-const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-```
+`@askdb/ai` loads your provider's AI SDK package when it first builds a model, and that package isn't installed. Install the one the message names, such as `npm i @ai-sdk/anthropic`. In a bundled app, see [Bundle an app that uses AskDB](/guides/bundle-your-app/).
 
-See [Bring your own model](/guides/bring-your-own-model/) for per-provider configuration.
+### `SqlGenerationError: Model call failed: …`
 
-### `Error: Model not found` / 404 from provider
+The provider refused the model call. The rest of the message is the provider's own. `error.cause` is the AI SDK's `APICallError`, with the HTTP status in `statusCode`:
 
-The model name passed to the provider doesn't exist or isn't available on your account tier. The default CLI model is `gpt-4o-mini` (OpenAI). Override it with `OPENAI_MODEL` in your `askdb.config.ts` or pass a different model instance to `ask()`.
+- **401 or 403:** the key is wrong or revoked, or belongs to another provider or project. Check the value your config reads for the key.
+- **404:** the provider has no model by that name, or your account can't use it. The default OpenAI model is `gpt-4o-mini`. Set another in `ai.language.model`. The config `askdb init` writes reads it from `OPENAI_MODEL`. With `ask()`, pass another model instance.
 
----
+See [Bring your own model](/guides/bring-your-own-model/) for each provider's settings.
 
-## Studio and drivers
+## Studio
 
-### Studio shows "driver not installed" or an Install button
+### Studio shows `pg missing` and an **Install pg** button
 
-Studio's **Execute Query** feature (running SQL against a live database) requires an optional peer driver package. Install the one matching your engine:
+Studio's **Execute Query** runs the generated SQL with your engine's driver package, and it isn't installed. The chip names the package: `pg`, `mysql2` (MySQL and MariaDB), `better-sqlite3` or `mssql`. Install it in the project that holds the schema directory, and reload Studio. The chip then reads `pg ready`:
 
-```bash
-npm install pg          # Postgres
-npm install mysql2      # MySQL
-npm install better-sqlite3  # SQLite
-npm install mssql       # SQL Server
-```
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+    <InstallTabs pkgs="pg" />
+  </TabItem>
+  <TabItem label="MySQL and MariaDB">
+    <InstallTabs pkgs="mysql2" />
+  </TabItem>
+  <TabItem label="SQLite">
+    <InstallTabs pkgs="better-sqlite3" />
+  </TabItem>
+  <TabItem label="SQL Server">
+    <InstallTabs pkgs="mssql" />
+  </TabItem>
+</Tabs>
 
-After installing, refresh Studio. The driver readiness indicator near the Execute button should clear.
+The **Install** button does the same from the Playground. [Install the driver](/guides/enable-studio-execute/#3-install-the-driver) says when it works.
 
 <Aside type="note">
 Generating SQL in Studio does **not** require a driver. Only the Execute Query action does.
 </Aside>
 
-### Studio doesn't connect to my database
+### `Studio execute is off.` / `No execute connection configured.`
 
-Studio execute is off by default. Check that `studio.execute.enabled: true` is set in `askdb.config.ts`, that `studio.execute.databaseUrl` (or `studio.execute.file` for SQLite) is set, and that the database is reachable from your machine. Restart Studio after editing the config. Studio resolves the execute connection in this order:
+Studio shows one of these in the Playground when **Execute Query** can't run. `Studio execute is off.` means `studio.execute.enabled` isn't `true`. `No execute connection configured.` means it is, but `studio.execute.databaseUrl` (or `studio.execute.file` for SQLite) isn't set. Studio runs the generated SQL on that connection, so give it a read-only database role. Set both in `askdb.config.ts`, and restart Studio. Studio resolves the execute connection in this order:
 
 1. `studio.execute.databaseUrl` / `studio.execute.file`
 2. The introspection connection for the same engine, only when `studio.execute.useIntrospectionConnection: true`
 
-The provider comes from `studio.execute.provider`, or the active `introspection.provider` when it's a live engine.
+The provider comes from `studio.execute.provider`, or the active `introspection.provider` when it's a live engine. If both are set and the query still can't connect, check that the database is reachable from your machine.
 
 See [Configuration — Studio execute](/reference/config/#studio-execute-configuration) for the full resolution order.
-
----
 
 ## SQL Server
 
 ### `self-signed certificate` / TLS error on connection
 
 Node.js rejects a SQL Server whose certificate is self-signed, as on many development servers. [Connect to SQL Server](/guides/connect-to-sql-server/#3-fix-the-self-signed-certificate-error) has the fix for each connection-string format, and for production.
-
----
 
 ## Tenant scope
 
@@ -288,26 +287,42 @@ Your tenant policy uses `enforcement: strict`, and the generated SQL is missing 
 
 `bindPreparedQuery()` was called with two arguments. Since it re-checks the stored template before binding, it needs a third: `{ schema, tenantScope? }`, the same schema and the caller's scope you pass to `ask()`. With `@askdb/client`, call `askdb.bind(prepared, values, { tenantScope })` instead; it supplies the schema. A `:tenant_*` key in the values throws `TENANT_VALUE_SUPPLIED`: tenant IDs now come from `tenantScope`. See [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails).
 
----
+## RAG
 
-## RAG / large schemas
+### The retriever is set, but the prompt has the full schema
 
-### Retriever is supplied but AskDB uses the full DDL anyway
+When `ask()` skips retrieval, it puts the full schema in the prompt instead. Pass a `logger` to see why: each skip logs `askdb.pipeline.retrieval.skipped` with a `reason`.
 
-Two reasons this happens:
+| `reason` | Why | Fix |
+| --- | --- | --- |
+| `below_threshold` | You passed a `totalSchemaChunkCount` at or below `retrievalThresholdChunks` (default 30). With the default, a schema of 30 chunks or fewer goes into the prompt whole. | None needed. To retrieve anyway, lower `retrievalThresholdChunks`. |
+| `no_results` | The retriever found no chunks for the schema's `schemaId`: the index is empty, or you built it from a schema with another `schemaId`. | Build the index from the schema you pass to `ask()`. |
+| `schema_not_v2` | The schema object isn't Schema v2: it has no `schemaId`. | Load the schema with `loadSchema()`. |
 
-1. **Below threshold:** `totalSchemaChunkCount` is at or below `retrievalThresholdChunks` (default 30). Pass the actual chunk count from `buildSchemaIndex` result:
-   ```ts
-   const index = await buildSchemaIndex({ schema, embedder });
-   const { sql } = await ask({
-     ...
-     retriever: index.retriever,
-     totalSchemaChunkCount: index.stats.chunksTotal,
-   });
-   ```
+```ts
+import { createAskDbLogger } from "@askdb/core";
+import { buildSchemaIndex, createMemoryStore } from "@askdb/rag";
 
-2. **Outdated artifact format:** The retriever is silently skipped for schema artifacts created by very old AskDB versions. Confirm `loadSchema()` returns an object with a `schemaId` field; if it doesn't, re-run `askdb introspect` to regenerate the artifact.
+const index = await buildSchemaIndex({ schema, embedder, store: createMemoryStore() });
+const { sql } = await ask({
+  question,
+  schema,
+  model,
+  dialect: "postgres",
+  retriever: index.retriever,
+  totalSchemaChunkCount: index.stats.chunksTotal,
+  logger: createAskDbLogger({ correlationId: "rag-check", level: "info" }),
+});
+```
 
-### Retriever returns no chunks
+### Retrieval misses the tables a question needs
 
-The question didn't match any indexed chunks. This usually means the schema artifact descriptions are too sparse for meaningful embedding similarity. Enrich your schema with richer table and column descriptions, then rebuild the index.
+The retriever returns the chunks nearest the question, `retrievalK` of them (default 8). Sparse descriptions make the wrong tables look nearest. Enrich the tables' descriptions, list the questions people ask in each table file's `## Example questions` section, and build the index again. Raising `retrievalK` also helps. See [RAG for large schemas](/guides/rag-for-large-schemas/).
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/core-api/#errors"><strong>Errors</strong><span>Every error class <code>@askdb/core</code> throws, with its rules and reasons.</span></a>
+  <a href="/guides/upgrading/"><strong>Upgrade AskDB</strong><span>What changed in each release, and what to do about it.</span></a>
+  <a href="/reference/cli/"><strong>CLI reference</strong><span>Every <code>askdb</code> command, flag and exit code.</span></a>
+</div>

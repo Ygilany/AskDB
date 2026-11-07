@@ -167,7 +167,7 @@ Chunks the schema artifact, indexes it in a vector store, and retrieves relevant
 | Symbol | Purpose |
 | --- | --- |
 | `buildSchemaIndex({ schema, store, embedder, ... })` | Chunk + embed + upsert a schema artifact; returns `{ retriever, stats, chunks }`. |
-| `createAiSdkEmbedder({ model })` / `createOpenAiEmbedder(...)` | Wrap an AI SDK embedding model (or raw OpenAI) as the `embedder`. |
+| `createAiSdkEmbedder({ model })` | Wrap an AI SDK embedding model, such as one `@askdb/ai`'s `createEmbeddingModelFromSection` builds, as the `embedder`. |
 | `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
 | `createPgvectorStore` | The pgvector store factory. |
 | `detectEmbeddingDimensions(embedder)` | Learn an embedder's vector width with one short embedding call, for a new pgvector table. |
