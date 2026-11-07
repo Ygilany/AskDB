@@ -118,8 +118,17 @@ const STANDARD_VIEW: SqlLexerProfile = {
   lineCommentEndsAtLfOnly: true,
   strictStringPrefixes: true,
 };
-/** The standard view, with Postgres `E'…'` escape strings and `$tag$…$tag$` strings. */
-const POSTGRES_VIEW: SqlLexerProfile = { ...STANDARD_VIEW, id: "postgres", escapeStrings: true, dollarQuotes: true };
+/**
+ * The standard view, with Postgres `E'…'` escape strings, `$tag$…$tag$` strings, and block comments
+ * nested the way Postgres and CockroachDB nest them.
+ */
+const POSTGRES_VIEW: SqlLexerProfile = {
+  ...STANDARD_VIEW,
+  id: "postgres",
+  escapeStrings: true,
+  dollarQuotes: true,
+  nestedBlockComments: true,
+};
 /**
  * The standard view, read the MySQL way: `"…"` is a string, backslash escapes, `#` comments, `--`
  * only before whitespace, and `/*! … *\/` bodies as code.
@@ -136,11 +145,18 @@ const MYSQL_VIEW: SqlLexerProfile = {
 /** A view whose line comments end at `\r` too, as on Postgres and SQL Server. */
 const crEnds = (view: SqlLexerProfile): SqlLexerProfile => ({ ...view, lineCommentEndsAtLfOnly: false });
 /**
- * The standard view, read the SQL Server way (#623): a line comment ends at `\r` too, and a name or
+ * The standard view, read the SQL Server way (#623): a line comment ends at `\r` too, a name or
  * number ends where SQL Server ends it (`tsqlLiterals`: after `0x` or `1E`, and at whitespace such
- * as U+00A0, U+200B and U+0085), so a keyword written right after one is a word of its own.
+ * as U+00A0, U+200B and U+0085), so a keyword written right after one is a word of its own, `]]`
+ * inside a bracketed name is an escaped `]`, and block comments nest.
  */
-const SQLSERVER_VIEW: SqlLexerProfile = { ...crEnds(STANDARD_VIEW), id: "sqlserver", tsqlLiterals: true };
+const SQLSERVER_VIEW: SqlLexerProfile = {
+  ...crEnds(STANDARD_VIEW),
+  id: "sqlserver",
+  tsqlLiterals: true,
+  bracketIdentifiers: "doubled",
+  nestedBlockComments: true,
+};
 
 /**
  * The tenant check's predicate readings. A built-in engine gets its own view: the MySQL one twice,

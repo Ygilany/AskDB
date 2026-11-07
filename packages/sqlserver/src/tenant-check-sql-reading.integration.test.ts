@@ -7,7 +7,8 @@
  * fixture, and the tenant check reads the predicate the same way, so a scoped query that filters
  * after a carriage-return comment passes while one that doesn't is required to. SQL Server also
  * ends a number after `0x` or `1E` and a name at U+00A0, U+200B and U+0085, so an `OR` written
- * right after one is a keyword, and the tenant check sees it (#623).
+ * right after one is a keyword, and the tenant check sees it (#623). It reads `]]` inside a bracketed
+ * name as an escaped `]` and nests block comments, so a predicate inside either is no predicate.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -58,5 +59,19 @@ fixtureSuite("the tenant check reads SQL the way SQL Server does (live SQL Serve
     const rows = (await runner(`SELECT count(*) AS c FROM (SELECT 1 AS a UNION ALL SELECT 2) t WHERE a = 1 AND ${tail}`)).rows;
     expect(Number(rows[0]![0])).toBe(2);
     expect(findings(`SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ${tail}`)).toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("`]]` inside a bracketed name is an escaped `]`, and block comments nest, as the engine reads them", async () => {
+    const runner = createSqlServerCatalogQueryRunner(connectionUrl("sqlserver", "reader"));
+    const count = async (sql: string) => Number((await runner(sql)).rows[0]![0]);
+    const three = "(SELECT 1 AS agency_id UNION ALL SELECT 2 UNION ALL SELECT 3)";
+    expect(await count(`SELECT count(*) AS c FROM ${three} AS [o] WHERE agency_id = 1`)).toBe(1);
+    // The alias runs to the last `]`, so the WHERE is part of it and every row comes back.
+    expect(await count(`SELECT count(*) AS c FROM ${three} AS [o]] WHERE agency_id = 1 AND [x]`)).toBe(3);
+    // The predicate sits inside the outer comment, which the `--` line comment closes.
+    expect(await count(`SELECT count(*) AS c FROM ${three} AS o WHERE 1=1 /* /* */ AND agency_id = 1 AND 1=1 -- */`)).toBe(3);
+    expect(findings("SELECT * FROM orders AS [o]] WHERE agency_id = :tenant_agency_ids AND [x]")).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });

@@ -5,7 +5,7 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `$tag$` string, a table named after a keyword, and where a `--`
- * comment ends are all read as Postgres reads them.
+ * comment ends, and nested block comments, are all read as Postgres reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -84,6 +84,15 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     const rows = (await runner("SELECT count(*) AS c FROM (SELECT 1 AS a --\rUNION ALL SELECT 2) t")).rows;
     expect(Number(rows[0]![0])).toBe(2);
     expect(findings("SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("block comments nest, as the engine reads them", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // The predicate sits inside the outer comment, which the `--` line comment closes, so both rows come back.
+    const rows = (await runner("SELECT count(*) AS c FROM (SELECT 1 AS agency_id UNION ALL SELECT 2) t WHERE 1=1 /* /* */ AND agency_id = 1 AND 1=1 -- */")).rows;
+    expect(Number(rows[0]![0])).toBe(2);
+    expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */"))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });
