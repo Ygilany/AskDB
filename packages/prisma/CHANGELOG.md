@@ -1,5 +1,11 @@
 # @askdb/prisma
 
+## 0.2.0-beta.25
+
+### Patch Changes
+
+- @askdb/introspect@0.3.0-beta.25
+
 ## 0.2.0-beta.24
 
 ### Patch Changes

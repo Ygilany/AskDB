@@ -1,5 +1,16 @@
 # @askdb/core
 
+## 1.0.0-beta.51
+
+### Minor Changes
+
+- 8e75d50: The tenant-policy loader refuses a column on another table than its entry's (#836). It checked only that `schema.json` had each column somewhere, so a `scopeThrough` column, a polymorphic `typeColumn` or `idColumn`, a root's `tenantIdColumn` or `parent.foreignKey`, or a hierarchy edge's `foreignKey` written as another table's column loaded with no warning, even under `enforcement: strict`, and broke that table's filter path. Such a column is now the new `TenantPolicyWarning` `misplaced_column_id` (`id`, `tableId`, the table the column is on, and `context`): an error under `strict`, which makes `loadSchema()` throw `SchemaParseError`, and a warning under `warn`. A `switch` over every `TenantPolicyWarning` needs a case for it. `normalizeTenantPolicy()`'s third parameter is now a `ReadonlyMap` from column ID to table ID instead of a `Set` of column IDs, since a column's table comes from `schema.json`, not from splitting its ID (a SQL Server table name can hold `#`). Join paths aren't checked step by step yet (#837).
+
+### Patch Changes
+
+- 6c8c88b: The tenant check reads a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) the way Postgres, CockroachDB and the shared lexer do. Its scanner read the tag as ASCII-only, so it treated such a string as code, and an `OR` the string hides could sit beside the tenant predicate unseen. The scanner's tag pattern now matches the lexer's.
+- 4196800: Security fix ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)), a residual of [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) finding 1. The tenant check read a dollar-quoted string whose tag holds non-ASCII letters (`$é$ … $é$`) as code, where Postgres, CockroachDB and the shared lexer read it as a string, so a tenant-scoped query could pass the check without an effective tenant predicate. The check's scanner now reads the tag with the same character set as the shared lexer and the engine. Enforce tenant isolation in the database (for example row-level security) regardless.
+
 ## 1.0.0-beta.50
 
 ### Minor Changes
