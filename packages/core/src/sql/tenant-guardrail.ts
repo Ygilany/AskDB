@@ -168,6 +168,18 @@ export function tenantRuleWarnings(
     );
   }
 
+  // On a Postgres reading the lexer reads `$1OR` as one parameter, while PostgreSQL 14 and earlier
+  // and CockroachDB end the parameter at its last digit and read the word as a keyword the checks
+  // below would miss. Refuse it rather than guess how the server splits it (GHSA-rhwf-7742-8hwj).
+  const glued = parameterAgainstWord(read, dialect);
+  if (glued !== undefined) {
+    warnings.push(
+      warn("NOT_SELECT_OR_WITH", "",
+        `The SQL writes a word right after a parameter ('${glued}'), which PostgreSQL 14 and CockroachDB read as a separate ` +
+        "keyword, so the tenant check can't tell which words are keywords. Put a space after the parameter."),
+    );
+  }
+
   const views = codeViews(read, dialect);
 
   // Check the roots this scope covers: a query on the root table itself is scoped by its tenant ID column.
@@ -439,6 +451,19 @@ function nonQueryKeyword(read: SqlRead, dialect: ValidateTenantGuardrailsOptions
 }
 
 /**
+ * The first `$N` parameter with a word written right after its digits (`$1OR`) under a reading
+ * from `tenantStatementReadings` on the Postgres lexer, where the lexer reads both as one token.
+ */
+function parameterAgainstWord(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of tenantStatementReadings(dialect)) {
+    if (profile.id !== "postgres") continue;
+    const token = read.tokens(profile).find((t) => t.kind === "parameter" && /^\$\d+\D/.test(t.text));
+    if (token) return token.text.slice(0, 40);
+  }
+  return undefined;
+}
+
+/**
  * Functions whose reads the tenant check can't see, lowercase (#702). A function belongs here when
  * it is built into Postgres or SQL Server, or comes from an extension that ships with Postgres
  * (`tablefunc`, `dblink`, `xml2`); any role can call it; and it runs a query passed as a string,
@@ -637,7 +662,7 @@ const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
 /** Split a code view into tokens with their nesting depth. Strings and comments are already blanked. */
 function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
-  const split = view.reading.profile.tsqlLiterals ? lexerWordEnds(view) : undefined;
+  const split = lexerWordEnds(view);
   let depth = 0;
   let quoted = false;
   for (const m of view.text.matchAll(TOKEN)) {
@@ -645,7 +670,7 @@ function tokenize(view: CodeViews[number]): Token[] {
       quoted = !quoted;
       continue;
     }
-    for (const [t, offset] of split && WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
+    for (const [t, offset] of WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
       if (t === ")") depth = Math.max(0, depth - 1);
       const lower = t.toLowerCase();
       tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth, offset });
@@ -656,15 +681,40 @@ function tokenize(view: CodeViews[number]): Token[] {
 }
 
 /**
- * Under a SQL Server reading, a word or number ends where the shared lexer ends it (#623): SQL
- * Server ends a number after `0x` or `1E` and a name at whitespace such as U+00A0, so in `1=0xOR 1=1`
- * or `1=1<U+00A0>OR 1=1` the `OR` is a keyword. Returns a function that cuts a word or number of the
- * view at each lexer token that starts inside it, dropping the characters the lexer reads as
+ * Where a word or number of the view ends under its reading (#623, GHSA-rhwf-7742-8hwj), so a
+ * keyword written right after one is a word of its own, as the engine reads it:
+ *
+ * - SQL Server: wherever the shared lexer ends a token. That is after `0x` or `1E`, after a number
+ *   before a word, and at whitespace such as U+00A0.
+ * - PostgreSQL and CockroachDB: after a number, before a word written right after it (`1OR`,
+ *   `1.0OR`), as PostgreSQL 14 and earlier read it. A `$N` parameter written against a word
+ *   (`$1OR`) is refused instead ({@link parameterAgainstWord}).
+ * - MySQL and MariaDB: after a number with a decimal point or an exponent (`1.0OR`, `1e1OR`). A
+ *   name that starts with digits (`3d_models`, `1OR`) is one name there.
+ *
+ * Any other reading keeps the check's own word ends. Returns a function that cuts a word or number
+ * of the view at those ends; under SQL Server it also drops the characters the lexer reads as
  * whitespace. A quoted name is one lexer token, so it is never cut.
  */
 function lexerWordEnds(view: CodeViews[number]): (text: string, offset: number) => Array<readonly [string, number]> {
+  const { profile } = view.reading;
   const owner = new Int32Array(view.text.length).fill(-1);
-  view.tokens.forEach((token, index) => owner.fill(index, token.start, token.end));
+  if (profile.tsqlLiterals) {
+    view.tokens.forEach((token, index) => owner.fill(index, token.start, token.end));
+  } else {
+    // Every character is code to this reading; a new piece starts only at a number's end.
+    owner.fill(0);
+    let piece = 0;
+    view.tokens.forEach((token, index) => {
+      const next = view.tokens[index + 1];
+      const wordAfter = next !== undefined && next.start === token.end && next.kind === "word";
+      const numberEnds =
+        token.kind === "number" &&
+        wordAfter &&
+        (profile.id === "postgres" || (profile.id === "mysql" && /^(?!0x)[\d.]*[.eE]/i.test(token.text)));
+      if (numberEnds) owner.fill(++piece, next.start);
+    });
+  }
   return (text, offset) => {
     const pieces: Array<readonly [string, number]> = [];
     let start = -1;

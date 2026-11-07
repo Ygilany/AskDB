@@ -5,8 +5,13 @@
  * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
  * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
- * custom engines and no dialect, where SQL Server ends a name or number), and #665 (5 read-only
- * verdicts on `SELECT $1SELECT 2`, under the Postgres family and the custom engines).
+ * custom engines and no dialect, where SQL Server ends a name or number), #665 (5 read-only
+ * verdicts on `SELECT $1SELECT 2`, under the Postgres family and the custom engines), and GHSA-rhwf-7742-8hwj
+ * (70 tenant verdicts, all refusals: 31 close a keyword written right after a number with a decimal
+ * point or exponent under `mysql` and `mariadb`, or after any number under the Postgres family; 3 refuse
+ * `1=0xOR 1=1` under the Postgres family, which PostgreSQL rejects; and 36 refuse a `$N` parameter written
+ * against a word wherever the SQL may be read as Postgres, rows the read-only check already refuses there
+ * since #665 included).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -177,6 +182,15 @@ const HOSTILE: readonly string[] = [
   // #665: a `$N` parameter written against a word, refused where the SQL may be read as Postgres.
   "SELECT $1INTO lab_x",
   "SELECT order_id FROM billing.order_line WHERE order_id = $1FOR SHARE",
+  // GHSA-rhwf-7742-8hwj: a keyword written right after a number or a $N parameter.
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1.0OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1e1OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=.5OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1.XOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 0 < $1OR TRUE",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1.0 OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total > 1.5 AND total < 1e3",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
