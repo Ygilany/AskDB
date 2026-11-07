@@ -198,11 +198,13 @@ export type TenantGuardrailRuleCode =
    */
   | "UNCHECKABLE_FUNCTION"
   /**
-   * A Postgres Unicode-escaped name (`U&"\006Frders"`) in any position: a table, a column or a
-   * function. Postgres decodes it, and the tenant check matches names as written, so it can't
-   * tell what the name reads. Reported for the whole SQL, with `tableId: ""`, whenever the SQL
-   * is read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect; not under
-   * a `global` scope (#704, #692).
+   * A name the tenant check can't match as written, in any position: a table, a column or a
+   * function. Either a Postgres Unicode-escaped name (`U&"\006Frders"`), which Postgres decodes,
+   * reported whenever the SQL is read as Postgres (postgres, cockroachdb, a custom `AskDialect`, or
+   * no dialect; #704, #692); or a name, quoted or not, that holds a character outside printable
+   * ASCII and that the schema doesn't spell exactly, which SQL Server's collation may read as
+   * another name (`[ｏｒｄｅｒｓ]` reads `orders`), reported under sqlserver, a custom `AskDialect`
+   * or id, or no dialect. Reported for the whole SQL, with `tableId: ""`; not under a `global` scope.
    */
   | "UNICODE_ESCAPED_IDENTIFIER"
   /**
@@ -278,9 +280,12 @@ export type SensitiveScopeIssue =
   /** A string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned. */
   | "UNTERMINATED_TOKEN"
   /**
-   * A Postgres Unicode-escaped name (`U&"p\0061ssword"`), which Postgres decodes and the check
-   * matches as written, so it can't tell which column it names. Raised whenever the SQL may be
-   * read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect (#707, #692).
+   * A name the check can't match as written, so it can't tell which column it names: a Postgres
+   * Unicode-escaped name (`U&"p\0061ssword"`), which Postgres decodes, raised whenever the SQL may
+   * be read as Postgres (postgres, cockroachdb, a custom `AskDialect`, or no dialect; #707, #692);
+   * or a name, quoted or not, that holds a character outside printable ASCII and that the schema
+   * doesn't spell exactly, which SQL Server's collation may read as another name (`[ｓｓｎ]` reads
+   * `ssn`), raised under sqlserver, a custom `AskDialect` or id, or no dialect.
    */
   | "UNICODE_ESCAPED_IDENTIFIER"
   /**
