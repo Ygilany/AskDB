@@ -1214,3 +1214,55 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.id = ${P})`)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a join counts only on the columns the policy declares (#400)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const scoped = (tenantRoot: string): TenantScope => ({ access: { kind: "ids", tenantRoot: `table:public.${tenantRoot}`, ids: ["5"] } });
+  const findings = (sql: string, root = "agencies") =>
+    validateTenantGuardrails(sql, warnPolicy, scoped(root)).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const appointments = ["MISSING_TENANT_PREDICATE:table:public.appointments"];
+
+  it.each([
+    ["the issue's join on the wrong ID column", "SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a hop on the wrong column of the right table", "SELECT a.* FROM appointments a JOIN clients c ON a.id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the path's tables with no join between them", "SELECT a.client_id FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids)", "clients"],
+  ])("rejects %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toEqual(appointments);
+  });
+
+  it("rejects a filter only in an outer join's ON, which keeps every appointment (and leaves the covered root unfiltered)", () => {
+    expect(findings("SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id AND c.id IN (:tenant_client_ids)", "clients"))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.clients", ...appointments]);
+  });
+
+  it.each([
+    ["the issue's correct join", "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the join written the other way round, in WHERE", "SELECT a.* FROM appointments a, clients c WHERE c.id = a.client_id AND c.id IN (:tenant_client_ids)", "clients"],
+    ["the path's root filtered through an outer join", "SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients"],
+    ["the last hop's column filtered directly", "SELECT a.* FROM appointments a WHERE a.client_id IN (:tenant_client_ids)", "clients"],
+  ])("accepts %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toEqual([]);
+  });
+
+  it.each([
+    ["joined on a column that isn't its ID", "SELECT a.name FROM agencies a JOIN orders o ON a.id = o.total WHERE o.agency_id = :tenant_agency_ids"],
+    ["cross-joined to a filtered scoped table", "SELECT a.name, o.id FROM agencies a, orders o WHERE o.agency_id = :tenant_agency_ids"],
+    ["IN (…) over a column that doesn't carry its IDs", "SELECT name FROM agencies WHERE id IN (SELECT total FROM orders WHERE agency_id = :tenant_agency_ids)"],
+  ])("the scope's root table: rejects one %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["joined on the scoped table's tenant column", "SELECT o.id, a.name FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE o.agency_id IN (:tenant_agency_ids)"],
+    ["IN (…) over the scoped table's tenant column", "SELECT name FROM agencies WHERE id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)"],
+  ])("the scope's root table: accepts one %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  it.each([
+    ["equal to the filtered root's ID", "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids"],
+    ["IN (…) the filtered root's IDs", "SELECT * FROM orders o WHERE o.agency_id IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)"],
+  ])("now accepts a scoped table's tenant column %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+});
