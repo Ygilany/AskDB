@@ -80,6 +80,10 @@ export function askCommand(): CommandSpec<AskOptions> {
     initial: () => ({}),
     check(opts) {
       if (opts.question === undefined) throw new Error("Missing --question <text>.");
+      // Core's own message names ask()'s `question` option; here it's the flag (#719).
+      if (!opts.question.trim()) {
+        throw new Error("Question is empty. Pass a non-blank natural-language question with -q / --question.");
+      }
     },
     needsConfig: () => true,
     run: runAsk,
@@ -117,10 +121,6 @@ async function runAsk(opts: AskOptions): Promise<number> {
 
   try {
     const schema = loadSchemaFromPath(opts.schema ?? runtime.introspection.outputDir);
-    // Core's own message names the `question` option; on the command line it's the flag.
-    if (!question.trim()) {
-      throw new AskDbError("Question is empty. Pass a non-blank natural-language question with -q / --question.");
-    }
 
     const askdb = createAskDb({
       config: runtime,

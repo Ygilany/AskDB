@@ -184,6 +184,15 @@ describe("resolveBaseConfig", () => {
     expect(cfg?.baseURL).toBe("https://askdb.example/v1");
   });
 
+  // The config key comes first: hosts with askdb.config.* never set the env names (#629).
+  it("throws when no language model can be resolved, naming ai.language.model first", () => {
+    expect(() =>
+      resolveBaseConfig("test", { ASKDB_AI_API_KEY: "k" }, { apiKeyVars: ["NATIVE_API_KEY"] }, { usage: "language" }),
+    ).toThrowError(
+      "test: no language model configured. Set ai.language.model in askdb.config.* (or, in an env map, ASKDB_AI_MODEL or the provider's native model variable).",
+    );
+  });
+
   it("throws when no model can be resolved", () => {
     expect(() =>
       resolveBaseConfig(
@@ -193,7 +202,7 @@ describe("resolveBaseConfig", () => {
         { usage: "embedding" },
       ),
     ).toThrowError(
-      "test: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).",
+      "test: no embedding model configured. Set ai.embedding.model in askdb.config.* (or, in an env map, ASKDB_AI_EMBEDDING_MODEL or the provider's native embedding model variable).",
     );
   });
 });
@@ -207,7 +216,7 @@ describe("the env path's embedding model", () => {
     ["gateway", { AI_GATEWAY_API_KEY: "k" }],
   ] as const)("%s: requires a model instead of picking one", async (provider, env) => {
     const ai = createAiRegistry([provider]);
-    const message = `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`;
+    const message = `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.* (or, in an env map, ASKDB_AI_EMBEDDING_MODEL or the provider's native embedding model variable).`;
     expect(() => ai.resolveEmbeddingConfig({ ASKDB_AI_PROVIDER: provider, ...env })).toThrowError(message);
     await expect(ai.createEmbeddingModelFromEnv({ ASKDB_AI_PROVIDER: provider, ...env })).rejects.toThrowError(message);
     expect(ai.resolveEmbeddingConfig({ ASKDB_AI_PROVIDER: provider, ...env, ASKDB_AI_EMBEDDING_MODEL: "m" })?.model).toBe("m");

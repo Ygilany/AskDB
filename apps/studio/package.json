@@ -1,7 +1,7 @@
 {
   "name": "@askdb/studio",
   "version": "0.2.0-beta.44",
-  "description": "AskDB Studio: local browser UI for Schema v2 enrichment and sample NL-to-SQL checks.",
+  "description": "AskDB Studio: local browser UI for schema artifact enrichment and sample NL-to-SQL checks.",
   "keywords": [
     "askdb",
     "studio",
