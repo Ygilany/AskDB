@@ -276,7 +276,7 @@ Revisit it only if hosts need to rebind where the schema isn't available (see "W
 - **`@askdb/core` exports `expandTenantScope()`**, additive: the `subtree` expansion stays in core (ADR 0014) at rebind as well, so no host hand-builds it.
 - **Policy and schema changes apply to stored templates** at their next rebind. A template that rebinds today can start failing after the policy is tightened. That is intended: it fails closed.
 - **`PreparedQuery` doesn't change.** Templates stored before the change keep working once the host passes the guardrail context.
-- **Not a stronger guarantee.** The checks stay heuristic: after #341 the tenant check matches predicate shapes, not a parse, and known gaps remain (#400); #235 or a parser is stage (d). ADR 0012 is the source of this stance: a read-only database role plus database-level tenant enforcement (RLS) remain the real controls, and tightening the lint doesn't move the boundary (its Decision 5 lists this ADR as one such tightening). Docs must not present the new structure as more than tidier, consistent enforcement.
+- **Not a stronger guarantee.** The checks stay heuristic: after #341 the tenant check matches predicate shapes, not a parse, and known gaps remain (ADR 0012 lists them); #235 or a parser is stage (d). ADR 0012 is the source of this stance: a read-only database role plus database-level tenant enforcement (RLS) remain the real controls, and tightening the lint doesn't move the boundary (its Decision 5 lists this ADR as one such tightening). Docs must not present the new structure as more than tidier, consistent enforcement.
 - **No verdict to tamper with.** The host is trusted to build the right `tenantScope`, as in `ask()`.
 
 ## When to revisit

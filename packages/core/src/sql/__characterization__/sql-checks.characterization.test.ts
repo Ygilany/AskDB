@@ -5,9 +5,10 @@
  * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
  * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
- * custom engines and no dialect, where SQL Server ends a name or number), and #399 (120 tenant
+ * custom engines and no dialect, where SQL Server ends a name or number), #399 (120 tenant
  * verdicts, every dialect, plus 12 for an undeclared qualifier: a predicate filters only the reads of its
- * own `SELECT`).
+ * own `SELECT`), and #400 (72 tenant verdicts, every dialect: 4 shapes newly refused and 2 correct
+ * ones newly accepted, now that a join counts only on the columns the policy declares).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -211,6 +212,18 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders O WHERE o.agency_id = :tenant_agency_ids",
   "SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = :tenant_agency_ids",
   "WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids",
+  // #400: a join counts only on the columns the policy declares.
+  "SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN clients c ON a.id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.client_id FROM appointments a, clients c, sub_agencies s WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id LEFT JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.name FROM agencies a JOIN orders o ON a.id = o.total WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT a.name, o.id FROM agencies a, orders o WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT name FROM agencies WHERE id IN (SELECT total FROM orders WHERE agency_id = :tenant_agency_ids)",
+  "SELECT name FROM agencies WHERE id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)",
+  "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids",
+  "SELECT * FROM orders o WHERE o.agency_id IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
