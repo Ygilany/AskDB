@@ -4,6 +4,8 @@
  * result with a golden file that pins the current verdicts. The golden was captured on `main`
  * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
+ * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
+ * custom engines and no dialect, where SQL Server ends a name or number).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -160,6 +162,17 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids",
   "SELECT 1 AS a -- \r'\n, u.secret_recovery_token FROM users u -- '",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # x\r OR 1=1",
+  // #623: SQL Server ends a number after `0x` or `1E` and a name at U+00A0, U+200B and U+0085.
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1 OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1​OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1\u0085OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=0xOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1EOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1E OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND flags = 0x AND rate = 1E",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids​AND\u0085status = 'open'",
+  "SELECT [x OR] FROM orders WHERE agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
