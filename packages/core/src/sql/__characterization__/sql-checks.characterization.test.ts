@@ -71,6 +71,7 @@ const HOSTILE: readonly string[] = [
   String.raw`SELECT (ARRAY[1,2])[1:E'1'` + "\n'\\''::int] AS x --'",
   String.raw`SELECT U&"\006Frders".id FROM U&"\006Frders"`,
   String.raw`SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND U&"p\0061ssword" = 'x'`,
+  String.raw`SELECT U&"secret\005Frecovery\005Ftoken" FROM users`,
   "SELECT $$ FROM orders $$ AS x FROM agencies WHERE id = :tenant_agency_ids",
   "SELECT $tag$ ' $tag$ AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
   "SELECT $é$ FROM orders $é$ AS x FROM agencies WHERE id = :tenant_agency_ids",
@@ -97,9 +98,12 @@ const HOSTILE: readonly string[] = [
   "SELECT 'unterminated FROM orders WHERE agency_id = :tenant_agency_ids",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids /* unterminated",
   "SELECT N'x' AS a, X'0a' AS b, B'01' AS c FROM orders WHERE agency_id = :tenant_agency_ids",
-  "SELECT u.password FROM users u",
-  "SELECT 'u.password' AS x FROM users u",
-  String.raw`SELECT 'a\' AS x, u.password FROM users u --'`,
+  "SELECT u.secret_recovery_token FROM users u",
+  "SELECT 'u.secret_recovery_token' AS x FROM users u",
+  String.raw`SELECT 'a\' AS x, u.secret_recovery_token FROM users u --'`,
+  String.raw`SELECT E'a\'' AS x, u.secret_recovery_token FROM users u --'`,
+  "SELECT $$ AS x, u.secret_recovery_token FROM users u $$",
+  "SELECT x$$y, u.secret_recovery_token FROM users u, (SELECT 1 AS x$$y) t",
   "SELECT * FROM users",
   "SELECT row_to_json(u) FROM users u",
   // Where the tenant check's own scanner and the shared lexer split strings, names and comments differently.
@@ -124,7 +128,7 @@ const HOSTILE: readonly string[] = [
   // Held (a CR ends a `--` comment on Postgres and SQL Server, not on MySQL, SQLite or CockroachDB): local only until the maintainer decides.
   "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders",
   "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids",
-  "SELECT 1 AS a -- \r'\n, u.password FROM users u -- '",
+  "SELECT 1 AS a -- \r'\n, u.secret_recovery_token FROM users u -- '",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # x\r OR 1=1",
 ];
 
@@ -152,7 +156,7 @@ function verdicts(sql: string, dialect: DialectSpec | undefined): string {
     const f = findPostgresOnlyForms(sql, dialect);
     return [f.unicodeEscapedIdentifier ? "U&" : "", f.escapeStringContinuation ? "E-cont" : "", f.escapedByteString ? "b-esc" : ""].filter(Boolean).join(",") || "-";
   });
-  attempt("spans", () => tokenizeSqlSpans(sql, dialect).map((s) => `${s.kind[0]}${s.start}-${s.end}`).join(" "));
+  attempt("spans", () => tokenizeSqlSpans(sql, dialect).map((s) => `${s.kind === "comment" ? "m" : s.kind[0]}${s.start}-${s.end}`).join(" "));
   attempt("ph", () => scanPlaceholders(sql, dialect).map((p) => p.name).join(","));
   attempt("tph", () => extractTenantPlaceholders(sql, dialect).join(","));
   return parts.join(" | ");
