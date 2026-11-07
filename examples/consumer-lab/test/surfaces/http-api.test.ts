@@ -250,7 +250,7 @@ export default defineConfig({
     // The model did answer; AskDB rejected its SQL.
     expect(modelCallsFor(WRITE.text).at(-1)).toMatchObject({ questionId: WRITE.id, error: null });
     expectError(reply, 400, "sql_validation_error");
-    // The core rule code (getting-started/troubleshooting.mdx). The docs site's example shows `read_only` (#285).
+    // The core rule code (guides/troubleshooting.mdx). The docs site's example shows `read_only` (#285).
     expect(reply.body.error.rule).toBe("SQL_NOT_SELECT_OR_WITH");
   });
 
