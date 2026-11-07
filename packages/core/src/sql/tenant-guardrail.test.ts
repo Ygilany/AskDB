@@ -1053,3 +1053,67 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
     }
   });
 });
+
+describe("validateTenantGuardrails — a keyword written right after a number or $N parameter (GHSA-rhwf-7742-8hwj)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec, p: NormalizedTenantPolicy = warnPolicy) =>
+    validateTenantGuardrails(sql, p, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ";
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+
+  // MySQL and MariaDB end a number after its decimal point or exponent and read the word after it.
+  it.each(["1=1.0OR 1=1", "1=1e1OR 1=1", "1=.5OR 1=1", "1=1.XOR 1=1"])("mysql and mariadb: an OR after the number in %s is read", (tail) => {
+    for (const dialect of [MYSQL_DIALECT, MARIADB_DIALECT]) expect(findings(scoped + tail, dialect), dialect.id).toEqual(orders);
+  });
+
+  // PostgreSQL 14 and earlier end a number at its last digit and read the word after it.
+  it.each(["1=1OR 1=1", "1=1.0OR 1=1", "1=1e1OR 1=1"])("postgres: an OR after the number in %s is read", (tail) => {
+    expect(findings(scoped + tail, POSTGRES_DIALECT)).toEqual(orders);
+  });
+
+  // PostgreSQL 14 and CockroachDB end a `$N` parameter at its last digit and read the word after it,
+  // so the tenant check refuses a parameter written against a word wherever the SQL may be read as Postgres.
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a $N parameter written against a word is refused", (_label, dialect) => {
+    expect(findings(scoped + "0 < $1OR TRUE", dialect)).toContain("NOT_SELECT_OR_WITH:");
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND id = $1UNION SELECT * FROM orders", dialect)).toContain("NOT_SELECT_OR_WITH:");
+  });
+
+  it("mysql and mariadb: `$1OR` is one name there, so no parameter refusal", () => {
+    for (const dialect of [MYSQL_DIALECT, MARIADB_DIALECT]) expect(findings(scoped + "0 < $1OR TRUE", dialect), dialect.id).not.toContain("NOT_SELECT_OR_WITH:");
+  });
+
+  it("the same tails with an ASCII space are refused, as before", () => {
+    for (const tail of ["1=1.0 OR 1=1", "1=1 OR 1=1", "0 < $1 OR TRUE"]) {
+      expect(findings(scoped + tail, MYSQL_DIALECT), tail).toEqual(orders);
+      expect(findings(scoped + tail), tail).toEqual(orders);
+    }
+  });
+
+  it("a scoped query with numbers and parameters that hide no keyword still passes", () => {
+    for (const sql of [
+      `${scoped}total > 1.5 AND total < 1e3 AND status = 'open'`,
+      `${scoped}total > $1 AND x$1y = 1`,
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY 1",
+    ]) {
+      for (const dialect of [MYSQL_DIALECT, POSTGRES_DIALECT, undefined]) expect(findings(sql, dialect), `${dialect?.id}: ${sql}`).toEqual([]);
+    }
+  });
+
+  it("mysql: a name that starts with digits is one name, as MySQL reads it", () => {
+    // MySQL reads `3d_models` as one name, and `1OR` too (a syntax error where a value goes).
+    const digitTable: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      scopedTables: [{ id: "table:app.3d_models", scopeThrough: [{ root: "table:public.agencies", column: "table:app.3d_models#agency_id" }] }],
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    expect(findings("SELECT * FROM 3d_models", MYSQL_DIALECT, digitTable)).toEqual(["MISSING_TENANT_PREDICATE:table:app.3d_models"]);
+    expect(findings("SELECT * FROM 3d_models WHERE agency_id = :tenant_agency_ids", MYSQL_DIALECT, digitTable)).toEqual([]);
+  });
+});

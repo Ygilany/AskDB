@@ -6,7 +6,7 @@
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a table named `user`, a string with the server's default
  * backslash escapes, and a `--` comment that ends only at a line feed are read as the server reads
- * them.
+ * them, and a number ends after its decimal point or exponent, so a keyword written right after it is a keyword.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -63,6 +63,13 @@ fixtureSuite("the tenant check reads SQL the way MySQL and MariaDB do (live)", (
       // A spec that leaves backslashEscapes unset must read it the same way (the field unset = on).
       const sql = String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`;
       expect(findings(sql, policy, { id: engine, backslashEscapes: undefined })).toContain("MISSING_TENANT_PREDICATE");
+    });
+
+    it.each(["1=1.0OR 1=1", "1=1e1OR 1=1", "1=.5OR 1=1"])("an OR written right after the number in %s is a keyword, as the engine reads it (GHSA-rhwf-7742-8hwj)", async (tail) => {
+      // `(a = 1 AND …) OR 1=1` keeps both rows; without the OR, only a = 1 would.
+      const rows = (await runner()(`SELECT count(*) AS c FROM (SELECT 1 AS a UNION ALL SELECT 2) t WHERE a = 1 AND ${tail}`)).rows;
+      expect(Number(rows[0]![0])).toBe(2);
+      expect(findings(`SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ${tail}`)).toEqual(["MISSING_TENANT_PREDICATE"]);
     });
 
     it("a `--` comment ends only at a line feed, as the engine reads it", async () => {

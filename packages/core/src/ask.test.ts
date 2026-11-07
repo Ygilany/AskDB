@@ -344,6 +344,24 @@ describe("ask — a `$$` inside a name opens no dollar-quoted string", () => {
   });
 });
 
+describe("ask — a keyword written right after a number is read, like the engine (GHSA-rhwf-7742-8hwj)", () => {
+  it.each(["mysql", "mariadb"] as const)("%s: refuses the OR after a decimal number", async (dialect) => {
+    // MySQL and MariaDB end `1.0` before `OR`, so the OR defeats the predicate.
+    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1.0OR 1=1";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+});
+
 describe("ask — a non-ASCII dollar tag is read as a string, like the engine", () => {
   it.each(["postgres", "cockroachdb"] as const)("%s: refuses the OR the tag exposes", async (dialect) => {
     // `$é$ … $é$` is a dollar-quoted string, so the OR after it is code and defeats the predicate.
