@@ -111,9 +111,7 @@ It prints `Created shop.db`, and a new `shop.db` file appears in the folder. Tha
 
 ## 2. Install AskDB and scaffold the config
 
-Install the AskDB CLI into the project:
-
-<Aside type="note">pnpm and Yarn install only releases that are at least a day old. Within a day of a new AskDB release, they pick an older one, which can fail. To let them install AskDB's newest release, first run `pnpm config set minimumReleaseAgeExclude '["askdb","@askdb/*"]' --json`, which applies to all your projects, or, in this folder, `yarn config set npmPreapprovedPackages --json '["askdb","@askdb/*"]'`.</Aside>
+Install the AskDB CLI into the project. pnpm and Yarn install only releases that are at least a day old, and AskDB releases often: within a day of a release, they would pick an older one, which can fail. So their tabs first let AskDB's packages skip that wait. pnpm's setting applies to all your projects, and Yarn's to this folder. Both cover AskDB's packages only.
 
 <Tabs syncKey="pkg">
   <TabItem label="npm">
@@ -126,6 +124,7 @@ npm install --save-dev askdb
   <TabItem label="pnpm">
 
 ```bash
+pnpm config set minimumReleaseAgeExclude '["askdb","@askdb/*"]' --json
 pnpm add --save-dev askdb
 ```
 
@@ -133,6 +132,7 @@ pnpm add --save-dev askdb
   <TabItem label="yarn">
 
 ```bash
+yarn config set npmPreapprovedPackages --json '["askdb","@askdb/*"]'
 yarn add --dev askdb
 ```
 
