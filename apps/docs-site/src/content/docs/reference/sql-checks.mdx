@@ -38,6 +38,8 @@ The checks don't parse SQL. They split it into tokens and skip strings, quoted n
 | Where a `--` comment ends | At a line feed or a carriage return on Postgres, at a line feed only on CockroachDB. Both ids are read both ways. | At a line feed | At a line feed | At a line feed or a carriage return |
 | `$` | Inside a name, such as `a$$b`, part of the name. Elsewhere, `$$` or `$tag$` starts a dollar-quoted string (`$tag$…$tag$`), read only on these engines. Since 1.0.0-beta.51, a tag with non-ASCII letters (`$é$ … $é$`) is read as a string, as the engine does ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). | Inside a name, part of the name | Inside a name, part of the name | Starts a money literal such as `$1.5` |
 
+On SQL Server, a number also ends after `0x` or `1E` with no digits after it, and a name at whitespace such as a non-breaking space (U+00A0), U+200B or U+0085, so a keyword written right after one is read as a keyword, as SQL Server reads it ([#623](https://github.com/Ygilany/AskDB/issues/623)).
+
 ### Forms the checks refuse to read
 
 The checks refuse four forms rather than guess where they end or what they name:

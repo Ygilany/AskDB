@@ -522,9 +522,14 @@ function extractColumnName(columnId: string): string {
 /**
  * One same-length view of the statement per reading from `tenantCodeReadings` (see
  * {@link codeView}), with the statement itself (`source`), where string literals are still
- * readable at the same offsets.
+ * readable at the same offsets, and the shared lexer's tokens under that reading.
  */
-type CodeViews = ReadonlyArray<{ readonly text: string; readonly source: string; readonly reading: CodeViewReading }>;
+type CodeViews = ReadonlyArray<{
+  readonly text: string;
+  readonly source: string;
+  readonly reading: CodeViewReading;
+  readonly tokens: readonly SqlToken[];
+}>;
 
 /**
  * The statement's code views. A built-in engine gets its family's reading; any other id, or none,
@@ -537,11 +542,10 @@ type CodeViews = ReadonlyArray<{ readonly text: string; readonly source: string;
  * server runs one depends on its version.
  */
 function codeViews(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): CodeViews {
-  return tenantCodeReadings(dialect).map((reading) => ({
-    text: codeView(read.sql, read.tokens(reading.profile)),
-    source: read.sql,
-    reading,
-  }));
+  return tenantCodeReadings(dialect).map((reading) => {
+    const tokens = read.tokens(reading.profile);
+    return { text: codeView(read.sql, tokens), source: read.sql, reading, tokens };
+  });
 }
 
 /**
@@ -627,24 +631,54 @@ type Token = {
 };
 
 const TOKEN = /:[A-Za-z0-9_]+|::|\|\||<>|!=|<=|>=|[A-Za-z_\u0080-\uffff][\w$\u0080-\uffff]*|\d[\w.]*|\S/g;
+/** A {@link TOKEN} match that is a word or a number. */
+const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
 
 /** Split a code view into tokens with their nesting depth. Strings and comments are already blanked. */
-function tokenize(text: string): Token[] {
+function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
+  const split = view.reading.profile.tsqlLiterals ? lexerWordEnds(view) : undefined;
   let depth = 0;
   let quoted = false;
-  for (const m of text.matchAll(TOKEN)) {
-    const t = m[0];
-    if (t === QUOTE_MARK) {
+  for (const m of view.text.matchAll(TOKEN)) {
+    if (m[0] === QUOTE_MARK) {
       quoted = !quoted;
       continue;
     }
-    if (t === ")") depth = Math.max(0, depth - 1);
-    const lower = t.toLowerCase();
-    tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth, offset: m.index });
-    if (t === "(") depth++;
+    for (const [t, offset] of split && WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
+      if (t === ")") depth = Math.max(0, depth - 1);
+      const lower = t.toLowerCase();
+      tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth, offset });
+      if (t === "(") depth++;
+    }
   }
   return tokens;
+}
+
+/**
+ * Under a SQL Server reading, a word or number ends where the shared lexer ends it (#623): SQL
+ * Server ends a number after `0x` or `1E` and a name at whitespace such as U+00A0, so in `1=0xOR 1=1`
+ * or `1=1<U+00A0>OR 1=1` the `OR` is a keyword. Returns a function that cuts a word or number of the
+ * view at each lexer token that starts inside it, dropping the characters the lexer reads as
+ * whitespace. A quoted name is one lexer token, so it is never cut.
+ */
+function lexerWordEnds(view: CodeViews[number]): (text: string, offset: number) => Array<readonly [string, number]> {
+  const owner = new Int32Array(view.text.length).fill(-1);
+  view.tokens.forEach((token, index) => owner.fill(index, token.start, token.end));
+  return (text, offset) => {
+    const pieces: Array<readonly [string, number]> = [];
+    let start = -1;
+    const cut = (at: number) => {
+      if (start >= 0) pieces.push([view.text.slice(start, at), start]);
+      start = -1;
+    };
+    for (let k = offset; k < offset + text.length; k++) {
+      if (owner[k] === -1 || (start >= 0 && owner[k] !== owner[start])) cut(k);
+      if (owner[k] !== -1 && start < 0) start = k;
+    }
+    cut(offset + text.length);
+    return pieces;
+  };
 }
 
 /** Keywords that open a clause whose conjuncts filter rows. */
@@ -697,7 +731,7 @@ type PredicateTarget = {
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[]): boolean {
   const name = table.toLowerCase();
   return views.every((view) => {
-    const tokens = tokenize(view.text);
+    const tokens = tokenize(view);
     // Every spelling of the name counts as the table, quoted or not, except the words of `ORDER BY`.
     const mentions = (from: number, to: number) => {
       for (let i = from; i < to; i++) if (tokens[i]!.lower === name && !isOrderOrGroupBy(tokens, i)) return true;

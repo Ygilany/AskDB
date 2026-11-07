@@ -12,7 +12,7 @@
  * | read-only ({@link readOnlyReadings}) | the engine's profile | every engine's profile |
  * | sensitive ({@link sensitiveReadings}) | the engine's (Postgres family: plus CockroachDB's comment end) | the generic profile, plus each engine's that lexes cleanly |
  * | tenant: statements and calls ({@link tenantStatementReadings}) | the engine's (Postgres family: both comment ends) | every engine's, Postgres and MySQL with both string settings |
- * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres and MySQL views, the first two with both comment ends |
+ * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends |
  * | placeholders ({@link placeholderReading}) | the engine's | the generic profile |
  * | Postgres-only forms (`postgresReadingProfiles` in `lexer.ts`) | the engine's, when it is on the Postgres lexer | Postgres's, with backslash escapes too when set |
  *
@@ -135,20 +135,26 @@ const MYSQL_VIEW: SqlLexerProfile = {
 };
 /** A view whose line comments end at `\r` too, as on Postgres and SQL Server. */
 const crEnds = (view: SqlLexerProfile): SqlLexerProfile => ({ ...view, lineCommentEndsAtLfOnly: false });
+/**
+ * The standard view, read the SQL Server way (#623): a line comment ends at `\r` too, and a name or
+ * number ends where SQL Server ends it (`tsqlLiterals`: after `0x` or `1E`, and at whitespace such
+ * as U+00A0, U+200B and U+0085), so a keyword written right after one is a word of its own.
+ */
+const SQLSERVER_VIEW: SqlLexerProfile = { ...crEnds(STANDARD_VIEW), id: "sqlserver", tsqlLiterals: true };
 
 /**
  * The tenant check's predicate readings. A built-in engine gets its own view: the MySQL one twice,
- * with executable comments as code and as comments; the Postgres one with both comment ends; SQL
- * Server's ending a line comment at `\r` too. Backslash escapes follow the spec as the lexer reads
- * it: an unset value on MySQL or MariaDB is the server default, on. Any other id, or none, gets the
- * standard and Postgres views with both comment ends and the MySQL view: a table counts as
- * referenced when any of them sees it, a predicate only when every one does.
+ * with executable comments as code and as comments; the Postgres one with both comment ends; the
+ * SQL Server one. Backslash escapes follow the spec as the lexer reads it: an unset value on MySQL
+ * or MariaDB is the server default, on. Any other id, or none, gets the standard and Postgres views
+ * with both comment ends, the MySQL view and the SQL Server view: a table counts as referenced when
+ * any of them sees it, a predicate only when every one does.
  */
 export function tenantCodeReadings(dialect: ReadingDialect | undefined): CodeViewReading[] {
   const views = (profiles: readonly SqlLexerProfile[]) =>
     bothExecutableCommentReadings(profiles).map((profile) => ({ profile, pipesAreOr: profile.id === "mysql" }));
   if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
-    return views([STANDARD_VIEW, crEnds(STANDARD_VIEW), POSTGRES_VIEW, crEnds(POSTGRES_VIEW), MYSQL_VIEW]);
+    return views([STANDARD_VIEW, crEnds(STANDARD_VIEW), POSTGRES_VIEW, crEnds(POSTGRES_VIEW), MYSQL_VIEW, SQLSERVER_VIEW]);
   }
   const mysqlFamily = dialect.id === "mysql" || dialect.id === "mariadb";
   const backslashEscapes = mysqlFamily ? dialect.backslashEscapes !== false : dialect.backslashEscapes === true;
@@ -158,7 +164,7 @@ export function tenantCodeReadings(dialect: ReadingDialect | undefined): CodeVie
       : dialect.id === "postgres" || dialect.id === "cockroachdb"
         ? [POSTGRES_VIEW, crEnds(POSTGRES_VIEW)]
         : dialect.id === "sqlserver"
-          ? [crEnds(STANDARD_VIEW)]
+          ? [SQLSERVER_VIEW]
           : [STANDARD_VIEW];
   return views(engine.map((view) => ({ ...view, backslashEscapes })));
 }
