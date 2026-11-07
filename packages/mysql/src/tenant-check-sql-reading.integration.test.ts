@@ -5,8 +5,9 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a table named `user`, a string with the server's default
- * backslash escapes, and a `--` comment that ends only at a line feed are read as the server reads
- * them, and a number ends after its decimal point or exponent, so a keyword written right after it is a keyword.
+ * backslash escapes, a `--` comment that ends only at a line feed, and a backticked name spelled like
+ * the tenant placeholder or holding U+0001 are read as the server reads them, and a number ends after its
+ * decimal point or exponent, so a keyword written right after it is a keyword.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -79,6 +80,21 @@ fixtureSuite("the tenant check reads SQL the way MySQL and MariaDB do (live)", (
       expect(Number(rows[0]![0])).toBe(1);
       // A predicate written after a carriage-return comment is commented out, so it doesn't count.
       expect(findings("SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids"))
+        .toEqual(["MISSING_TENANT_PREDICATE"]);
+    });
+
+    it("a backticked name is a name, whatever it holds, as the engine reads it", async () => {
+      const count = async (sql: string) => Number((await runner()(sql)).rows[0]![0]);
+      // `:tenant_agency_ids` is x's column, not a bound value: the filter is x's 3.
+      const agency3 = await count("SELECT count(*) AS c FROM people.client WHERE agency_id = 3");
+      expect(await count("SELECT count(*) AS c FROM people.client o CROSS JOIN (SELECT 3 AS `:tenant_agency_ids`) x WHERE o.agency_id = `:tenant_agency_ids`"))
+        .toBe(agency3);
+      // A U+0001 inside a backticked name is part of it, and the OR after it keeps every row.
+      expect(await count("SELECT count(DISTINCT agency_id) AS c FROM people.client CROSS JOIN (SELECT 1 AS a) `\u0001` WHERE agency_id = 3 AND `\u0001`.a = 1 OR 1=1"))
+        .toBeGreaterThan(1);
+      expect(findings("SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS `:tenant_agency_ids`) x WHERE o.agency_id = `:tenant_agency_ids`"))
+        .toEqual(["MISSING_TENANT_PREDICATE"]);
+      expect(findings("SELECT `\u0001`.a FROM orders CROSS JOIN (SELECT 1 AS a) `\u0001` WHERE agency_id = :tenant_agency_ids AND `\u0001`.a = 1 OR 1=1"))
         .toEqual(["MISSING_TENANT_PREDICATE"]);
     });
   });

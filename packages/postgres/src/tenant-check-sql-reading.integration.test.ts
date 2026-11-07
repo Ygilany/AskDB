@@ -6,7 +6,8 @@
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `$tag$` string, a table named after a keyword, and where a `--`
  * comment ends, nested block comments, a column list after a table's alias, an `ON` that closes an
- * earlier outer join, and a quoted column name, compared exactly, are all read as Postgres reads them.
+ * earlier outer join, a quoted column name, compared exactly, and a quoted name spelled like the tenant
+ * placeholder or holding U+0001 are all read as Postgres reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -130,5 +131,22 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     expect(findings('SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids'))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
     expect(findings('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids')).toEqual([]);
+  });
+
+  it("a quoted name is a name, whatever it holds, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    const agencies = async (sql: string) => Number((await runner(sql)).rows[0]![0]);
+    // ":tenant_agency_ids" is x's column, equal to o.agency_id, so clients of every agency come back.
+    expect(await agencies(
+      'SELECT count(DISTINCT o.agency_id) AS c FROM people.client o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"',
+    )).toBeGreaterThan(1);
+    // A U+0001 inside a quoted name is part of it, and the OR after it keeps every row.
+    expect(await agencies(
+      'SELECT count(DISTINCT agency_id) AS c FROM people.client CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = 3 AND "\u0001".a = 1 OR 1=1',
+    )).toBeGreaterThan(1);
+    expect(findings('SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"'))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings('SELECT "\u0001".a FROM orders CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = :tenant_agency_ids AND "\u0001".a = 1 OR 1=1'))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });

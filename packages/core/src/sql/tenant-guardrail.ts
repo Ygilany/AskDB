@@ -643,8 +643,8 @@ function codeViews(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dial
 
 /**
  * What a quoted identifier's delimiters become in a code view: not a word character, so
- * identifier matching still sees `"agency_id"` as `agency_id`, but the tokenizer can tell
- * a quoted `"where"` (an identifier) from the keyword `WHERE`.
+ * identifier matching still sees `"agency_id"` as `agency_id`. The tokenizer skips it, and
+ * tells a quoted `"where"` (an identifier) from the keyword `WHERE` by the lexer's spans.
  */
 const QUOTE_MARK = "\u0001";
 
@@ -715,7 +715,7 @@ type Token = {
   readonly text: string;
   /** Lower-cased, for identifier comparison. */
   readonly lower: string;
-  /** Lower-cased for keyword comparison; empty for a quoted identifier, which is never a keyword. */
+  /** Lower-cased for keyword comparison; empty inside a quoted identifier, which is never a keyword or a placeholder. */
   readonly kw: string;
   /** Parenthesis nesting of the token; a `(` or `)` has the depth outside it. */
   readonly depth: number;
@@ -727,21 +727,23 @@ const TOKEN = /:[A-Za-z0-9_]+|::|\|\||<>|!=|<=|>=|[A-Za-z_\u0080-\uffff][\w$\u00
 /** A {@link TOKEN} match that is a word or a number. */
 const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
 
-/** Split a code view into tokens with their nesting depth. Strings and comments are already blanked. */
+/**
+ * Split a code view into tokens with their nesting depth. Strings and comments are already blanked.
+ * A token is quoted when it lies inside a quoted identifier as the reading's lexer spans it, so a
+ * {@link QUOTE_MARK} character written inside a quoted name changes nothing.
+ */
 function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
   const split = lexerWordEnds(view);
+  const quoted = new Uint8Array(view.text.length);
+  for (const token of view.tokens) if (token.kind === "quoted_identifier") quoted.fill(1, token.start, token.end);
   let depth = 0;
-  let quoted = false;
   for (const m of view.text.matchAll(TOKEN)) {
-    if (m[0] === QUOTE_MARK) {
-      quoted = !quoted;
-      continue;
-    }
+    if (m[0] === QUOTE_MARK) continue;
     for (const [t, offset] of WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
       if (t === ")") depth = Math.max(0, depth - 1);
       const lower = t.toLowerCase();
-      tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth, offset });
+      tokens.push({ text: t, lower, kw: quoted[offset] === 1 ? "" : lower, depth, offset });
       if (t === "(") depth++;
     }
   }
@@ -864,7 +866,8 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
       .every(([from, to]) => {
         for (let k = from; k < to; k++) {
           for (const target of targets) {
-            if (tokens[k]!.text !== target.placeholder) continue;
+            // A quoted name spelled like the placeholder is a name, which nothing binds.
+            if (tokens[k]!.text !== target.placeholder || tokens[k]!.kw === "") continue;
             const span = predicateSpan(tokens, k, target, postgres);
             if (!span || !isFilterConjunct(tokens, span[0], span[1], view.reading)) continue;
             if (!target.discriminator || hasDiscriminator(tokens, from, to, view, target)) return true;

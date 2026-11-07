@@ -11,7 +11,8 @@
  * name as an escaped `]` and nests block comments, so a predicate inside either is no predicate.
  * SQL Server resolves a name through the database collation, which reads fullwidth letters as ASCII
  * and ignores U+200D, so the tenant and sensitive checks refuse a name outside printable ASCII that
- * the schema doesn't spell.
+ * the schema doesn't spell. A bracketed name spelled like the tenant placeholder, or holding U+0001,
+ * is a name.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -94,5 +95,22 @@ fixtureSuite("the tenant check reads SQL the way SQL Server does (live SQL Serve
     const sensitive = loadSchema(join(here, "../../../fixtures/schemas/orders-users-sensitive.schema"));
     const scan = validateSensitiveReferences("SELECT [secret\u200d_recovery_token] FROM users", sensitive, { dialect });
     expect(scan.unresolvedScope?.issues).toContain("UNICODE_ESCAPED_IDENTIFIER");
+  });
+
+  it("a bracketed name is a name, whatever it holds, as the engine reads it", async () => {
+    const runner = createSqlServerCatalogQueryRunner(connectionUrl("sqlserver", "reader"));
+    const agencies = async (sql: string) => Number((await runner(sql)).rows[0]![0]);
+    // [:tenant_agency_ids] is x's column, equal to o.agency_id, so clients of every agency come back.
+    expect(await agencies(
+      "SELECT count(DISTINCT o.agency_id) AS c FROM people.client o CROSS APPLY (SELECT o.agency_id AS [:tenant_agency_ids]) x WHERE o.agency_id = [:tenant_agency_ids]",
+    )).toBeGreaterThan(1);
+    // A U+0001 inside a bracketed name is part of it, and the OR after it keeps every row.
+    expect(await agencies(
+      "SELECT count(DISTINCT agency_id) AS c FROM people.client CROSS JOIN (SELECT 1 AS a) [\u0001] WHERE agency_id = 3 AND [\u0001].a = 1 OR 1=1",
+    )).toBeGreaterThan(1);
+    expect(findings("SELECT o.* FROM orders o CROSS APPLY (SELECT o.agency_id AS [:tenant_agency_ids]) x WHERE o.agency_id = [:tenant_agency_ids]"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings("SELECT [\u0001].a FROM orders CROSS JOIN (SELECT 1 AS a) [\u0001] WHERE agency_id = :tenant_agency_ids AND [\u0001].a = 1 OR 1=1"))
+      .toContain("MISSING_TENANT_PREDICATE");
   });
 });
