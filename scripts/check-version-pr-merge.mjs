@@ -34,7 +34,13 @@ try {
 } catch {
   packages = undefined;
 }
-if (!/^[0-9a-f]{40}$/.test(sha ?? "") || !/^[^/\s]+\/[^/\s]+$/.test(repo ?? "") || !Array.isArray(packages)) {
+const isPackage = (p) => typeof p?.name === "string" && p.name !== "" && typeof p.version === "string" && p.version !== "";
+if (
+  !/^[0-9a-f]{40}$/.test(sha ?? "") ||
+  !/^[^/\s]+\/[^/\s]+$/.test(repo ?? "") ||
+  !Array.isArray(packages) ||
+  !packages.every(isPackage)
+) {
   process.stderr.write(
     "usage: GITHUB_REPOSITORY=<owner>/<repo> PACKAGES=<JSON array of { name, version }> check-version-pr-merge.mjs <40-hex sha>\n",
   );
@@ -73,10 +79,18 @@ if (!versionPr) {
 
 const parent = execFileSync("git", ["rev-parse", `${sha}^1`], { encoding: "utf8" }).trim();
 const beforeMerge = new Set(publicPackagesAt(parent).map(nameAtVersion));
-const leftover = packages.map(nameAtVersion).filter((id) => beforeMerge.has(id));
+const leftover = packages.filter((pkg) => beforeMerge.has(nameAtVersion(pkg)));
 if (leftover.length > 0) {
+  // This merge's own versions publish from its tree with a filter, because the leftover
+  // versions are in that tree too: reverting one on `main` later doesn't change it.
+  const own = packages.filter((pkg) => !beforeMerge.has(nameAtVersion(pkg)));
+  const filters = (suffix) => own.map((pkg) => `--filter "${pkg.name}${suffix}"`).join(" ");
+  const ownStep =
+    own.length === 0
+      ? "This merge added none of the versions to publish."
+      : `Then publish this merge's own versions (${own.map(nameAtVersion).join(", ")}) from ${sha.slice(0, 8)}, filtered to them: pnpm ${filters("...")} build && pnpm ${filters("")} publish --access public --tag latest --no-git-checks.`;
   process.stderr.write(
-    `::error::Version PR #${versionPr.number} didn't add ${leftover.join(", ")}: already unpublished on main before it merged (${parent.slice(0, 8)}), so its approval doesn't cover them. Nothing was published. Publish each by hand from the merge commit of the Version PR that added it, and revert one no Version PR added; then publish the rest of this merge's versions by hand from ${sha.slice(0, 8)} (${HAND_PUBLISH}).\n`,
+    `::error::Version PR #${versionPr.number} didn't add ${leftover.map(nameAtVersion).join(", ")}: already unpublished on main before it merged (${parent.slice(0, 8)}), so its approval doesn't cover them. Nothing was published. Publish each by hand from the merge commit of the Version PR that added it, filtered to that PR's versions, and revert one no Version PR added. ${ownStep} (${HAND_PUBLISH})\n`,
   );
   process.exit(1);
 }
