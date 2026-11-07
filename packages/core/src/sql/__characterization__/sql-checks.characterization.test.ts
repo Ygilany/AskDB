@@ -221,6 +221,12 @@ const HOSTILE: readonly string[] = [
   "SELECT o.* FROM orders o CROSS APPLY (SELECT o.agency_id AS [:tenant_agency_ids]) x WHERE o.agency_id = [:tenant_agency_ids]",
   'SELECT "\u0001".a FROM orders CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = :tenant_agency_ids AND "\u0001".a = 1 OR 1=1',
   "SELECT [\u0001].a FROM orders CROSS JOIN (SELECT 1 AS a) [\u0001] WHERE agency_id = :tenant_agency_ids AND [\u0001].a = 1 OR 1=1",
+  // SQLite reads a '…' literal in a table's place as the table's name.
+  "SELECT * FROM 'orders'",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM 'orders'",
+  "SELECT * FROM lookup_states, main.'orders'",
+  "SELECT * FROM 'users'",
+  "SELECT 'orders' AS label, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

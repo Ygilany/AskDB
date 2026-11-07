@@ -1454,3 +1454,51 @@ describe("validateTenantGuardrails — a quoted name is a name, whatever it hold
   });
 });
 
+
+describe("validateTenantGuardrails — SQLite reads a single-quoted name in a table's place as the table", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+
+  // SQLite takes a '…' literal where only a name may stand as that name: on SQLite 3.54, each of these
+  // read every row of orders.
+  const named: Array<[string, string, string]> = [
+    ["after FROM", "SELECT * FROM 'orders'", "orders"],
+    ["in a UNION branch", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM 'orders'", "orders"],
+    ["after a schema", "SELECT * FROM main.'orders'", "orders"],
+    ["after a comma in FROM", "SELECT * FROM lookup_states, 'orders'", "orders"],
+    ["after JOIN", "SELECT o.* FROM lookup_states x JOIN 'orders' o ON o.state = x.code", "orders"],
+    ["after IN, which reads a table", "SELECT * FROM lookup_states WHERE code IN 'orders'", "orders"],
+    ["the root table", "SELECT * FROM 'agencies'", "agencies"],
+  ];
+
+  it.each(maybeSqlite)("refuses an unfiltered read of a single-quoted table under %s", (_label, dialect) => {
+    for (const [label, sql, table] of named) {
+      expect(findings(sql, dialect), label).toContain(`MISSING_TENANT_PREDICATE:table:public.${table}`);
+    }
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails("SELECT * FROM 'orders'", policy, agencyScope, { dialect: SQLITE_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(maybeSqlite)("keeps a filtered read, and string literals elsewhere, under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM 'orders' WHERE agency_id = :tenant_agency_ids",
+      "SELECT 'orders' AS label, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
+      "SELECT 'a', 'orders' FROM lookup_states",
+      "SELECT * FROM lookup_states WHERE code IN ('orders', 'x')",
+      "SELECT CASE WHEN code = 'x' THEN 'orders' ELSE 'other' END AS kind FROM lookup_states",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  it.each([["postgres", POSTGRES_DIALECT], ["mysql", MYSQL_DIALECT], ["sqlserver", SQLSERVER_DIALECT]] as const)(
+    "leaves %s alone, which rejects a literal in a table's place",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM 'orders'", dialect)).toEqual([]);
+    },
+  );
+});

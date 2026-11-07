@@ -873,3 +873,26 @@ describe("validateSensitiveReferences — a name outside printable ASCII that th
     expect(scan("SELECT email FROM identity.users WHERE tag = N'ｔａｇ'", dialect).passed).toBe(true);
   });
 });
+
+describe("validateSensitiveReferences — SQLite reads a single-quoted name in a table's place as the table", () => {
+  const scan = (sql: string, dialect?: DialectSpec) => validateSensitiveReferences(sql, districtSchema, dialect ? { dialect } : undefined);
+  const customEngine = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine], ["no dialect", undefined]] as const;
+
+  // On SQLite, `FROM 'users'` reads the table, so `*` reaches its sensitive column.
+  it.each(maybeSqlite)("expands * over a single-quoted table under %s", (_label, dialect) => {
+    for (const sql of ["SELECT * FROM 'users'", "SELECT * FROM identity.'users'", "SELECT u.* FROM people.students s, 'users' u"]) {
+      const result = scan(sql, dialect);
+      expect(result.passed, sql).toBe(false);
+      expect(result.references, sql).toContainEqual(expect.objectContaining({ table: "users", column: "password" }));
+    }
+  });
+
+  it.each(maybeSqlite)("keeps a string literal in the select list under %s", (_label, dialect) => {
+    expect(scan("SELECT 'users' AS label, email FROM identity.users", dialect).passed).toBe(true);
+  });
+
+  it("leaves postgres alone, which rejects a literal in a table's place", () => {
+    expect(scan("SELECT * FROM 'users'", POSTGRES_DIALECT).passed).toBe(true);
+  });
+});
