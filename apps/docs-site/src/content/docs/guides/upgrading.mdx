@@ -404,7 +404,7 @@ if (result.unboundSql && result.params) {
 - **A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call. Set `"sql-params"` if your driver binds `$1`-style markers, or `"sql-only"`: on SQL Server, `$1` is a money constant. A value other than these two throws the same error on every dialect.
 - **`@askdb/client`'s `askdb.ask()`** forwards to `ask()`, so it changes the same way. Studio's Playground now starts in `sql-params`.
 
-[Executing the result](/reference/core-api/#executing-the-result) describes both SQL forms.
+[Executing the result](/reference/core-api/ask/#executing-the-result) describes both SQL forms.
 
 ### Use `sql-params` for tenant IDs outside printable ASCII
 
@@ -569,7 +569,7 @@ const rebound = bindPreparedQuery(
 - **With a tenant policy whose `enforcement` is `warn`**, a template that fails the tenant check is refused with `TenantGuardrailError`. To bind it anyway, pass `acceptWarnings: ["tenant"]`.
 - **Stored `PreparedQuery` objects keep working.** The checks use the schema and scope you pass now, so a tightened policy applies at the next rebind.
 
-With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
+With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
 
 ### Load a schema directory, not a renamed copy of its JSON file
 
@@ -630,7 +630,7 @@ const target = buildSuggestionTarget(schema, source);
 const context = buildSuggestionContext(schema, source.tableId);
 ```
 
-The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
+The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/schema/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
 
 ### Other changes you may notice in beta.45
 
@@ -641,7 +641,7 @@ The context no longer lists an untracked table (`tracked: false`) as a neighbor,
 - **Omitting sensitive identifiers withholds more text** ([#374](https://github.com/Ygilany/AskDB/issues/374)). With `omitSensitiveIdentifiersFromNlToSqlPrompt: true`, a description, alias, enum value, common query language block or retrieved chunk that names a sensitive column no longer reaches the model. If you build an `NlToSqlSchemaFormatStats` object by hand, such as a test double, set its new `mentionDroppedCount` field (`0` keeps the old meaning).
 - **Studio follows `modes.omitSensitiveFromPrompt`** in the Playground and in **Suggest** ([#601](https://github.com/Ygilany/AskDB/issues/601)). With it on, the Playground's prompt leaves out sensitive columns and text that names one, and **Suggest** on a sensitive column shows an error (`400` from `POST /api/suggest`) instead of a draft. See [Tables and enrichment](/studio/#tables-and-enrichment).
 - **The enrichment suggestion prompt has a new format.** `buildEnrichmentUserPrompt()` lists the target table the way `ask()`'s prompt does (`TABLE public.users`, then lines such as `- email text (NOT NULL) (sensitive)`), so a test that compares the prompt text needs updating. `suggestEnrichment()` takes a new `omitSensitiveIdentifiersFromPrompt` option; pass your `modes.omitSensitiveFromPrompt`. With it on, a sensitive target column throws `SensitiveEnrichmentTargetError`.
-- **Results gain `verdict`**, which lists every guardrail finding. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/#guardrail-verdict).
+- **Results gain `verdict`**, which lists every finding of the SQL checks. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict).
 
 ## 1.0.0-beta.44
 

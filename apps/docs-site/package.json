@@ -9,8 +9,9 @@
     "preview": "astro preview",
     "dev": "astro dev --host 127.0.0.1 --port 4310",
     "lint": "astro check",
-    "test": "pnpm run test:errors && ASTRO_BASE=/ pnpm run build && pnpm run test:links",
+    "test": "pnpm run test:errors && pnpm run test:exports && ASTRO_BASE=/ pnpm run build && pnpm run test:links",
     "test:errors": "node --test ./scripts/check-error-reference.test.mjs && node ./scripts/check-error-reference.mjs",
+    "test:exports": "node --test ./scripts/check-export-coverage.test.mjs && node ./scripts/check-export-coverage.mjs",
     "test:links": "node --test ./scripts/check-link-targets.test.mjs && node ./scripts/check-base-links.mjs / && node ./scripts/check-link-targets.mjs /"
   },
   "engines": {

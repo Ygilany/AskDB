@@ -19,7 +19,7 @@ When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB runs these s
 4. **Generate.** AskDB calls the model you supplied — any provider compatible with the [Vercel AI SDK](/guides/bring-your-own-model/) — and the model returns SQL. AskDB does not host inference; your key, your billing.
 5. **Check.** The returned SQL goes through AskDB's heuristic guardrails: single statement (with a SQL Server caveat), must start with `SELECT` or `WITH`, no comments, no DDL/DML keywords, no locking reads, no calls to known side-effecting functions. SQL that fails these is rejected. When your artifact declares a tenant policy or `sensitive` markers, the tenant and sensitive-column checks also run. Depending on their mode, they either reject the SQL or return it with warnings. These checks catch common model mistakes but aren't a security boundary. The exact checks, and what they miss, are in [Safety boundaries](/concepts/safety-boundaries/).
 
-`ask()` returns the checked SQL, the values to bind when the SQL has parameters, and what the checks found. [`AskPipelineResult`](/reference/core-api/#result--askpipelineresult) lists every field. What happens next is your call.
+`ask()` returns the checked SQL, the values to bind when the SQL has parameters, and what the checks found. [`AskPipelineResult`](/reference/core-api/ask/#result--askpipelineresult) lists every field. What happens next is your call.
 
 ## The runtime boundary
 

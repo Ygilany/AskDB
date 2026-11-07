@@ -288,7 +288,7 @@ SELECT customer_id, SUM(total) AS lifetime_value FROM orders GROUP BY customer_i
 
 Everything else goes to stderr, so stdout stays parseable: errors, `Note:` lines (a dialect note, or a sensitive-scope note), and the sensitive warning. Execution is not part of the CLI.
 
-If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict`, rely on `bindPreparedQuery()` re-running it on a rebind, or call it directly on cached SQL.
+If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/checks/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict`, rely on `bindPreparedQuery()` re-running it on a rebind, or call it directly on cached SQL.
 
 #### Dialect
 
@@ -416,7 +416,7 @@ Stdout is one JSON object: `question`, `k`, and `results`, best match first. Eac
 
 Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command prints its usage to stderr and exits `1`.
 
-Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/#logging). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line.
+Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/core-api/logging/). A usage error is one line naming the problem, such as `Unknown option: --x`, `--out requires a value.` or `Missing --question <text>.`, and it's reported before any config is read. An error repeats a value you passed only when it looks like a name or a number, so a connection string given to the wrong flag isn't printed back. When a connection fails on several addresses, such as `localhost` refusing on both `::1` and `127.0.0.1`, each address's error prints on its own line.
 
 An unexpected error, such as a config file that fails to load, prints its message and the hint `Set ASKDB_DEBUG=1 to print the stack trace.` Set `ASKDB_DEBUG` to `1` or `true` to add the stack trace. Any other value, including `0`, leaves it off, and the `DEBUG` variable used by the `debug` package has no effect.
 
