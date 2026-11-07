@@ -1,5 +1,47 @@
 # askdb
 
+## 1.0.0-beta.52
+
+### Patch Changes
+
+- 2da504c: `askdb init --rag-store pgvector` writes a config that reads the pgvector connection URL from `PGVECTOR_URL` by default, not `ASKDB_PGVECTOR_URL`, and names that variable in `.env.example`. `--pgvector-env` still picks another name. A config that already reads `env("ASKDB_PGVECTOR_URL")` keeps working.
+- dc750be: `askdb init` installs `@askdb/config` and the driver in a one-package project whose `pnpm-workspace.yaml` holds only settings, such as `minimumReleaseAgeExclude` (#863). It skipped the install there and printed the `pnpm add` command. It still skips at a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`.
+- 30d2348: `askdb` help says "schema directory" instead of "Schema v2" (#273), and marks the experimental surfaces ADR 0030 keeps at 0.x (#662). `askdb --help` tags `studio`, `enrich`, `bundle` and `rag` "(experimental)" and links ADR 0030. `askdb bundle --help` and `askdb rag --help` add a note that a minor release may change them. `askdb init --help` heads its RAG and Studio options "(experimental)", since they write the experimental `rag` and `studio` blocks. A blank `--question` now fails before `askdb ask` looks for a config or a schema, with a message that names `-q / --question` itself, because `@askdb/core`'s message no longer names CLI flags (#719); the exit code is still `1`.
+- 8d706ae: `askdb ask`'s hint after a schema that doesn't load no longer names `fixtures/schemas/orders-users.schema/`, a folder only AskDB's repository holds (#850). On `Schema path not found.`, `Schema path is not readable (permission denied).`, `Failed to parse schema.` and `Failed to load schema.`, it now says to use a schema directory that `askdb introspect` wrote, and links the troubleshooting guide.
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [f59a7e1]
+- Updated dependencies [30d2348]
+- Updated dependencies [dc750be]
+- Updated dependencies [6320c85]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4188c04]
+- Updated dependencies [97312e1]
+- Updated dependencies [39a4a5e]
+- Updated dependencies [8069854]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [6320c85]
+- Updated dependencies [30d2348]
+- Updated dependencies [2da504c]
+  - @askdb/ai@0.1.0-beta.12
+  - @askdb/config@1.0.0-beta.20
+  - @askdb/core@1.0.0-beta.52
+  - @askdb/introspect@0.3.0-beta.26
+  - @askdb/enrich@0.2.0-beta.23
+  - @askdb/rag@0.2.0-beta.32
+  - @askdb/postgres@0.2.0-beta.28
+  - @askdb/studio@0.2.0-beta.45
+  - @askdb/client@1.0.0-beta.12
+  - @askdb/mysql@0.1.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.27
+  - @askdb/sqlserver@0.1.0-beta.28
+
 ## 1.0.0-beta.51
 
 ### Patch Changes
