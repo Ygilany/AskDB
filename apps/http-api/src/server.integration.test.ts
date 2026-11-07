@@ -362,22 +362,26 @@ describe("http-api", () => {
     }
   });
 
-  it("missing schema file returns schema_parse_error with source context", async () => {
+  // #840: the server's own schema is the operator's to fix, so a host.schemaPath that doesn't
+  // load is a 500, and its path stays in the server log, never in the response.
+  it("a server host.schemaPath that doesn't load answers 500 generation_not_configured, names no path, and logs the cause", async () => {
     const missingPath = "/nope/does-not-exist-http.schema";
-    installTestRuntime({
-      mockSql: "select 1",
-      logLevel: "silent",
-      host: { schemaPath: missingPath },
-    });
+    const dir = mkdtempSync(join(tmpdir(), "askdb-http-schema-path-"));
+    const logFile = join(dir, "askdb.log");
+    installTestRuntime({ mockSql: "select 1", logLevel: "error", logFile, host: { schemaPath: missingPath } });
     const app = await startApp();
     try {
       const { status, json } = await postAsk(app.url, { question: "hi" });
-      expect(status).toBe(400);
+      expect(status).toBe(500);
       expect(json.ok).toBe(false);
-      expect(json.error?.code).toBe("schema_parse_error");
-      expect(String(json.error?.message ?? "")).toContain(`host.schemaPath (${missingPath})`);
+      expect(json.error?.code).toBe("generation_not_configured");
+      expect(String(json.error?.message ?? "")).not.toContain("does-not-exist-http");
+      const runError = readLogEntries(logFile).find((entry) => entry.msg === "askdb http run error");
+      expect(runError?.errName).toBe("SchemaLoadError");
+      expect(String(runError?.errMessage)).toContain(`host.schemaPath (${missingPath})`);
     } finally {
       await app.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

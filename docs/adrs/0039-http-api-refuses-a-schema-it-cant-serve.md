@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-06; amended 2026-11-06, #809). The coordinator decided #716 and #720 on 2026-11-06 (the "Decision (2026-11-06)" section of each issue). Implemented in PR #806.
+Accepted (2026-11-06; amended 2026-11-06, #809, #840). The coordinator decided #716 and #720 on 2026-11-06 (the "Decision (2026-11-06)" section of each issue). Implemented in PR #806.
 
 ## Context
 
@@ -48,6 +48,11 @@ For #716:
 - **A request schema that records no `provider`, or one AskDB has no dialect for, answers `400 bad_request`** (`DialectNotSupportedError`, Decision 2's branch). The message names the provider, or says there is none, and the supported ids, and never points the caller at the server's config.
 - **`@askdb/client` doesn't change.** `resolveDialect` keeps "a configured `dialect` wins" for the CLI, Studio and hosts; the HTTP server, which knows which schema came from the request, overrides it per call.
 - **Options not taken:** refusing a request schema whose `provider` disagrees with the config (it would bar a caller from any other engine on that server), and keeping Decision 5 with the note logged (the caller still got another engine's SQL).
+
+**2026-11-06 — A server schema that doesn't load (#840):** a wrong `host.schemaPath` answered any caller `400 schema_parse_error`, with the server's absolute path in the message. Decision 2 now covers loading too: the server's own schema answers `500 generation_not_configured` with a generic message that names no path, and the `askdb.run.error` log line keeps the full `SchemaLoadError`. A request `schemaJson` that doesn't load keeps `400 schema_parse_error`. A third cause joins Decision 3's `errName` list: `SchemaLoadError`. Options not taken:
+- **Keep `400 schema_parse_error` and drop the path from the message.** It still blames the caller for the operator's configuration, Option C's reason for #720.
+- **`500 internal_error`.** It reads as a crash and tells the client nothing about the cause, the reason #716 named its own code.
+- **A new public code, such as `schema_not_loaded`.** One more public code before the 1.0 freeze, Option B's reason for #720; a client can't act differently on it, and the log's `errName` already names the cause.
 
 ## Related
 
