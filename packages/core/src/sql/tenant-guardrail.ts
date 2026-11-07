@@ -611,6 +611,15 @@ function inOrderOrGroupBy(text: string, start: number, end: number): boolean {
   return word === "by" && /(?:^|[^\w$\u0080-\uffff.\u0001])(?:order|group)\s+$/i.test(text.slice(0, start));
 }
 
+/**
+ * Whether a reading sees `tableName` as a name of its own, not part of a longer one (`orders$archive`):
+ * anywhere in code, or inside a quoted name, except as a word of `ORDER BY` or `GROUP BY`.
+ */
+function mentionsAsName(view: CodeViews[number], tableName: string): boolean {
+  const pattern = new RegExp(`(?<![\\w$\\u0080-\\uffff])${escapeRegex(tableName)}(?![\\w$\\u0080-\\uffff])`, "gi");
+  return [...view.text.matchAll(pattern)].some((m) => !inOrderOrGroupBy(view.text, m.index, m.index + m[0].length));
+}
+
 /** A tenant column counts only when every reading sees it in code. */
 function mentionsIdentifier(views: CodeViews, identifier: string): boolean {
   const pattern = new RegExp(`\\b${escapeRegex(identifier)}\\b`, "i");
@@ -846,6 +855,15 @@ function scopeOpen(scope: string): number {
   return Number.parseInt(scope, 10);
 }
 
+/**
+ * A token's name for matching a table or CTE: lower-cased, and for a quoted name without its
+ * trailing whitespace, which SQL Server ignores (`[orders ]` reads `orders`). Matching more
+ * spellings finds more reads, so the check only gets stricter on engines that keep it.
+ */
+function tableNameOf(t: Token): string {
+  return t.quoted === true ? t.lower.trimEnd() : t.lower;
+}
+
 function isWord(token: Token | undefined): boolean {
   return token !== undefined && (token.quoted === true || /^[A-Za-z_\u0080-￿]/.test(token.text));
 }
@@ -897,7 +915,12 @@ function readNames(a: Analysis, i: number): Set<string> {
 function sourceEnd(a: Analysis, i: number): number {
   let start = qualifiedStart(a.tokens, i);
   let end = i;
-  while (a.tokens[start - 1]?.text === "(" && a.tokens[end + 1]?.text === ")") {
+  // Only parentheses in a source position (after `FROM`, `JOIN`, `ONLY`, `,` or another `(`), not a call's.
+  const opensSource = (open: number) => {
+    const before = a.tokens[open - 1];
+    return before !== undefined && (["from", "join", "only", "lateral", "straight_join"].includes(before.kw) || before.text === "," || before.text === "(");
+  };
+  while (a.tokens[start - 1]?.text === "(" && a.tokens[end + 1]?.text === ")" && opensSource(start - 1)) {
     start--;
     end++;
   }
@@ -927,7 +950,7 @@ function cteAt(tokens: readonly Token[], open: number): { readonly name: string;
   if (tokens[k]?.kw !== "as" || !isWord(tokens[k - 1])) return undefined;
   const before = tokens[k - 2];
   if (!(before?.kw === "with" || before?.kw === "recursive" || before?.text === ",")) return undefined;
-  return { name: tokens[k - 1]!.lower, at: k - 1 };
+  return { name: tableNameOf(tokens[k - 1]!), at: k - 1 };
 }
 
 /**
@@ -939,7 +962,7 @@ function cteAt(tokens: readonly Token[], open: number): { readonly name: string;
 function readsOf(a: Analysis, name: string): Read[] {
   const reads: Read[] = [];
   a.tokens.forEach((t, i) => {
-    if (t.lower !== name || isOrderOrGroupBy(a.tokens, i) || a.tokens[i + 1]?.text === ".") return;
+    if (tableNameOf(t) !== name || isOrderOrGroupBy(a.tokens, i) || a.tokens[i + 1]?.text === ".") return;
     reads.push({ at: i, scope: a.scopes.of[i]!, names: readNames(a, i) });
   });
   return reads;
@@ -980,7 +1003,7 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
     const reads = readsOf(a, name);
     // A reading that sees the table's name but no read of it (the name only inside a longer quoted
     // name, or only as a qualifier) can't tell what filters it, so it fails closed.
-    if (reads.length === 0) return !mentionsTable([view], name);
+    if (reads.length === 0) return !mentionsAsName(view, name);
     const found = occurrences(a, targets);
     return reads.every((read) => readFiltered(a, found, targets, read, name));
   });
@@ -1068,7 +1091,7 @@ function readSourceRefs(a: Analysis, open: number): Read[] | undefined {
     if (cte === undefined) return undefined; // a column list renames the output, or it's no CTE this check reads
     const refs: Read[] = [];
     for (let j = 0; j < tokens.length; j++) {
-      if (j === cte.at || tokens[j]!.lower !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
+      if (j === cte.at || tableNameOf(tokens[j]!) !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
       if (j > open && j < close) return undefined; // recursive
       if (tokens[j + 1]?.text === "(" || hasColumnList(a, sourceEnd(a, j))) return undefined;
       refs.push({ at: j, scope: scopes.of[j]!, names: readNames(a, j) });
