@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-05; amended 2026-11-05). The maintainer settled #624 and #625 in the 2026-11-05 planning round (each issue's "Decision (2026-11-05)" section). The coordinating thread took this work's plan recommendations the same day. Implemented in the PR that closes #601, #624 and #625: `askSampleQuestion` and `suggestForSource` in `apps/studio/src/server.ts`, `buildEnrichmentUserPrompt` in `packages/core/src/enrichment/prompt.ts`, and `buildSuggestionTarget` and `buildSuggestionContext` in `packages/enrich/src/suggest.ts`. Contract: [`sensitive-fields-and-modes.md` → Which prompts follow omission](../contracts/sensitive-fields-and-modes.md#which-prompts-follow-omission). Amended 2026-11-05 (#667): core's enrichment types take `NormalizedV2Table`, not the raw `V2Table` (see Decision and Options considered).
+Accepted (2026-11-05; amended 2026-11-05). The maintainer settled #624 and #625 in the 2026-11-05 planning round (each issue's "Decision (2026-11-05)" section). The coordinating thread took this work's plan recommendations the same day. Implemented in the PR that closes #601, #624 and #625: `askSampleQuestion` and `suggestForSource` in `apps/studio/src/server.ts`, `buildEnrichmentUserPrompt` in `packages/core/src/enrichment/prompt.ts`, and `buildSuggestionTarget` and `buildSuggestionContext` in `packages/enrich/src/suggest.ts`. Contract: [`sensitive-fields-and-modes.md` → Which prompts follow omission](../contracts/sensitive-fields-and-modes.md#which-prompts-follow-omission). Amended 2026-11-05 (#667): core's enrichment types take `NormalizedV2Table`, not the raw `V2Table` (see Decision and Options considered). Amended 2026-11-06 (#771): the tenant policy block names only the tables the prompt shows (see Amendments).
 
 ## Context
 
@@ -41,3 +41,7 @@ ADR 0021 made Studio's tenant-policy draft follow `ask()`'s rule through core's 
 - Narrowing `EnrichmentTarget` and `EnrichmentContext` is a breaking change to `@askdb/core`, which goes to 1.0. It lands before the rc.1 API freeze, with a minor changeset (#667). A table built by hand must set `sensitive` on the table and `sensitive` and `primaryKey` on every column.
 - Under omission, a column of a sensitive table can't get a suggestion either, because `loadSchema()` marks every column of a sensitive table sensitive.
 - Omission doesn't keep a column the tenant policy names away from the model. Tenant columns are usually keys such as `org_id`, not the attributes omission is for; the database role stays the boundary (ADR 0012).
+
+## Amendments
+
+**2026-11-06 — The tenant policy block names only the tables the prompt shows (#771):** the exception above still holds, but only for the tables the block names. Since #771 it leaves out tables marked `tracked: false` and, under retrieval, tables retrieval left out, except a tracked table on a join path that a shown table needs. Under omission it still names the sensitive tenant columns of the tables it shows. [ADR 0038](0038-prompt-hints-name-no-schema-table.md)'s amendment records the rule.

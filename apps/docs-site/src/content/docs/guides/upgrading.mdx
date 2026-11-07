@@ -144,12 +144,21 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse. That `dialect` applies to the server's own schema only.
 - **For a `schemaJson` the request sends,** the server generates and checks SQL for the artifact's own `provider`, never for the config's `dialect` ([#809](https://github.com/Ygilany/AskDB/issues/809)). A request schema that records no `provider`, or one AskDB has no dialect for, answers `400 bad_request`, with a message that names the provider and the supported ids. Send a schema whose `provider` is a built-in dialect id. A caller that relied on the server's `dialect` to cover its schema's engine, such as a MariaDB artifact, which records `mysql`, now gets that recorded engine's SQL.
 
+### Pass the prompt's schema to `buildTenantPromptBlock()`
+
+`buildTenantPromptBlock(policy, scope, prompt)` now requires `prompt`: the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows ([#771](https://github.com/Ygilany/AskDB/issues/771), ADR 0038). The block names only those tables. `ask()` passes it for you, so this only matters if you call the function yourself.
+
+- **For a prompt that shows the whole schema,** pass `{ schema }`. If no table in your schema is marked `tracked: false`, the block is the same as before. An untracked table can no longer be named in the block, even on purpose.
+- **Under retrieval,** pass `{ schema, tableIds }`, with `synthesizeRetrievedDdl()`'s `tableIds`.
+- **`buildNlToSqlUserPrompt()` throws `AskDbError`** when you pass `prebuiltDdl` and a tenant policy without `promptTableIds` (the same ids), or a tenant policy with a v1 schema.
+
 ### Other changes you may notice in beta.50
 
 - **A connection's `secondaryApiKey` is used on every provider** when the connection has no `apiKey`. Before, only Azure and Foundry read it; the connection types still declare it only there.
 - **An `ai.language` or `ai.embedding` provider that no registered adapter handles** now fails with the message that says how to register it, as `createLanguageModel` already did, instead of `Unknown ASKDB_AI_PROVIDER`.
 - **`getAskDbRuntimeConfig().deprecations` is empty**, since no config key is deprecated now. It stays for the next deprecation.
 - **The prompt's note about a table the question names, but the schema doesn't have, no longer lists the schema's tables** ([#677](https://github.com/Ygilany/AskDB/issues/677)). The list included tables marked `tracked: false` and, under retrieval, tables retrieval left out, so their names reached the model. The note now names only the word from the question, and the single-table note no longer names the table. Both count tracked tables only, so a question that names an untracked table gets the note too: the table stays in your schema artifact, but the prompt doesn't list it. If you call `nlToSqlAmbiguityNotes()` yourself, expect the shorter notes.
+- **The prompt's tenant-policy block names only the tables the prompt shows** ([#771](https://github.com/Ygilany/AskDB/issues/771)). It listed every table in your tenant policy, including tables marked `tracked: false` and, under retrieval, tables retrieval left out. A root whose table isn't shown now appears by its label and placeholder only. A join path through a tracked table that retrieval left out is still printed, with that table's name, since the shown table needs it. A scoped table whose only join path runs through an untracked table loses that path, and the prompt tells the model not to read it; the tenant check still requires its predicate.
 - **A schema with a tenant policy** gets `500 tenant_scope_not_configured` from `askdb-http`, not `500 internal_error` ([#716](https://github.com/Ygilany/AskDB/issues/716)). The server still can't set a tenant scope, so it still returns no SQL and never calls the model. If your client matched `internal_error` for this case, match the new code.
 
 ## 1.0.0-beta.49
