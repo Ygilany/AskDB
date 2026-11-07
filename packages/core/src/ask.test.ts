@@ -326,6 +326,24 @@ describe("ask — a MySQL DialectSpec that leaves backslashEscapes unset", () =>
   });
 });
 
+describe("ask — a `$$` inside a name opens no dollar-quoted string", () => {
+  it.each(["postgres", "mysql", "mariadb", "sqlite"] as const)("%s: refuses the UNION after the name", async (dialect) => {
+    // `x$$y` is one name to the engine, so the UNION reads every tenant's orders.
+    const sql = "SELECT id AS x$$y FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY x$$y";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);

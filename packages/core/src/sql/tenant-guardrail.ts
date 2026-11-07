@@ -551,6 +551,11 @@ type CodeReading = {
    * inside it even when `backslashEscapes` is off.
    */
   eStrings: boolean;
+  /**
+   * `$tag$…$tag$` is a string (Postgres, CockroachDB). Elsewhere `$` is a name character
+   * (MySQL, MariaDB, SQLite) or starts a money literal (SQL Server).
+   */
+  dollarQuotes: boolean;
   /** `||` is logical OR (MySQL/MariaDB without `PIPES_AS_CONCAT`), not string concatenation. */
   pipesAreOr: boolean;
   /** `--` starts a comment only before whitespace, a control character, or the end (MySQL/MariaDB). */
@@ -568,16 +573,18 @@ const STANDARD_READING: CodeReading = {
   backslashEscapes: false,
   hashComments: false,
   eStrings: false,
+  dollarQuotes: false,
   pipesAreOr: false,
   dashCommentNeedsSpace: false,
   executableComments: false,
 };
-const POSTGRES_READING: CodeReading = { ...STANDARD_READING, eStrings: true };
+const POSTGRES_READING: CodeReading = { ...STANDARD_READING, eStrings: true, dollarQuotes: true };
 const MYSQL_READING: CodeReading = {
   doubleQuoted: "string",
   backslashEscapes: true,
   hashComments: true,
   eStrings: false,
+  dollarQuotes: false,
   pipesAreOr: true,
   dashCommentNeedsSpace: true,
   executableComments: true,
@@ -638,7 +645,7 @@ const IDENTIFIER_CONTINUE = /[A-Za-z0-9_$\u0080-\uffff]/;
 
 /**
  * Blank out everything that is not SQL code, so identifier checks only see code
- * regions. String literals (`'…'`, `$tag$…$tag$` bodies, and `"…"` when the
+ * regions. String literals (`'…'`, and `$tag$…$tag$` bodies and `"…"` when the
  * reading says so) and comments become spaces. A comment starts where the reading
  * says (`--` only before whitespace on MySQL, see `startsDashComment` in the shared
  * lexer), and an executable comment's body stays code when the reading says so. The output has the same length
@@ -721,7 +728,8 @@ function codeView(sql: string, reading: CodeReading): string {
       i = end;
       continue;
     }
-    if (ch === "$") {
+    // A `$` right after a name character continues the name (`x$$y`), as every engine reads it.
+    if (ch === "$" && reading.dollarQuotes && !IDENTIFIER_CONTINUE.test(out[i - 1] ?? "")) {
       dollarTag.lastIndex = i;
       const tag = dollarTag.exec(sql);
       const close = tag ? sql.indexOf(tag[0], i + tag[0].length) : -1;

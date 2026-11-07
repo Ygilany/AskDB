@@ -6,6 +6,7 @@ import { loadSchema } from "../schema/v2/loader.js";
 import type { TenantScope, NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import {
   COCKROACHDB_DIALECT,
+  MARIADB_DIALECT,
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
   SQLITE_DIALECT,
@@ -822,3 +823,43 @@ describe("validateTenantGuardrails — a MySQL dialect that leaves backslashEsca
   });
 });
 
+describe("validateTenantGuardrails — `$` in names, and dollar quotes only where the engine has them", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  // Every engine but SQL Server reads `x$$y` as one name, so the UNION reads every tenant's orders.
+  const dollarsInName =
+    "SELECT id AS x$$y FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY x$$y";
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a $$ inside a name opens no string", (_label, dialect) => {
+    expect(findings(dollarsInName, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  // Only Postgres and CockroachDB have dollar quotes; MariaDB reads `$a$` as a name.
+  const dollarName =
+    "SELECT id AS $a$ FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY $a$";
+  it.each([
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: $a$ … $a$ is code where the engine may have no dollar quotes", (_label, dialect) => {
+    expect(findings(dollarName, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("postgres and cockroachdb: $a$ … $a$ is still a string", () => {
+    expect(findings(dollarName, POSTGRES_DIALECT)).toEqual([]);
+    expect(findings(dollarName, COCKROACHDB_DIALECT)).toEqual([]);
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = $q$ OR 1=1 $q$", POSTGRES_DIALECT)).toEqual([]);
+  });
+});
