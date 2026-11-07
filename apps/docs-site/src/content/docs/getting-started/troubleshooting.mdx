@@ -106,7 +106,7 @@ The model returned more than one SQL statement. AskDB refuses multi-statement ou
 
 ### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, etc.). Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword (say, `update`) also trips them. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, MariaDB's `NEXTVAL` and `SETVAL`, `NEXT VALUE FOR`, etc.). A query that only needs a sequence's current value can read it with `PREVIOUS VALUE FOR` or MariaDB's `LASTVAL()`, which pass. Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword (say, `update`) also trips them. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
 
 ### `SqlValidationError: SQL_LOCKING_READ`
 

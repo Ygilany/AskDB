@@ -179,6 +179,9 @@ export const MYSQL_DIALECT: DialectSpec = {
     "load_file", "sleep", "benchmark", "get_lock", "release_lock", "release_all_locks",
     "master_pos_wait", "source_pos_wait", "wait_for_executed_gtid_set",
     "wait_until_sql_thread_after_gtids", "sys_exec", "sys_eval",
+    // MariaDB sequences advance or set a sequence from a SELECT, outside the transaction's
+    // rollback (#825). MySQL has none. LASTVAL() only reads, so it stays allowed.
+    "nextval", "setval",
   ],
   listBinding: "expand",
   backslashEscapes: true,
