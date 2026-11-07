@@ -93,7 +93,6 @@ When it fails, prefer fixing over allowlisting:
 
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
-| GHSA-g3hv-75wg-m249 | `minimatch` < 11.0.1 via `eslint`, `@eslint/config-array`, `@typescript-eslint/*`, `eslint-plugin-import-x` and `eslint-import-resolver-typescript` (`apps/studio` lint stack) and `react-doctor > eslint-plugin-react-hooks` (workspace root) | Moderate severity: an attacker-supplied glob can make `minimatch`'s pattern preprocessing (at `optimizationLevel` 2 and above) grow quadratically in CPU and memory. Every path is lint or review tooling that matches the repo's own fixed globs, and none of it is in a published package's runtime dependencies. The patched `minimatch` is 11.0.1, a major above the `^10.2` that the latest `eslint` (10.14.0) and `@eslint/config-array` (0.23.5) ask for, so an override would put an untested `minimatch` major under the lint stack. | `eslint`, `@eslint/config-array` and the `@typescript-eslint/*` packages depend on `minimatch` >= 11.0.1 |
 
 ## Before Opening a PR
 
