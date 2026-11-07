@@ -94,8 +94,6 @@ When it fails, prefer fixing over allowlisting:
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
 
-The allowlist is empty, so the table has no rows.
-
 ## Before Opening a PR
 
 Run the release-style checks when a change affects published packages, CLIs, docs, workflows, or package metadata:

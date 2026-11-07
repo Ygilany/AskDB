@@ -9,15 +9,7 @@ packages:
 publicHoistPattern:
   - "*turbo*"
 # Transitive-dependency pins we carry ahead of upstream.
-#
-# brace-expansion: reached only through `minimatch@10` (via eslint and
-# typescript-eslint in `apps/studio`), so it is devDependency-only and never ships.
-# `minimatch` already allows `^5.0.8`; the lockfile was pinned at 5.0.9, which is
-# vulnerable to GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7 (stack exhaustion on nested
-# or comma-heavy braces) and GHSA-q2hr-2g5m-vwhr (quadratic-time `{a},b}` rewrite);
-# 5.0.12 fixes all three. Drop this once minimatch raises its own floor past 5.0.12.
 overrides:
-  brace-expansion: ^5.0.12
   # Security advisories (GHSA-*) — drop once upstream releases a version with the fix.
   # postcss-selector-parser: GHSA-xh2x-qr4w-9w2m (moderate) — quadratic complexity in flat selector parsing.
   #   Only in apps/docs-site (dev only, not published). Patched in 7.1.6.
