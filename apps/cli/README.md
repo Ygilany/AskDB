@@ -16,7 +16,7 @@ pnpm dlx askdb --help
 pnpm dlx askdb init
 ```
 
-The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs. `askdb init` installs `@askdb/config`, `dotenv`, and the driver for your selected database — only for the path you chose.
+The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs. `askdb init` installs `@askdb/config` and the driver for your selected database — only for the path you chose.
 
 ## Live introspection drivers
 

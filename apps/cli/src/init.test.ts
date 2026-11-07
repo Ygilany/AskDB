@@ -521,7 +521,7 @@ describe("runInitCli install", () => {
     expect(stderr.join("")).toContain(`  pnpm add ${packages.join(" ")}\n`);
   });
 
-  // #863: pnpm 10 and later keep settings such as minimumReleaseAgeExclude in pnpm-workspace.yaml,
+  // #863: pnpm also keeps settings such as minimumReleaseAgeExclude in pnpm-workspace.yaml,
   // so a one-package project can have the file without being a workspace.
   it("in a one-package project whose pnpm-workspace.yaml holds only settings, installs", async () => {
     enterProject({

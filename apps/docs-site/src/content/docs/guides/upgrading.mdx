@@ -25,7 +25,7 @@ Not published yet: these changes ship with `askdb` 1.0.0-beta.52 and `@askdb/con
 
 ### Other changes you may notice in beta.52
 
-- **`askdb init` installs in a one-package project whose `pnpm-workspace.yaml` holds only settings** ([#863](https://github.com/Ygilany/AskDB/issues/863)), such as `minimumReleaseAgeExclude`, which pnpm 10 and later keep in that file. It used to skip the install there and print the `pnpm add` command instead. It still skips at a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`. Studio's guided setup reads the file the same way.
+- **`askdb init` installs in a one-package project whose `pnpm-workspace.yaml` holds only settings** ([#863](https://github.com/Ygilany/AskDB/issues/863)), such as `minimumReleaseAgeExclude`, which pnpm also keeps in that file. It used to skip the install there and print the `pnpm add` command instead. It still skips at a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`. Studio's guided setup reads the file the same way.
 
 ## 1.0.0-beta.51
 
