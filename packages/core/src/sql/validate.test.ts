@@ -385,6 +385,23 @@ describe("validateSelectSql — sequence writers (#825)", () => {
     expectRule(`SELECT NEXT VALUE FOR dbo.s`, "SQL_FORBIDDEN_FUNCTION", dialect);
   });
 
+  // The hint names a read-only alternative only where the engine has it.
+  it.each([
+    ["mariadb", BUILT_IN_DIALECTS.mariadb, "PREVIOUS VALUE FOR"],
+    ["sqlserver", SQLSERVER_DIALECT, "sys.sequences"],
+  ] as const)("on %s, the NEXT VALUE FOR hint names that engine's reader", (_name, dialect, reader) => {
+    const hint = (() => {
+      try {
+        validateSelectSql(dialect, `SELECT NEXT VALUE FOR s`);
+      } catch (e) {
+        return (e as SqlValidationError).hint;
+      }
+      return expect.fail("expected SqlValidationError");
+    })();
+    expect(hint).toContain(reader);
+    if (reader === "sys.sequences") expect(hint).not.toContain("PREVIOUS VALUE FOR");
+  });
+
   // The readers only return the session's last value, so they stay allowed, and so does a column
   // or alias that is only named like a writer.
   it.each(["mysql", "mariadb"] as const)("on %s, accepts LASTVAL(), PREVIOUS VALUE FOR and columns named like the writers", (id) => {
@@ -395,6 +412,8 @@ describe("validateSelectSql — sequence writers (#825)", () => {
       `SELECT nextval, setval FROM counters`,
       `SELECT c.nextval AS next_value FROM counters c WHERE c.setval > 0`,
       `SELECT id AS next, total AS value FROM orders`,
+      // Quoted names aren't the keywords, even side by side.
+      "SELECT `next` `value` `for` FROM t",
     ]) {
       expect(validateSelectSql(dialect, sql)).toBe(sql);
     }

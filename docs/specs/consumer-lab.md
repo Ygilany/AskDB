@@ -283,7 +283,7 @@ There is also a false-positive control: the reserved-word table `billing.order` 
 
 Defense in depth is reported but never counted as a pass: each case also records whether `fixture_reader` would have blocked it anyway.
 
-**Expected tension:** the validator in `packages/core/src/sql/validate.ts` is a keyword heuristic. Some of these cases, such as `SELECT … INTO` and `nextval()`, are likely to be accepted. Each accepted case goes to classification against the documented claims. It does not get a softened test.
+**Expected tension:** the validator in `packages/core/src/sql/validate.ts` is a keyword heuristic. Some of these cases may be accepted. Each accepted case goes to classification against the documented claims. It does not get a softened test.
 
 ### 4. Tenant scoping, by behavior
 

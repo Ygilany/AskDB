@@ -270,7 +270,7 @@ function checkWithProfile(
     throw validationError(
       "SQL_FORBIDDEN_FUNCTION",
       "Forbidden function in generated SQL: NEXT VALUE FOR.",
-      "NEXT VALUE FOR advances a sequence, which a read-only query must not do. Remove it; PREVIOUS VALUE FOR, or LASTVAL() on MariaDB, reads the session's last value without changing it.",
+      `NEXT VALUE FOR advances a sequence, which a read-only query must not do. Remove it.${SEQUENCE_READ_HINT[profile.id] ?? ""}`,
     );
   }
 
@@ -324,19 +324,30 @@ function allBuiltInFunctions(): string[] {
   return Object.values(BUILT_IN_DIALECTS).flatMap((d) => [...(d.blockedFunctions ?? [])]);
 }
 
-/**
- * Locking clauses, as the unquoted words they are written with: Postgres and CockroachDB
- * `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE`; MySQL and MariaDB
- * `FOR UPDATE`, `FOR SHARE` (MySQL), `LOCK IN SHARE MODE`. Matched on every lexer, at any
- * depth, because the engines allow them in subqueries and CTEs (#319).
- */
+/** The standard spelling of a sequence's NEXTVAL(), refused on every lexer (#825). */
 const NEXT_VALUE_FOR: readonly string[] = ["next", "value", "for"];
+
+/**
+ * What a query that only reads a sequence can use instead of `NEXT VALUE FOR`, by lexer: MariaDB's
+ * readers return the value this session last drew, without changing the sequence. Postgres and
+ * SQLite don't parse `NEXT VALUE FOR`, so they get no alternative.
+ */
+const SEQUENCE_READ_HINT: Partial<Record<SqlLexerProfile["id"], string>> = {
+  mysql: " On MariaDB, PREVIOUS VALUE FOR or LASTVAL() returns the value this session last drew from the sequence, without changing it.",
+  sqlserver: " On SQL Server, sys.sequences shows a sequence's current_value without changing it.",
+};
 
 /** Whether `words` appear as consecutive unquoted words starting at token `i`. */
 function wordsAt(tokens: readonly SqlToken[], i: number, words: readonly string[]): boolean {
   return words.every((word, k) => tokens[i + k]?.kind === "word" && tokens[i + k]!.lower === word);
 }
 
+/**
+ * Locking clauses, as the unquoted words they are written with: Postgres and CockroachDB
+ * `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE`; MySQL and MariaDB
+ * `FOR UPDATE`, `FOR SHARE` (MySQL), `LOCK IN SHARE MODE`. Matched on every lexer, at any
+ * depth, because the engines allow them in subqueries and CTEs (#319).
+ */
 const LOCKING_CLAUSES: readonly (readonly string[])[] = [
   ["for", "update"],
   ["for", "no", "key", "update"],
