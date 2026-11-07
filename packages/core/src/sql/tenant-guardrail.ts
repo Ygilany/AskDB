@@ -909,23 +909,33 @@ const NOT_A_TABLE_ALIAS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Whether a read of the table `name` is followed by an alias and a column list (`orders t (a, b)`,
- * `orders AS t (a, b)`, `orders * t (a, b)`), at any depth. Postgres and CockroachDB read the list as
- * new names for the table's first columns, so a predicate on `t.agency_id` filters whatever column
- * comes first, and the real one is renamed out of the way: the read can't be checked.
+ * Whether a read of the table `name` has its columns renamed by a column list after an alias, at any
+ * depth: right after the table (`orders t (a, b)`, `orders AS t (a, b)`, `orders * t (a, b)`), or
+ * after a parenthesized `FROM` item the read sits in, a join or a derived table
+ * (`(orders o JOIN s ON true) AS j (a, b, agency_id)`). Postgres and CockroachDB read the list as
+ * new names for the first columns, so a predicate on `agency_id` filters whatever column the list
+ * names that, and the real one is renamed out of the way: the read can't be checked.
  */
 function renamesColumns(tokens: readonly Token[], name: string): boolean {
   for (let i = 0; i < tokens.length; i++) {
-    if (tokens[i]!.lower !== name || tokens[i + 1]?.text === ".") continue;
-    let j = i + 1;
-    if (tokens[j]?.text === "*") j++;
-    const as = tokens[j]?.kw === "as";
-    if (as) j++;
-    const alias = tokens[j];
-    if (alias === undefined || !isIdentifier(alias) || tokens[j + 1]?.text !== "(") continue;
-    if (as || alias.kw === "" || !NOT_A_TABLE_ALIAS.has(alias.kw)) return true;
+    if (tokens[i]!.lower !== name) continue;
+    for (let open = enclosing(tokens, i, "("); open >= 0; open = enclosing(tokens, open, "(")) {
+      if (subqueryUse(tokens, open) !== "table") continue;
+      const close = enclosing(tokens, open + 1, ")");
+      if (close >= 0 && aliasWithColumnList(tokens, close + 1)) return true;
+    }
+    if (tokens[i + 1]?.text === ".") continue;
+    if (aliasWithColumnList(tokens, tokens[i + 1]?.text === "*" ? i + 2 : i + 1)) return true;
   }
   return false;
+}
+
+/** Whether `tokens[j]` starts an alias and a column list: `AS t (` or `t (`, where a bare `t` is no reserved word. */
+function aliasWithColumnList(tokens: readonly Token[], j: number): boolean {
+  const as = tokens[j]?.kw === "as";
+  const alias = tokens[as ? j + 1 : j];
+  if (alias === undefined || !isIdentifier(alias) || tokens[as ? j + 2 : j + 1]?.text !== "(") return false;
+  return as || alias.kw === "" || !NOT_A_TABLE_ALIAS.has(alias.kw);
 }
 
 /**

@@ -112,6 +112,23 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     }
   });
 
+  it("a column list on a parenthesized join renames the join's columns, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // j's columns start order_id, agency_id, client_id, so `agency_id = 2` keeps client 2's orders,
+    // whose agency (a2) isn't 2.
+    const rows = (await runner(
+      'SELECT count(*) AS c FROM (billing."order" o JOIN ref.status s ON true) AS j (a1, a2, agency_id) WHERE agency_id = 2 AND a2 <> 2',
+    )).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(0);
+    for (const sql of [
+      "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids",
+      "SELECT * FROM (orders o JOIN lookup_states s ON true) j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql), sql).toEqual(["MISSING_TENANT_PREDICATE"]);
+    }
+    expect(findings("SELECT * FROM (orders o JOIN lookup_states s ON true) AS j WHERE agency_id = :tenant_agency_ids")).toEqual([]);
+  });
+
   it("an ON that closes an earlier LEFT JOIN belongs to it, as the engine reads it", async () => {
     const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
     // `o LEFT JOIN (x JOIN s ON …) ON …`: the second ON is the LEFT JOIN's, which keeps every client.
