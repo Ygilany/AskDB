@@ -67,6 +67,10 @@ Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/ht
 - **Node's rules decide the module format,** as for any file Node loads: `.cjs` is CommonJS, `.mjs` is an ES module, and `.js` follows the nearest `package.json`. A TypeScript config loads as before.
 - **An ES module config that throws while it loads loads again only after a restart.** Node keeps the failed module, so a process that loads the config again, as Studio does after you edit `.env`, gets an error that says to restart it. A CommonJS or TypeScript config loads again once fixed.
 
+### Fix an unknown `studio.execute.provider`, which now fails to load
+
+A `studio.execute.provider` that isn't `postgres`, `mysql`, `sqlite` or `sqlserver` now fails to load with `askdb.config: invalid studio.execute.provider "postgress" (expected one of: postgres, mysql, sqlite, sqlserver).` ([#751](https://github.com/Ygilany/AskDB/issues/751)). Before, Studio quietly ran Execute against the introspection provider, or `postgres`, so a typo could point it at an engine you didn't name. Fix the value, or remove the key to keep that fallback: an unset provider still uses the introspection provider when it's a live engine, else `postgres`.
+
 ### Other changes you may notice in beta.52
 
 - **A tenant policy with a table named `order` or `group` no longer refuses every sorted query** ([#828](https://github.com/Ygilany/AskDB/issues/828)). The tenant check read the `ORDER` of `ORDER BY` (and `GROUP` of `GROUP BY`) as a reference to a table of that name, so under `strict` enforcement a sorted, tenant-scoped query was refused with `UNKNOWN_TABLE_REFERENCED` or `MISSING_TENANT_PREDICATE`. It no longer reads those keywords as a table; a quoted or qualified `"order"`, or `order` in `FROM`/`JOIN`, still counts as the table. If you worked around this by renaming the table or dropping `ORDER BY`, you can undo that.

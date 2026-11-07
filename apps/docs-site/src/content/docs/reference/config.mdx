@@ -319,7 +319,7 @@ The `studio.execute` block configures the Playground's live execution. It's **of
 
 **Provider resolution order:**
 
-1. `studio.execute.provider`.
+1. `studio.execute.provider`. Any other value fails to load, so a typo can't point Execute at another engine.
 2. The active `introspection.provider` when it is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`).
 3. `"postgres"` for backward compatibility.
 
