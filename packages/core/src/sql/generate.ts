@@ -41,6 +41,11 @@ export type GenerateSqlDeps = {
    * directly.
    */
   prebuiltDdl?: string;
+  /**
+   * The ids of the tables `prebuiltDdl` shows, so the prompt's tenant block names no other
+   * (#771). Set by `ask({ retriever })` with `prebuiltDdl`.
+   */
+  promptTableIds?: readonly string[];
   /** Normalized tenant policy from the schema artifact. Forwarded from ask(). */
   tenantPolicy?: NormalizedTenantPolicy;
   /** Validated tenant scope from the host. Forwarded from ask(). */
@@ -178,6 +183,7 @@ async function runGenerateSelectSql(
           deps.tenantPolicy,
           deps.tenantScope,
           parameterize || undefined,
+          deps.promptTableIds,
         ),
         temperature: 0,
         // Cast: AskDB's public `providerOptions` type is a plain opaque bag

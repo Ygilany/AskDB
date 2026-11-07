@@ -260,6 +260,54 @@ describe("ask — the prompt hint names no table the prompt leaves out (#677)", 
   });
 });
 
+describe("ask — the tenant block names no table the prompt leaves out (#771)", () => {
+  async function promptFor(untracked: string[], extra: Partial<Parameters<typeof ask>[0]> = {}): Promise<string> {
+    const schema = loadSchema(multiTenantDir);
+    for (const t of schema.tables) if (untracked.includes(t.name)) t.tracked = false;
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM orders WHERE agency_id = :tenant_agency_ids\n```" }));
+    await ask({
+      question: "how many orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: { generateText: generateText as never },
+      ...extra,
+    }).catch(() => undefined);
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+  // The tenant block's lines that name `name`, so a failure shows where it leaked.
+  const linesNaming = (prompt: string, name: string) => prompt.split("\n").filter((l) => l.includes(name));
+
+  it.each([
+    ["a scoped table", "campaigns", "public.campaigns"],
+    ["a polymorphic table", "notes", "public.notes"],
+    ["a global table", "lookup_states", "public.lookup_states"],
+    ["a tenant root's table", "agencies", "public.agencies"],
+  ])("leaves out %s marked tracked: false", async (_label, table, id) => {
+    expect(linesNaming(await promptFor([]), id), "named while tracked").not.toEqual([]);
+    expect(linesNaming(await promptFor([table]), id)).toEqual([]);
+  });
+
+  it("names no table that retrieval left out", async () => {
+    const retriever = vi.fn(async () => [
+      {
+        id: "chunk:table:public.orders",
+        score: 1,
+        payload: { id: "chunk:table:public.orders", type: "table" as const, text: "# public.orders", schemaId: "agency-multi-tenant", refs: ["table:public.orders"], sensitive: false },
+      },
+    ]);
+    const prompt = await promptFor([], { retriever, totalSchemaChunkCount: 100 });
+    expect(retriever).toHaveBeenCalledOnce();
+    expect(prompt).toContain("TABLE public.orders");
+    // The retrieved table keeps its tenant scope.
+    expect(prompt).toContain("  - table:public.orders → filter via table:public.orders#agency_id (Agency scope)");
+    for (const id of ["public.campaigns", "public.appointments", "public.notes", "public.lookup_states", "public.service_types"]) {
+      expect(linesNaming(prompt, id), id).toEqual([]);
+    }
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);
