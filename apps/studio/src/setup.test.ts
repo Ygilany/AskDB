@@ -56,6 +56,14 @@ describe("writeSetupConfig answers", () => {
     expect(source).toContain('outputDir: "./askdb"');
     expect(envVars.map((v) => v.name)).toEqual(["ANTHROPIC_API_KEY"]);
   });
+
+  it("reads a pgvector store's URL from PGVECTOR_URL by default", () => {
+    const dir = projectDir();
+    const { envVars } = writeSetupConfig(dir, { database: "postgres", aiProvider: "openai", ragStore: "pgvector" });
+
+    expect(readFileSync(join(dir, "askdb.config.ts"), "utf8")).toContain('databaseUrl: env("PGVECTOR_URL")');
+    expect(envVars.map((v) => v.name)).toContain("PGVECTOR_URL");
+  });
 });
 
 // @askdb/prisma is an optional peer of Studio and askdb (#259): a Prisma project installs
