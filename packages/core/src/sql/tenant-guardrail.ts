@@ -403,8 +403,9 @@ function continuesExpression(prev: SqlToken | undefined): boolean {
  */
 function statementReadings(dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): SqlLexerProfile[] {
   const known = dialect?.id !== undefined ? lexerProfileFor(dialect) : undefined;
+  // A `postgres` dialect may point at CockroachDB, where only `\n` ends a line comment: read both ways.
   const profiles = known
-    ? [known]
+    ? known.id === "postgres" ? [known, { ...known, lineCommentEndsAtLfOnly: true }] : [known]
     : ENGINE_LEXER_PROFILES.flatMap((p) =>
         p.id === "postgres" || p.id === "mysql" ? [p, { ...p, backslashEscapes: !p.backslashEscapes }] : [p],
       );
@@ -560,6 +561,8 @@ type CodeReading = {
   pipesAreOr: boolean;
   /** `--` starts a comment only before whitespace, a control character, or the end (MySQL/MariaDB). */
   dashCommentNeedsSpace: boolean;
+  /** A `--` or `#` comment ends at `\r` too (Postgres, SQL Server), not only at `\n`. */
+  lineCommentEndsAtCr: boolean;
   /**
    * The body of a `/*! … *\/` (or MariaDB `/*M! … *\/`) executable comment is code. MySQL
    * runs it only on a server at least as new as its version number, so a MySQL dialect is
@@ -576,6 +579,7 @@ const STANDARD_READING: CodeReading = {
   dollarQuotes: false,
   pipesAreOr: false,
   dashCommentNeedsSpace: false,
+  lineCommentEndsAtCr: false,
   executableComments: false,
 };
 const POSTGRES_READING: CodeReading = { ...STANDARD_READING, eStrings: true, dollarQuotes: true };
@@ -587,6 +591,7 @@ const MYSQL_READING: CodeReading = {
   dollarQuotes: false,
   pipesAreOr: true,
   dashCommentNeedsSpace: true,
+  lineCommentEndsAtCr: false,
   executableComments: true,
 };
 /** MySQL with its executable comments read as comments: a server too old for their version skips them. */
@@ -613,19 +618,26 @@ function codeViews(
   sql: string,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
 ): CodeViews {
+  // A CR ends a line comment on Postgres and SQL Server, not on MySQL, MariaDB, SQLite or CockroachDB.
+  const crEnds = (r: CodeReading): CodeReading => ({ ...r, lineCommentEndsAtCr: true });
   if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
-    return [STANDARD_READING, POSTGRES_READING, MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE].map((r) => view(sql, r));
+    return [
+      STANDARD_READING, crEnds(STANDARD_READING), POSTGRES_READING, crEnds(POSTGRES_READING), MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE,
+    ].map((r) => view(sql, r));
   }
   // As the shared lexer reads it (`lexerProfileFor`): an unset value on a MySQL-family dialect is the
   // server default, escapes on; elsewhere escapes are on only when the dialect says so.
   const mysqlFamily = dialect.id === "mysql" || dialect.id === "mariadb";
   const backslashEscapes = mysqlFamily ? dialect.backslashEscapes !== false : dialect.backslashEscapes === true;
+  // A `postgres` dialect may point at CockroachDB, which is wire-compatible: read both ways.
   const bases =
     dialect.id === "mysql" || dialect.id === "mariadb"
       ? [MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE]
       : dialect.id === "postgres" || dialect.id === "cockroachdb"
-        ? [POSTGRES_READING]
-        : [STANDARD_READING];
+        ? [POSTGRES_READING, crEnds(POSTGRES_READING)]
+        : dialect.id === "sqlserver"
+          ? [crEnds(STANDARD_READING)]
+          : [STANDARD_READING];
   return bases.map((base) => view(sql, { ...base, backslashEscapes }));
 }
 
@@ -686,14 +698,15 @@ function codeView(sql: string, reading: CodeReading): string {
   };
   const dollarTag = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
   const executableOpener = /\/\*M?!\d*/y;
+  const lineEnd = reading.lineCommentEndsAtCr ? /[\n\r]/g : /\n/g;
   let inExecutable = false;
   let i = 0;
   while (i < sql.length) {
     const ch = sql[i]!;
     const next = sql[i + 1];
     if (startsDashComment(sql, i, reading.dashCommentNeedsSpace) || (ch === "#" && reading.hashComments)) {
-      const newline = sql.indexOf("\n", i);
-      const end = newline === -1 ? sql.length : newline;
+      lineEnd.lastIndex = i;
+      const end = lineEnd.exec(sql)?.index ?? sql.length;
       blank(i, end);
       i = end;
       continue;

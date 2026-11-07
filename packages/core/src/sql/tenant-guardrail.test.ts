@@ -863,3 +863,50 @@ describe("validateTenantGuardrails — `$` in names, and dollar quotes only wher
     expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = $q$ OR 1=1 $q$", POSTGRES_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a carriage return ends a `--` comment on Postgres and SQL Server only", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  // Postgres and SQL Server end the comment at the CR, so the UNION reads every tenant's orders.
+  const unionAfterCr = "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders";
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb, read both ways like postgres", COCKROACHDB_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a UNION after the CR is code", (_label, dialect) => {
+    expect(findings(unionAfterCr, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("mysql, mariadb and sqlite: the comment runs to the end of the line, as they read it", () => {
+    for (const dialect of [MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT]) expect(findings(unionAfterCr, dialect), dialect.id).toEqual([]);
+  });
+
+  // MySQL, MariaDB, SQLite and CockroachDB end the comment only at `\n`, so the predicate is commented out.
+  const predicateAfterCr = "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids";
+  it.each([
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["postgres, which a host may point at CockroachDB", POSTGRES_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a predicate after the CR doesn't count", (_label, dialect) => {
+    expect(findings(predicateAfterCr, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("sqlserver: a predicate after the CR counts, as SQL Server reads it", () => {
+    expect(findings(predicateAfterCr, SQLSERVER_DIALECT)).toEqual([]);
+  });
+
+  it("a statement on the line after the comment is a statement where only `\\n` ends it, not part of a string", () => {
+    const sql = "SELECT id FROM agencies WHERE id = :tenant_agency_ids -- \r'\n; DO SLEEP(1) -- '";
+    for (const dialect of [MYSQL_DIALECT, SQLITE_DIALECT, POSTGRES_DIALECT, COCKROACHDB_DIALECT, undefined]) {
+      expect(findings(sql, dialect), String(dialect?.id)).toContain("NOT_SELECT_OR_WITH:");
+    }
+  });
+});

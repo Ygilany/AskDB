@@ -1505,6 +1505,15 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "UNICODE_ESCAPED_IDENTIFIER", tableId: "" }] });
   });
 
+  it("strict: rejects a UNION after a `--` comment a carriage return ends, which the read-only check doesn't see here", async () => {
+    const schema = loadSchema(multiTenantDir);
+    // Postgres and SQL Server end the comment at the CR, so the UNION reads every tenant's orders.
+    const sql = "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders";
+    const dialect: AskDialect = { generate: async () => ({ sql }) };
+    const rejection = ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+
   it("does not trust a custom dialect's self-reported passing guardrail", async () => {
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = {
