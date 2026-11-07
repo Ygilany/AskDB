@@ -6,9 +6,10 @@ import {
   type ScopedTable,
   type PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
-import { isBuiltInDialectId, SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
+import { SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { ENGINE_LEXER_PROFILES, findPostgresOnlyForms, lexerProfileFor, lexSql, startsDashComment, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
+import { readSql, tenantCodeReadings, tenantStatementReadings, type CodeViewReading, type SqlRead } from "./readings.js";
 import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
 import { denylistFor } from "./validate.js";
 
@@ -100,12 +101,13 @@ export function tenantRuleWarnings(
   if (scope.access.kind === "global") return [];
 
   const warnings: TenantGuardrailWarning[] = [];
+  const read = readSql(sql);
 
   // The per-table checks below read queries. A statement that isn't one (a `DO` block, `CALL`,
   // `EXPLAIN`, `SHOW`) can touch tables they never see, a `DO` body as a dollar-quoted string,
   // so it is refused here, under every dialect: read-only validation may be a custom
   // AskDialect's job (ADR 0010), tenant enforcement isn't (#698).
-  const keyword = nonQueryKeyword(sql, dialect);
+  const keyword = nonQueryKeyword(read, dialect);
   if (keyword !== undefined) {
     warnings.push(
       warn("NOT_SELECT_OR_WITH", "",
@@ -119,7 +121,7 @@ export function tenantRuleWarnings(
   // reads. The read-only check allows some of these as reads, and a custom AskDialect skips
   // it, so the tenant check refuses them under every dialect (#702). A listed name counts in any
   // code position, since an engine can reach a function without `(` right after its name.
-  const name = uncheckableName(sql, dialect);
+  const name = uncheckableName(read, dialect);
   if (name !== undefined) {
     warnings.push(
       warn("UNCHECKABLE_FUNCTION", "",
@@ -166,7 +168,7 @@ export function tenantRuleWarnings(
     );
   }
 
-  const views = codeViews(sql, dialect);
+  const views = codeViews(read, dialect);
 
   // Check the roots this scope covers: a query on the root table itself is scoped by its tenant ID column.
   for (const rootId of scopeRootIds(scope)) {
@@ -395,39 +397,21 @@ function continuesExpression(prev: SqlToken | undefined): boolean {
 }
 
 /**
- * Every way a server may lex `sql` into statements: the dialect's profile when it names a
- * built-in engine, otherwise every engine's, and for Postgres and MySQL both string settings
- * (a backslash ends a literal under one and escapes the quote under the other). A MySQL
- * profile is read with its `/*!NNNNN … *\/` bodies as code and as comments, since a server
- * older than NNNNN skips them.
- */
-function statementReadings(dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): SqlLexerProfile[] {
-  const known = dialect?.id !== undefined ? lexerProfileFor(dialect) : undefined;
-  // A `postgres` dialect may point at CockroachDB, where only `\n` ends a line comment: read both ways.
-  const profiles = known
-    ? known.id === "postgres" ? [known, { ...known, lineCommentEndsAtLfOnly: true }] : [known]
-    : ENGINE_LEXER_PROFILES.flatMap((p) =>
-        p.id === "postgres" || p.id === "mysql" ? [p, { ...p, backslashEscapes: !p.backslashEscapes }] : [p],
-      );
-  return profiles.flatMap((p) => (p.executableComments ? [p, { ...p, executableComments: false }] : [p]));
-}
-
-/**
  * The leading token of the first statement in `sql` that isn't a query, upper-cased (a
  * keyword, or the token's own text when it isn't a word), or undefined when every statement
  * starts with `SELECT` or `WITH`. A statement ends at each `;`, and under the SQL Server
  * reading also at a top-level word from {@link TSQL_STATEMENT_WORDS} that doesn't
  * {@link continuesExpression continue an expression}. Its first token is read
  * past comments and `(` with the shared lexer, under every reading from
- * {@link statementReadings}, so a statement any of them reads as a non-query counts.
+ * `tenantStatementReadings`, so a statement any of them reads as a non-query counts.
  */
-function nonQueryKeyword(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
-  for (const profile of statementReadings(dialect)) {
+function nonQueryKeyword(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of tenantStatementReadings(dialect)) {
     const tsql = profile.id === "sqlserver";
     let statementStart = true;
     let depth = 0;
     let prev: SqlToken | undefined;
-    for (const token of lexSql(sql, profile)) {
+    for (const token of read.tokens(profile)) {
       if (token.kind === "comment") continue;
       const before = prev;
       prev = token;
@@ -485,11 +469,11 @@ const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
  * in any code position, in any case, bare, quoted or qualified, not only right before `(`: an
  * engine can reach a function in forms with no `(` after its name, so a column, an alias or a
  * placeholder named like a listed function counts too. Text in comments and single-quoted strings
- * doesn't. Read under every reading from {@link statementReadings}, so a name any of them sees counts.
+ * doesn't. Read under every reading from `tenantStatementReadings`, so a name any of them sees counts.
  */
-function uncheckableName(sql: string, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
-  for (const profile of statementReadings(dialect)) {
-    for (const token of lexSql(sql, profile)) {
+function uncheckableName(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of tenantStatementReadings(dialect)) {
+    for (const token of read.tokens(profile)) {
       const name = nameOf(token);
       if (name !== undefined && UNCHECKABLE_FUNCTIONS.has(name)) return name;
     }
@@ -536,113 +520,28 @@ function extractColumnName(columnId: string): string {
 }
 
 /**
- * How one engine separates code from strings and comments. `'…'` strings (with
- * `''` escapes), `--` and `/* *\/` comments, and `` `…` `` / `[…]` identifiers
- * are common to every reading.
+ * One same-length view of the statement per reading from `tenantCodeReadings` (see
+ * {@link codeView}), with the statement itself (`source`), where string literals are still
+ * readable at the same offsets.
  */
-type CodeReading = {
-  /** `"…"` is a quoted identifier (standard SQL) or a string literal (MySQL/MariaDB). */
-  doubleQuoted: "identifier" | "string";
-  /** Backslash escapes the next character inside string literals. */
-  backslashEscapes: boolean;
-  /** `#` starts a line comment (MySQL/MariaDB). */
-  hashComments: boolean;
-  /**
-   * `E'…'` is a Postgres escape string: backslash escapes the next character
-   * inside it even when `backslashEscapes` is off.
-   */
-  eStrings: boolean;
-  /**
-   * `$tag$…$tag$` is a string (Postgres, CockroachDB). Elsewhere `$` is a name character
-   * (MySQL, MariaDB, SQLite) or starts a money literal (SQL Server).
-   */
-  dollarQuotes: boolean;
-  /** `||` is logical OR (MySQL/MariaDB without `PIPES_AS_CONCAT`), not string concatenation. */
-  pipesAreOr: boolean;
-  /** `--` starts a comment only before whitespace, a control character, or the end (MySQL/MariaDB). */
-  dashCommentNeedsSpace: boolean;
-  /** A `--` or `#` comment ends at `\r` too (Postgres, SQL Server), not only at `\n`. */
-  lineCommentEndsAtCr: boolean;
-  /**
-   * The body of a `/*! … *\/` (or MariaDB `/*M! … *\/`) executable comment is code. MySQL
-   * runs it only on a server at least as new as its version number, so a MySQL dialect is
-   * read both with and without it (see {@link codeViews}).
-   */
-  executableComments: boolean;
-};
-
-const STANDARD_READING: CodeReading = {
-  doubleQuoted: "identifier",
-  backslashEscapes: false,
-  hashComments: false,
-  eStrings: false,
-  dollarQuotes: false,
-  pipesAreOr: false,
-  dashCommentNeedsSpace: false,
-  lineCommentEndsAtCr: false,
-  executableComments: false,
-};
-const POSTGRES_READING: CodeReading = { ...STANDARD_READING, eStrings: true, dollarQuotes: true };
-const MYSQL_READING: CodeReading = {
-  doubleQuoted: "string",
-  backslashEscapes: true,
-  hashComments: true,
-  eStrings: false,
-  dollarQuotes: false,
-  pipesAreOr: true,
-  dashCommentNeedsSpace: true,
-  lineCommentEndsAtCr: false,
-  executableComments: true,
-};
-/** MySQL with its executable comments read as comments: a server too old for their version skips them. */
-const MYSQL_SKIPPING_EXECUTABLE: CodeReading = { ...MYSQL_READING, executableComments: false };
+type CodeViews = ReadonlyArray<{ readonly text: string; readonly source: string; readonly reading: CodeViewReading }>;
 
 /**
- * One same-length view of the statement per reading (see {@link codeView}), with the
- * statement itself (`source`), where string literals are still readable at the same offsets.
+ * The statement's code views. A built-in engine gets its family's reading; any other id, or none,
+ * gets every reading (standard SQL, Postgres with `E'…'` escape strings, MySQL): the statement is
+ * ambiguous exactly where they differ, and the matchers below resolve that ambiguity toward a
+ * warning (tables: any view; predicates: every view). A MySQL server running with `ANSI_QUOTES`
+ * reads `"…"` as an identifier; the MySQL reading still treats it as a string, so a predicate
+ * written only as `"agency_id"` is flagged there, never passed. A MySQL reading comes twice, with
+ * the bodies of `/*! … *\/` executable comments read as code and as comments, since whether the
+ * server runs one depends on its version.
  */
-type CodeViews = ReadonlyArray<{ readonly text: string; readonly source: string; readonly reading: CodeReading }>;
-
-/**
- * A known dialect gets its own single reading. An unknown one gets every reading
- * (standard SQL, Postgres with `E'…'` escape strings, MySQL): the statement is
- * ambiguous exactly where they differ, and the matchers below resolve that
- * ambiguity toward a warning (tables: any view; predicates: every view). A MySQL
- * server running with `ANSI_QUOTES` reads `"…"` as an identifier; the MySQL
- * reading still treats it as a string, so a predicate written only as
- * `"agency_id"` is flagged there, never passed. A MySQL reading comes twice, with the
- * bodies of `/*! … *\/` executable comments read as code and as comments, since whether
- * the server runs one depends on its version.
- */
-function codeViews(
-  sql: string,
-  dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
-): CodeViews {
-  // A CR ends a line comment on Postgres and SQL Server, not on MySQL, MariaDB, SQLite or CockroachDB.
-  const crEnds = (r: CodeReading): CodeReading => ({ ...r, lineCommentEndsAtCr: true });
-  if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
-    return [
-      STANDARD_READING, crEnds(STANDARD_READING), POSTGRES_READING, crEnds(POSTGRES_READING), MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE,
-    ].map((r) => view(sql, r));
-  }
-  // As the shared lexer reads it (`lexerProfileFor`): an unset value on a MySQL-family dialect is the
-  // server default, escapes on; elsewhere escapes are on only when the dialect says so.
-  const mysqlFamily = dialect.id === "mysql" || dialect.id === "mariadb";
-  const backslashEscapes = mysqlFamily ? dialect.backslashEscapes !== false : dialect.backslashEscapes === true;
-  // A `postgres` dialect may point at CockroachDB, which is wire-compatible: read both ways.
-  const bases =
-    dialect.id === "mysql" || dialect.id === "mariadb"
-      ? [MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE]
-      : dialect.id === "postgres" || dialect.id === "cockroachdb"
-        ? [POSTGRES_READING, crEnds(POSTGRES_READING)]
-        : dialect.id === "sqlserver"
-          ? [crEnds(STANDARD_READING)]
-          : [STANDARD_READING];
-  return bases.map((base) => view(sql, { ...base, backslashEscapes }));
-}
-
-function view(sql: string, reading: CodeReading): CodeViews[number] {
-  return { text: codeView(sql, reading), source: sql, reading };
+function codeViews(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): CodeViews {
+  return tenantCodeReadings(dialect).map((reading) => ({
+    text: codeView(read.sql, read.tokens(reading.profile)),
+    source: read.sql,
+    reading,
+  }));
 }
 
 /**
@@ -652,140 +551,55 @@ function view(sql: string, reading: CodeReading): CodeViews[number] {
  */
 const QUOTE_MARK = "\u0001";
 
-/** A character that continues an identifier, so an `E` before it is not a string prefix. */
-const IDENTIFIER_CONTINUE = /[A-Za-z0-9_$\u0080-\uffff]/;
-
 /**
- * Blank out everything that is not SQL code, so identifier checks only see code
- * regions. String literals (`'…'`, and `$tag$…$tag$` bodies and `"…"` when the
- * reading says so) and comments become spaces. A comment starts where the reading
- * says (`--` only before whitespace on MySQL, see `startsDashComment` in the shared
- * lexer), and an executable comment's body stays code when the reading says so. The output has the same length
- * and keeps the original case (placeholders are case-sensitive), so word
+ * `sql` with everything that is not code blanked, from the shared lexer's `tokens`, so identifier
+ * checks only see code. Strings and comments become spaces (a newline stays); the body of an
+ * executable comment the reading runs is code, since the lexer reads it as tokens. The output has
+ * the same length and keeps the original case (placeholders are case-sensitive), so word
  * boundaries at the seams are unchanged.
  *
- * Quoted identifiers keep their contents; their delimiters become {@link QUOTE_MARK}:
- * `"agency_id"` *is* the identifier `agency_id` on Postgres, and blanking it
- * would hide `FROM "orders"` from the table check and skip that table.
+ * Quoted identifiers keep their contents, and each of their delimiters becomes
+ * {@link QUOTE_MARK}, a doubled one inside them too: `"agency_id"` *is* the identifier
+ * `agency_id` on Postgres, and blanking it would hide `FROM "orders"` from the table check.
  */
-function codeView(sql: string, reading: CodeReading): string {
+function codeView(sql: string, tokens: readonly SqlToken[]): string {
   const out = sql.split("");
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
-  };
-  /**
-   * End (exclusive) of the string literal opened by `quote` at `open`. `escapes`
-   * says whether backslash escapes the next character inside it.
-   */
-  const stringEnd = (open: number, quote: string, escapes: boolean): number => {
-    let j = open + 1;
-    while (j < sql.length) {
-      const c = sql[j];
-      if (c === "\\" && escapes) {
-        j += 2;
-        continue;
-      }
-      if (c === quote) {
-        if (sql[j + 1] === quote) {
-          j += 2;
-          continue;
-        }
-        return j + 1;
-      }
-      j++;
+  for (const token of tokens) {
+    if (token.kind === "string" || token.kind === "comment") {
+      // A string's prefix letter (`E'…'`, `N'…'`) stays code, as the check has always read it.
+      const from = token.kind === "string" && /^[A-Za-z]/.test(token.text) ? token.start + 1 : token.start;
+      for (let k = from; k < token.end; k++) if (out[k] !== "\n") out[k] = " ";
+    } else if (token.kind === "quoted_identifier") {
+      const close = token.quote === "[" ? "]" : token.quote;
+      out[token.start] = QUOTE_MARK;
+      for (let k = token.start + 1; k < token.end; k++) if (sql[k] === close) out[k] = QUOTE_MARK;
     }
-    return sql.length;
-  };
-  // The tag may hold non-ASCII letters, as the shared lexer's DOLLAR_TAG and Postgres read it.
-  const dollarTag = /\$(?:[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/y;
-  const executableOpener = /\/\*M?!\d*/y;
-  const lineEnd = reading.lineCommentEndsAtCr ? /[\n\r]/g : /\n/g;
-  let inExecutable = false;
-  let i = 0;
-  while (i < sql.length) {
-    const ch = sql[i]!;
-    const next = sql[i + 1];
-    if (startsDashComment(sql, i, reading.dashCommentNeedsSpace) || (ch === "#" && reading.hashComments)) {
-      lineEnd.lastIndex = i;
-      const end = lineEnd.exec(sql)?.index ?? sql.length;
-      blank(i, end);
-      i = end;
-      continue;
-    }
-    if (ch === "*" && next === "/" && inExecutable) {
-      blank(i, i + 2);
-      inExecutable = false;
-      i += 2;
-      continue;
-    }
-    if (ch === "/" && next === "*" && reading.executableComments && !inExecutable) {
-      executableOpener.lastIndex = i;
-      const opener = executableOpener.exec(sql);
-      if (opener) {
-        blank(i, i + opener[0].length);
-        inExecutable = true;
-        i += opener[0].length;
-        continue;
-      }
-    }
-    if (ch === "/" && next === "*") {
-      const close = sql.indexOf("*/", i + 2);
-      const end = close === -1 ? sql.length : close + 2;
-      blank(i, end);
-      i = end;
-      continue;
-    }
-    if (ch === "'" || (ch === '"' && reading.doubleQuoted === "string")) {
-      const escapes = reading.backslashEscapes || (ch === "'" && isEStringPrefix(out, i, reading));
-      const end = stringEnd(i, ch, escapes);
-      blank(i, end);
-      i = end;
-      continue;
-    }
-    // A `$` right after a name character continues the name (`x$$y`), as every engine reads it.
-    if (ch === "$" && reading.dollarQuotes && !IDENTIFIER_CONTINUE.test(out[i - 1] ?? "")) {
-      dollarTag.lastIndex = i;
-      const tag = dollarTag.exec(sql);
-      const close = tag ? sql.indexOf(tag[0], i + tag[0].length) : -1;
-      if (tag && close !== -1) {
-        const end = close + tag[0].length;
-        blank(i, end);
-        i = end;
-        continue;
-      }
-      i++;
-      continue;
-    }
-    if (ch === '"' || ch === "`" || ch === "[") {
-      const close = sql.indexOf(ch === "[" ? "]" : ch, i + 1);
-      out[i] = QUOTE_MARK;
-      if (close === -1) break;
-      out[close] = QUOTE_MARK;
-      i = close + 1;
-      continue;
-    }
-    i++;
   }
   return out.join("");
 }
 
 /**
- * Whether the `'` at `quote` opens a Postgres `E'…'` escape string: the character
- * before it is `E`/`e` and that `E` starts a new token (it is not the tail of an
- * identifier such as `date'…'`). `out` is the view built so far, where blanked
- * strings, comments, and quoted-identifier delimiters are spaces.
+ * A table counts as referenced when any reading sees its name in code, except as a word of
+ * `ORDER BY` or `GROUP BY` (#828).
  */
-function isEStringPrefix(out: readonly string[], quote: number, reading: CodeReading): boolean {
-  if (!reading.eStrings || quote === 0) return false;
-  const prefix = out[quote - 1];
-  if (prefix !== "E" && prefix !== "e") return false;
-  return quote < 2 || !IDENTIFIER_CONTINUE.test(out[quote - 2]!);
+function mentionsTable(views: CodeViews, tableName: string): boolean {
+  const pattern = new RegExp(`\\b${escapeRegex(tableName)}\\b`, "gi");
+  return views.some((view) =>
+    [...view.text.matchAll(pattern)].some((m) => !inOrderOrGroupBy(view.text, m.index, m.index + m[0].length)),
+  );
 }
 
-/** A table counts as referenced when any reading sees it. */
-function mentionsTable(views: CodeViews, tableName: string): boolean {
-  const pattern = new RegExp(`\\b${escapeRegex(tableName)}\\b`, "i");
-  return views.some((view) => pattern.test(view.text));
+/**
+ * Whether `text[start, end)` in a code view is a word of `ORDER BY` or `GROUP BY`. `ORDER` and
+ * `GROUP` are reserved on every engine, so a table named after one is written quoted (`"order"`,
+ * whose closing quote mark breaks the phrase) or qualified (`billing.order`, which Postgres takes
+ * unquoted), and the `BY` after them is the keyword.
+ */
+function inOrderOrGroupBy(text: string, start: number, end: number): boolean {
+  if (text[start - 1] === ".") return false;
+  const word = text.slice(start, end).toLowerCase();
+  if (word === "order" || word === "group") return /^\s+by(?![\w$\u0080-\uffff])/i.test(text.slice(end));
+  return word === "by" && /(?:^|[^\w$\u0080-\uffff.\u0001])(?:order|group)\s+$/i.test(text.slice(0, start));
 }
 
 /** A tenant column counts only when every reading sees it in code. */
@@ -1102,7 +916,7 @@ function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
  * derived table or CTE), or when the whole `col IN (…)` around it is itself such a
  * conjunct; not inside `EXISTS (…)`, a scalar subquery, or a comparison. A level opened by a function call or a comparison doesn't count.
  */
-function isFilterConjunct(tokens: readonly Token[], start: number, end: number, reading: CodeReading): boolean {
+function isFilterConjunct(tokens: readonly Token[], start: number, end: number, reading: CodeViewReading): boolean {
   const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && reading.pipesAreOr);
   const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
   let lo = start;

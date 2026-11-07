@@ -2,8 +2,8 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 // CLIs call `bootstrapAskDbEnv`, which loads `.env` (a missing file is OK), then evaluates this file and
 // installs the AskDB runtime snapshot, so this file doesn't load `.env` itself.
-// Use `env("VAR")` for every value read from the environment; `flattenAskDbConfig` applies defaults
-// for optional fields (see `@askdb/config` / `defaults.ts`).
+// Use `env("VAR")` for every value read from the environment; `@askdb/config` applies defaults
+// for optional fields (see its `defaults.ts`).
 export default defineConfig({
   ai: {
     // openai | azure | foundry | anthropic | google | gateway — the default provider for both sections below

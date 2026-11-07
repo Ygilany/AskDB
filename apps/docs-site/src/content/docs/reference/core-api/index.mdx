@@ -45,17 +45,9 @@ import AnchorRedirects from "../../../../components/AnchorRedirects.astro";
 | --- | --- | --- |
 | `tenantPolicyFrontmatterSchema`, `tenantScopeSchema` | The zod schemas for `tenant-policy.md` front-matter and for a `TenantScope` | Studio |
 | `v2SchemaJsonSchema` | The zod schema for `schema.json` | `@askdb/enrich` |
-| `enforcementModeSchema`, `hierarchyEdgeSchema`, `polymorphicTableSchema`, `scopedTableSchema`, `tenantAccessSchema`, `tenantRootSchema`, `v2ColumnFrontmatterSchema`, `v2ColumnSchema`, `v2ConceptSchema`, `v2ConceptsFrontmatterSchema`, `v2TableFrontmatterSchema`, `v2TableSchema` | The other zod schemas behind the loaders | `@askdb/core` only |
 | `normalizeTenantPolicy` | Checks a parsed tenant policy against `schema.json` and collects its problems | `@askdb/enrich` |
-| `RECOGNIZED_H2_SECTIONS`, `TENANT_POLICY_H2_SECTIONS` | The `##` headings the table and tenant-policy parsers recognize | `@askdb/core` only |
-| `assertNlToSqlInputs` | The question and schema check `ask()` runs before the model call | `@askdb/core` only |
-| `buildNlToSqlSystemPrompt` | The NL→SQL system prompt | `@askdb/core` only |
-| `buildSelectGuardrailExplanation` | Builds the `explain` summary of a statement that passed the read-only check | `@askdb/core` only |
-| `escapeSqlLiteral` | Escapes a value as a SQL literal for a dialect | `@askdb/core` only |
-| `extractTenantPlaceholders` | Lists the `:tenant_*` placeholders in SQL | `@askdb/core` only |
 | `formatAskDbModesV1` | Formats the list of modes for a message | CLI |
 | `formatSupportedAskDbLogLevels`, `isSupportedAskDbLogLevel` | Log-level helpers | CLI |
-| `parseAskDbSchemaJson`, `normalizeAskDbSchema` | Parse and normalize the older v1 schema format | `@askdb/core` only |
 | `loadNormalizedSchemaFromJson`, `AskDbSchemaFile` | Load a v1 schema from a JSON string, and the v1 file's type | `@askdb/core`, and the packed-install smoke tests in `examples/installable-smoke` |
 
 ## Read next

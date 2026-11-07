@@ -7,15 +7,8 @@ import {
 import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { DialectSpec } from "./dialect-spec.js";
 import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } from "./guardrail-decide.js";
-import {
-  ENGINE_LEXER_PROFILES,
-  GENERIC_LEXER,
-  findPostgresOnlyForms,
-  hasUnterminatedToken,
-  lexSql,
-  lexerProfileFor,
-  type SqlToken,
-} from "./lexer.js";
+import { findPostgresOnlyForms, hasUnterminatedToken, type SqlToken } from "./lexer.js";
+import { isKnownEngine, readSql, sensitiveReadings } from "./readings.js";
 
 export type SensitiveGuardrailMode = "warn" | "strict";
 
@@ -355,10 +348,11 @@ type ScanOutcome = {
 };
 
 /**
- * Lex and scan. With a known dialect the statement is lexed the way that engine reads it
- * (a Postgres-family one also the way CockroachDB ends a line comment, with the references
- * found there added). Without one (or for an unrecognized id) the generic reading decides scope
- * issues, and references are unioned across every engine's reading that lexes cleanly —
+ * Lex and scan, under the readings `sensitiveReadings` gives. With a known dialect the statement is
+ * lexed the way that engine reads it (a Postgres-family one also the way CockroachDB ends a line
+ * comment, with the references found there added). Without one (or for an unrecognized id) the
+ * generic reading decides scope issues, and references are unioned across every engine's reading
+ * that lexes cleanly —
  * so a column hidden from one reading by an engine-specific quote or comment rule (for
  * example MySQL `'\''` or Postgres `E'\''`) is still reported. Readings with an
  * unterminated token are skipped: the engine would reject that SQL outright.
@@ -368,16 +362,12 @@ function scanSql(
   index: SchemaIndex,
   dialect: Pick<DialectSpec, "id" | "backslashEscapes"> | undefined,
 ): SensitiveGuardrailResult {
-  const profile = dialect ? lexerProfileFor(dialect) : undefined;
-  // A `postgres` dialect may point at CockroachDB, where only `\n` ends a line comment: the
-  // references that reading finds are added too.
-  const modifiers = profile ? selectModifiersFor(dialect) : SELECT_MODIFIERS.any;
-  const primary = scanTokens(lexSql(sql, profile ?? GENERIC_LEXER), index, modifiers);
-  const others = !profile
-    ? ENGINE_LEXER_PROFILES
-    : profile.id === "postgres" ? [{ ...profile, lineCommentEndsAtLfOnly: true }] : [];
-  for (const p of others) {
-    const tokens = lexSql(sql, p);
+  const read = readSql(sql);
+  const readings = sensitiveReadings(dialect);
+  const modifiers = dialect && isKnownEngine(dialect) ? selectModifiersFor(dialect) : SELECT_MODIFIERS.any;
+  const primary = scanTokens(read.tokens(readings.primary), index, modifiers);
+  for (const p of readings.union) {
+    const tokens = read.tokens(p);
     if (hasUnterminatedToken(tokens)) continue;
     for (const [key, ref] of scanTokens(tokens, index, modifiers).found) {
       const existing = primary.found.get(key);

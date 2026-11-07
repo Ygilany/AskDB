@@ -212,10 +212,7 @@ The tooling `askdb init` and Studio's setup wizard share, for tools that set up 
 These are exported, but they serve AskDB's own packages and tools. Don't build on them.
 
 - **`getAskDbRuntimeConfig().flat`:** a map of internal keys named like environment variables, such as `ASKDB_INTROSPECT_OUT` and `ASKDB_PGVECTOR_URL`, built from the same checked config, and the same map as a projection's `entries`. It holds no API keys. Studio reads its pgvector settings and its default schema directory from it, and it's kept for copies of `@askdb/config` that still read it. AskDB never reads these keys from the environment, so setting one in the shell changes nothing.
-- **`flattenAskDbConfig(config)`:** checks an `AskDbConfig` and returns that map. It throws the same `askdb.config:` errors as `defineConfig()`.
 - **`mergeAskDbFlatIntoEnvMap(base, flat)`:** returns a copy of `base` with each non-blank entry of `flat` added, to build a child process's environment from `getAskDbRuntimeConfig().flat`. It doesn't read `process.env` itself. [ADR 0005](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md) names it for tools that spawn processes.
-- **`ASKDB_ENV_PROJECTION`:** the symbol that marks `defineConfig()`'s result. It's registered with `Symbol.for`, so two copies of the package agree on it.
-- **`isAskDbEnvProjection(value)`:** `true` for `defineConfig()`'s result. The loader uses it to tell `defineConfig({ … })` from a plain `export default { … }`.
 
 ## Read next
 

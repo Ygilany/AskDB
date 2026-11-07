@@ -131,6 +131,27 @@ describe("lexSql — a `:` before a b'…' string (#730)", () => {
   });
 });
 
+describe("lexSql — strictStringPrefixes, the tenant check's reading of string prefixes (#815)", () => {
+  const strict: SqlLexerProfile = { ...POSTGRES_LEXER, strictStringPrefixes: true };
+
+  it("opens a $tag$ string only when the tag closes", () => {
+    expect(kinds("$x$ a", POSTGRES_LEXER)).toEqual(["string:$x$ a!"]);
+    expect(kinds("$x$ a", strict)).toEqual(["punct:$", "word:x$", "word:a"]);
+  });
+
+  it("reads a $tag$ or E prefix right after a digit as code", () => {
+    expect(kinds("1$a$ b $a$", POSTGRES_LEXER)).toEqual(["number:1", "string:$a$ b $a$"]);
+    expect(kinds("1$a$ b $a$", strict)).toEqual(["number:1", "punct:$", "word:a$", "word:b", "punct:$", "word:a$"]);
+    expect(kinds("1e'x'", POSTGRES_LEXER)).toEqual(["number:1", "string:e'x'"]);
+    expect(kinds("1e'x'", strict)).toEqual(["number:1", "word:e", "string:'x'"]);
+  });
+
+  it("reads a closed tag with non-ASCII letters as a string, as the engine does (GHSA-rmjw-pffc-5hjr)", () => {
+    expect(kinds("$é$ a $é$", strict)).toEqual(["string:$é$ a $é$"]);
+    expect(kinds("$é$'$é$ = ''", strict)).toEqual(["string:$é$'$é$", "punct:=", "string:''"]);
+  });
+});
+
 describe("lexerProfileFor", () => {
   it("maps dialect families and honours backslashEscapes", () => {
     expect(lexerProfileFor(POSTGRES_DIALECT)).toBe(POSTGRES_LEXER);

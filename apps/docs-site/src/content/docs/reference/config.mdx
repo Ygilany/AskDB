@@ -357,7 +357,7 @@ AskDB loads `.env` first, then your `askdb.config.*`. **You choose the variable 
 | --- | --- | --- |
 | `DATABASE_URL` | `introspection.providerConfig.<engine>.databaseUrl`; with `--studio-execute`, `studio.execute.databaseUrl` too | `--database postgres`, `mysql` or `sqlserver`. `--connection-env` gives another name. |
 | `SQLITE_FILE` | `introspection.providerConfig.sqlite.file` | `--database sqlite`, unless `--sqlite-file` gives a path or another name. Studio's setup wizard asks for the file's path instead. |
-| `ASKDB_PGVECTOR_URL` | `rag.storeConfig.pgvector.databaseUrl` | `--rag-store pgvector`. `--pgvector-env` gives another name. |
+| `PGVECTOR_URL` | `rag.storeConfig.pgvector.databaseUrl` | `--rag-store pgvector`. `--pgvector-env` gives another name. |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | `ai.providerConfig.openai.apiKey`, `ai.language.model` | `--ai-provider openai`, the default. |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | `ai.providerConfig.anthropic.apiKey`, `ai.language.model` | `--ai-provider anthropic`. |
 | `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_AI_MODEL` | `ai.providerConfig.google.apiKey`, `ai.language.model` | `--ai-provider google`. |

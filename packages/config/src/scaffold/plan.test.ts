@@ -181,7 +181,7 @@ describe("planAskDbScaffold", () => {
         database: "postgres",
         connectionEnv: "DATABASE_URL",
         ai: { provider: "azure", keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-        rag: { store: "pgvector", pgvectorEnv: "ASKDB_PGVECTOR_URL" },
+        rag: { store: "pgvector", pgvectorEnv: "PGVECTOR_URL" },
         studioExecute: { provider: "postgres", connectionEnv: "DATABASE_URL" },
       }),
       VERSIONS,
@@ -189,7 +189,7 @@ describe("planAskDbScaffold", () => {
 
     expect(plan.envVars).toEqual([
       { name: "DATABASE_URL", purpose: "postgres connection URL, for introspection and Studio execute", requiredForIntrospection: true },
-      { name: "ASKDB_PGVECTOR_URL", purpose: "pgvector connection URL", requiredForIntrospection: false },
+      { name: "PGVECTOR_URL", purpose: "pgvector connection URL", requiredForIntrospection: false },
       { name: "AZURE_OPENAI_API_KEY", purpose: "azure API key", requiredForIntrospection: false },
       { name: "AZURE_OPENAI_DEPLOYMENT", purpose: "azure model override", requiredForIntrospection: false },
       {
@@ -204,7 +204,7 @@ describe("planAskDbScaffold", () => {
 # postgres connection URL, for introspection and Studio execute. Format: postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>
 DATABASE_URL=
 # pgvector connection URL. Format: postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>
-ASKDB_PGVECTOR_URL=
+PGVECTOR_URL=
 # azure API key
 AZURE_OPENAI_API_KEY=
 # azure model override

@@ -71,6 +71,9 @@ function aiDefaults(provider: string): { keyEnv: string; modelEnv: string } | un
 /** The connection URL variable every live engine defaults to, for introspection and Studio execute. */
 const DEFAULT_CONNECTION_ENV = "DATABASE_URL";
 
+/** The pgvector store's connection URL variable, as `askdb init` defaults it. */
+const DEFAULT_PGVECTOR_ENV = "PGVECTOR_URL";
+
 /** The planner's name for each answer, mapped to this endpoint's field, for errors. */
 const SETUP_FIELDS: Record<string, keyof SetupConfigInput> = {
   connectionEnv: "connectionEnv",
@@ -108,7 +111,7 @@ function scaffoldAnswers(input: SetupConfigInput): AskDbScaffoldAnswers {
       keyEnv: trimmed(input.aiKeyEnv) ?? aiDefaults(input.aiProvider)?.keyEnv ?? "",
       ...(input.aiModelEnv ? { modelEnv: input.aiModelEnv.trim() } : {}),
     },
-    rag: { store: input.ragStore ?? "file", pgvectorEnv: trimmed(input.pgvectorEnv) ?? "ASKDB_PGVECTOR_URL" },
+    rag: { store: input.ragStore ?? "file", pgvectorEnv: trimmed(input.pgvectorEnv) ?? DEFAULT_PGVECTOR_ENV },
     ...(input.studioExecute
       ? {
           studioExecute: {
