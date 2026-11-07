@@ -38,7 +38,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `SQL_MULTI_STATEMENT` | More than one statement. |
 | `SQL_COMMENT` | A `--`, `/* */` or (MySQL) `#` comment. |
 | `SQL_NOT_SELECT_OR_WITH` | A first keyword other than `SELECT` or `WITH`. |
-| `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. |
+| `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. Also a `$N` parameter written against a word (`$1INTO`), where the SQL may be read as Postgres. |
 | `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, such as `pg_sleep(` or, on MySQL and MariaDB, `NEXTVAL(`. On every dialect, also `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server. |
 | `SQL_UNICODE_ESCAPED_IDENTIFIER` | On Postgres and CockroachDB, a Unicode-escaped identifier such as `U&"set\005fconfig"`, whose escapes could spell a blocked function or a sensitive column. |
 | `SQL_UNTERMINATED` | A string, quoted identifier, dollar-quoted string or block comment that never closes. |

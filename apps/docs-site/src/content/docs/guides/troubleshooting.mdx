@@ -120,7 +120,7 @@ The model wrote more than one statement. Ask for a single result, or split the q
 
 ### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The SQL has a comment, a forbidden keyword or a call to a blocked function. Keywords count only as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword, such as `update`, trips the check. [Keywords and functions](/reference/sql-checks/#keywords-and-functions) lists them for each engine. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+The SQL has a comment, a forbidden keyword or a call to a blocked function. Keywords count only as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword, such as `update`, trips the check. Where the SQL may be read as Postgres, so does a `$N` parameter written against a word, such as `$1INTO`: put a space after the parameter. [Keywords and functions](/reference/sql-checks/#keywords-and-functions) lists them for each engine. If one fires on a legitimate query, file an issue with the question and schema excerpt.
 
 ### `SqlValidationError: SQL_LOCKING_READ`
 
