@@ -130,6 +130,7 @@ export default defineConfig({
                 { label: "Switch engines", slug: "guides/switch-engines" },
                 { label: "Connect to SQL Server", slug: "guides/connect-to-sql-server" },
                 { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
+                { label: "Rerun a query with new values", slug: "guides/rerun-a-query-with-new-values" },
               ],
             },
             {
