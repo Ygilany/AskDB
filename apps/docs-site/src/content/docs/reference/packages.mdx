@@ -244,7 +244,7 @@ Headless schema-authoring helpers used by Studio. Use directly when building a c
 | `saveTable(workspace, tableId, frontmatter, body)` | Save one table's markdown file in `tables/`. |
 | `saveConcepts(workspace, frontmatter, body?)` | Save `concepts.md`. Throws if a concept links to a table or column that doesn't exist. |
 | `saveTenantPolicy(workspace, frontmatter, body)` | Save `tenant-policy.md`. Throws `SchemaParseError`, and writes nothing, if `loadSchema()` would reject the policy. |
-| `bundleSchemaDirectory(schemaDir)` | Bundle a schema directory into one JSON object, as `askdb bundle` does. Returns `@askdb/core`'s `readSchemaDirectory(schemaDir)`. |
+| `bundleSchemaDirectory(schemaDir)` | Bundle a schema directory into one JSON object, as `askdb bundle` does. Reads it with `@askdb/core`'s `readSchemaDirectory(schemaDir)`, then checks the bundle with core's loader: a directory `loadSchema()` refuses throws its `SchemaParseError`, naming the file, so a bundle it returns always loads. |
 
 The save functions write only inside the schema directory, through `@askdb/core`'s `saveSchemaFile()`. Each one refuses to write when the target file, or `tables/` for a table file, is a symbolic link, and saves through a temporary file renamed over the target, so a save is atomic and a hard link is replaced rather than written through.
 
