@@ -41,7 +41,7 @@ Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/ht
 
 ### Replace the unused exports removed before 1.0
 
-`@askdb/ai`, `@askdb/config`, `@askdb/core` and `@askdb/introspect` no longer export the values below ([#654](https://github.com/Ygilany/AskDB/issues/654)). Nothing outside their own package used them, so they leave before 1.0 freezes the API (ADR 0031). Each still works inside its package, except `bootstrapAskDbRuntime`, which is removed.
+`@askdb/ai`, `@askdb/config`, `@askdb/core` and `@askdb/introspect` no longer export the values below ([#654](https://github.com/Ygilany/AskDB/issues/654)). Nothing outside their own package used them, so they leave before 1.0 freezes the API (ADR 0031). Each still works inside its package, except `bootstrapAskDbRuntime` and the deprecated `placeholderForRoot`, which are removed.
 
 | Removed | Use instead |
 | --- | --- |

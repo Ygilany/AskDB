@@ -1,7 +1,6 @@
 import { TenantScopeError } from "../errors.js";
 import {
   assertDistinctRootPlaceholders,
-  placeholderForRoot,
   placeholderForTenantRoot,
   type NormalizedTenantPolicy,
   type TenantScope,
@@ -89,7 +88,7 @@ function lexerDialect(
 // Placeholder naming convention (owned by the policy; re-exported for callers here)
 // ---------------------------------------------------------------------------
 
-export { placeholderForRoot, placeholderForTenantRoot };
+export { placeholderForTenantRoot };
 
 // ---------------------------------------------------------------------------
 // Extract placeholders found in SQL (quote-aware via shared scanner)

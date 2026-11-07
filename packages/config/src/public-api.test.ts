@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as config from "./index.js";
+import { getAskDbRuntimeConfig, resetAskDbRuntimeForTests } from "./index.js";
 import * as scaffold from "./scaffold/index.js";
 
 // Unused outside @askdb/config and removed from its public API before 1.0 (#654).
@@ -18,5 +19,12 @@ describe("@askdb/config public API", () => {
 
   it("@askdb/config/scaffold doesn't export renderAskDbAiConfigScaffold", () => {
     expect(scaffold).not.toHaveProperty("renderAskDbAiConfigScaffold");
+  });
+
+  it("the not-initialized error names bootstrapAskDbEnv() alone", () => {
+    resetAskDbRuntimeForTests();
+    expect(() => getAskDbRuntimeConfig()).toThrow(
+      "AskDB runtime is not initialized. Call bootstrapAskDbEnv() from @askdb/config after startup",
+    );
   });
 });

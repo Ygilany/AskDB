@@ -4,6 +4,9 @@
 
 Accepted (2026-11-05; amended 2026-11-05). The maintainer settled #624 and #625 in the 2026-11-05 planning round (each issue's "Decision (2026-11-05)" section). The coordinating thread took this work's plan recommendations the same day. Implemented in the PR that closes #601, #624 and #625: `askSampleQuestion` and `suggestForSource` in `apps/studio/src/server.ts`, `buildEnrichmentUserPrompt` in `packages/core/src/enrichment/prompt.ts`, and `buildSuggestionTarget` and `buildSuggestionContext` in `packages/enrich/src/suggest.ts`. Contract: [`sensitive-fields-and-modes.md` → Which prompts follow omission](../contracts/sensitive-fields-and-modes.md#which-prompts-follow-omission). Amended 2026-11-05 (#667): core's enrichment types take `NormalizedV2Table`, not the raw `V2Table` (see Decision and Options considered). Amended 2026-11-06 (#771): the tenant policy block names only the tables the prompt shows (see Amendments).
 
+
+> **Amendment (2026-11, #654):** `buildEnrichmentUserPrompt` is no longer exported. `suggestEnrichment()` builds the prompt with it and throws `SensitiveEnrichmentTargetError` as described below.
+
 ## Context
 
 `modes.omitSensitiveFromPrompt` is a floor: `@askdb/client`, the CLI and the HTTP API apply it to every `ask()` call. Three paths that put schema names in front of a model did not:
