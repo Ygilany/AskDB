@@ -64,7 +64,7 @@ const { rows, truncated } = await runCapped(rebound.sql, rebound.tenantParams);
 | `QueryParameterError` `TENANT_VALUE_SUPPLIED` | Remove the `tenant_*` key from the values, and pass the scope as `tenantScope`. |
 | `QueryParameterError` `DIALECT_SPEC_REQUIRED` | `ask()` ran with your own `DialectSpec`, or the template was stored before 1.0.0-beta.46. Pass the spec `ask()` ran with as `dialect`, or the built-in id, such as `"postgres"`, if it ran with the built-in rules. |
 | `TenantScopeError` `MISSING_SCOPE` | Pass the caller's `tenantScope`. |
-| `TenantGuardrailError` | The template fails the tenant check under this scope or the current policy. Call `ask()` again for this caller. |
+| `TenantGuardrailError` | The template fails the tenant check under this scope or the current policy. Under `enforcement: warn`, pass `acceptWarnings: ["tenant"]` if you accept the warning. Otherwise call `ask()` again for this caller. |
 
 [`QueryParameterError` reasons](/reference/core-api/#queryparametererror-reasons) lists the rest.
 
