@@ -80,7 +80,8 @@ const result = await ask({
     };
   },
 });
-// e.g. { agencies: ["1"], sub_agencies: ["5"], clients: ["5"] } becomes a multi_root scope:
+// e.g. { "table:public.agencies": ["1"], "table:public.sub_agencies": ["5"], "table:public.clients": ["5"] }
+// becomes a multi_root scope:
 // :tenant_agency_ids → "1", :tenant_sub_agency_ids → "5", :tenant_client_ids → "5"
 // result.sql → ... JOIN clients c ON a.client_id = c.id WHERE c.id = $1
 // result.tenantParams → ["5"]
@@ -104,7 +105,7 @@ resolveTenantDescendants: async (tenantRoot, seedIds) => {
   return { [tenantRoot]: rows.map((r) => r.id) };
 },
 // result.sql → ... WHERE agency_id IN ($1, $2, $3)
-// result.tenantParams → ["state-1", "county-a", "county-b"]
+// result.tenantParams → ["1", "4", "5"]
 ```
 
 ## What the callback must return
@@ -118,11 +119,11 @@ resolveTenantDescendants: async (tenantRoot, seedIds) => {
 
 ## How `strict` mode pairs placeholders
 
-In `strict` mode the tenant guardrail enforces the pairing. Each tenant column must be compared with its own root's placeholder, so a model that filters a client column with `:tenant_agency_ids`, or the agency column with `:tenant_client_ids`, is rejected with `TenantGuardrailError`. Every root the expanded scope covers is also checked as a root table: a query that reads `clients` must filter it with `:tenant_client_ids`, not only through `clients.sub_agency_id` or a joined, filtered agency. Within one query block a predicate isn't tied to a particular table reference, so a mispaired second reference next to a correctly filtered one can still pass: for example, a scalar subquery on `clients` compared with `:tenant_agency_ids` beside a read of `clients` filtered with `:tenant_client_ids`. [Known limits](/concepts/tenant-isolation/#known-limits) lists the others. Treat the check as defense in depth.
+In `strict` mode the tenant check enforces the pairing. Each tenant column must be compared with its own root's placeholder, so a model that filters a client column with `:tenant_agency_ids`, or the agency column with `:tenant_client_ids`, is rejected with `TenantGuardrailError`. Every root the expanded scope covers is also checked as a root table: a query that reads `clients` must filter it with `:tenant_client_ids`, not only through `clients.sub_agency_id` or a joined, filtered agency. Within one query block a predicate isn't tied to a particular table reference, so a mispaired second reference next to a correctly filtered one can still pass: for example, a scalar subquery on `clients` compared with `:tenant_agency_ids` beside a read of `clients` filtered with `:tenant_client_ids`. [Known limits](/concepts/tenant-isolation/#known-limits) lists the others. Treat the check as defense in depth.
 
 ## Walk a hierarchy you hold in memory
 
-If one root's hierarchy is already in memory (for example, a cached parent map of a same-table tree), `expandClosure(seedIds, childrenOf)` from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
+If one root's hierarchy is already in memory (for example, a cached parent map of a same-table tree), [`expandClosure(seedIds, childrenOf)`](/reference/core-api/#expandclosureseedids-childrenof) from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
 
 ```ts
 import { expandClosure } from "@askdb/core";

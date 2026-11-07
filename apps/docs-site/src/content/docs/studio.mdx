@@ -70,7 +70,7 @@ Concepts reach the model through RAG retrieval: build the index (see [RAG Index]
 
 The Tenancy view declares tenant isolation for a multi-tenant schema. Choose **Draft with AI** to have your model propose a tenant policy, or **Configure manually** to pick the tenant root table, its tenant ID column and an enforcement mode (**Strict** or **Warn**) yourself. Either way, you review the policy before **Save** writes `tenant-policy.md`. A saved policy shows its table coverage and an **Edit** button.
 
-[Multi-tenancy](/guides/multi-tenancy/) explains the policy's fields and how `ask()` enforces it.
+[Scope queries to a tenant](/guides/multi-tenancy/) walks through using it, and [Tenant policy format](/reference/tenant-policy/) lists the policy's fields and what the tenant check requires.
 
 ## RAG Index
 

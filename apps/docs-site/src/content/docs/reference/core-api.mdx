@@ -174,6 +174,16 @@ const rebound = bindPreparedQuery(prepared, values, { schema, tenantScope: expan
 
 The `subtree` expansion `ask()` runs, as a function: it calls your [`resolveTenantDescendants`](#options) and returns a `multi_root` scope with one entry per root the subtree covers (an `ids` scope when the subtree is one root table), keeping a level with no IDs as `ids: []` so reading it fails closed. Other access kinds pass through. It validates the scope first and throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) for a missing resolver or a malformed result, as `ask()` does.
 
+### `expandClosure(seedIds, childrenOf)`
+
+```ts
+import { expandClosure } from "@askdb/core";
+
+const ids = expandClosure(seedIds, (id) => childrenByAgencyId.get(id) ?? []);
+```
+
+Walks a hierarchy you already hold in memory, breadth-first, and returns the seed IDs and every descendant, each once, seeds first. It's cycle-safe: an ID it has already visited isn't visited again. Use it inside `resolveTenantDescendants` for a tree inside one table; see [Scope to a tenant hierarchy](/guides/tenant-hierarchy/#walk-a-hierarchy-you-hold-in-memory).
+
 ### `AskUsage`
 
 ```ts
@@ -549,7 +559,7 @@ To pass your own logger instead, implement `AskDbLogger`: `info(context, message
 
 ## Tenant types
 
-These types are needed when your schema has a tenant policy. See the [multi-tenancy guide](/guides/multi-tenancy/) for the full workflow.
+These types are needed when your schema has a tenant policy. See [Scope queries to a tenant](/guides/multi-tenancy/) for the full workflow.
 
 ### `TenantSqlOutputMode`
 
