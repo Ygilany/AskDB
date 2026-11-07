@@ -10,9 +10,10 @@ name: Release
 #      changeset (version bumps and CHANGELOG entries). It publishes nothing.
 #      `pnpm version-packages` restarts the prerelease counter after a pre-tag change
 #      (scripts/prerelease-counter.mjs), so the rc line starts at `1.0.0-rc.1`.
-#   3. The maintainer approves and merges that PR, which puts versions on `main` that
-#      npm doesn't have yet. Once CI passes on the merge commit, `publish` publishes
-#      them with no further approval, and `tag` creates their git tags.
+#   3. The maintainer approves that PR. Merging it (by hand or by auto-merge) puts
+#      versions on `main` that npm doesn't have yet. Once CI passes on the merge
+#      commit, `publish` publishes them with no further approval, and `tag` creates
+#      their git tags.
 #
 # Why each piece is shaped this way:
 # - `workflow_run` on `CI`, not `push`: publishing only starts after the full CI run
