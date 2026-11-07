@@ -303,7 +303,7 @@ const ai = createAiRegistry();
 const model = await ai.createLanguageModelFromEnv(process.env); // undefined without an API key
 ```
 
-`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` takes its settings only from the map you pass. Its one read of `process.env` is a check: with no base URL configured, it refuses an `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` with a username or password, which the provider SDK would read itself. The [`@askdb/ai` reference](/reference/packages/#env-map-precedence) lists the variables it reads from the map, in order. A config section and an env map that hold the same settings give the same model.
+`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` takes its settings only from the map you pass. Its one read of `process.env` is a check: with no base URL configured, it refuses an `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` with a username or password, which the provider SDK would read itself. The [`@askdb/ai` reference](/reference/ai-api/#env-map-precedence) lists the variables it reads from the map, in order. A config section and an env map that hold the same settings give the same model.
 
 ## A provider that isn't built in
 
@@ -328,7 +328,7 @@ export default defineConfig({
 });
 ```
 
-AskDB then hands the connection and the model to the adapter registered under that id, so you need your own code to register one: `createAskDb({ providers: [myAdapter] })`, or `createAiRegistry([myAdapter])`. Add built-in names next to it, such as `providers: ["openai", myAdapter]`, to keep those. The CLI, Studio and the HTTP API register only the built-in providers, so they can't use a custom id. The [`@askdb/ai` reference](/reference/packages/#askdbai) describes `AiProviderAdapter`.
+AskDB then hands the connection and the model to the adapter registered under that id, so you need your own code to register one: `createAskDb({ providers: [myAdapter] })`, or `createAiRegistry([myAdapter])`. Add built-in names next to it, such as `providers: ["openai", myAdapter]`, to keep those. The CLI, Studio and the HTTP API register only the built-in providers, so they can't use a custom id. [Write an adapter](/reference/ai-api/#write-an-adapter) shows one.
 
 ## Reasoning/latency effort
 
