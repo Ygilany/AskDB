@@ -30,7 +30,7 @@ Install `ai` and the AI SDK package of your provider, such as `@ai-sdk/openai`:
 
 <InstallTabs pkgs="ai @ai-sdk/openai" />
 
-`@askdb/ai` loads each provider's SDK only when it first builds a model, so the SDKs you don't install are left out of the bundle. The Vercel AI Gateway needs none. See [Provider SDKs](/reference/ai-api/#provider-sdks).
+`@askdb/ai` loads each provider's SDK only when it first builds a model. esbuild leaves out the SDKs you don't install; webpack 5 needs them listed in `externals`, as step 3 shows. The Vercel AI Gateway needs none. See [Provider SDKs](/reference/ai-api/#provider-sdks).
 
 ## 3. Bundle
 

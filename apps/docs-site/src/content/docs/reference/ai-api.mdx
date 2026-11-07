@@ -3,12 +3,11 @@ title: "@askdb/ai API reference"
 description: "Every export of @askdb/ai: the provider registry, the built-in providers and their SDKs, writing your own adapter, the env variables it reads without a config, and its errors."
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
 import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Reference · @askdb/ai</p>
 
-<p class="doc-lede"><code>@askdb/ai</code> turns a provider and a model setting into a Vercel AI SDK model, the <code>model</code> that <code>ask()</code> takes. <code>@askdb/client</code> builds its registry for you. Import it yourself to build a model outside the client, to restrict or extend the set of providers, or to share one registry across clients.</p>
+<p class="doc-lede"><code>@askdb/ai</code> turns a provider and a model setting into a Vercel AI SDK model, the <code>model</code> that <code>ask()</code> takes. <code>@askdb/client</code> builds its registry for you. Import it yourself to build a model outside the client and share it with your app's own AI SDK calls, to restrict or extend the set of providers, or to share one registry across clients.</p>
 
 <InstallTabs pkgs="@askdb/ai ai" />
 
@@ -35,7 +34,7 @@ const ai = createAiRegistry(); // every built-in provider; or createAiRegistry([
 const model = await ai.createLanguageModelFromSection(rt.ai.language); // undefined without an API key
 ```
 
-`providers` is an `AiProviderAdapters`: a list of `AiProviderSelector`s, each a built-in provider's name or alias (an `AiProvider`, a string such as `"openai"` or `"foundry"`) or an [adapter](#write-an-adapter) object, or a record of adapters keyed by provider name. Names and aliases match without regard to case or surrounding spaces.
+`providers` is an `AiProviderAdapters`: a list of `AiProviderSelector`s, each a built-in provider's name or alias (an `AiProvider`, a string such as `"openai"` or `"foundry"`) or an [adapter](#aiprovideradapter) object, or a record of adapters keyed by provider name. Names and aliases match without regard to case or surrounding spaces.
 
 ### `AiRegistry`
 
@@ -84,55 +83,12 @@ Each built-in provider loads its AI SDK package the first time it builds a model
 
 Any 4.x release of each `@ai-sdk/*` package works (the peer range is `^4.0.0`), so AskDB doesn't force a provider SDK upgrade. `@askdb/client` declares the same optional peers and passes them through to `@askdb/ai`, so with strict installs (Yarn Plug'n'Play) install the SDK in the package that depends on `@askdb/client` or `@askdb/ai`. Under Plug'n'Play the AI SDK also needs `zod` installed next to it, as its own peer dependency. To bundle an app, see [Bundle an app that uses AskDB](/guides/bundle-your-app/).
 
-<Tabs syncKey="ai-provider">
-  <TabItem label="OpenAI">
-    <InstallTabs pkgs="@ai-sdk/openai" />
-  </TabItem>
-  <TabItem label="Anthropic">
-    <InstallTabs pkgs="@ai-sdk/anthropic" />
-  </TabItem>
-  <TabItem label="Google">
-    <InstallTabs pkgs="@ai-sdk/google" />
-  </TabItem>
-  <TabItem label="Azure OpenAI">
-    <InstallTabs pkgs="@ai-sdk/azure" />
-  </TabItem>
-  <TabItem label="Vercel AI Gateway">
-    Nothing extra: the gateway provider ships with `ai`.
-  </TabItem>
-</Tabs>
 
 The CLI, Studio and the HTTP API already include all four SDKs, and register only the built-in providers.
 
-## Write an adapter
+## `AiProviderAdapter`
 
-For a provider that isn't built in, write an `AiProviderAdapter` and register it. This one builds Mistral models with `@ai-sdk/mistral`:
-
-```ts
-import { createAiRegistry, resolveBaseConfig, type AiProviderAdapter } from "@askdb/ai";
-import { createMistral } from "@ai-sdk/mistral";
-
-const MISTRAL_ENV = { apiKeyVars: ["MISTRAL_API_KEY"], modelVars: ["MISTRAL_MODEL"], defaultModel: "mistral-large-latest" };
-
-export const mistralAdapter: AiProviderAdapter = {
-  provider: "mistral",
-  configHint: "For Mistral, set MISTRAL_API_KEY.",
-  resolveConfig: (env, options) => resolveBaseConfig("mistral", env, MISTRAL_ENV, options),
-  resolveConfigFromSection(section, { usage }) {
-    const apiKey = section.connection.apiKey ?? section.connection.apiKeySecondary;
-    if (!apiKey) return undefined;
-    const model = section.model ?? (usage === "language" ? MISTRAL_ENV.defaultModel : undefined);
-    if (!model) throw new Error("mistral: set ai.embedding.model");
-    return { provider: "mistral", apiKey, model, ...(section.connection.baseUrl ? { baseURL: section.connection.baseUrl } : {}) };
-  },
-  createLanguageModel: (config) => createMistral({ apiKey: config.apiKey, baseURL: config.baseURL })(config.model),
-  createEmbeddingModel: (config) => createMistral({ apiKey: config.apiKey, baseURL: config.baseURL }).embedding(config.model),
-};
-
-const ai = createAiRegistry(["openai", mistralAdapter]);
-```
-
-Pass it to `createAskDb({ providers: ["openai", mistralAdapter] })` the same way, and a config with `ai.provider: "mistral"` and `ai.providerConfig.mistral` then uses it (see [Bring your own model](/guides/bring-your-own-model/#a-provider-that-isnt-built-in)).
+The shape of a provider adapter, for a provider that isn't built in. [Bring your own model](/guides/bring-your-own-model/#a-provider-that-isnt-built-in) walks through a complete one, for Mistral.
 
 | Field | Required | What it does |
 | --- | --- | --- |
