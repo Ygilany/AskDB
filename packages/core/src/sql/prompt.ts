@@ -61,7 +61,7 @@ export function buildNlToSqlUserPrompt(
   parameterize?: boolean,
   /**
    * The ids of the tables `prebuiltDdl` shows (the retrieved ones), so the tenant block names no
-   * other (#771, ADR 0038). Optional: this function already has the schema, so the tenant block
+   * other table (#771, ADR 0038). Optional: this function already has the schema, so the tenant block
    * never names a table marked `tracked: false`. Pass it with `prebuiltDdl` so the block also leaves
    * out the tables retrieval didn't pick; without it, the block names every tracked policy table.
    */
