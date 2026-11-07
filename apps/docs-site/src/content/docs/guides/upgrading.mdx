@@ -80,6 +80,7 @@ A `studio.execute.provider` that isn't `postgres`, `mysql`, `sqlite` or `sqlserv
   - a source that computes over its rows (an aggregate, a window, `LIMIT`), filtered only outside it;
   - a source whose body is a set operation (`UNION`, `INTERSECT`, `EXCEPT`), filtered only outside it;
   - a read with a clause right after its table (`orders TABLESAMPLE …`), filtered only through the table's name;
+  - a self-join where a read has no alias, a quoted alias or sits in parentheses, or that is filtered unqualified (`FROM orders a, orders b WHERE agency_id = …`): give each read a plain alias and its own predicate (`WHERE a.agency_id = … AND b.agency_id = …`);
   - on MySQL, MariaDB and SQL Server, a predicate whose qualifier spells the alias in another case (`FROM orders O WHERE o.agency_id = …`).
 
   For each, add the predicate inside that `SELECT` (in each branch of a set operation), filter through an alias or unqualified, and write an alias the same way each time.

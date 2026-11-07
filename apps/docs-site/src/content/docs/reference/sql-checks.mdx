@@ -141,7 +141,8 @@ With a tenant policy, `ask()` refuses to run without a `tenantScope`, and checks
 - **`global` scope.** The tenant check doesn't run, and SQL that still has a tenant placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), since there are no IDs to bind.
 - **Each read, in its own `SELECT`.** Every read of a scoped table, and of a root the scope covers, needs its own predicate in the `SELECT` it appears in ([#399](https://github.com/Ygilany/AskDB/issues/399)).
   - A CTE body, a derived table, a subquery and each `UNION` branch are each their own `SELECT`.
-  - A qualified predicate (`o.agency_id`) counts only for the read it names. A read has a name only when written `table`, `table alias` or `table AS alias`; after any other clause, only an unqualified predicate filters it.
+  - A qualified predicate (`o.agency_id`) counts only for the read it names. A read has a name only when written `table`, `table alias` or `table AS alias`, followed by what ends the source (a join, `ON`, `WHERE`, a comma or a closing parenthesis); after any other clause, only an unqualified predicate filters it.
+  - When a `SELECT` reads a table more than once, each read needs a distinct plain alias (`orders a JOIN orders b`), outside parentheses, and its own predicate qualified with that alias.
   - On MySQL, MariaDB and SQL Server, write an alias the same way each time. A qualifier in another case doesn't count.
   - A read inside a derived table or CTE also passes when every reference to that source is filtered on the tenant column. The source must pass the column through unrenamed (`SELECT *` over one table, or the column itself).
   - The source must also compute nothing across its rows: no aggregate, window, `GROUP BY`, `HAVING`, `QUALIFY`, `LIMIT`, `OFFSET`, `FETCH` or `TOP`.

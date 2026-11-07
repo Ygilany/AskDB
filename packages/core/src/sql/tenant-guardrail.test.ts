@@ -1174,6 +1174,15 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     // A subquery is a row source only where a source starts, never after ON or in an expression.
     ["a scalar subquery right after ON", `SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = ${P}`, undefined],
     ["a scalar subquery in an ON's BETWEEN", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code BETWEEN (SELECT agency_id FROM orders x) AND 9 WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // A FROM that opens no FROM clause (IS DISTINCT FROM, or inside a call) starts no row source.
+    ["a scalar subquery after IS NOT DISTINCT FROM", `SELECT * FROM orders WHERE agency_id = ${P} AND 2 IS NOT DISTINCT FROM (SELECT agency_id FROM orders x WHERE x.id = 99)`, undefined],
+    ["a scalar subquery after the FROM inside SUBSTRING", `SELECT SUBSTRING('0123456789' FROM (SELECT agency_id FROM orders x)) AS s FROM orders WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // A SELECT that reads a table twice tells the reads apart only by distinct plain aliases at its own level.
+    ["a self-join whose first read sits in an aliased parenthesized join", `SELECT j.* FROM (orders o CROSS JOIN lookup_states s) AS j CROSS JOIN orders o WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a self-join whose first read sits in aliased parentheses", `SELECT y.* FROM (orders x) AS y, orders x WHERE x.agency_id = ${P}`, SQLITE_DIALECT],
+    ["a self-join with an unaliased read", `SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = ${P} AND b.agency_id = ${P}`, undefined],
+    ["a self-join with a quoted alias", `SELECT * FROM orders "a", orders b WHERE "a".agency_id = ${P} AND b.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a self-join filtered unqualified", `SELECT * FROM orders a, orders b WHERE agency_id = ${P}`, undefined],
     // A table alone in parentheses takes the alias that follows them.
     ["`ONLY (orders) a` beside an unaliased sibling", `SELECT a.* FROM ONLY (orders) a, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
     ["`(orders) a` beside an unaliased sibling", `SELECT a.* FROM (orders) a, orders WHERE orders.agency_id = ${P}`, SQLITE_DIALECT],
@@ -1212,6 +1221,11 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     ["another table whose name starts with the scoped one's", "SELECT * FROM orders$archive", POSTGRES_DIALECT],
   ])("accepts %s", (_label, sql, dialect) => {
     expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it("rejects a root read twice where a carrier's IN (…) filters only one read", () => {
+    expect(findings(`SELECT b.* FROM agencies a, agencies b WHERE a.id IN (SELECT agency_id FROM orders WHERE agency_id = ${P})`))
+      .toContain("MISSING_TENANT_PREDICATE:table:public.agencies");
   });
 
   it("rejects the scope's root table read through a bracketed alias `.`", () => {

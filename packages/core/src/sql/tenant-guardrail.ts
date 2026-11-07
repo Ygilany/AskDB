@@ -926,7 +926,7 @@ function sourceEnd(a: Analysis, i: number): number {
   // Only parentheses in a source position (after `FROM`, `JOIN`, `ONLY`, `,` or another `(`), not a call's.
   const opensSource = (open: number) => {
     const before = a.tokens[open - 1];
-    return before !== undefined && (["from", "join", "only", "lateral", "straight_join"].includes(before.kw) || before.text === "," || before.text === "(");
+    return before !== undefined && ((before.kw === "from" && opensFromClause(a.tokens, open - 1)) || ["join", "only", "lateral", "straight_join"].includes(before.kw) || before.text === "," || before.text === "(");
   };
   while (a.tokens[start - 1]?.text === "(" && a.tokens[end + 1]?.text === ")" && opensSource(start - 1)) {
     start--;
@@ -942,17 +942,42 @@ function sourceEnd(a: Analysis, i: number): number {
 function inSourcePosition(tokens: readonly Token[], open: number): boolean {
   const before = tokens[open - 1];
   if (before === undefined) return false;
-  if (["from", "join", "straight_join", "lateral", "apply"].includes(before.kw)) return true;
+  if (before.kw === "from") return opensFromClause(tokens, open - 1);
+  if (["join", "straight_join", "lateral", "apply"].includes(before.kw)) return true;
   if (before.text === "(") return !opensQuery(tokens, open - 1) && inSourcePosition(tokens, open - 1);
   if (before.text !== ",") return false;
   for (let k = open - 2; k >= 0; k--) {
     const t = tokens[k]!;
     if (t.depth < before.depth) return false;
     if (t.depth > before.depth) continue;
-    if (t.kw === "from") return true;
+    if (t.kw === "from") return opensFromClause(tokens, k);
     if (t.kw === "select" || t.kw === "where" || t.kw === "having" || (CLAUSE_END.has(t.kw) && !JOIN_WORDS.has(t.kw))) return false;
   }
   return false;
+}
+
+/**
+ * Whether a table read can start at `start`: right after a `SELECT`'s own `FROM`, a join word,
+ * `ONLY`, `LATERAL`, a comma of a `FROM` list, or a `(` in one of those places that opens no query.
+ * A whole-row reference in an expression (`json_agg(orders)`, `(orders).id`) starts none.
+ */
+function startsSource(tokens: readonly Token[], start: number): boolean {
+  const before = tokens[start - 1];
+  if (before === undefined) return false;
+  if (before.kw === "from") return opensFromClause(tokens, start - 1);
+  if (["join", "straight_join", "only", "lateral"].includes(before.kw)) return true;
+  if (before.text === "(") return !opensQuery(tokens, start - 1) && startsSource(tokens, start - 1);
+  return before.text === "," && inSourcePosition(tokens, start);
+}
+
+/**
+ * Whether the `FROM` at `k` opens its `SELECT`'s own `FROM` clause: not `IS [NOT] DISTINCT FROM`,
+ * and not a `FROM` inside a call's parentheses (`EXTRACT(YEAR FROM d)`, `SUBSTRING(s FROM 2)`).
+ */
+function opensFromClause(tokens: readonly Token[], k: number): boolean {
+  if (tokens[k]?.kw !== "from" || tokens[k - 1]?.kw === "distinct") return false;
+  const open = enclosing(tokens, k, "(");
+  return open < 0 || opensQuery(tokens, open);
 }
 
 /** Whether the alias of the row source ending at `i` has a column list (`x t (a, b)`), which renames its output. */
@@ -1033,8 +1058,50 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
     // name, or only as a qualifier) can't tell what filters it, so it fails closed.
     if (reads.length === 0) return !mentionsAsName(view, name);
     const found = occurrences(a, targets);
-    return reads.every((read) => readFiltered(a, found, targets, read, name));
+    const tableReads = reads.filter((r) => startsSource(a.tokens, qualifiedStart(a.tokens, r.at)));
+    return reads.every((read) => {
+      const sameSelect = tableReads.filter((r) => r.scope === read.scope);
+      return tableReads.includes(read) && sameSelect.length > 1
+        ? selfJoinReadFiltered(a, found, targets, read, name, sameSelect)
+        : readFiltered(a, found, targets, read, name);
+    });
   });
+}
+
+/**
+ * A read of a table its `SELECT` reads more than once (a self-join): it counts as filtered only
+ * when every read of the table there is canonical (`table alias` or `table AS alias`, outside
+ * parentheses, with a plain unquoted alias no other read there shares, in any case) and a
+ * predicate qualified with its own alias filters it. Anything less can't tell the reads apart, so
+ * it fails closed.
+ */
+function selfJoinReadFiltered(
+  a: Analysis,
+  found: readonly Occurrence[],
+  targets: readonly PredicateTarget[],
+  read: Read,
+  table: string,
+  sameSelect: readonly Read[],
+): boolean {
+  const aliases = sameSelect.map((r) => canonicalAlias(a, r));
+  if (aliases.some((alias) => alias === undefined)) return false;
+  if (new Set(aliases.map((alias) => alias!.toLowerCase())).size !== aliases.length) return false;
+  const mine = canonicalAlias(a, read)!;
+  return found.some((o) =>
+    o.filters.some((f) =>
+      f.scope === read.scope && f.qualifier === mine && targets.includes(o.target) &&
+      (!o.target.discriminator || hasDiscriminator(a, read, o.target))));
+}
+
+/** The plain alias of a read written `table alias` or `table AS alias`, at its `SELECT`'s own level; else undefined. */
+function canonicalAlias(a: Analysis, read: Read): string | undefined {
+  const { tokens } = a;
+  const open = scopeOpen(read.scope);
+  const depth = open < 0 ? 0 : tokens[open]!.depth + 1;
+  if (tokens[read.at]!.depth !== depth || sourceEnd(a, read.at) !== read.at) return undefined;
+  const at = aliasAt(a, read.at);
+  if (at === undefined || tokens[at]!.quoted === true || tokens[at + 1]?.text === "(") return undefined;
+  return tokens[at]!.name;
 }
 
 function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readonly PredicateTarget[], read: Read, table: string): boolean {

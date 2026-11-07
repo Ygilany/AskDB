@@ -6,8 +6,8 @@
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
  * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
  * custom engines and no dialect, where SQL Server ends a name or number), #399 (120 tenant
- * verdicts, every dialect, plus 12 for an undeclared qualifier: a predicate filters only the reads of its
- * own `SELECT`), and #665 (5 read-only verdicts on `SELECT $1SELECT 2`, under the Postgres family and the
+ * verdicts, every dialect, plus 12 for an undeclared qualifier and 16 for a self-join whose reads the check
+ * can't tell apart: a predicate filters only the reads of its own `SELECT`), and #665 (5 read-only verdicts on `SELECT $1SELECT 2`, under the Postgres family and the
  * custom engines).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
@@ -224,6 +224,12 @@ const HOSTILE: readonly string[] = [
   // #399 review, confirm pass: only canonical forms name a read, and a subquery is a row source only where a source starts.
   "SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS \"tablesample\" WHERE \"tablesample\".agency_id = :tenant_agency_ids",
   "SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = :tenant_agency_ids",
+  // #399 review, confirm pass 2: a FROM that opens no FROM clause starts no source, and a SELECT that reads a
+  // table twice tells its reads apart only by distinct plain aliases and alias-qualified predicates.
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 2 IS NOT DISTINCT FROM (SELECT agency_id FROM orders x WHERE x.id = 99)",
+  "SELECT j.* FROM (orders o CROSS JOIN lookup_states s) AS j CROSS JOIN orders o WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT b.* FROM agencies a, agencies b WHERE a.id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)",
+  "SELECT * FROM orders a, orders b WHERE agency_id = :tenant_agency_ids",
   // #665: a `$N` parameter written against a word, refused where the SQL may be read as Postgres.
   "SELECT $1INTO lab_x",
   "SELECT order_id FROM billing.order_line WHERE order_id = $1FOR SHARE",
