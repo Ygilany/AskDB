@@ -12,7 +12,7 @@ description: "The read-only, tenant and sensitive checks AskDB runs on generated
 | Check | Runs when | With a custom `AskDialect` | On a finding |
 | --- | --- | --- | --- |
 | Read-only | The dialect is a built-in id or a `DialectSpec`. | Doesn't run. Call `validateSelectSql()` in your generator. | Always refuses: `SqlValidationError`. |
-| Tenant | The schema has a `tenant-policy.md`. | Runs. | `enforcement: strict` refuses with `TenantGuardrailError`; `warn` returns the SQL and reports it. |
+| Tenant | The schema has a `tenant-policy.md`, and the scope isn't `global`. | Runs. | `enforcement: strict` refuses with `TenantGuardrailError`; `warn` returns the SQL and reports it. |
 | Sensitive | The schema marks a table or column `sensitive`, and `sensitiveGuardrailMode` isn't `"off"`. | Runs. | `"strict"` refuses with `SensitiveReferenceError`; `"warn"`, the default, returns the SQL and reports it. |
 
 `ask()` runs each check on the model's bound SQL and on its `sql-unbound` block, while the `:tenant_<root>_ids` placeholders are still in place, before it renders tenant IDs or binds values. `bindPreparedQuery()` and `askdb.bind()` run all three again on the stored template, under the schema, scope and dialect rules you pass then. `generateSelectSql()` runs the read-only and tenant checks. [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict) says how the findings become an outcome, and which error a refusal throws.
@@ -40,7 +40,7 @@ The checks don't parse SQL. They split it into tokens and skip strings, quoted n
 
 ### Forms the checks refuse to read
 
-A few forms read differently under readings the checks can't tell apart, so the checks refuse them rather than guess:
+The checks refuse four forms rather than guess where they end or what they name:
 
 | Form | Refused when | Why |
 | --- | --- | --- |
@@ -83,13 +83,13 @@ A `DialectSpec`'s `extraValidate` runs after these, on the SQL without its trail
 
 ### Keywords and functions
 
-The SQL is refused if any of these appear as unquoted keywords: `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `VACUUM`, `ANALYZE`, `COPY`, `CALL`, `MERGE`, `INTO`. `INTO` covers `SELECT … INTO new_table` and MySQL `INTO OUTFILE`. Each built-in spec adds its own, in its `extraForbiddenKeywords`:
+AskDB refuses the SQL if any of these appear as unquoted keywords: `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `VACUUM`, `ANALYZE`, `COPY`, `CALL`, `MERGE`, `INTO`. `INTO` covers `SELECT … INTO new_table` and MySQL `INTO OUTFILE`. Each built-in spec adds its own, in its `extraForbiddenKeywords`:
 
 - **MySQL and MariaDB:** `OUTFILE` and `DUMPFILE`.
 - **SQLite:** `ATTACH`, `DETACH`, `PRAGMA` and `REINDEX`.
 - **SQL Server:** `EXEC`, `EXECUTE`, `OPENROWSET`, `OPENQUERY`, `WAITFOR`, `SHUTDOWN`, `SET`, `USE`, control-flow verbs such as `DECLARE`, `BEGIN`, `IF`, `WHILE` and `RETURN`, and other T-SQL statement verbs, because T-SQL runs a batch without semicolons. `SQLSERVER_DIALECT.extraForbiddenKeywords` lists all 46.
 
-Calls to known side-effecting functions are refused too, from each built-in spec's `blockedFunctions`: for example `pg_sleep`, `set_config`, `pg_read_file`, `dblink` and `nextval` on Postgres and CockroachDB (`POSTGRES_DIALECT.blockedFunctions` lists all 84), `SLEEP`, `LOAD_FILE`, and MariaDB's sequence writers `NEXTVAL` and `SETVAL` on MySQL and MariaDB, and `load_extension` on SQLite. On every engine, `NEXT VALUE FOR` is refused with the same rule code, because it advances a sequence on MariaDB and SQL Server, outside your transaction's rollback. MariaDB's `PREVIOUS VALUE FOR` and `LASTVAL()` return the value your session last drew, without changing the sequence, and pass. A dialect id that is no built-in engine gets every built-in spec's keywords and functions.
+AskDB also refuses calls to known side-effecting functions, from each built-in spec's `blockedFunctions`: for example `pg_sleep`, `set_config`, `pg_read_file`, `dblink` and `nextval` on Postgres and CockroachDB (`POSTGRES_DIALECT.blockedFunctions` lists all 84), `SLEEP`, `LOAD_FILE`, and MariaDB's sequence writers `NEXTVAL` and `SETVAL` on MySQL and MariaDB, and `load_extension` on SQLite. On every engine, `NEXT VALUE FOR` is refused with the same rule code, because it advances a sequence on MariaDB and SQL Server, outside your transaction's rollback. MariaDB's `PREVIOUS VALUE FOR` and `LASTVAL()` return the value your session last drew, without changing the sequence, and pass. A dialect id that is no built-in engine gets every built-in spec's keywords and functions.
 
 Setting `extraForbiddenKeywords` or `blockedFunctions` on a `DialectSpec` replaces the built-in list, so spread a built-in spec (`{ ...POSTGRES_DIALECT, … }`) to keep it.
 
@@ -111,7 +111,7 @@ With a tenant policy, `ask()` refuses to run without a `tenantScope`, and checks
 
 - **Statements.** A statement ends at each `;`, and on SQL Server also at a verb such as `EXEC`.
 - **Outcome.** The policy's `enforcement` decides it: `strict` throws `TenantGuardrailError`, and `warn` returns the SQL with the findings in `result.tenantGuardrail.warnings` and `result.verdict`. At rebind, a `warn` finding refuses the template unless you pass `acceptWarnings: ["tenant"]`. AskDB never adds a missing tenant filter.
-- **`global` scope.** The rules that need a scope don't apply, and SQL that still has a tenant placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), since there are no IDs to bind.
+- **`global` scope.** The tenant check doesn't run, and SQL that still has a tenant placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), since there are no IDs to bind.
 - **Known limit.** Within one statement, including its CTEs, derived tables and subqueries (only `UNION`, `INTERSECT` and `EXCEPT` branches are checked on their own), the check doesn't tie a predicate to a particular table reference, so an unfiltered reference can pass beside a filtered one: `WITH t AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders` passes ([#399](https://github.com/Ygilany/AskDB/issues/399)).
 
 ## The sensitive check

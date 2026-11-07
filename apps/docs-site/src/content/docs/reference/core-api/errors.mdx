@@ -84,7 +84,7 @@ The policy's `enforcement` decides the outcome: `strict` throws `TenantGuardrail
 
 ### `SensitiveReferenceError` rules
 
-`rule` is a `SensitiveReferenceRuleCode`: `SENSITIVE_TABLE_REFERENCED`, `SENSITIVE_COLUMN_REFERENCED`, or `UNRESOLVED_TABLE_SCOPE` when no sensitive reference was found but the table scope couldn't be resolved. `references` lists each [`SensitiveReference`](/reference/core-api/checks/#result--sensitiveguardrailresult), and `unresolvedScope` is set when scope resolution was incomplete (see [Conservative failure](/reference/core-api/checks/#conservative-failure)).
+`rule` is a `SensitiveReferenceRuleCode`: `SENSITIVE_TABLE_REFERENCED`, `SENSITIVE_COLUMN_REFERENCED`, or `UNRESOLVED_TABLE_SCOPE` when no sensitive reference was found but the table scope couldn't be resolved. `references` lists each [`SensitiveReference`](/reference/core-api/checks/#result--sensitiveguardrailresult), and `unresolvedScope` is set when scope resolution was incomplete (see [Conservative failure](/reference/core-api/checks/#conservative-failure)). [The sensitive check](/reference/sql-checks/#the-sensitive-check) says what it reports and the forms it can miss.
 
 ### `QueryParameterError` reasons
 
