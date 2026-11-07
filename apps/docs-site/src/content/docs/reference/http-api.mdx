@@ -86,7 +86,7 @@ npx askdb-http --schema-path ./my-app.schema --port 3000 --host 127.0.0.1
 
 Every flag is optional. Each setting comes from its flag, then `askdb.config.ts`, then the default:
 
-- **Schema:** `--schema-path`, then `host.schemaJson`, then `host.schemaPath`. There's no default: with none, `POST /ask` answers `500 generation_not_configured`, unless the request sends its own `schemaJson`.
+- **Schema:** `--schema-path`, then `host.schemaJson`, then `host.schemaPath`. There's no default: with none, `POST /ask` answers `500 generation_not_configured`, unless the request sends its own `schemaJson` (accepted when `httpApi.allowSchemaOverride` is `true`).
 - **Port and host:** `--port` and `--host`, then `httpApi.listen.port` and `httpApi.listen.host`, then `3000` and `127.0.0.1`.
 
 `askdb-http` loads one `.env` file before the config: the first of these that exists.
