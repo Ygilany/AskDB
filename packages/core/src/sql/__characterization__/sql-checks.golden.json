@@ -392,17 +392,17 @@
   "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=pass[] | pg=- | spans=c0-7 q7-14 c14-41 q41-48 | ph= | tph="
  },
  "SELECT $1SELECT 2": {
-  "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "postgres": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "postgres+escapes": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "cockroachdb": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "mysql": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "custom": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
-  "custom+escapes": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "custom": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
+  "custom+escapes": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph=",
   "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-17 | ph= | tph="
  },
  "SELECT $body$ delete; drop $ $$ $body$ AS s": {
@@ -11170,5 +11170,33 @@
   "custom": "ro!SQL_COMMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-69 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro!SQL_COMMENT | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-69 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-69 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "SELECT $1INTO lab_x": {
+  "postgres": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "postgres+escapes": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "cockroachdb": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "custom": "ro!SQL_FORBIDDEN_KEYWORD | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "custom+escapes": "ro!SQL_FORBIDDEN_KEYWORD | tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph=",
+  "none": "tg=NOT_SELECT_OR_WITH: | tgk=NOT_SELECT_OR_WITH: | sens=fail[]{NO_TABLE_SOURCE} | pg=- | spans=c0-19 | ph= | tph="
+ },
+ "SELECT order_id FROM billing.order_line WHERE order_id = $1FOR SHARE": {
+  "postgres": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "postgres+escapes": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "cockroachdb": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "sqlserver": "ro!SQL_MULTI_STATEMENT | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "custom": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "custom+escapes": "ro!SQL_FORBIDDEN_KEYWORD | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph=",
+  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-68 | ph= | tph="
  }
 }

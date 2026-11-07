@@ -4,6 +4,8 @@
  * result with a golden file that pins the current verdicts. The golden was captured on `main`
  * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
+ * Since then it has changed only on purpose: #665 (5 read-only verdicts on `SELECT $1SELECT 2`, under
+ * the Postgres family and the custom engines).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -160,6 +162,9 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids",
   "SELECT 1 AS a -- \r'\n, u.secret_recovery_token FROM users u -- '",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # x\r OR 1=1",
+  // #665: a `$N` parameter written against a word, refused where the SQL may be read as Postgres.
+  "SELECT $1INTO lab_x",
+  "SELECT order_id FROM billing.order_line WHERE order_id = $1FOR SHARE",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
