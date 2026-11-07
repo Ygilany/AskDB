@@ -243,6 +243,16 @@ describe("workspace", () => {
     expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
   });
 
+  // A column on another table than the one the contract puts it on fails a strict load
+  // (#836), so Save refuses it too, checked against schema.json's own column → table map.
+  it("saveTenantPolicy refuses a root whose tenantIdColumn is on another table, and writes nothing", () => {
+    const ws = loadWorkspace(schemaDir);
+    const misplaced = { ...ACCOUNT_POLICY, roots: [{ ...ACCOUNT_POLICY.roots[0]!, tenantIdColumn: "table:public.orders#id" }] };
+
+    expect(() => saveTenantPolicy(ws, misplaced, "")).toThrow("column table:public.orders#id is on table:public.orders");
+    expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
+  });
+
   // Studio keeps its workspace in memory. When a re-introspection renames a column and
   // the strict policy then fails to load, that copy goes stale; the corrected policy must
   // be checked against schema.json on disk, or Save refuses the fix (#647 review).
