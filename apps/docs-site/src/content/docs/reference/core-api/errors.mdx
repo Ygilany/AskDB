@@ -21,7 +21,7 @@ description: "Every error class @askdb/core throws, what throws it, and its fiel
 | `TenantScopeError` | `ask()`, `bindPreparedQuery()`, `expandTenantScope()`, `validateTenantScope()`, `resolveTenantSql()` and `buildTenantPromptBlock()`: a missing or invalid scope, or tenant IDs that can't be bound. | `reason` |
 | `TenantGuardrailError` | A `deny` from the tenant check in `ask()`, `generateSelectSql()` and `bindPreparedQuery()`, and `validateTenantGuardrails()` under a `strict` policy. | `warnings`, `verdict?` |
 | `SensitiveReferenceError` | `validateSensitiveReferences()` in `strict` mode, and a `deny` from the sensitive check in `ask()` and `bindPreparedQuery()`. | `rule`, `references`, `unresolvedScope?`, `verdict?` |
-| `QueryParameterError` | `bindPreparedQuery()`: missing guardrail inputs, a template that declares a parameter `type` or `cardinality` AskDB doesn't support, or values that don't fit the template. | `reason` |
+| `QueryParameterError` | `bindPreparedQuery()`: missing `guardrails` inputs, a template that declares a parameter `type` or `cardinality` AskDB doesn't support, or values that don't fit the template. | `reason` |
 | `SensitiveEnrichmentTargetError` | `suggestEnrichment()`, for a sensitive target column while `omitSensitiveIdentifiersFromPrompt` is on. The message names no column. | — |
 
 `verdict` is set when the error comes from `ask()`, `generateSelectSql()` or `bindPreparedQuery()`: every finding of every check, not only the one that denied. See [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict). A direct `validateSelectSql()` or `validateSensitiveReferences()` call leaves it unset.
@@ -38,7 +38,7 @@ Some functions throw a plain `Error` instead: `getDialectSpec()` for an id with 
 | `SQL_MULTI_STATEMENT` | More than one statement. |
 | `SQL_COMMENT` | A `--`, `/* */` or (MySQL) `#` comment. |
 | `SQL_NOT_SELECT_OR_WITH` | A first keyword other than `SELECT` or `WITH`. |
-| `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. |
+| `SQL_FORBIDDEN_KEYWORD` | A keyword from the shared denylist or the dialect's `extraForbiddenKeywords`, outside strings and quoted identifiers. Also a `$N` parameter written against a word (`$1INTO`), where the SQL may be read as Postgres. |
 | `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, such as `pg_sleep(` or, on MySQL and MariaDB, `NEXTVAL(`. On every dialect, also `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server. |
 | `SQL_UNICODE_ESCAPED_IDENTIFIER` | On Postgres and CockroachDB, a Unicode-escaped identifier such as `U&"set\005fconfig"`, whose escapes could spell a blocked function or a sensitive column. |
 | `SQL_UNTERMINATED` | A string, quoted identifier, dollar-quoted string or block comment that never closes. |

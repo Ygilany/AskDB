@@ -120,7 +120,7 @@ The model wrote more than one statement. Ask for a single result, or split the q
 
 ### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The SQL has a comment, a forbidden keyword or a call to a blocked function. Keywords count only as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword, such as `update`, trips the check. [Keywords and functions](/reference/sql-checks/#keywords-and-functions) lists them for each engine. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+The SQL has a comment, a forbidden keyword or a call to a blocked function. Keywords count only as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword, such as `update`, trips the check. Where the SQL may be read as Postgres, so does a `$N` parameter written against a word, such as `$1INTO`: put a space after the parameter. [Keywords and functions](/reference/sql-checks/#keywords-and-functions) lists them for each engine. If one fires on a legitimate query, file an issue with the question and schema excerpt.
 
 ### `SqlValidationError: SQL_LOCKING_READ`
 
@@ -293,7 +293,7 @@ Your tenant policy uses `enforcement: strict`, and the SQL failed the tenant che
 
 ### `QueryParameterError: DIALECT_SPEC_REQUIRED`
 
-`bindPreparedQuery()` or `askdb.bind()` got a template whose dialect rules it can't recover, and no `dialect` in its guardrails. That's a template `ask()` made under your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), or one stored before 1.0.0-beta.46, which has no `dialectRules`. Pass the spec you gave `ask()` as `dialect`. If `ask()` ran with the built-in rules, the built-in id is enough, such as `dialect: "postgres"`. An app that loads two copies of `@askdb/core`, such as ESM beside CJS, gets `"host"` templates from the built-in constants of the other copy, and the same fix applies. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
+`bindPreparedQuery()` or `askdb.bind()` got a template whose dialect rules it can't recover, and no `dialect` in its `guardrails` argument. That's a template `ask()` made under your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), or one stored before 1.0.0-beta.46, which has no `dialectRules`. Pass the spec you gave `ask()` as `dialect`. If `ask()` ran with the built-in rules, the built-in id is enough, such as `dialect: "postgres"`. An app that loads two copies of `@askdb/core`, such as ESM beside CJS, gets `"host"` templates from the built-in constants of the other copy, and the same fix applies. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
 
 ### `QueryParameterError: MISSING_GUARDRAIL_CONTEXT`
 
