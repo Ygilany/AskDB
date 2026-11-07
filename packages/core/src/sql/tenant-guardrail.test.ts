@@ -1403,3 +1403,54 @@ describe("validateTenantGuardrails — a quoted tenant column counts only when s
     expect(findings('SELECT * FROM orders WHERE "AGENCY_ID" = :tenant_agency_ids', SQLITE_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a quoted name is a name, whatever it holds", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const every = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // The engine reads each quoted ":tenant_agency_ids" as x's column, equal to o.agency_id, so the WHERE
+  // keeps every row (Postgres, CockroachDB and SQL Server for "…" and […], MySQL for `…`).
+  const spelledLikeThePlaceholder: Array<[string, string]> = [
+    ["double quotes", 'SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"'],
+    ["backticks", "SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS `:tenant_agency_ids`) x WHERE o.agency_id = `:tenant_agency_ids`"],
+    ["brackets", "SELECT o.* FROM orders o CROSS APPLY (SELECT o.agency_id AS [:tenant_agency_ids]) x WHERE o.agency_id = [:tenant_agency_ids]"],
+  ];
+
+  it.each(every)("doesn't count a quoted name spelled like the placeholder as the placeholder under %s", (_label, dialect) => {
+    for (const [label, sql] of spelledLikeThePlaceholder) expect(findings(sql, dialect), label).toContain(missing);
+  });
+
+  // A quoted name may hold U+0001. It is part of the name, so the OR after it is still a keyword: on
+  // Postgres, SQL Server and MySQL each statement returned every agency's rows.
+  const holdingU0001: Array<[string, string]> = [
+    ["double quotes", 'SELECT "\u0001".a FROM orders CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = :tenant_agency_ids AND "\u0001".a = 1 OR 1=1'],
+    ["backticks", "SELECT `\u0001`.a FROM orders CROSS JOIN (SELECT 1 AS a) `\u0001` WHERE agency_id = :tenant_agency_ids AND `\u0001`.a = 1 OR 1=1"],
+    ["brackets", "SELECT [\u0001].a FROM orders CROSS JOIN (SELECT 1 AS a) [\u0001] WHERE agency_id = :tenant_agency_ids AND [\u0001].a = 1 OR 1=1"],
+  ];
+
+  it.each(every)("reads the OR after a quoted name that holds U+0001 under %s", (_label, dialect) => {
+    for (const [label, sql] of holdingU0001) expect(findings(sql, dialect), label).toContain(missing);
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(spelledLikeThePlaceholder[0]![1], policy, agencyScope, { dialect: POSTGRES_DIALECT }))
+      .toThrow(TenantGuardrailError);
+  });
+
+  it.each(every)("keeps the real placeholder beside a quoted name spelled like it under %s", (_label, dialect) => {
+    expect(findings('SELECT ":tenant_agency_ids" AS label, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids', dialect)).toEqual([]);
+  });
+});
+
