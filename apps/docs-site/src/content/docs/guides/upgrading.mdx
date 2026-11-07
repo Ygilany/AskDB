@@ -39,7 +39,7 @@ The 12 packages on the 1.0 line now share one version, and every release publish
 
 A range written for a `0.x` version doesn't match `1.0.0-rc.1`. With `"@askdb/ai": "^0.1.0-beta.9"` in your `package.json`, `npm update` stops at the newest `0.1.0-beta.*` and never installs `1.0.0-rc.1`. Install every AskDB package your app lists at `@latest` in one step, as step 3 of [Before you upgrade](#before-you-upgrade) shows. That also moves the ranges in your `package.json` to the 1.0 line.
 
-- **From `1.0.0` on,** a breaking change to any of the 12 comes only in a new major version, of all 12 together. The exception is the Studio and RAG surfaces of the 1.0 packages, which follow their `0.x` packages and can change in a minor version: the `studio` and `rag` blocks of `defineConfig()`, the `askdb studio`, `enrich`, `bundle` and `rag` commands, and `askdb init`'s RAG and Studio flags.
+- **From `1.0.0` on,** a breaking change to any of the 12 comes only in a new major version, of all 12 together. The exception is the Studio and RAG surfaces of the 1.0 packages, which follow their `0.x` packages and can change in a minor version: the `studio` and `rag` blocks of `defineConfig()`, the `askdb studio`, `enrich`, `bundle` and `rag` commands, `askdb init`'s RAG and Studio flags, and the `@askdb/config/scaffold` entry point.
 - **`1.0.0-rc.1` freezes the public API of the 12.** Later release candidates fix bugs. When a fix asks something of your app, it gets its own section on this page.
 - **Studio, `@askdb/enrich` and `@askdb/rag` stay on `0.x`,** because their APIs can still change. A breaking change to one of them comes in a minor version, such as `0.3.0`, and gets its own section here.
 
