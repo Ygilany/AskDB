@@ -760,13 +760,16 @@ function resolveStudio(
 
   const execute = studio?.execute;
   // An explicit provider, else the introspection provider when it's a live engine, else postgres.
-  // An unknown provider falls back the same way.
-  const configured = readString(execute?.provider, "studio.execute.provider");
-  const provider: AskDbStudioExecuteProvider = isMember(configured, ASKDB_STUDIO_EXECUTE_PROVIDERS)
-    ? configured
-    : isMember(introspection.provider, ASKDB_STUDIO_EXECUTE_PROVIDERS)
-      ? introspection.provider
-      : "postgres";
+  // An unknown explicit provider fails: falling back would run Execute against an engine the
+  // author didn't name (#751).
+  const configured = readMember(
+    readString(execute?.provider, "studio.execute.provider"),
+    ASKDB_STUDIO_EXECUTE_PROVIDERS,
+    "studio.execute.provider",
+  );
+  const provider: AskDbStudioExecuteProvider =
+    configured ??
+    (isMember(introspection.provider, ASKDB_STUDIO_EXECUTE_PROVIDERS) ? introspection.provider : "postgres");
   const enabled = readBoolean(execute?.enabled, "studio.execute.enabled");
   const useIntrospectionConnection = readBoolean(
     execute?.useIntrospectionConnection,
