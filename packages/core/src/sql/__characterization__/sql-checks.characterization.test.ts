@@ -200,6 +200,17 @@ const HOSTILE: readonly string[] = [
   "WITH x (id, agency_id) AS (SELECT id, agency_id FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM x",
   "SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = :tenant_agency_ids",
   "SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = :tenant_agency_ids",
+  // #399 review, round 2: a word after a read that may be an alias leaves it unnamed, a column list on a
+  // source's alias or a CTE reference isn't followed, names the engine tells apart stay apart, and `*`
+  // sees past an alias spelled like a clause.
+  "SELECT force.* FROM orders force, orders WHERE orders.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT total, agency_id FROM orders) AS lock (agency_id, x) WHERE lock.agency_id = :tenant_agency_ids",
+  "WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS t (agency_id, real_agency) WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT \"A\".* FROM orders \"A\" JOIN orders a ON true WHERE a.agency_id = :tenant_agency_ids",
+  "SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders O WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = :tenant_agency_ids",
+  "WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

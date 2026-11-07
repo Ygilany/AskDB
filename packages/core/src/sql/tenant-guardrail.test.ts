@@ -1099,6 +1099,74 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     expect(findings(sql)).toEqual(orders);
   });
 
+  it.each([
+    // A word after a table that may be an alias on some engine leaves the read with no name, so the
+    // table's name, which then refers to an unaliased sibling, doesn't filter it.
+    ["a sibling's predicate through the table's name, past an alias spelled `force`", `SELECT force.* FROM orders force, orders WHERE orders.agency_id = ${P}`],
+    ["the same past `lock`", `SELECT lock.* FROM orders lock, orders WHERE orders.agency_id = ${P}`],
+    ["the same past `qualify`", `SELECT qualify.* FROM orders qualify, orders WHERE orders.agency_id = ${P}`],
+    ["the same in a JOIN", `SELECT force.* FROM orders JOIN orders force ON force.id <> orders.id WHERE orders.agency_id = ${P}`],
+    ["the same for a CTE's references", `WITH x AS (SELECT * FROM orders) SELECT force.* FROM x force, x WHERE x.agency_id = ${P}`],
+    ["a correlated subquery read past an alias spelled `force`", `SELECT orders.*, (SELECT sum(force.total) FROM orders force WHERE orders.agency_id = ${P}) AS t FROM orders WHERE agency_id = ${P}`],
+    ["a read written `orders *`", `SELECT a.* FROM orders * a, orders WHERE orders.agency_id = ${P}`],
+    // After `AS`, a word and `(` are an alias with a column list; without `AS`, unless the word is a clause no engine takes as an alias.
+    ["a derived table's column list after `AS lock`", `SELECT * FROM (SELECT total, agency_id FROM orders) AS lock (agency_id, x) WHERE lock.agency_id = ${P}`],
+    ["a derived table's column list after `AS apply`", `SELECT * FROM (SELECT total, agency_id FROM orders) AS apply (agency_id, x) WHERE apply.agency_id = ${P}`],
+    ["a derived table's column list after `lock`", `SELECT * FROM (SELECT total, agency_id FROM orders) lock (agency_id, x) WHERE lock.agency_id = ${P}`],
+    ["a derived table's column list after `qualify`", `SELECT * FROM (SELECT total, agency_id FROM orders) qualify (agency_id, x) WHERE agency_id = ${P}`],
+    ["a derived table's column list after `xor`", `SELECT * FROM (SELECT total, agency_id FROM orders) xor (agency_id, x) WHERE agency_id = ${P}`],
+    ["a column list on a CTE's reference", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS t (agency_id, real_agency) WHERE t.agency_id = ${P}`],
+    ["a column list on a CTE's reference, filtered unqualified", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x t (agency_id, real_agency) WHERE agency_id = ${P}`],
+    ["`*` over two sources, the first aliased `lock`", `SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = ${P}`],
+    // What a source computes over its rows, or which of them it keeps, runs before the outside filter.
+    ["a source with HAVING", `SELECT * FROM (SELECT * FROM orders HAVING count(*) > 0) t WHERE t.agency_id = ${P}`],
+    ["a source with WINDOW", `SELECT * FROM (SELECT * FROM orders WINDOW w AS (ORDER BY id)) t WHERE t.agency_id = ${P}`],
+    ["a source with QUALIFY", `SELECT * FROM (SELECT * FROM orders QUALIFY total > 0) t WHERE t.agency_id = ${P}`],
+    ["a source with OFFSET", `SELECT * FROM (SELECT * FROM orders OFFSET 5) t WHERE t.agency_id = ${P}`],
+    ["a source with FETCH", `SELECT * FROM (SELECT * FROM orders FETCH FIRST 1 ROWS ONLY) t WHERE t.agency_id = ${P}`],
+    ["a source ordered by a window", `SELECT * FROM (SELECT * FROM orders ORDER BY sum(total) OVER ()) t WHERE t.agency_id = ${P}`],
+  ])("rejects %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  // Two names the engine tells apart count as two: a quoted name keeps its case, Postgres folds only
+  // ASCII letters, and MySQL and SQL Server can compare an alias case-sensitively.
+  it.each([
+    ["a quoted alias and an unquoted one", `SELECT "A".* FROM orders "A" JOIN orders a ON true WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["aliases that differ in a non-ASCII letter's case", `SELECT É.* FROM orders É JOIN orders é ON true WHERE é.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted derived table's alias and an unquoted one", `SELECT "T".* FROM (SELECT * FROM orders) "T", (SELECT * FROM orders WHERE agency_id = ${P}) t WHERE t.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["aliases that differ in case on MySQL", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, MYSQL_DIALECT],
+    ["aliases that differ in case on SQL Server", `SELECT A.* FROM orders A JOIN orders a ON 1 = 1 WHERE a.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["aliases that differ in case under no dialect", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, undefined],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  it.each([
+    ["an unquoted alias written in another case on Postgres", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a SQL Server table hint", `SELECT * FROM orders WITH (NOLOCK) WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a MySQL index hint", `SELECT * FROM orders FORCE INDEX (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["an alias spelled `force`, filtered unqualified", `SELECT * FROM orders force WHERE agency_id = ${P}`, undefined],
+    ["an alias spelled `force`, filtered through it", `SELECT * FROM orders force WHERE force.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before a join", `SELECT orders.* FROM orders LEFT JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, undefined],
+    ["a filtered MATERIALIZED CTE", `WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a filtered NOT MATERIALIZED CTE", `WITH x AS NOT MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it("works out a chain of sources read several times each in bounded time", () => {
+    // Nine CTEs, each reading the one before six times: re-exploring each source once per path took seconds.
+    const levels = ["x1 AS (SELECT * FROM orders)"];
+    for (let n = 2; n <= 9; n++) {
+      levels.push(`x${n} AS (SELECT agency_id FROM ${Array.from({ length: 6 }, (_, k) => `x${n - 1} a${k}`).join(", ")})`);
+    }
+    const started = performance.now();
+    expect(findings(`WITH ${levels.join(", ")} SELECT * FROM x9 WHERE agency_id = ${P}`)).toEqual([]);
+    expect(findings(`WITH ${levels.join(", ")} SELECT * FROM x9`)).toEqual(orders);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("a polymorphic table: a discriminator on a table function's alias doesn't count", () => {
     expect(findings(`SELECT n.* FROM notes n, unnest(ARRAY['agency']) AS u(owner_type) WHERE u.owner_type = 'agency' AND n.owner_id = ${P}`))
       .toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);

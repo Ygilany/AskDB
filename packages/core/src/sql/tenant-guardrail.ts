@@ -625,8 +625,14 @@ function mentionsIdentifier(views: CodeViews, identifier: string): boolean {
 type Token = {
   /** The token as written (placeholders are case-sensitive). */
   readonly text: string;
-  /** Lower-cased, for identifier comparison. */
+  /** Lower-cased, for matching a table's name. */
   readonly lower: string;
+  /**
+   * The name as the reading's engine compares an alias or a qualifier: a quoted name exactly, an
+   * unquoted one with ASCII letters lower-cased under Postgres and SQLite, which fold it that way,
+   * and exactly under MySQL and SQL Server, whose aliases can be case-sensitive.
+   */
+  readonly name: string;
   /** Lower-cased for keyword comparison; empty for a quoted identifier, which is never a keyword. */
   readonly kw: string;
   /** Parenthesis nesting of the token; a `(` or `)` has the depth outside it. */
@@ -643,6 +649,7 @@ const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
 function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
   const split = view.reading.profile.tsqlLiterals ? lexerWordEnds(view) : undefined;
+  const foldsCase = view.reading.profile.id === "postgres" || view.reading.profile.id === "generic";
   let depth = 0;
   let quoted = false;
   for (const m of view.text.matchAll(TOKEN)) {
@@ -653,7 +660,8 @@ function tokenize(view: CodeViews[number]): Token[] {
     for (const [t, offset] of split && WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
       if (t === ")") depth = Math.max(0, depth - 1);
       const lower = t.toLowerCase();
-      tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth, offset });
+      const name = quoted || !foldsCase ? t : t.replace(/[A-Z]+/g, (s) => s.toLowerCase());
+      tokens.push({ text: t, lower, name, kw: quoted ? "" : lower, depth, offset });
       if (t === "(") depth++;
     }
   }
@@ -764,9 +772,9 @@ type Occurrence = { readonly target: PredicateTarget; readonly filters: readonly
 
 /** Words that start a query right after its `(`. */
 const QUERY_START = new Set(["select", "with", "values", "table"]);
-/** Words that end a table reference rather than alias it. */
-const NOT_AN_ALIAS = new Set([
-  ...CLAUSE_END, ...NOT_A_FILTER, ...PREDICATE_WORDS, "on", "tablesample", "with", "partition", "use", "force", "ignore", "lateral", "only",
+/** Words that end a row source with no alias under every reading: no engine takes one as an alias. */
+const ENDS_A_SOURCE = new Set([
+  "where", "group", "order", "having", "union", "intersect", "except", "join", "inner", "left", "right", "cross", "outer", "on",
 ]);
 /** The words of a join, which put a second source in a `FROM`. */
 const JOIN_WORDS = new Set(["join", "inner", "left", "right", "full", "cross", "outer", "natural", "straight_join", "apply", "using"]);
@@ -827,12 +835,49 @@ function isWord(token: Token | undefined): boolean {
   return token !== undefined && /^[A-Za-z_\u0080-￿]/.test(token.text);
 }
 
-/** The alias written after the table reference or `)` at `i` (`orders o`, `orders AS o`, `) t`), if any. */
-function aliasAfter(tokens: readonly Token[], i: number): string | undefined {
-  const as = tokens[i + 1]?.kw === "as";
-  const t = tokens[as ? i + 2 : i + 1];
-  if (!isWord(t) || (!as && NOT_AN_ALIAS.has(t!.kw))) return undefined;
-  return t!.lower;
+/**
+ * Whether the token at `k`, right after a row source, ends that source with no alias in `view`'s
+ * reading: the end of the statement, `,`, `)`, `;`, a word in {@link ENDS_A_SOURCE}, a join word
+ * the reading's engine reserves (`FULL` but on MySQL, `NATURAL` and `USING` but on SQL Server,
+ * MySQL's `STRAIGHT_JOIN`), a SQL Server `WITH (` hint, or a MySQL `FORCE`/`USE`/`IGNORE INDEX`.
+ * Any other word may be an alias on some engine (`force`, `lock`, `qualify` are on Postgres).
+ */
+function endsSource(a: Analysis, k: number): boolean {
+  const t = a.tokens[k];
+  if (t === undefined || t.text === "," || t.text === ")" || t.text === ";") return true;
+  const engine = a.view.reading.profile.id;
+  const next = a.tokens[k + 1];
+  switch (t.kw) {
+    case "full": return engine !== "mysql";
+    case "natural": case "using": return engine !== "sqlserver";
+    case "straight_join": return engine === "mysql";
+    case "with": return next?.text === "(";
+    case "force": case "use": case "ignore": return next?.kw === "index" || next?.kw === "key";
+    default: return ENDS_A_SOURCE.has(t.kw);
+  }
+}
+
+/** The token that names the row source ending at `i` (`orders o`, `orders AS o`, `) t`): its alias, if one may follow. */
+function aliasAt(a: Analysis, i: number): number | undefined {
+  if (a.tokens[i + 1]?.kw === "as") return isWord(a.tokens[i + 2]) ? i + 2 : undefined;
+  return endsSource(a, i + 1) || !isWord(a.tokens[i + 1]) ? undefined : i + 1;
+}
+
+/**
+ * The names the table reference at `i` goes by: its alias, or its own name when what follows ends
+ * it with no alias. Anything else after it may be an alias the check doesn't recognise, so the
+ * read gets no name and only an unqualified predicate filters it.
+ */
+function readNames(a: Analysis, i: number): Set<string> {
+  const alias = aliasAt(a, i);
+  if (alias !== undefined) return new Set([a.tokens[alias]!.name]);
+  return endsSource(a, i + 1) ? new Set([a.tokens[i]!.name]) : new Set();
+}
+
+/** Whether the alias of the row source ending at `i` has a column list (`x t (a, b)`), which renames its output. */
+function hasColumnList(a: Analysis, i: number): boolean {
+  const alias = aliasAt(a, i);
+  return alias !== undefined && a.tokens[alias + 1]?.text === "(";
 }
 
 /** Whether the `(` at `open` follows `AS` (or `AS [NOT] MATERIALIZED`), as a CTE body does. */
@@ -855,27 +900,24 @@ function cteAt(tokens: readonly Token[], open: number): { readonly name: string;
   return { name: tokens[k - 1]!.lower, at: k - 1 };
 }
 
-/** Words after a derived table's `)` that start a clause, not an alias with a column list. */
-const NOT_A_COLUMN_LIST = new Set([...CLAUSE_END, ...FILTER_CLAUSE, ...PREDICATE_WORDS, "on", "using", "lateral"]);
-
 /**
  * The reads of `name`: every spelling of it, quoted or not, except a word of `ORDER BY` or
  * `GROUP BY` and a qualifier (`orders.id`), which refers to a read rather than being one. A read
- * with an alias goes by its alias only: once a source has one, the table's name refers to another
- * read, or to none.
+ * goes by its names ({@link readNames}): an alias only, once it has one, since the table's name
+ * then refers to another read, or to none.
  */
 function readsOf(a: Analysis, name: string): Read[] {
   const reads: Read[] = [];
   a.tokens.forEach((t, i) => {
     if (t.lower !== name || isOrderOrGroupBy(a.tokens, i) || a.tokens[i + 1]?.text === ".") return;
-    reads.push({ at: i, scope: a.scopes.of[i]!, names: new Set([aliasAfter(a.tokens, i) ?? name]) });
+    reads.push({ at: i, scope: a.scopes.of[i]!, names: readNames(a, i) });
   });
   return reads;
 }
 
-/** The qualifier of the column at `column` (`o` in `o.agency_id`), if any. */
+/** The qualifier of the column at `column` (`o` in `o.agency_id`), if any, as the reading compares names. */
 function qualifierOf(tokens: readonly Token[], column: number): string | undefined {
-  return tokens[column - 1]?.text === "." ? tokens[column - 2]?.lower : undefined;
+  return tokens[column - 1]?.text === "." ? tokens[column - 2]?.name : undefined;
 }
 
 /** Every tenant predicate in the view for one of `targets`, with the `SELECT`s it filters. */
@@ -926,8 +968,8 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
 /**
  * Whether a predicate that filters `read`'s `SELECT` through `filter` filters `read` itself.
  * Unqualified, it does: the read's table has the column, so the name resolves to it or the SQL is
- * ambiguous. On the read's own column, its qualifier must name that read (its alias, or its
- * table's name when it has none); on another table's column (a root filtered through a column
+ * ambiguous. On the read's own column, its qualifier must name that read ({@link readNames});
+ * on another table's column (a root filtered through a column
  * that carries its IDs), a read of that table. A qualifier that names no read the check sees,
  * such as a table function's alias, counts for nothing. Through `col IN (…)`, which read of
  * another table `col` filters is left to the join.
@@ -948,19 +990,44 @@ function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read:
  * source, a recursive CTE or a CTE nothing reads fails closed.
  */
 function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Read, target: PredicateTarget, depth: number): boolean {
+  // Each source's answer is worked out once per call: re-exploring it once per path is exponential
+  // in a chain of sources that each read the one before several times.
+  let memo = outsideMemo.get(found);
+  if (memo === undefined) outsideMemo.set(found, (memo = new Map()));
+  const key = `${read.scope}|${depth}|${[...read.names].join(" ")}|${target.table}|${target.column}|${target.placeholder}`;
+  const known = memo.get(key);
+  if (known !== undefined) return known;
+  memo.set(key, false); // a cycle fails closed
   const open = scopeOpen(read.scope);
-  if (depth > 8 || open < 0 || a.scopes.branched.has(open)) return false;
-  const refs = sourceRefs(a, open);
-  if (refs === undefined || refs.length === 0 || !passesThrough(a, open, read.names, target.column.toLowerCase())) return false;
-  return refs.every((ref) =>
-    found.some((o) =>
-      o.target === target &&
-      o.filters.some((f) => f.ownSelect && f.scope === ref.scope && (f.qualifier === undefined || ref.names.has(f.qualifier)))) ||
-    filteredFromOutside(a, found, ref, target, depth + 1));
+  let filtered = false;
+  if (depth <= 8 && open >= 0 && !a.scopes.branched.has(open)) {
+    const refs = sourceRefs(a, open);
+    filtered = refs !== undefined && refs.length > 0 && passesThrough(a, open, read.names, target.column.toLowerCase()) &&
+      refs.every((ref) =>
+        found.some((o) =>
+          o.target === target &&
+          o.filters.some((f) => f.ownSelect && f.scope === ref.scope && (f.qualifier === undefined || ref.names.has(f.qualifier)))) ||
+        filteredFromOutside(a, found, ref, target, depth + 1));
+  }
+  memo.set(key, filtered);
+  return filtered;
 }
 
-/** The references to the row source whose query opens at `open`, or undefined when it isn't a source this check follows. */
+const outsideMemo = new WeakMap<readonly Occurrence[], Map<string, boolean>>();
+const sourceRefsMemo = new WeakMap<Analysis, Map<number, Read[] | undefined>>();
+
+/**
+ * The references to the row source whose query opens at `open`, or undefined when it isn't a source
+ * this check follows: a column list on the source or on a reference to it renames its output.
+ */
 function sourceRefs(a: Analysis, open: number): Read[] | undefined {
+  let memo = sourceRefsMemo.get(a);
+  if (memo === undefined) sourceRefsMemo.set(a, (memo = new Map()));
+  if (!memo.has(open)) memo.set(open, readSourceRefs(a, open));
+  return memo.get(open);
+}
+
+function readSourceRefs(a: Analysis, open: number): Read[] | undefined {
   const { tokens, scopes } = a;
   const close = scopes.close.get(open);
   if (close === undefined || subqueryUse(tokens, open) !== "table") return undefined;
@@ -971,15 +1038,14 @@ function sourceRefs(a: Analysis, open: number): Read[] | undefined {
     for (let j = 0; j < tokens.length; j++) {
       if (j === cte.at || tokens[j]!.lower !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
       if (j > open && j < close) return undefined; // recursive
-      refs.push({ at: j, scope: scopes.of[j]!, names: new Set([aliasAfter(tokens, j) ?? cte.name]) });
+      if (tokens[j + 1]?.text === "(" || hasColumnList(a, j)) return undefined;
+      refs.push({ at: j, scope: scopes.of[j]!, names: readNames(a, j) });
     }
     return refs;
   }
-  // A word and a `(` after the `)` is an alias with a column list, which renames the output.
-  const word = close + (tokens[close + 1]?.kw === "as" ? 2 : 1);
-  if (isWord(tokens[word]) && !NOT_A_COLUMN_LIST.has(tokens[word]!.kw) && tokens[word + 1]?.text === "(") return undefined;
-  const alias = aliasAfter(tokens, close);
-  return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined ? [] : [alias]) }];
+  if (hasColumnList(a, close)) return undefined;
+  const alias = aliasAt(a, close);
+  return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined ? [] : [tokens[alias]!.name]) }];
 }
 
 /** Clauses that compute over a source's rows, or pick some of them, before an outside filter runs. */
@@ -1031,7 +1097,7 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
       continue;
     }
     if (n === 3 && ts[1]!.text === "." && ts[2]!.text === "*") {
-      if (!names.has(ts[0]!.lower)) return false;
+      if (!names.has(ts[0]!.name)) return false;
       yields++;
       continue;
     }
@@ -1048,7 +1114,7 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
     if (!isColumn) return false; // an expression, a call or an aggregate
     const name = expr[expr.length - 1]!.lower;
     if ((alias ?? name) !== column) continue;
-    if (name !== column || (expr.length === 3 && !names.has(expr[0]!.lower))) return false; // another expression named like the column
+    if (name !== column || (expr.length === 3 && !names.has(expr[0]!.name))) return false; // another expression named like the column
     yields++;
   }
   return yields === 1;
@@ -1064,7 +1130,9 @@ function singleSource(a: Analysis, open: number, scope: string, depth: number): 
     const t = tokens[i]!;
     if (scopes.of[i] !== scope || t.depth !== depth) continue;
     if (t.text === "," || JOIN_WORDS.has(t.kw) || (t.text === "(" && !opensQuery(tokens, i))) return false;
-    if (FILTER_CLAUSE.has(t.kw) || CLAUSE_END.has(t.kw)) return true;
+    // Only a clause no engine takes as an alias ends the FROM: past `lock` or `qualify`, which
+    // may be the first source's alias, a second source can still follow.
+    if (ENDS_A_SOURCE.has(t.kw) && !JOIN_WORDS.has(t.kw)) return true;
   }
   return true;
 }
@@ -1179,6 +1247,8 @@ function subqueryUse(tokens: readonly Token[], open: number): SubqueryUse {
   }
   if (opener.kw === "in") return tokens[open - 2] !== undefined && isIdentifier(tokens[open - 2]!) ? "in" : "other";
   if (opener.kw === "as" || opener.kw === "lateral") return "table";
+  // A CTE body after `AS MATERIALIZED (` or `AS NOT MATERIALIZED (`.
+  if (opener.kw === "materialized" && (tokens[open - 2]?.kw === "as" || (tokens[open - 2]?.kw === "not" && tokens[open - 3]?.kw === "as"))) return "table";
   const depth = tokens[open]!.depth;
   for (let i = open - 1; i >= 0; i--) {
     const t = tokens[i]!;
