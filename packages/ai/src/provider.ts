@@ -226,7 +226,7 @@ function sectionWithoutModel(provider: string, usage: AiUsage): Error {
 
 /**
  * Throws when an embedding section has an API key but no model, whatever its adapter: no layer
- * picks an embedding model (ADR 0016), so a custom adapter's own default doesn't either.
+ * picks an embedding model (ADR 0016), so a custom adapter can't pick one either.
  */
 export function refuseSectionWithoutEmbeddingModel(section: AiModelSection): void {
   const { connection } = section;
