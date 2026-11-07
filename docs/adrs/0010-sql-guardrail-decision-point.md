@@ -274,7 +274,7 @@ Revisit it only if hosts need to rebind where the schema isn't available (see "W
 - **`@askdb/core` exports `expandTenantScope()`**, additive: the `subtree` expansion stays in core (ADR 0014) at rebind as well, so no host hand-builds it.
 - **Policy and schema changes apply to stored templates** at their next rebind. A template that rebinds today can start failing after the policy is tightened. That is intended: it fails closed.
 - **`PreparedQuery` doesn't change.** Templates stored before the change keep working once the host passes the guardrail context.
-- **Not a stronger guarantee.** The checks stay heuristic: after #341 the tenant check matches predicate shapes, not a parse, and known gaps remain (#399); #235 or a parser is stage (d). ADR 0012 is the source of this stance: a read-only database role plus database-level tenant enforcement (RLS) remain the real controls, and tightening the lint doesn't move the boundary (its Decision 5 lists this ADR as one such tightening). Docs must not present the new structure as more than tidier, consistent enforcement.
+- **Not a stronger guarantee.** The checks stay heuristic: after #341 the tenant check matches predicate shapes, not a parse, and known gaps remain (#400); #235 or a parser is stage (d). ADR 0012 is the source of this stance: a read-only database role plus database-level tenant enforcement (RLS) remain the real controls, and tightening the lint doesn't move the boundary (its Decision 5 lists this ADR as one such tightening). Docs must not present the new structure as more than tidier, consistent enforcement.
 - **No verdict to tamper with.** The host is trusted to build the right `tenantScope`, as in `ask()`.
 
 ## When to revisit
@@ -286,7 +286,7 @@ Revisit it only if hosts need to rebind where the schema isn't available (see "W
 
 ## Related
 
-- #310 (implementation), #315 and PR #341 (stage (a): tenant check on the pre-render forms), #399 (tenant check gap after #341), #371 (literal escaping when string settings differ), #235 (deterministic tenant rewriting), #314 and #319 (future read-only rules on the shared analysis), #321 (consumer lab, hostile-ID escaping test).
+- #310 (implementation), #315 and PR #341 (stage (a): tenant check on the pre-render forms), #399 (tenant check gap after #341, closed in 1.0.0-beta.52), #371 (literal escaping when string settings differ), #235 (deterministic tenant rewriting), #314 and #319 (future read-only rules on the shared analysis), #321 (consumer lab, hostile-ID escaping test).
 - PR #186 (tenant enforcement fails closed; the review discussion that led here), #197 (tenant binding), #192 (sensitivity overrides), #190 (dialect-aware lexer), #270 (subtree scope), #375 (subtree scope expands per root).
 - `plans/033-reusable-parameterized-queries.md` and its entry in `plans/README.md` (the design review this ADR reverses).
 - ADR 0012 (SQL checks are defense in depth; the database is the boundary), ADR 0014 (subtree scope expands per root), ADR 0009 (Studio local API protection), ADR 0006 (AI providers).

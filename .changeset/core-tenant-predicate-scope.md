@@ -1,0 +1,7 @@
+---
+"@askdb/core": minor
+---
+
+The tenant check ties each predicate to the reads it filters (#399). Each CTE body, derived table, subquery and set-operation branch is its own `SELECT`, and a read of a scoped table, or of a root the scope covers, needs its own predicate there; a qualified predicate counts only for the read it names. A predicate inside a CTE or derived table no longer covers an unfiltered read of the same table outside it, and a predicate on one reference no longer covers another (a self-join, or a mispaired subquery under `multi_root`). A read inside a derived table or CTE still passes when every reference to that source is filtered on the tenant column and the source passes the column through unrenamed.
+
+Upgrade notes (breaking): SQL that passed before and now throws `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`) under `strict`. Besides the shapes above, some correct queries are refused: a root table joined for a label from a CTE, derived table or scalar subquery whose own `SELECT` doesn't filter it, and a read inside a correlated subquery filtered only through the outer query. Add the predicate in that `SELECT`.

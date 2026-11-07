@@ -1097,6 +1097,20 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     expect(findings(sql)).toEqual([]);
   });
 
+  it("a literal on one reference doesn't ride on another reference's predicate", () => {
+    expect(findings(`SELECT * FROM orders a, orders b WHERE a.agency_id = ${P} AND b.agency_id = 7`)).toEqual(orders);
+  });
+
+  it("multi_root: a scalar subquery on a root compared with another root's placeholder is refused", () => {
+    // The outer read of clients is filtered with its own placeholder; the subquery's read binds agency IDs to client IDs.
+    const multi: TenantScope = {
+      access: { kind: "multi_root", scopes: [{ tenantRoot: "table:public.agencies", ids: ["1"] }, { tenantRoot: "table:public.clients", ids: ["5"] }] },
+    };
+    const sql = "SELECT c.*, (SELECT name FROM clients WHERE id IN (:tenant_agency_ids)) AS x FROM clients c WHERE c.id IN (:tenant_client_ids)";
+    expect(validateTenantGuardrails(sql, warnPolicy, multi).warnings.map((w) => `${w.rule}:${w.tableId}`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.clients"]);
+  });
+
   it("the scope's root table: a read inside a subquery needs its own predicate too", () => {
     expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.name = 'x')`))
       .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
