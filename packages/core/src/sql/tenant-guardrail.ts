@@ -49,10 +49,15 @@ export type ValidateTenantGuardrailsOptions = {
  * needs the same predicate on its tenant ID column. Down a join path, the predicate
  * must be on a column that carries the IDs of the path's root or one of its ancestors
  * in the hierarchy. A polymorphic table also needs `typeColumn = '<key>'` ANDed into
- * the same query block, with a `mapping` key of the root whose placeholder filters
- * its id column. It does not tie a predicate
- * to one table reference, so an unfiltered reference beside a filtered one can
- * still pass; database-side row-level security is the sound boundary.
+ * the same `SELECT`, with a `mapping` key of the root whose placeholder filters
+ * its id column. Each read of a table needs its own predicate in its own `SELECT`
+ * (#399): a CTE body, a derived table and a subquery are each their own, and a
+ * qualified predicate counts only for the read its qualifier names. A read in a
+ * derived table or CTE also counts as filtered when every reference to that source
+ * is filtered on the column, which the source passes through unrenamed without
+ * computing across its rows. It doesn't
+ * check which columns a join or an `IN (…)` subquery equates (#400); database-side
+ * row-level security is the sound boundary.
  *
  * **This is not a security boundary.** Its purpose is to catch model mistakes
  * (a forgotten or widened tenant filter, an unclassified table) early and
@@ -286,7 +291,7 @@ function checkPolymorphicTable(
   }
 
   // The id predicate filters by one root's IDs, so the discriminator must pick that root's
-  // rows: `owner_type = 'agency' AND owner_id = :tenant_agency_ids`, ANDed in the same block.
+  // rows: `owner_type = 'agency' AND owner_id = :tenant_agency_ids`, ANDed in the same `SELECT`.
   const paired = rootIds.map((rootId, i) => ({
     ...targets[i]!,
     discriminator: {
@@ -692,7 +697,7 @@ const CLAUSE_END = new Set([
 /** Words that put a predicate somewhere other than a filter conjunct (select list, `CASE`, assignment, …). */
 const NOT_A_FILTER = new Set(["select", "from", "by", "when", "then", "else", "case", "end", "as", "set", "values", "distinct", "is"]);
 
-/** Keywords that combine query blocks; each block is checked on its own. */
+/** Keywords that combine `SELECT`s; each branch is checked on its own. */
 const SET_OPERATORS = new Set(["union", "intersect", "except", "minus"]);
 /** Words other than identifiers that the predicate forms use. */
 const PREDICATE_WORDS = new Set(["in", "any", "and", "or", "not", "xor"]);
@@ -711,7 +716,7 @@ function isOrderOrGroupBy(tokens: readonly Token[], i: number): boolean {
 
 /**
  * What a tenant predicate compares: `column` (of `table`) with `placeholder`. With a
- * `discriminator`, the same query block must also AND in `discriminator.column = '<v>'`
+ * `discriminator`, the same `SELECT` must also AND in `discriminator.column = '<v>'`
  * for one of its `values` (a polymorphic table's type column and mapping keys).
  */
 type PredicateTarget = {
@@ -722,53 +727,365 @@ type PredicateTarget = {
 };
 
 /**
- * Whether the statement has a tenant predicate for `table` on every reading: a column
- * and placeholder from `targets`, compared as a conjunct of a filter clause. Every query
- * block that mentions the table needs its own: the statement, and each branch of every
- * `UNION` / `INTERSECT` / `EXCEPT`, at the top level or inside a derived table or CTE.
- * See {@link validateTenantGuardrails} for the rule.
+ * The `SELECT`s of a code view (#399): the statement, every parenthesized query (a CTE body, a
+ * derived table, a subquery) and each branch of a set operation in either. A tenant predicate
+ * filters the reads of its own `SELECT`. Parentheses that open no query (a call, an `IN` list, a
+ * boolean group, a parenthesized join) belong to the `SELECT` around them.
+ */
+type Scopes = {
+  /** Each token's `SELECT`, as `"<open>:<branch>"`: `open` is the index of the `(` that opens its query, or -1. */
+  readonly of: readonly string[];
+  /** The `)` that closes each query's `(`. */
+  readonly close: ReadonlyMap<number, number>;
+  /** The queries (by their `(`, or -1 for the statement) with a set operator at their own level. */
+  readonly branched: ReadonlySet<number>;
+};
+
+/** One code view, read for the tenant predicates: its tokens and `SELECT`s. */
+type Analysis = {
+  readonly view: CodeViews[number];
+  readonly tokens: readonly Token[];
+  readonly scopes: Scopes;
+};
+
+/** A read of a table: its token, its `SELECT`, and the names a qualifier may use for it. */
+type Read = { readonly at: number; readonly scope: string; readonly names: ReadonlySet<string> };
+
+/** Where a tenant predicate filters: a `SELECT`, and the qualifier that ties it to a read there. */
+type Filter = {
+  readonly scope: string;
+  readonly qualifier: string | undefined;
+  /** The predicate's own `SELECT`, where the qualifier is its column's; else one it reaches through `col IN (…)`. */
+  readonly ownSelect: boolean;
+};
+
+/** A tenant predicate for one target, and the `SELECT`s it filters. */
+type Occurrence = { readonly target: PredicateTarget; readonly filters: readonly Filter[] };
+
+/** Words that start a query right after its `(`. */
+const QUERY_START = new Set(["select", "with", "values", "table"]);
+/** Words that end a table reference rather than alias it. */
+const NOT_AN_ALIAS = new Set([
+  ...CLAUSE_END, ...NOT_A_FILTER, ...PREDICATE_WORDS, "on", "tablesample", "with", "partition", "use", "force", "ignore", "lateral", "only",
+]);
+/** The words of a join, which put a second source in a `FROM`. */
+const JOIN_WORDS = new Set(["join", "inner", "left", "right", "full", "cross", "outer", "natural", "straight_join", "apply", "using"]);
+
+const analyses = new WeakMap<CodeViews[number], Analysis>();
+
+/** The view's tokens and `SELECT`s, read once per view. */
+function analyze(view: CodeViews[number]): Analysis {
+  let analysis = analyses.get(view);
+  if (analysis === undefined) {
+    const tokens = tokenize(view);
+    analysis = { view, tokens, scopes: readScopes(tokens) };
+    analyses.set(view, analysis);
+  }
+  return analysis;
+}
+
+/** Whether the `(` at `open` opens a query: `SELECT`, `WITH`, `VALUES` or `TABLE` right after it, past any further `(`. */
+function opensQuery(tokens: readonly Token[], open: number): boolean {
+  let j = open + 1;
+  while (tokens[j]?.text === "(") j++;
+  return QUERY_START.has(tokens[j]?.kw ?? "");
+}
+
+function readScopes(tokens: readonly Token[]): Scopes {
+  const of: string[] = [];
+  const close = new Map<number, number>();
+  const branched = new Set<number>();
+  const frames = [{ open: -1, branch: 0, depth: 0 }];
+  tokens.forEach((t, i) => {
+    let top = frames[frames.length - 1]!;
+    if (t.text === ")" && top.open >= 0 && t.depth === tokens[top.open]!.depth) {
+      close.set(top.open, i);
+      frames.pop();
+      top = frames[frames.length - 1]!;
+    }
+    of.push(scopeKey(top.open, top.branch));
+    if (SET_OPERATORS.has(t.kw) && t.depth === top.depth) {
+      top.branch++;
+      branched.add(top.open);
+    }
+    if (t.text === "(" && opensQuery(tokens, i)) frames.push({ open: i, branch: 0, depth: t.depth + 1 });
+  });
+  return { of, close, branched };
+}
+
+/** A `SELECT`'s key: the `(` that opens its query (-1 for the statement) and its set-operation branch. */
+function scopeKey(open: number, branch: number): string {
+  return `${open}:${branch}`;
+}
+
+/** The `(` that opens a `SELECT`'s query, or -1 for the statement's (see {@link scopeKey}). */
+function scopeOpen(scope: string): number {
+  return Number.parseInt(scope, 10);
+}
+
+function isWord(token: Token | undefined): boolean {
+  return token !== undefined && /^[A-Za-z_\u0080-￿]/.test(token.text);
+}
+
+/** The alias written after the table reference or `)` at `i` (`orders o`, `orders AS o`, `) t`), if any. */
+function aliasAfter(tokens: readonly Token[], i: number): string | undefined {
+  const as = tokens[i + 1]?.kw === "as";
+  const t = tokens[as ? i + 2 : i + 1];
+  if (!isWord(t) || (!as && NOT_AN_ALIAS.has(t!.kw))) return undefined;
+  return t!.lower;
+}
+
+/** Whether the `(` at `open` follows `AS` (or `AS [NOT] MATERIALIZED`), as a CTE body does. */
+function opensAfterAs(tokens: readonly Token[], open: number): boolean {
+  let k = open - 1;
+  if (tokens[k]?.kw === "materialized") k -= tokens[k - 1]?.kw === "not" ? 2 : 1;
+  return tokens[k]?.kw === "as";
+}
+
+/**
+ * The CTE named before the `(` at `open` (`WITH x AS (`, `, x AS MATERIALIZED (`): its name and
+ * token. Undefined when it isn't one, or when a column list (`x (a, b) AS (`) renames its output.
+ */
+function cteAt(tokens: readonly Token[], open: number): { readonly name: string; readonly at: number } | undefined {
+  let k = open - 1;
+  if (tokens[k]?.kw === "materialized") k -= tokens[k - 1]?.kw === "not" ? 2 : 1;
+  if (tokens[k]?.kw !== "as" || !isWord(tokens[k - 1])) return undefined;
+  const before = tokens[k - 2];
+  if (!(before?.kw === "with" || before?.kw === "recursive" || before?.text === ",")) return undefined;
+  return { name: tokens[k - 1]!.lower, at: k - 1 };
+}
+
+/** Words after a derived table's `)` that start a clause, not an alias with a column list. */
+const NOT_A_COLUMN_LIST = new Set([...CLAUSE_END, ...FILTER_CLAUSE, ...PREDICATE_WORDS, "on", "using", "lateral"]);
+
+/**
+ * The reads of `name`: every spelling of it, quoted or not, except a word of `ORDER BY` or
+ * `GROUP BY` and a qualifier (`orders.id`), which refers to a read rather than being one. A read
+ * with an alias goes by its alias only: once a source has one, the table's name refers to another
+ * read, or to none.
+ */
+function readsOf(a: Analysis, name: string): Read[] {
+  const reads: Read[] = [];
+  a.tokens.forEach((t, i) => {
+    if (t.lower !== name || isOrderOrGroupBy(a.tokens, i) || a.tokens[i + 1]?.text === ".") return;
+    reads.push({ at: i, scope: a.scopes.of[i]!, names: new Set([aliasAfter(a.tokens, i) ?? name]) });
+  });
+  return reads;
+}
+
+/** The qualifier of the column at `column` (`o` in `o.agency_id`), if any. */
+function qualifierOf(tokens: readonly Token[], column: number): string | undefined {
+  return tokens[column - 1]?.text === "." ? tokens[column - 2]?.lower : undefined;
+}
+
+/** Every tenant predicate in the view for one of `targets`, with the `SELECT`s it filters. */
+function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurrence[] {
+  const found: Occurrence[] = [];
+  a.tokens.forEach((t, k) => {
+    for (const target of targets) {
+      if (t.text !== target.placeholder) continue;
+      const predicate = predicateAt(a.tokens, k, target.column);
+      if (!predicate) continue;
+      const filters = filteredScopes(a, predicate.start, predicate.end, qualifierOf(a.tokens, predicate.column));
+      if (filters.length > 0) found.push({ target, filters });
+    }
+  });
+  return found;
+}
+
+/**
+ * Whether every read of `table` is filtered, on every reading, by a predicate from `targets`
+ * (#399): a column and placeholder compared as a conjunct of a filter clause in the read's own
+ * `SELECT`, and tied to that read by its qualifier. Each branch of a `UNION` / `INTERSECT` /
+ * `EXCEPT` is its own `SELECT`, and so is every CTE body, derived table and subquery. A read in a
+ * derived table or CTE is also filtered from outside, when that source passes the column through
+ * unrenamed and every reference to it is filtered on it. See {@link validateTenantGuardrails}.
  */
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[]): boolean {
   const name = table.toLowerCase();
   return views.every((view) => {
-    const tokens = tokenize(view);
-    // Every spelling of the name counts as the table, quoted or not, except the words of `ORDER BY`.
-    const mentions = (from: number, to: number) => {
-      for (let i = from; i < to; i++) if (tokens[i]!.lower === name && !isOrderOrGroupBy(tokens, i)) return true;
-      return false;
-    };
-    return queryBlocks(tokens)
-      .filter(([from, to]) => mentions(from, to))
-      .every(([from, to]) => {
-        for (let k = from; k < to; k++) {
-          for (const target of targets) {
-            if (tokens[k]!.text !== target.placeholder) continue;
-            const span = predicateSpan(tokens, k, target);
-            if (!span || !isFilterConjunct(tokens, span[0], span[1], view.reading)) continue;
-            if (!target.discriminator || hasDiscriminator(tokens, from, to, view, target)) return true;
-          }
-        }
-        return false;
-      });
+    const a = analyze(view);
+    const reads = readsOf(a, name);
+    if (reads.length === 0) return true;
+    const found = occurrences(a, targets);
+    return reads.every((read) => readFiltered(a, found, targets, read, name));
   });
 }
 
+function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readonly PredicateTarget[], read: Read, table: string): boolean {
+  for (const o of found) {
+    for (const f of o.filters) {
+      if (f.scope !== read.scope || !filtersRead(a, f, o.target, read, table)) continue;
+      if (o.target.discriminator && !hasDiscriminator(a, read, o.target)) continue;
+      return true;
+    }
+  }
+  return targets.some((target) => target.table.toLowerCase() === table && !target.discriminator && filteredFromOutside(a, found, read, target, 0));
+}
+
 /**
- * Whether the block `tokens[from, to)` ANDs in `col = '<value>'` for `target.discriminator`:
- * its column (optionally qualified with the target's table or alias), `=`, and a plain
- * `'…'` literal, read from `view.source` at the offsets where the view blanked it, whose
- * value is one of the discriminator's values and which nothing but whitespace follows up
- * to the next token (no `''`-escape, no adjacent literal, no comment).
+ * Whether a predicate that filters `read`'s `SELECT` through `filter` filters `read` itself.
+ * Unqualified, it does: the read's table has the column, so the name resolves to it or the SQL is
+ * ambiguous. On the read's own column, its qualifier must name that read (its alias, or its
+ * table's name when it has none); on another table's column (a root filtered through a column
+ * that carries its IDs), a read of that table. A qualifier that names no read the check sees,
+ * such as a table function's alias, counts for nothing. Through `col IN (…)`, which read of
+ * another table `col` filters is left to the join.
  */
-function hasDiscriminator(tokens: readonly Token[], from: number, to: number, view: CodeViews[number], target: PredicateTarget): boolean {
+function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
+  const q = filter.qualifier;
+  if (q === undefined) return true;
+  const owner = target.table.toLowerCase();
+  if (owner === table) return read.names.has(q);
+  return !filter.ownSelect || readsOf(a, owner).some((r) => r.names.has(q));
+}
+
+/**
+ * Whether `read`, inside a derived table or CTE, is filtered from outside on `target`'s column:
+ * its `SELECT` is the source's whole body, the body passes the column through unrenamed, and
+ * every reference to the source is filtered on that column in its own `SELECT`, directly or,
+ * through a source around it, the same way. A set operation in the body, a column list on the
+ * source, a recursive CTE or a CTE nothing reads fails closed.
+ */
+function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Read, target: PredicateTarget, depth: number): boolean {
+  const open = scopeOpen(read.scope);
+  if (depth > 8 || open < 0 || a.scopes.branched.has(open)) return false;
+  const refs = sourceRefs(a, open);
+  if (refs === undefined || refs.length === 0 || !passesThrough(a, open, read.names, target.column.toLowerCase())) return false;
+  return refs.every((ref) =>
+    found.some((o) =>
+      o.target === target &&
+      o.filters.some((f) => f.ownSelect && f.scope === ref.scope && (f.qualifier === undefined || ref.names.has(f.qualifier)))) ||
+    filteredFromOutside(a, found, ref, target, depth + 1));
+}
+
+/** The references to the row source whose query opens at `open`, or undefined when it isn't a source this check follows. */
+function sourceRefs(a: Analysis, open: number): Read[] | undefined {
+  const { tokens, scopes } = a;
+  const close = scopes.close.get(open);
+  if (close === undefined || subqueryUse(tokens, open) !== "table") return undefined;
+  if (opensAfterAs(tokens, open)) {
+    const cte = cteAt(tokens, open);
+    if (cte === undefined) return undefined; // a column list renames the output, or it's no CTE this check reads
+    const refs: Read[] = [];
+    for (let j = 0; j < tokens.length; j++) {
+      if (j === cte.at || tokens[j]!.lower !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
+      if (j > open && j < close) return undefined; // recursive
+      refs.push({ at: j, scope: scopes.of[j]!, names: new Set([aliasAfter(tokens, j) ?? cte.name]) });
+    }
+    return refs;
+  }
+  // A word and a `(` after the `)` is an alias with a column list, which renames the output.
+  const word = close + (tokens[close + 1]?.kw === "as" ? 2 : 1);
+  if (isWord(tokens[word]) && !NOT_A_COLUMN_LIST.has(tokens[word]!.kw) && tokens[word + 1]?.text === "(") return undefined;
+  const alias = aliasAfter(tokens, close);
+  return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined ? [] : [alias]) }];
+}
+
+/** Clauses that compute over a source's rows, or pick some of them, before an outside filter runs. */
+const COMPUTES_OVER_ROWS = new Set(["group", "having", "window", "qualify", "limit", "offset", "fetch", "top", "over"]);
+
+/**
+ * Whether the body of the query at `open` passes `column` of the read named `names` through to
+ * its output unrenamed, and computes nothing across rows: every select-list item is a plain column
+ * (`col` or `q.col`, optionally aliased), `q.*` or `*`; exactly one yields that name, and it is the
+ * column itself, the read's `q.*`, or `*` over a single source; and the body has no `GROUP BY`,
+ * `HAVING`, window, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
+ * before the outside filter. An item with a string or comment in it, `DISTINCT ON` or a nested
+ * `WITH` fails closed.
+ */
+function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, column: string): boolean {
+  const { tokens, scopes, view } = a;
+  const scope = scopeKey(open, 0);
+  const depth = tokens[open]!.depth + 1;
+  const level = (i: number) => scopes.of[i] === scope && tokens[i]!.depth === depth;
+  const select = open + 1;
+  if (tokens[select]?.kw !== "select") return false;
+  let from = select + 1;
+  while (from < tokens.length && !(level(from) && tokens[from]!.kw === "from")) from++;
+  if (from >= tokens.length) return false;
+  let first = select + 1;
+  if (tokens[first]?.kw === "all" || tokens[first]?.kw === "distinct") first++;
+  if (tokens[first]?.kw === "on") return false;
+  const end = scopes.close.get(open) ?? tokens.length;
+  for (let i = select; i < end; i++) if (scopes.of[i] === scope && COMPUTES_OVER_ROWS.has(tokens[i]!.kw)) return false;
+
+  const items: number[][] = [[]];
+  for (let i = first; i < from; i++) {
+    if (level(i) && tokens[i]!.text === ",") items.push([]);
+    else items[items.length - 1]!.push(i);
+  }
+  let yields = 0;
+  for (const item of items) {
+    if (item.length === 0) return false;
+    // Text the view blanked (a string, a comment) could be part of the item, so don't guess.
+    const last = tokens[item[item.length - 1]!]!;
+    for (let p = tokens[item[0]!]!.offset; p < last.offset + last.text.length; p++) {
+      if (view.text[p] !== view.source[p] && view.text[p] !== QUOTE_MARK) return false;
+    }
+    const ts = item.map((i) => tokens[i]!);
+    const n = ts.length;
+    if (n === 1 && ts[0]!.text === "*") {
+      if (!singleSource(a, open, scope, depth)) return false;
+      yields++;
+      continue;
+    }
+    if (n === 3 && ts[1]!.text === "." && ts[2]!.text === "*") {
+      if (!names.has(ts[0]!.lower)) return false;
+      yields++;
+      continue;
+    }
+    let alias: string | undefined;
+    let expr = ts;
+    if (n >= 3 && ts[n - 2]!.kw === "as" && isWord(ts[n - 1])) {
+      alias = ts[n - 1]!.lower;
+      expr = ts.slice(0, n - 2);
+    } else if (n >= 2 && isWord(ts[n - 1]) && (isWord(ts[n - 2]) || ts[n - 2]!.text === ")" || /^\d/.test(ts[n - 2]!.text))) {
+      alias = ts[n - 1]!.lower;
+      expr = ts.slice(0, n - 1);
+    }
+    const isColumn = expr.length === 1 ? isWord(expr[0]) : expr.length === 3 && isWord(expr[0]) && expr[1]!.text === "." && isWord(expr[2]);
+    if (!isColumn) return false; // an expression, a call or an aggregate
+    const name = expr[expr.length - 1]!.lower;
+    if ((alias ?? name) !== column) continue;
+    if (name !== column || (expr.length === 3 && !names.has(expr[0]!.lower))) return false; // another expression named like the column
+    yields++;
+  }
+  return yields === 1;
+}
+
+/** Whether the `FROM` of the query at `open` has one source: no join and no comma before its next clause. */
+function singleSource(a: Analysis, open: number, scope: string, depth: number): boolean {
+  const { tokens, scopes } = a;
+  const end = scopes.close.get(open) ?? tokens.length;
+  let i = open + 1;
+  while (i < end && !(scopes.of[i] === scope && tokens[i]!.depth === depth && tokens[i]!.kw === "from")) i++;
+  for (i++; i < end; i++) {
+    const t = tokens[i]!;
+    if (scopes.of[i] !== scope || t.depth !== depth) continue;
+    if (t.text === "," || JOIN_WORDS.has(t.kw) || (t.text === "(" && !opensQuery(tokens, i))) return false;
+    if (FILTER_CLAUSE.has(t.kw) || CLAUSE_END.has(t.kw)) return true;
+  }
+  return true;
+}
+
+/**
+ * Whether `read`'s `SELECT` ANDs in `col = '<value>'` for `target.discriminator`: its column
+ * (unqualified, or qualified with the read's table or alias), `=`, and a plain `'…'` literal,
+ * read from the statement at the offsets where the view blanked it, whose value is one of the
+ * discriminator's values and which nothing but whitespace follows up to the next token (no
+ * `''`-escape, no adjacent literal, no comment).
+ */
+function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boolean {
   const { column, values } = target.discriminator!;
+  const { tokens, view } = a;
   const source = view.source;
-  for (let i = from; i < to; i++) {
+  for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     const eq = tokens[i + 1];
-    if (!isIdentifier(t) || t.lower !== column.toLowerCase() || eq?.text !== "=") continue;
-    const qualifier = tokens[i - 1]?.text === "." ? tokens[i - 2] : undefined;
-    if (qualifier !== undefined && namesOtherTable(tokens, qualifier.lower, target.table.toLowerCase())) continue;
+    if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || t.lower !== column.toLowerCase() || eq?.text !== "=") continue;
+    const qualifier = qualifierOf(tokens, i);
+    if (qualifier !== undefined && !read.names.has(qualifier)) continue;
     let open = eq.offset + 1;
     while (/\s/.test(source[open] ?? "")) open++;
     if (source[open] !== "'") continue;
@@ -779,33 +1096,9 @@ function hasDiscriminator(tokens: readonly Token[], from: number, to: number, vi
     // The view must read it as a string, and it must end there.
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
-    if (isFilterConjunct(tokens, qualifiedStart(tokens, i), i + 1, view.reading)) return true;
+    if (filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier).some((f) => f.ownSelect && f.scope === read.scope)) return true;
   }
   return false;
-}
-
-/**
- * Token ranges `[from, to)` of the statement's query blocks: the whole statement, and
- * each branch of every set operation at any depth (bounded by the parentheses around it).
- */
-function queryBlocks(tokens: readonly Token[]): Array<[number, number]> {
-  const blocks: Array<[number, number]> = [[0, tokens.length]];
-  const splits = new Map<number, number[]>(); // enclosing "(" (or -1) → set-operator positions
-  tokens.forEach((t, i) => {
-    if (!SET_OPERATORS.has(t.kw)) return;
-    const open = enclosing(tokens, i, "(");
-    splits.set(open, [...(splits.get(open) ?? []), i]);
-  });
-  for (const [open, positions] of splits) {
-    const end = open < 0 ? tokens.length : enclosing(tokens, open + 1, ")");
-    let from = open + 1;
-    for (const at of positions) {
-      blocks.push([from, at]);
-      from = at + 1;
-    }
-    blocks.push([from, end < 0 ? tokens.length : end]);
-  }
-  return blocks;
 }
 
 /** An identifier token: a word that isn't one of the predicate forms' keywords. */
@@ -829,59 +1122,35 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
 }
 
 /**
- * The token span `[start, end]` of a tenant predicate around the placeholder at `k`:
- * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a
- * possibly qualified name) is the target's column. A qualifier that names, or is the
- * alias of, a table other than the target's makes it no predicate for that table.
+ * The span `[start, end]` and column index of a tenant predicate around the placeholder at `k`:
+ * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a possibly
+ * qualified name) is `column`. Which read the column belongs to is its qualifier's to say.
  */
-function predicateSpan(tokens: readonly Token[], k: number, target: PredicateTarget): [number, number] | undefined {
+function predicateAt(tokens: readonly Token[], k: number, column: string): { start: number; end: number; column: number } | undefined {
   const at = (i: number) => tokens[i];
-  const column = target.column.toLowerCase();
+  const name = column.toLowerCase();
   const matches = (i: number) => {
     const t = at(i);
-    if (t === undefined || !isIdentifier(t) || t.lower !== column) return false;
-    const qualifier = at(i - 1)?.text === "." ? at(i - 2) : undefined;
-    return qualifier === undefined || !namesOtherTable(tokens, qualifier.lower, target.table.toLowerCase());
+    return t !== undefined && isIdentifier(t) && t.lower === name;
   };
   // col = P
-  if (at(k - 1)?.text === "=" && matches(k - 2)) return [qualifiedStart(tokens, k - 2), k];
+  if (at(k - 1)?.text === "=" && matches(k - 2)) return { start: qualifiedStart(tokens, k - 2), end: k, column: k - 2 };
   const closed = at(k + 1)?.text === ")";
   // col IN ( P )
   if (closed && at(k - 1)?.text === "(" && at(k - 2)?.kw === "in" && matches(k - 3)) {
-    return [qualifiedStart(tokens, k - 3), k + 1];
+    return { start: qualifiedStart(tokens, k - 3), end: k + 1, column: k - 3 };
   }
   // col = ANY ( P )
   if (closed && at(k - 1)?.text === "(" && at(k - 2)?.kw === "any" && at(k - 3)?.text === "=" && matches(k - 4)) {
-    return [qualifiedStart(tokens, k - 4), k + 1];
+    return { start: qualifiedStart(tokens, k - 4), end: k + 1, column: k - 4 };
   }
   // P = col
   if (at(k + 1)?.text === "=") {
     let end = k + 2;
     while (at(end + 1)?.text === "." && at(end + 2) !== undefined && isIdentifier(at(end + 2)!)) end += 2;
-    if (matches(end)) return [k, end];
+    if (matches(end)) return { start: k, end, column: end };
   }
   return undefined;
-}
-
-/**
- * Whether the qualifier `name` names a table other than `table`: `name` is that other
- * table, or is declared as its alias (`FROM appointments a`, `JOIN appointments AS a`).
- * A qualifier the statement doesn't declare (a derived table's or CTE's name) names no
- * known table, so it doesn't rule the predicate out.
- */
-function namesOtherTable(tokens: readonly Token[], name: string, table: string): boolean {
-  if (name === table) return false;
-  for (let i = 1; i < tokens.length; i++) {
-    if (tokens[i]!.lower !== name || !isIdentifier(tokens[i]!)) continue;
-    const source = tokens[i - 1]?.kw === "as" ? i - 2 : i - 1;
-    const src = tokens[source];
-    if (src === undefined || !isIdentifier(src) || tokens[source + 1]?.text === ".") continue;
-    const before = tokens[qualifiedStart(tokens, source) - 1];
-    if (before !== undefined && (before.kw === "from" || before.kw === "join" || before.text === ",")) {
-      return src.lower !== table;
-    }
-  }
-  return false;
 }
 
 /** How a parenthesized query block is used by the query around it. */
@@ -942,27 +1211,32 @@ function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
 }
 
 /**
- * Whether the term `tokens[start..end]` is ANDed into a `WHERE`, `ON` (of an inner join)
- * or `HAVING` clause of the statement: at its own level and at every enclosing
- * parenthesized level up to that clause, it sits between `AND`s (or the clause's start
- * and end), with no `OR`, `XOR` (or MySQL's `||`) at that level and no `NOT` in front of
- * it. A clause inside a subquery counts only when the subquery is a row source (a
- * derived table or CTE), or when the whole `col IN (…)` around it is itself such a
- * conjunct; not inside `EXISTS (…)`, a scalar subquery, or a comparison. A level opened by a function call or a comparison doesn't count.
+ * The `SELECT`s whose reads the term `tokens[start..end]` filters (#399), each with the qualifier
+ * that ties it to a read there. The term must be ANDed into a `WHERE`, `ON` (of an inner join) or
+ * `HAVING` clause: at its own level and at every enclosing parenthesized level up to that clause,
+ * it sits between `AND`s (or the clause's start and end), with no `OR`, `XOR` (or MySQL's `||`)
+ * at that level and no `NOT` in front of it. It then filters that clause's `SELECT`, through
+ * `qualifier`, its column's. When that `SELECT` is the whole right side of `col IN (…)` and the
+ * `col IN (…)` is itself such a conjunct, it filters the query around it too, through `col`'s
+ * qualifier. A level opened by a function call or a comparison doesn't count.
  */
-function isFilterConjunct(tokens: readonly Token[], start: number, end: number, reading: CodeViewReading): boolean {
-  const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && reading.pipesAreOr);
+function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined): Filter[] {
+  const { tokens, scopes } = a;
+  const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && a.view.reading.pipesAreOr);
   const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
+  const filters: Filter[] = [];
   let lo = start;
   let hi = end;
   let depth = tokens[start]!.depth;
+  let q = qualifier;
+  let ownSelect = true;
   for (;;) {
     // What is directly around the term, at its level.
     const before = tokens[lo - 1];
     const after = tokens[hi + 1];
     const leftOk = before !== undefined && (before.kw === "and" || before.text === "(" || FILTER_CLAUSE.has(before.kw));
     const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || endsClause(hi + 1);
-    if (!leftOk || !rightOk) return false;
+    if (!leftOk || !rightOk) return filters;
 
     // Scan the rest of this level on both sides for a disjunction, a NOT, or the clause keyword.
     let clause = -1;
@@ -974,12 +1248,12 @@ function isFilterConjunct(tokens: readonly Token[], start: number, end: number, 
         break;
       }
       if (t.depth > depth) continue;
-      if (disjunction(t) || t.kw === "not") return false;
+      if (disjunction(t) || t.kw === "not") return filters;
       if (FILTER_CLAUSE.has(t.kw)) {
         clause = i;
         break;
       }
-      if ((endsClause(i) || NOT_A_FILTER.has(t.kw)) && !isFunctionCall(tokens, i)) return false;
+      if ((endsClause(i) || NOT_A_FILTER.has(t.kw)) && !isFunctionCall(tokens, i)) return filters;
     }
     let close = tokens.length;
     for (let j = hi + 1; j < tokens.length; j++) {
@@ -990,31 +1264,31 @@ function isFilterConjunct(tokens: readonly Token[], start: number, end: number, 
       }
       if (t.depth > depth) continue;
       if (t.text === ";" || endsClause(j)) break;
-      if (disjunction(t)) return false;
+      if (disjunction(t)) return filters;
     }
 
     if (clause >= 0) {
-      if (tokens[clause]!.kw === "on" && isOuterJoinOn(tokens, clause)) return false;
-      if (depth === 0) return true;
-      // The clause is inside a subquery: how does the query around it use that subquery?
-      const blockOpen = enclosing(tokens, clause, "(");
-      const blockClose = enclosing(tokens, clause, ")");
-      if (blockOpen < 0 || blockClose < 0) return false;
-      const use = subqueryUse(tokens, blockOpen);
-      if (use === "table") return true;
-      if (use === "other") return false;
-      lo = qualifiedStart(tokens, blockOpen - 2); // `col IN (…)`
-      hi = blockClose;
-      depth = tokens[blockOpen]!.depth;
+      if (tokens[clause]!.kw === "on" && isOuterJoinOn(tokens, clause)) return filters;
+      const scope = scopes.of[clause]!;
+      filters.push({ scope, qualifier: q, ownSelect });
+      // `col IN (<this SELECT>)` limits the query around it to the rows this SELECT returns.
+      const query = scopeOpen(scope);
+      const queryClose = scopes.close.get(query);
+      if (query < 0 || queryClose === undefined || scopes.branched.has(query) || subqueryUse(tokens, query) !== "in") return filters;
+      lo = qualifiedStart(tokens, query - 2);
+      hi = queryClose;
+      depth = tokens[query]!.depth;
+      q = qualifierOf(tokens, query - 2);
+      ownSelect = false;
       continue;
     }
 
-    if (open < 0 || tokens[open]!.text !== "(" || close >= tokens.length || tokens[close]!.text !== ")") return false;
+    if (open < 0 || tokens[open]!.text !== "(" || close >= tokens.length || tokens[close]!.text !== ")") return filters;
     // A parenthesized group counts only as a plain boolean conjunct: opened right after
     // WHERE/ON/HAVING, AND, or another "(". Anything else (`f(`, `IN (`, `EXISTS (`,
     // `NOT (`, `= (`) makes it something other than a filter conjunct.
     const opener = tokens[open - 1];
-    if (opener === undefined || !(FILTER_CLAUSE.has(opener.kw) || opener.kw === "and" || opener.text === "(")) return false;
+    if (opener === undefined || !(FILTER_CLAUSE.has(opener.kw) || opener.kw === "and" || opener.text === "(")) return filters;
     lo = open;
     hi = close;
     depth = tokens[open]!.depth;
