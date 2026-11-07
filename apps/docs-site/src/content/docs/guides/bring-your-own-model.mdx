@@ -276,16 +276,23 @@ Every built-in provider is registered, and each loads its `@ai-sdk/*` package on
 
 The former `@askdb/ai-openai`, `@askdb/ai-anthropic`, `@askdb/ai-google`, and `@askdb/ai-azure` packages were removed before 1.0. Use `@askdb/client` (or `@askdb/ai`) and the `@ai-sdk/*` package instead ([removed packages](/reference/packages/#removed-packages)).
 
-Need the model object yourself (to pass to `ask()` directly, or to share with other code)? Build it from the same config with `@askdb/ai`'s registry — the one advanced case where you import `@askdb/ai` directly:
+Need the model object yourself, to pass to `ask()` directly or to share with your app's other AI calls? Build it once from the same config with `@askdb/ai`'s registry. It returns a plain AI SDK `LanguageModel`, so one model, from one configuration, serves AskDB and your own `generateText()` or `generateObject()` calls:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { createAiRegistry } from "@askdb/ai";
+import { ask } from "@askdb/core";
+import { generateText } from "ai";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 const rt = getAskDbRuntimeConfig();
 const ai = createAiRegistry(); // every built-in provider; or createAiRegistry(["openai"])
 const model = await ai.createLanguageModelFromSection(rt.ai.language); // undefined without an API key
+if (!model) throw new Error(ai.keyMissingMessage("my-app"));
+
+// The same model for AskDB and for your own AI SDK calls:
+const { sql } = await ask({ question, schema, dialect: "postgres", model });
+const { text } = await generateText({ model, prompt: `Explain this SQL in one sentence: ${sql}` });
 ```
 
 `rt.ai.language` is the config's typed `ai.language` section: its provider, its connection's settings and its model. The registry maps it to the provider's settings, and `rt.ai.embedding` goes to `createEmbeddingModelFromSection` the same way.
@@ -303,7 +310,7 @@ const ai = createAiRegistry();
 const model = await ai.createLanguageModelFromEnv(process.env); // undefined without an API key
 ```
 
-`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` takes its settings only from the map you pass. Its one read of `process.env` is a check: with no base URL configured, it refuses an `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` with a username or password, which the provider SDK would read itself. The [`@askdb/ai` reference](/reference/packages/#env-map-precedence) lists the variables it reads from the map, in order. A config section and an env map that hold the same settings give the same model.
+`ASKDB_AI_PROVIDER` picks the provider, `openai` when it's unset. `@askdb/ai` takes its settings only from the map you pass. Its one read of `process.env` is a check: with no base URL configured, it refuses an `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` with a username or password, which the provider SDK would read itself. The [`@askdb/ai` reference](/reference/ai-api/#env-map-precedence) lists the variables it reads from the map, in order. A config section and an env map that hold the same settings give the same model.
 
 ## A provider that isn't built in
 
@@ -328,7 +335,33 @@ export default defineConfig({
 });
 ```
 
-AskDB then hands the connection and the model to the adapter registered under that id, so you need your own code to register one: `createAskDb({ providers: [myAdapter] })`, or `createAiRegistry([myAdapter])`. Add built-in names next to it, such as `providers: ["openai", myAdapter]`, to keep those. The CLI, Studio and the HTTP API register only the built-in providers, so they can't use a custom id. The [`@askdb/ai` reference](/reference/packages/#askdbai) describes `AiProviderAdapter`.
+AskDB then hands the connection and the model to the adapter registered under that id, so you need your own code to register one. The CLI, Studio and the HTTP API register only the built-in providers, so they can't use a custom id. This adapter builds Mistral models with `@ai-sdk/mistral`:
+
+```ts
+import { createAiRegistry, resolveBaseConfig, type AiProviderAdapter } from "@askdb/ai";
+import { createMistral } from "@ai-sdk/mistral";
+
+const MISTRAL_ENV = { apiKeyVars: ["MISTRAL_API_KEY"], modelVars: ["MISTRAL_MODEL"], defaultModel: "mistral-large-latest" };
+
+export const mistralAdapter: AiProviderAdapter = {
+  provider: "mistral",
+  configHint: "For Mistral, set MISTRAL_API_KEY.",
+  resolveConfig: (env, options) => resolveBaseConfig("mistral", env, MISTRAL_ENV, options),
+  resolveConfigFromSection(section, { usage }) {
+    const apiKey = section.connection.apiKey ?? section.connection.apiKeySecondary;
+    if (!apiKey) return undefined;
+    const model = section.model ?? (usage === "language" ? MISTRAL_ENV.defaultModel : undefined);
+    if (!model) throw new Error("mistral: set ai.embedding.model");
+    return { provider: "mistral", apiKey, model, ...(section.connection.baseUrl ? { baseURL: section.connection.baseUrl } : {}) };
+  },
+  createLanguageModel: (config) => createMistral({ apiKey: config.apiKey, baseURL: config.baseURL })(config.model),
+  createEmbeddingModel: (config) => createMistral({ apiKey: config.apiKey, baseURL: config.baseURL }).embedding(config.model),
+};
+
+const ai = createAiRegistry(["openai", mistralAdapter]);
+```
+
+Pass it to `createAskDb({ providers: ["openai", mistralAdapter] })` the same way: list built-in names next to it to keep those. [`AiProviderAdapter`](/reference/ai-api/#aiprovideradapter) lists every field.
 
 ## Reasoning/latency effort
 
