@@ -345,20 +345,29 @@ describe("http-api", () => {
     }
   });
 
-  it("missing schema returns bad_request", async () => {
-    installTestRuntime({
-      mockSql: "select 1",
-      logLevel: "silent",
-    });
+  // #845: no schema configured server-side is the operator's to fix, like #840's schema that
+  // doesn't load: a generic 500, with the cause in the server log. A request that brings its own
+  // schemaJson doesn't need the server's schema, so it's unaffected.
+  it("with no schema configured, answers 500 generation_not_configured, logs the cause, and still serves a request schemaJson", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "askdb-http-no-schema-"));
+    const logFile = join(dir, "askdb.log");
+    installTestRuntime({ mockSql: "select 1", logLevel: "error", logFile, httpApi: { allowSchemaOverride: true } });
     const app = await startApp();
     try {
       const { status, json } = await postAsk(app.url, { question: "hi" });
-      expect(status).toBe(400);
+      expect(status).toBe(500);
       expect(json.ok).toBe(false);
-      expect(json.error?.code).toBe("bad_request");
-      expect(String(json.error?.message ?? "")).toContain("No schema configured");
+      expect(json.error?.code).toBe("generation_not_configured");
+      expect(json.error?.message).toBe("The server has no schema configured. See server logs for this correlationId.");
+      const runError = readLogEntries(logFile).find((entry) => entry.msg === "askdb http run error");
+      expect(runError?.errName).toBe("SchemaNotConfiguredError");
+
+      const withSchema = await postAsk(app.url, { question: "hi", schemaJson: requestSchemaJson("postgres") });
+      expect(withSchema.status).toBe(200);
+      expect(withSchema.json.sql).toBe("select 1");
     } finally {
       await app.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
