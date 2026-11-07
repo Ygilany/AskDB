@@ -594,6 +594,27 @@ Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prom
 
 `placeholderForRoot(label)` is deprecated. It takes the label alone, so for a label with no ASCII letter or digit it returns `:tenant___ids`, which core doesn't bind. For every other label the two agree.
 
+### `buildTenantPromptBlock(policy, scope, prompt)`
+
+```ts
+import { buildTenantPromptBlock, loadSchema, type TenantScope } from "@askdb/core";
+
+const schema = loadSchema("./my-app.schema");
+const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
+
+// The prompt shows the whole schema: the block names its tracked policy tables.
+buildTenantPromptBlock(schema.tenantPolicy!, scope, { schema });
+
+// Under retrieval, pass the ids of the tables the retrieved DDL shows.
+buildTenantPromptBlock(schema.tenantPolicy!, scope, { schema, tableIds: ["table:public.orders"] });
+```
+
+Returns the tenant-policy block `ask()` adds to the NL→SQL prompt: the roots, the tenant-scoped, polymorphic and global tables, the scope's placeholders and the columns each one may be compared with, and the rules. `prompt` is required. It's the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows (`synthesizeRetrievedDdl()`'s `tableIds`). The block names only the tables the prompt shows: never a table marked `tracked: false`, and no table retrieval left out, except one on a join path a shown table needs. A root whose table isn't shown appears by its label and placeholder. An unexpanded `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`); expand it first with `expandTenantScope()`.
+
+### `buildNlToSqlUserPrompt(dialect, question, schema, ambiguityNotes?, logger?, nlToSqlSchemaOptions?, prebuiltDdl?, tenantPolicy?, tenantScope?, parameterize?, promptTableIds?)`
+
+Returns the NL→SQL user prompt `ask()` sends with a built-in dialect: the rules, the schema's DDL (or `prebuiltDdl`), the tenant block when `tenantPolicy` and `tenantScope` are set, and the hints. With a tenant policy, the tenant block follows the tables the prompt shows. Without `prebuiltDdl` those are the schema's tracked tables. With `prebuiltDdl`, pass `promptTableIds`, the ids of the tables it shows; leaving them out throws `AskDbError`. A tenant policy also needs a v2 schema.
+
 ### `formatTenantPolicyWarning(warning)`
 
 ```ts

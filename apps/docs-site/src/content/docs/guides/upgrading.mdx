@@ -124,6 +124,14 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **For the server's configured schema,** `POST /ask` answers `500 generation_not_configured`, and the server log names `DialectNotSupportedError`. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks, such as `"postgres"` for a PostgreSQL-compatible warehouse. The server then uses that dialect for every schema it serves, a request `schemaJson` included, whatever its `provider` says.
 - **For a `schemaJson` the request sends,** while `dialect` isn't set, it answers `400 bad_request`. Send a schema whose `provider` is a built-in dialect id.
 
+### Pass the prompt's schema to `buildTenantPromptBlock()`
+
+`buildTenantPromptBlock(policy, scope, prompt)` now requires `prompt`: the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows ([#771](https://github.com/Ygilany/AskDB/issues/771), ADR 0038). The block names only those tables. `ask()` passes it for you, so this only matters if you call the function yourself.
+
+- **For a prompt that shows the whole schema,** pass `{ schema }`. If no table in your schema is marked `tracked: false`, the block is the same as before. An untracked table can no longer be named in the block, even on purpose.
+- **Under retrieval,** pass `{ schema, tableIds }`, with `synthesizeRetrievedDdl()`'s `tableIds`.
+- **`buildNlToSqlUserPrompt()` throws `AskDbError`** when you pass `prebuiltDdl` and a tenant policy without `promptTableIds` (the same ids), or a tenant policy with a v1 schema.
+
 ### Other changes you may notice in beta.50
 
 - **A connection's `secondaryApiKey` is used on every provider** when the connection has no `apiKey`. Before, only Azure and Foundry read it; the connection types still declare it only there.

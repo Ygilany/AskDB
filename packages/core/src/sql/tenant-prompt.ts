@@ -41,23 +41,23 @@ export function buildTenantPromptBlock(
   scope: TenantScope,
   /**
    * The prompt the block is for: its schema, and under retrieval the ids of the tables the
-   * retrieved DDL shows. With it, the block names only the tables the prompt shows: an untracked
-   * table, or one retrieval left out, stays out of it. A root whose table isn't shown keeps only
-   * its label and placeholder, and a join path through a tracked table retrieval left out stays.
-   * Without it, the block names every table in the policy. `ask()` always passes it.
+   * retrieved DDL shows. The block names only the tables the prompt shows: an untracked table, or
+   * one retrieval left out, stays out of it. A root whose table isn't shown keeps only its label
+   * and placeholder, and a join path through a tracked table retrieval left out stays. Required, so
+   * a direct caller can't name a table the prompt leaves out by default (#771, ADR 0038).
    */
-  prompt?: { schema: NormalizedSchemaV2; tableIds?: readonly string[] },
+  prompt: { schema: NormalizedSchemaV2; tableIds?: readonly string[] },
 ): string {
   const lines: string[] = [];
-  const view = prompt === undefined ? undefined : promptView(prompt.schema, prompt.tableIds);
-  const shown = (table: string) => view === undefined || view.shown.has(table);
+  const view = promptView(prompt.schema, prompt.tableIds);
+  const shown = (table: string) => view.shown.has(table);
   // A column the schema doesn't list counts as on no table the prompt tracks or shows.
-  const columnTracked = (column: string) => view === undefined || view.tracked.has(view.tableOfColumn.get(column) ?? "");
+  const columnTracked = (column: string) => view.tracked.has(view.tableOfColumn.get(column) ?? "");
   // The columns a printed join path names stay in the scope's column lists even when their table
   // isn't shown (a tracked table retrieval left out): the path's predicate compares with them.
   const joinPathColumns = new Set<string>();
   const columnShown = (column: string) =>
-    view === undefined || view.shown.has(view.tableOfColumn.get(column) ?? "") || joinPathColumns.has(column);
+    view.shown.has(view.tableOfColumn.get(column) ?? "") || joinPathColumns.has(column);
   // A root's label. An id the policy declares no root for is named only when the prompt shows its table.
   const rootName = (id: string) =>
     policy.roots.find((r) => r.id === id)?.label ?? (shown(id) ? id : "an undeclared root");

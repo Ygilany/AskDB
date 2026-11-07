@@ -1,3 +1,4 @@
+import { AskDbError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import {
@@ -59,8 +60,9 @@ export function buildNlToSqlUserPrompt(
    */
   parameterize?: boolean,
   /**
-   * The ids of the tables `prebuiltDdl` shows (the retrieved ones), so the tenant block names
-   * no other. Without it, the block names every tracked table in the policy (#771).
+   * The ids of the tables `prebuiltDdl` shows (the retrieved ones), so the tenant block names no
+   * other (#771, ADR 0038). Required with `prebuiltDdl` when there's a tenant policy; without
+   * `prebuiltDdl` the prompt shows the schema's tracked tables, and the block follows them.
    */
   promptTableIds?: readonly string[],
 ): string {
@@ -123,11 +125,14 @@ export function buildNlToSqlUserPrompt(
   // Tenant policy block (always injected when present — security boundary)
   if (tenantPolicy && tenantScope) {
     lines.push("");
-    // The block names only the tables this prompt shows (#771, ADR 0038). A v1 schema has no tenant
-    // policy of its own, so there is nothing to narrow.
-    lines.push(
-      buildTenantPromptBlock(tenantPolicy, tenantScope, isV2(schema) ? { schema, tableIds: promptTableIds } : undefined),
-    );
+    // The block names only the tables this prompt shows (#771, ADR 0038), so it needs to know them.
+    if (!isV2(schema)) {
+      throw new AskDbError("buildNlToSqlUserPrompt(): a tenant policy needs the v2 schema it belongs to, so the tenant block can name only the tables the prompt shows.");
+    }
+    if (prebuiltDdl !== undefined && promptTableIds === undefined) {
+      throw new AskDbError("buildNlToSqlUserPrompt(): with prebuiltDdl and a tenant policy, pass promptTableIds, the ids of the tables prebuiltDdl shows, so the tenant block names no other table.");
+    }
+    lines.push(buildTenantPromptBlock(tenantPolicy, tenantScope, { schema, tableIds: promptTableIds }));
     lines.push("");
   }
   if (ambiguityNotes.length > 0) {

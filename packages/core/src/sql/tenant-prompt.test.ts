@@ -5,6 +5,9 @@ import { loadSchema, loadSchemaFromJson } from "../schema/v2/loader.js";
 import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import { buildTenantPromptBlock } from "./tenant-prompt.js";
+import { buildNlToSqlUserPrompt } from "./prompt.js";
+import { POSTGRES_DIALECT } from "./dialect-spec.js";
+import { AskDbError } from "../errors.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../fixtures/schemas");
@@ -18,7 +21,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain("Agency");
     expect(block).toContain("Sub-Agency");
     expect(block).toContain("Client");
@@ -30,7 +33,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain("Tenant-scoped tables (MUST include tenant predicate):");
     expect(block).toContain("  - table:public.orders → filter via table:public.orders#agency_id (Agency scope)");
   });
@@ -39,7 +42,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain("table:public.appointments");
     expect(block).toContain("join path");
   });
@@ -48,7 +51,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain(
       "  - table:public.notes: type column = table:public.notes#owner_type, id column = table:public.notes#owner_id",
     );
@@ -59,7 +62,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain("table:public.lookup_states");
     expect(block).toContain("table:public.service_types");
     expect(block).toContain("no tenant filter needed");
@@ -77,7 +80,7 @@ describe("buildTenantPromptBlock", () => {
         includeDescendants: true,
       },
     };
-    expect(() => buildTenantPromptBlock(policy, scope)).toThrow(
+    expect(() => buildTenantPromptBlock(policy, scope, { schema })).toThrow(
       expect.objectContaining({ name: "TenantScopeError", reason: "SUBTREE_NOT_RESOLVABLE" }),
     );
   });
@@ -97,7 +100,7 @@ describe("buildTenantPromptBlock", () => {
         ],
       },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain(
       [
         "Current user scope:",
@@ -130,7 +133,7 @@ describe("buildTenantPromptBlock", () => {
         ],
       },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain(
       [
         "    - Agency IDs = :tenant_agency_ids",
@@ -155,7 +158,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain(
       [
         "Current user scope:",
@@ -185,7 +188,7 @@ describe("buildTenantPromptBlock", () => {
         ],
       },
     };
-    const block = buildTenantPromptBlock(cyrillic, scope);
+    const block = buildTenantPromptBlock(cyrillic, scope, { schema });
     expect(block).toContain("    - Клиент IDs = :tenant_clients_ids\n");
   });
 
@@ -198,7 +201,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(agencyOnly, scope);
+    const block = buildTenantPromptBlock(agencyOnly, scope, { schema });
     expect(block).toContain(
       [
         "Current user scope:",
@@ -213,7 +216,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "global", reason: "super_admin" },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain("GLOBAL");
     expect(block).toContain("super_admin");
     expect(block).toContain("tenant predicates are optional");
@@ -229,7 +232,7 @@ describe("buildTenantPromptBlock", () => {
         description: "Manages 3 sub-agencies",
       },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain("regional_manager");
     expect(block).toContain("northeast");
     expect(block).toContain("sales");
@@ -241,7 +244,7 @@ describe("buildTenantPromptBlock", () => {
     const scope: TenantScope = {
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
     };
-    const block = buildTenantPromptBlock(policy, scope);
+    const block = buildTenantPromptBlock(policy, scope, { schema });
     expect(block).toContain("MUST include the tenant predicate");
     expect(block).toContain("named placeholders");
   });
@@ -300,8 +303,8 @@ describe("buildTenantPromptBlock — only the tables the prompt shows (#771, ADR
     expect(b).toContain("table:public.orders#agency_id");
   });
 
-  it("names every policy table without the prompt argument", () => {
-    const b = buildTenantPromptBlock(policy, idsScope);
+  it("names every policy table when every one is tracked and no retrieval narrows the prompt", () => {
+    const b = buildTenantPromptBlock(policy, idsScope, { schema });
     for (const id of ["table:public.agencies", "table:public.campaigns", "table:public.notes", "table:public.lookup_states"]) {
       expect(b, id).toContain(id);
     }
@@ -377,5 +380,31 @@ describe("buildTenantPromptBlock — only the tables the prompt shows (#771, ADR
       expect(b).not.toContain("Orders#Archive");
       expect(b).toContain("table:dbo.Orders#AgencyId");
     });
+  });
+});
+
+describe("buildNlToSqlUserPrompt — the tenant block needs the tables the prompt shows (#771)", () => {
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
+  const prompt = (prebuiltDdl?: string, promptTableIds?: readonly string[], s: Parameters<typeof buildNlToSqlUserPrompt>[2] = schema) =>
+    buildNlToSqlUserPrompt(POSTGRES_DIALECT, "how many orders", s, [], undefined, undefined, prebuiltDdl, policy, scope, undefined, promptTableIds);
+
+  it("follows the schema's tracked tables without prebuilt DDL", () => {
+    expect(prompt()).toContain("table:public.campaigns");
+  });
+
+  it("refuses prebuilt DDL without the ids of the tables it shows", () => {
+    expect(() => prompt("TABLE public.orders")).toThrow(AskDbError);
+    expect(() => prompt("TABLE public.orders")).toThrow(/pass promptTableIds/);
+  });
+
+  it("names only the retrieved tables with prebuilt DDL and their ids", () => {
+    const p = prompt("TABLE public.orders", ["table:public.orders"]);
+    expect(p).toContain("  - table:public.orders → filter via table:public.orders#agency_id (Agency scope)");
+    expect(p).not.toContain("table:public.campaigns");
+  });
+
+  it("refuses a tenant policy with a v1 schema, which has no tracked tables to follow", () => {
+    const v1 = { tables: [{ name: "orders", columns: [{ name: "id", type: "int", nullable: false, primaryKey: true }] }] };
+    expect(() => prompt(undefined, undefined, v1)).toThrow(/needs the v2 schema/);
   });
 });
