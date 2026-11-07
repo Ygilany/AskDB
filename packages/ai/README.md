@@ -1,10 +1,10 @@
 # `@askdb/ai`
 
-AskDB AI provider registry. It resolves AskDB config/env maps into AI SDK language and embedding models, with built-in providers for OpenAI, Azure OpenAI / Microsoft Foundry, Google Gemini, Anthropic, and the Vercel AI Gateway.
+Turn `askdb.config.*` (or an env map) into a plain AI SDK `LanguageModel`: one model for AskDB's `ask()` and for your app's own AI SDK calls, with provider choice and keys in one place. Built-in providers cover OpenAI, Azure OpenAI / Microsoft Foundry, Google Gemini, Anthropic, and the Vercel AI Gateway; embedding models resolve the same way.
 
 `@askdb/core` stays BYO-model: it accepts any AI SDK `LanguageModel` and runs the NL-to-SQL pipeline. Passing a model you built yourself (e.g. `openai("gpt-4o-mini")` from `@ai-sdk/openai`) straight to `ask()` is an equally supported path that needs no AskDB AI package. Use this package when you want `askdb.config.*` / env to pick the provider and model.
 
-Most applications never import this package directly: `createAskDb({ config })` from `@askdb/client` registers every built-in provider and lets `ai.provider` in your config pick one. Import `@askdb/ai` yourself to construct model objects outside the client, to restrict or extend the provider set, or to share one registry across several clients.
+Most applications never import this package directly: `createAskDb({ config })` from `@askdb/client` registers every built-in provider and lets `ai.provider` in your config pick one. Import `@askdb/ai` yourself to construct model objects outside the client, to share one model with your app's other AI calls, to restrict or extend the provider set, or to share one registry across several clients.
 
 ## Install
 
@@ -51,6 +51,20 @@ const result = await ask({
   schema,
   dialect: "postgres",
   model,
+});
+```
+
+### Use the same model for your own AI SDK calls
+
+The registry returns a plain AI SDK `LanguageModel`, so the model `ask()` uses can serve your app's other AI features too, such as a summary or a chart plan. They then read the same `ai` config, instead of a second model factory that can drift from it:
+
+```ts
+import { generateText } from "ai";
+
+// The same `model` as above, from the same askdb.config.* section.
+const { text } = await generateText({
+  model,
+  prompt: `Explain this SQL in one sentence: ${result.sql}`,
 });
 ```
 
