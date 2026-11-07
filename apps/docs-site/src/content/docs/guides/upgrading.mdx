@@ -45,6 +45,14 @@ A range written for a `0.x` version doesn't match `1.0.0-rc.1`. With `"@askdb/ai
 
 [Versioning and stability](/reference/versioning/) lists both sets, the experimental surfaces and the dist-tags.
 
+## 1.0.0-beta.52
+
+Not published yet: these changes ship with `askdb` 1.0.0-beta.52 and `@askdb/config` 1.0.0-beta.20.
+
+### Other changes you may notice in beta.52
+
+- **`askdb init` installs in a one-package project whose `pnpm-workspace.yaml` holds only settings** ([#863](https://github.com/Ygilany/AskDB/issues/863)), such as `minimumReleaseAgeExclude`, which pnpm also keeps in that file. It used to skip the install there and print the `pnpm add` command instead. It still skips at a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`. Studio's guided setup reads the file the same way.
+
 ## 1.0.0-beta.51
 
 Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.51, `@askdb/studio` 0.2.0-beta.44, `@askdb/enrich` 0.2.0-beta.22, `@askdb/introspect` 0.3.0-beta.25, `@askdb/rag` 0.2.0-beta.31, `@askdb/postgres` 0.2.0-beta.27, `@askdb/prisma` 0.2.0-beta.25, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.26, and `@askdb/sqlserver` 0.1.0-beta.27.

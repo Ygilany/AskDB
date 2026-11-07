@@ -31,14 +31,23 @@ export function findNearestPackageJsonDir(startDir: string): string | undefined 
 }
 
 /**
- * Whether `packageDir` looks like a monorepo or workspace root (a `pnpm-workspace.yaml`,
- * or a `workspaces` field), whose `package.json` setup tools leave alone.
+ * Whether `packageDir` looks like a monorepo or workspace root, whose `package.json` setup
+ * tools leave alone: its `pnpm-workspace.yaml` lists at least one package under `packages`,
+ * or its `package.json` has a `workspaces` field. pnpm also keeps project settings such as
+ * `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`, so a one-package project can have
+ * the file with no `packages` list.
  *
  * @experimental See the module note.
  */
 export function isLikelyWorkspaceRoot(packageDir: string): boolean {
-  if (existsSync(join(packageDir, "pnpm-workspace.yaml")) || existsSync(join(packageDir, "pnpm-workspace.yml"))) {
-    return true;
+  for (const name of ["pnpm-workspace.yaml", "pnpm-workspace.yml"]) {
+    const path = join(packageDir, name);
+    if (!existsSync(path)) continue;
+    try {
+      if (listsWorkspacePackages(readFileSync(path, "utf8"))) return true;
+    } catch {
+      return true;
+    }
   }
   try {
     const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as { workspaces?: unknown };
@@ -46,6 +55,54 @@ export function isLikelyWorkspaceRoot(packageDir: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a `pnpm-workspace.yaml` lists at least one package under its top-level `packages`
+ * key. It reads only plain block YAML, so `@askdb/config` needs no YAML parser, and it
+ * answers "no packages" only for a file it reads in full: every top-level line is a plain
+ * `name:` key or a list item under one, and `packages` is absent, `[]`, or has no items.
+ * Any other top-level line (`? packages`, `"packages":`, `{…}`) or `packages` value counts
+ * as a list, so a file it can't follow is read as a workspace root, which setup tools
+ * leave alone.
+ */
+function listsWorkspacePackages(yaml: string): boolean {
+  const lines = yaml
+    .replace(/^\uFEFF/, "")
+    .split(/\r\n|\r|\n/)
+    .filter((line) => !/^\s*(#.*)?$/.test(line));
+  const rootIndent = leadingSpaces(lines[0] ?? "");
+  let afterKey = false;
+  for (const [index, line] of lines.entries()) {
+    const indent = leadingSpaces(line);
+    if (indent > rootIndent) continue; // inside the value of the key above
+    const text = line.slice(indent);
+    if (indent < rootIndent || text.startsWith("\t")) return true;
+    if (/^(---|\.\.\.)$/.test(text.trimEnd())) continue; // a document marker
+    if (/^-(\s|$)/.test(text)) {
+      if (!afterKey) return true;
+      continue; // an item of the list under the key above
+    }
+    const keyMatch = /^([A-Za-z_][\w.-]*)\s*:(?:\s+(.*))?$/.exec(text);
+    if (!keyMatch) return true;
+    afterKey = true;
+    if (keyMatch[1] !== "packages") continue;
+    const value = (keyMatch[2] ?? "").replace(/(^|\s)#.*$/, "").trim();
+    if (value === "" ? itemsFollow(lines.slice(index + 1), rootIndent) : !/^\[\s*\]$/.test(value)) return true;
+  }
+  return false;
+}
+
+function leadingSpaces(line: string): number {
+  return line.length - line.replace(/^ +/, "").length;
+}
+
+/** Whether the line after an empty top-level `packages:` (blank and comment lines removed) is a list item or nested under it. */
+function itemsFollow(lines: readonly string[], rootIndent: number): boolean {
+  const next = lines[0];
+  if (next === undefined) return false;
+  const indent = leadingSpaces(next);
+  return indent > rootIndent || (indent === rootIndent && /^-(\s|$)/.test(next.slice(indent)));
 }
 
 /**

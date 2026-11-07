@@ -11,7 +11,7 @@ import InstallTabs from "../../components/InstallTabs.astro";
 
 Upgrading from an earlier release? [Upgrade AskDB](/guides/upgrading/) lists what to change for each release.
 
-On the day an AskDB version is published, `pnpm dlx askdb@latest` and `yarn dlx askdb@latest` still install the previous one. pnpm 11 and later, and Yarn 4.18, skip versions less than a day old by default (pnpm's `minimumReleaseAge`, Yarn's `npmMinimalAgeGate`). npm installs the new version at once.
+On the day an AskDB version is published, `pnpm dlx askdb@latest` and `yarn dlx askdb@latest` install an older one. pnpm 11 and later, and Yarn 4.18, skip versions less than a day old by default (pnpm's `minimumReleaseAge`, Yarn's `npmMinimalAgeGate`). npm installs the new version at once. Step 2 of the [Quickstart](/quickstart/#2-install-askdb-and-scaffold-the-config) shows the setting that lets pnpm and Yarn install AskDB's newest release.
 
 ## What to install — by use case
 
