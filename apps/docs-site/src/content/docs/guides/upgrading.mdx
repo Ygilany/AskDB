@@ -19,6 +19,14 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.51
+
+Not published yet: these changes ship with `@askdb/http-api` 1.0.0-beta.51.
+
+### Other changes you may notice in beta.51
+
+- **No schema configured server-side answers `500 generation_not_configured`** from `askdb-http`, not `400 bad_request` ([#845](https://github.com/Ygilany/AskDB/issues/845)), with the cause in the server log (`errName` `SchemaNotConfiguredError`). A request that sends its own `schemaJson` is unaffected. If your client matched `bad_request` for this case, match `generation_not_configured`.
+
 ## 1.0.0-beta.50
 
 Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30 and `@askdb/studio` 0.2.0-beta.43.
@@ -163,7 +171,6 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **Generated SQL that advances a sequence is refused** ([#825](https://github.com/Ygilany/AskDB/issues/825)). On MySQL and MariaDB, `NEXTVAL(…)` and `SETVAL(…)` now fail the read-only check with `SQL_FORBIDDEN_FUNCTION`, and so does `NEXT VALUE FOR …` on every dialect: MariaDB and SQL Server advance the sequence, and the change isn't rolled back with your transaction. `PREVIOUS VALUE FOR` and MariaDB's `LASTVAL()` only read and still pass, as does a column named `nextval`.
 - **`askdb-http` reads the working directory's `.env` first, and never one inside `node_modules`** ([#839](https://github.com/Ygilany/AskDB/issues/839)). In an npm install it used to read `node_modules/.env` before `./.env`. An install now reads only the working directory's `.env`, so if you kept your settings in `node_modules/.env` or the package folder, move them to the working directory's.
 - **A server schema that doesn't load answers `500 generation_not_configured`** from `askdb-http`, not `400 schema_parse_error` ([#840](https://github.com/Ygilany/AskDB/issues/840)), such as a `host.schemaPath` that doesn't exist. The message no longer includes the server's path; the server log has the full error, with `errName` `SchemaLoadError`. A request `schemaJson` that doesn't load still answers `400 schema_parse_error`. If your client matched `schema_parse_error` for a server-side schema problem, match `generation_not_configured`.
-- **No schema configured server-side answers `500 generation_not_configured`** from `askdb-http`, not `400 bad_request` ([#845](https://github.com/Ygilany/AskDB/issues/845)), with the cause in the server log (`errName` `SchemaNotConfiguredError`). A request that sends its own `schemaJson` is unaffected. If your client matched `bad_request` for this case, match `generation_not_configured`.
 
 ## 1.0.0-beta.49
 
