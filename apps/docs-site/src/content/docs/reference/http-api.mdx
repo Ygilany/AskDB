@@ -92,10 +92,10 @@ Every flag is optional. Each setting comes from its flag, then `askdb.config.ts`
 `askdb-http` loads one `.env` file before the config: the first of these that exists.
 
 1. The `.env` in the working directory.
-2. A `.env` in the `@askdb/http-api` package folder.
-3. A `.env` three directories above the package's `dist` folder, which is the repository root when you run it from AskDB's own repository.
+2. Only when you run it from AskDB's own repository: a `.env` in the `apps/http-api` folder.
+3. Only there too: the `.env` at the repository root.
 
-It never reads a candidate inside `node_modules`, so in an npm, pnpm or Yarn install only the working directory's `.env` is read. `createAskDbHttpServer()` reads only the working directory's `.env` too (see [Config loading](#config-loading)).
+An installed `askdb-http` reads only the working directory's `.env`, and it never reads a `.env` inside `node_modules`. `createAskDbHttpServer()` reads only the working directory's `.env` too (see [Config loading](#config-loading)).
 
 If the server can't load its config (no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`) or can't bind (for example, the port is already in use), `askdb-http` prints a one-line error and exits with code `1`.
 

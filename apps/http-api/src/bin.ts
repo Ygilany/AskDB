@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { bootstrapAskDbEnv } from "@askdb/config";
 import { existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dotenvCandidates } from "./dotenv-candidates.js";
 import { createAskDbHttpServer } from "./server.js";
@@ -29,7 +29,9 @@ if (cliOptions.help) {
 
 {
   const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = dotenvCandidates(here, process.cwd()).filter((p) => existsSync(p));
+  // `src` isn't published, so it sits beside `dist` only in AskDB's own source checkout.
+  const fromSourceCheckout = existsSync(resolve(here, "../src/bin.ts"));
+  const candidates = dotenvCandidates(here, process.cwd(), fromSourceCheckout).filter((p) => existsSync(p));
   try {
     bootstrapAskDbEnv({
       cwd: process.cwd(),

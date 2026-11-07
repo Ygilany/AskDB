@@ -22,6 +22,8 @@ Accepted.
 
 > **Amendment (2026-11, #787, ADR 0036):** Decision 6 has one exception. When a built-in provider builds a model from an `AiConfig` with no `baseURL`, `@askdb/ai` reads the base URL variable that provider's SDK falls back to (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`) from `process.env`, only to refuse one with a user name or password. It never uses the value: the SDK still reads it. No other `process.env` read is allowed outside `@askdb/config`.
 
+> **Amendment (2026-11, #839):** `askdb-http` passes `bootstrapAskDbEnv` its own `dotenvCandidatePaths`, and the order changed. Its first candidate was the `.env` three directories above `dist`, which in an install is `node_modules/.env`, so that file won over the working directory's. Now the working directory's `.env` comes first; the package folder's and the repo root's follow only when the binary runs from AskDB's own source checkout (`dist` beside its unpublished `src`), and a candidate inside `node_modules` is never read. Demoting `node_modules/.env` to last was the option not taken: it would still read settings from a folder the host doesn't own, and an install with only that file would load it silently. The CLI and Studio read only the working directory's `.env`, as before.
+
 ## Context
 
 First-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) load secrets and defaults from `.env` via `dotenv`, then read canonical names such as `OPENAI_API_KEY`, `ASKDB_*`, and `DATABASE_URL` directly from `process.env`. Library packages like `@askdb/core`, `@askdb/rag`, and `@askdb/tui` were also reading `process.env` directly, which means:
