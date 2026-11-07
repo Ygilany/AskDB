@@ -41,10 +41,11 @@ jobs:
         with:
           node-version: 22
 
-      # Merging a PR that leaves an unpublished version on `main` publishes it with no
-      # further approval: approving the Version PR is the release approval (ADR 0040). So
-      # no other PR may add a public `name@version` that npm doesn't have. The script reads
-      # the public packages the way release.yml's publish list does (scripts/release-packages.mjs).
+      # Approving the Version PR is the release approval (ADR 0040), so no other PR may add a
+      # public `name@version` that npm doesn't have: release.yml's `approved` job would refuse
+      # to publish it, and hold up the next release until it's published by hand or reverted.
+      # The script reads the public packages the way release.yml's publish list does
+      # (scripts/release-packages.mjs).
       - name: Check that only the Version PR adds unpublished versions
         if: env.IS_VERSION_PR != 'true'
         run: node scripts/check-unpublished-versions.mjs --since "origin/${BASE_REF}"

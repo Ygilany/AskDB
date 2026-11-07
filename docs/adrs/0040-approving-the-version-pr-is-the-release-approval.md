@@ -25,7 +25,7 @@ Rejected: without the environment gate, an unpublished version that reaches `mai
 ### The Version PR review, plus a check where versions enter `main` and one where they leave it (chosen)
 
 - **Entry:** `changesets.yml` fails any PR but the Version PR that adds a public `name@version` npm doesn't have: a version bump, a new public package, or a package made public. It reads the public packages through the same function `release-unpublished.mjs` publishes from (`scripts/release-packages.mjs`), so every manifest format pnpm reads and symlinked manifests count.
-- **Exit:** `release.yml`'s `approved` job lets `publish` run only when the commit is the merge commit of a merged `changeset-release/main` PR from this repository. It reads the commit's PRs through the GitHub API with `pull-requests: read`, in a job of its own, so the job that holds the OIDC token gains no permission.
+- **Exit:** `release.yml`'s `approved` job lets `publish` run only when the commit is the merge commit of a merged `changeset-release/main` PR from this repository, and that merge added every version `publish` would ship: none of them was already a public, unpublished `name@version` in the merge's first parent. It reads the commit's PRs through the GitHub API with `pull-requests: read`, in a job of its own, so the job that holds the OIDC token gains no permission.
 
 ### Also require an approving review at publish time
 
@@ -34,13 +34,13 @@ Not done. The ruleset already requires the code-owner review before the merge, a
 ## Decision
 
 - **The maintainer's approval of the Version PR is the release approval.** Once the Version PR is approved and merged, `release.yml` publishes with no further approval. The `npm-publish` environment stays, limited to `main`, with no required reviewer: every trusted publisher names it, and it keeps OIDC to the `publish` job on `main`.
-- **Only the Version PR adds unpublished versions** (the entry check), **and only its merge commit publishes them** (the exit check).
+- **Only the Version PR adds unpublished versions** (the entry check), **and only its merge commit publishes them, only the ones it added** (the exit check).
 - **An agent never approves the Version PR,** even when `gh` runs with the maintainer's credentials. It may enable auto-merge on it, or merge it, only after the maintainer has approved it (`AGENTS.md`).
 
 ## Consequences
 
-- **A refused publish needs a hand publish.** When the `approved` job refuses a commit, the approved versions are on `main` but not on npm. The maintainer publishes them by hand from the Version PR's merge commit (`docs/release.md`, "Publishing by Hand"), so what ships is what was approved.
+- **A refused publish needs a hand publish.** When the `approved` job refuses a commit, approved versions are on `main` but not on npm. The maintainer publishes each by hand from the merge commit of the Version PR that added it (`docs/release.md`, "Publishing by Hand"), so what ships is what was approved.
 - **A new public package's first version is published by hand** from its PR branch, before the PR merges. The entry check fails the PR until that version is on npm, and the pipeline can only publish a package that has a trusted publisher.
-- **An admin bypass merge** of another PR skips the entry check, but the exit check still refuses to publish from it. An admin bypass merge of the Version PR publishes without the approval.
+- **An admin bypass merge** of another PR skips the entry check, but the exit check refuses a version it adds, from that commit or with a later Version PR. That version has no approval, so it's reverted, or published by hand on purpose. An admin bypass merge of the Version PR publishes without the approval.
 - **The maintainer removes the environment's required reviewer** after this lands (Settings → Environments → `npm-publish`). Until then, `publish` still waits for that approval.
 - **Changing either check, or adding a publish path,** amends this ADR. The rules both checks share live in `scripts/release-packages.mjs`, with self-tests that CI's `preflight` job runs.
