@@ -1170,6 +1170,17 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     expect(findings(sql, dialect)).toEqual(orders);
   });
 
+  // A reading that sees a scoped table's name but no read of it can't tell what filters it.
+  it.each([
+    ["the query written with U+00A0 between words on Postgres", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids", POSTGRES_DIALECT],
+    ["the same on MySQL", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids", MYSQL_DIALECT],
+    ["the same on SQLite", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids", SQLITE_DIALECT],
+    ["the same under no dialect", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids", undefined],
+    ["the table's name only as a qualifier", "SELECT orders.total FROM lookup_states", undefined],
+  ])("rejects %s, which names the table but reads it nowhere the check sees", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
   it("rejects the scope's root table read through a bracketed alias `.`", () => {
     expect(findings("SELECT * FROM agencies [.]", SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
   });
