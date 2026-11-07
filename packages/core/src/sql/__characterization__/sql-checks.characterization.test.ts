@@ -163,16 +163,16 @@ const HOSTILE: readonly string[] = [
   "SELECT 1 AS a -- \r'\n, u.secret_recovery_token FROM users u -- '",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # x\r OR 1=1",
   // #623: SQL Server ends a number after `0x` or `1E` and a name at U+00A0, U+200B and U+0085.
-  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1 OR 1=1",
-  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1​OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1\u00a0OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1\u200bOR 1=1",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1\u0085OR 1=1",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=0xOR 1=1",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1EOR 1=1",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1E OR 1=1",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND flags = 0x AND rate = 1E",
-  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids",
-  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids​AND\u0085status = 'open'",
-  "SELECT [x OR] FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT *\u00a0FROM orders\u00a0WHERE agency_id\u00a0=\u00a0:tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\u200bAND\u0085status = 'open'",
+  "SELECT [x\u00a0OR] FROM orders WHERE agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

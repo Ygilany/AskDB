@@ -1016,8 +1016,8 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
 
   // SQL Server reads each tail as `… OR 1=1`, so the tenant predicate is no longer a conjunct.
   const gluedOr: Array<[string, string]> = [
-    ["U+00A0, which SQL Server reads as whitespace", "1=1 OR 1=1"],
-    ["U+200B, which SQL Server reads as whitespace", "1=1​OR 1=1"],
+    ["U+00A0, which SQL Server reads as whitespace", "1=1\u00a0OR 1=1"],
+    ["U+200B, which SQL Server reads as whitespace", "1=1\u200bOR 1=1"],
     ["U+0085, which SQL Server reads as whitespace", "1=1\u0085OR 1=1"],
     ["`0x`, an empty binary literal", "1=0xOR 1=1"],
     ["`1E`, a float with no exponent digits", "1=1EOR 1=1"],
@@ -1046,8 +1046,8 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
   it("a scoped query that uses these forms without an OR still passes", () => {
     for (const sql of [
       `${scoped}flags = 0x AND rate = 1E`,
-      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids",
-      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids​AND\u0085status = 'open'",
+      "SELECT *\u00a0FROM orders\u00a0WHERE agency_id\u00a0=\u00a0:tenant_agency_ids",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\u200bAND\u0085status = 'open'",
     ]) {
       expect(findings(sql, SQLSERVER_DIALECT), sql).toEqual([]);
     }

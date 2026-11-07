@@ -47,8 +47,8 @@ fixtureSuite("the tenant check reads SQL the way SQL Server does (live SQL Serve
   });
 
   it.each([
-    ["U+00A0", "1=1 OR 1=1"],
-    ["U+200B", "1=1​OR 1=1"],
+    ["U+00A0", "1=1\u00a0OR 1=1"],
+    ["U+200B", "1=1\u200bOR 1=1"],
     ["U+0085", "1=1\u0085OR 1=1"],
     ["`0x`", "1=0xOR 1=1"],
     ["`1E`", "1=1EOR 1=1"],
