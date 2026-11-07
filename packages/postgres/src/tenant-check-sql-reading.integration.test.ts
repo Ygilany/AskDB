@@ -59,6 +59,16 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
       .toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 
+  it("a non-ASCII dollar tag opens a string, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // `$é$ … $é$` is a dollar-quoted string: the engine reads its body as data, not code.
+    const rows = (await runner("SELECT $é$ a $é$ AS v")).rows;
+    expect(String(rows[0]![0])).toBe(" a ");
+    // So the OR after such a string is code, and the predicate beside it doesn't count.
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND $é$'$é$ = '' OR 1=1 OR 'x' = 'x'"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
   it("a table named after a keyword stands in table position, as the engine reads it", async () => {
     const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
     for (const name of ["lock", "qualify", "by"]) {

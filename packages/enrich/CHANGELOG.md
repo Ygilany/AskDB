@@ -1,5 +1,18 @@
 # @askdb/enrich
 
+## 0.2.0-beta.22
+
+### Minor Changes
+
+- 8e75d50: `saveTenantPolicy()` (Studio's Save) refuses a strict tenant policy with a column on another table than its entry's, as `loadSchema()` now does (#836). It passes `normalizeTenantPolicy()` a column ID → table ID map from `schema.json` on disk.
+
+### Patch Changes
+
+- Updated dependencies [6c8c88b]
+- Updated dependencies [8e75d50]
+- Updated dependencies [4196800]
+  - @askdb/core@1.0.0-beta.51
+
 ## 0.2.0-beta.21
 
 ### Minor Changes

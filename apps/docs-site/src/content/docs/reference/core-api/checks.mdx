@@ -51,7 +51,7 @@ type SensitiveReference = {
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `mode` | `"warn" \| "strict"` | `"warn"` | See [Modes](#modes). |
-| `dialect` | `Pick<DialectSpec, "id" \| "backslashEscapes">` | — | A `DialectSpec`, or `{ id }` with an optional `backslashEscapes`. Lex the SQL the way that engine does (MySQL backslash escapes and `#` comments, Postgres `E'…'` and `$tag$…$tag$`, SQL Server `[…]`). Without it, references are collected under every built-in engine's reading, which is conservative and can over-report in rare cases. |
+| `dialect` | `Pick<DialectSpec, "id" \| "backslashEscapes">` | — | A `DialectSpec`, or `{ id }` with an optional `backslashEscapes`. Lex the SQL the way that engine does (see [How the checks read SQL](/reference/sql-checks/#how-the-checks-read-sql)). Without it, references are collected under every built-in engine's reading, which is conservative and can over-report in rare cases. |
 
 ### Scope resolution
 
@@ -75,7 +75,7 @@ validateSensitiveReferences("SELECT email, password FROM identity.users", schema
 
 ### Conservative failure
 
-When the check can tell it couldn't bind names to tables, it reports that in `unresolvedScope` rather than passing. It can't always tell: a table in a `FROM` form it doesn't recognize is skipped without a report (see [Safety boundaries](/concepts/safety-boundaries/), #306–#309). `unresolvedScope.issues` contains one or more of:
+When the check can tell it couldn't bind names to tables, it reports that in `unresolvedScope` rather than passing. It can't always tell: a table in a `FROM` form it doesn't recognize is skipped without a report (see [The sensitive check](/reference/sql-checks/#the-sensitive-check)). `unresolvedScope.issues` contains one or more of:
 
 | Issue | Cause | Effect |
 | --- | --- | --- |
