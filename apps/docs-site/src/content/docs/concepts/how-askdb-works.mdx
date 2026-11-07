@@ -3,8 +3,6 @@ title: "How AskDB works"
 description: "The end-to-end flow from a natural-language question to checked SQL that your application runs."
 ---
 
-import runtimeBoundaryUrl from "../../../assets/diagrams/askdb-runtime-boundary.svg?url";
-
 <p class="doc-eyebrow">The pipeline</p>
 
 <p class="doc-lede">AskDB is a function that turns a question and a schema artifact into checked SQL. Everything else — execution, approval, audit — happens in your application, not in AskDB.</p>
@@ -23,7 +21,26 @@ When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB runs these s
 
 ## The runtime boundary
 
-<img src={runtimeBoundaryUrl} alt="Flow from question and schema through ask() to checked SQL, with execution owned by your application" class="doc-diagram" />
+<figure>
+
+```mermaid
+flowchart TB
+  %% ask()'s five steps, and where AskDB stops. Source of truth: packages/core/src/ask.ts
+  %% (maybeRetrieveDdl, generateSelectSqlForAsk, which builds the prompt, then enforceGuardrails).
+  subgraph askdb["ask(), in AskDB"]
+    load["1. load the schema artifact"]
+    retrieve["2. retrieve the chunks the<br/>question needs (optional)"]
+    prompt["3. build the prompt"]
+    generate["4. generate SQL with<br/>your model provider"]
+    check["5. run the SQL checks"]
+  end
+  run["your application: review,<br/>approve and run it<br/>under a read-only role"]
+  load --> retrieve --> prompt --> generate --> check
+  check -- "checked SQL" --> run
+```
+
+<figcaption><code>ask()</code> runs five steps and calls your model provider in step 4. It stops at checked SQL: your application reviews, approves and runs it.</figcaption>
+</figure>
 
 AskDB stops at checked SQL. Your application — the code that imports `@askdb/core` or calls the HTTP API — owns everything past that:
 
