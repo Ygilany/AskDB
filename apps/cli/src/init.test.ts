@@ -521,12 +521,38 @@ describe("runInitCli install", () => {
     expect(stderr.join("")).toContain(`  pnpm add ${packages.join(" ")}\n`);
   });
 
+  // #863: pnpm 10 and later keep settings such as minimumReleaseAgeExclude in pnpm-workspace.yaml,
+  // so a one-package project can have the file without being a workspace.
+  it("in a one-package project whose pnpm-workspace.yaml holds only settings, installs", async () => {
+    enterProject({
+      "package.json": '{ "name": "app", "private": true }\n',
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "pnpm-workspace.yaml": "minimumReleaseAgeExclude:\n  - askdb\n  - '@askdb/*'\n",
+    });
+    const installer = vi.fn().mockReturnValue(true);
+
+    const code = await runInitCli(["--yes", "--database", "sqlite", "--sqlite-file", "./shop.db", "--path", join(project, "askdb.config.ts")], installer);
+
+    expect(code).toBe(0);
+    expect(installer).toHaveBeenCalledWith("pnpm", project, [`@askdb/config@${resolveInitDepSpecs().configSpec}`, "better-sqlite3"], []);
+    expect(stdout.join("")).not.toContain("Skipped automatic dependency install");
+  });
+
   // Where init won't install, the command it prints names the detected manager and
   // carries the build approval, so following it works on pnpm 11.
   it.each([
     [
       "at a workspace root",
       { "package.json": '{ "name": "repo", "private": true, "workspaces": ["packages/*"] }\n', "pnpm-lock.yaml": "lockfileVersion: '9.0'\n" },
+      "",
+    ],
+    [
+      "at a pnpm workspace root whose pnpm-workspace.yaml lists packages",
+      {
+        "package.json": '{ "name": "repo", "private": true }\n',
+        "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+        "pnpm-workspace.yaml": "packages:\n  - packages/*\nminimumReleaseAgeExclude:\n  - askdb\n",
+      },
       "",
     ],
     ["with no package.json, run by `pnpm dlx`", {}, "pnpm/11.28.10 npm/? node/v22.23.4 darwin arm64"],

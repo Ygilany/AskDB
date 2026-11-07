@@ -31,14 +31,23 @@ export function findNearestPackageJsonDir(startDir: string): string | undefined 
 }
 
 /**
- * Whether `packageDir` looks like a monorepo or workspace root (a `pnpm-workspace.yaml`,
- * or a `workspaces` field), whose `package.json` setup tools leave alone.
+ * Whether `packageDir` looks like a monorepo or workspace root, whose `package.json` setup
+ * tools leave alone: its `pnpm-workspace.yaml` lists at least one package under `packages`,
+ * or its `package.json` has a `workspaces` field. pnpm 10 and later also keep project
+ * settings such as `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`, so a one-package
+ * project can have the file with no `packages` list.
  *
  * @experimental See the module note.
  */
 export function isLikelyWorkspaceRoot(packageDir: string): boolean {
-  if (existsSync(join(packageDir, "pnpm-workspace.yaml")) || existsSync(join(packageDir, "pnpm-workspace.yml"))) {
-    return true;
+  for (const name of ["pnpm-workspace.yaml", "pnpm-workspace.yml"]) {
+    const path = join(packageDir, name);
+    if (!existsSync(path)) continue;
+    try {
+      if (listsWorkspacePackages(readFileSync(path, "utf8"))) return true;
+    } catch {
+      return true;
+    }
   }
   try {
     const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as { workspaces?: unknown };
@@ -46,6 +55,32 @@ export function isLikelyWorkspaceRoot(packageDir: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a `pnpm-workspace.yaml` lists at least one package under a `packages:` key, as a
+ * block list (`- apps/*` lines) or a flow list (`[apps/*]`). It reads only those two forms,
+ * so `@askdb/config` needs no YAML parser. Any other `packages` value counts as a list, and
+ * so does a `packages` key at any depth or inside a flow mapping: a file it can't follow is
+ * read as a workspace root, which setup tools leave alone.
+ */
+function listsWorkspacePackages(yaml: string): boolean {
+  const lines = yaml.replace(/^\uFEFF/, "").split(/\r?\n/);
+  return lines.some((line, index) => {
+    const key = /(?:^|[\s{,])(["']?)packages\1\s*:(.*)$/.exec(line.replace(/(^|\s)#.*$/, ""));
+    if (!key) return false;
+    const value = key[2]!.trim();
+    if (value === "") return blockListFollows(lines.slice(index + 1), line.length - line.trimStart().length);
+    return !/^\[\s*\]$/.test(value);
+  });
+}
+
+/** Whether the first line after an empty `packages:` value, past blank and comment lines, is a list item or nested under the key. */
+function blockListFollows(lines: readonly string[], keyIndent: number): boolean {
+  const next = lines.find((line) => !/^\s*(#.*)?$/.test(line));
+  if (next === undefined) return false;
+  const indent = next.length - next.trimStart().length;
+  return indent > keyIndent || (indent === keyIndent && /^-(\s|$)/.test(next.trimStart()));
 }
 
 /**

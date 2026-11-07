@@ -41,11 +41,23 @@ describe("findNearestPackageJsonDir", () => {
 });
 
 describe("isLikelyWorkspaceRoot", () => {
+  const pkg = '{"name":"r","private":true}\n';
   it.each([
-    ["a pnpm-workspace.yaml", { "package.json": '{"name":"r"}\n', "pnpm-workspace.yaml": "packages: []\n" }, true],
-    ["an npm workspaces field", { "package.json": '{"workspaces":["packages/*"]}\n' }, true],
-    ["a leaf package.json", { "package.json": '{"name":"app","private":true}\n' }, false],
-  ])("with %s is %s", (_label, files, expected) => {
+    ["a pnpm-workspace.yaml that lists packages", true, { "package.json": pkg, "pnpm-workspace.yaml": 'packages:\n  - "packages/*"\n' }],
+    ["a pnpm-workspace.yaml with a flow list of packages", true, { "package.json": pkg, "pnpm-workspace.yaml": "packages: [apps/*, packages/*]\n" }],
+    ["a pnpm-workspace.yaml whose packages list follows comments and settings", true, { "package.json": pkg, "pnpm-workspace.yaml": "# Workspace\nminimumReleaseAge: 720\npackages:\n  # apps first\n\n  - apps/*\n" }],
+    ["a pnpm-workspace.yml that lists packages", true, { "package.json": pkg, "pnpm-workspace.yml": "packages:\n- packages/*\n" }],
+    // #863: pnpm 10 and later keep project settings in the same file.
+    ["a pnpm-workspace.yaml that holds only settings", false, { "package.json": pkg, "pnpm-workspace.yaml": "minimumReleaseAgeExclude:\n  - askdb\n  - '@askdb/*'\nallowBuilds:\n  better-sqlite3: true\n" }],
+    ["a pnpm-workspace.yaml with an empty packages list", false, { "package.json": pkg, "pnpm-workspace.yaml": "packages: []\nallowBuilds:\n  esbuild: true\n" }],
+    ["a pnpm-workspace.yaml whose packages key has no entries", false, { "package.json": pkg, "pnpm-workspace.yaml": "packages:\n# none yet\nallowBuilds:\n  esbuild: true\n" }],
+    ["a pnpm-workspace.yaml whose packages list is commented out", false, { "package.json": pkg, "pnpm-workspace.yaml": "# packages:\n#   - apps/*\nminimumReleaseAge: 720\n" }],
+    // A packages value it can't read counts as a list, so init leaves the project alone.
+    ["a pnpm-workspace.yaml whose packages value is an alias", true, { "package.json": pkg, "pnpm-workspace.yaml": "x: &dirs [apps/*]\npackages: *dirs\n" }],
+    ["a pnpm-workspace.yaml written as one flow mapping", true, { "package.json": pkg, "pnpm-workspace.yaml": "{ minimumReleaseAge: 720, packages: [apps/*] }\n" }],
+    ["an npm workspaces field", true, { "package.json": '{"workspaces":["packages/*"]}\n' }],
+    ["a leaf package.json", false, { "package.json": '{"name":"app","private":true}\n' }],
+  ])("with %s is %s", (_label, expected, files) => {
     expect(isLikelyWorkspaceRoot(project(files))).toBe(expected);
   });
 });
