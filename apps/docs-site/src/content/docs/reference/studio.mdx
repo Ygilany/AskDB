@@ -41,7 +41,7 @@ The setup wizard writes, in the directory Studio started in:
 
 It never writes `.env` or any secret value: it asks only for environment variable names.
 
-It then installs what the config needs and the project doesn't have yet: `@askdb/config`; the engine's driver, or `@askdb/prisma`, `ai` and `zod` for a Prisma schema; and the [execute](/guides/enable-studio-execute/) driver, if you chose execute on another engine. On pnpm 10.4 or later, it approves `@prisma/engines`' build. It installs automatically only when the nearest `package.json` is in the start directory and that directory isn't a workspace root. Otherwise it shows the command to run.
+It then installs what the config needs and the project doesn't have yet: `@askdb/config`; the engine's driver, or `@askdb/prisma`, `ai` and `zod` for a Prisma schema; and the [execute](/guides/enable-studio-execute/) driver, if you chose execute on another engine. On pnpm 10.4 or later, it approves `@prisma/engines`' build. It installs automatically only when the nearest `package.json` is in the start directory and that directory isn't a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`. A `pnpm-workspace.yaml` that holds only settings doesn't count, unless it's written in a form other than plain block YAML, such as JSON. Otherwise it shows the command to run.
 
 It picks the package manager the way `askdb init` does:
 
