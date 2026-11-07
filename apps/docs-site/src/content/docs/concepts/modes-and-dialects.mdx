@@ -72,7 +72,7 @@ The versioned spec — including the contracts an eventual bounded-results imple
 Columns marked `sensitive: true` in the schema artifact can be:
 
 - Included with a sensitivity tag in the prompt (default), so the model knows to handle them carefully and your application can decide whether to display them.
-- Omitted from the prompt entirely with `modes.omitSensitiveFromPrompt: true` in your config (or the `--omit-sensitive-from-prompt` flag), so the model never sees them and therefore never proposes them. The one exception is a tenant policy: the columns it filters on stay in the prompt, so the model can write the tenant predicate.
+- Omitted from the prompt entirely with `modes.omitSensitiveFromPrompt: true` in your config (or the `--omit-sensitive-from-prompt` flag), so the model never sees those columns, or text that names them, and can't propose them. A sensitive table keeps one line with its name. The one exception is a tenant policy: the columns it filters on stay in the prompt, so the model can write the tenant predicate.
 
 The complete behavior table is in the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md).
 

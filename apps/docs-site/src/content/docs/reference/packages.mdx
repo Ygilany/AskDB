@@ -3,7 +3,6 @@ title: "Package reference"
 description: "Every @askdb/* package: purpose, when to install, and what it exports."
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
 import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Reference · Packages</p>
@@ -56,91 +55,11 @@ See the **[@askdb/client API reference](/reference/client-api/)** for the full o
 
 ### `@askdb/ai`
 
-AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsoft Foundry, Google Gemini, Anthropic, and the Vercel AI Gateway. `@askdb/client` depends on it and builds the registry for you. Import it yourself to build a model object outside the client (`createAiRegistry().createLanguageModelFromSection(rt.ai.language)`), to restrict or extend the provider set, or to share one registry across several clients.
+The AI provider registry, with built-in providers for OpenAI, Azure OpenAI and Microsoft Foundry, Google Gemini, Anthropic and the Vercel AI Gateway. `@askdb/client` depends on it and builds the registry for you. Import it yourself to build a model object outside the client, to restrict or extend the set of providers, or to share one registry across several clients.
 
 <InstallTabs pkgs="@askdb/ai ai" />
 
-**Key exports**
-
-| Symbol | Purpose |
-| --- | --- |
-| `createAiRegistry(providers?)` | Build a registry and create language or embedding models from it. No argument: every built-in provider. Or pass built-in names (`["openai"]`) and/or `AiProviderAdapter` objects. |
-| `BUILTIN_AI_PROVIDERS` | Table of built-in providers: names, aliases, env vars, default models, and the SDK package each needs. |
-| `openaiProvider`, `azureProvider`, `googleProvider`, `anthropicProvider`, `gatewayProvider` | The built-in adapters, if you want to pass them as objects. |
-| `registry.resolveAiConfigFromSection(section)` / `registry.resolveEmbeddingConfigFromSection(section)` | Resolve a provider's `AiConfig` from a typed config section (`getAskDbRuntimeConfig().ai.language`, `.ai.embedding`) without building a model. `undefined` when the connection has no API key. These and the methods below are on the registry `createAiRegistry` returns, not standalone exports. |
-| `registry.createLanguageModelFromSection(section)` / `registry.createEmbeddingModelFromSection(section, options?)` | Resolve a section and build its model. The embedding model asks for the section's `dimensions` unless `options.dimensions` is set. |
-| `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)`, `registry.createLanguageModelFromEnv(env)` / `registry.createEmbeddingModelFromEnv(env)` | The same from an env map, for an app without a config file. See [Env map precedence](#env-map-precedence). |
-| `resolveReasoningEffortFromSection(reasoning, purpose, override?)` | The reasoning effort for `"nlToSql"` or `"enrichment"` calls from `ai.language.reasoning`: `override`, then the purpose's own effort, then `effort`. `resolveReasoningEffort(env, purpose, override?)` reads the same from an env map. |
-| `AiLanguageSection`, `AiEmbeddingSection`, `AiConnectionSection`, `AiReasoningSection` | The section types. `@askdb/config`'s `ai.language` and `ai.embedding` fit them as they are; `@askdb/ai` doesn't depend on `@askdb/config`. |
-| `AiProviderAdapter.resolveConfigFromSection(section, { usage })`, `AiModelSection` | The optional adapter method that maps a section (`AiModelSection`: `provider`, `connection`, `model`, `modelFamily`) to the adapter's `AiConfig`, as `resolveConfig` maps an env map. Every built-in provider implements it. A custom adapter without it gets the section through the universal `ASKDB_AI_*` keys, passed to its `resolveConfig`. |
-| `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
-| `withEmbeddingProviderOptions` | Wraps an embedding model so `dimensions`/`user` reach the provider; an optional mapper renames them to the provider's own settings (e.g. Gemini's `outputDimensionality`). Shared across adapters. |
-| `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
-| `AiBaseUrlCredentialsError` | Thrown when a model base URL holds a username or password: by the section methods (`setting: "connection.baseUrl"`), by a provider's `resolveConfig` (its `setting` names the env variable, such as `OPENAI_BASE_URL`) and by a built-in adapter building a model from an `AiConfig` (`setting: "baseURL"`). The message never repeats the URL. |
-
-#### Env map precedence
-
-An app without a config file passes an env map to the registry's `*FromEnv` methods. For the selected provider, each setting comes from the first variable in the map that holds a value:
-
-| Setting | Variables, in order |
-| --- | --- |
-| Provider | `ASKDB_AI_PROVIDER`, else `openai`. A built-in name or alias, or a registered adapter's. |
-| API key | `ASKDB_AI_API_KEY`, the provider's key variables, the provider's secondary key variables, `ASKDB_AI_API_KEY_SECONDARY`. Without one, AI is off: the methods return `undefined`. |
-| Language model | `ASKDB_AI_MODEL`, `ASKDB_MODEL`, the provider's model variables, the `modelDefault` option, the provider's default model. |
-| Embedding model | The variable the `modelEnvVar` option names, `ASKDB_AI_EMBEDDING_MODEL`, `ASKDB_EMBEDDING_MODEL`, the provider's embedding model variables, the `modelDefault` option. No provider has a default embedding model: with a key and none of these, resolving throws. |
-| Base URL | `ASKDB_AI_BASE_URL`, the provider's base URL variables. One with a username or password throws `AiBaseUrlCredentialsError`, naming the variable. |
-| Azure and Foundry | Resource name: `ASKDB_AI_AZURE_RESOURCE_NAME`, `AZURE_RESOURCE_NAME`. API version: `ASKDB_AI_AZURE_API_VERSION`, `AZURE_OPENAI_API_VERSION`, `AZURE_API_VERSION`. Model family: `ASKDB_AI_AZURE_MODEL_FAMILY`. |
-| Reasoning effort | `resolveReasoningEffort(env, purpose)`: `ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` or `ASKDB_AI_REASONING_EFFORT_ENRICHMENT`, then `ASKDB_AI_REASONING_EFFORT`. |
-
-Each built-in provider's own variables (`BUILTIN_AI_PROVIDERS[].env` lists them):
-
-| Provider | Key | Secondary key | Model | Embedding model | Base URL |
-| --- | --- | --- | --- | --- | --- |
-| `openai` | `OPENAI_API_KEY` | `OPENAI_API_KEY_SECONDARY` | `OPENAI_MODEL` | `OPENAI_EMBEDDING_MODEL` | `OPENAI_BASE_URL` |
-| `azure`, `azure-openai`, `foundry` | `AZURE_OPENAI_API_KEY`, `AZURE_API_KEY` | `AZURE_OPENAI_API_KEY_SECONDARY`, `AZURE_API_KEY_SECONDARY` | `AZURE_OPENAI_DEPLOYMENT`, `AZURE_DEPLOYMENT_NAME` | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `AZURE_EMBEDDING_DEPLOYMENT_NAME` | `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_ENDPOINT`, `AZURE_BASE_URL` |
-| `anthropic` | `ANTHROPIC_API_KEY` | none | `ANTHROPIC_MODEL` | none (no embeddings API) | `ANTHROPIC_BASE_URL` |
-| `google` | `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_AI_API_KEY` | none | `GOOGLE_AI_MODEL` | `GOOGLE_AI_EMBEDDING_MODEL` | `GOOGLE_AI_BASE_URL` |
-| `gateway` | `AI_GATEWAY_API_KEY` | none | none | none | none |
-
-With an `askdb.config.*` file, none of these variables matter on their own: the config reads what it needs with `env("…")`, and the section methods take its typed settings.
-
-### Provider SDKs
-
-Each built-in provider loads its AI SDK package lazily. These packages are optional peer dependencies of `@askdb/ai`, so install the one for the provider your config selects. If it's missing, model creation fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. `ai` itself is a required peer of `@askdb/ai`: npm and pnpm install it automatically, but depend on `ai` directly when you want to pin the version. AskDB raises its `ai` floor only when it needs a newer version or a security fix, and that release's changelog says which.
-
-Any 4.x release of each `@ai-sdk/*` package works (the peer range is `^4.0.0`), so AskDB doesn't force a provider SDK upgrade. `@askdb/client` declares the same optional peers and passes them through to `@askdb/ai`, so with strict installs (Yarn Plug'n'Play) install the SDK in the package that depends on `@askdb/client` or `@askdb/ai`, as the install lines above do. Under Plug'n'Play the AI SDK also needs `zod` installed next to it (its own peer dependency). If you bundle your app, esbuild builds without the SDKs you didn't install, and a missing one fails only when its provider first builds a model. webpack 5 stops with `Module not found` for each missing `@ai-sdk/*` package: install them, or list the ones you don't use in `externals` (with ESM output, use `externalsType: "module"` and the bare package names):
-
-```js
-// webpack.config.js: list the @ai-sdk/* packages you don't install.
-module.exports = {
-  // ...
-  externals: {
-    "@ai-sdk/anthropic": "commonjs @ai-sdk/anthropic",
-    "@ai-sdk/azure": "commonjs @ai-sdk/azure",
-    "@ai-sdk/google": "commonjs @ai-sdk/google",
-  },
-};
-```
-
-<Tabs syncKey="ai-provider">
-  <TabItem label="OpenAI">
-    <InstallTabs pkgs="@ai-sdk/openai" />
-  </TabItem>
-  <TabItem label="Anthropic">
-    <InstallTabs pkgs="@ai-sdk/anthropic" />
-  </TabItem>
-  <TabItem label="Google">
-    <InstallTabs pkgs="@ai-sdk/google" />
-  </TabItem>
-  <TabItem label="Azure OpenAI">
-    <InstallTabs pkgs="@ai-sdk/azure" />
-  </TabItem>
-  <TabItem label="Vercel AI Gateway">
-    Nothing extra: the gateway provider ships with `ai`.
-  </TabItem>
-</Tabs>
-
-The CLI, Studio, and the HTTP API already include all four SDKs. Unknown `ai.provider` values require a registered adapter. The built-ins are `openai`, `azure` (aliases `azure-openai`, `foundry`), `google`, `anthropic`, and `gateway`. For anything else, embed AskDB and pass your own `AiProviderAdapter` to `createAiRegistry()` or `createAskDb({ providers })`, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
+Each built-in provider's AI SDK package, such as `@ai-sdk/openai`, is an optional peer dependency: install the one you use. The [@askdb/ai API reference](/reference/ai-api/) lists every export, the env variables it reads without a config file, and how to write an adapter for another provider.
 
 ### `@askdb/config`
 
