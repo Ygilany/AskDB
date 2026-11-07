@@ -228,7 +228,7 @@ A miss is model quality: only AskDB's documented rejections of the SQL (`SqlVali
 
 ## Safety
 
-`test/safety.test.ts` sends adversarial model replies through the installed `ask()`, through the documented `deps.generateText` seam (the way `lab ask --sql` does). Each reply must be rejected with `SqlValidationError` and the rule code that `getting-started/troubleshooting.mdx` and the dialect's forbidden-keyword and blocked-function lists give it. A rejection under a different rule fails the test. The replies live in the test file, not in the question catalog or the cassettes.
+`test/safety.test.ts` sends adversarial model replies through the installed `ask()`, through the documented `deps.generateText` seam (the way `lab ask --sql` does). Each reply must be rejected with `SqlValidationError` and the rule code that `guides/troubleshooting.mdx` and the dialect's forbidden-keyword and blocked-function lists give it. A rejection under a different rule fails the test. The replies live in the test file, not in the question catalog or the cassettes.
 
 | Scenario | Replies | Rule | Proven on a scratch copy |
 | --- | --- | --- | --- |

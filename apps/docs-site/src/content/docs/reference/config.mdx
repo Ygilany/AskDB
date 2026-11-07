@@ -366,7 +366,7 @@ AskDB loads `.env` first, then your `askdb.config.*`. **You choose the variable 
 
 `--ai-key-env` and `--ai-model-env` give the AI variables other names. A model variable that's unset leaves `ai.language.model` to the provider's default (see [`ai.language`](#ailanguage)).
 
-Every other setting, such as the output directory, a mode or the log level, is a field in `askdb.config.ts`, which you can bind to a variable with `env("…")` too. AskDB reads one variable of its own from the environment, `ASKDB_DEBUG`, which prints stack traces (see [Troubleshooting](/getting-started/troubleshooting/)). An `ASKDB_*` variable you set in the shell does nothing unless your config reads it with `env("…")`.
+Every other setting, such as the output directory, a mode or the log level, is a field in `askdb.config.ts`, which you can bind to a variable with `env("…")` too. AskDB reads one variable of its own from the environment, `ASKDB_DEBUG`, which prints stack traces (see [Fix common errors](/guides/troubleshooting/#set-askdb_debug1-to-print-the-stack-trace)). An `ASKDB_*` variable you set in the shell does nothing unless your config reads it with `env("…")`.
 
 ## Custom providers
 
