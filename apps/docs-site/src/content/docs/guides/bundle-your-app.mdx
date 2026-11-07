@@ -1,0 +1,159 @@
+---
+title: "Bundle an app that uses AskDB"
+description: "Bundle a Node service that uses AskDB with esbuild or webpack 5: keep @askdb/config out of the bundle or use no config file, and ship the schema as one JSON file."
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
+
+<p class="doc-eyebrow">Integrator guide</p>
+
+<p class="doc-lede">AskDB bundles into a Node service like most libraries, with one exception: <code>@askdb/config</code> can't load <code>askdb.config.*</code> from inside a bundle. Keep it out of the bundle, or use no config file. This guide covers esbuild and webpack 5.</p>
+
+## Before you start
+
+- A Node service that calls `createAskDb()` or `ask()`. [Embed in a Node app](/guides/embed-in-node/) sets one up.
+- esbuild, or webpack 5, building for Node.
+
+## 1. Choose where the settings come from
+
+`@askdb/config` loads `askdb.config.*` from disk when your service starts. Once `@askdb/config` is inside the bundle, that fails: on webpack for every config file, and on esbuild for a TypeScript config. Two setups work:
+
+- **With a config file, `createAskDb()`:** leave `@askdb/config` out of the bundle and install it next to the bundle when you deploy. `askdb.config.ts` then loads as it does without a bundler.
+- **Without one, `ask()`:** build the model with the AI SDK in your own code, and load the schema from one JSON file. The bundle then needs nothing installed beside it.
+
+[Bring your own model](/guides/bring-your-own-model/#which-should-i-use) helps you choose between the two.
+
+## 2. Install the provider SDK you use
+
+Install `ai` and the AI SDK package of your provider, such as `@ai-sdk/openai`:
+
+<InstallTabs pkgs="ai @ai-sdk/openai" />
+
+`@askdb/ai` loads each provider's SDK only when it first builds a model. esbuild leaves out the SDKs you don't install; webpack 5 needs them listed in `externals`, as step 3 shows. The Vercel AI Gateway needs none. See [Provider SDKs](/reference/ai-api/#provider-sdks).
+
+## 3. Bundle
+
+<Tabs syncKey="bundler">
+  <TabItem label="esbuild">
+
+With a config file, mark `@askdb/config` external. Without one, drop `--external:@askdb/config`.
+
+```bash
+# CommonJS output
+esbuild src/server.mjs --bundle --platform=node --format=cjs \
+  --external:@askdb/config --outfile=dist/server.cjs
+```
+
+ESM output also needs a banner that defines `require`. The AI SDK's `@vercel/oidc` calls `require("path")`, and without the banner the bundle stops at startup with `Dynamic require of "path" is not supported`:
+
+```bash
+# ESM output
+esbuild src/server.mjs --bundle --platform=node --format=esm \
+  --external:@askdb/config --outfile=dist/server.mjs \
+  --banner:js="import { createRequire as topLevelCreateRequire } from 'node:module'; const require = topLevelCreateRequire(import.meta.url);"
+```
+
+esbuild needs nothing for the provider SDKs you didn't install: the build succeeds, and a provider whose SDK is missing fails only when it first builds a model.
+
+  </TabItem>
+  <TabItem label="webpack 5">
+
+List in `externals` `@askdb/config`, with a config file, and each `@ai-sdk/*` package you didn't install:
+
+```js
+// webpack.config.cjs: CommonJS output
+module.exports = {
+  mode: "production",
+  target: "node",
+  entry: "./src/server.mjs",
+  output: { filename: "server.cjs", library: { type: "commonjs2" } },
+  externals: {
+    "@askdb/config": "commonjs @askdb/config", // with a config file only
+    "@ai-sdk/anthropic": "commonjs @ai-sdk/anthropic", // the SDKs you don't install
+    "@ai-sdk/azure": "commonjs @ai-sdk/azure",
+    "@ai-sdk/google": "commonjs @ai-sdk/google",
+  },
+};
+```
+
+For ESM output, use `externalsType: "module"` and the bare package names:
+
+```js
+// webpack.config.cjs: ESM output
+module.exports = {
+  mode: "production",
+  target: "node",
+  entry: "./src/server.mjs",
+  experiments: { outputModule: true },
+  output: { filename: "server.mjs", module: true, library: { type: "module" }, chunkFormat: "module" },
+  externalsType: "module",
+  externals: ["@askdb/config", "@ai-sdk/anthropic", "@ai-sdk/azure", "@ai-sdk/google"],
+};
+```
+
+Without the SDK entries, webpack stops with `Module not found: Error: Can't resolve '@ai-sdk/anthropic'` for each SDK you didn't install. An app that imports only `@askdb/core` needs none of them, because `@askdb/ai` is what loads the SDKs.
+
+  </TabItem>
+</Tabs>
+
+## 4. Ship the schema as one file
+
+The schema artifact is a directory that your service reads at run time, so the bundler doesn't include it. Turn it into one JSON file with [`askdb bundle`](/reference/cli/#askdb-bundle), and ship that file next to the bundle:
+
+```bash
+npx askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
+```
+
+Load it like a schema directory. With a config file, pass it to `createAskDb()`, or set `host.schemaPath` to it:
+
+```ts
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  schema: { path: "./my-app.schema.bundle.json" },
+});
+```
+
+Without one, load it with `loadSchema()` and pass your model to `ask()`:
+
+```ts
+import { ask, loadSchema } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
+
+const schema = loadSchema("./my-app.schema.bundle.json");
+const model = openai("gpt-4o-mini"); // reads OPENAI_API_KEY from the environment
+
+const { sql } = await ask({ question, schema, dialect: "postgres", model });
+```
+
+## 5. Deploy
+
+**With a config file,** deploy the bundle, `askdb.config.ts`, the schema file and your `.env` or environment variables, and install `@askdb/config` in that directory:
+
+<InstallTabs pkgs="@askdb/config" />
+
+It brings `jiti` and `dotenv`, which load the config. Start the service from that directory, where `bootstrapAskDbEnv({ cwd: process.cwd() })` looks for the config.
+
+**Without one,** deploy the bundle and the schema file, and set your provider's key in the environment. Nothing else needs installing.
+
+## If it fails
+
+| Error | Fix |
+| --- | --- |
+| `i.createRequire is not a function` (webpack); `The argument 'filename' must be a file URL object, file URL string, or absolute path string. Received undefined` or `Cannot find module '../dist/babel.cjs'` (esbuild) | `@askdb/config` is inside the bundle. Mark it external, and install it next to the bundle. |
+| `Cannot find module '@askdb/config'`, or `Cannot find package '@askdb/config'` | `@askdb/config` is external but not installed where the bundle runs. Install it there. |
+| `Module not found: Error: Can't resolve '@ai-sdk/<name>'` (webpack) | Install that SDK, or add it to `externals`. |
+| `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>` | The SDK of the provider your config selects isn't in the bundle. Install it and bundle again. |
+| `Dynamic require of "path" is not supported` (esbuild ESM) | Add the `createRequire` banner from step 3. |
+
+<Aside type="caution" title="A cached config can hide the problem">
+`@askdb/config` caches each config file it compiles in `node_modules/.cache/jiti`. A bundle run next to a `node_modules` holding that cache can load `askdb.config.ts` on your machine and then fail where you deploy. Test the bundle in a directory that holds only what you deploy.
+</Aside>
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/ai-api/"><strong>@askdb/ai API reference</strong><span>The registry, the built-in providers and their SDKs.</span></a>
+  <a href="/reference/config-api/"><strong>@askdb/config API reference</strong><span>How <code>bootstrapAskDbEnv()</code> finds and loads the config.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The read-only role, timeouts and audit logging your service needs.</span></a>
+</div>
