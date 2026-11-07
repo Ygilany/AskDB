@@ -850,8 +850,10 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
   const name = table.toLowerCase();
   return views.every((view) => {
     const tokens = tokenize(view);
-    // Read the Postgres way, a column list after the table's alias renames its columns.
-    if (view.reading.profile.id === "postgres" && renamesColumns(tokens, name)) return false;
+    // Read the Postgres way, a column list after the table's alias renames its columns, and a quoted
+    // name is compared exactly.
+    const postgres = view.reading.profile.id === "postgres";
+    if (postgres && renamesColumns(tokens, name)) return false;
     // Every spelling of the name counts as the table, quoted or not, except the words of `ORDER BY`.
     const mentions = (from: number, to: number) => {
       for (let i = from; i < to; i++) if (tokens[i]!.lower === name && !isOrderOrGroupBy(tokens, i)) return true;
@@ -863,7 +865,7 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
         for (let k = from; k < to; k++) {
           for (const target of targets) {
             if (tokens[k]!.text !== target.placeholder) continue;
-            const span = predicateSpan(tokens, k, target);
+            const span = predicateSpan(tokens, k, target, postgres);
             if (!span || !isFilterConjunct(tokens, span[0], span[1], view.reading)) continue;
             if (!target.discriminator || hasDiscriminator(tokens, from, to, view, target)) return true;
           }
@@ -990,14 +992,18 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
  * The token span `[start, end]` of a tenant predicate around the placeholder at `k`:
  * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a
  * possibly qualified name) is the target's column. A qualifier that names, or is the
- * alias of, a table other than the target's makes it no predicate for that table.
+ * alias of, a table other than the target's makes it no predicate for that table. With
+ * `exactQuoted` (read the Postgres way, where a quoted name is compared exactly), a quoted
+ * `col` counts only when spelled as the schema spells the column: `"AGENCY_ID"` is another
+ * column there, which another source in the query may hold.
  */
-function predicateSpan(tokens: readonly Token[], k: number, target: PredicateTarget): [number, number] | undefined {
+function predicateSpan(tokens: readonly Token[], k: number, target: PredicateTarget, exactQuoted: boolean): [number, number] | undefined {
   const at = (i: number) => tokens[i];
   const column = target.column.toLowerCase();
   const matches = (i: number) => {
     const t = at(i);
     if (t === undefined || !isIdentifier(t) || t.lower !== column) return false;
+    if (exactQuoted && t.kw === "" && t.text !== target.column) return false;
     const qualifier = at(i - 1)?.text === "." ? at(i - 2) : undefined;
     return qualifier === undefined || !namesOtherTable(tokens, qualifier.lower, target.table.toLowerCase());
   };

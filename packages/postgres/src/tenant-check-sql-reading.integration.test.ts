@@ -5,8 +5,8 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `$tag$` string, a table named after a keyword, and where a `--`
- * comment ends, nested block comments, a column list after a table's alias, and an `ON` that closes an
- * earlier outer join are all read as Postgres reads them.
+ * comment ends, nested block comments, a column list after a table's alias, an `ON` that closes an
+ * earlier outer join, and a quoted column name, compared exactly, are all read as Postgres reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -120,5 +120,15 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     expect(Number(rows[0]![0])).toBeGreaterThan(1);
     expect(findings("SELECT o.* FROM orders o LEFT JOIN lookup_states x JOIN service_types s ON s.id = x.id ON x.code = o.state AND o.agency_id = :tenant_agency_ids"))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("a quoted column name is compared exactly, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // "AGENCY_ID" is x's column, not people.client.agency_id, so clients of every agency come back.
+    const rows = (await runner('SELECT count(DISTINCT o.agency_id) AS c FROM people.client o CROSS JOIN (SELECT 3 AS "AGENCY_ID") x WHERE "AGENCY_ID" = 3')).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(1);
+    expect(findings('SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids'))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids')).toEqual([]);
   });
 });

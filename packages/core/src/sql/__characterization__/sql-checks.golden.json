@@ -11704,9 +11704,9 @@
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-143 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS \"AGENCY_ID\") x WHERE \"AGENCY_ID\" = :tenant_agency_ids": {
-  "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mysql": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mysql-escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-50 q50-61 c61-71 q71-82 c82-103 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
