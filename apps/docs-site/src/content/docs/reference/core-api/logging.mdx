@@ -1,0 +1,58 @@
+---
+title: "@askdb/core API reference: logging"
+description: "createAskDbLogger() and its sinks, the AskDbLogEvent names, the log levels, the minimum log contract, and how to pass your own logger to ask()."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede"><code>ask()</code> logs a structured event at each stage when you pass it a logger. Build one with <code>createAskDbLogger()</code>, or pass your own.</p>
+
+## `createAskDbLogger(options)`
+
+```ts
+import { createAskDbLogger } from "@askdb/core";
+
+const logger = createAskDbLogger({
+  correlationId: requestId,
+  level: "info",
+  logFile: "./logs/askdb.json",
+});
+```
+
+Returns an `AskDbLogger` that emits structured JSON for each pipeline stage. Pass it to `ask()` via `options.logger`.
+
+| Option | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `correlationId` | `string` | yes | — | Attached to every log line. Pass the request id. |
+| `level` | `AskDbLogLevel` | no | `"silent"` | Pino log level. `"silent"` suppresses all output. |
+| `stderr` | `boolean` | no | `true` | Write JSON logs to stderr. Set `false` to log only to `logFile` or stdout. A logger with no output left is silent. |
+| `logFile` | `string` | no | — | Append JSON logs to this path. Parent directories are created automatically. Loggers with the same path share one open file, which stays open for the life of the process: rotate it with `copytruncate`, or restart the process after a rotate. |
+| `logStdout` | `boolean` | no | `false` | Duplicate logs to stdout in addition to stderr/file. |
+
+**`AskDbLogLevel`:** `"fatal"` | `"error"` | `"warn"` | `"info"` | `"debug"` | `"trace"` | `"silent"`
+
+`SUPPORTED_ASKDB_LOG_LEVELS` holds the same seven names as a `ReadonlySet<string>`, to check a level read from config or a flag.
+
+The emitted log events are typed as `AskDbLogEvent` constants (e.g. `PipelineMode`, `PipelineGenerateStart`, `TenantScopeValidated`). Import `AskDbLogEvent` from `@askdb/core` to filter logs by event kind.
+
+To pass your own logger instead, implement `AskDbLogger`: `info(context, message)` and `error(context, message)`, plus optional `debug` and `warn`. `ask()` logs `TenantPolicyWarnings` (`askdb.tenant.policy_warnings`) through `warn`, or through `info` when your logger has no `warn`.
+
+## Log contract
+
+A run of `askdb ask` or one `askdb-http` request that logs emits at least the events in `ASKDB_LOG_REQUIRED_EVENTS`, so a test or a log pipeline can rely on them. `ask()` emits `askdb.pipeline.mode`, `askdb.pipeline.generate.start` and `askdb.pipeline.generate.complete`, and the CLI or the server adds `askdb.run.start` and `askdb.run.end`. Each line from `createAskDbLogger()` carries the fields in `ASKDB_LOG_REQUIRED_FIELDS`: `event` and `correlationId`.
+
+## Types
+
+| Type | What it is |
+| --- | --- |
+| `AskDbLogger` | A logger `ask()` accepts, as above. |
+| `CreateAskDbLoggerOptions` | `createAskDbLogger()`'s options, as in the table above. |
+| `AskDbLogLevel` | A log level, as above. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>Audit logging with <code>createAskDbLogger()</code>, next to the read-only role.</span></a>
+  <a href="/reference/core-api/ask/"><strong>ask()</strong><span>Pass the logger as <code>options.logger</code>.</span></a>
+  <a href="/reference/cli/"><strong>CLI reference</strong><span>The CLI's <code>--log-level</code> and log file flags.</span></a>
+</div>

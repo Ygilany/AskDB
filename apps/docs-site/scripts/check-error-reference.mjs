@@ -1,21 +1,33 @@
 // Fails when an error class or code in @askdb/core's or @askdb/client's errors.ts is missing
-// from its API reference page, so a new class or code can't ship undocumented (#287), and when
-// the page's Errors tables list one that errors.ts no longer declares (#682).
+// from its API reference pages, so a new class or code can't ship undocumented (#287), and when
+// the Errors page's tables list one that errors.ts no longer declares (#682).
 //
 // It reads each errors.ts with a small parser, not the TypeScript compiler, and fails closed:
 // an export it can't classify stops the check instead of being skipped. A name counts as
-// documented when it appears anywhere on the page as `` `name` `` or `"name"`.
-import { realpathSync } from "node:fs";
+// documented when it appears anywhere on the package's pages as `` `name` `` or `"name"`.
+import { readdirSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = new URL("../../../", import.meta.url);
 const docsRoot = new URL("../src/content/docs/reference/", import.meta.url);
+const corePages = new URL("core-api/", docsRoot);
 
-/** Each errors.ts and the reference page that documents it. */
+/**
+ * Each errors.ts, the page whose `## Errors` section lists its classes and codes, and every page
+ * of that package's reference, where a code counts as documented.
+ */
 const ERROR_SOURCES = [
-  { sourceUrl: new URL("packages/core/src/errors.ts", repoRoot), pageUrl: new URL("core-api.mdx", docsRoot) },
-  { sourceUrl: new URL("packages/client/src/errors.ts", repoRoot), pageUrl: new URL("client-api.mdx", docsRoot) },
+  {
+    sourceUrl: new URL("packages/core/src/errors.ts", repoRoot),
+    pageUrl: new URL("errors.mdx", corePages),
+    docsUrls: readdirSync(corePages).filter((name) => name.endsWith(".mdx")).map((name) => new URL(name, corePages)),
+  },
+  {
+    sourceUrl: new URL("packages/client/src/errors.ts", repoRoot),
+    pageUrl: new URL("client-api.mdx", docsRoot),
+    docsUrls: [new URL("client-api.mdx", docsRoot)],
+  },
 ];
 
 /**
@@ -134,14 +146,15 @@ export function staleOnPage(sourceText, pageText) {
 
 async function main() {
   let failed = false;
-  for (const { sourceUrl, pageUrl } of ERROR_SOURCES) {
+  for (const { sourceUrl, pageUrl, docsUrls } of ERROR_SOURCES) {
     const [sourceText, pageText] = [await readFile(sourceUrl, "utf8"), await readFile(pageUrl, "utf8")];
+    const docsText = (await Promise.all(docsUrls.map((url) => readFile(url, "utf8")))).join("\n");
     const page = fileURLToPath(pageUrl);
     const source = fileURLToPath(sourceUrl);
-    const missing = missingFromPage(sourceText, pageText);
+    const missing = missingFromPage(sourceText, docsText);
     if (missing.length > 0) {
       failed = true;
-      console.error(`${page} doesn't document these from ${source}; add each one to its Errors section:`);
+      console.error(`${page} doesn't document these from ${source}, and no other page of its reference does; add each one to its Errors section:`);
       for (const name of missing) console.error(`- ${name}`);
     }
     const stale = staleOnPage(sourceText, pageText);

@@ -28,7 +28,7 @@
  * Not covered elsewhere: core's validator unit tests run workspace source against strings
  * and never touch an engine, so they can't show a statement does damage, or that the packed
  * build rejects it; `lab-ask` checks only that one DELETE is reported as rejected.
- * No production seam: `ask()` with `deps.generateText` (documented in `reference/core-api.mdx`),
+ * No production seam: `ask()` with `deps.generateText` (documented in `reference/core-api/ask.mdx`),
  * `SqlValidationError` and its `rule` (documented error class). The scratch copies are lab
  * code and are only ever written by the owner, never through AskDB.
  *
@@ -632,7 +632,7 @@ const CATALOG_CASES: { what: string; dialects: readonly SupportedDialect[]; sql:
 ];
 const CATALOG_ISSUE = 318;
 
-/** A quoted identifier, in each engine's own quoting (the dialects' prompt briefs, `reference/core-api.mdx`). */
+/** A quoted identifier, in each engine's own quoting (the dialects' prompt briefs, `reference/core-api/dialects.mdx`). */
 function quoted(dialect: SupportedDialect, name: string): string {
   if (dialect === "mysql" || dialect === "mariadb") return `\`${name}\``;
   if (dialect === "sqlserver") return `[${name}]`;

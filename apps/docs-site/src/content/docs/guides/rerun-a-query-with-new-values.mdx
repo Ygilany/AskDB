@@ -43,7 +43,7 @@ Key each value by a parameter's `name`. Pass one for each entry in `preparedQuer
 - **Tenant IDs come only from `tenantScope`.** A value keyed `tenant_*` throws. A query first generated for one tenant gets the IDs of the scope you pass now, so you can rebind it for another caller. Authorizing that scope stays your job, as for `ask()`.
 - **A tenant check that fails throws**, also under a policy whose `enforcement` is `warn`, unless you pass `acceptWarnings: ["tenant"]`.
 
-If you call `@askdb/core` directly, `bindPreparedQuery(preparedQuery, values, { schema, dialect, tenantScope })` does the same. If `ask()` ran with your own `DialectSpec`, pass the same spec as `dialect` to either function. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options) and [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails) for every option.
+If you call `@askdb/core` directly, `bindPreparedQuery(preparedQuery, values, { schema, dialect, tenantScope })` does the same. If `ask()` ran with your own `DialectSpec`, pass the same spec as `dialect` to either function. See [`client.bind()`](/reference/client-api/#clientbindprepared-values-options) and [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails) for every option.
 
 ## 3. Run the rebound SQL
 
@@ -66,7 +66,7 @@ const { rows, truncated } = await runCapped(rebound.sql, rebound.tenantParams);
 | `TenantScopeError` `MISSING_SCOPE` | Pass the caller's `tenantScope`. |
 | `TenantGuardrailError` | The template fails the tenant check under this scope or the current policy. Under `enforcement: warn`, pass `acceptWarnings: ["tenant"]` if you accept the warning. Otherwise call `ask()` again for this caller. |
 
-[`QueryParameterError` reasons](/reference/core-api/#queryparametererror-reasons) lists the rest.
+[`QueryParameterError` reasons](/reference/core-api/errors/#queryparametererror-reasons) lists the rest.
 
 ## Read next
 
