@@ -15,7 +15,7 @@
  * seam are stated above its `describe`. None needs a production seam: the scope, the
  * enforcement mode and `resolveTenantDescendants` are documented `ask()` inputs
  * (`reference/core-api.mdx`), the policy is a documented artifact file, and the errors are
- * documented exports (`getting-started/troubleshooting.mdx`, "Tenant scope").
+ * documented exports (`guides/troubleshooting.mdx`, "Tenant scope").
  *
  * The scenarios that assert what the docs promise but the product doesn't do are `it.fails`
  * with their issue. Each is written so that the assertion that fails is the leak itself:
@@ -338,7 +338,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   /**
    * Contract: strict enforcement rejects a reply with no tenant filter on a scoped table
    * with `TenantGuardrailError` (`docs/contracts/tenant-policy.md`, "Enforcement modes";
-   * `getting-started/troubleshooting.mdx`: "AskDB refuses to return SQL that could leak
+   * `guides/troubleshooting.mdx`: "AskDB refuses to return SQL that could leak
    * cross-tenant data"). The same SQL run raw returns other agencies' programs, which is
    * what makes the rejection matter.
    * Catches: a guardrail that misses an unfiltered scoped table, or a strict mode that only
@@ -469,7 +469,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 /**
  * Contract: a tenant policy with no `tenantScope` fails closed before the prompt:
  * `TenantScopeError` with reason `MISSING_SCOPE` (`docs/contracts/tenant-policy.md`,
- * "Enforcement rules"; `getting-started/troubleshooting.mdx`), and the model is never called.
+ * "Enforcement rules"; `guides/troubleshooting.mdx`), and the model is never called.
  * Catches: a missing scope treated as "no tenancy", or checked only after the model call.
  * Not covered elsewhere: the HTTP suite sees this only through `POST /ask`'s `500` (#277),
  * not the error and its reason. The check runs before any SQL exists, so it's
