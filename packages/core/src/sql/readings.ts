@@ -15,7 +15,7 @@
  * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends; the Postgres and SQL Server views with block comments nested and not |
  * | placeholders ({@link placeholderReading}) | the engine's | the generic profile |
  * | names outside printable ASCII, tenant and sensitive ({@link unmatchedNonAsciiName}) | `sqlserver`: the engine's; any other engine: none | as for tenant statements |
- * | `'…'` read as a name, tenant and sensitive ({@link stringsSqliteReadsAsNames}) | `sqlite`: its readings; any other engine: none | the generic and standard readings, and SQLite's |
+ * | `'…'` read as a name or an alias, tenant and sensitive ({@link stringsSqliteReadsAsNames}) | `sqlite`: its readings; any other engine: none | the generic and standard readings, and SQLite's |
  * | Postgres-only forms (`postgresReadingProfiles` in `lexer.ts`) | the engine's, when it is on the Postgres lexer | Postgres's, with backslash escapes too when set |
  *
  * Every MySQL reading is taken twice by the tenant check, with `/*! … *\/` bodies as code and as
@@ -125,10 +125,13 @@ const NOT_A_FROM_LIST = new Set(["select", "where", "group", "having", "order", 
  * The indices in `tokens` of the `'…'` strings that SQLite reads as names. SQLite takes a
  * single-quoted literal where only a name may stand as that name, so `FROM 'orders'` reads the
  * table `orders`. A string counts right after `FROM`, `JOIN` or `IN` (`IN 'orders'` reads a table),
- * after a `,` in a `FROM` list, or beside a `.` (`main.'orders'`, `'main'.orders`). The tenant and
- * sensitive checks read such a string as a name under a reading that {@link mayBeSqlite may be SQLite's}.
+ * after a `,` in a `FROM` list, or beside a `.` (`main.'orders'`, `'main'.orders`). With
+ * `withAliases`, it also counts right after a table or CTE reference, or after `AS` following one,
+ * where it is that read's alias (`FROM orders 'o'`). The tenant and sensitive checks read such a
+ * string as a quoted name under a reading that {@link mayBeSqlite may be SQLite's}; only the tenant
+ * check reads aliases, since the sensitive check already fails closed on a qualifier it can't bind.
  */
-export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[]): ReadonlySet<number> {
+export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[], withAliases: boolean): ReadonlySet<number> {
   const code = [...tokens.keys()].filter((i) => tokens[i]!.kind !== "comment");
   const at = (j: number) => (j >= 0 && j < code.length ? tokens[code[j]!] : undefined);
   const is = (t: SqlToken | undefined, kind: "word" | "punct", text: string) => t?.kind === kind && t.lower === text;
@@ -149,12 +152,20 @@ export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[]): Readonly
     return false;
   };
   const names = new Set<number>();
+  /** Positions in `code` of the names that stand in a table's place: `FROM orders`, `JOIN main.orders`. */
+  const sources = new Set<number>();
   for (let j = 0; j < code.length; j++) {
     const t = at(j)!;
-    if (t.kind !== "string" || !t.text.startsWith("'")) continue;
     const prev = at(j - 1);
+    const plainString = t.kind === "string" && t.text.startsWith("'");
+    const startsSource =
+      is(prev, "word", "from") || is(prev, "word", "join") ||
+      (is(prev, "punct", ",") && inFromList(j - 1)) || (is(prev, "punct", ".") && sources.has(j - 2));
+    if (startsSource && (t.kind === "word" || t.kind === "quoted_identifier" || plainString)) sources.add(j);
+    if (!plainString) continue;
+    const alias = withAliases && (sources.has(j - 1) || (is(prev, "word", "as") && sources.has(j - 2)));
     const named =
-      is(prev, "punct", ".") || is(at(j + 1), "punct", ".") ||
+      alias || is(prev, "punct", ".") || is(at(j + 1), "punct", ".") ||
       is(prev, "word", "from") || is(prev, "word", "join") || is(prev, "word", "in") ||
       (is(prev, "punct", ",") && inFromList(j - 1));
     if (named) names.add(code[j]!);

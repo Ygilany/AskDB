@@ -4,8 +4,9 @@
  *
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
- * predicate. A `$` inside a name, a `--` comment that ends only at a line feed, and a `'…'` in a
- * table's place, which SQLite reads as the table's name, are read as SQLite reads them.
+ * predicate. A `$` inside a name, a `--` comment that ends only at a line feed, a `'…'` in a
+ * table's place, which SQLite reads as the table's name, and a `'…'` right after a table, which it
+ * reads as the table's alias, are read as SQLite reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real engine.
  *
@@ -64,5 +65,16 @@ fixtureSuite("the tenant check reads SQL the way SQLite does (live SQLite)", () 
     ]) {
       expect(findings(sql), sql).toEqual(["MISSING_TENANT_PREDICATE"]);
     }
+  });
+
+  it("a single-quoted string right after a table is its alias, as the engine reads it", async () => {
+    const runner = createSqliteCatalogQueryRunner(SQLITE_FILE);
+    const count = async (sql: string) => Number((await runner(sql)).rows[0]![0]);
+    const clients = await count("SELECT count(*) AS c FROM client");
+    expect(await count("SELECT count(*) AS c FROM client WHERE agency_id = 1")).toBeLessThan(clients);
+    // `a` is agency's alias, so `a.agency_id = 1` filters agency, and every client comes back.
+    expect(await count("SELECT count(*) AS c FROM agency 'a', client WHERE a.agency_id = 1")).toBe(clients);
+    expect(findings("SELECT orders.* FROM sub_agencies 'o', orders WHERE o.agency_id = :tenant_agency_ids")).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings("SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids")).toEqual([]);
   });
 });

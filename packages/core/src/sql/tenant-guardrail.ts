@@ -641,8 +641,9 @@ type CodeViews = ReadonlyArray<{
 function codeViews(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): CodeViews {
   return tenantCodeReadings(dialect).map((reading) => {
     const tokens = read.tokens(reading.profile);
-    // A reading that may be SQLite's reads a '…' in a table's place as the table's name.
-    const names = mayBeSqlite(reading.profile) ? stringsSqliteReadsAsNames(tokens) : new Set<number>();
+    // A reading that may be SQLite's reads a '…' in a table's place as the table's name, and one right
+    // after a table or CTE reference as its alias.
+    const names = mayBeSqlite(reading.profile) ? stringsSqliteReadsAsNames(tokens, true) : new Set<number>();
     const quoted = new Uint8Array(read.sql.length);
     tokens.forEach((token, i) => {
       if (token.kind === "quoted_identifier" || names.has(i)) quoted.fill(1, token.start, token.end);

@@ -445,7 +445,7 @@ function scanTokens(
   sqlite: boolean,
 ): ScanOutcome {
   // A reading that may be SQLite's reads a '…' in a table's place as the table's name.
-  const tokens = toToks(lexed, sqlite ? stringsSqliteReadsAsNames(lexed) : new Set<number>());
+  const tokens = toToks(lexed, sqlite ? stringsSqliteReadsAsNames(lexed, false) : new Set<number>());
   const isWord = (t: Tok | undefined): boolean => t?.kind === "word";
   const isPunct = (t: Tok | undefined, v: string): boolean => t?.kind === "punct" && t.value === v;
   const isKeywordTok = (t: Tok | undefined, v: string): boolean =>
