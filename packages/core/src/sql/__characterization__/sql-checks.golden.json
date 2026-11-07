@@ -11795,11 +11795,11 @@
   "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
   "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph="
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-14 q14-22 | ph= | tph="
  },
  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM 'orders'": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
@@ -11809,11 +11809,11 @@
   "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-82 q82-90 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT * FROM lookup_states, main.'orders'": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
@@ -11823,11 +11823,11 @@
   "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
-  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
+  "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
   "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph="
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-34 q34-42 | ph= | tph="
  },
  "SELECT * FROM 'users'": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
@@ -11837,11 +11837,11 @@
   "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
   "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
   "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
-  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:unqualified] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
   "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-14 q14-21 | ph= | tph="
+  "custom": "ro=ok | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:unqualified] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:unqualified] | pg=- | spans=c0-14 q14-21 | ph= | tph=",
+  "none": "tg=ok | tgk=ok | sens=fail[users.secret_recovery_token:unqualified] | pg=- | spans=c0-14 q14-21 | ph= | tph="
  },
  "SELECT 'orders' AS label, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids": {
   "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-7 q7-15 c15-82 | ph=tenant_agency_ids | tph=:tenant_agency_ids",

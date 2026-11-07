@@ -15,6 +15,7 @@
  * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends |
  * | placeholders ({@link placeholderReading}) | the engine's | the generic profile |
  * | names outside printable ASCII, tenant and sensitive ({@link unmatchedNonAsciiName}) | `sqlserver`: the engine's; any other engine: none | as for tenant statements |
+ * | `'…'` read as a name, tenant and sensitive ({@link stringsSqliteReadsAsNames}) | `sqlite`: its readings; any other engine: none | the generic and standard readings, and SQLite's |
  * | Postgres-only forms (`postgresReadingProfiles` in `lexer.ts`) | the engine's, when it is on the Postgres lexer | Postgres's, with backslash escapes too when set |
  *
  * Every MySQL reading is taken twice by the tenant check, with `/*! … *\/` bodies as code and as
@@ -108,6 +109,55 @@ export function unmatchedNonAsciiName(
     }
   }
   return undefined;
+}
+
+/** Whether `profile` may be SQLite's reading: SQLite's own, or the generic and standard ones a dialect that may be SQLite gets. */
+export function mayBeSqlite(profile: SqlLexerProfile): boolean {
+  return profile.id === "sqlite" || profile.id === "generic";
+}
+
+/** Words that start a clause other than `FROM`, so a `,` after one is in no `FROM` list. */
+const NOT_A_FROM_LIST = new Set(["select", "where", "group", "having", "order", "limit", "offset", "window", "values", "returning", "union", "intersect", "except", "set", "with"]);
+
+/**
+ * The indices in `tokens` of the `'…'` strings that SQLite reads as names. SQLite takes a
+ * single-quoted literal where only a name may stand as that name, so `FROM 'orders'` reads the
+ * table `orders`. A string counts right after `FROM`, `JOIN` or `IN` (`IN 'orders'` reads a table),
+ * after a `,` in a `FROM` list, or beside a `.` (`main.'orders'`, `'main'.orders`). The tenant and
+ * sensitive checks read such a string as a name under a reading that {@link mayBeSqlite may be SQLite's}.
+ */
+export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[]): ReadonlySet<number> {
+  const code = [...tokens.keys()].filter((i) => tokens[i]!.kind !== "comment");
+  const at = (j: number) => (j >= 0 && j < code.length ? tokens[code[j]!] : undefined);
+  const is = (t: SqlToken | undefined, kind: "word" | "punct", text: string) => t?.kind === kind && t.lower === text;
+  const inFromList = (comma: number) => {
+    let depth = 0;
+    for (let j = comma - 1; j >= 0; j--) {
+      const t = at(j)!;
+      if (is(t, "punct", ")")) depth++;
+      else if (is(t, "punct", "(")) {
+        if (depth === 0) return false;
+        depth--;
+      } else if (depth === 0 && is(t, "punct", ";")) return false;
+      else if (depth === 0 && t.kind === "word") {
+        if (t.lower === "from") return true;
+        if (NOT_A_FROM_LIST.has(t.lower)) return false;
+      }
+    }
+    return false;
+  };
+  const names = new Set<number>();
+  for (let j = 0; j < code.length; j++) {
+    const t = at(j)!;
+    if (t.kind !== "string" || !t.text.startsWith("'")) continue;
+    const prev = at(j - 1);
+    const named =
+      is(prev, "punct", ".") || is(at(j + 1), "punct", ".") ||
+      is(prev, "word", "from") || is(prev, "word", "join") || is(prev, "word", "in") ||
+      (is(prev, "punct", ",") && inFromList(j - 1));
+    if (named) names.add(code[j]!);
+  }
+  return names;
 }
 
 /** A profile that reads `/*!NNNNN … *\/` bodies as code, also read with them as comments. */

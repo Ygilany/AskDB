@@ -8,7 +8,7 @@ import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { DialectSpec } from "./dialect-spec.js";
 import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, hasUnterminatedToken, type SqlToken } from "./lexer.js";
-import { isKnownEngine, readSql, sensitiveReadings, unmatchedNonAsciiName } from "./readings.js";
+import { isKnownEngine, mayBeSqlite, readSql, sensitiveReadings, stringsSqliteReadsAsNames, unmatchedNonAsciiName } from "./readings.js";
 
 export type SensitiveGuardrailMode = "warn" | "strict";
 
@@ -197,11 +197,17 @@ type Tok = { kind: TokKind; value: string; lower: string; quoted: boolean };
 
 /**
  * Map lexer tokens onto the scanner's simpler vocabulary. Comments are dropped (MySQL
- * `/*! … *\/` bodies are already lexed as code).
+ * `/*! … *\/` bodies are already lexed as code). A `'…'` at an index in `names` is a quoted name,
+ * as SQLite reads `FROM 'users'`.
  */
-function toToks(tokens: readonly SqlToken[]): Tok[] {
+function toToks(tokens: readonly SqlToken[], names: ReadonlySet<number>): Tok[] {
   const out: Tok[] = [];
-  for (const t of tokens) {
+  for (const [index, t] of tokens.entries()) {
+    if (names.has(index)) {
+      const inner = t.text.slice(1, t.unterminated ? undefined : -1).replaceAll("''", "'");
+      out.push({ kind: "word", value: inner, lower: inner.toLowerCase(), quoted: true });
+      continue;
+    }
     switch (t.kind) {
       case "comment":
         break;
@@ -381,11 +387,11 @@ function scanSql(
   const read = readSql(sql);
   const readings = sensitiveReadings(dialect);
   const modifiers = dialect && isKnownEngine(dialect) ? selectModifiersFor(dialect) : SELECT_MODIFIERS.any;
-  const primary = scanTokens(read.tokens(readings.primary), index, modifiers);
+  const primary = scanTokens(read.tokens(readings.primary), index, modifiers, mayBeSqlite(readings.primary));
   for (const p of readings.union) {
     const tokens = read.tokens(p);
     if (hasUnterminatedToken(tokens)) continue;
-    for (const [key, ref] of scanTokens(tokens, index, modifiers).found) {
+    for (const [key, ref] of scanTokens(tokens, index, modifiers, mayBeSqlite(p)).found) {
       const existing = primary.found.get(key);
       if (!existing) primary.found.set(key, ref);
       else if (ref.matchKind === "qualified") existing.matchKind = "qualified";
@@ -436,8 +442,10 @@ function scanTokens(
   lexed: readonly SqlToken[],
   index: SchemaIndex,
   modifiers: SelectModifiers,
+  sqlite: boolean,
 ): ScanOutcome {
-  const tokens = toToks(lexed);
+  // A reading that may be SQLite's reads a '…' in a table's place as the table's name.
+  const tokens = toToks(lexed, sqlite ? stringsSqliteReadsAsNames(lexed) : new Set<number>());
   const isWord = (t: Tok | undefined): boolean => t?.kind === "word";
   const isPunct = (t: Tok | undefined, v: string): boolean => t?.kind === "punct" && t.value === v;
   const isKeywordTok = (t: Tok | undefined, v: string): boolean =>

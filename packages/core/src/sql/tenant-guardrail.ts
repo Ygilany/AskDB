@@ -10,7 +10,9 @@ import { SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
 import {
+  mayBeSqlite,
   readSql,
+  stringsSqliteReadsAsNames,
   tenantCodeReadings,
   tenantStatementReadings,
   unmatchedNonAsciiName,
@@ -615,13 +617,15 @@ function extractColumnName(columnId: string): string {
 /**
  * One same-length view of the statement per reading from `tenantCodeReadings` (see
  * {@link codeView}), with the statement itself (`source`), where string literals are still
- * readable at the same offsets, and the shared lexer's tokens under that reading.
+ * readable at the same offsets, the shared lexer's tokens under that reading, and which offsets
+ * lie inside a name the view reads as quoted (`quoted`, 1 for each).
  */
 type CodeViews = ReadonlyArray<{
   readonly text: string;
   readonly source: string;
   readonly reading: CodeViewReading;
   readonly tokens: readonly SqlToken[];
+  readonly quoted: Uint8Array;
 }>;
 
 /**
@@ -637,7 +641,13 @@ type CodeViews = ReadonlyArray<{
 function codeViews(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): CodeViews {
   return tenantCodeReadings(dialect).map((reading) => {
     const tokens = read.tokens(reading.profile);
-    return { text: codeView(read.sql, tokens), source: read.sql, reading, tokens };
+    // A reading that may be SQLite's reads a '…' in a table's place as the table's name.
+    const names = mayBeSqlite(reading.profile) ? stringsSqliteReadsAsNames(tokens) : new Set<number>();
+    const quoted = new Uint8Array(read.sql.length);
+    tokens.forEach((token, i) => {
+      if (token.kind === "quoted_identifier" || names.has(i)) quoted.fill(1, token.start, token.end);
+    });
+    return { text: codeView(read.sql, tokens, names), source: read.sql, reading, tokens, quoted };
   });
 }
 
@@ -657,12 +667,15 @@ const QUOTE_MARK = "\u0001";
  *
  * Quoted identifiers keep their contents, and each of their delimiters becomes
  * {@link QUOTE_MARK}, a doubled one inside them too: `"agency_id"` *is* the identifier
- * `agency_id` on Postgres, and blanking it would hide `FROM "orders"` from the table check.
+ * `agency_id` on Postgres, and blanking it would hide `FROM "orders"` from the table check. The
+ * strings at the indices in `names` are read the same way, as SQLite reads them (`FROM 'orders'`).
  */
-function codeView(sql: string, tokens: readonly SqlToken[]): string {
+function codeView(sql: string, tokens: readonly SqlToken[], names: ReadonlySet<number>): string {
   const out = sql.split("");
-  for (const token of tokens) {
-    if (token.kind === "string" || token.kind === "comment") {
+  for (const [index, token] of tokens.entries()) {
+    if (names.has(index)) {
+      for (let k = token.start; k < token.end; k++) if (sql[k] === "'") out[k] = QUOTE_MARK;
+    } else if (token.kind === "string" || token.kind === "comment") {
       // A string's prefix letter (`E'…'`, `N'…'`) stays code, as the check has always read it.
       const from = token.kind === "string" && /^[A-Za-z]/.test(token.text) ? token.start + 1 : token.start;
       for (let k = from; k < token.end; k++) if (out[k] !== "\n") out[k] = " ";
@@ -729,14 +742,13 @@ const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
 
 /**
  * Split a code view into tokens with their nesting depth. Strings and comments are already blanked.
- * A token is quoted when it lies inside a quoted identifier as the reading's lexer spans it, so a
- * {@link QUOTE_MARK} character written inside a quoted name changes nothing.
+ * A token is quoted when it lies inside a name the view reads as quoted, as the reading's lexer
+ * spans it, so a {@link QUOTE_MARK} character written inside a quoted name changes nothing.
  */
 function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
   const split = lexerWordEnds(view);
-  const quoted = new Uint8Array(view.text.length);
-  for (const token of view.tokens) if (token.kind === "quoted_identifier") quoted.fill(1, token.start, token.end);
+  const quoted = view.quoted;
   let depth = 0;
   for (const m of view.text.matchAll(TOKEN)) {
     if (m[0] === QUOTE_MARK) continue;
