@@ -850,6 +850,8 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
   const name = table.toLowerCase();
   return views.every((view) => {
     const tokens = tokenize(view);
+    // Read the Postgres way, a column list after the table's alias renames its columns.
+    if (view.reading.profile.id === "postgres" && renamesColumns(tokens, name)) return false;
     // Every spelling of the name counts as the table, quoted or not, except the words of `ORDER BY`.
     const mentions = (from: number, to: number) => {
       for (let i = from; i < to; i++) if (tokens[i]!.lower === name && !isOrderOrGroupBy(tokens, i)) return true;
@@ -869,6 +871,44 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
         return false;
       });
   });
+}
+
+/**
+ * Words Postgres never takes as a bare table alias: its reserved keywords, and those it reserves
+ * except as a function or type name. So in `orders WHERE (`, `orders ON (` or `orders USING (` the
+ * word after the table is no alias, and the `(` no column list.
+ */
+const NOT_A_TABLE_ALIAS: ReadonlySet<string> = new Set([
+  "all", "analyse", "analyze", "and", "any", "array", "as", "asc", "asymmetric", "authorization", "binary", "both",
+  "case", "cast", "check", "collate", "collation", "column", "concurrently", "constraint", "create", "cross",
+  "current_catalog", "current_date", "current_role", "current_schema", "current_time", "current_timestamp",
+  "current_user", "default", "deferrable", "desc", "distinct", "do", "else", "end", "except", "false", "fetch", "for",
+  "foreign", "freeze", "from", "full", "grant", "group", "having", "ilike", "in", "initially", "inner", "intersect",
+  "into", "is", "isnull", "join", "lateral", "leading", "left", "like", "limit", "localtime", "localtimestamp",
+  "natural", "not", "notnull", "null", "offset", "on", "only", "or", "order", "outer", "overlaps", "placing",
+  "primary", "references", "returning", "right", "select", "session_user", "similar", "some", "symmetric",
+  "system_user", "table", "tablesample", "then", "to", "trailing", "true", "union", "unique", "user", "using",
+  "variadic", "verbose", "when", "where", "window", "with",
+]);
+
+/**
+ * Whether a read of the table `name` is followed by an alias and a column list (`orders t (a, b)`,
+ * `orders AS t (a, b)`, `orders * t (a, b)`), at any depth. Postgres and CockroachDB read the list as
+ * new names for the table's first columns, so a predicate on `t.agency_id` filters whatever column
+ * comes first, and the real one is renamed out of the way: the read can't be checked.
+ */
+function renamesColumns(tokens: readonly Token[], name: string): boolean {
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i]!.lower !== name || tokens[i + 1]?.text === ".") continue;
+    let j = i + 1;
+    if (tokens[j]?.text === "*") j++;
+    const as = tokens[j]?.kw === "as";
+    if (as) j++;
+    const alias = tokens[j];
+    if (alias === undefined || !isIdentifier(alias) || tokens[j + 1]?.text !== "(") continue;
+    if (as || alias.kw === "" || !NOT_A_TABLE_ALIAS.has(alias.kw)) return true;
+  }
+  return false;
 }
 
 /**

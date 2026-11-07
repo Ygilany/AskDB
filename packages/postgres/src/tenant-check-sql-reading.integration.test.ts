@@ -5,7 +5,8 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `$tag$` string, a table named after a keyword, and where a `--`
- * comment ends, and nested block comments, are all read as Postgres reads them.
+ * comment ends, nested block comments, and a column list after a table's alias are all read as
+ * Postgres reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -94,5 +95,19 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     expect(Number(rows[0]![0])).toBe(2);
     expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */"))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("a column list after a table's alias renames the table's first columns, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // people.client's first column is client_id, so `t.agency_id = 3` keeps client 3, whose agency isn't 3.
+    const rows = (await runner("SELECT count(*) AS c FROM people.client t (agency_id, real_agency) WHERE t.agency_id = 3 AND t.real_agency <> 3")).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(0);
+    for (const sql of [
+      "SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders AS t (agency_id, x) WHERE agency_id = :tenant_agency_ids",
+      "SELECT * FROM (SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids) d",
+    ]) {
+      expect(findings(sql), sql).toEqual(["MISSING_TENANT_PREDICATE"]);
+    }
   });
 });
