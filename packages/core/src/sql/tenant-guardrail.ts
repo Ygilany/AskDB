@@ -8,9 +8,9 @@ import {
 } from "../schema/v2/tenant-policy.js";
 import { SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
-import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
+import { SQLSERVER_LEXER, findPostgresOnlyForms, type SqlToken } from "./lexer.js";
 import { readSql, tenantCodeReadings, tenantStatementReadings, type CodeViewReading, type SqlRead } from "./readings.js";
-import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
+import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION, findAmbiguousTsqlText } from "./tsql-batch.js";
 import { denylistFor } from "./validate.js";
 
 export type TenantGuardrailResult = {
@@ -113,6 +113,19 @@ export function tenantRuleWarnings(
       warn("NOT_SELECT_OR_WITH", "",
         `A statement starts with ${keyword}, not SELECT or WITH. The tenant check can only read a query's ` +
         "tenant predicates, so under a tenant policy it refuses any other statement."),
+    );
+  }
+
+  // Under SQL Server, the check reads token ends through the lexer's model of SQL Server's, which
+  // can't be checked against SQL Server's own (ADR 0012, #327). So code SQL Server may split
+  // differently (a character outside plain code, a number written against a word) is refused, as
+  // the read-only check refuses it; through `ask()` that check already has (#623 review).
+  const ambiguous = dialect?.id === "sqlserver" ? ambiguousTsqlText(read) : undefined;
+  if (ambiguous !== undefined) {
+    warnings.push(
+      warn("NOT_SELECT_OR_WITH", "",
+        `SQL Server may split code at ${ambiguous}, so the tenant check can't tell where a statement ends or which words ` +
+        "are keywords. Separate keywords, names and numbers with ASCII spaces, and keep other characters inside string literals or [bracketed] names."),
     );
   }
 
@@ -436,6 +449,17 @@ function nonQueryKeyword(read: SqlRead, dialect: ValidateTenantGuardrailsOptions
     }
   }
   return undefined;
+}
+
+/**
+ * The first code SQL Server may split into tokens differently from the lexer
+ * (`findAmbiguousTsqlText`), outside strings, quoted names and comments, described for a message.
+ */
+function ambiguousTsqlText(read: SqlRead): string | undefined {
+  const tokens = read.tokens(SQLSERVER_LEXER);
+  const code = read.sql.split("");
+  for (const t of tokens) if (t.kind === "comment") for (let k = t.start; k < t.end; k++) code[k] = " ";
+  return findAmbiguousTsqlText(code.join(""), tokens.filter((t) => t.kind !== "comment"));
 }
 
 /**

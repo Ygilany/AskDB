@@ -5,7 +5,8 @@
  * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
  * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
- * custom engines and no dialect, where SQL Server ends a name or number).
+ * custom engines and no dialect, where SQL Server ends a name or number), and the #623 review's plain-code
+ * rule (54 tenant verdicts under `sqlserver`, all on SQL the read-only check already refuses there).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it

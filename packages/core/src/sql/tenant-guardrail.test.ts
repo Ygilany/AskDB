@@ -854,7 +854,8 @@ describe("validateTenantGuardrails — `$` in names, and dollar quotes only wher
     ["a custom engine", customEngine()],
     ["no dialect", undefined],
   ])("%s: $a$ … $a$ is code where the engine may have no dollar quotes", (_label, dialect) => {
-    expect(findings(dollarName, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    // Under sqlserver the bare `$` is also code SQL Server may split differently, refused as such.
+    expect(findings(dollarName, dialect)).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
   });
 
   it("postgres and cockroachdb: $a$ … $a$ is still a string", () => {
@@ -1024,7 +1025,8 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
   ];
 
   it.each(gluedOr)("sqlserver: an OR after %s is read", (_label, tail) => {
-    expect(findings(scoped + tail, SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    // Refused twice under sqlserver: the OR is read, and the text is code SQL Server may split differently.
+    expect(findings(scoped + tail, SQLSERVER_DIALECT)).toEqual(["NOT_SELECT_OR_WITH:", "MISSING_TENANT_PREDICATE:table:public.orders"]);
   });
 
   it.each(gluedOr)("a custom engine or no dialect, which may be SQL Server: an OR after %s is read", (_label, tail) => {
@@ -1043,13 +1045,28 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
     }
   });
 
-  it("a scoped query that uses these forms without an OR still passes", () => {
+  it("a scoped query that uses these forms without an OR passes, unless SQL Server may split its text differently", () => {
+    expect(findings(`${scoped}flags = 0x AND rate = 1E`, SQLSERVER_DIALECT)).toEqual([]);
+    // Unicode whitespace between words is code the plain-code rule refuses under sqlserver, as the read-only check does.
     for (const sql of [
-      `${scoped}flags = 0x AND rate = 1E`,
       "SELECT *\u00a0FROM orders\u00a0WHERE agency_id\u00a0=\u00a0:tenant_agency_ids",
       "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\u200bAND\u0085status = 'open'",
     ]) {
-      expect(findings(sql, SQLSERVER_DIALECT), sql).toEqual([]);
+      expect(findings(sql, SQLSERVER_DIALECT), sql).toEqual(["NOT_SELECT_OR_WITH:"]);
     }
+  });
+
+  it("sqlserver only: code SQL Server may split differently is refused, the way the read-only check refuses it", () => {
+    for (const sql of [
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND id = 1ESELECT",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total > $ 5",
+    ]) {
+      expect(findings(sql, SQLSERVER_DIALECT), sql).toContain("NOT_SELECT_OR_WITH:");
+      expect(findings(sql, customEngine()), sql).not.toContain("NOT_SELECT_OR_WITH:");
+      expect(findings(sql), sql).not.toContain("NOT_SELECT_OR_WITH:");
+    }
+    // Text inside comments, strings and bracketed names is not code, and unquoted Unicode letters are plain.
+    expect(findings("SELECT [Größe\u00a0x] FROM orders WHERE agency_id = :tenant_agency_ids AND note = 'café\u00a0' -- é\u00a0", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT Größe FROM orders WHERE agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
   });
 });
