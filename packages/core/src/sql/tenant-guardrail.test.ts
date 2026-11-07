@@ -1175,6 +1175,15 @@ describe("validateTenantGuardrails — `]]` in a bracketed name, and nested bloc
     // MySQL ends the comment at the first `*/`, so the predicate is code there.
     expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
   });
+
+  // Block comments are read both nested and not, so a statement is refused whenever one reading sees
+  // code the other doesn't, even where the engine's nesting would comment the OR out.
+  it.each([["postgres", POSTGRES_DIALECT], ["sqlserver", SQLSERVER_DIALECT]] as const)(
+    "still refuses an OR that only a nested reading comments out under %s",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids /* a /* b */ OR 1=1 */", dialect)).toEqual(missing);
+    },
+  );
 });
 
 describe("validateTenantGuardrails — a name outside printable ASCII that the schema doesn't spell", () => {

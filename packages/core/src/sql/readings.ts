@@ -12,14 +12,16 @@
  * | read-only ({@link readOnlyReadings}) | the engine's profile | every engine's profile |
  * | sensitive ({@link sensitiveReadings}) | the engine's (Postgres family: plus CockroachDB's comment end) | the generic profile, plus each engine's that lexes cleanly |
  * | tenant: statements and calls ({@link tenantStatementReadings}) | the engine's (Postgres family: both comment ends) | every engine's, Postgres and MySQL with both string settings |
- * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends |
+ * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends; the Postgres and SQL Server views with block comments nested and not |
  * | placeholders ({@link placeholderReading}) | the engine's | the generic profile |
  * | names outside printable ASCII, tenant and sensitive ({@link unmatchedNonAsciiName}) | `sqlserver`: the engine's; any other engine: none | as for tenant statements |
  * | `'…'` read as a name, tenant and sensitive ({@link stringsSqliteReadsAsNames}) | `sqlite`: its readings; any other engine: none | the generic and standard readings, and SQLite's |
  * | Postgres-only forms (`postgresReadingProfiles` in `lexer.ts`) | the engine's, when it is on the Postgres lexer | Postgres's, with backslash escapes too when set |
  *
  * Every MySQL reading is taken twice by the tenant check, with `/*! … *\/` bodies as code and as
- * comments, since a server older than the comment's version skips the body. A `postgres` dialect
+ * comments, since a server older than the comment's version skips the body. Its Postgres and SQL
+ * Server views, which nest block comments as those engines do, are taken twice too, with the
+ * comments nested and not, so a predicate counts only where the two agree on what is code. A `postgres` dialect
  * may point at CockroachDB, which is wire-compatible but ends a `--` comment only at `\n`, so the
  * Postgres family is read with both comment ends where that decides what is code.
  */
@@ -160,6 +162,11 @@ export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[]): Readonly
   return names;
 }
 
+/** A view that nests block comments, also read with them ending at the first `*\/`. */
+function bothBlockCommentReadings(profiles: readonly SqlLexerProfile[]): SqlLexerProfile[] {
+  return profiles.flatMap((p) => (p.nestedBlockComments ? [p, { ...p, nestedBlockComments: false }] : [p]));
+}
+
 /** A profile that reads `/*!NNNNN … *\/` bodies as code, also read with them as comments. */
 function bothExecutableCommentReadings(profiles: readonly SqlLexerProfile[]): SqlLexerProfile[] {
   return profiles.flatMap((p) => (p.executableComments ? [p, { ...p, executableComments: false }] : [p]));
@@ -239,14 +246,15 @@ const SQLSERVER_VIEW: SqlLexerProfile = {
 /**
  * The tenant check's predicate readings. A built-in engine gets its own view: the MySQL one twice,
  * with executable comments as code and as comments; the Postgres one with both comment ends; the
- * SQL Server one. Backslash escapes follow the spec as the lexer reads it: an unset value on MySQL
+ * SQL Server one. The Postgres and SQL Server views nest block comments, and each is read again with
+ * them not nested. Backslash escapes follow the spec as the lexer reads it: an unset value on MySQL
  * or MariaDB is the server default, on. Any other id, or none, gets the standard and Postgres views
  * with both comment ends, the MySQL view and the SQL Server view: a table counts as referenced when
  * any of them sees it, a predicate only when every one does.
  */
 export function tenantCodeReadings(dialect: ReadingDialect | undefined): CodeViewReading[] {
   const views = (profiles: readonly SqlLexerProfile[]) =>
-    bothExecutableCommentReadings(profiles).map((profile) => ({ profile, pipesAreOr: profile.id === "mysql" }));
+    bothExecutableCommentReadings(bothBlockCommentReadings(profiles)).map((profile) => ({ profile, pipesAreOr: profile.id === "mysql" }));
   if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
     return views([STANDARD_VIEW, crEnds(STANDARD_VIEW), POSTGRES_VIEW, crEnds(POSTGRES_VIEW), MYSQL_VIEW, SQLSERVER_VIEW]);
   }
