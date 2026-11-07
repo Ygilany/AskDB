@@ -206,7 +206,21 @@ export default defineConfig({
             {
               label: "APIs",
               items: [
-                { label: "@askdb/core API", slug: "reference/core-api" },
+                {
+                  label: "@askdb/core API",
+                  collapsed: true,
+                  items: [
+                    { label: "Overview", slug: "reference/core-api" },
+                    { label: "ask()", slug: "reference/core-api/ask" },
+                    { label: "bindPreparedQuery()", slug: "reference/core-api/rebind" },
+                    { label: "Tenant scope", slug: "reference/core-api/tenancy" },
+                    { label: "Checks", slug: "reference/core-api/checks" },
+                    { label: "Schema loading", slug: "reference/core-api/schema" },
+                    { label: "Dialects", slug: "reference/core-api/dialects" },
+                    { label: "Logging", slug: "reference/core-api/logging" },
+                    { label: "Errors", slug: "reference/core-api/errors" },
+                  ],
+                },
                 { label: "@askdb/client API", slug: "reference/client-api" },
                 { label: "@askdb/config API", slug: "reference/config-api" },
                 { label: "@askdb/ai API", slug: "reference/ai-api" },

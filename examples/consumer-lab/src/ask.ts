@@ -1,6 +1,6 @@
 /**
  * The raw-model path to the replay server: a Vercel AI SDK `LanguageModel` from
- * `createOpenAI({ baseURL })`, passed to `ask()` from `@askdb/core` (`reference/core-api.mdx`,
+ * `createOpenAI({ baseURL })`, passed to `ask()` from `@askdb/core` (`reference/core-api/ask.mdx`,
  * `guides/bring-your-own-model.mdx`). Used by `pnpm lab ask` and by the suites that need
  * `ask()`'s whole result, not only its SQL. Also the live model on either path
  * (`liveModel`, `useLiveConfig`), for `lab ask --model live`, `lab ui` and the live suite.

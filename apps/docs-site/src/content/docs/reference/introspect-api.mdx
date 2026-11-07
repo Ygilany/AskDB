@@ -284,7 +284,7 @@ Each engine package exports the same set of pieces:
 - `load<Driver>Driver(options?)`, which resolves the driver the same way (for hosts that need the driver directly), and `is<Driver>DriverInstalled(options?)`, a synchronous check. `options` is the kit's `DriverLoadOptions`.
 - Its connector provider adapter, for the registry.
 - Type re-exports of `CatalogQueryResult` and `CatalogQueryRunner` from `@askdb/introspect`.
-- Re-exports of its dialect from `@askdb/core`, listed by name below. The dialect specs live in `@askdb/core`, and `ask()` needs only the dialect id. See [`DialectSpec`](/reference/core-api/#dialectspec).
+- Re-exports of its dialect from `@askdb/core`, listed by name below. The dialect specs live in `@askdb/core`, and `ask()` needs only the dialect id. See [`DialectSpec`](/reference/core-api/dialects/#dialectspec).
 
 Every live connector sets `IntrospectionResult.provider` to its dialect id (`"postgres"`, `"mysql"`, `"sqlite"`, `"sqlserver"`).
 

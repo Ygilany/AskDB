@@ -201,13 +201,15 @@ export function mapAskError(
       },
     };
   }
+  // No schema configured server-side is the operator's to fix, as a schema that doesn't load is
+  // (#840): a generic 500, and the log line's errName (SchemaNotConfiguredError) names the cause
+  // (#845). A request that sends its own schemaJson never reaches this.
   if (isErrorOf(e, SchemaNotConfiguredError)) {
     return {
-      status: 400,
+      status: 500,
       error: {
-        code: "bad_request",
-        message:
-          "No schema configured. Set host.schemaPath / host.schemaJson in askdb.config.* (or start askdb-http with --schema-path).",
+        code: "generation_not_configured",
+        message: "The server has no schema configured. See server logs for this correlationId.",
       },
     };
   }

@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.51
 
-Not published yet: these changes ship with `@askdb/core` 1.0.0-beta.51, `@askdb/enrich` 0.2.0-beta.22 and `@askdb/rag` 0.2.0-beta.31.
+Not published yet: these changes ship with `@askdb/core` and `@askdb/http-api` 1.0.0-beta.51, `@askdb/enrich` 0.2.0-beta.22 and `@askdb/rag` 0.2.0-beta.31.
 
 ### Replace `createOpenAiEmbedder` from `@askdb/rag`
 
@@ -52,6 +52,10 @@ The tenant-policy loader now checks that each column the contract puts on an ent
 - **Under `enforcement: strict`, such a policy fails to load** with `SchemaParseError`, naming the file, the column and the table it's on, in `loadSchema()`, a bundle, and `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save). Under `warn`, it loads with the warning. Point the field at the column on the entry's own table.
 - **A `switch` over every `TenantPolicyWarning`** (in `schema.tenantPolicy.warnings`) needs a case for the new `misplaced_column_id`, with `id`, `tableId` (the table the column is on) and `context`. The schema loader's warning of the same name, in `schema.warnings`, is unchanged.
 - **If you call `normalizeTenantPolicy()` yourself,** its third argument is now a `Map` from column ID to table ID, read from `schema.json`: `new Map(tables.flatMap((t) => t.columns.map((c) => [c.id, t.id])))`.
+
+### Other changes you may notice in beta.51
+
+- **No schema configured server-side answers `500 generation_not_configured`** from `askdb-http`, not `400 bad_request` ([#845](https://github.com/Ygilany/AskDB/issues/845)), with the cause in the server log (`errName` `SchemaNotConfiguredError`). A request that sends its own `schemaJson` is unaffected. If your client matched `bad_request` for this case, match `generation_not_configured`.
 
 ## 1.0.0-beta.50
 
@@ -417,7 +421,7 @@ if (result.unboundSql && result.params) {
 - **A custom `AskDialect`, or a `DialectSpec` whose `id` isn't built in, has no default.** With a tenant scope and no `tenantSqlMode`, `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`) before the model call. Set `"sql-params"` if your driver binds `$1`-style markers, or `"sql-only"`: on SQL Server, `$1` is a money constant. A value other than these two throws the same error on every dialect.
 - **`@askdb/client`'s `askdb.ask()`** forwards to `ask()`, so it changes the same way. Studio's Playground now starts in `sql-params`.
 
-[Executing the result](/reference/core-api/#executing-the-result) describes both SQL forms.
+[Executing the result](/reference/core-api/ask/#executing-the-result) describes both SQL forms.
 
 ### Use `sql-params` for tenant IDs outside printable ASCII
 
@@ -582,7 +586,7 @@ const rebound = bindPreparedQuery(
 - **With a tenant policy whose `enforcement` is `warn`**, a template that fails the tenant check is refused with `TenantGuardrailError`. To bind it anyway, pass `acceptWarnings: ["tenant"]`.
 - **Stored `PreparedQuery` objects keep working.** The checks use the schema and scope you pass now, so a tightened policy applies at the next rebind.
 
-With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
+With `@askdb/client`, call [`askdb.bind(prepared, values, { tenantScope })`](/reference/client-api/#clientbindprepared-values-options) instead. It supplies the client's schema and expands a `subtree` scope for you. [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails) lists every error it throws.
 
 ### Load a schema directory, not a renamed copy of its JSON file
 
@@ -643,7 +647,7 @@ const target = buildSuggestionTarget(schema, source);
 const context = buildSuggestionContext(schema, source.tableId);
 ```
 
-The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
+The context no longer lists an untracked table (`tracked: false`) as a neighbor, since `ask()`'s prompt leaves it out too. [`suggestEnrichment()`](/reference/core-api/schema/#suggestenrichmenttarget-context-model-deps) describes the prompt these build.
 
 ### Other changes you may notice in beta.45
 
@@ -654,7 +658,7 @@ The context no longer lists an untracked table (`tracked: false`) as a neighbor,
 - **Omitting sensitive identifiers withholds more text** ([#374](https://github.com/Ygilany/AskDB/issues/374)). With `omitSensitiveIdentifiersFromNlToSqlPrompt: true`, a description, alias, enum value, common query language block or retrieved chunk that names a sensitive column no longer reaches the model. If you build an `NlToSqlSchemaFormatStats` object by hand, such as a test double, set its new `mentionDroppedCount` field (`0` keeps the old meaning).
 - **Studio follows `modes.omitSensitiveFromPrompt`** in the Playground and in **Suggest** ([#601](https://github.com/Ygilany/AskDB/issues/601)). With it on, the Playground's prompt leaves out sensitive columns and text that names one, and **Suggest** on a sensitive column shows an error (`400` from `POST /api/suggest`) instead of a draft. See [Tables and enrichment](/studio/#tables-and-enrichment).
 - **The enrichment suggestion prompt has a new format.** `buildEnrichmentUserPrompt()` lists the target table the way `ask()`'s prompt does (`TABLE public.users`, then lines such as `- email text (NOT NULL) (sensitive)`), so a test that compares the prompt text needs updating. `suggestEnrichment()` takes a new `omitSensitiveIdentifiersFromPrompt` option; pass your `modes.omitSensitiveFromPrompt`. With it on, a sensitive target column throws `SensitiveEnrichmentTargetError`.
-- **Results gain `verdict`**, which lists every guardrail finding. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/#guardrail-verdict).
+- **Results gain `verdict`**, which lists every finding of the SQL checks. `tenantGuardrail` and `sensitiveGuardrail` stay. See [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict).
 
 ## 1.0.0-beta.44
 
