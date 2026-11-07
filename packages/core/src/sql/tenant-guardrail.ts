@@ -906,8 +906,8 @@ function aliasAt(a: Analysis, i: number): number | undefined {
 
 /**
  * The names the table reference at `i` goes by: its alias, or its own name when what follows ends
- * it with no alias. Anything else after it, an alias with a column list included, is a form the
- * check doesn't read, so the read gets no name and only an unqualified predicate filters it.
+ * it with no alias. Anything else after it is a form the check doesn't read, so the read gets no
+ * name and only an unqualified predicate filters it.
  */
 function readNames(a: Analysis, i: number): Set<string> {
   const end = sourceEnd(a, i);
