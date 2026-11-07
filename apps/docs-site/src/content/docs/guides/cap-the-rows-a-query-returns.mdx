@@ -59,7 +59,7 @@ async function runCapped(sql: string, params: unknown[] = []) {
 
 Stream the rows on a connection of their own, and stop at one row more than the cap. `mysql2` can't cancel a running query, so close the connection when you stop: the server then stops the query, and the read-only transaction ends with it. The same code works on MariaDB.
 
-Pin the connection's charset to `utf8mb4`, which the URL can't then change. `query()` writes the parameters into the SQL text, and under a charset such as `sjis` a crafted value can escape its quotes (see [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings)). The `error` listener keeps a dropped connection from crashing the process, and ends the loop with the error.
+Pin the connection's charset to `utf8mb4`, which the URL can't then change. `query()` writes the parameters into the SQL text, and under a charset such as `sjis` a crafted value can escape its quotes (see [Match your server's string settings](/guides/match-server-string-settings/)). The `error` listener keeps a dropped connection from crashing the process, and ends the loop with the error.
 
 ```ts
 import mysql from "mysql2";
