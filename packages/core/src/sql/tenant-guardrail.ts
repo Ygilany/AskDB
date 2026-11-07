@@ -578,10 +578,28 @@ function codeView(sql: string, tokens: readonly SqlToken[]): string {
   return out.join("");
 }
 
-/** A table counts as referenced when any reading sees it. */
+/**
+ * A table counts as referenced when any reading sees its name in code, except as a word of
+ * `ORDER BY` or `GROUP BY` (#828).
+ */
 function mentionsTable(views: CodeViews, tableName: string): boolean {
-  const pattern = new RegExp(`\\b${escapeRegex(tableName)}\\b`, "i");
-  return views.some((view) => pattern.test(view.text));
+  const pattern = new RegExp(`\\b${escapeRegex(tableName)}\\b`, "gi");
+  return views.some((view) =>
+    [...view.text.matchAll(pattern)].some((m) => !inOrderOrGroupBy(view.text, m.index, m.index + m[0].length)),
+  );
+}
+
+/**
+ * Whether `text[start, end)` in a code view is a word of `ORDER BY` or `GROUP BY`. `ORDER` and
+ * `GROUP` are reserved on every engine, so a table named after one is written quoted (`"order"`,
+ * whose closing quote mark breaks the phrase) or qualified (`billing.order`, which Postgres takes
+ * unquoted), and the `BY` after them is the keyword.
+ */
+function inOrderOrGroupBy(text: string, start: number, end: number): boolean {
+  if (text[start - 1] === ".") return false;
+  const word = text.slice(start, end).toLowerCase();
+  if (word === "order" || word === "group") return /^\s+by(?![\w$\u0080-\uffff])/i.test(text.slice(end));
+  return word === "by" && /(?:^|[^\w$\u0080-\uffff.\u0001])(?:order|group)\s+$/i.test(text.slice(0, start));
 }
 
 /** A tenant column counts only when every reading sees it in code. */

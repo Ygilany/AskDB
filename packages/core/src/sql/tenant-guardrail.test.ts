@@ -959,3 +959,51 @@ describe("validateTenantGuardrails — a table named after a word only some engi
     }
   });
 });
+
+describe("validateTenantGuardrails — ORDER BY and GROUP BY don't name a table called order or group (#828)", () => {
+  // As the multi-engine fixture leaves `billing.order`: any query naming these tables is refused.
+  const keywordTables: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    coverage: [
+      ...policy.coverage,
+      { tableId: "table:billing.order", classification: "unknown" },
+      { tableId: "table:app.group", classification: "unknown" },
+    ],
+  };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, keywordTables, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const dialects: Array<[string, DialectSpec | undefined]> = [
+    ["postgres", POSTGRES_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["no dialect", undefined],
+  ];
+
+  it.each(dialects)("%s: a sorted, grouped query passes", (_label, dialect) => {
+    for (const sql of [
+      "SELECT status, count(*) FROM orders WHERE agency_id = :tenant_agency_ids GROUP BY status ORDER BY status",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER /* newest */ BY id",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids order\nby id",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  it.each([
+    ["FROM, quoted", POSTGRES_DIALECT, 'SELECT * FROM billing."order" ORDER BY id', "billing.order"],
+    ["JOIN, quoted", POSTGRES_DIALECT, 'SELECT * FROM orders o JOIN "order" b ON b.id = o.id WHERE o.agency_id = :tenant_agency_ids ORDER BY o.id', "billing.order"],
+    ["FROM, backticks", MYSQL_DIALECT, "SELECT * FROM `order` ORDER BY id", "billing.order"],
+    ["FROM, brackets", SQLSERVER_DIALECT, "SELECT * FROM [order] ORDER BY id", "billing.order"],
+    ["a quoted qualifier in ORDER BY", POSTGRES_DIALECT, 'SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY "order".id', "billing.order"],
+    ["GROUP BY on the table named group", POSTGRES_DIALECT, 'SELECT g.id FROM app."group" g GROUP BY g.id', "app.group"],
+    // Postgres reads both as the table `order` with the alias `by`.
+    ["a quoted name, then an alias by", POSTGRES_DIALECT, 'SELECT * FROM "order" by WHERE by.id > 0', "billing.order"],
+    ["a qualified name, then an alias by", POSTGRES_DIALECT, "SELECT * FROM billing.order by WHERE by.id > 0", "billing.order"],
+    // No built-in engine accepts `order` unquoted as a table, and the check still counts it.
+    ["FROM, unquoted", POSTGRES_DIALECT, "SELECT * FROM order o ORDER BY id", "billing.order"],
+  ])("%s still names the table", (_label, dialect, sql, table) => {
+    expect(findings(sql, dialect)).toEqual([`UNKNOWN_TABLE_REFERENCED:table:${table}`]);
+  });
+});
