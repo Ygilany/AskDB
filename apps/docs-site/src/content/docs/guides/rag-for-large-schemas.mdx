@@ -15,9 +15,32 @@ A rule of thumb: if your schema artifact has more than ~30 tables, or if rendere
 
 When you pass a retriever, `ask()` retrieves on every call, unless you also pass the schema's chunk count: see [Wire retrieval into `ask()`](#wire-retrieval-into-ask).
 
-<figure style="--d2-width: 624px">
+<figure>
 
-```d2 src="../../../assets/diagrams/d2/rag-index-query.d2"
+```mermaid
+flowchart TB
+  %% @askdb/rag: indexing writes the vector store once per schema change; each ask() with a
+  %% retriever reads it. Indexing embeds only the chunks the store doesn't already hold with the
+  %% same content hash. A question is embedded on every call.
+  %% Source of truth: buildSchemaIndex and createRetriever (default k 8) in packages/rag, and
+  %% synthesizeRetrievedDdl in packages/core/src/retrieval/synthesize-ddl.ts.
+  subgraph index["Indexing: once per schema change"]
+    artifact["schema artifact"]
+    chunks["chunks"]
+    artifact -- "buildSchemaIndex" --> chunks
+  end
+  store[("vector store")]
+  chunks -- "embedding model:<br/>new or changed chunks" --> store
+  subgraph query["Each ask() call"]
+    question["your question"]
+    retrieved["retrieved chunks<br/>(top k, 8 by default)"]
+    prompt["ask()'s prompt:<br/>each table a chunk<br/>points to, in full"]
+    sql["checked SQL"]
+    retrieved --> prompt
+    prompt -- "language model" --> sql
+  end
+  question -- "embedding model" --> store
+  store -- "nearest chunks" --> retrieved
 ```
 
 <figcaption>Indexing chunks the schema artifact and stores the chunks' embeddings, once per schema change. Each <code>ask()</code> call embeds only the question, retrieves the nearest chunks, and lists in the prompt each table they point to.</figcaption>

@@ -206,9 +206,46 @@ See [the CLI reference](/reference/cli/).
 
 ## Dependency direction
 
-<figure style="--d2-width: 684px">
+<figure>
 
-```d2 src="../../../assets/diagrams/d2/package-dependencies.d2"
+```mermaid
+flowchart TB
+  %% AskDB's packages and what each depends on (dependencies and peers), top to bottom.
+  %% Each arrow points to a direct dependency, left out when the package already reaches that
+  %% dependency through another arrow: askdb reaches the engine packages through Studio.
+  %% Dashed: optional peer, which isn't installed for dependents, so each package that declares
+  %% one gets its own arrow (askdb and Studio both point at prisma).
+  %% Source of truth: the "Dependency direction" table on this page.
+  %% The invisible links (~~~) are layout only: they put rag and enrich a row lower.
+  cli["askdb (CLI)"]
+  studio["studio"]
+  http["http-api"]
+  client["client"]
+  prisma["prisma"]
+  engines["engine<br/>packages"]
+  aicfg["ai, config"]
+  rag["rag"]
+  enrich["enrich"]
+  introspect["introspect"]
+  core["core"]
+  cli --> studio
+  cli --> client
+  cli -.-> prisma
+  studio -.-> prisma
+  studio --> engines
+  studio --> aicfg
+  studio --> rag
+  studio --> enrich
+  http --> client
+  client --> aicfg
+  client --> core
+  prisma --> introspect
+  engines --> introspect
+  rag --> core
+  enrich --> core
+  introspect --> core
+  engines ~~~ rag
+  engines ~~~ enrich
 ```
 
 <figcaption>Each arrow points to a package's dependency or peer. An arrow is left out when the package already reaches that dependency through another one: `askdb` gets the engine packages through Studio. Dashed arrows are optional peers, drawn for each package that declares one. Boxes name `@askdb/*` packages without the scope (`ai` is `@askdb/ai`), except `askdb` itself. Not drawn: the AI SDK package `ai`, the `@ai-sdk/*` providers and the database drivers.</figcaption>

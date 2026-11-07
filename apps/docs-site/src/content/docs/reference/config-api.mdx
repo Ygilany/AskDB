@@ -11,9 +11,31 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 <InstallTabs pkgs="@askdb/config" />
 
-<figure style="--d2-width: 452px">
+<figure>
 
-```d2 src="../../../assets/diagrams/d2/config-flow.d2"
+```mermaid
+flowchart TB
+  %% @askdb/config: how a setting reaches a run. env() reads the environment only while the
+  %% config file loads; bootstrapAskDbEnv() checks the result and installs it as the process's
+  %% snapshot; each surface reads the snapshot with getAskDbRuntimeConfig().
+  %% Source of truth: packages/config/src/bootstrap.ts (dotenv, then the config file, then
+  %% setAskDbRuntime), env.ts, runtime-config.ts; callers in apps/cli/src/project-config.ts,
+  %% apps/studio/src/bin.ts, apps/http-api/src/server.ts, packages/client/src/client.ts.
+  %% The invisible links (~~~) put the four surfaces in two rows, so it fits a phone.
+  env[".env and your shell"]
+  file["askdb.config.ts"]
+  snapshot["runtime snapshot<br/>(one per process)"]
+  subgraph surfaces[" "]
+    cli["askdb CLI"]
+    studio["Studio"]
+    http["askdb-http"]
+    client["createAskDb()"]
+    cli ~~~ http
+    studio ~~~ client
+  end
+  env -- "env(&quot;NAME&quot;)<br/>while the file loads" --> file
+  file -- "bootstrapAskDbEnv():<br/>checked, defaults filled in" --> snapshot
+  snapshot -- "getAskDbRuntimeConfig(),<br/>in each run" --> surfaces
 ```
 
 <figcaption><code>env()</code> reads the environment only while the config file loads. <code>bootstrapAskDbEnv()</code> checks the result and installs it as the process's snapshot, and each surface reads the snapshot with <code>getAskDbRuntimeConfig()</code>. Other than <code>ASKDB_DEBUG</code>, an <code>ASKDB_*</code> variable set in the shell reaches a run only through an <code>env()</code> call in the config.</figcaption>

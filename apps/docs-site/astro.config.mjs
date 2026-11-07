@@ -1,8 +1,8 @@
 import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import astroD2 from "astro-d2";
 import starlightLlmsTxt from "starlight-llms-txt";
+import { remarkMermaid } from "./plugins/remark-mermaid.mjs";
 
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
@@ -50,14 +50,12 @@ export default defineConfig({
     "/getting-started/troubleshooting": `${normalizedBase}/guides/troubleshooting/`,
   },
   markdown: {
-    processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
+    // remarkMermaid turns each ```mermaid fence into an inline SVG at build time (ADR 0041), so
+    // pages ship no diagram JavaScript. src/styles/custom.css maps pele's color variables to
+    // Starlight's, so a diagram follows the theme toggle.
+    processor: unified({ remarkPlugins: [remarkRebaseLinks, remarkMermaid] }),
   },
   integrations: [
-    // Diagrams: ```d2 fences (or `src` files under src/assets/diagrams/d2/) render to inline SVG
-    // at build time through D2's WebAssembly build, so CI and the Pages deploy need no D2 binary.
-    // D2's own dark theme is off: src/styles/custom.css maps D2's palette classes to Starlight's
-    // color variables, so a diagram follows the site's theme toggle.
-    astroD2({ experimental: { useD2js: true }, inline: true, pad: 16, theme: { dark: false } }),
     starlight({
       head: [
         {

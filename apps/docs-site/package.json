@@ -9,7 +9,8 @@
     "preview": "astro preview",
     "dev": "astro dev --host 127.0.0.1 --port 4310",
     "lint": "astro check",
-    "test": "pnpm run test:errors && pnpm run test:exports && ASTRO_BASE=/ pnpm run build && pnpm run test:links",
+    "test": "pnpm run test:errors && pnpm run test:exports && pnpm run test:diagrams && ASTRO_BASE=/ pnpm run build && pnpm run test:links",
+    "test:diagrams": "node --test ./plugins/remark-mermaid.test.mjs",
     "test:errors": "node --test ./scripts/check-error-reference.test.mjs && node ./scripts/check-error-reference.mjs",
     "test:exports": "node --test ./scripts/check-export-coverage.test.mjs && node ./scripts/check-export-coverage.mjs",
     "test:links": "node --test ./scripts/check-link-targets.test.mjs && node ./scripts/check-base-links.mjs / && node ./scripts/check-link-targets.mjs /"
@@ -23,7 +24,7 @@
     "@astrojs/starlight": "^0.42.8",
     "@emnapi/runtime": "^1.11.3",
     "astro": "^7.4.7",
-    "astro-d2": "^0.14.0",
+    "pele": "1.9.0",
     "sharp": "^0.35.5",
     "starlight-llms-txt": "^0.12.0"
   }
