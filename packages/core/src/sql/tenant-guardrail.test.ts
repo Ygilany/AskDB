@@ -1241,3 +1241,55 @@ describe("validateTenantGuardrails — a name outside printable ASCII that the s
     expect(findings("SELECT [agency_id] FROM [orders] WHERE [agency_id] = :tenant_agency_ids", dialect)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a column list after a table's alias renames the table's columns", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const postgresFamily = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+
+  // Postgres and CockroachDB read `t (agency_id, x)` as new names for the table's first columns, so
+  // `t.agency_id` is its first column: on Postgres 17, `people.client t (agency_id, real_agency)`
+  // filtered on client_id and returned clients of other agencies.
+  const renamed: Array<[string, string, string]> = [
+    ["after a bare alias", "SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids", "orders"],
+    ["after AS", "SELECT * FROM orders AS t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids", "orders"],
+    ["with an unqualified predicate", "SELECT * FROM orders t (agency_id, x) WHERE agency_id = :tenant_agency_ids", "orders"],
+    ["inside a derived table", "SELECT * FROM (SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids) d", "orders"],
+    ["after a quoted alias", 'SELECT * FROM orders "t" (agency_id, x) WHERE "t".agency_id = :tenant_agency_ids', "orders"],
+    ["on a schema-qualified table", "SELECT * FROM public.orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids", "orders"],
+    ["on the root table", "SELECT * FROM agencies a (x, id) WHERE a.id = :tenant_agency_ids", "agencies"],
+  ];
+
+  it.each(postgresFamily)("refuses a renamed read under %s", (_label, dialect) => {
+    for (const [label, sql, table] of renamed) {
+      expect(findings(sql, dialect), label).toContain(`MISSING_TENANT_PREDICATE:table:public.${table}`);
+    }
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(renamed[0]![1], policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(postgresFamily)("keeps a read with no column list under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM orders t WHERE t.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders AS t WHERE t.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders WHERE (agency_id = :tenant_agency_ids)",
+      "SELECT o.id FROM orders o JOIN agencies a ON (a.id = o.agency_id) WHERE o.agency_id = :tenant_agency_ids AND a.id = :tenant_agency_ids",
+      "SELECT o.id FROM agencies a JOIN orders USING (agency_id) WHERE a.id = :tenant_agency_ids AND orders.agency_id = :tenant_agency_ids",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION (SELECT id FROM lookup_states)",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  it("keeps SQL Server's table hint in parentheses after an alias, which SQL Server doesn't read as a column list", () => {
+    expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+  });
+});
