@@ -204,7 +204,7 @@ export function saveTenantPolicy(
   normalizeTenantPolicy(
     parseTenantPolicyMarkdown(md, filePath),
     new Set(tables.map((table) => table.id)),
-    new Set(tables.flatMap((table) => table.columns.map((column) => column.id))),
+    new Map(tables.flatMap((table) => table.columns.map((column) => [column.id, table.id] as const))),
   );
   saveSchemaFile(workspace.schemaDir, "tenant-policy.md", md);
 }

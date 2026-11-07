@@ -44,13 +44,30 @@ const TABLE_REMOVED_KINDS: ReadonlySet<TenantPolicyWarning["kind"]> = new Set([
   "orphaned_global_table_id",
 ]);
 
+/**
+ * Check a parsed tenant policy against schema.json and normalize it. `physicalColumns` maps each
+ * column ID in schema.json to its table's ID, read from schema.json rather than split from the
+ * column ID, since a SQL Server table name can hold `#`.
+ */
 export function normalizeTenantPolicy(
   parsed: ParsedTenantPolicyMarkdown,
   physicalTableIds: Set<string>,
-  physicalColumnIds: Set<string>,
+  physicalColumns: ReadonlyMap<string, string>,
 ): NormalizedTenantPolicy {
   const fm = parsed.frontmatter;
   const warnings: TenantPolicyWarning[] = [];
+  // A column the contract puts on `table` (#836): missing from schema.json is `orphaned`; in
+  // schema.json but on another table is `misplaced_column_id`.
+  const checkColumnOn = (
+    id: string,
+    table: string,
+    orphaned: "orphaned_column_id" | "orphaned_fk_id",
+    context: string,
+  ): void => {
+    const actual = physicalColumns.get(id);
+    if (actual === undefined) warnings.push({ kind: orphaned, id, context });
+    else if (actual !== table) warnings.push({ kind: "misplaced_column_id", id, tableId: actual, context });
+  };
 
   // A shared placeholder would bind one root's IDs where another root's column is compared.
   assertDistinctRootPlaceholders(fm.roots);
@@ -64,12 +81,8 @@ export function normalizeTenantPolicy(
   for (const root of fm.roots) {
     if (tableRemoved(root.id)) {
       warnings.push({ kind: "orphaned_root_id", id: root.id });
-    } else if (!physicalColumnIds.has(root.tenantIdColumn)) {
-      warnings.push({
-        kind: "orphaned_column_id",
-        id: root.tenantIdColumn,
-        context: `root ${root.id}`,
-      });
+    } else {
+      checkColumnOn(root.tenantIdColumn, root.id, "orphaned_column_id", `root ${root.id}`);
     }
     if (root.parent) {
       if (!rootIds.has(root.parent.root)) {
@@ -79,12 +92,9 @@ export function normalizeTenantPolicy(
           context: `parent of root ${root.id}`,
         });
       }
-      if (!tableRemoved(root.id) && !physicalColumnIds.has(root.parent.foreignKey)) {
-        warnings.push({
-          kind: "orphaned_fk_id",
-          id: root.parent.foreignKey,
-          context: `parent FK on root ${root.id}`,
-        });
+      // The parent foreign key sits on this root's own table.
+      if (!tableRemoved(root.id)) {
+        checkColumnOn(root.parent.foreignKey, root.id, "orphaned_fk_id", `parent FK on root ${root.id}`);
       }
     }
   }
@@ -106,12 +116,8 @@ export function normalizeTenantPolicy(
       });
     }
     // The edge's foreign key sits on the child's table.
-    if (!tableRemoved(edge.child) && !physicalColumnIds.has(edge.foreignKey)) {
-      warnings.push({
-        kind: "orphaned_fk_id",
-        id: edge.foreignKey,
-        context: `hierarchy edge ${edge.parent} -> ${edge.child}`,
-      });
+    if (!tableRemoved(edge.child)) {
+      checkColumnOn(edge.foreignKey, edge.child, "orphaned_fk_id", `hierarchy edge ${edge.parent} -> ${edge.child}`);
     }
   }
 
@@ -137,23 +143,17 @@ export function normalizeTenantPolicy(
       }
       if (removed) continue;
       if ("column" in path) {
-        if (!physicalColumnIds.has(path.column)) {
-          warnings.push({
-            kind: "orphaned_column_id",
-            id: path.column,
-            context: `scopeThrough column on ${st.id}`,
-          });
-        }
+        checkColumnOn(path.column, st.id, "orphaned_column_id", `scopeThrough column on ${st.id}`);
       } else {
         for (const step of path.join) {
-          if (!physicalColumnIds.has(step.from)) {
+          if (!physicalColumns.has(step.from)) {
             warnings.push({
               kind: "orphaned_fk_id",
               id: step.from,
               context: `scopeThrough join on ${st.id}`,
             });
           }
-          if (!physicalColumnIds.has(step.to)) {
+          if (!physicalColumns.has(step.to)) {
             warnings.push({
               kind: "orphaned_fk_id",
               id: step.to,
@@ -171,19 +171,9 @@ export function normalizeTenantPolicy(
     if (removed) {
       warnings.push({ kind: "orphaned_polymorphic_table_id", id: pt.id });
     }
-    if (!removed && !physicalColumnIds.has(pt.typeColumn)) {
-      warnings.push({
-        kind: "orphaned_column_id",
-        id: pt.typeColumn,
-        context: `polymorphic typeColumn on ${pt.id}`,
-      });
-    }
-    if (!removed && !physicalColumnIds.has(pt.idColumn)) {
-      warnings.push({
-        kind: "orphaned_column_id",
-        id: pt.idColumn,
-        context: `polymorphic idColumn on ${pt.id}`,
-      });
+    if (!removed) {
+      checkColumnOn(pt.typeColumn, pt.id, "orphaned_column_id", `polymorphic typeColumn on ${pt.id}`);
+      checkColumnOn(pt.idColumn, pt.id, "orphaned_column_id", `polymorphic idColumn on ${pt.id}`);
     }
     for (const [typeVal, targetRoot] of Object.entries(pt.mapping)) {
       if (!rootIds.has(targetRoot)) {

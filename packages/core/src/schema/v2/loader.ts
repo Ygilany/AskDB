@@ -400,10 +400,8 @@ function loadFromFiles(
     tenantPolicy = parseOrWrap(policyFile, () => {
       const parsed = parseTenantPolicyMarkdown(policyContent, policyFile);
       const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-      const physicalColumnIds = new Set(
-        physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
-      );
-      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+      const physicalColumns = new Map(physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)));
+      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumns);
     });
   }
 

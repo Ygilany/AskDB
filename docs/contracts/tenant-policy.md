@@ -129,7 +129,7 @@ Each root is a table that represents a tenant entity in the hierarchy.
 | `label` | string | yes | Human-readable label used in prompt assembly and named placeholders (e.g., `Agency` → `:tenant_agency_ids`). Each root must derive a distinct placeholder. The name keeps only ASCII letters and digits (other runs become `_`); a label with none of them (e.g. Cyrillic or CJK) uses the root's table name instead (see [Named placeholder convention](#named-placeholder-convention)). Two roots that derive the same placeholder (`Agency` and `agency`, `Sub-Agency` and `Sub Agency`) are a load error (`SchemaParseError`), because one root's IDs would be bound where the other root's column is compared. |
 | `parent` | object | no | If this root is a child in the hierarchy. |
 | `parent.root` | string | yes (if parent) | Stable table ID of the parent root. |
-| `parent.foreignKey` | string | yes (if parent) | Stable column ID of the FK linking this root to its parent. |
+| `parent.foreignKey` | string | yes (if parent) | Stable column ID of the FK on this root's table linking it to its parent. |
 
 #### `hierarchy[]` — hierarchy edges
 
@@ -185,6 +185,7 @@ The loader checks every ID in the front-matter against `schema.json` when it loa
 | Problem | `warn` | `strict` |
 |---|---|---|
 | A column or foreign key ID that `schema.json` doesn't have: `tenantIdColumn`, `parent.foreignKey`, `hierarchy[].foreignKey`, a `scopeThrough` column or join step, a polymorphic `typeColumn` or `idColumn` | Warning | Error |
+| A column that `schema.json` has on another table than the field names: a root's `tenantIdColumn` or `parent.foreignKey` off the root's table, a `hierarchy[].foreignKey` off the child's, a `scopeThrough` column off the scoped table, a polymorphic `typeColumn` or `idColumn` off the polymorphic table (`misplaced_column_id`, #836) | Warning | Error |
 | A hierarchy cycle | Warning | Error |
 | A root named in `parent.root`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare | Warning | Error |
 | A root, scoped, polymorphic or global table that `schema.json` doesn't have | Warning | Warning |
