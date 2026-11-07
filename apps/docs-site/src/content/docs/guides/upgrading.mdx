@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.52
 
-Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/config` 1.0.0-beta.20, and the other packages that pin `@askdb/core`.
+Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/config` 1.0.0-beta.20, `@askdb/ai` 0.1.0-beta.12, `@askdb/introspect` 0.3.0-beta.26, and the other packages that pin `@askdb/core`.
 
 ### Replace the removed internal exports
 
@@ -38,6 +38,26 @@ Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/ht
 | `escapeSqlLiteral()` | None. Pass values to your driver as bound parameters. |
 | `extractTenantPlaceholders()` | `resolveTenantSql()`, whose `bindings` name each placeholder it replaced. |
 | `parseAskDbSchemaJson()`, `normalizeAskDbSchema()` | `loadNormalizedSchemaFromJson()`, which runs both steps on a v1 schema. |
+
+### Replace the unused exports removed before 1.0
+
+`@askdb/ai`, `@askdb/config`, `@askdb/core` and `@askdb/introspect` no longer export the values below ([#654](https://github.com/Ygilany/AskDB/issues/654)). Nothing outside their own package used them, so they leave before 1.0 freezes the API (ADR 0031). Each still works inside its package, except `bootstrapAskDbRuntime` and the deprecated `placeholderForRoot`, which are removed.
+
+| Removed | Use instead |
+| --- | --- |
+| `aiKeyMissingMessage(context)` (`@askdb/ai`) | `registry.keyMissingMessage(context)`, which names the registry's own providers. |
+| `aiProviderMissingMessage(provider)` (`@askdb/ai`) | None. A registry throws this message when it has no adapter for the provider; `registry.hasProvider(provider)` checks first. |
+| `isReasoningEffort(value)` (`@askdb/ai`) | `REASONING_EFFORTS` from `@askdb/ai`, the four values to check a string against. |
+| `bootstrapAskDbRuntime(options)` (`@askdb/config`) | `bootstrapAskDbEnv(options)`, the same function. The not-initialized error now names only `bootstrapAskDbEnv()`. |
+| `ASKDB_CONFIG_EXTENSION_PRECEDENCE` (`@askdb/config`) | `discoverAskDbConfigPath(cwd)`, which returns the file this order picks. The config API reference lists the order. |
+| `DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS` (`@askdb/config`) | `getAskDbRuntimeConfig().httpApi.requestTimeoutMs`, the resolved value; the default is `60000`. |
+| `DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS`, `DEFAULT_STUDIO_EXECUTE_MAX_ROWS` (`@askdb/config`) | `getAskDbRuntimeConfig().studio.execute.timeoutMs` and `.maxRows`; the defaults are `30000` and `500`. |
+| `DEFAULT_PGVECTOR_INDEX_STRATEGY` (`@askdb/config`) | `"hnsw"`, the default for `rag.storeConfig.pgvector.indexStrategy`. |
+| `DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS` (`@askdb/config`) | `64`, the mock embedder's width unless `askdb rag --dimensions` asks for another. |
+| `renderAskDbAiConfigScaffold(input)` and the types `AskDbAiConfigScaffold`, `AskDbScaffoldEnvVar` (`@askdb/config/scaffold`) | `planAskDbScaffold(answers, versions)`: its `configSource` holds the `ai` block, and `envVars` lists the variables the config reads. |
+| `placeholderForRoot(label)` (`@askdb/core`) | `placeholderForTenantRoot(root)`, which also handles a label with no ASCII letter or digit. |
+| `ENRICHMENT_SYSTEM_PROMPT`, `buildEnrichmentUserPrompt()`, `parseCandidates()` (`@askdb/core`) | `suggestEnrichment(target, context, model, deps?)`, which sends the prompt and splits the reply. `deps.generateText` replaces the model call when you need to make it yourself. |
+| `connectorProviderMissingMessage(provider)` (`@askdb/introspect`) | None. A connector registry throws this message when it has no adapter for the provider; `registry.hasProvider(provider)` checks first. |
 
 ### A JavaScript config loads with Node's own loader
 

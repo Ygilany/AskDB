@@ -107,6 +107,3 @@ export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
 
   return { dotenvPath, configPath };
 }
-
-/** Alias for {@link bootstrapAskDbEnv} (explicit naming). */
-export const bootstrapAskDbRuntime = bootstrapAskDbEnv;

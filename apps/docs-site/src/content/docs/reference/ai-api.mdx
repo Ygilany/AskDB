@@ -134,7 +134,7 @@ With an `askdb.config.*` file, none of these variables matter on their own: the 
 
 ## Reasoning
 
-- **`REASONING_EFFORTS`** is `["minimal", "low", "medium", "high"]`, the values of `ReasoningEffort`. **`isReasoningEffort(value)`** checks a string against it.
+- **`REASONING_EFFORTS`** is `["minimal", "low", "medium", "high"]`, the values of `ReasoningEffort`.
 - **`resolveReasoningEffortFromSection(reasoning, purpose, override?)`** returns the effort for `"nlToSql"` or `"enrichment"` calls (an `AiCallPurpose`) from `ai.language.reasoning`: `override`, then the purpose's own effort, then `effort`.
 - **`resolveReasoningEffort(env, purpose?, override?)`** reads the same from an env map: `override`, then `ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` or `ASKDB_AI_REASONING_EFFORT_ENRICHMENT`, then `ASKDB_AI_REASONING_EFFORT`. A value that isn't an effort is skipped.
 - **`ReasoningSettings`** is what `resolveProviderOptions()` takes: `{ reasoningEffort }`.
@@ -142,8 +142,8 @@ With an `askdb.config.*` file, none of these variables matter on their own: the 
 ## Errors and messages
 
 - **`AiBaseUrlCredentialsError`** is thrown when a model base URL holds a username or password. Its `setting` names where the URL came from: `connection.baseUrl` from the section methods, the variable from an env map (such as `OPENAI_BASE_URL`), or `baseURL` when a built-in adapter builds a model from an `AiConfig`. The message never repeats the URL: `connection.baseUrl contains a username or password, which AskDB won't send in a URL. …`
-- **A provider the registry doesn't have** throws `aiProviderMissingMessage(provider)`. For a built-in provider it says to register it and which SDK to install; for any other name it points to an adapter, or to passing a model to `ask()` directly.
-- **`aiKeyMissingMessage(context)`** says how to configure a key for every built-in provider, from their `configHint`s. `keyMissingMessage()` on a registry says the same for its own providers.
+- **A provider the registry doesn't have** throws an `Error`. For a built-in provider it says to register it and which SDK to install; for any other name it points to an adapter, or to passing a model to `ask()` directly.
+- **`keyMissingMessage(context)`** on a registry says how to configure a key for each of its providers, from their `configHint`s.
 - **A missing provider SDK** throws `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`.
 
 ## Read next

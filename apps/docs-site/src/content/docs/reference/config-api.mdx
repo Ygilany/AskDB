@@ -60,7 +60,7 @@ It runs these steps, once per call:
 3. Checks the config and installs the result as the process's snapshot, replacing any earlier one.
 4. Reports each deprecated key the config uses as a `DeprecationWarning` with the code `ASKDB_CONFIG_DEPRECATED`, once per process.
 
-It doesn't copy settings into `process.env`. `bootstrapAskDbRuntime` is the same function under another name.
+It doesn't copy settings into `process.env`.
 
 The `askdb` CLI and Studio call it in the directory they start in, and `createAskDbHttpServer()` calls it when nothing has yet. In your own service, call it once at startup, before `createAskDb()`.
 
@@ -87,7 +87,7 @@ It throws:
 1. `askdb.config.<ext>`
 2. `.config/askdb.<ext>`
 
-Each location tries the extensions in `ASKDB_CONFIG_EXTENSION_PRECEDENCE`: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`. The first file found wins, so any `askdb.config.*` comes before `.config/askdb.*`. JSON config files aren't supported. Every extension loads synchronously, `.mjs` included, so the file can't use top-level `await`. A JavaScript config (`js`, `mjs`, `cjs`) loads with Node's own loader, by Node's rules: `.js` is CommonJS or an ES module according to the nearest `package.json`. A TypeScript config (`ts`, `mts`, `cts`) loads with jiti, which compiles it, so only a JavaScript config loads from inside an app's bundle ([Bundle an app that uses AskDB](/guides/bundle-your-app/)).
+Each location tries the extensions in this order: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`. The first file found wins, so any `askdb.config.*` comes before `.config/askdb.*`. JSON config files aren't supported. Every extension loads synchronously, `.mjs` included, so the file can't use top-level `await`. A JavaScript config (`js`, `mjs`, `cjs`) loads with Node's own loader, by Node's rules: `.js` is CommonJS or an ES module according to the nearest `package.json`. A TypeScript config (`ts`, `mts`, `cts`) loads with jiti, which compiles it, so only a JavaScript config loads from inside an app's bundle ([Bundle an app that uses AskDB](/guides/bundle-your-app/)).
 
 `discoverAskDbConfigPath(cwd)` returns the path this finds, or `undefined`. Its extension's type is `AskDbConfigExtension`.
 
@@ -99,7 +99,7 @@ Load and check the config file in `cwd`, without reading `.env` or installing a 
 
 ### `getAskDbRuntimeConfig()`
 
-Returns the snapshot as an `AskDbRuntimeConfig`: every setting checked, with its default filled in. Before any snapshot is installed, it throws `AskDB runtime is not initialized. Call bootstrapAskDbEnv() (or bootstrapAskDbRuntime()) from @askdb/config after startup, typically with the project cwd, and ensure askdb.config.* exists.`
+Returns the snapshot as an `AskDbRuntimeConfig`: every setting checked, with its default filled in. Before any snapshot is installed, it throws `AskDB runtime is not initialized. Call bootstrapAskDbEnv() from @askdb/config after startup, typically with the project cwd, and ensure askdb.config.* exists.`
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
@@ -163,11 +163,6 @@ Each provider's default `ai.language.model`, and the other defaults AskDB fills 
 | `DEFAULT_GOOGLE_LANGUAGE_MODEL` | `"gemini-2.0-flash"` |
 | `DEFAULT_GATEWAY_LANGUAGE_MODEL` | `"openai/gpt-4o-mini"` |
 | `DEFAULT_INTROSPECT_OUTPUT_DIR` | `"./askdb/"` |
-| `DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS` | `60000` |
-| `DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS` | `64` |
-| `DEFAULT_PGVECTOR_INDEX_STRATEGY` | `"hnsw"` |
-| `DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS` | `30000` |
-| `DEFAULT_STUDIO_EXECUTE_MAX_ROWS` | `500` |
 
 The values each enum-like field accepts, as a constant list and its type:
 
@@ -202,9 +197,8 @@ The snapshot is an `AskDbRuntimeConfig`, with the section types in the table und
 
 The tooling `askdb init` and Studio's setup wizard share, for tools that set up a project. It's experimental, like Studio: a minor release of `@askdb/config` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). Your own `askdb.config.ts` never needs it.
 
-- **`planAskDbScaffold(answers, versions)`** turns a new project's answers into its `askdb.config.ts` source, its `.env.example`, the env vars the config reads and the packages to install. It throws `AskDbScaffoldInputError`, with the answer's `field`, for a bad answer. Its types are `AskDbScaffoldAnswers`, `AskDbScaffoldPlan` and `ScaffoldValue`.
+- **`planAskDbScaffold(answers, versions)`** turns a new project's answers into its `askdb.config.ts` source, its `.env.example`, the env vars the config reads and the packages to install. It throws `AskDbScaffoldInputError`, with the answer's `field`, for a bad answer. Its types are `AskDbScaffoldAnswers` (its `ai` answer is an `AskDbAiConfigScaffoldInput`), `AskDbScaffoldPlan` and `ScaffoldValue`.
 - **`isAskDbScaffoldEnvName(name)`** is its rule for an env var name: POSIX and uppercase (`^[A-Z_][A-Z0-9_]*$`).
-- **`renderAskDbAiConfigScaffold(input)`** renders the config's `ai` block (the provider connection in `ai.providerConfig`, plus `ai.language.model` read from an env var when one is given) and lists the env vars that block reads. Its types are `AskDbAiConfigScaffoldInput`, `AskDbAiConfigScaffold` and `AskDbScaffoldEnvVar`.
 - **The package-manager helpers:** `detectPackageManager`, `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` and `packageManagerSpawnSpec`, with the types `PackageManager` and `PackageManagerSpawnSpec`.
 
 ## Internal
