@@ -180,7 +180,7 @@ async function runAsk(opts: AskOptions): Promise<number> {
   }
 }
 
-/** The schema path and a hint that names what every install has, not a folder only AskDB's repo holds (#850). */
+/** The schema path, and a hint that names `askdb introspect` and the troubleshooting page. */
 function formatSchemaPathHint(schemaPath: string): string {
   return (
     `Schema path: ${schemaPath}\n` +

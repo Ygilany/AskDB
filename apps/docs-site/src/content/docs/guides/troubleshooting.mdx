@@ -56,6 +56,16 @@ Nothing exists at the schema path. `askdb ask --schema` prints `Schema path not 
 
 Run `ls my-app.schema/` to check that `askdb introspect` wrote the directory. If it holds no `schema.json`, introspection didn't finish.
 
+### `Schema path is not readable (permission denied).`
+
+`askdb ask` can't read the file at the schema path, or can't enter a directory above it. Check the owner and mode of the path and each directory on the way to it:
+
+```bash
+ls -ld my-app.schema my-app.schema/schema.json
+```
+
+The user that runs `askdb` needs read access to the files and execute access to every directory above them, such as `chmod -R u+rX my-app.schema` when that user owns it. In a container, the mounted schema directory must be readable by the container's user, which may not be yours. A schema directory that exists but can't be listed prints `Failed to parse schema.` instead, with `EACCES: permission denied, scandir '…'` after `Details:`. The same fix applies.
+
 ### `SchemaParseError: Refusing to load … as a standalone physical layer`
 
 You passed a JSON file that isn't named `schema.json`, such as `prod-schema.json`, and its directory also holds `tenant-policy.md`, `tables/`, or `concepts.md`, in any case (`Tenant-Policy.md` counts). Loading the file alone would ignore those files, so `ask()` would run without your tenant policy and without the `sensitive: true` marks in `tables/*.md`. AskDB refuses instead.
@@ -78,6 +88,10 @@ Rename each file the error names, for example `git mv Tenant-Policy.md tenant-po
 rm my-app.schema/schema.json
 npx askdb introspect --out my-app.schema --schema-id my-app
 ```
+
+### `Failed to load schema.`
+
+Reading the schema path failed with a file system error other than a missing path or a permission. Node's error follows `Details:`. The usual one is `ENOTDIR: not a directory`, which means a part of the path is a file, as in `my-app.schema/schema.json/tables`. Pass a schema directory, the `schema.json` inside one, or a bundle file from [`askdb bundle`](/reference/cli/#askdb-bundle).
 
 ### `Refusing to write … outside the schema directory: "…" is a symbolic link`
 
