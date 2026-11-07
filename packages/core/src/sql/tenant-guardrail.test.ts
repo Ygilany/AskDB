@@ -1341,3 +1341,65 @@ describe("validateTenantGuardrails — a join with LEFT, RIGHT, FULL or OUTER in
     }
   });
 });
+
+describe("validateTenantGuardrails — a quoted tenant column counts only when spelled as the schema spells it", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const exact = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+
+  // Postgres and CockroachDB compare a quoted name exactly, so "AGENCY_ID" is x's column, not
+  // orders.agency_id: on Postgres 17 the statement returned every agency's rows.
+  it.each(exact)("refuses another source's quoted column spelled in another case under %s", (_label, dialect) => {
+    for (const sql of [
+      'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids',
+      'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "Agency_Id") x WHERE :tenant_agency_ids = "Agency_Id"',
+      'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" IN (:tenant_agency_ids)',
+    ]) {
+      expect(findings(sql, dialect), sql).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+    }
+  });
+
+  it.each([["a custom id", customEngine()], ["no dialect", undefined]] as const)(
+    "refuses it in backticks or brackets under %s, whose engine may compare those exactly too",
+    (_label, dialect) => {
+      for (const sql of [
+        "SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS `AGENCY_ID`) x WHERE `AGENCY_ID` = :tenant_agency_ids",
+        "SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS [AGENCY_ID]) x WHERE [AGENCY_ID] = :tenant_agency_ids",
+      ]) {
+        expect(findings(sql, dialect), sql).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+      }
+    },
+  );
+
+  it("a strict policy refuses it", () => {
+    const sql = 'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids';
+    expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(exact)("keeps the column quoted as the schema spells it, or unquoted in any case, under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM orders WHERE AGENCY_ID = :tenant_agency_ids",
+      "SELECT o.* FROM orders o WHERE O.Agency_Id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  it("keeps a quoted column in the schema's spelling under postgres and cockroachdb", () => {
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT]) {
+      expect(findings('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids', dialect)).toEqual([]);
+    }
+  });
+
+  it("keeps a quoted column in another case where the engine compares column names without case", () => {
+    expect(findings("SELECT * FROM orders WHERE [AGENCY_ID] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT * FROM orders WHERE `AGENCY_ID` = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
+    expect(findings('SELECT * FROM orders WHERE "AGENCY_ID" = :tenant_agency_ids', SQLITE_DIALECT)).toEqual([]);
+  });
+});
