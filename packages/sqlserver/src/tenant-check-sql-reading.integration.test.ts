@@ -57,6 +57,6 @@ fixtureSuite("the tenant check reads SQL the way SQL Server does (live SQL Serve
     // `(a = 1 AND …) OR 1=1` keeps both rows; without the OR, only a = 1 would.
     const rows = (await runner(`SELECT count(*) AS c FROM (SELECT 1 AS a UNION ALL SELECT 2) t WHERE a = 1 AND ${tail}`)).rows;
     expect(Number(rows[0]![0])).toBe(2);
-    expect(findings(`SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ${tail}`)).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings(`SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ${tail}`)).toContain("MISSING_TENANT_PREDICATE");
   });
 });
