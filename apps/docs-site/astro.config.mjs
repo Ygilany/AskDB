@@ -199,6 +199,7 @@ export default defineConfig({
               items: [
                 { label: "@askdb/core API", slug: "reference/core-api" },
                 { label: "@askdb/client API", slug: "reference/client-api" },
+                { label: "@askdb/config API", slug: "reference/config-api" },
                 { label: "@askdb/rag API", slug: "reference/rag-api" },
                 { label: "Introspection API", slug: "reference/introspect-api" },
               ],

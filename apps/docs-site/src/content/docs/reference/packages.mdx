@@ -144,24 +144,11 @@ The CLI, Studio, and the HTTP API already include all four SDKs. Unknown `ai.pro
 
 ### `@askdb/config`
 
-Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `defineConfig`, and a runtime snapshot accessor.
+Loads `.env` and `askdb.config.*`, checks the config, and keeps it as the process's runtime snapshot, which the CLI, Studio, the HTTP API and `createAskDb()` read. It depends on no other AskDB package.
 
 <InstallTabs pkgs="@askdb/config" />
 
-**Key exports**
-
-| Symbol | Purpose |
-| --- | --- |
-| `defineConfig(config)` | Type-safe config builder. |
-| `bootstrapAskDbEnv(options)` | Load `.env` + `askdb.config.*` and install the runtime snapshot. |
-| `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). Its `ai.language` and `ai.embedding` sections go to `@askdb/ai`'s `*FromSection` methods as they are; each section's `connection` is an `AskDbRuntimeAiConnection` (`name`, `apiKey`, `apiKeySecondary`, `baseUrl`, `resourceName`, `apiVersion`). |
-| `isAskDbRuntimeInitialized()` | `true` once the runtime snapshot is installed, so code can bootstrap only when its host hasn't. |
-| `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
-| `env`, `requiredEnv` | Typed env-var accessors. |
-| `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
-| `DEFAULT_OPENAI_LANGUAGE_MODEL`, `DEFAULT_ANTHROPIC_LANGUAGE_MODEL`, `DEFAULT_GOOGLE_LANGUAGE_MODEL`, `DEFAULT_GATEWAY_LANGUAGE_MODEL`, `DEFAULT_AZURE_OPENAI_DEPLOYMENT` | Each provider's default `ai.language.model`. |
-
-For tools that set up a project, the `@askdb/config/scaffold` entry point exports `planAskDbScaffold(answers, versions)`, `renderAskDbAiConfigScaffold(input)` and the package-manager helpers `askdb init` and Studio share: `detectPackageManager`, `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` and `packageManagerSpawnSpec`. `planAskDbScaffold` turns a new project's answers into its `askdb.config.ts` source, its `.env.example`, the env vars the config reads and the packages to install, and throws `AskDbScaffoldInputError` (with the answer's `field`) for a bad answer; its types are `AskDbScaffoldAnswers`, `AskDbScaffoldPlan` and `ScaffoldValue`. `isAskDbScaffoldEnvName(name)` is its env var name rule: POSIX, uppercase (`^[A-Z_][A-Z0-9_]*$`). `renderAskDbAiConfigScaffold` renders the config's `ai` block (the provider connection in `ai.providerConfig`, plus `ai.language.model` read from an env var when one is given) and lists the env vars that block reads. The entry point is tooling for `askdb init` and Studio's setup wizard. It is experimental, like Studio: a minor release of `@askdb/config` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)). Your own `askdb.config.ts` never needs it.
+The [@askdb/config API](/reference/config-api/) lists every export, including the experimental `@askdb/config/scaffold` entry point, and the [Configuration reference](/reference/config/) every config key.
 
 ## Engine packages
 
