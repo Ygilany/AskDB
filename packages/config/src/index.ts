@@ -40,7 +40,7 @@ export {
   DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
 } from "./defaults.js";
-export { defineConfig, isAskDbEnvProjection, ASKDB_ENV_PROJECTION } from "./projection.js";
+export { defineConfig } from "./projection.js";
 export type { AskDbEnvProjection } from "./projection.js";
 export { loadAskDbConfigProjection, loadAskDbConfigProjectionSync } from "./load-merge.js";
 export type {
@@ -66,7 +66,6 @@ export type {
   MemoryStoreConfig,
   PgvectorStoreConfig,
 } from "./types.js";
-export { flattenAskDbConfig } from "./projection.js";
 export {
   ASKDB_MODES_V1,
   ASKDB_LOG_LEVELS,

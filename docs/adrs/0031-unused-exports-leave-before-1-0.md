@@ -4,6 +4,8 @@
 
 Accepted (2026-11-05, the coordinating thread's answer to Stop 1 of #275 and #356, Q1 to Q3). Implemented in PR #637.
 
+> **Amendment (2026-11, #852, #830):** The one-step rule also covers an export that its package's API page lists as internal, with no stability promise, when nothing outside its own package imports it. A page naming it doesn't make it documented API. The maintainer decided this in Round 14 of the 1.0.0-rc.1 plan (Q34), as one rule for `@askdb/core` and `@askdb/config`. Core dropped 21 internal exports, and config dropped `flattenAskDbConfig`, `isAskDbEnvProjection` and `ASKDB_ENV_PROJECTION`. The beta.52 upgrade notes name each one and its replacement. `flattenAskDbConfig` also appeared in `@askdb/config`'s README and in earlier upgrade notes. It went in one step too, because `defineConfig(config).entries` returns the same map. Deprecating first lost for the reason option B lost: the removal would land after rc.1 and stay frozen until 2.0. "Outside its own package" counts other packages, apps, examples and the consumer lab, not only their `src` directories. `loadNormalizedSchemaFromJson` stays because the packed-install smoke imports it. An internal export that another AskDB package, app or example imports stays until it has another home (#866, #752).
+
 ## Context
 
 1.0 freezes AskDB's public API: after it, removing an export needs a major. The freeze starts with the RC version line (#354).
