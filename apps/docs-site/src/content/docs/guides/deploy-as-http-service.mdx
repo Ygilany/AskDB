@@ -83,7 +83,9 @@ resp = httpx.post(
     json={"question": "How many customers signed up last week?"},
     timeout=30,
 )
-body = resp.json()  # error responses are JSON too, with ok: false
+if not resp.headers.get("content-type", "").startswith("application/json"):
+    resp.raise_for_status()  # a gateway's own error page, not AskDB's
+body = resp.json()  # AskDB's own error responses are JSON too, with ok: false
 
 if body["ok"]:
     sql = body["sql"]
