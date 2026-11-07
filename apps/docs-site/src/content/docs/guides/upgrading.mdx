@@ -19,6 +19,18 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.51
+
+Not published yet: these changes ship with `@askdb/core` 1.0.0-beta.51 and `@askdb/enrich` 0.2.0-beta.22.
+
+### Point each tenant-policy column at its entry's own table
+
+The tenant-policy loader now checks that each column the contract puts on an entry's own table is on that table ([#836](https://github.com/Ygilany/AskDB/issues/836)): a root's `tenantIdColumn` and `parent.foreignKey`, a hierarchy edge's `foreignKey` (on the child), a `scopeThrough` column, and a polymorphic `typeColumn` and `idColumn`. Before, it only checked that `schema.json` had the column somewhere, so a `scopeThrough` column on another table loaded without a warning and broke the scoped table's filter path.
+
+- **Under `enforcement: strict`, such a policy fails to load** with `SchemaParseError`, naming the file, the column and the table it's on, in `loadSchema()`, a bundle, and `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save). Under `warn`, it loads with the warning. Point the field at the column on the entry's own table.
+- **A `switch` over every `TenantPolicyWarning`** (in `schema.tenantPolicy.warnings`) needs a case for the new `misplaced_column_id`, with `id`, `tableId` (the table the column is on) and `context`. The schema loader's warning of the same name, in `schema.warnings`, is unchanged.
+- **If you call `normalizeTenantPolicy()` yourself,** its third argument is now a `Map` from column ID to table ID, read from `schema.json`: `new Map(tables.flatMap((t) => t.columns.map((c) => [c.id, t.id])))`.
+
 ## 1.0.0-beta.50
 
 Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30 and `@askdb/studio` 0.2.0-beta.43.
@@ -151,14 +163,6 @@ A bundle must carry `tables`, the markdown of each `tables/*.md` keyed by file n
 - **For a prompt that shows the whole schema,** pass `{ schema }`. If no table in your schema is marked `tracked: false`, the block is the same as before. An untracked table can no longer be named in the block, even on purpose.
 - **Under retrieval,** pass `{ schema, tableIds }`, with `synthesizeRetrievedDdl()`'s `tableIds`.
 - **`buildNlToSqlUserPrompt()` throws `AskDbError`** when you pass `prebuiltDdl` and a tenant policy without `promptTableIds` (the same ids), or a tenant policy with a v1 schema.
-
-### Point each tenant-policy column at its entry's own table
-
-The tenant-policy loader now checks that each column the contract puts on an entry's own table is on that table ([#836](https://github.com/Ygilany/AskDB/issues/836)): a root's `tenantIdColumn` and `parent.foreignKey`, a hierarchy edge's `foreignKey` (on the child), a `scopeThrough` column, and a polymorphic `typeColumn` and `idColumn`. Before, it only checked that `schema.json` had the column somewhere, so a `scopeThrough` column on another table loaded without a warning and broke the scoped table's filter path.
-
-- **Under `enforcement: strict`, such a policy fails to load** with `SchemaParseError`, naming the file, the column and the table it's on, in `loadSchema()`, a bundle, and `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save). Under `warn`, it loads with the warning. Point the field at the column on the entry's own table.
-- **A `switch` over every `TenantPolicyWarning`** (in `schema.tenantPolicy.warnings`) needs a case for the new `misplaced_column_id`, with `id`, `tableId` (the table the column is on) and `context`. The schema loader's warning of the same name, in `schema.warnings`, is unchanged.
-- **If you call `normalizeTenantPolicy()` yourself,** its third argument is now a `Map` from column ID to table ID, read from `schema.json`: `new Map(tables.flatMap((t) => t.columns.map((c) => [c.id, t.id])))`.
 
 ### Other changes you may notice in beta.50
 
