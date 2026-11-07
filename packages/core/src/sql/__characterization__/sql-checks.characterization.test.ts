@@ -207,6 +207,9 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders AS t (agency_id, x) WHERE agency_id = :tenant_agency_ids",
   "SELECT * FROM (SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids) d",
   "SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids",
+  "SELECT * FROM (orders o JOIN lookup_states s ON true) j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids",
+  "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j WHERE agency_id = :tenant_agency_ids",
   // A join with LEFT, RIGHT or FULL anywhere in it is outer, whatever hint sits beside it.
   "SELECT o.* FROM orders o LEFT STRAIGHT JOIN lookup_states x ON x.code = o.state AND o.agency_id = :tenant_agency_ids",
   "SELECT o.* FROM orders o LEFT LOOKUP JOIN lookup_states x ON x.code = o.state AND o.agency_id = :tenant_agency_ids",

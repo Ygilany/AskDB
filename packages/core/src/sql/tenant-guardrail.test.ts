@@ -1301,6 +1301,32 @@ describe("validateTenantGuardrails — a column list after a table's alias renam
   it("keeps SQL Server's table hint in parentheses after an alias, which SQL Server doesn't read as a column list", () => {
     expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
   });
+
+  // A column list on a parenthesized FROM item renames what it outputs: on Postgres 17,
+  // `(billing."order" o JOIN ref.status s ON true) AS j (a1, a2, agency_id)` made `agency_id` the
+  // join's third column (client_id), and `agency_id = 2` returned agency 1's orders.
+  const renamedItem: Array<[string, string]> = [
+    ["a join after AS", "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a join with a bare alias", "SELECT * FROM (orders o JOIN lookup_states s ON true) j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a join in double parentheses", "SELECT * FROM ((orders o JOIN lookup_states s ON true)) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a join after a comma in FROM", "SELECT * FROM service_types t, (orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a derived table", "SELECT * FROM (SELECT total, agency_id FROM orders) AS t (agency_id, real_agency) WHERE agency_id = :tenant_agency_ids"],
+  ];
+
+  it.each(postgresFamily)("refuses a read inside a parenthesized FROM item with a column list under %s", (_label, dialect) => {
+    for (const [label, sql] of renamedItem) expect(findings(sql, dialect), label).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+  });
+
+  it.each(postgresFamily)("keeps a parenthesized FROM item without a column list under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j WHERE agency_id = :tenant_agency_ids",
+      "SELECT * FROM (orders o JOIN lookup_states s ON o.state = s.code) WHERE o.agency_id = :tenant_agency_ids",
+      "SELECT * FROM (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) AS t",
+      "SELECT o.* FROM (VALUES (1, 2)) AS v (a, b), orders o WHERE o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
 });
 
 describe("validateTenantGuardrails — a join with LEFT, RIGHT, FULL or OUTER in it is outer, whatever hint it carries", () => {
