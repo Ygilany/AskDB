@@ -1149,11 +1149,11 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
 
   // A quoted identifier is one name, whatever it holds: its dots, spaces and punctuation are never code.
   it.each([
-    ["a quoted alias `.`", `SELECT * FROM orders "."`, POSTGRES_DIALECT],
-    ["a backtick-quoted alias `.`", "SELECT * FROM orders `.`", MYSQL_DIALECT],
-    ["a bracketed alias `.`", "SELECT * FROM orders [.]", SQLSERVER_DIALECT],
-    ["a quoted alias starting with `.`", `SELECT * FROM orders ".x"`, POSTGRES_DIALECT],
-    ["a bracketed alias `.` under no dialect", "SELECT * FROM orders [.]", undefined],
+    ["a quoted alias `.`", `SELECT * FROM orders "." WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a backtick-quoted alias `.`", "SELECT * FROM orders `.` WHERE orders.agency_id = " + P, MYSQL_DIALECT],
+    ["a bracketed alias `.`", `SELECT * FROM orders [.] WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a quoted alias starting with `.`", `SELECT * FROM orders ".x" WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a bracketed alias `.` under no dialect", `SELECT * FROM orders [.] WHERE orders.agency_id = ${P}`, undefined],
     ["a CTE reference aliased `[.]`", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x [.]`, undefined],
     ["a quoted alias with a space beside a read aliased like its first word", `SELECT "b a".* FROM orders "b a" CROSS JOIN orders b WHERE b.agency_id = ${P}`, POSTGRES_DIALECT],
     ["the same, backtick-quoted", "SELECT `b a`.* FROM orders `b a` CROSS JOIN orders b WHERE b.agency_id = " + P, MYSQL_DIALECT],
@@ -1163,6 +1163,17 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     ["a bracketed alias `,` before a sibling", `SELECT [,].* FROM orders [,], orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
     ["a column list after a quoted alias with a space", `SELECT * FROM (SELECT total, agency_id FROM orders) AS "t x" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
     ["a column list after a CTE reference's quoted alias with a space", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS "t y" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // Only `table`, `table alias` and `table AS alias` followed by what ends a source name a read: a
+    // clause after the table (TABLESAMPLE, NOT INDEXED, PARTITION, FOR SYSTEM_TIME) leaves it nameless.
+    ["a sibling's quoted alias spelled like TABLESAMPLE", `SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS "tablesample" WHERE "tablesample".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the same on SQLite", `SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS "tablesample" WHERE "tablesample".agency_id = ${P}`, SQLITE_DIALECT],
+    ["a sibling's quoted alias spelled like NOT INDEXED", `SELECT * FROM orders NOT INDEXED, orders AS "not" WHERE "not".agency_id = ${P}`, SQLITE_DIALECT],
+    ["a sibling's alias spelled like PARTITION", "SELECT * FROM orders partition (p0), orders AS `partition` WHERE `partition`.agency_id = " + P, MYSQL_DIALECT],
+    ["a sibling's alias spelled like FOR SYSTEM_TIME", `SELECT * FROM orders for system_time all, orders AS [for] WHERE [for].agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["the PARTITION shape under no dialect", "SELECT * FROM orders partition (p0), orders AS `partition` WHERE `partition`.agency_id = " + P, undefined],
+    // A subquery is a row source only where a source starts, never after ON or in an expression.
+    ["a scalar subquery right after ON", `SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = ${P}`, undefined],
+    ["a scalar subquery in an ON's BETWEEN", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code BETWEEN (SELECT agency_id FROM orders x) AND 9 WHERE agency_id = ${P}`, POSTGRES_DIALECT],
     // A table alone in parentheses takes the alias that follows them.
     ["`ONLY (orders) a` beside an unaliased sibling", `SELECT a.* FROM ONLY (orders) a, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
     ["`(orders) a` beside an unaliased sibling", `SELECT a.* FROM (orders) a, orders WHERE orders.agency_id = ${P}`, SQLITE_DIALECT],
@@ -1211,6 +1222,8 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     ["a quoted alias with a space, filtered through it", `SELECT * FROM orders "my alias" WHERE "my alias".agency_id = ${P}`, POSTGRES_DIALECT],
     ["a quoted table name filtered through it", `SELECT * FROM "orders" WHERE "orders".agency_id = ${P}`, POSTGRES_DIALECT],
     ["`ONLY (orders) a`, filtered through its alias", `SELECT * FROM ONLY (orders) a WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a subquery after ON with its own predicate", `SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT max(x.agency_id) FROM orders x WHERE x.agency_id = ${P}) = 7 WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["TABLESAMPLE after an alias, filtered unqualified", `SELECT * FROM orders o TABLESAMPLE SYSTEM (10) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
   ])("accepts %s", (_label, sql, dialect) => {
     expect(findings(sql, dialect)).toEqual([]);
   });

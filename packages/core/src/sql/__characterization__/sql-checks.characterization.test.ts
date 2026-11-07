@@ -220,6 +220,9 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders \"my alias\" WHERE \"my alias\".agency_id = :tenant_agency_ids",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM [orders ]",
   "SELECT json_agg(orders) AS data FROM orders WHERE orders.agency_id = :tenant_agency_ids",
+  // #399 review, confirm pass: only canonical forms name a read, and a subquery is a row source only where a source starts.
+  "SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS \"tablesample\" WHERE \"tablesample\".agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

@@ -890,21 +890,29 @@ function endsSource(a: Analysis, k: number): boolean {
   }
 }
 
-/** The token that names the row source ending at `i` (`orders o`, `orders AS o`, `) t`): its alias, if one may follow. */
+/**
+ * The alias of the row source ending at `i`, in the only forms the check reads one: `orders o`,
+ * `orders AS o`, `) t`, where the alias is followed by what ends the source ({@link endsSource})
+ * or by its column list. Anything else (`orders TABLESAMPLE …`, `orders NOT INDEXED`) is no alias
+ * the check recognises, so it returns undefined and the caller fails closed.
+ */
 function aliasAt(a: Analysis, i: number): number | undefined {
-  if (a.tokens[i + 1]?.kw === "as") return isWord(a.tokens[i + 2]) ? i + 2 : undefined;
-  return endsSource(a, i + 1) || !isWord(a.tokens[i + 1]) ? undefined : i + 1;
+  const as = a.tokens[i + 1]?.kw === "as";
+  if (!as && endsSource(a, i + 1)) return undefined;
+  const alias = as ? i + 2 : i + 1;
+  if (!isWord(a.tokens[alias])) return undefined;
+  return endsSource(a, alias + 1) || a.tokens[alias + 1]?.text === "(" ? alias : undefined;
 }
 
 /**
  * The names the table reference at `i` goes by: its alias, or its own name when what follows ends
- * it with no alias. Anything else after it may be an alias the check doesn't recognise, so the
- * read gets no name and only an unqualified predicate filters it.
+ * it with no alias. Anything else after it, an alias with a column list included, is a form the
+ * check doesn't read, so the read gets no name and only an unqualified predicate filters it.
  */
 function readNames(a: Analysis, i: number): Set<string> {
   const end = sourceEnd(a, i);
   const alias = aliasAt(a, end);
-  if (alias !== undefined) return new Set([a.tokens[alias]!.name]);
+  if (alias !== undefined) return a.tokens[alias + 1]?.text === "(" ? new Set() : new Set([a.tokens[alias]!.name]);
   return endsSource(a, end + 1) ? new Set([a.tokens[i]!.name]) : new Set();
 }
 
@@ -925,6 +933,26 @@ function sourceEnd(a: Analysis, i: number): number {
     end++;
   }
   return end;
+}
+
+/**
+ * Whether the `(` at `open` sits where a row source starts: right after `FROM`, a join word,
+ * `LATERAL`, `APPLY`, a comma of a `FROM` list, or another `(` that does.
+ */
+function inSourcePosition(tokens: readonly Token[], open: number): boolean {
+  const before = tokens[open - 1];
+  if (before === undefined) return false;
+  if (["from", "join", "straight_join", "lateral", "apply"].includes(before.kw)) return true;
+  if (before.text === "(") return !opensQuery(tokens, open - 1) && inSourcePosition(tokens, open - 1);
+  if (before.text !== ",") return false;
+  for (let k = open - 2; k >= 0; k--) {
+    const t = tokens[k]!;
+    if (t.depth < before.depth) return false;
+    if (t.depth > before.depth) continue;
+    if (t.kw === "from") return true;
+    if (t.kw === "select" || t.kw === "where" || t.kw === "having" || (CLAUSE_END.has(t.kw) && !JOIN_WORDS.has(t.kw))) return false;
+  }
+  return false;
 }
 
 /** Whether the alias of the row source ending at `i` has a column list (`x t (a, b)`), which renames its output. */
@@ -1086,6 +1114,8 @@ function readSourceRefs(a: Analysis, open: number): Read[] | undefined {
   const { tokens, scopes } = a;
   const close = scopes.close.get(open);
   if (close === undefined || subqueryUse(tokens, open) !== "table") return undefined;
+  // A derived table only in a source position: a subquery after `ON` or in an expression is no row source.
+  if (!opensAfterAs(tokens, open) && !inSourcePosition(tokens, open)) return undefined;
   if (opensAfterAs(tokens, open)) {
     const cte = cteAt(tokens, open);
     if (cte === undefined) return undefined; // a column list renames the output, or it's no CTE this check reads
@@ -1111,7 +1141,7 @@ const COMPUTES_OVER_ROWS = new Set(["group", "having", "window", "qualify", "lim
  * its output unrenamed, and computes nothing across rows: every select-list item is a plain column
  * (`col` or `q.col`, optionally aliased), `q.*` or `*`; exactly one yields that name, and it is the
  * column itself, the read's `q.*`, or `*` over a single source; and the body has no `GROUP BY`,
- * `HAVING`, window, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
+ * `HAVING`, window, `QUALIFY`, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
  * before the outside filter. An item with a string or comment in it, `DISTINCT ON` or a nested
  * `WITH` fails closed.
  */
