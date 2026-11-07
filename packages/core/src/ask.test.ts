@@ -308,6 +308,24 @@ describe("ask — the tenant block names no table the prompt leaves out (#771)",
   });
 });
 
+describe("ask — a MySQL DialectSpec that leaves backslashEscapes unset", () => {
+  it("reads the model's strings with escapes on, as the server's default does", async () => {
+    // MySQL reads `status = '<one string>' OR 1=1 OR status = ''`: every tenant's rows.
+    const sql = String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`;
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: { ...MYSQL_DIALECT, backslashEscapes: undefined },
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);
