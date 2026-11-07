@@ -55,7 +55,7 @@ const DIALECTS: ReadonlyArray<readonly [string, DialectSpec | undefined]> = [
   ["cockroachdb", COCKROACHDB_DIALECT],
   ["mysql", MYSQL_DIALECT],
   ["mysql-escapes", { ...MYSQL_DIALECT, backslashEscapes: false }],
-  // #827 (held): a MySQL spec that leaves backslashEscapes unset. Local only until the maintainer decides.
+  // A MySQL spec that leaves backslashEscapes unset reads escapes on (GHSA-8pwj-6hfv-5pm4).
   ["mysql-unset", { ...MYSQL_DIALECT, backslashEscapes: undefined }],
   ["mariadb", MARIADB_DIALECT],
   ["sqlite", SQLITE_DIALECT],
@@ -70,7 +70,7 @@ const HOSTILE: readonly string[] = [
   String.raw`SELECT * FROM orders WHERE note = 'a\' AND agency_id = :tenant_agency_ids AND note = '`,
   String.raw`SELECT * FROM orders WHERE note = 'a\'' AND agency_id = :tenant_agency_ids`,
   String.raw`SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = 'it''s'`,
-  // #827 (held): local only until the maintainer decides.
+  // GHSA-8pwj-6hfv-5pm4: a MySQL spec with backslashEscapes unset reads the string with escapes on.
   String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`,
   String.raw`SELECT E'a\'b' AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids`,
   "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'",
@@ -84,6 +84,9 @@ const HOSTILE: readonly string[] = [
   "SELECT $$ FROM orders $$ AS x FROM agencies WHERE id = :tenant_agency_ids",
   "SELECT $tag$ ' $tag$ AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
   "SELECT $é$ FROM orders $é$ AS x FROM agencies WHERE id = :tenant_agency_ids",
+  // GHSA-rmjw-pffc-5hjr: a dollar tag may hold non-ASCII letters, so `$é$ … $é$` is a string, as the engine reads it.
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND $é$'$é$ = '' OR 1=1 OR 'x' = 'x'",
+  "SELECT $é$ a $é$ AS n, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
   "SELECT * FROM orders /* a /* nested */ WHERE agency_id = :tenant_agency_ids */",
   "SELECT * FROM orders /* note */ WHERE agency_id = :tenant_agency_ids",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids --1\nOR 1=1",
@@ -150,7 +153,7 @@ const HOSTILE: readonly string[] = [
   'SELECT g.id FROM app."group" g GROUP BY g.id',
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY \"group\"",
   "SELECT * FROM orders WHERE note = E'\\'' AND agency_id = :tenant_agency_ids AND x = '",
-  // Held (a CR ends a `--` comment on Postgres and SQL Server, not on MySQL, SQLite or CockroachDB): local only until the maintainer decides.
+  // A CR ends a `--`/`#` comment on Postgres and SQL Server, not on MySQL, SQLite or CockroachDB (GHSA-8pwj-6hfv-5pm4).
   "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders",
   "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids",
   "SELECT 1 AS a -- \r'\n, u.secret_recovery_token FROM users u -- '",

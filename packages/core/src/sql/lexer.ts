@@ -72,9 +72,10 @@ export type SqlLexerProfile = {
   lineCommentEndsAtLfOnly?: boolean;
   /**
    * The tenant check's own, stricter reading of string prefixes, which its code views keep (#815):
-   * `$tag$` opens a string only when the tag is ASCII and closed, and an `E'…'` or `$tag$` string
-   * only when no name character or digit comes right before it (outside a string, comment or
-   * quoted name). Otherwise the `$` or `E` is read as code.
+   * a `$tag$` opens a string only when the tag is closed, and an `E'…'` or `$tag$` string only when
+   * no name character or digit comes right before it (outside a string, comment or quoted name).
+   * Otherwise the `$` or `E` is read as code. The tag may hold non-ASCII letters, as the engine
+   * reads it (GHSA-rmjw-pffc-5hjr).
    */
   strictStringPrefixes?: boolean;
 };
@@ -259,8 +260,6 @@ const CURRENCY = /\p{Sc}/u;
  */
 const TSQL_EXTRA_SPACE = /[\u200b\u0085]/;
 const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
-/** {@link DOLLAR_TAG} with an ASCII tag only, for `strictStringPrefixes`. */
-const ASCII_DOLLAR_TAG = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/;
 /** A character that continues a name or number, for `strictStringPrefixes`. */
 const NAME_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
 
@@ -476,7 +475,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     if (ch === "$") {
       if (profile.dollarQuotes) {
         const strict = profile.strictStringPrefixes === true;
-        const tag = (strict ? ASCII_DOLLAR_TAG : DOLLAR_TAG).exec(sql.slice(i));
+        const tag = DOLLAR_TAG.exec(sql.slice(i));
         const opener = tag?.[0];
         const closeAt = opener === undefined ? -1 : sql.indexOf(opener, i + opener.length);
         if (opener !== undefined && !(strict && (closeAt === -1 || followsNameChar(i)))) {
