@@ -13,10 +13,8 @@ import { ask, type AskDialect } from "../ask.js";
 import { SchemaParseError, TenantScopeError, UnknownDialectError } from "../errors.js";
 import { getDialectSpec, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
-import {
-  placeholderForRoot as publicPlaceholderForRoot,
-  placeholderForTenantRoot as publicPlaceholderForTenantRoot,
-} from "../index.js";
+import { placeholderForTenantRoot as publicPlaceholderForTenantRoot } from "../index.js";
+import { placeholderForRoot } from "../schema/v2/tenant-policy.js";
 
 function reasonOf(fn: () => unknown): string | undefined {
   try {
@@ -677,9 +675,9 @@ describe("placeholderForTenantRoot — the public derivation agrees with the bin
   });
 
   it("keeps the deprecated label-only placeholderForRoot output unchanged", () => {
-    expect(publicPlaceholderForRoot("Agency")).toBe(":tenant_agency_ids");
-    expect(publicPlaceholderForRoot("Sub-Agency")).toBe(":tenant_sub_agency_ids");
-    expect(publicPlaceholderForRoot("My Cool Root")).toBe(":tenant_my_cool_root_ids");
-    expect(publicPlaceholderForRoot("Клиент")).toBe(":tenant___ids");
+    expect(placeholderForRoot("Agency")).toBe(":tenant_agency_ids");
+    expect(placeholderForRoot("Sub-Agency")).toBe(":tenant_sub_agency_ids");
+    expect(placeholderForRoot("My Cool Root")).toBe(":tenant_my_cool_root_ids");
+    expect(placeholderForRoot("Клиент")).toBe(":tenant___ids");
   });
 });

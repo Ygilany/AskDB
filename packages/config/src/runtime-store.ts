@@ -37,7 +37,7 @@ export function getAskDbRuntimeStore(): AskDbRuntimeStore {
   const stored = runtimeHolder[RUNTIME_STORE_KEY];
   if (!stored) {
     throw new Error(
-      "AskDB runtime is not initialized. Call bootstrapAskDbEnv() (or bootstrapAskDbRuntime()) from @askdb/config after startup, " +
+      "AskDB runtime is not initialized. Call bootstrapAskDbEnv() from @askdb/config after startup, " +
         "typically with the project cwd, and ensure askdb.config.* exists.",
     );
   }

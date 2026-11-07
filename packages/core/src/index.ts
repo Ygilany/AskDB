@@ -17,7 +17,6 @@ export {
 export {
   DEFAULT_TENANT_SQL_MODE,
   resolveTenantSql,
-  placeholderForRoot,
   placeholderForTenantRoot,
   type TenantSqlOutputMode,
   type TenantPlaceholderResult,
@@ -129,12 +128,7 @@ export type {
   TableTenantClassification,
   TenantPolicyH2Section,
 } from "./schema/v2/index.js";
-export {
-  ENRICHMENT_SYSTEM_PROMPT,
-  buildEnrichmentUserPrompt,
-  parseCandidates,
-  suggestEnrichment,
-} from "./enrichment/index.js";
+export { suggestEnrichment } from "./enrichment/index.js";
 export type {
   EnrichmentCandidate,
   EnrichmentContext,

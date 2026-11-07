@@ -115,7 +115,7 @@ The prompt lists the target table the way `ask()`'s prompt does (`TABLE public.u
 | `temperature` | `0.4` | Sampling temperature. |
 | `maxCandidates` | `3` | The most candidates returned. |
 
-The option's type is exported as `EnrichmentPromptOptions`. `buildEnrichmentUserPrompt(target, context, options?)` returns the user prompt `suggestEnrichment` sends, with the same `options`, for hosts that call their model themselves; it throws `SensitiveEnrichmentTargetError` in the same case. `ENRICHMENT_SYSTEM_PROMPT` is the system prompt, and `parseCandidates(text, max)` splits a reply into candidates.
+The option's type is exported as `EnrichmentPromptOptions`.
 
 ## Markdown files
 

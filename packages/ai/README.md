@@ -105,10 +105,8 @@ await ask({ question, schema, dialect: "postgres", model, deps: { providerOption
 - `resolveBaseConfig`
 - registry methods for a typed config section (`resolveAiConfigFromSection`, `resolveEmbeddingConfigFromSection`, `createLanguageModelFromSection`, `createEmbeddingModelFromSection`), for an env map (`resolveAiConfig`, `resolveEmbeddingConfig`, `createLanguageModelFromEnv`, `createEmbeddingModelFromEnv`), and `resolveProviderOptions`
 - the section types `AiLanguageSection`, `AiEmbeddingSection`, `AiConnectionSection`, `AiReasoningSection`, and `AiModelSection` (what an adapter's optional `resolveConfigFromSection` reads)
-- `aiKeyMissingMessage`
-- `aiProviderMissingMessage`
 - `AiBaseUrlCredentialsError`, thrown when a model base URL holds a username or password
-- `resolveReasoningEffortFromSection`, `resolveReasoningEffort`, `isReasoningEffort`, `REASONING_EFFORTS`
+- `resolveReasoningEffortFromSection`, `resolveReasoningEffort`, `REASONING_EFFORTS`
 
 ## License
 

@@ -1,6 +1,6 @@
-export { ASKDB_CONFIG_EXTENSION_PRECEDENCE, discoverAskDbConfigPath } from "./discover.js";
+export { discoverAskDbConfigPath } from "./discover.js";
 export type { AskDbConfigExtension } from "./discover.js";
-export { bootstrapAskDbEnv, bootstrapAskDbRuntime } from "./bootstrap.js";
+export { bootstrapAskDbEnv } from "./bootstrap.js";
 export type { BootstrapAskDbEnvOptions } from "./bootstrap.js";
 export { env, requiredEnv } from "./env.js";
 export { isAskDbDebugEnabled } from "./diagnostics.js";
@@ -32,13 +32,8 @@ export {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_GATEWAY_LANGUAGE_MODEL,
   DEFAULT_GOOGLE_LANGUAGE_MODEL,
-  DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
-  DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_OPENAI_LANGUAGE_MODEL,
-  DEFAULT_PGVECTOR_INDEX_STRATEGY,
-  DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
-  DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
 } from "./defaults.js";
 export { defineConfig } from "./projection.js";
 export type { AskDbEnvProjection } from "./projection.js";
