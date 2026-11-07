@@ -21,7 +21,23 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.50
 
-Not published yet: these changes ship with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30 and `@askdb/studio` 0.2.0-beta.43.
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.50, `@askdb/ai` 0.1.0-beta.11, `@askdb/config` 1.0.0-beta.19, `@askdb/client` 1.0.0-beta.12, `@askdb/enrich` 0.2.0-beta.21, `@askdb/introspect` 0.3.0-beta.24, `@askdb/rag` 0.2.0-beta.30 and `@askdb/studio` 0.2.0-beta.43. Other packages that got a new version list what changed in their CHANGELOG.
+
+### Security: upgrade for GHSA-8pwj-6hfv-5pm4
+
+The tenant check looks for each tenant-scoped table's predicate in the model's SQL, and skips string literals and comments to find it. In four cases it read the SQL differently from the database engine, so a statement could pass the check while the engine read a table, or dropped a predicate, that the check never saw, and returned rows belonging to tenants outside the caller's scope ([GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4)). With `enforcement: strict`, `ask()` returned the statement. Getting there needed a way to steer the model's reply, and SQL run without database-level tenant enforcement. The check now reads each case the way the engine does:
+
+- **A `$` inside a name.** Postgres, CockroachDB, MySQL, MariaDB and SQLite read `x$$y` as one name, but the check read its `$$` as the start of a dollar-quoted string, under every dialect, and read `$tag$…$tag$` as a string on engines that have no such strings. This reached the built-in `postgres`, `cockroachdb`, `mysql`, `mariadb` and `sqlite` dialects with default settings, and the CLI, the HTTP API and Studio.
+- **A table named after a keyword.** A scoped table written unquoted under a name some engine takes as a plain name, such as `user` on MySQL or `lock`, `qualify` and `by` on Postgres, wasn't checked for its predicate.
+- **An unset `backslashEscapes` on a MySQL or MariaDB `DialectSpec`.** The check read it as escapes off, while the server and the rest of AskDB read it as on. A spec that spreads `MYSQL_DIALECT` or `MARIADB_DIALECT` keeps the field and wasn't affected.
+- **Where a `--` comment ends.** Postgres and SQL Server end it at a carriage return as well as at a line feed, and the check ended it only at a line feed. This reached a custom `AskDialect`, which skips the read-only check that refuses comments, and direct calls to the checks. On MySQL, MariaDB and SQLite the sensitive-column check had the opposite difference.
+
+What to do:
+
+- **Upgrade** `@askdb/core`, `askdb` and `@askdb/http-api` to 1.0.0-beta.50, and `@askdb/studio` to 0.2.0-beta.43. These pin `@askdb/core` exactly, so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **Expect a few more refusals.** A scoped table named after a keyword now counts wherever its name appears outside `ORDER BY` and `GROUP BY`: with a scoped table named `limit`, a query that uses `LIMIT` needs that table's tenant predicate too. Under a custom `AskDialect`, a `DO $$ … $$` block's tables are now reported beside `NOT_SELECT_OR_WITH`. Under `sqlserver`, a predicate written after a comment that a carriage return ends now counts, as SQL Server reads it.
+- **If you can't upgrade at once,** set `backslashEscapes` on a MySQL-family `DialectSpec` you built yourself, or spread `MYSQL_DIALECT`; and in a custom `AskDialect`, run `validateSelectSql(spec, sql)` with your engine's built-in spec before executing, since it refuses comments. No setting closes the first two cases.
+- **Enforce tenant isolation in the database** (for example Postgres row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. It limits the rows a statement can read regardless of its text.
 
 ### Handle `INVALID_DECLARATION` from `bindPreparedQuery()`
 
