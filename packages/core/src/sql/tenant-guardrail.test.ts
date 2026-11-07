@@ -1117,3 +1117,61 @@ describe("validateTenantGuardrails — a keyword written right after a number or
     expect(findings("SELECT * FROM 3d_models WHERE agency_id = :tenant_agency_ids", MYSQL_DIALECT, digitTable)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — `]]` in a bracketed name, and nested block comments", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const missing = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+
+  // SQL Server reads `]]` inside `[…]` as an escaped `]`, so `[o]] WHERE … AND [x]` is one alias, and on
+  // SQL Server 2022 the statement returned every row.
+  it.each([["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const)(
+    "refuses a `]]` alias that runs over the predicate under %s",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM orders AS [o]] WHERE agency_id = :tenant_agency_ids AND [x]", dialect)).toEqual(missing);
+    },
+  );
+
+  // SQL Server, Postgres and CockroachDB nest block comments, so the predicate is inside one: each returned every row.
+  it.each([
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const)(
+    "refuses a predicate inside a nested block comment under %s",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */", dialect)).toEqual(missing);
+    },
+  );
+
+  it("a strict policy refuses both", () => {
+    for (const sql of [
+      "SELECT * FROM orders AS [o]] WHERE agency_id = :tenant_agency_ids AND [x]",
+      "SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */",
+    ]) {
+      expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect: SQLSERVER_DIALECT }), sql).toThrow(TenantGuardrailError);
+    }
+  });
+
+  it.each([["sqlserver", SQLSERVER_DIALECT], ["postgres", POSTGRES_DIALECT], ["no dialect", undefined]] as const)(
+    "keeps bracketed names and closed comments under %s",
+    (_label, dialect) => {
+      for (const sql of [
+        "SELECT [agency_id] FROM [orders] WHERE [agency_id] = :tenant_agency_ids",
+        "SELECT [a]]b] FROM orders WHERE agency_id = :tenant_agency_ids",
+        "SELECT * FROM orders /* a /* b */ c */ WHERE agency_id = :tenant_agency_ids",
+        "SELECT * FROM orders /* note */ WHERE agency_id = :tenant_agency_ids",
+      ]) {
+        expect(findings(sql, dialect), sql).toEqual([]);
+      }
+    },
+  );
+
+  it("reads a comment MySQL doesn't nest the way MySQL does", () => {
+    // MySQL ends the comment at the first `*/`, so the predicate is code there.
+    expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
+  });
+});
