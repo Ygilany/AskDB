@@ -47,6 +47,9 @@ Two kinds of schema don't work with this server. A schema with a tenant policy (
 Some platforms give a service its port in a `PORT` variable. Read it in `askdb.config.ts` and convert it to a number: `env()` returns a string, so `port: env("PORT")` doesn't type-check.
 
 ```ts
+// askdb.config.ts
+import { defineConfig, env } from "@askdb/config";
+
 export default defineConfig({
   // ...
   httpApi: {

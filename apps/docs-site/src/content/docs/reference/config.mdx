@@ -117,7 +117,7 @@ export default defineConfig({
     language: { model: "my-gpt-4o-deployment", modelFamily: "gpt-4o" },
     embedding: { connection: "westus", model: "my-embedding-deployment", dimensions: 1536 },
   },
-  rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: env("PGVECTOR_URL") } } },
+  rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: env("ASKDB_PGVECTOR_URL") } } },
   // ...
 });
 ```

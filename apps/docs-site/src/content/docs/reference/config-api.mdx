@@ -1,5 +1,5 @@
 ---
-title: "@askdb/config API"
+title: "@askdb/config API reference"
 description: "Every export of @askdb/config: write a config with defineConfig(), load it with bootstrapAskDbEnv(), and read the checked settings with getAskDbRuntimeConfig()."
 ---
 
@@ -11,7 +11,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 <InstallTabs pkgs="@askdb/config" />
 
-<figure style="--d2-width: 420px">
+<figure style="--d2-width: 452px">
 
 ```d2 src="../../../assets/diagrams/d2/config-flow.d2"
 ```
@@ -72,7 +72,7 @@ Options, `BootstrapAskDbEnvOptions`:
 | `dotenvCandidatePaths` | `readonly string[]` | none | `.env` files to try in order. The first one that exists and loads wins; one that fails to load is skipped without a report. When none loads, the `.env` in the process's working directory is tried. Without this option, only `<cwd>/.env` is read. |
 | `dotenvNonFatal` | `boolean` | `true` | What a `.env` that exists but can't be read does, such as a directory named `.env`. With `true`, `Failed to load .env: <reason>` goes to stderr, `process.exitCode` becomes `1`, and loading goes on. With `false`, it throws that error. A missing `.env` is never an error. |
 
-It returns `{ dotenvPath, configPath }`. `dotenvPath` is the candidate or `<cwd>/.env` it loaded, and is absent when neither loaded. `configPath` is the config file.
+It returns `{ dotenvPath, configPath }`. `dotenvPath` is the `.env` file it loaded: the first candidate that loaded, or `<cwd>/.env` when you pass no candidates. It's absent when none loaded, and also when the fallback `.env` after the candidates did. `configPath` is the config file.
 
 It throws:
 
