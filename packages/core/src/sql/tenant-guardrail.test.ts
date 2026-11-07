@@ -1293,3 +1293,51 @@ describe("validateTenantGuardrails — a column list after a table's alias renam
     expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a join with LEFT, RIGHT, FULL or OUTER in it is outer, whatever hint it carries", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const every = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+  const on = "ON x.code = o.state AND o.agency_id = :tenant_agency_ids";
+
+  // An outer join's ON doesn't filter the side it keeps: on CockroachDB, each hinted join below kept
+  // every order, and Postgres and CockroachDB both kept every row for the nested form.
+  const outer: Array<[string, string]> = [
+    ["LEFT STRAIGHT JOIN", `SELECT o.* FROM orders o LEFT STRAIGHT JOIN lookup_states x ${on}`],
+    ["LEFT LOOKUP JOIN", `SELECT o.* FROM orders o LEFT LOOKUP JOIN lookup_states x ${on}`],
+    ["LEFT INVERTED JOIN", `SELECT o.* FROM orders o LEFT INVERTED JOIN lookup_states x ${on}`],
+    ["LEFT OUTER STRAIGHT JOIN", `SELECT o.* FROM orders o LEFT OUTER STRAIGHT JOIN lookup_states x ${on}`],
+    ["RIGHT STRAIGHT JOIN, with orders on the kept side", `SELECT o.* FROM lookup_states x RIGHT STRAIGHT JOIN orders o ${on}`],
+    ["FULL STRAIGHT JOIN", `SELECT o.* FROM orders o FULL STRAIGHT JOIN lookup_states x ${on}`],
+    ["an ON that closes an earlier LEFT JOIN", `SELECT o.* FROM orders o LEFT JOIN lookup_states x JOIN service_types s ON s.id = x.id ${on}`],
+  ];
+
+  it.each(every)("refuses the predicate in an outer join's ON under %s", (_label, dialect) => {
+    for (const [label, sql] of outer) expect(findings(sql, dialect), label).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(outer[0]![1], policy, agencyScope, { dialect: COCKROACHDB_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(every)("keeps the predicate in an inner join's ON under %s", (_label, dialect) => {
+    for (const sql of [
+      `SELECT o.* FROM orders o INNER STRAIGHT JOIN lookup_states x ${on}`,
+      `SELECT o.* FROM orders o INNER HASH JOIN lookup_states x ${on}`,
+      "SELECT o.* FROM orders o JOIN lookup_states x ON LEFT(x.code, 2) = o.state AND o.agency_id = :tenant_agency_ids",
+      `SELECT o.* FROM orders o LEFT JOIN service_types s ON s.id = o.id JOIN lookup_states x ${on}`,
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+});
