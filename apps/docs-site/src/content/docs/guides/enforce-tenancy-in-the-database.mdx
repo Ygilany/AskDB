@@ -122,7 +122,7 @@ In node-postgres, with `askdb` created by `createAskDb()` as in [Embed in a Node
 import { Pool, type QueryConfig } from "pg";
 
 // Connects as askdb_reader.
-const pool = new Pool({ connectionString: process.env.ASKDB_READER_URL, statement_timeout: 5000 });
+const pool = new Pool({ connectionString: process.env.READER_DATABASE_URL, statement_timeout: 5000 });
 
 // organizationIds: the organizations your application authorized for this user.
 export async function askForOrganizations(question: string, organizationIds: string[]) {

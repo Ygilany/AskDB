@@ -34,7 +34,7 @@ export default defineConfig({
     embedder: "ai",
     store: "pgvector",
     storeConfig: {
-      pgvector: { databaseUrl: env("ASKDB_PGVECTOR_URL") },
+      pgvector: { databaseUrl: env("PGVECTOR_URL") },
     },
   },
   logging: {
@@ -117,7 +117,7 @@ export default defineConfig({
     language: { model: "my-gpt-4o-deployment", modelFamily: "gpt-4o" },
     embedding: { connection: "westus", model: "my-embedding-deployment", dimensions: 1536 },
   },
-  rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: env("ASKDB_PGVECTOR_URL") } } },
+  rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: env("PGVECTOR_URL") } } },
   // ...
 });
 ```
@@ -351,7 +351,7 @@ A config that sets a key AskDB removed before 1.0 fails to load. The `askdb.conf
 
 ## Environment variables
 
-AskDB loads `.env` first, then your `askdb.config.*`. **You choose the variable names:** they're whatever you pass to `env("…")` in your config. `askdb init` writes these names unless you pass another, and Studio's setup wizard uses the same ones. Rename any of them in your config and `.env` together.
+AskDB loads `.env` first, then your `askdb.config.*`. **You choose the variable names:** they're whatever you pass to `env("…")` in your config. This table lists the names `askdb init` writes by default, and Studio's setup wizard uses the same ones. Rename any of them in your config and `.env` together.
 
 | Variable | Config field | Written for |
 | --- | --- | --- |
