@@ -123,7 +123,7 @@ In `strict` mode the tenant check enforces the pairing. Each tenant column must 
 
 ## Walk a hierarchy you hold in memory
 
-If one root's hierarchy is already in memory (for example, a cached parent map of a same-table tree), [`expandClosure(seedIds, childrenOf)`](/reference/core-api/#expandclosureseedids-childrenof) from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
+If one root's hierarchy is already in memory (for example, a cached parent map of a same-table tree), [`expandClosure(seedIds, childrenOf)`](/reference/core-api/tenancy/#expandclosureseedids-childrenof) from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
 
 ```ts
 import { expandClosure } from "@askdb/core";

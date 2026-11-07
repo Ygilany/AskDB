@@ -29,7 +29,7 @@ The model never receives:
 - **Database credentials.** Connection strings, passwords, and roles live in your application's environment. `ask()` doesn't open a database connection. A pgvector retriever you pass in connects to its own vector store, and its credentials stay out of the prompt.
 - **Query results.** Your application runs the SQL after AskDB returns it. Results stay between your app and your database.
 - **Tenant IDs.** The prompt names a placeholder for them, and AskDB binds your IDs into the SQL after the model answers. See [Tenant isolation](/concepts/tenant-isolation/).
-- **User identifiers, session tokens, request headers.** AskDB doesn't send them unless you put one in the question or in `tenantScope.context`. Keep personal data out of `context` if it mustn't reach your model provider: a `label` such as `"Jane Smith"` goes into the prompt as written. See [`TenantScope`](/reference/core-api/#tenantscope).
+- **User identifiers, session tokens, request headers.** AskDB doesn't send them unless you put one in the question or in `tenantScope.context`. Keep personal data out of `context` if it mustn't reach your model provider: a `label` such as `"Jane Smith"` goes into the prompt as written. See [`TenantScope`](/reference/core-api/tenancy/#tenantscope).
 
 ## No middlemen
 

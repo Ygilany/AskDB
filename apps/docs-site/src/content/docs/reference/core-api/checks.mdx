@@ -1,0 +1,130 @@
+---
+title: "@askdb/core: checks"
+description: "The SQL check functions in @askdb/core: validateSensitiveReferences() and its result, and the read-only and tenant check functions for SQL that doesn't come through ask()."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede"><code>ask()</code> and <code>bindPreparedQuery()</code> run the read-only, tenant and sensitive checks for you, and report them in their <a href="/reference/core-api/ask/#guardrail-verdict">verdict</a>. These functions run one check on SQL that doesn't come through either.</p>
+
+## `validateSensitiveReferences(sql, schema, options?)`
+
+Reports the `sensitive` tables and columns a SQL statement references. Pure, synchronous, no model call.
+
+`sensitive: true` otherwise only affects the **prompt** — `formatSchemaForNlToSql` either tags identifiers `(sensitive)` or, with `omitSensitiveIdentifiersFromNlToSqlPrompt`, withholds them. Both act on what the model *sees*. This function is the **enforcement** path: it inspects SQL that is about to execute. Hosts that cache, store, or replay generated SQL should call it on **every execution path**, not just at generation time.
+
+```ts
+import { validateSensitiveReferences } from "@askdb/core";
+
+// Cache-replay path — no model in the loop.
+const { passed, references } = validateSensitiveReferences(cachedSql, schema);
+if (!passed) {
+  throw new Error(`refusing to replay: ${references.map((r) => r.column).join(", ")}`);
+}
+```
+
+`ask()` runs this check on the model's SQL and reports it in `result.verdict` and `result.sensitiveGuardrail`, and `bindPreparedQuery()` runs it again on every rebind. Use the standalone function for statements that don't come through either, such as SQL you store and replay yourself.
+
+### Result — `SensitiveGuardrailResult`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `passed` | `boolean` | `true` only when nothing sensitive was referenced **and** table scope was fully resolved. |
+| `references` | `SensitiveReference[]` | Every sensitive identifier the statement touches. |
+| `unresolvedScope` | `SensitiveScopeReport \| undefined` | Present when the statement's `FROM`/`JOIN` scope could not be resolved with confidence. |
+
+```ts
+type SensitiveReference = {
+  table: string;            // table name as spelled in the schema artifact
+  schema?: string;          // namespace, when the artifact records one
+  column: string;           // column name, or "*" when matchKind is "table"
+  matchKind: "qualified" | "unqualified" | "table";
+};
+```
+
+- **`"qualified"`** — `table.column`, or `alias.column` where the alias binds to the owning table. Also `alias.*` and whole-row references such as `row_to_json(alias)` or `to_jsonb(alias)`, which reach every sensitive column of that table.
+- **`"unqualified"`** — a bare `column`, counted **only because the owning table is in the statement's scope**. Also a bare `SELECT *`, which reaches every sensitive column of the tables in that `SELECT`'s own `FROM`/`JOIN` (not a subquery's).
+- **`"table"`** — the sensitive table itself is a `FROM`/`JOIN` target. Catches `SELECT * FROM secrets`, where no column is named.
+
+### Options
+
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `mode` | `"warn" \| "strict"` | `"warn"` | See [Modes](#modes). |
+| `dialect` | `Pick<DialectSpec, "id" \| "backslashEscapes">` | — | A `DialectSpec`, or `{ id }` with an optional `backslashEscapes`. Lex the SQL the way that engine does (MySQL backslash escapes and `#` comments, Postgres `E'…'` and `$tag$…$tag$`, SQL Server `[…]`). Without it, references are collected under every built-in engine's reading, which is conservative and can over-report in rare cases. |
+
+### Scope resolution
+
+An unqualified name is not a substring search. `FROM`/`JOIN` targets and their aliases are resolved first — including inside CTEs and derived tables — and bare names are matched only against the columns of tables actually in scope.
+
+This matters most with table-level `sensitive`, which promotes *every* column of that table into the match set. A schema with a `sensitive` audit or changelog table that has an `id` column would otherwise flag `SELECT s.id FROM students s`. It does not:
+
+```ts
+validateSensitiveReferences(
+  "SELECT s.id, s.first_name FROM people.students s",
+  schema,
+); // → { passed: true, references: [] }
+
+validateSensitiveReferences("SELECT email, password FROM identity.users", schema);
+// → references: [{ table: "users", schema: "identity", column: "password", matchKind: "unqualified" }]
+```
+
+### Modes
+
+`{ mode: "warn" }` (default) returns the references without throwing. `{ mode: "strict" }` throws `SensitiveReferenceError extends AskDbError` whenever `passed` is `false`, carrying `.rule` (`"SENSITIVE_TABLE_REFERENCED"` | `"SENSITIVE_COLUMN_REFERENCED"` | `"UNRESOLVED_TABLE_SCOPE"`), `.references`, and `.unresolvedScope`.
+
+### Conservative failure
+
+When the check can tell it couldn't bind names to tables, it reports that in `unresolvedScope` rather than passing. It can't always tell: a table in a `FROM` form it doesn't recognize is skipped without a report (see [Safety boundaries](/concepts/safety-boundaries/), #306–#309). `unresolvedScope.issues` contains one or more of:
+
+| Issue | Cause | Effect |
+| --- | --- | --- |
+| `NO_TABLE_SOURCE` | No `FROM`/`JOIN` target resolved, so unqualified names cannot be bound. | Unqualified matching widens to every sensitive column. |
+| `UNKNOWN_QUALIFIER` | A `qualifier.column` whose qualifier is not a known table, alias, or CTE. | That column is matched against every sensitive column. |
+| `OPAQUE_TABLE_SOURCE` | A table source that is not a relation name (table function, table-valued expression). | Reported only; no widening — such a source exposes no schema columns. |
+| `UNTERMINATED_TOKEN` | A string, quoted identifier, or comment never closes. | Reported only; the rest of the statement could not be scanned. |
+| `UNICODE_ESCAPED_IDENTIFIER` | A Postgres Unicode-escaped name (`U&"p\0061ssword"`), which Postgres decodes and the check matches as written. Raised when the SQL may be read as Postgres: postgres, cockroachdb, a custom `AskDialect`, or no dialect. | Reported only; the check can't tell which column the name reads. |
+| `STRING_CONTINUATION` | An `E'…'` string continued on a later line, which Postgres reads with backslash escapes. Raised when the SQL may be read as Postgres. | Reported only; a column after it may be hidden from the check. |
+| `ESCAPED_BYTE_STRING` | A `b'…'` byte string (lower-case `b`) with a backslash, or continued on a later line, which CockroachDB reads with backslash escapes. Raised when the SQL may be read as Postgres. | Reported only; a column after it may be hidden from the check. |
+
+`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure: `passed` is `false`, so it throws `SensitiveReferenceError` (`rule: "UNRESOLVED_TABLE_SCOPE"` when no sensitive reference was found).
+
+The check is heuristic, not a SQL parser — a review and enforcement aid, not a substitute for database-side column privileges.
+
+## `schemaHasSensitiveIdentifiers(schema)`
+
+`true` when the schema marks at least one table or column `sensitive`. Cheap pre-check for hosts that want to skip the guardrail entirely on schemas with no markers — `ask()` uses it for exactly that, which is why `result.sensitiveGuardrail` is absent on unmarked schemas.
+
+## `formatSensitiveReference(ref)`
+
+Renders a `SensitiveReference` as `schema.table.column` (or `table.column` when the artifact has no namespace). `askdb ask` uses it for its `Warning:` line, and `ask()` uses it for the `sensitiveColumns` field of the `askdb.pipeline.sensitive_sql_warning` log event, next to `sensitiveColumnCount`.
+
+## Other check functions
+
+### `validateSelectSql(dialect, sql)`
+
+Runs the read-only check on `sql` under a `DialectSpec`'s rules. It returns the statement, trimmed, and throws `SqlValidationError` when it fails: [`SqlValidationError` rules](/reference/core-api/errors/#sqlvalidationerror-rules) lists each `rule`. `ask()` runs it for a built-in dialect or a `DialectSpec`, and a custom [`AskDialect`](/reference/core-api/dialects/#askdialect) calls it itself.
+
+### `validateTenantGuardrails(sql, policy, scope, options?)`
+
+Runs the tenant check on SQL that still has its `:tenant_<root>_ids` placeholders, and returns a `TenantGuardrailResult`: `{ passed, warnings }`. Under a `strict` policy, a failure throws `TenantGuardrailError` instead. [`TenantGuardrailError` rules](/reference/core-api/errors/#tenantguardrailerror-rules) lists each warning's `rule`, and [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) says what passes. `options` is a `ValidateTenantGuardrailsOptions`: `dialect`, a `DialectSpec` or its `id` and `backslashEscapes`, which `ask()` passes when it has one.
+
+## Types
+
+| Type | What it is |
+| --- | --- |
+| `ValidateSensitiveReferencesOptions` | `validateSensitiveReferences()`'s `options`, as in [Options](#options). |
+| `SensitiveGuardrailMode` | Its `mode`: `"warn"` or `"strict"`. |
+| `SensitiveMatchKind` | A reference's `matchKind`: `"qualified"`, `"unqualified"` or `"table"`. |
+| `SensitiveScopeIssue` | One entry of `unresolvedScope.issues`, as in [Conservative failure](#conservative-failure). |
+| `TenantGuardrailResult` | `validateTenantGuardrails()`'s result, and `ask()`'s `result.tenantGuardrail`. |
+| `TenantGuardrailWarning` | One entry of its `warnings`: `{ rule, tableId, message }`. |
+| `ValidateTenantGuardrailsOptions` | `validateTenantGuardrails()`'s `options`. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What the checks catch, and why the database stays the boundary.</span></a>
+  <a href="/guides/keep-sensitive-columns-out-of-prompts/"><strong>Keep sensitive columns out of prompts</strong><span>Mark columns sensitive, and check SQL you replay.</span></a>
+  <a href="/reference/core-api/errors/"><strong>Errors</strong><span>Every rule each check reports.</span></a>
+</div>

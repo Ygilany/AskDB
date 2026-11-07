@@ -89,7 +89,7 @@ const { sql, usage, unboundSql, params, preparedQuery } = await askdb.ask(
 );
 ```
 
-Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/#result--askpipelineresult). The facade forwards options and returns the core result verbatim, including `verdict` and the optional `unboundSql` / `params` / `parameters` / `preparedQuery` when `parameterize` is on (default). Rebind a stored `preparedQuery` with [`client.bind()`](#clientbindprepared-values-options).
+Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/ask/#result--askpipelineresult). The facade forwards options and returns the core result verbatim, including `verdict` and the optional `unboundSql` / `params` / `parameters` / `preparedQuery` when `parameterize` is on (default). Rebind a stored `preparedQuery` with [`client.bind()`](#clientbindprepared-values-options).
 
 The model comes from the first of these that is set: the call's `model`, the call's `deps.generateText`, `dev.mockSql` in `askdb.config.ts` (every call returns that SQL, with no model call), then the registry's model for `ai` in the config.
 
@@ -105,13 +105,13 @@ All `AskPipelineOptions` fields can be overridden per call, except that the two 
 | `reasoningEffort` | `ReasoningEffort` | Reasoning effort for this call: `"minimal"`, `"low"`, `"medium"` or `"high"`. It takes precedence over `createAskDb({ reasoningEffort })` and the config. It applies only to the registry's model: it's ignored with `model`, `deps.generateText` or `dev.mockSql`, and when `deps.providerOptions` is set. |
 | `explain` | `boolean` | Include guardrail metadata in the result. |
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers, and any describable text that names one, from the prompt. Config `modes.omitSensitiveFromPrompt: true` is a floor: `true` here tightens a single call, but `false` can't loosen the config setting. |
-| `abortSignal` | `AbortSignal` | Core's [`ask()` option](/reference/core-api/#options), passed through: cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` to enforce a timeout. With a built-in dialect, an aborted call rejects with `SqlGenerationError`; a custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
+| `abortSignal` | `AbortSignal` | Core's [`ask()` option](/reference/core-api/ask/#options), passed through: cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` to enforce a timeout. With a built-in dialect, an aborted call rejects with `SqlGenerationError`; a custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
 | `mode` | `AskDbModeV1` | Trust boundary for this call. Config `modes.askdbMode` (unset: `"schema_only"`) is the loosest mode a call gets: `"schema_only"` here tightens it, but `"bounded_results"` can't loosen it. A looser request runs at the config mode, with no error. The call's value is parsed like the config's, so an unknown mode throws `AskDbError`. |
 | `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. |
-| `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-params"` (the default) binds tenant IDs through driver markers and returns them as `tenantParams`; `"sql-only"` inlines them in `sql` as escaped literals. A custom `AskDialect` has no default with a tenant scope and must set it, or the call throws `TENANT_SQL_MODE_REQUIRED`; see [`ask()` options](/reference/core-api/#options). See [Executing the result](/reference/core-api/#executing-the-result). |
-| `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` tenant scope: returns the subtree's IDs grouped by tenant root (`TenantIdsByRoot`), which `ask()` binds to each root's own placeholder. Required for `subtree` scopes. See [`ask()` options](/reference/core-api/#options). |
+| `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-params"` (the default) binds tenant IDs through driver markers and returns them as `tenantParams`; `"sql-only"` inlines them in `sql` as escaped literals. A custom `AskDialect` has no default with a tenant scope and must set it, or the call throws `TENANT_SQL_MODE_REQUIRED`; see [`ask()` options](/reference/core-api/ask/#options). See [Executing the result](/reference/core-api/ask/#executing-the-result). |
+| `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` tenant scope: returns the subtree's IDs grouped by tenant root (`TenantIdsByRoot`), which `ask()` binds to each root's own placeholder. Required for `subtree` scopes. See [`ask()` options](/reference/core-api/ask/#options). |
 | `parameterize` | `boolean` | Default `true`. Set `false` to skip unbound SQL / parameter manifest output tokens. |
-| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | Default `"warn"`. How `ask()` treats SQL that references identifiers marked `sensitive`; see [`ask()` options](/reference/core-api/#options). |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | Default `"warn"`. How `ask()` treats SQL that references identifiers marked `sensitive`; see [`ask()` options](/reference/core-api/ask/#options). |
 | `retriever` | `Retriever` | RAG retriever. When supplied, retrieval replaces the full DDL, unless `totalSchemaChunkCount` is at or below `retrievalThresholdChunks`. |
 | `retrievalK` | `number` | Top-k for the retriever. |
 | `retrievalThresholdChunks` | `number` | Chunk count at or below which the full DDL is used even with a retriever (default `30`). Compared with `totalSchemaChunkCount`. |
@@ -131,7 +131,7 @@ const rebound = await askdb.bind(preparedQuery!, { month: "2026-04" }, { tenantS
 await pool.query(rebound.unboundSql, rebound.params);
 ```
 
-Rebinds a stored `preparedQuery` with new values, without calling the model. It resolves the schema the way `ask()` does, expands a `subtree` scope with core's [`expandTenantScope()`](/reference/core-api/#expandtenantscopepolicy-scope-resolvetenantdescendants) and your `resolveTenantDescendants`, and forwards to core's [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails), which re-checks the template under that schema, the scope and the modes before binding. Returns `Promise<BoundQuery>`: `sql` (with `tenantParams` in `"sql-params"` mode), `unboundSql` + `params`, `bindings`, and the `verdict`. It throws the same errors as `bindPreparedQuery()`.
+Rebinds a stored `preparedQuery` with new values, without calling the model. It resolves the schema the way `ask()` does, expands a `subtree` scope with core's [`expandTenantScope()`](/reference/core-api/tenancy/#expandtenantscopepolicy-scope-resolvetenantdescendants) and your `resolveTenantDescendants`, and forwards to core's [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails), which re-checks the template under that schema, the scope and the modes before binding. Returns `Promise<BoundQuery>`: `sql` (with `tenantParams` in `"sql-params"` mode), `unboundSql` + `params`, `bindings`, and the `verdict`. It throws the same errors as `bindPreparedQuery()`.
 
 ### Options — `BindOptions`
 
@@ -141,8 +141,8 @@ Rebinds a stored `preparedQuery` with new values, without calling the model. It 
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` `tenantScope`, as for `ask()`. Required for `subtree` scopes. |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | Default `"warn"`: sensitive references bind and are reported in `verdict`. `"strict"` refuses them. |
 | `acceptWarnings` | `ReadonlyArray<"tenant">` | With a policy whose `enforcement` is `warn`, a template that fails the tenant check is refused unless this includes `"tenant"`. |
-| `tenantSqlMode` | `TenantSqlOutputMode` | As for `ask()`. `"sql-params"` (the default) puts tenant markers in the rebound `sql` and the IDs in `tenantParams`; `"sql-only"` inlines them as escaped literals. See [`bindPreparedQuery()`](/reference/core-api/#bindpreparedqueryprepared-values-guardrails). |
-| `dialect` | `DialectSpec \| BuiltInDialectId` | The dialect rules to check and render under. Required when `ask()` ran with your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), and for a template stored without `dialectRules`. See [Which dialect rules a rebind uses](/reference/core-api/#bindpreparedqueryprepared-values-guardrails). |
+| `tenantSqlMode` | `TenantSqlOutputMode` | As for `ask()`. `"sql-params"` (the default) puts tenant markers in the rebound `sql` and the IDs in `tenantParams`; `"sql-only"` inlines them as escaped literals. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails). |
+| `dialect` | `DialectSpec \| BuiltInDialectId` | The dialect rules to check and render under. Required when `ask()` ran with your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), and for a template stored without `dialectRules`. See [Which dialect rules a rebind uses](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails). |
 | `schema` | `SchemaSource \| AnyNormalizedSchema` | Override the schema for this call only. Default: the schema `ask()` resolves (`createAskDb({ schema })`, then `host.schemaJson`, then `host.schemaPath`). |
 
 ---
@@ -177,7 +177,7 @@ type AskDbClient = {
 
 ## Errors
 
-`@askdb/client` exports four error classes. Each extends `AskDbError` from `@askdb/core` and sets `name` to its class name. `ask()` and `bind()` also throw `@askdb/core`'s errors unchanged; see [@askdb/core API → Errors](/reference/core-api/#errors).
+`@askdb/client` exports four error classes. Each extends `AskDbError` from `@askdb/core` and sets `name` to its class name. `ask()` and `bind()` also throw `@askdb/core`'s errors unchanged; see [@askdb/core API → Errors](/reference/core-api/errors/#errors).
 
 | Class | Thrown when | Fields |
 | --- | --- | --- |

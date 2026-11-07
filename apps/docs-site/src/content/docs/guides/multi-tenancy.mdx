@@ -80,7 +80,7 @@ const result = await askdb.ask("How many documents did we create this month?", {
 - **`subtree`:** a root's IDs and everything beneath them. See [Scope to a tenant hierarchy](/guides/tenant-hierarchy/).
 - **`global`:** deliberately unscoped, with a `reason` for the audit trail. The tenant check is skipped, and SQL that still uses a tenant placeholder throws `TenantScopeError`.
 
-The optional `context`, such as a role or a department, goes into the prompt as advisory text, and nothing enforces it. Polymorphic tables are declared in the policy and surfaced to the model through the prompt; there's no scope field for pre-resolving them at runtime. [`TenantScope`](/reference/core-api/#tenantscope) lists every field.
+The optional `context`, such as a role or a department, goes into the prompt as advisory text, and nothing enforces it. Polymorphic tables are declared in the policy and surfaced to the model through the prompt; there's no scope field for pre-resolving them at runtime. [`TenantScope`](/reference/core-api/tenancy/#tenantscope) lists every field.
 
 ## 3. Run the SQL
 
@@ -132,7 +132,7 @@ AskDB's tenant check is a heuristic over the SQL's tokens, so a query can get pa
 | `TenantGuardrailError` | The SQL fails the tenant check. [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists each rule. |
 | `SchemaParseError` naming `tenant-policy.md` | The policy has a key AskDB doesn't know, or, under `strict`, names IDs `schema.json` doesn't have. See [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree). |
 
-[`TenantScopeError` reasons](/reference/core-api/#tenantscopeerror-reasons) lists the rest.
+[`TenantScopeError` reasons](/reference/core-api/errors/#tenantscopeerror-reasons) lists the rest.
 
 ## Read next
 

@@ -1,0 +1,183 @@
+---
+title: "@askdb/core: tenant scope"
+description: "TenantScope, scope expansion, tenant placeholders and binding, the tenant prompt block, and the normalized tenant policy types in @askdb/core."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede">The functions and types for a schema with a <code>tenant-policy.md</code>: the scope you pass to <code>ask()</code>, its expansion, the tenant placeholders and how they're bound, and the policy as <code>loadSchema()</code> returns it. <a href="/reference/tenant-policy/">Tenant policy format</a> describes the file, and <a href="/concepts/tenant-isolation/">Tenant isolation</a> explains the model.</p>
+
+## `TenantScope`
+
+Passed as `options.tenantScope` to `ask()`. Carries enforceable access plus optional advisory context.
+
+```ts
+// IDs access — user can see records for their specific org ids
+const scope: TenantScope = {
+  access: {
+    kind: "ids",
+    tenantRoot: "table:public.organizations", // stable table ID from the policy
+    ids: ["org-1", "org-2"],
+  },
+  context: { role: "regional_manager", label: "Jane Smith" },
+};
+
+// Global / super access
+const adminScope: TenantScope = {
+  access: { kind: "global", reason: "support investigation" },
+};
+```
+
+`context` goes into the prompt as advisory text, and so does a `global` scope's `reason`; the `access` IDs don't, because the prompt names only their placeholders. Keep personal data you don't want sent to your model provider out of `context` and `reason`: the example's `label` puts a person's name in the prompt.
+
+`access` is a `TenantAccess`, one of four kinds. `tenantRoot` is a root's table ID from the policy's `roots`.
+
+| Kind | Fields | Description |
+| --- | --- | --- |
+| `"ids"` (`TenantAccessIds`) | `tenantRoot: string`, `ids: string[]` (at least one) | User can access specific root-entity ids. |
+| `"subtree"` (`TenantAccessSubtree`) | `tenantRoot: string`, `rootIds: string[]` (at least one), `includeDescendants: true` | User can access a subtree rooted at `rootIds`, including descendant roots. Requires the `resolveTenantDescendants` option on `ask()`, which returns IDs per root; `ask()` expands the scope to `"multi_root"` before generation. |
+| `"multi_root"` (`TenantAccessMultiRoot`) | `scopes: { tenantRoot: string; ids: string[] }[]` | User has access across multiple tenant roots, each with their own id set. An entry's `ids` may be empty (a covered root with no IDs, which fails closed if read); at least one entry needs an ID. |
+| `"global"` (`TenantAccessGlobal`) | `reason: string` (not blank) | Super / admin access. The `reason` is for audit: a missing or blank one throws `TenantScopeError` (`GLOBAL_WITHOUT_REASON`). Binds no tenant IDs: SQL that still has a `:tenant_*` placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), in `ask()` and at rebind. |
+
+`context` is an optional `TenantScopeContext`: `role`, `label`, `department`, `region` and `description` (each a `string`), and `attributes` (`Record<string, string>`). The prompt lists the fields that are set under "User context (advisory — not enforced)", and no check enforces them. `validateTenantScope()` refuses any other key.
+
+## `expandTenantScope(policy, scope, resolveTenantDescendants)`
+
+```ts
+import { expandTenantScope } from "@askdb/core";
+
+const expanded = await expandTenantScope(schema.tenantPolicy!, subtreeScope, resolveTenantDescendants);
+const rebound = bindPreparedQuery(prepared, values, { schema, tenantScope: expanded });
+```
+
+The `subtree` expansion `ask()` runs, as a function: it calls your [`resolveTenantDescendants`](/reference/core-api/ask/#options) and returns a `multi_root` scope with one entry per root the subtree covers (an `ids` scope when the subtree is one root table), keeping a level with no IDs as `ids: []` so reading it fails closed. Other access kinds pass through. It validates the scope first and throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) for a missing resolver or a malformed result, as `ask()` does.
+
+## `expandClosure(seedIds, childrenOf)`
+
+```ts
+import { expandClosure } from "@askdb/core";
+
+const ids = expandClosure(seedIds, (id) => childrenByAgencyId.get(id) ?? []);
+```
+
+Walks a hierarchy you already hold in memory, breadth-first, and returns the seed IDs and every descendant, each once, seeds first. It's cycle-safe: an ID it has already visited isn't visited again. Use it inside `resolveTenantDescendants` for a tree inside one table; see [Scope to a tenant hierarchy](/guides/tenant-hierarchy/#walk-a-hierarchy-you-hold-in-memory).
+
+## `validateTenantScope(tenantPolicy, tenantScope)`
+
+Checks a scope against a policy before you use it, as `ask()` does, and returns nothing. It throws `TenantScopeError`: `MISSING_SCOPE` for an `undefined` scope, `INVALID_SCOPE_SHAPE`, `UNKNOWN_TENANT_ROOT` or `GLOBAL_WITHOUT_REASON` (see [`TenantScopeError` reasons](/reference/core-api/errors/#tenantscopeerror-reasons)). A policy whose two roots share a placeholder throws `SchemaParseError`.
+
+## `resolveTenantSql(sql, policy, scope, mode?, paramStartIndex?, dialect?)`
+
+```ts
+import { resolveTenantSql } from "@askdb/core";
+
+const resolved = resolveTenantSql(checkedSql, schema.tenantPolicy!, scope);
+// { mode: "sql-params", sql: "… WHERE id IN ($1)", params: ["1"], bindings: [ … ] }
+```
+
+Replaces each `:tenant_<root>_ids` placeholder in SQL that already passed the tenant check, as `ask()` does after its checks. It doesn't check the SQL. `mode` is a `TenantSqlOutputMode` and defaults to `DEFAULT_TENANT_SQL_MODE`. In `"sql-params"` mode the markers start at `paramStartIndex` (default `1`), and the result carries the IDs as `params`. `dialect` is a `TenantSqlDialect`, the `id` and `backslashEscapes` of a `DialectSpec`: `id` picks the marker style. It returns a `TenantPlaceholderResult`: `{ mode, sql, bindings }`, plus `params` and `paramStartIndex` in `"sql-params"` mode. It throws `TenantScopeError` for the reasons that name it in [`TenantScopeError` reasons](/reference/core-api/errors/#tenantscopeerror-reasons), and `SchemaParseError` for a policy whose two roots share a placeholder.
+
+## Tenant types
+
+These types are needed when your schema has a tenant policy. See [Scope queries to a tenant](/guides/multi-tenancy/) for the full workflow.
+
+### `TenantSqlOutputMode`
+
+- `"sql-params"` (the default, exported as `DEFAULT_TENANT_SQL_MODE`) — replaces the tenant placeholders with the dialect's driver markers and returns the IDs as `tenantParams`. See [Executing the result](/reference/core-api/ask/#executing-the-result).
+- `"sql-only"` — inlines the tenant IDs as escaped literals, for a tool that takes one SQL string. A tenant ID that isn't printable ASCII or contains a backslash throws `TenantScopeError` (`UNESCAPABLE_TENANT_ID`).
+
+### `DEFAULT_TENANT_SQL_MODE`
+
+```ts
+const DEFAULT_TENANT_SQL_MODE: TenantSqlOutputMode; // "sql-params"
+```
+
+The mode `ask()` and `resolveTenantSql()` use when you don't pass one. It doesn't apply to `ask()` with a tenant scope and a custom `AskDialect`: those must set `tenantSqlMode`. A host that reports or forwards the mode, such as a UI that shows which mode a query ran in, imports it rather than hard-coding the string:
+
+```ts
+import { DEFAULT_TENANT_SQL_MODE } from "@askdb/core";
+
+const mode = options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE;
+```
+
+### `TenantBinding`
+
+```ts
+type TenantBinding = {
+  placeholder: string;  // e.g. ":tenant_org_ids"
+  rootLabel: string;    // domain label (e.g. "organization")
+  rootId: string;       // tenant root id
+  ids: string[];        // resolved id values
+};
+```
+
+### `placeholderForTenantRoot(root)`
+
+```ts
+import { placeholderForTenantRoot } from "@askdb/core";
+
+placeholderForTenantRoot({ id: "table:public.sub_agencies", label: "Sub-Agency" }); // ":tenant_sub_agency_ids"
+placeholderForTenantRoot({ id: "table:public.clients", label: "Клиент" });          // ":tenant_clients_ids"
+```
+
+Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prompt names, `ask()` and `resolveTenantSql()` bind, and the tenant guardrail checks. `<name>` is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit uses the root's table name instead. Pass a root from `schema.tenantPolicy.roots` (anything with `id` and `label`).
+
+`placeholderForRoot(label)` is deprecated. It takes the label alone, so for a label with no ASCII letter or digit it returns `:tenant___ids`, which core doesn't bind. For every other label the two agree.
+
+### `buildTenantPromptBlock(policy, scope, prompt)`
+
+```ts
+import { buildTenantPromptBlock, loadSchema, type TenantScope } from "@askdb/core";
+
+const schema = loadSchema("./my-app.schema");
+const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
+
+// The prompt shows the whole schema: the block names its tracked policy tables.
+buildTenantPromptBlock(schema.tenantPolicy!, scope, { schema });
+
+// Under retrieval, pass the ids of the tables the retrieved DDL shows.
+buildTenantPromptBlock(schema.tenantPolicy!, scope, { schema, tableIds: ["table:public.orders"] });
+```
+
+Returns the tenant-policy block `ask()` adds to the NL→SQL prompt: the roots, the tenant-scoped, polymorphic and global tables, the scope's placeholders and the columns each one may be compared with, and the rules. `prompt` is required. It's the prompt's schema and, under retrieval, the ids of the tables the retrieved DDL shows (`synthesizeRetrievedDdl()`'s `tableIds`). The block names only the tables the prompt shows: never a table marked `tracked: false`, and no table retrieval left out, except one on a join path a shown table needs. A root whose table isn't shown appears by its label and placeholder. An unexpanded `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`); expand it first with `expandTenantScope()`.
+
+### `formatTenantPolicyWarning(warning)`
+
+```ts
+import { formatTenantPolicyWarning, loadSchema } from "@askdb/core";
+
+// A policy with `enforcement: warn`: under `strict`, this problem makes loadSchema() throw.
+const schema = loadSchema("./my-app.schema");
+schema.tenantPolicy?.warnings.map(formatTenantPolicyWarning);
+// ["scopeThrough column on table:public.orders: column table:public.orders#agency_ref is not in schema.json"]
+```
+
+Returns one line describing a `TenantPolicyWarning`, naming the IDs involved. The `SchemaParseError` for a strict policy, the `askdb.tenant.policy_warnings` log message and `askdb introspect` use the same wording.
+
+## Policy types
+
+`schema.tenantPolicy` is a `NormalizedTenantPolicy`: the policy file after `loadSchema()` checked it against `schema.json`.
+
+| Type | What it is |
+| --- | --- |
+| `NormalizedTenantPolicy` | `{ schemaId, enforcement, roots, hierarchy, scopedTables, polymorphicTables, globalTables, coverage, warnings, body, sections }`. |
+| `EnforcementMode` | `enforcement`: `"strict"` or `"warn"`. |
+| `TenantRoot` | One entry of `roots`: `id`, `tenantIdColumn`, `label` and an optional `parent`. |
+| `HierarchyEdge` | One entry of `hierarchy`: `parent`, `child` and `foreignKey`. |
+| `ScopedTable` | One entry of `scopedTables`: `id` and its `scopeThrough` list. |
+| `ScopeThrough` | One way a scoped table reaches a root: a `column`, or a `join` path. |
+| `PolymorphicTable` | One entry of `polymorphicTables`: `id`, `typeColumn`, `idColumn` and `mapping`. |
+| `TableCoverageEntry` | One entry of `coverage`: `{ tableId, classification, scopeRoots? }`, for every table in `schema.json`. |
+| `TableTenantClassification` | A table's `classification`: `"scoped"`, `"inherited"`, `"polymorphic"`, `"global"`, `"root"` or `"unknown"`. |
+| `TenantPolicyWarning` | One entry of `warnings`. [`formatTenantPolicyWarning()`](#formattenantpolicywarningwarning) prints it. |
+| `TenantPolicyH2Section` | A key of `sections`: `"Hierarchy"`, `"Scope rules"` or `"Sensitive interactions"`, the `##` sections of the file's body. |
+
+[Field reference](/reference/tenant-policy/#field-reference) describes each field as you write it in the file.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/multi-tenancy/"><strong>Scope queries to a tenant</strong><span>Write a policy and pass a scope, step by step.</span></a>
+  <a href="/reference/tenant-policy/"><strong>Tenant policy format</strong><span>Every field of <code>tenant-policy.md</code>, and what the tenant check requires.</span></a>
+  <a href="/reference/core-api/errors/"><strong>Errors</strong><span><code>TenantScopeError</code> reasons and <code>TenantGuardrailError</code> rules.</span></a>
+</div>

@@ -9,7 +9,7 @@ description: "Every field of tenant-policy.md, what happens when the policy and 
 
 ## The file
 
-`tenant-policy.md` sits in the schema artifact, next to `schema.json`. When the artifact has one, every `ask()` call must include a `tenantScope`; without one, `ask()` throws `TenantScopeError` before calling the model. The scope's shapes are in [`TenantScope`](/reference/core-api/#tenantscope).
+`tenant-policy.md` sits in the schema artifact, next to `schema.json`. When the artifact has one, every `ask()` call must include a `tenantScope`; without one, `ask()` throws `TenantScopeError` before calling the model. The scope's shapes are in [`TenantScope`](/reference/core-api/tenancy/#tenantscope).
 
 The front-matter is YAML, validated strictly when the schema artifact loads — unknown keys are rejected, and every table or column reference uses the **stable IDs** from `schema.json` (`table:public.projects`, `table:public.projects#organization_id`), never bare names.
 
@@ -152,5 +152,5 @@ If you deploy a bundle (`askdb bundle`), the policy travels inside it as the `te
 <div class="home-path-grid">
   <a href="/guides/multi-tenancy/"><strong>Scope queries to a tenant</strong><span>Write the policy, pass the caller's scope, and run the SQL.</span></a>
   <a href="/concepts/tenant-isolation/"><strong>Tenant isolation</strong><span>What the policy and the check do, and why the database stays the boundary.</span></a>
-  <a href="/reference/core-api/#tenantscope"><strong><code>TenantScope</code></strong><span>Every scope shape <code>ask()</code> takes.</span></a>
+  <a href="/reference/core-api/tenancy/#tenantscope"><strong><code>TenantScope</code></strong><span>Every scope shape <code>ask()</code> takes.</span></a>
 </div>

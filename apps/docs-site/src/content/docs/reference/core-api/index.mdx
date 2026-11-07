@@ -1,0 +1,68 @@
+---
+title: "@askdb/core API reference"
+description: "@askdb/core, the NL-to-SQL pipeline: a map of its API pages, where to start, and the exports that are internal."
+---
+
+import AnchorRedirects from "../../../../components/AnchorRedirects.astro";
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede"><code>@askdb/core</code> is the NL-to-SQL pipeline. It owns schema loading, prompt construction, the built-in dialects, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
+
+## Pages
+
+<div class="home-path-grid">
+  <a href="/reference/core-api/ask/"><strong>ask()</strong><span>Options, result, how to run the SQL, the guardrail verdict, modes and the lower-level functions.</span></a>
+  <a href="/reference/core-api/rebind/"><strong>bindPreparedQuery()</strong><span>Rerun a stored query with new values, re-checked.</span></a>
+  <a href="/reference/core-api/tenancy/"><strong>Tenant scope</strong><span><code>TenantScope</code>, scope expansion, placeholders and the policy types.</span></a>
+  <a href="/reference/core-api/checks/"><strong>Checks</strong><span><code>validateSensitiveReferences()</code> and the other check functions.</span></a>
+  <a href="/reference/core-api/schema/"><strong>Schema loading</strong><span><code>loadSchema()</code>, the schema files, mentions and enrichment suggestions.</span></a>
+  <a href="/reference/core-api/dialects/"><strong>Dialects</strong><span>Built-in ids, <code>DialectSpec</code> and <code>AskDialect</code>.</span></a>
+  <a href="/reference/core-api/logging/"><strong>Logging</strong><span><code>createAskDbLogger()</code>, the log events and the log contract.</span></a>
+  <a href="/reference/core-api/errors/"><strong>Errors</strong><span>Every error class, with its rules and reasons.</span></a>
+</div>
+
+## Where to start
+
+| To | Use | Page |
+| --- | --- | --- |
+| Turn a question into SQL | `ask()` | [ask()](/reference/core-api/ask/) |
+| Rerun a stored query with new values | `bindPreparedQuery()` | [bindPreparedQuery()](/reference/core-api/rebind/) |
+| Load a schema artifact | `loadSchema()` | [Schema loading](/reference/core-api/schema/) |
+| Scope queries to a tenant | `TenantScope`, `expandTenantScope()` | [Tenant scope](/reference/core-api/tenancy/) |
+| Check SQL that didn't come through `ask()` | `validateSensitiveReferences()`, `validateSelectSql()`, `validateTenantGuardrails()` | [Checks](/reference/core-api/checks/) |
+| Change how a built-in engine is prompted and checked | `DialectSpec` | [Dialects](/reference/core-api/dialects/) |
+| Log each stage | `createAskDbLogger()` | [Logging](/reference/core-api/logging/) |
+| Catch what it throws | `AskDbError` and its subclasses | [Errors](/reference/core-api/errors/) |
+
+`@askdb/client`'s `createAskDb()` calls `ask()` with the settings in `askdb.config.ts`; see [@askdb/client API](/reference/client-api/).
+
+## Internal exports
+
+`@askdb/core` also exports these for AskDB's own packages and tests. They aren't part of the documented API, and they have no stability promise.
+
+| Export | What it is | Used by |
+| --- | --- | --- |
+| `tenantPolicyFrontmatterSchema`, `tenantScopeSchema` | The zod schemas for `tenant-policy.md` front-matter and for a `TenantScope` | Studio |
+| `v2SchemaJsonSchema` | The zod schema for `schema.json` | `@askdb/enrich` |
+| `enforcementModeSchema`, `hierarchyEdgeSchema`, `polymorphicTableSchema`, `scopedTableSchema`, `tenantAccessSchema`, `tenantRootSchema`, `v2ColumnFrontmatterSchema`, `v2ColumnSchema`, `v2ConceptSchema`, `v2ConceptsFrontmatterSchema`, `v2TableFrontmatterSchema`, `v2TableSchema` | The other zod schemas behind the loaders | `@askdb/core` only |
+| `normalizeTenantPolicy` | Checks a parsed tenant policy against `schema.json` and collects its problems | `@askdb/enrich` |
+| `RECOGNIZED_H2_SECTIONS`, `TENANT_POLICY_H2_SECTIONS` | The `##` headings the table and tenant-policy parsers recognize | `@askdb/core` only |
+| `assertNlToSqlInputs` | The question and schema check `ask()` runs before the model call | `@askdb/core` only |
+| `buildNlToSqlSystemPrompt` | The NL→SQL system prompt | `@askdb/core` only |
+| `buildSelectGuardrailExplanation` | Builds the `explain` summary of a statement that passed the read-only check | `@askdb/core` only |
+| `escapeSqlLiteral` | Escapes a value as a SQL literal for a dialect | `@askdb/core` only |
+| `extractTenantPlaceholders` | Lists the `:tenant_*` placeholders in SQL | `@askdb/core` only |
+| `formatAskDbModesV1` | Formats the list of modes for a message | CLI |
+| `formatSupportedAskDbLogLevels`, `isSupportedAskDbLogLevel` | Log-level helpers | CLI |
+| `parseAskDbSchemaJson`, `loadNormalizedSchemaFromJson`, `normalizeAskDbSchema`, `AskDbSchemaFile` | The older v1 schema format: parse, load and normalize it, and its file's type | `@askdb/core` only |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/client-api/"><strong>@askdb/client API</strong><span>The config-driven facade: <code>createAskDb()</code> and per-call overrides.</span></a>
+  <a href="/reference/rag-api/"><strong>@askdb/rag API</strong><span><code>buildSchemaIndex()</code>, embedders and vector stores.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>These APIs in a service, end to end.</span></a>
+</div>
+
+<AnchorRedirects moved={{"askoptions":"ask/#askoptions","options":"ask/#options","result--askpipelineresult":"ask/#result--askpipelineresult","executing-the-result":"ask/#executing-the-result","guardrail-verdict":"ask/#guardrail-verdict","bindpreparedqueryprepared-values-guardrails":"rebind/#bindpreparedqueryprepared-values-guardrails","expandtenantscopepolicy-scope-resolvetenantdescendants":"tenancy/#expandtenantscopepolicy-scope-resolvetenantdescendants","expandclosureseedids-childrenof":"tenancy/#expandclosureseedids-childrenof","askusage":"ask/#askusage","guardrails":"checks/","validatesensitivereferencessql-schema-options":"checks/#validatesensitivereferencessql-schema-options","result--sensitiveguardrailresult":"checks/#result--sensitiveguardrailresult","options-1":"checks/#options","scope-resolution":"checks/#scope-resolution","modes":"checks/#modes","conservative-failure":"checks/#conservative-failure","schemahassensitiveidentifiersschema":"checks/#schemahassensitiveidentifiersschema","formatsensitivereferenceref":"checks/#formatsensitivereferenceref","schema-loading":"schema/","loadschemapath":"schema/#loadschemapath","loadschemafromjsonraw":"schema/#loadschemafromjsonraw","readschemadirectorydir":"schema/#readschemadirectorydir","findmentionednamestext-names-creatementionmatchernames-and-sensitivementionnamesschema":"schema/#findmentionednamestext-names-creatementionmatchernames-and-sensitivementionnamesschema","saveschemafileschemadir-relativepath-content":"schema/#saveschemafileschemadir-relativepath-content","enrichment-suggestions":"schema/#suggestenrichmenttarget-context-model-deps","suggestenrichmenttarget-context-model-deps":"schema/#suggestenrichmenttarget-context-model-deps","dialects":"dialects/","built-in-dialect-id":"dialects/#built-in-dialect-id","dialectspec":"dialects/#dialectspec","askdialect":"dialects/#askdialect","modes-1":"ask/#modes","logging":"logging/","createaskdbloggeroptions":"logging/#createaskdbloggeroptions","tenant-types":"tenancy/#tenant-types","tenantsqloutputmode":"tenancy/#tenantsqloutputmode","default_tenant_sql_mode":"tenancy/#default_tenant_sql_mode","tenantbinding":"tenancy/#tenantbinding","placeholderfortenantrootroot":"tenancy/#placeholderfortenantrootroot","buildtenantpromptblockpolicy-scope-prompt":"tenancy/#buildtenantpromptblockpolicy-scope-prompt","buildnltosqluserpromptdialect-question-schema-ambiguitynotes-logger-nltosqlschemaoptions-prebuiltddl-tenantpolicy-tenantscope-parameterize-prompttableids":"ask/#buildnltosqluserpromptdialect-question-schema-ambiguitynotes-logger-nltosqlschemaoptions-prebuiltddl-tenantpolicy-tenantscope-parameterize-prompttableids","formattenantpolicywarningwarning":"tenancy/#formattenantpolicywarningwarning","tenantscope":"tenancy/#tenantscope","errors":"errors/#errors","sqlvalidationerror-rules":"errors/#sqlvalidationerror-rules","tenantscopeerror-reasons":"errors/#tenantscopeerror-reasons","tenantguardrailerror-rules":"errors/#tenantguardrailerror-rules","sensitivereferenceerror-rules":"errors/#sensitivereferenceerror-rules","queryparametererror-reasons":"errors/#queryparametererror-reasons"}} />
