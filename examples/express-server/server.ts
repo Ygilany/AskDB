@@ -17,7 +17,7 @@
  * Environment (.env or system):
  *   OPENAI_API_KEY     — required
  *   OPENAI_MODEL       — optional, defaults to gpt-4o-mini
- *   ASKDB_SCHEMA_PATH  — path to your <name>.schema/ artifact directory
+ *   SCHEMA_PATH        — path to your <name>.schema/ artifact directory
  *   DATABASE_URL       — required only when execute: true; use a read-only role
  *   PORT               — optional, defaults to 3000
  *   HOST               — optional, defaults to localhost

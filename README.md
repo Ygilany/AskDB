@@ -70,6 +70,24 @@ const { sql } = await ask({
 });
 ```
 
+Or build the model from `askdb.config.ts` with `@askdb/ai`, and share it with your app's own AI SDK calls:
+
+```ts
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { generateText } from "ai";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+const ai = createAiRegistry(); // the provider and model come from ai.language in askdb.config.ts
+const model = await ai.createLanguageModelFromSection(getAskDbRuntimeConfig().ai.language);
+if (!model) throw new Error(ai.keyMissingMessage("my-app"));
+
+const { sql } = await ask({ question: "How many users signed up last week?", schema, model, dialect: "postgres" });
+const { text } = await generateText({ model, prompt: `Explain this SQL in one sentence: ${sql}` });
+```
+
+Install `@askdb/ai`, `@askdb/config` and your provider's SDK for this path. [`@askdb/client`](packages/client/README.md)'s `createAskDb()` does the same setup and also resolves the schema and dialect from config.
+
 Per-provider model recipes (OpenAI, Azure OpenAI / Foundry, Google Gemini, and Anthropic) and introspection recipes live in [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
 
 ## Constitution

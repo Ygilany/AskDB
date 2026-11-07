@@ -16,7 +16,7 @@ export default defineConfig({
   },
   host: {
     // Path to the schema artifact produced by `askdb introspect`.
-    // Set ASKDB_SCHEMA_PATH in .env or the system environment.
-    schemaPath: env("ASKDB_SCHEMA_PATH"),
+    // Set SCHEMA_PATH in .env or the system environment.
+    schemaPath: env("SCHEMA_PATH"),
   },
 } satisfies AskDbConfig);

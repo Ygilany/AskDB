@@ -25,7 +25,7 @@ await server.listen();
 | --- | --- | --- |
 | `port` | `httpApi.listen.port`, else `3000` | Port to listen on. |
 | `host` | `httpApi.listen.host`, else `127.0.0.1` | Bind address. Bind to `0.0.0.0` only behind a gateway. |
-| `schemaPath` | `host.schemaPath` | Server-default schema artifact path. |
+| `schemaPath` | `host.schemaJson`, then `host.schemaPath` | Server-default schema artifact path. |
 | `maxBodyBytes` | `1048576` (1 MiB) | Request body size limit. Larger requests return `payload_too_large`. |
 
 `createAskDbHttpServer()` returns an object with these members:
@@ -84,7 +84,18 @@ npx askdb-http --schema-path ./my-app.schema --port 3000 --host 127.0.0.1
 | `--port <n>` | Port to listen on. |
 | `--host <host>` | Bind address. |
 
-Every flag is optional. Precedence per setting: CLI flag → `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`) → built-in default.
+Every flag is optional. Each setting comes from its flag, then `askdb.config.ts`, then the default:
+
+- **Schema:** `--schema-path`, then `host.schemaJson`, then `host.schemaPath`. There's no default: with none, `POST /ask` answers `400 bad_request`.
+- **Port and host:** `--port` and `--host`, then `httpApi.listen.port` and `httpApi.listen.host`, then `3000` and `127.0.0.1`.
+
+`askdb-http` loads one `.env` file before the config: the first of these that exists.
+
+1. A `.env` three directories above the package's `dist` folder: `node_modules/.env` in an npm install, or the repository root when you run it from AskDB's own repository.
+2. The `.env` in the working directory.
+3. A `.env` in the `@askdb/http-api` package folder.
+
+So a `.env` inside `node_modules` is read in place of the working directory's. `createAskDbHttpServer()` reads only the working directory's `.env` (see [Config loading](#config-loading)).
 
 If the server can't load its config (no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`) or can't bind (for example, the port is already in use), `askdb-http` prints a one-line error and exits with code `1`.
 
@@ -135,7 +146,6 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
   "ok": true,
   "correlationId": "8f14e45f-ceea-4e7a-9f2b-1c3d5e7a9b0c",
   "sql": "SELECT count(*) FROM customers WHERE created_at >= …",
-  "explain": null,
   "usage": {
     "promptTokens": 1250,
     "completionTokens": 45,
@@ -151,7 +161,7 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 | Field | Type | Notes |
 | --- | --- | --- |
 | `sql` | `string` | The generated, checked SQL. |
-| `explain` | `object \| null` | Heuristic guardrail metadata. Present (non-null) when `explain: true` was sent in the request. |
+| `explain` | `object`, only when requested | Heuristic guardrail metadata: which read-only checks ran. Present only when the request sent `explain: true`. |
 | `usage` | `object \| null` | Token counts for the generation call: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). `null` when the provider does not report usage. |
 | `sensitiveGuardrail` | `object`, only on some responses | Present only when the schema marks at least one table or column `sensitive`. Shows which sensitive identifiers the returned `sql` references: `passed` (`boolean`), `references` (`{ table, schema?, column, matchKind }[]`), and `unresolvedScope` when the table scope couldn't be resolved. `passed: false` is a warning. The SQL is still returned, so check it before you execute. See [`validateSensitiveReferences`](/reference/core-api/#validatesensitivereferencessql-schema-options). |
 
@@ -163,8 +173,8 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
   "correlationId": "8f14e45f-ceea-4e7a-9f2b-1c3d5e7a9b0c",
   "error": {
     "code": "sql_validation_error",
-    "message": "Generated SQL contains a write statement.",
-    "rule": "read_only"
+    "message": "SQL must start with SELECT or WITH (got 'delete').",
+    "rule": "SQL_NOT_SELECT_OR_WITH"
   }
 }
 ```
@@ -173,12 +183,12 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 
 | Code | HTTP | When |
 | --- | --- | --- |
-| `not_found` | `404` | Unknown route. |
+| `not_found` | `404` | Any route other than `GET /health` and `POST /ask`, including `GET /ask`. |
 | `bad_request` | `400` | Malformed JSON, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, a retired execution field, no schema configured server-side, or a request `schemaJson` that records no `provider` or one with no AskDB dialect. |
 | `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
 | `schema_override_disabled` | `403` | The request sent `schemaJson` but `httpApi.allowSchemaOverride` is not `true`. |
 | `schema_parse_error` | `400` | The schema artifact (inline `schemaJson` or the server's configured schema) couldn't be loaded or parsed. |
-| `sql_validation_error` | `400` | Model output failed the SQL checks (must start with `SELECT`/`WITH`, a single statement, no comments, no unterminated strings or quoted identifiers, no write or DDL keywords, no locking reads, no blocked side-effecting functions). Includes `rule`. |
+| `sql_validation_error` | `400` | Model output failed the SQL checks (must start with `SELECT`/`WITH`, a single statement, no comments, no unterminated strings or quoted identifiers, no write or DDL keywords, no locking reads, no blocked side-effecting functions). Includes `rule`, the check's [`SqlValidationRuleCode`](/reference/core-api/#sqlvalidationerror-rules), such as `SQL_NOT_SELECT_OR_WITH`. |
 | `guardrail_violation` | `422` | Reserved for a tenant or sensitive-identifier guardrail rejecting the generated SQL, with `rule`. The server doesn't return it today: it runs the sensitive-identifier check in warn mode (see `sensitiveGuardrail`), and it can't pass a tenant scope, so a schema with a tenant policy fails earlier with `500 tenant_scope_not_configured`. |
 | `generation_not_configured` | `500` | The server can't generate SQL for its configured schema, for one of two reasons: no model provider is configured, or the schema's `provider` has no AskDB dialect and `dialect` isn't set in `askdb.config.*`. The server never falls back to PostgreSQL. The log line's `errName` names the cause: `ModelNotConfiguredError` or `DialectNotSupportedError`. |
 | `tenant_scope_not_configured` | `500` | The schema has a tenant policy (`tenant-policy.md`), and the server can't set a `tenantScope`, so `ask()` refuses it before any model call. No SQL is returned. To serve a tenant-scoped schema, call `ask()` with a `tenantScope` in your own server; server-side scoping for this server is planned in [#343](https://github.com/Ygilany/AskDB/issues/343). |
@@ -214,5 +224,5 @@ See [Deploy as HTTP service](/guides/deploy-as-http-service/) for the production
 <div class="home-path-grid">
   <a href="/guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>The end-to-end deploy guide with curl and Python examples.</span></a>
   <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>What your gateway service needs to enforce.</span></a>
-  <a href="/reference/config/"><strong>Configuration</strong><span>Environment variables the server reads at startup.</span></a>
+  <a href="/reference/config/"><strong>Configuration reference</strong><span>Every <code>askdb.config.ts</code> key the server reads, including <code>httpApi</code>.</span></a>
 </div>

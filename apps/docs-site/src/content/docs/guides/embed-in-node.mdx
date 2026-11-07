@@ -272,7 +272,7 @@ export default defineConfig({
     providerConfig: { postgres: { databaseUrl: env("DATABASE_URL") } },
   },
   host: {
-    schemaPath: env("ASKDB_SCHEMA_PATH"),
+    schemaPath: env("SCHEMA_PATH"),
   },
 } satisfies AskDbConfig);
 ```
