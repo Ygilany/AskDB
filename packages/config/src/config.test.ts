@@ -991,6 +991,13 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
     );
   });
 
+  // A connection string pasted into the wrong key could carry a password, so the error leaves it out.
+  it("names the key but not a connection string written as studio.execute.provider", () => {
+    expect(() =>
+      defineConfig(minimalConfig({ studio: { execute: { provider: "postgres://ro:s3cret@db.internal/app" } } as never })),
+    ).toThrow(/^askdb\.config: invalid studio\.execute\.provider \(expected one of: postgres, mysql, sqlite, sqlserver\)\.$/);
+  });
+
   it("uses explicit studio.execute.provider when set", () => {
     installStudio(
       { execute: { provider: "mysql", databaseUrl: "mysql://host/db" } },

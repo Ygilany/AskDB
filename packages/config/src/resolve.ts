@@ -488,11 +488,17 @@ function readBoolean(value: unknown, key: string): boolean | undefined {
   throw new Error(`askdb.config: ${key} must be a boolean (got ${describeValue(value)}).`);
 }
 
+/** A value short and plain enough to repeat in an error. */
+const BARE_WORD = /^[A-Za-z0-9_.-]{1,64}$/;
+
 /** One of `allowed`, or `undefined` when unset (`undefined`, `null` or `""`). */
 function readMember<T extends readonly string[]>(value: unknown, allowed: T, key: string): T[number] | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (isMember(value, allowed)) return value;
-  throw new Error(`askdb.config: invalid ${key} ${describeValue(value)} (expected one of: ${allowed.join(", ")}).`);
+  // A rejected string is echoed only when it's a bare word: a connection string or path pasted
+  // into the wrong key could carry a password.
+  const shown = typeof value !== "string" ? ` ${describeValue(value)}` : BARE_WORD.test(value) ? ` ${JSON.stringify(value)}` : "";
+  throw new Error(`askdb.config: invalid ${key}${shown} (expected one of: ${allowed.join(", ")}).`);
 }
 
 /** A list of strings, each trimmed, blanks dropped; `undefined` when unset or empty. */
