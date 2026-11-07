@@ -35,7 +35,7 @@ const ASK_FLAGS: readonly Flag<AskOptions>[] = [
   {
     names: ["-s", "--schema"],
     value: "<path>",
-    help: "Schema v2 directory, bundled JSON, or schema.json. Default: introspection.outputDir, or ./askdb/.",
+    help: "Schema directory, bundled JSON, or schema.json. Default: introspection.outputDir, or ./askdb/.",
     apply: (opts, value) => (opts.schema = value),
   },
   {
@@ -80,6 +80,10 @@ export function askCommand(): CommandSpec<AskOptions> {
     initial: () => ({}),
     check(opts) {
       if (opts.question === undefined) throw new Error("Missing --question <text>.");
+      // Core's own message names ask()'s `question` option; here it's the flag (#719).
+      if (!opts.question.trim()) {
+        throw new Error("Question is empty. Pass a non-blank natural-language question with -q / --question.");
+      }
     },
     needsConfig: () => true,
     run: runAsk,

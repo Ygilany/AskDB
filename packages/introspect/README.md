@@ -1,6 +1,6 @@
 # `@askdb/introspect`
 
-Engine-agnostic introspection orchestrator for AskDB. Defines the `Connector` contract and turns the integration package's `SqlSchema` output into a Schema v2 directory.
+Engine-agnostic introspection orchestrator for AskDB. Defines the `Connector` contract and turns the integration package's `SqlSchema` output into a schema directory.
 
 > Status: pre-1.0. `@askdb/introspect` itself does not bundle any engine support — integration packages (e.g. `@askdb/postgres`, `@askdb/prisma`) supply connectors and input shapes.
 
@@ -31,7 +31,7 @@ const result = await introspect(
 );
 ```
 
-The output directory contains a physical Schema v2 artifact (`schema.json`) plus the Phase 5 describable layer.
+The output directory contains a physical schema artifact (`schema.json`) plus the Phase 5 describable layer.
 
 For Prisma projects, use `@askdb/prisma` to read schema files without connecting to the database:
 
@@ -104,8 +104,8 @@ The `@askdb/introspect/kit` subpath holds the engine-agnostic helpers every firs
 | --- | --- |
 | `createOptionalDriverLoader({ packageName, specifier?, importDriver, missingMessage })`, `isDriverInstalled(packageName, { resolveFrom? })`, `missingDriverMessage({ engine, packageName })`, `rethrowDriverImportError` | Lazy, cached loading of an optional driver peer (`pg`, `mysql2`, …): the engine package's own `import()` first, then the caller's project (`resolveFrom`, default `process.cwd()`). A missing peer rejects with an `AskDbError`; the failed cache slot is cleared so a later call retries. `missingDriverMessage` is the first-party engines' message (it suggests a one-off `askdb` command, which registers only those engines); a third-party engine passes its own `missingMessage`. Chain `.catch(rethrowDriverImportError)` on your `import()` so bundlers such as esbuild treat the peer as optional. |
 | `compileTableFilters(patterns)`, `ambiguousFilterWarnings(patterns, qualifiedNames)` | `IntrospectionFilters.tables` glob matching (`*`, `?`) and the `ambiguous_filter` warning for patterns that match nothing. |
-| `makeTableId(schema, table)`, `makeColumnId(schema, table, column)` | Schema v2 ids (`table:<schema>.<name>`, `table:<schema>.<name>#<column>`). |
-| `rowsToRecords(result, { expectedColumns?, source? })`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction` | Folding positional `CatalogQueryResult` rows into Schema v2 tables, constraints, and indexes. |
+| `makeTableId(schema, table)`, `makeColumnId(schema, table, column)` | Schema artifact ids (`table:<schema>.<name>`, `table:<schema>.<name>#<column>`). |
+| `rowsToRecords(result, { expectedColumns?, source? })`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction` | Folding positional `CatalogQueryResult` rows into schema artifact tables, constraints, and indexes. |
 | `formatConnectionLabel`, `parseConnectionUrl`, `ConnectionLabelParts` | `ConnectionLabelParts` is what an adapter's `connectionLabelParts` hook returns (take the parts from your driver's own parser where it has one; `parseConnectionUrl` is a strict fallback for a standard URL). `formatConnectionLabel` is what `registry.connectionLabel()` applies to those parts: host, port and database (or a file path), else `configured <engine> connection` ([ADR 0011](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0011-connection-labels-from-parsed-parts.md)). |
 | `defineLiveConnectorProvider({ provider, displayName, runtimeKey, connectionNoun, missingConnection, fromExportUnsupported?, createConnector, createRunner, connectionLabelParts })` | The full `ConnectorProviderAdapter` for an engine that only introspects through a live `CatalogQueryRunner`. `@askdb/mysql`, `@askdb/sqlite`, and `@askdb/sqlserver` use it. |
 | `runtimeIntrospectionString(runtime, key)` | A non-empty string from `runtime.introspection[key]`, the per-engine values `@askdb/config` resolves (for example `postgresDatabaseUrl`). |

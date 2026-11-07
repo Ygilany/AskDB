@@ -4,8 +4,9 @@
  * result with a golden file that pins the current verdicts. The golden was captured on `main`
  * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
- * Since then it has changed only on purpose: #665 (5 read-only verdicts on `SELECT $1SELECT 2`, under
- * the Postgres family and the custom engines).
+ * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
+ * custom engines and no dialect, where SQL Server ends a name or number), and #665 (5 read-only
+ * verdicts on `SELECT $1SELECT 2`, under the Postgres family and the custom engines).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -162,6 +163,17 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids",
   "SELECT 1 AS a -- \r'\n, u.secret_recovery_token FROM users u -- '",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # x\r OR 1=1",
+  // #623: SQL Server ends a number after `0x` or `1E` and a name at U+00A0, U+200B and U+0085.
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1\u00a0OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1\u200bOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1\u0085OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=0xOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1EOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1E OR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND flags = 0x AND rate = 1E",
+  "SELECT *\u00a0FROM orders\u00a0WHERE agency_id\u00a0=\u00a0:tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\u200bAND\u0085status = 'open'",
+  "SELECT [x\u00a0OR] FROM orders WHERE agency_id = :tenant_agency_ids",
   // #665: a `$N` parameter written against a word, refused where the SQL may be read as Postgres.
   "SELECT $1INTO lab_x",
   "SELECT order_id FROM billing.order_line WHERE order_id = $1FOR SHARE",

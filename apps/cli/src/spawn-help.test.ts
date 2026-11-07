@@ -65,3 +65,38 @@ describe("askdb help text (#281)", () => {
     }
   });
 });
+
+describe("askdb help marks the ADR 0030 experimental surfaces (#662)", () => {
+  const ADR_0030 = "docs/adrs/0030-1-0-promises-checked-sql-only.md";
+  let emptyDir: string;
+
+  beforeAll(() => {
+    emptyDir = mkdtempSync(join(tmpdir(), "askdb-cli-help-"));
+  });
+
+  afterAll(() => {
+    rmSync(emptyDir, { recursive: true, force: true });
+  });
+
+  function help(args: string[]): string {
+    const exec = spawnSync("node", [cliJs, ...args], { cwd: emptyDir, encoding: "utf8" });
+    expect(exec.status, exec.stderr).toBe(0);
+    return exec.stdout;
+  }
+
+  it("`askdb --help` tags studio, enrich, bundle and rag experimental, and only those, and links ADR 0030", () => {
+    const text = help(["--help"]);
+    const commandLines = (text.split("\nCommands:\n")[1] ?? "").split("\n\n")[0]!.split("\n");
+    const experimental = commandLines
+      .filter((line) => line.includes("experimental"))
+      .map((line) => line.trim().split(/\s+/)[0]);
+    expect(experimental).toEqual(["studio", "enrich", "bundle", "rag"]);
+    expect(text).toContain(ADR_0030);
+  });
+
+  it.each([["bundle"], ["rag"], ["init"]])("`askdb %s --help` says it's experimental and links ADR 0030", (command) => {
+    const text = help([command, "--help"]);
+    expect(text).toMatch(/experimental/i);
+    expect(text).toContain(ADR_0030);
+  });
+});

@@ -7,7 +7,7 @@ description: "Every file in a schema artifact: the schema.json fields, the table
 
 <p class="doc-lede">A schema artifact is a folder of files that <code>loadSchema()</code> reads, or one bundle file that holds them. This page lists each file, every field it accepts, and what AskDB does with it. For why the artifact is split this way, see <a href="/concepts/the-schema-artifact/">The schema artifact</a>.</p>
 
-The format is Schema v2, the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
+It's the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
 
 ## Layout
 
@@ -147,7 +147,7 @@ AskDB drops a key it doesn't know without an error or a warning. A misspelled `"
 
 | Problem | Error (`SchemaParseError`) |
 | --- | --- |
-| `"version": 1` | ``AskDB schema format `version: 1` is not supported as of `@askdb/core@0.2.0`. Migrate to Schema v2 format. …`` |
+| `"version": 1` | ``AskDB schema format `version: 1` is not supported as of `@askdb/core@0.2.0`. Migrate to the schema artifact format (`"version": 2`): …`` |
 | Any other invalid field | `Invalid schema.json at <path>: <details>` |
 | Text that isn't JSON | `Failed to parse schema.json in <dir>` |
 
@@ -181,7 +181,7 @@ The `<schema>` part is the table's `schema` field:
 | SQLite | `public` |
 | A Prisma schema (`@askdb/prisma`) | The model's `@@schema`, or else `public`, for every datasource provider |
 
-Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition. Entries that name the old ID then report [warnings](#loader-warnings), and its `sensitive` marks don't carry over. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps after a rename.
+Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition. Entries that name the old ID then report [warnings](#loader-warnings), and its `sensitive` marks don't carry over. [Enrich your schema](/guides/author-your-schema/#re-introspecting) has the steps after a rename.
 
 ## Table files (`tables/*.md`)
 
@@ -341,12 +341,12 @@ A bundle is one JSON file that holds a whole artifact. Loading it gives the same
 
 ## Versioning
 
-Schema v2 is the only format AskDB reads. Before 1.0, v2 can gain fields without a new version number. After 1.0, a breaking change to the format gets a new `version`. The [Schema v2 contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) records the policy.
+This is the only format AskDB reads. Before 1.0, it can gain fields without a new `version` number. After 1.0, a breaking change to the format gets a new `version`. The [schema artifact contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) records the policy.
 
 ## Read next
 
 <div class="home-path-grid">
   <a href="/concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>Why the artifact is files your team owns, and how its two layers fit together.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
   <a href="/reference/core-api/schema/#loadschemapath"><strong>@askdb/core API</strong><span><code>loadSchema()</code>, <code>loadSchemaFromJson()</code> and the loaded schema's fields.</span></a>
 </div>

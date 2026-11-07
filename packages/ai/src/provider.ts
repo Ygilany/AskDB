@@ -265,8 +265,8 @@ function resolveModel(
   if (!model) {
     throw new Error(
       options.usage === "embedding"
-        ? `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`
-        : `${provider}: no language model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).`,
+        ? `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.* (or, in an env map, ASKDB_AI_EMBEDDING_MODEL or the provider's native embedding model variable).`
+        : `${provider}: no language model configured. Set ai.language.model in askdb.config.* (or, in an env map, ASKDB_AI_MODEL or the provider's native model variable).`,
     );
   }
   return model;

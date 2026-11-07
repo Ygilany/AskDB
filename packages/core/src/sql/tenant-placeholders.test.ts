@@ -13,10 +13,7 @@ import { ask, type AskDialect } from "../ask.js";
 import { SchemaParseError, TenantScopeError, UnknownDialectError } from "../errors.js";
 import { getDialectSpec, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
-import {
-  placeholderForRoot as publicPlaceholderForRoot,
-  placeholderForTenantRoot as publicPlaceholderForTenantRoot,
-} from "../index.js";
+import { placeholderForTenantRoot as publicPlaceholderForTenantRoot } from "../index.js";
 
 function reasonOf(fn: () => unknown): string | undefined {
   try {
@@ -653,8 +650,7 @@ describe("resolveTenantSql — placeholders derived per root", () => {
 });
 
 // A host that computes a placeholder itself (to write or rebind SQL) must get the one
-// core binds. The public `placeholderForTenantRoot` is that derivation; the deprecated
-// label-only `placeholderForRoot` keeps its old output (#375 review).
+// core binds. The public `placeholderForTenantRoot` is that derivation (#375 review).
 describe("placeholderForTenantRoot — the public derivation agrees with the binder", () => {
   const relabelled: NormalizedTenantPolicy = {
     ...policy,
@@ -674,12 +670,5 @@ describe("placeholderForTenantRoot — the public derivation agrees with the bin
     expect(result.bindings.map((b) => [b.placeholder, b.rootId])).toEqual(
       p.roots.map((root, i) => [placeholders[i], root.id]),
     );
-  });
-
-  it("keeps the deprecated label-only placeholderForRoot output unchanged", () => {
-    expect(publicPlaceholderForRoot("Agency")).toBe(":tenant_agency_ids");
-    expect(publicPlaceholderForRoot("Sub-Agency")).toBe(":tenant_sub_agency_ids");
-    expect(publicPlaceholderForRoot("My Cool Root")).toBe(":tenant_my_cool_root_ids");
-    expect(publicPlaceholderForRoot("Клиент")).toBe(":tenant___ids");
   });
 });

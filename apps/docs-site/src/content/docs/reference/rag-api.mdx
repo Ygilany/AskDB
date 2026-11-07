@@ -512,7 +512,7 @@ type Filter = {
 | `type` | `ChunkType` | Semantic kind of this chunk. |
 | `text` | `string` | The text that gets embedded. |
 | `schemaId` | `string` | The schema this chunk belongs to. |
-| `refs` | `string[]` | Schema v2 ids referenced by this chunk (table ids, column ids, etc.). |
+| `refs` | `string[]` | Schema artifact ids referenced by this chunk (table ids, column ids, etc.). |
 | `sensitive` | `boolean` | `true` when the chunk carries content that belongs to or mentions a sensitive table/column. That content is only emitted with `includeSensitiveDescribable: true`. |
 
 ### `ChunkPayload`

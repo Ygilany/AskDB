@@ -179,13 +179,16 @@ function readValue(argv: readonly string[], index: number, flag: string): string
 function printHelp(stream: NodeJS.WriteStream): void {
   stream.write(
     [
-      "askdb-studio - Local browser UI for AskDB Schema v2 enrichment",
+      "askdb-studio - Local browser UI for AskDB schema enrichment",
+      "",
+      "Experimental: Studio stays 0.x, so a minor release may change it",
+      "(https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md).",
       "",
       "Usage:",
       "  askdb-studio [--schema <dir>] [--port <number>] [--host <host>]",
       "",
       "Options:",
-      "  -s, --schema <dir>   Schema v2 directory (default: introspection.outputDir from",
+      "  -s, --schema <dir>   Schema directory (default: introspection.outputDir from",
       "                       askdb.config, or ./askdb/)",
       "  --port <number>      Port to listen on (default: studio.listen.port from askdb.config, or 5556)",
       "  --host <host>        Host to bind (default: studio.listen.host from askdb.config, or 127.0.0.1)",

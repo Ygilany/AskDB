@@ -120,9 +120,7 @@ placeholderForTenantRoot({ id: "table:public.sub_agencies", label: "Sub-Agency" 
 placeholderForTenantRoot({ id: "table:public.clients", label: "Клиент" });          // ":tenant_clients_ids"
 ```
 
-Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prompt names, `ask()` and `resolveTenantSql()` bind, and the tenant guardrail checks. `<name>` is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit uses the root's table name instead. Pass a root from `schema.tenantPolicy.roots` (anything with `id` and `label`).
-
-`placeholderForRoot(label)` is deprecated. It takes the label alone, so for a label with no ASCII letter or digit it returns `:tenant___ids`, which core doesn't bind. For every other label the two agree.
+Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prompt names, `ask()` and `resolveTenantSql()` bind, and the tenant check looks for. `<name>` is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit uses the root's table name instead. Pass a root from `schema.tenantPolicy.roots` (anything with `id` and `label`).
 
 ### `buildTenantPromptBlock(policy, scope, prompt)`
 

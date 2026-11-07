@@ -17,9 +17,26 @@ description: "The read-only, tenant and sensitive checks AskDB runs on generated
 
 `ask()` runs each check on the model's bound SQL and on its `sql-unbound` block, while the `:tenant_<root>_ids` placeholders are still in place, before it renders tenant IDs or binds values. `bindPreparedQuery()` and `askdb.bind()` run all three again on the stored template, under the schema, scope and dialect rules you pass then. `generateSelectSql()` runs the read-only and tenant checks. [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict) says how the findings become an outcome, and which error a refusal throws.
 
-<figure style="--d2-width: 593px">
+<figure>
 
-```d2 src="../../../assets/diagrams/d2/sql-checks-flow.d2"
+```mermaid
+flowchart TB
+  %% The SQL checks: which run on the model's SQL, in order, and how their findings become one
+  %% outcome. Source of truth: packages/core/src/ask.ts (the enforceGuardrails call) and
+  %% sql/guardrails.ts (the decision: read-only always denies; tenant by enforcement; sensitive by
+  %% sensitiveGuardrailMode).
+  sql["the model's SQL<br/>and its sql-unbound block"]
+  readonly["read-only check<br/>built-in id or<br/>DialectSpec only"]
+  tenant["tenant check<br/>with a tenant policy"]
+  sensitive["sensitive check<br/>with sensitive marks"]
+  verdict["verdict<br/>every finding"]
+  allow["allow"]
+  warn["warn:<br/>returned, reported"]
+  deny["deny:<br/>throws"]
+  sql --> readonly --> tenant --> sensitive --> verdict
+  verdict --> allow
+  verdict --> warn
+  verdict --> deny
 ```
 
 <figcaption>The checks run in this order on the model's SQL. Every check runs, then one decision maps their findings to an outcome.</figcaption>
@@ -37,6 +54,8 @@ The checks don't parse SQL. They split it into tokens and skip strings, quoted n
 | Comments | `--`, `/* … */` (nested) | `--` followed by a space or a control character, `#`, `/* … */`. | `--`, `/* … */` | `--`, `/* … */` (nested) |
 | Where a `--` comment ends | At a line feed or a carriage return on Postgres, at a line feed only on CockroachDB. Both ids are read both ways. | At a line feed | At a line feed | At a line feed or a carriage return |
 | `$` | Inside a name, such as `a$$b`, part of the name. Elsewhere, `$$` or `$tag$` starts a dollar-quoted string (`$tag$…$tag$`), read only on these engines. Since 1.0.0-beta.51, a tag with non-ASCII letters (`$é$ … $é$`) is read as a string, as the engine does ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). | Inside a name, part of the name | Inside a name, part of the name | Starts a money literal such as `$1.5` |
+
+On SQL Server, a number also ends after `0x` or `1E` with no digits after it, and a name at whitespace such as a non-breaking space (U+00A0), U+200B or U+0085, so a keyword written right after one is read as a keyword, as SQL Server reads it ([#623](https://github.com/Ygilany/AskDB/issues/623)).
 
 ### Forms the checks refuse to read
 

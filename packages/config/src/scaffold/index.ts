@@ -8,8 +8,7 @@
  * @experimental Tooling for `askdb init` and AskDB Studio: a minor release of
  * `@askdb/config` may change these exports (ADR 0030).
  */
-export { renderAskDbAiConfigScaffold } from "./ai.js";
-export type { AskDbAiConfigScaffold, AskDbAiConfigScaffoldInput, AskDbScaffoldEnvVar } from "./ai.js";
+export type { AskDbAiConfigScaffoldInput } from "./ai.js";
 export { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold } from "./plan.js";
 export type { AskDbScaffoldAnswers, AskDbScaffoldPlan, ScaffoldValue } from "./plan.js";
 export {

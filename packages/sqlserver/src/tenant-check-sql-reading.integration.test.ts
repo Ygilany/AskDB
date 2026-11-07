@@ -1,10 +1,13 @@
 /**
- * The tenant check reads comments the way SQL Server does, checked against a live SQL Server 2022.
+ * The tenant check reads comments and token ends the way SQL Server does, checked against a live
+ * SQL Server 2022.
  *
  * Protects: SQL Server ends a `--` comment at a carriage return as well as at a line feed, so a
  * predicate written after the carriage return is code. The engine's reading is confirmed on the
  * fixture, and the tenant check reads the predicate the same way, so a scoped query that filters
- * after a carriage-return comment passes while one that doesn't is required to.
+ * after a carriage-return comment passes while one that doesn't is required to. SQL Server also
+ * ends a number after `0x` or `1E` and a name at U+00A0, U+200B and U+0085, so an `OR` written
+ * right after one is a keyword, and the tenant check sees it (#623).
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -41,5 +44,19 @@ fixtureSuite("the tenant check reads SQL the way SQL Server does (live SQL Serve
     expect(findings("SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids")).toEqual([]);
     expect(findings("SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders"))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it.each([
+    ["U+00A0", "1=1\u00a0OR 1=1"],
+    ["U+200B", "1=1\u200bOR 1=1"],
+    ["U+0085", "1=1\u0085OR 1=1"],
+    ["`0x`", "1=0xOR 1=1"],
+    ["`1E`", "1=1EOR 1=1"],
+  ])("an OR written right after %s is a keyword, as the engine reads it (#623)", async (_label, tail) => {
+    const runner = createSqlServerCatalogQueryRunner(connectionUrl("sqlserver", "reader"));
+    // `(a = 1 AND …) OR 1=1` keeps both rows; without the OR, only a = 1 would.
+    const rows = (await runner(`SELECT count(*) AS c FROM (SELECT 1 AS a UNION ALL SELECT 2) t WHERE a = 1 AND ${tail}`)).rows;
+    expect(Number(rows[0]![0])).toBe(2);
+    expect(findings(`SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ${tail}`)).toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });

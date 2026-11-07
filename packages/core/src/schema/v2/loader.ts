@@ -486,7 +486,7 @@ function parsePhysicalLayer(data: unknown, filePath: string): V2SchemaJson {
   ) {
     throw new SchemaParseError(
       `AskDB schema format \`version: 1\` is not supported as of \`@askdb/core@0.2.0\`. ` +
-        `Migrate to Schema v2 format. See \`docs/contracts/schema-v2.md\` for the format contract.`,
+        `Migrate to the schema artifact format (\`"version": 2\`): see https://askdb.tools/reference/schema-artifact-format/.`,
     );
   }
 

@@ -14,7 +14,7 @@ import { loadSchema } from "@askdb/core";
 const schema = loadSchema("./my-app.schema"); // synchronous
 ```
 
-Autodetects and loads a v2 schema artifact. Accepts:
+Autodetects and loads a schema artifact. Accepts:
 - A **schema directory** (`<name>.schema/`) — the output of `askdb introspect`
 - A **bundled JSON file** (any JSON object with a `bundled` key, whatever the file's name) — the output of `askdb bundle`
 - A direct path to a `schema.json` file, matched in any case (`Schema.json` works too). This loads the enclosing directory, so sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md` apply just as they do for the directory path.
@@ -69,7 +69,7 @@ const names = sensitiveMentionNames(schema); // → ["email", { table: "users", 
 createMentionMatcher(names).mentionsAny("Dedupe on email"); // → true
 ```
 
-The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker, `@askdb/enrich`'s authoring warning and `ask()`'s prompt (with `omitSensitiveIdentifiersFromNlToSqlPrompt`) all use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`. `sensitiveMentionNames(schema)` returns the names that rule checks for a normalized schema, schema-wide: a column marked sensitive itself by its bare name, and a column that is sensitive only because its table is (`sensitiveFromTable`) only as `{ table, column }`. Columns of untracked tables count too.
+The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker, `@askdb/enrich`'s authoring warning and `ask()`'s prompt (with `omitSensitiveIdentifiersFromNlToSqlPrompt`) all use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema artifact contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`. `sensitiveMentionNames(schema)` returns the names that rule checks for a normalized schema, schema-wide: a column marked sensitive itself by its bare name, and a column that is sensitive only because its table is (`sensitiveFromTable`) only as `{ table, column }`. Columns of untracked tables count too.
 
 ## `saveSchemaFile(schemaDir, relativePath, content)`
 
@@ -115,7 +115,7 @@ The prompt lists the target table the way `ask()`'s prompt does (`TABLE public.u
 | `temperature` | `0.4` | Sampling temperature. |
 | `maxCandidates` | `3` | The most candidates returned. |
 
-The option's type is exported as `EnrichmentPromptOptions`. `buildEnrichmentUserPrompt(target, context, options?)` returns the user prompt `suggestEnrichment` sends, with the same `options`, for hosts that call their model themselves; it throws `SensitiveEnrichmentTargetError` in the same case. `ENRICHMENT_SYSTEM_PROMPT` is the system prompt, and `parseCandidates(text, max)` splits a reply into candidates.
+The option's type is exported as `EnrichmentPromptOptions`.
 
 ## Markdown files
 
@@ -170,6 +170,6 @@ Each parser reads one file's text. `filePath` names the file in its errors. A fi
 
 <div class="home-path-grid">
   <a href="/reference/schema-artifact-format/"><strong>Schema artifact format</strong><span>Every file in a schema directory, and the sensitivity rules.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Describe tables and columns so the model gets them right.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>Describe tables and columns so the model gets them right.</span></a>
   <a href="/reference/core-api/ask/"><strong>ask()</strong><span>Pass the loaded schema to <code>ask()</code>.</span></a>
 </div>

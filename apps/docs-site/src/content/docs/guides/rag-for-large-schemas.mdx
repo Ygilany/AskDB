@@ -15,9 +15,32 @@ A rule of thumb: if your schema artifact has more than ~30 tables, or if rendere
 
 When you pass a retriever, `ask()` retrieves on every call, unless you also pass the schema's chunk count: see [Wire retrieval into `ask()`](#wire-retrieval-into-ask).
 
-<figure style="--d2-width: 624px">
+<figure>
 
-```d2 src="../../../assets/diagrams/d2/rag-index-query.d2"
+```mermaid
+flowchart TB
+  %% @askdb/rag: indexing writes the vector store once per schema change; each ask() with a
+  %% retriever reads it. Indexing embeds only the chunks the store doesn't already hold with the
+  %% same content hash. A question is embedded on every call.
+  %% Source of truth: buildSchemaIndex and createRetriever (default k 8) in packages/rag, and
+  %% synthesizeRetrievedDdl in packages/core/src/retrieval/synthesize-ddl.ts.
+  subgraph index["Indexing: once per schema change"]
+    artifact["schema artifact"]
+    chunks["chunks"]
+    artifact -- "buildSchemaIndex" --> chunks
+  end
+  store[("vector store")]
+  chunks -- "embedding model:<br/>new or changed chunks" --> store
+  subgraph query["Each ask() call"]
+    question["your question"]
+    retrieved["retrieved chunks<br/>(top k, 8 by default)"]
+    prompt["ask()'s prompt:<br/>each table a chunk<br/>points to, in full"]
+    sql["checked SQL"]
+    retrieved --> prompt
+    prompt -- "language model" --> sql
+  end
+  question -- "embedding model" --> store
+  store -- "nearest chunks" --> retrieved
 ```
 
 <figcaption>Indexing chunks the schema artifact and stores the chunks' embeddings, once per schema change. Each <code>ask()</code> call embeds only the question, retrieves the nearest chunks, and lists in the prompt each table they point to.</figcaption>
@@ -163,7 +186,7 @@ With only a retriever, `ask()` retrieves on every call. To let a small schema sk
 
 Sensitive content stays out of the index by default. The chunker leaves out the text you wrote about sensitive tables and columns (descriptions, aliases, primary entity, enum values, notes, common query language, example questions and business context), and any text that names a sensitive column, whichever table it describes. Column names and types stay available to the model through `ask()`'s prompt. [Privacy model](/concepts/privacy-model/#large-schemas-and-the-embedding-provider) says what the embedding model receives.
 
-Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust model allows embedding that content. Chunks kept this way carry `sensitive: true`. With `omitSensitiveIdentifiersFromNlToSqlPrompt` on, `ask()` leaves the text of any retrieved chunk that carries `sensitive: true` or names a sensitive column out of the prompt, whichever retriever returned it, and still lists the tables the chunk points to. See the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) for the full rules.
+Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust model allows embedding that content. Chunks kept this way carry `sensitive: true`. With `omitSensitiveIdentifiersFromNlToSqlPrompt` on, `ask()` leaves the text of any retrieved chunk that carries `sensitive: true` or names a sensitive column out of the prompt, whichever retriever returned it, and still lists the tables the chunk points to. See the [schema artifact contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) for the full rules.
 
 ## Custom table or dimensions
 
@@ -181,7 +204,7 @@ npx askdb rag setup-store \
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrichment dramatically improves retrieval quality.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>Enrichment dramatically improves retrieval quality.</span></a>
   <a href="/guides/bring-your-own-model/"><strong>Bring your own model</strong><span>Embedder options and key management.</span></a>
   <a href="/reference/rag-api/"><strong>@askdb/rag API</strong><span>Every export: indexing, retrieval, the lock file, chunking, embedders and stores.</span></a>
 </div>

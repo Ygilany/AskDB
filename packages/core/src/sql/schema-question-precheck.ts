@@ -10,12 +10,10 @@ const FROM_JOIN_TABLE = /\b(?:from|join)\s+([a-zA-Z_][\w]*)\b/gi;
 
 export function assertNlToSqlInputs(schema: AnyNormalizedSchema, question: string): void {
   if (schema.tables.length === 0) {
-    throw new AskDbError(
-      "Schema has no tables. Add at least one table to the AskDB schema JSON (see fixtures/schemas/ in this repo).",
-    );
+    throw new AskDbError("Schema has no tables. Pass a `schema` with at least one table.");
   }
   if (!question.trim()) {
-    throw new AskDbError("Question is empty. Pass a non-blank natural-language question with -q / --question.");
+    throw new AskDbError("Question is empty. Pass a non-blank natural-language `question`.");
   }
 }
 

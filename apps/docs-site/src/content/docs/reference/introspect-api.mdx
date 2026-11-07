@@ -51,7 +51,7 @@ Runs `options.connector.describe(input)`. The connector's package owns the shape
 | `renderToSchemaV2(schema, options)` | Writes `<outDir>/schema.json` from a `SqlSchema` and returns a `RenderResult`. It creates `outDir` if it's missing, and writes through `@askdb/core`'s `saveSchemaFile()`, which refuses a `schema.json` that is a symbolic link and renames a temporary file into place. It writes only `schema.json`. |
 | `renderSchemaV2Body(schema, options)` | The same output without writing: returns `{ json, body, warnings }` (a `RenderBodyResult`), where `body` is the exact file contents. `askdb introspect --out`, `--print` and `--diff` all use it. |
 | `isSchemaV2Json(value)` | `true` when a parsed `schema.json` passes the check the merge applies first: `version` 2, a schema id, and each table's `id`, `name` and `schema` and each column's `id`, `name`, `type` and `nullable`, with optional boolean `sensitive` flags. It never throws. |
-| `toV2SchemaJson(schema, schemaId, provider?)` | Builds the Schema v2 document without writing it. Views become tables. Every `sensitive` flag is `false`. |
+| `toV2SchemaJson(schema, schemaId, provider?)` | Builds the `schema.json` document without writing it. Views become tables. Every `sensitive` flag is `false`. |
 | `compactPostgresType(dataType, udtName)` | Shortens Postgres type names the way the artifact stores them (`timestamp with time zone` → `timestamptz`, `character varying(80)` → `varchar(80)`). Other strings pass through. `udtName` is unused. |
 
 The output is deterministic: tables sorted by schema and name, columns in their ordinal order, and `JSON.stringify(json, null, 2)` plus a newline, so the same catalog gives the same bytes.
@@ -119,7 +119,6 @@ const registry = createConnectorRegistry([
 | Export | Description |
 | --- | --- |
 | `BUILT_IN_CONNECTOR_PROVIDERS` | The first-party ids: `["postgres", "prisma", "mysql", "sqlite", "sqlserver"]`. |
-| `connectorProviderMissingMessage(provider)` | The error text for an unregistered provider. For a built-in id it says to install `@askdb/<id>`. |
 | `connectorPackageMissingMessage({ provider, packageName, allowBuilds? })` | The CLI's and Studio's error text for a registered engine whose package isn't installed: an install command and the one-off `npx -p askdb -p <package>` form. With `allowBuilds` (dependencies whose install scripts pnpm must approve), it gives `npm install <package>`, or on pnpm 10.4 or later `pnpm add --allow-build=<dependency> <package>`. It names the `askdb` binary, so a third-party host writes its own message. |
 
 ### Connector contract

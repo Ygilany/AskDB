@@ -1252,7 +1252,7 @@ async function openStudioRagStore(
   if (!config.connectionString) {
     throw new StudioHttpError(
       400,
-      'Studio pgvector RAG requires `ASKDB_PGVECTOR_URL` via `askdb.config.ts`.',
+      'Studio pgvector RAG requires `rag.storeConfig.pgvector.databaseUrl` in `askdb.config.ts`.',
     );
   }
   const pgvectorFactory = studioPgvectorStoreFactoryForTests ?? createPgvectorStore;

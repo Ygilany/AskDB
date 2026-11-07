@@ -4,6 +4,8 @@
 
 Accepted (2026-09-29, maintainer decision on #338, option 1). Implemented in `@askdb/core` (`packages/core/src/ask.ts`, `expandSubtreeScope`; `packages/core/src/sql/tenant-prompt.ts`).
 
+> **Amendment (2026-11, #654):** The deprecated `placeholderForRoot(label)`, which *Distinct placeholders* below keeps with its old output, is removed: nothing outside `@askdb/core` called it, and nothing inside did either. `placeholderForTenantRoot(root)` is the one derivation, and the one public way to compute a root's placeholder.
+
 ## Context
 
 A `subtree` access (`{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`) means "these tenants and everything beneath them". AskDB never queries the database, so the host expands the subtree through the `resolveTenantDescendants` callback on `ask()`.

@@ -37,7 +37,6 @@ export {
 export {
   BUILT_IN_CONNECTOR_PROVIDERS,
   connectorPackageMissingMessage,
-  connectorProviderMissingMessage,
   createConnectorRegistry,
   type BuiltInConnectorProvider,
   type ConnectorConfig,

@@ -1,8 +1,8 @@
 import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import astroD2 from "astro-d2";
 import starlightLlmsTxt from "starlight-llms-txt";
+import { remarkMermaid } from "./plugins/remark-mermaid.mjs";
 
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
@@ -50,14 +50,12 @@ export default defineConfig({
     "/getting-started/troubleshooting": `${normalizedBase}/guides/troubleshooting/`,
   },
   markdown: {
-    processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
+    // remarkMermaid turns each ```mermaid fence into an inline SVG at build time (ADR 0041), so
+    // pages ship no diagram JavaScript. src/styles/custom.css maps pele's color variables to
+    // Starlight's, so a diagram follows the theme toggle.
+    processor: unified({ remarkPlugins: [remarkRebaseLinks, remarkMermaid] }),
   },
   integrations: [
-    // Diagrams: ```d2 fences (or `src` files under src/assets/diagrams/d2/) render to inline SVG
-    // at build time through D2's WebAssembly build, so CI and the Pages deploy need no D2 binary.
-    // D2's own dark theme is off: src/styles/custom.css maps D2's palette classes to Starlight's
-    // color variables, so a diagram follows the site's theme toggle.
-    astroD2({ experimental: { useD2js: true }, inline: true, pad: 16, theme: { dark: false } }),
     starlight({
       head: [
         {
@@ -101,7 +99,7 @@ export default defineConfig({
           details:
             "AskDB is an open-source NL-to-SQL toolkit: `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact and a Vercel AI SDK `LanguageModel`, and returns SQL that has passed heuristic checks. It never executes SQL — the host application runs it through its own connection. The same pipeline powers the CLI, the `@askdb/client` library, `@askdb/http-api`, and Studio.\n" +
             "\n" +
-            "The docs site is organized as Start (overview, quickstart, install, Studio tour); Guides, in five groups: Build (embed in a Node app, author your schema, introspect without a connection, bring your own model, switch engines, connect to SQL Server, RAG for large schemas, rerun a query with new values, bundle an app), Run in production (run safely, cap the rows a query returns, keep sensitive columns out of prompts, match your server's string settings, deploy as an HTTP service, enable Studio execute), Tenancy (scope queries to a tenant, tenant hierarchies, enforce tenancy in the database), Maintain (upgrade AskDB, fix common errors) and Integrations (Prisma, agents and MCP); Concepts (how AskDB works, the schema artifact, safety boundaries, modes and dialects, privacy model, tenant isolation); and Reference (CLI, HTTP API, configuration, Studio, the schema artifact and tenant policy formats, the SQL checks, packages, and the core, client, config, ai, rag and introspection APIs). The full per-page index is in the linked documentation sets below.\n" +
+            "The docs site is organized as Start (overview, quickstart, install, Studio tour); Guides, in five groups: Build (embed in a Node app, enrich your schema, introspect without a connection, bring your own model, switch engines, connect to SQL Server, RAG for large schemas, rerun a query with new values, bundle an app), Run in production (run safely, cap the rows a query returns, keep sensitive columns out of prompts, match your server's string settings, deploy as an HTTP service, enable Studio execute), Tenancy (scope queries to a tenant, tenant hierarchies, enforce tenancy in the database), Maintain (upgrade AskDB, fix common errors) and Integrations (Prisma, expose AskDB as an agent tool); Concepts (how AskDB works, the schema artifact, safety boundaries, modes and dialects, privacy model, tenant isolation); and Reference (CLI, HTTP API, configuration, Studio, the schema artifact and tenant policy formats, the SQL checks, packages, and the core, client, config, ai, rag and introspection APIs). The full per-page index is in the linked documentation sets below.\n" +
             "\n" +
             "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — config-driven `@askdb/client`/`@askdb/ai` (built-in providers; install the matching `@ai-sdk/*` package) vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities. AskDB validates the scope shape, binds tenant IDs, and runs heuristic checks, but never originates scope and isn't the enforcement boundary; see /concepts/safety-boundaries/, and /guides/enforce-tenancy-in-the-database/ for Postgres row-level security.\n" +
             "\n" +
@@ -125,7 +123,7 @@ export default defineConfig({
               label: "Build",
               items: [
                 { label: "Embed in a Node app", slug: "guides/embed-in-node" },
-                { label: "Author your schema", slug: "guides/author-your-schema" },
+                { label: "Enrich your schema", slug: "guides/author-your-schema" },
                 { label: "Introspect without a connection", slug: "guides/introspect-without-a-connection" },
                 { label: "Bring your own model", slug: "guides/bring-your-own-model" },
                 { label: "Switch engines", slug: "guides/switch-engines" },
@@ -165,7 +163,7 @@ export default defineConfig({
               label: "Integrations",
               items: [
                 { label: "Prisma", slug: "guides/integrations/prisma" },
-                { label: "Agents & MCP", slug: "guides/integrations/agents-mcp" },
+                { label: "Expose as an agent tool", slug: "guides/integrations/agents-mcp" },
               ],
             },
           ],

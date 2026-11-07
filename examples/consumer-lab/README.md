@@ -310,11 +310,10 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 | `tenant-strict-unfiltered` | A reply with no tenant filter returns every agency's rows when run raw, and strict mode rejects it with `TenantGuardrailError`. |
 | `tenant-strict-column-only`, `-wrong-tenant`, `-or-true`, `-root-table` | Each reply, run raw, returns rows outside agency 2, and strict mode rejects it with `TenantGuardrailError` (#315). If strict mode returns the SQL instead, the test runs it and fails on the leaked rows. |
 | `tenant-warn` | With `enforcement: warn`, the unfiltered reply's SQL is returned, and `tenantGuardrail` reports `MISSING_TENANT_PREDICATE`. |
-| `tenant-warn-claims` | The docs name warn mode's warnings `tenantWarnings`; `ask()`'s result has no such field: `known (#316)`. If #316 renames the docs to `tenantGuardrail`, this case is removed. |
 | `tenant-missing-scope` | No `tenantScope` with a policy: `TenantScopeError` `MISSING_SCOPE`, and no model call. Runs once, as `[postgres]`. |
 | `tenant-subtree-no-resolver` | `subtree` access with no resolver: `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`, and no model call. Runs once, as `[postgres]`. |
 
-The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`. The `known (#316)` case fails because a result field is missing, not on a leak.
+The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`.
 
 ### Row-level security (informational)
 

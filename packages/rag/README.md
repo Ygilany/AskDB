@@ -1,6 +1,6 @@
 # @askdb/rag
 
-Deterministic retrieval over AskDB Schema v2 artifacts. `@askdb/rag` chunks the describable schema, indexes chunks with your embedder and vector store, and returns a retriever you can pass to `@askdb/core` `ask({ retriever })`.
+Deterministic retrieval over AskDB schema artifacts. `@askdb/rag` chunks the describable schema, indexes chunks with your embedder and vector store, and returns a retriever you can pass to `@askdb/core` `ask({ retriever })`.
 
 > Status: pre-1.0. Phase 8 ships BYO embeddings and BYO stores with in-memory, file-backed, and pgvector adapters.
 
@@ -68,7 +68,7 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 
 ### Core
 
-- `chunkSchema`, `chunkSchemaDir`, `chunkSchemaBundle` — deterministic Schema v2 chunking.
+- `chunkSchema`, `chunkSchemaDir`, `chunkSchemaBundle` — deterministic schema artifact chunking.
 - `buildSchemaIndex` — chunk, embed, upsert, write `schema.lock.json`, and return a retriever.
 - `createRetriever` — bind an existing store and embedder without indexing.
 

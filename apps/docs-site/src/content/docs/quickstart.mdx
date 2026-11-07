@@ -9,9 +9,19 @@ import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
 
 <p class="doc-lede">In this tutorial, we'll create a small shop database, point AskDB at it, ask a question in plain English, and run the SQL that AskDB returns.</p>
 
-<figure style="--d2-width: 226px">
+<figure>
 
-```d2 src="../../assets/diagrams/d2/quickstart-flow.d2"
+```mermaid
+flowchart TB
+  %% The files the tutorial makes, and which step makes each. AskDB reads the schema and
+  %% returns SQL; the reader's own code runs it. Top to bottom, so it fits a phone.
+  db["shop.db<br/>the sample database"]
+  schema["askdb/schema.json<br/>the schema artifact"]
+  sql["query.sql<br/>checked SQL"]
+  rows["the answer<br/>rows from shop.db"]
+  db -- "askdb introspect" --> schema
+  schema -- "askdb ask<br/>+ your question" --> sql
+  sql -- "run-query.mjs<br/>(your code)" --> rows
 ```
 
 <figcaption>The files we'll make, and the step that makes each. AskDB reads the schema and returns checked SQL. Our own code runs it.</figcaption>

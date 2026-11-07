@@ -27,7 +27,7 @@ import {
   type QueryResult,
   type VectorStore,
 } from "@askdb/rag";
-import { runCommand, type CommandSpec, type Flag } from "./command.js";
+import { EXPERIMENTAL_ADR_URL, runCommand, type CommandSpec, type Flag } from "./command.js";
 import { labelled, showable } from "./error-values.js";
 import { createCliLogger, loggingFlags, type CliLoggingFlags } from "./logger.js";
 
@@ -100,7 +100,7 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
 export function ragCommand(): CommandSpec<CliOptions> {
   return {
     name: "rag",
-    summary: "Chunk, embed, and query a schema artifact directory",
+    summary: "Chunk, embed, and query a schema artifact directory (experimental)",
     usage: RAG_USAGE,
     notes: ragNotes(),
     flags: RAG_FLAGS,
@@ -697,6 +697,8 @@ const RAG_USAGE = [
 
 function ragNotes(): string[] {
   return [
+    `Experimental: @askdb/rag stays 0.x, so a minor release of askdb may change these commands (${EXPERIMENTAL_ADR_URL}).`,
+    "",
     "Flags override askdb.config.*: [schema-dir] defaults to introspection.outputDir, --store to rag.store,",
     "--pg-url, --pg-table and --file-path to rag.storeConfig, and --embedder to rag.embedder.",
     "",
