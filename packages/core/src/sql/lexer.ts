@@ -70,6 +70,13 @@ export type SqlLexerProfile = {
    * at `\r` too, as on Postgres and SQL Server.
    */
   lineCommentEndsAtLfOnly?: boolean;
+  /**
+   * The tenant check's own, stricter reading of string prefixes, which its code views keep (#815):
+   * `$tag$` opens a string only when the tag is ASCII and closed, and an `E'…'` or `$tag$` string
+   * only when no name character or digit comes right before it (outside a string, comment or
+   * quoted name). Otherwise the `$` or `E` is read as code.
+   */
+  strictStringPrefixes?: boolean;
 };
 
 export const POSTGRES_LEXER: SqlLexerProfile = {
@@ -252,6 +259,10 @@ const CURRENCY = /\p{Sc}/u;
  */
 const TSQL_EXTRA_SPACE = /[\u200b\u0085]/;
 const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
+/** {@link DOLLAR_TAG} with an ASCII tag only, for `strictStringPrefixes`. */
+const ASCII_DOLLAR_TAG = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/;
+/** A character that continues a name or number, for `strictStringPrefixes`. */
+const NAME_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
 
 /**
  * Whether the `--` at `i` starts a line comment. It always does, except on MySQL/MariaDB
@@ -280,6 +291,16 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   const isWordChar = (c: string): boolean =>
     (WORD_CHAR.test(c) || (profile.tsqlLiterals && c === "@")) &&
     !(profile.tsqlLiterals && c !== "\ufeff" && isSpace(c));
+
+  /**
+   * `strictStringPrefixes`: whether a name character or digit comes right before `at`, outside a
+   * string, comment or quoted name, so that a string prefix there continues the token.
+   */
+  const followsNameChar = (at: number): boolean => {
+    if (!NAME_CHAR.test(sql[at - 1] ?? "")) return false;
+    const prev = tokens[tokens.length - 1];
+    return !(prev !== undefined && prev.end === at && (prev.kind === "string" || prev.kind === "comment" || prev.kind === "quoted_identifier"));
+  };
 
   const endsLineComment = (c: string): boolean => c === "\n" || (c === "\r" && !profile.lineCommentEndsAtLfOnly);
 
@@ -454,10 +475,11 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     }
     if (ch === "$") {
       if (profile.dollarQuotes) {
-        const tag = DOLLAR_TAG.exec(sql.slice(i));
-        if (tag) {
-          const opener = tag[0]!;
-          const closeAt = sql.indexOf(opener, i + opener.length);
+        const strict = profile.strictStringPrefixes === true;
+        const tag = (strict ? ASCII_DOLLAR_TAG : DOLLAR_TAG).exec(sql.slice(i));
+        const opener = tag?.[0];
+        const closeAt = opener === undefined ? -1 : sql.indexOf(opener, i + opener.length);
+        if (opener !== undefined && !(strict && (closeAt === -1 || followsNameChar(i)))) {
           const end = closeAt === -1 ? n : closeAt + opener.length;
           push("string", i, end, { quote: opener, unterminated: closeAt === -1 });
           i = end;
@@ -480,7 +502,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       const word = sql.slice(i, j);
       if (sql[j] === "'" && j - i === 1) {
         const prefix = word.toLowerCase();
-        if (prefix === "e" && profile.escapeStrings) {
+        if (prefix === "e" && profile.escapeStrings && !(profile.strictStringPrefixes && followsNameChar(i))) {
           lexString(i, j, true, "string");
           continue;
         }
