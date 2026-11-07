@@ -4,6 +4,9 @@
 
 Accepted (2026-11-06; amended 2026-11-06, #809, #840, #845). The coordinator decided #716 and #720 on 2026-11-06 (the "Decision (2026-11-06)" section of each issue). Implemented in PR #806.
 
+
+> **Amendment (2026-11, #886):** Studio now picks the dialect by the same rule: `@askdb/client` exports it as `resolveDialect()` (the maintainer's Q49, option A), and Studio calls it, so its Playground refuses a schema whose `provider` has no AskDB dialect, as the CLI and `askdb-http` do. The *`@askdb/client` doesn't change* consequence still holds for the rule's behavior; only its export is new.
+
 ## Context
 
 Two schemas reached `POST /ask` and got an answer that hid the cause.
