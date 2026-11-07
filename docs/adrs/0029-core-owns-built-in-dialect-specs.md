@@ -75,7 +75,7 @@ flowchart LR
 - **In core:**
   - Add its id to `DialectId`, and its spec to `dialect-spec.ts` and `BUILT_IN_DIALECTS`. Add the id to `ASKDB_DIALECTS` in `@askdb/config` too, so `askdb.config` accepts it.
   - Add its reserved words to `reserved-words.ts`. Write a source comment (the document and the date fetched) and a `Checked` comment (the server versions it was checked against) above the list.
-  - Add its cases to the switches on `id`: the lexer profile, the prompt quoting, the parameter markers in `bind.ts`, the SELECT modifiers in `sensitive-guardrail.ts` and the tenant check's code readings (`codeViews` in `tenant-guardrail.ts`). Only the parameter markers fail the type check when a case is missing. The others fall back without an error, and the tenant check falls back to a standard-SQL reading, which a MySQL-family engine reads differently (#661).
+  - Add its cases to the switches on `id`: the lexer profile, the prompt quoting, the parameter markers in `bind.ts`, the SELECT modifiers in `sensitive-guardrail.ts` and the readings each SQL check uses (`readings.ts`, which holds the tenant check's code readings, `tenantCodeReadings`, since #815). Only the parameter markers fail the type check when a case is missing. The others fall back without an error, and the tenant check falls back to a standard-SQL reading, which a MySQL-family engine reads differently (#661).
 - **In its engine package:**
   - Build the connector, catalog SQL and driver loading on the engine kit (ADR 0008).
   - Re-export its spec.
