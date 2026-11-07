@@ -848,11 +848,17 @@ const SET_OPERATORS = new Set(["union", "intersect", "except", "minus"]);
 /** Words other than identifiers that the predicate forms use. */
 const PREDICATE_WORDS = new Set(["in", "any", "and", "or", "not", "xor"]);
 
-/** Keywords a table can be named after only when quoted (`"order"`, `[group]`). */
-const RESERVED = new Set([
-  ...FILTER_CLAUSE, ...CLAUSE_END, ...NOT_A_FILTER, ...SET_OPERATORS, ...PREDICATE_WORDS,
-  "order", "group", "user", "table", "limit", "offset", "all", "exists",
-]);
+/**
+ * Whether the unquoted word at `i` is part of `ORDER BY` or `GROUP BY`. `ORDER` and `GROUP` are
+ * reserved on every engine, so a table named after one is written quoted. Any other keyword may
+ * name a table, unquoted, on some engine (`user` on MySQL, `lock` on Postgres), so its spelling
+ * always counts as the table.
+ */
+function isOrderOrGroupBy(tokens: readonly Token[], i: number): boolean {
+  const kw = tokens[i]!.kw;
+  if (kw === "order" || kw === "group") return tokens[i + 1]?.kw === "by";
+  return kw === "by" && (tokens[i - 1]?.kw === "order" || tokens[i - 1]?.kw === "group");
+}
 
 /**
  * What a tenant predicate compares: `column` (of `table`) with `placeholder`. With a
@@ -875,13 +881,15 @@ type PredicateTarget = {
  */
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[]): boolean {
   const name = table.toLowerCase();
-  // A table named after a keyword (`order`) can only be written quoted, so its unquoted
-  // spelling (`ORDER BY`) is the keyword, not the table.
-  const mentions = (t: Token) => t.lower === name && (t.kw === "" || !RESERVED.has(t.kw));
   return views.every((view) => {
     const tokens = tokenize(view.text);
+    // Every spelling of the name counts as the table, quoted or not, except the words of `ORDER BY`.
+    const mentions = (from: number, to: number) => {
+      for (let i = from; i < to; i++) if (tokens[i]!.lower === name && !isOrderOrGroupBy(tokens, i)) return true;
+      return false;
+    };
     return queryBlocks(tokens)
-      .filter(([from, to]) => tokens.slice(from, to).some(mentions))
+      .filter(([from, to]) => mentions(from, to))
       .every(([from, to]) => {
         for (let k = from; k < to; k++) {
           for (const target of targets) {

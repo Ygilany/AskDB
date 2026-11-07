@@ -910,3 +910,37 @@ describe("validateTenantGuardrails — a carriage return ends a `--` comment on 
     }
   });
 });
+
+describe("validateTenantGuardrails — a table named after a word only some engines reserve", () => {
+  // The engine reads each unquoted name as the table, so the query needs that table's predicate.
+  const scopedAs = (name: string): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [{ id: `table:app.${name}`, scopeThrough: [{ root: "table:public.agencies", column: `table:app.${name}#agency_id` }] }],
+    polymorphicTables: [],
+    globalTables: [],
+    coverage: [],
+  });
+  const findings = (name: string, sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, scopedAs(name), agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([
+    ["user", "mysql", MYSQL_DIALECT],
+    ["lock", "postgres", POSTGRES_DIALECT],
+    ["qualify", "postgres", POSTGRES_DIALECT],
+    ["by", "postgres", POSTGRES_DIALECT],
+    ["limit", "sqlserver", SQLSERVER_DIALECT],
+    ["window", "sqlite", SQLITE_DIALECT],
+    ["user", "no dialect", undefined],
+  ])("%s on %s: an unquoted name in FROM is the table", (name, _d, dialect) => {
+    expect(findings(name, `SELECT * FROM ${name} t`, dialect)).toEqual([`MISSING_TENANT_PREDICATE:table:app.${name}`]);
+    expect(findings(name, `SELECT * FROM ${name} t WHERE t.agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+  });
+
+  it("ORDER BY and GROUP BY are keywords, not a table named order, group or by", () => {
+    for (const name of ["order", "group", "by"]) {
+      expect(findings(name, "SELECT id FROM lookup_states GROUP BY id ORDER BY id", POSTGRES_DIALECT), name).toEqual([]);
+      expect(findings(name, `SELECT id FROM "${name}" GROUP BY id ORDER BY id`, POSTGRES_DIALECT), name).toEqual([`MISSING_TENANT_PREDICATE:table:app.${name}`]);
+    }
+  });
+});
