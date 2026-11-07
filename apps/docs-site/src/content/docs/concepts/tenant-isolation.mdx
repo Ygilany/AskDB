@@ -33,7 +33,7 @@ Three layers can keep a query to the caller's tenants. Only the database holds w
 | --- | --- | --- |
 | **The database** | Row-level security, per-tenant views, or per-tenant roles return only the caller's rows. | Yes, once it's set up and checked as in the guide below. It doesn't depend on the SQL. |
 | **Your application** | Adds or checks the tenant filter itself before it runs the query. | Only as far as your code covers every shape of query. |
-| **AskDB's policy and check** | The prompt tells the model to filter by tenant, and the check rejects or flags SQL that looks unscoped. | No. It's a lint over the SQL's tokens, not a boundary. |
+| **AskDB's policy and check** | The prompt tells the model to filter by tenant, and the check rejects or flags SQL that looks unscoped. | No. It's a heuristic over the SQL's tokens, not a boundary. |
 
 AskDB's layer alone isn't enough to isolate tenants that don't trust each other. It still earns its place: the model writes the filter, so queries return the right rows and can use your tenant indexes, and `enforcement: strict` stops the common mistakes before anything runs. The database makes a mistake that gets past the check harmless. To set that up on Postgres, follow [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
 
@@ -49,7 +49,7 @@ The tenant check reads the SQL's tokens and doesn't parse it, so it can pass SQL
 
 ## Other engines
 
-This recipe is for Postgres. On every engine, AskDB's tenant check stays a lint, so the database or your application must keep each query to its tenants. The other engines AskDB supports haven't been tested with a recipe like this one:
+This recipe is for Postgres. On every engine, AskDB's tenant check stays a heuristic, so the database or your application must keep each query to its tenants. The other engines AskDB supports haven't been tested with a recipe like this one:
 
 - **CockroachDB** has row-level security from v25.2, with `FORCE ROW LEVEL SECURITY` for table owners. Its docs pass the tenant in `application_name` rather than a custom setting, and list features that skip the policies. See [Row-level security](https://www.cockroachlabs.com/docs/stable/row-level-security).
 - **SQL Server and Azure SQL** have row-level security from SQL Server 2016: a security policy with a filter predicate function, which can read a tenant ID your application sets with `sp_set_session_context` and `@read_only = 1`. Microsoft warns that crafted queries can infer filtered rows from errors, which matters for generated SQL. See [Row-level security](https://learn.microsoft.com/en-us/sql/relational-databases/security/row-level-security).

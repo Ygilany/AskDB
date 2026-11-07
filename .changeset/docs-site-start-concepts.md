@@ -1,0 +1,5 @@
+---
+"@askdb/docs-site": patch
+---
+
+The Start and Concepts pages lose what belongs elsewhere (#713). The overview links Embed in a Node app instead of repeating its two code samples, and its "No data leaves your stack" badge now says "Rows never reach the model", since the question and schema text do go to the model provider. How AskDB works names the SQL checks and links their reference instead of listing their rules. Modes and dialects becomes an explanation: the engine table, the code samples and the per-surface mode rules give way to links to the dialect, configuration and CLI references, and its sensitive-fields section to the privacy model. Install is titled "Install AskDB", and its Prisma section is a link to the Prisma guide's install steps. These pages say "SQL checks" or "heuristic" where they said "guardrails" or "lint"; API names keep "guardrail".
