@@ -79,7 +79,7 @@ The upgrade guide says what each fix asks of your app: [GHSA-8pwj-6hfv-5pm4 in 1
 | `SQL_NOT_SELECT_OR_WITH` | A first keyword, after any opening parentheses, other than `SELECT` or `WITH`. |
 | `SQL_MULTI_STATEMENT` | A `;` that separates a second statement. A single trailing `;` is kept, as the model wrote it, and anything after it is refused. If you wrap the SQL, for example in a row-cap subquery, remove the `;` first (see [Row limits](/guides/run-safely-in-prod/#row-limits)). On SQL Server, also a second statement written without a `;`: see [SQL Server statements](#sql-server-statements). |
 | `SQL_COMMENT` | A `--` or `/* … */` comment, or `#` on MySQL and MariaDB. |
-| `SQL_FORBIDDEN_KEYWORD` | An unquoted keyword from the shared list or the dialect's `extraForbiddenKeywords`: see [Keywords and functions](#keywords-and-functions). |
+| `SQL_FORBIDDEN_KEYWORD` | An unquoted keyword from the shared list or the dialect's `extraForbiddenKeywords`: see [Keywords and functions](#keywords-and-functions). Also a `$N` parameter written against a word (`$1INTO`, `$1FOR`), where the SQL may be read as Postgres: a server that ends the parameter at its last digit reads the word as a keyword the check can't see ([#665](https://github.com/Ygilany/AskDB/issues/665)). Put a space after the parameter. |
 | `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, or `NEXT VALUE FOR` on any engine. |
 | `SQL_LOCKING_READ` | A locking read: see [Locking reads](#locking-reads). |
 | `SQL_UNICODE_ESCAPED_IDENTIFIER` | A Unicode-escaped name, where the SQL may be read as Postgres. |
