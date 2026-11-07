@@ -1,0 +1,170 @@
+/**
+ * Characterization of every SQL check's verdict, for the #815 refactor (one SQL reading per
+ * dialect). It runs each check over a frozen corpus and every dialect setup, and compares the
+ * result with a golden file captured on `main` before the refactor. The refactor must leave every
+ * verdict unchanged, except shapes its PR lists and decides (the new reading may only refuse more).
+ *
+ * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
+ * strings below. Regenerate the golden only on purpose: `vitest run -u` on this file.
+ */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { loadSchema } from "../../schema/v2/loader.js";
+import type { TenantScope } from "../../schema/v2/tenant-policy.js";
+import { scanPlaceholders, tokenizeSqlSpans } from "../bind.js";
+import {
+  COCKROACHDB_DIALECT,
+  MARIADB_DIALECT,
+  MYSQL_DIALECT,
+  POSTGRES_DIALECT,
+  SQLITE_DIALECT,
+  SQLSERVER_DIALECT,
+  type DialectSpec,
+} from "../dialect-spec.js";
+import { findPostgresOnlyForms } from "../lexer.js";
+import { validateSensitiveReferences } from "../sensitive-guardrail.js";
+import { validateTenantGuardrails } from "../tenant-guardrail.js";
+import { extractTenantPlaceholders } from "../tenant-placeholders.js";
+import { validateSelectSql } from "../validate.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const fixtures = join(here, "../../../../../fixtures/schemas");
+const tenantSchema = loadSchema(join(fixtures, "agency-multi-tenant.schema"));
+const sensitiveSchema = loadSchema(join(fixtures, "orders-users-sensitive.schema"));
+const policy = { ...tenantSchema.tenantPolicy!, enforcement: "warn" as const };
+const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
+
+const custom = (backslashEscapes?: boolean) =>
+  ({ ...POSTGRES_DIALECT, id: "custom-engine", backslashEscapes }) as unknown as DialectSpec;
+
+/** Every dialect setup the checks see. `undefined`: no dialect (the read-only check needs one). */
+const DIALECTS: ReadonlyArray<readonly [string, DialectSpec | undefined]> = [
+  ["postgres", POSTGRES_DIALECT],
+  ["postgres+escapes", { ...POSTGRES_DIALECT, backslashEscapes: true }],
+  ["cockroachdb", COCKROACHDB_DIALECT],
+  ["mysql", MYSQL_DIALECT],
+  ["mysql-escapes", { ...MYSQL_DIALECT, backslashEscapes: false }],
+  // #827 (held): a MySQL spec that leaves backslashEscapes unset. Local only until the maintainer decides.
+  ["mysql-unset", { ...MYSQL_DIALECT, backslashEscapes: undefined }],
+  ["mariadb", MARIADB_DIALECT],
+  ["sqlite", SQLITE_DIALECT],
+  ["sqlserver", SQLSERVER_DIALECT],
+  ["custom", custom()],
+  ["custom+escapes", custom(true)],
+  ["none", undefined],
+];
+
+/** Shapes where the readings may disagree: quoting, escapes, comments, prefixes, placeholders. */
+const HOSTILE: readonly string[] = [
+  String.raw`SELECT * FROM orders WHERE note = 'a\' AND agency_id = :tenant_agency_ids AND note = '`,
+  String.raw`SELECT * FROM orders WHERE note = 'a\'' AND agency_id = :tenant_agency_ids`,
+  String.raw`SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = 'it''s'`,
+  // #827 (held): local only until the maintainer decides.
+  String.raw`SELECT * FROM orders WHERE status = 'a\' AND agency_id = :tenant_agency_ids AND status = ' OR 1=1 OR status = ''`,
+  String.raw`SELECT E'a\'b' AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids`,
+  "SELECT E'a'\n'\\'' AS x, o.* FROM orders o --'",
+  String.raw`SELECT b'\'' AS x, o.* FROM orders o --'`,
+  "SELECT b'a'\n'\\'' AS x, o.* FROM orders o --'",
+  String.raw`SELECT (ARRAY[1,2])[1:b'\''] AS x, o.* FROM orders o --'`,
+  String.raw`SELECT (ARRAY[1,2])[1:E'1'` + "\n'\\''::int] AS x --'",
+  String.raw`SELECT U&"\006Frders".id FROM U&"\006Frders"`,
+  String.raw`SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND U&"p\0061ssword" = 'x'`,
+  "SELECT $$ FROM orders $$ AS x FROM agencies WHERE id = :tenant_agency_ids",
+  "SELECT $tag$ ' $tag$ AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT $é$ FROM orders $é$ AS x FROM agencies WHERE id = :tenant_agency_ids",
+  "SELECT * FROM orders /* a /* nested */ WHERE agency_id = :tenant_agency_ids */",
+  "SELECT * FROM orders /* note */ WHERE agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids --1\nOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids -- c\nOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # c\nOR 1=1",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids /*!50000 OR 1=1 */",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids /*M! OR 1=1 */",
+  'SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = "x" OR "y"',
+  'SELECT "agency_id" FROM orders WHERE "agency_id" = :tenant_agency_ids',
+  "SELECT [agency_id] FROM orders WHERE [agency_id] = :tenant_agency_ids",
+  "SELECT [a]]b] FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT `agency_id` FROM orders WHERE `agency_id` = :tenant_agency_ids",
+  "SELECT arr[1] FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids || 'x'",
+  "SELECT * FROM orders WHERE note = ':tenant_agency_ids'",
+  "SELECT * FROM orders WHERE note = 'x' -- :tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :TENANT_AGENCY_IDS",
+  "SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids) AND status = :status",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids; DELETE FROM orders",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\nEXEC xp_cmdshell 'x'",
+  "SELECT 'unterminated FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids /* unterminated",
+  "SELECT N'x' AS a, X'0a' AS b, B'01' AS c FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT u.password FROM users u",
+  "SELECT 'u.password' AS x FROM users u",
+  String.raw`SELECT 'a\' AS x, u.password FROM users u --'`,
+  "SELECT * FROM users",
+  "SELECT row_to_json(u) FROM users u",
+  // Where the tenant check's own scanner and the shared lexer split strings, names and comments differently.
+  String.raw`SELECT 1e'\'' AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids --'`,
+  String.raw`SELECT $e'\'' AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids --'`,
+  "SELECT a$$b FROM orders WHERE agency_id = :tenant_agency_ids AND c$$d = 1",
+  "SELECT * FROM agencies WHERE id = :tenant_agency_ids AND a$$b = 1 $$ OR 1=1",
+  "SELECT $x$ AS v FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT $x$ FROM orders",
+  'SELECT "a""b" FROM orders WHERE "agency_id" = :tenant_agency_ids',
+  'SELECT "a"" FROM orders WHERE agency_id = :tenant_agency_ids',
+  "SELECT arr['orders'] FROM agencies WHERE id = :tenant_agency_ids",
+  "SELECT `x'` FROM orders WHERE agency_id = :tenant_agency_ids --'",
+  "SELECT [x'] FROM orders WHERE agency_id = :tenant_agency_ids --'",
+  "SELECT [a]]b'] FROM orders WHERE agency_id = :tenant_agency_ids --'",
+  "SELECT * FROM orders /*!50000 /* c */ WHERE agency_id = :tenant_agency_ids */",
+  "SELECT * FROM agencies WHERE id = :tenant_agency_ids /* a /* b */ UNION SELECT * FROM orders */",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids /* a /* b */ OR 1=1 */",
+  "SELECT 'a' 'b' FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT N'a\\' AS x, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids --'",
+  'SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND type = "agency"',
+  // Held (a CR ends a `--` comment on Postgres and SQL Server, not on MySQL, SQLite or CockroachDB): local only until the maintainer decides.
+  "SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders",
+  "SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids",
+  "SELECT 1 AS a -- \r'\n, u.password FROM users u -- '",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # x\r OR 1=1",
+];
+
+function verdicts(sql: string, dialect: DialectSpec | undefined): string {
+  const parts: string[] = [];
+  const attempt = (label: string, run: () => string) => {
+    try {
+      parts.push(`${label}=${run()}`);
+    } catch (e) {
+      const err = e as { rule?: string; name?: string; warnings?: Array<{ rule: string; tableId: string }> };
+      parts.push(`${label}!${err.rule ?? err.name ?? "error"}${err.warnings ? `[${err.warnings.map((w) => `${w.rule}:${w.tableId}`).sort().join(",")}]` : ""}`);
+    }
+  };
+  if (dialect) attempt("ro", () => (validateSelectSql(dialect, sql), "ok"));
+  attempt("tg", () => {
+    const r = validateTenantGuardrails(sql, policy, scope, { dialect });
+    return r.warnings.map((w) => `${w.rule}:${w.tableId}`).sort().join(",") || "ok";
+  });
+  attempt("sens", () => {
+    const r = validateSensitiveReferences(sql, sensitiveSchema, dialect ? { dialect } : undefined);
+    const refs = r.references.map((x) => `${x.table}.${x.column ?? "*"}:${x.matchKind}`).sort().join(",");
+    return `${r.passed ? "pass" : "fail"}[${refs}]${r.unresolvedScope ? `{${r.unresolvedScope.issues.join(",")}}` : ""}`;
+  });
+  attempt("pg", () => {
+    const f = findPostgresOnlyForms(sql, dialect);
+    return [f.unicodeEscapedIdentifier ? "U&" : "", f.escapeStringContinuation ? "E-cont" : "", f.escapedByteString ? "b-esc" : ""].filter(Boolean).join(",") || "-";
+  });
+  attempt("spans", () => tokenizeSqlSpans(sql, dialect).map((s) => `${s.kind[0]}${s.start}-${s.end}`).join(" "));
+  attempt("ph", () => scanPlaceholders(sql, dialect).map((p) => p.name).join(","));
+  attempt("tph", () => extractTenantPlaceholders(sql, dialect).join(","));
+  return parts.join(" | ");
+}
+
+describe("SQL checks: characterization for #815", () => {
+  it("gives every verdict the golden file records", async () => {
+    const corpus = [...new Set([...(JSON.parse(readFileSync(join(here, "sql-corpus.json"), "utf8")) as string[]), ...HOSTILE])];
+    const golden: Record<string, Record<string, string>> = {};
+    for (const sql of corpus) {
+      golden[sql] = Object.fromEntries(DIALECTS.map(([label, dialect]) => [label, verdicts(sql, dialect)]));
+    }
+    await expect(`${JSON.stringify(golden, null, 1)}\n`).toMatchFileSnapshot("./sql-checks.golden.json");
+  });
+});
