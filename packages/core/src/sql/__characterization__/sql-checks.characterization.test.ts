@@ -6,7 +6,8 @@
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
  * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
  * custom engines and no dialect, where SQL Server ends a name or number), and #399 (120 tenant
- * verdicts, every dialect: a predicate filters only the reads of its own `SELECT`).
+ * verdicts, every dialect, plus 12 for an undeclared qualifier: a predicate filters only the reads of its
+ * own `SELECT`).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -192,6 +193,13 @@ const HOSTILE: readonly string[] = [
   "WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE x.agency_id = :tenant_agency_ids",
   "SELECT * FROM orders o WHERE o.agency_id = :tenant_agency_ids AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = o.state)",
   "SELECT b.* FROM orders a JOIN orders b ON a.id = b.parent_id WHERE a.agency_id = :tenant_agency_ids AND b.agency_id = :tenant_agency_ids",
+  // #399 review: an aliased read goes by its alias, an unseen qualifier counts for nothing, and a source
+  // with a column list, a computation over its rows or a parenthesized join isn't followed from outside.
+  "SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o CROSS JOIN generate_series(1, 100) AS g(agency_id) WHERE g.agency_id = :tenant_agency_ids",
+  "WITH x (id, agency_id) AS (SELECT id, agency_id FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM x",
+  "SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

@@ -54,7 +54,8 @@ export type ValidateTenantGuardrailsOptions = {
  * (#399): a CTE body, a derived table and a subquery are each their own, and a
  * qualified predicate counts only for the read its qualifier names. A read in a
  * derived table or CTE also counts as filtered when every reference to that source
- * is filtered on the column, which the source passes through unrenamed. It doesn't
+ * is filtered on the column, which the source passes through unrenamed without
+ * computing across its rows. It doesn't
  * check which columns a join or an `IN (…)` subquery equates (#400); database-side
  * row-level security is the sound boundary.
  *
@@ -740,13 +741,11 @@ type Scopes = {
   readonly branched: ReadonlySet<number>;
 };
 
-/** One code view, read for the tenant predicates: its tokens, `SELECT`s and declared sources. */
+/** One code view, read for the tenant predicates: its tokens and `SELECT`s. */
 type Analysis = {
   readonly view: CodeViews[number];
   readonly tokens: readonly Token[];
   readonly scopes: Scopes;
-  /** Every name or alias the statement gives a row source (see {@link declaredSources}). */
-  readonly declared: ReadonlySet<string>;
 };
 
 /** A read of a table: its token, its `SELECT`, and the names a qualifier may use for it. */
@@ -757,7 +756,7 @@ type Filter = {
   readonly scope: string;
   readonly qualifier: string | undefined;
   /** The predicate's own `SELECT`, where the qualifier is its column's; else one it reaches through `col IN (…)`. */
-  readonly own: boolean;
+  readonly ownSelect: boolean;
 };
 
 /** A tenant predicate for one target, and the `SELECT`s it filters. */
@@ -774,13 +773,12 @@ const JOIN_WORDS = new Set(["join", "inner", "left", "right", "full", "cross", "
 
 const analyses = new WeakMap<CodeViews[number], Analysis>();
 
-/** The view's tokens, `SELECT`s and declared sources, read once per view. */
+/** The view's tokens and `SELECT`s, read once per view. */
 function analyze(view: CodeViews[number]): Analysis {
   let analysis = analyses.get(view);
   if (analysis === undefined) {
     const tokens = tokenize(view);
-    const scopes = readScopes(tokens);
-    analysis = { view, tokens, scopes, declared: declaredSources(tokens, scopes) };
+    analysis = { view, tokens, scopes: readScopes(tokens) };
     analyses.set(view, analysis);
   }
   return analysis;
@@ -805,7 +803,7 @@ function readScopes(tokens: readonly Token[]): Scopes {
       frames.pop();
       top = frames[frames.length - 1]!;
     }
-    of.push(`${top.open}:${top.branch}`);
+    of.push(scopeKey(top.open, top.branch));
     if (SET_OPERATORS.has(t.kw) && t.depth === top.depth) {
       top.branch++;
       branched.add(top.open);
@@ -815,7 +813,12 @@ function readScopes(tokens: readonly Token[]): Scopes {
   return { of, close, branched };
 }
 
-/** The `(` that opens a `SELECT`'s query, or -1 for the statement's. */
+/** A `SELECT`'s key: the `(` that opens its query (-1 for the statement) and its set-operation branch. */
+function scopeKey(open: number, branch: number): string {
+  return `${open}:${branch}`;
+}
+
+/** The `(` that opens a `SELECT`'s query, or -1 for the statement's (see {@link scopeKey}). */
 function scopeOpen(scope: string): number {
   return Number.parseInt(scope, 10);
 }
@@ -832,7 +835,17 @@ function aliasAfter(tokens: readonly Token[], i: number): string | undefined {
   return t!.lower;
 }
 
-/** The CTE named before the `(` at `open` (`WITH x AS (`, `, x AS MATERIALIZED (`): its name and token, if it is one. */
+/** Whether the `(` at `open` follows `AS` (or `AS [NOT] MATERIALIZED`), as a CTE body does. */
+function opensAfterAs(tokens: readonly Token[], open: number): boolean {
+  let k = open - 1;
+  if (tokens[k]?.kw === "materialized") k -= tokens[k - 1]?.kw === "not" ? 2 : 1;
+  return tokens[k]?.kw === "as";
+}
+
+/**
+ * The CTE named before the `(` at `open` (`WITH x AS (`, `, x AS MATERIALIZED (`): its name and
+ * token. Undefined when it isn't one, or when a column list (`x (a, b) AS (`) renames its output.
+ */
 function cteAt(tokens: readonly Token[], open: number): { readonly name: string; readonly at: number } | undefined {
   let k = open - 1;
   if (tokens[k]?.kw === "materialized") k -= tokens[k - 1]?.kw === "not" ? 2 : 1;
@@ -842,40 +855,20 @@ function cteAt(tokens: readonly Token[], open: number): { readonly name: string;
   return { name: tokens[k - 1]!.lower, at: k - 1 };
 }
 
-/**
- * The names and aliases the statement gives its row sources: each name after `FROM`, `JOIN` or a
- * comma and its alias, each derived table's alias, and each CTE's name. A qualifier outside this
- * set names no source, so the SQL can't run with it.
- */
-function declaredSources(tokens: readonly Token[], scopes: Scopes): Set<string> {
-  const names = new Set<string>();
-  tokens.forEach((t, i) => {
-    if (!isWord(t) || tokens[i + 1]?.text === ".") return;
-    const before = tokens[qualifiedStart(tokens, i) - 1];
-    if (before === undefined || !(before.kw === "from" || before.kw === "join" || before.text === ",")) return;
-    names.add(t.lower);
-    const alias = aliasAfter(tokens, i);
-    if (alias !== undefined) names.add(alias);
-  });
-  for (const [open, close] of scopes.close) {
-    const alias = aliasAfter(tokens, close);
-    if (alias !== undefined) names.add(alias);
-    const cte = cteAt(tokens, open);
-    if (cte !== undefined) names.add(cte.name);
-  }
-  return names;
-}
+/** Words after a derived table's `)` that start a clause, not an alias with a column list. */
+const NOT_A_COLUMN_LIST = new Set([...CLAUSE_END, ...FILTER_CLAUSE, ...PREDICATE_WORDS, "on", "using", "lateral"]);
 
 /**
  * The reads of `name`: every spelling of it, quoted or not, except a word of `ORDER BY` or
- * `GROUP BY` and a qualifier (`orders.id`), which refers to a read rather than being one.
+ * `GROUP BY` and a qualifier (`orders.id`), which refers to a read rather than being one. A read
+ * with an alias goes by its alias only: once a source has one, the table's name refers to another
+ * read, or to none.
  */
 function readsOf(a: Analysis, name: string): Read[] {
   const reads: Read[] = [];
   a.tokens.forEach((t, i) => {
     if (t.lower !== name || isOrderOrGroupBy(a.tokens, i) || a.tokens[i + 1]?.text === ".") return;
-    const alias = aliasAfter(a.tokens, i);
-    reads.push({ at: i, scope: a.scopes.of[i]!, names: new Set(alias === undefined ? [name] : [name, alias]) });
+    reads.push({ at: i, scope: a.scopes.of[i]!, names: new Set([aliasAfter(a.tokens, i) ?? name]) });
   });
   return reads;
 }
@@ -922,7 +915,7 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
 function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readonly PredicateTarget[], read: Read, table: string): boolean {
   for (const o of found) {
     for (const f of o.filters) {
-      if (f.scope !== read.scope || !fits(a, f, o.target, read, table)) continue;
+      if (f.scope !== read.scope || !filtersRead(a, f, o.target, read, table)) continue;
       if (o.target.discriminator && !hasDiscriminator(a, read, o.target)) continue;
       return true;
     }
@@ -933,17 +926,18 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
 /**
  * Whether a predicate that filters `read`'s `SELECT` through `filter` filters `read` itself.
  * Unqualified, it does: the read's table has the column, so the name resolves to it or the SQL is
- * ambiguous. On the read's own column, its qualifier must name that read (its table or alias);
- * on another table's column (a root filtered through a column that carries its IDs), a read of
- * that table. A qualifier that names no source the statement declares can't run, so it rules
- * nothing out. Through `col IN (…)`, which read of another table `col` filters is left to the join.
+ * ambiguous. On the read's own column, its qualifier must name that read (its alias, or its
+ * table's name when it has none); on another table's column (a root filtered through a column
+ * that carries its IDs), a read of that table. A qualifier that names no read the check sees,
+ * such as a table function's alias, counts for nothing. Through `col IN (…)`, which read of
+ * another table `col` filters is left to the join.
  */
-function fits(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
+function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
   const q = filter.qualifier;
-  if (q === undefined || !a.declared.has(q)) return true;
+  if (q === undefined) return true;
   const owner = target.table.toLowerCase();
   if (owner === table) return read.names.has(q);
-  return !filter.own || readsOf(a, owner).some((r) => r.names.has(q));
+  return !filter.ownSelect || readsOf(a, owner).some((r) => r.names.has(q));
 }
 
 /**
@@ -961,7 +955,7 @@ function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Re
   return refs.every((ref) =>
     found.some((o) =>
       o.target === target &&
-      o.filters.some((f) => f.own && f.scope === ref.scope && (f.qualifier === undefined || !a.declared.has(f.qualifier) || ref.names.has(f.qualifier)))) ||
+      o.filters.some((f) => f.ownSelect && f.scope === ref.scope && (f.qualifier === undefined || ref.names.has(f.qualifier)))) ||
     filteredFromOutside(a, found, ref, target, depth + 1));
 }
 
@@ -970,32 +964,39 @@ function sourceRefs(a: Analysis, open: number): Read[] | undefined {
   const { tokens, scopes } = a;
   const close = scopes.close.get(open);
   if (close === undefined || subqueryUse(tokens, open) !== "table") return undefined;
-  const cte = cteAt(tokens, open);
-  if (cte !== undefined) {
+  if (opensAfterAs(tokens, open)) {
+    const cte = cteAt(tokens, open);
+    if (cte === undefined) return undefined; // a column list renames the output, or it's no CTE this check reads
     const refs: Read[] = [];
     for (let j = 0; j < tokens.length; j++) {
       if (j === cte.at || tokens[j]!.lower !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
       if (j > open && j < close) return undefined; // recursive
-      const alias = aliasAfter(tokens, j);
-      refs.push({ at: j, scope: scopes.of[j]!, names: new Set(alias === undefined ? [cte.name] : [cte.name, alias]) });
+      refs.push({ at: j, scope: scopes.of[j]!, names: new Set([aliasAfter(tokens, j) ?? cte.name]) });
     }
     return refs;
   }
+  // A word and a `(` after the `)` is an alias with a column list, which renames the output.
+  const word = close + (tokens[close + 1]?.kw === "as" ? 2 : 1);
+  if (isWord(tokens[word]) && !NOT_A_COLUMN_LIST.has(tokens[word]!.kw) && tokens[word + 1]?.text === "(") return undefined;
   const alias = aliasAfter(tokens, close);
-  const afterAlias = close + (tokens[close + 1]?.kw === "as" ? 3 : 2);
-  if (alias !== undefined && tokens[afterAlias]?.text === "(") return undefined; // a column list renames the output
   return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined ? [] : [alias]) }];
 }
 
+/** Clauses that compute over a source's rows, or pick some of them, before an outside filter runs. */
+const COMPUTES_OVER_ROWS = new Set(["group", "having", "window", "qualify", "limit", "offset", "fetch", "top", "over"]);
+
 /**
  * Whether the body of the query at `open` passes `column` of the read named `names` through to
- * its output unrenamed: exactly one select-list item yields that name, and it is the column itself
- * (`col` or `q.col`, optionally `AS col`), the read's `q.*`, or `*` over a single source. An item
- * with a string or comment in it, `DISTINCT ON`, `TOP` or a nested `WITH` fails closed.
+ * its output unrenamed, and computes nothing across rows: every select-list item is a plain column
+ * (`col` or `q.col`, optionally aliased), `q.*` or `*`; exactly one yields that name, and it is the
+ * column itself, the read's `q.*`, or `*` over a single source; and the body has no `GROUP BY`,
+ * `HAVING`, window, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
+ * before the outside filter. An item with a string or comment in it, `DISTINCT ON` or a nested
+ * `WITH` fails closed.
  */
 function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, column: string): boolean {
   const { tokens, scopes, view } = a;
-  const scope = `${open}:0`;
+  const scope = scopeKey(open, 0);
   const depth = tokens[open]!.depth + 1;
   const level = (i: number) => scopes.of[i] === scope && tokens[i]!.depth === depth;
   const select = open + 1;
@@ -1005,7 +1006,9 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
   if (from >= tokens.length) return false;
   let first = select + 1;
   if (tokens[first]?.kw === "all" || tokens[first]?.kw === "distinct") first++;
-  if (tokens[first]?.kw === "on" || tokens[first]?.kw === "top") return false;
+  if (tokens[first]?.kw === "on") return false;
+  const end = scopes.close.get(open) ?? tokens.length;
+  for (let i = select; i < end; i++) if (scopes.of[i] === scope && COMPUTES_OVER_ROWS.has(tokens[i]!.kw)) return false;
 
   const items: number[][] = [[]];
   for (let i = first; i < from; i++) {
@@ -1042,7 +1045,8 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
       expr = ts.slice(0, n - 1);
     }
     const isColumn = expr.length === 1 ? isWord(expr[0]) : expr.length === 3 && isWord(expr[0]) && expr[1]!.text === "." && isWord(expr[2]);
-    const name = isColumn ? expr[expr.length - 1]!.lower : undefined;
+    if (!isColumn) return false; // an expression, a call or an aggregate
+    const name = expr[expr.length - 1]!.lower;
     if ((alias ?? name) !== column) continue;
     if (name !== column || (expr.length === 3 && !names.has(expr[0]!.lower))) return false; // another expression named like the column
     yields++;
@@ -1053,12 +1057,13 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
 /** Whether the `FROM` of the query at `open` has one source: no join and no comma before its next clause. */
 function singleSource(a: Analysis, open: number, scope: string, depth: number): boolean {
   const { tokens, scopes } = a;
+  const end = scopes.close.get(open) ?? tokens.length;
   let i = open + 1;
-  while (i < tokens.length && !(scopes.of[i] === scope && tokens[i]!.depth === depth && tokens[i]!.kw === "from")) i++;
-  for (i++; i < tokens.length && scopes.of[i] === scope; i++) {
+  while (i < end && !(scopes.of[i] === scope && tokens[i]!.depth === depth && tokens[i]!.kw === "from")) i++;
+  for (i++; i < end; i++) {
     const t = tokens[i]!;
-    if (t.depth !== depth) continue;
-    if (t.text === "," || JOIN_WORDS.has(t.kw)) return false;
+    if (scopes.of[i] !== scope || t.depth !== depth) continue;
+    if (t.text === "," || JOIN_WORDS.has(t.kw) || (t.text === "(" && !opensQuery(tokens, i))) return false;
     if (FILTER_CLAUSE.has(t.kw) || CLAUSE_END.has(t.kw)) return true;
   }
   return true;
@@ -1080,7 +1085,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     const eq = tokens[i + 1];
     if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || t.lower !== column.toLowerCase() || eq?.text !== "=") continue;
     const qualifier = qualifierOf(tokens, i);
-    if (qualifier !== undefined && a.declared.has(qualifier) && !read.names.has(qualifier)) continue;
+    if (qualifier !== undefined && !read.names.has(qualifier)) continue;
     let open = eq.offset + 1;
     while (/\s/.test(source[open] ?? "")) open++;
     if (source[open] !== "'") continue;
@@ -1091,7 +1096,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     // The view must read it as a string, and it must end there.
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
-    if (filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier).some((f) => f.own && f.scope === read.scope)) return true;
+    if (filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier).some((f) => f.ownSelect && f.scope === read.scope)) return true;
   }
   return false;
 }
@@ -1224,7 +1229,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
   let hi = end;
   let depth = tokens[start]!.depth;
   let q = qualifier;
-  let own = true;
+  let ownSelect = true;
   for (;;) {
     // What is directly around the term, at its level.
     const before = tokens[lo - 1];
@@ -1265,7 +1270,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     if (clause >= 0) {
       if (tokens[clause]!.kw === "on" && isOuterJoinOn(tokens, clause)) return filters;
       const scope = scopes.of[clause]!;
-      filters.push({ scope, qualifier: q, own });
+      filters.push({ scope, qualifier: q, ownSelect });
       // `col IN (<this SELECT>)` limits the query around it to the rows this SELECT returns.
       const query = scopeOpen(scope);
       const queryClose = scopes.close.get(query);
@@ -1274,7 +1279,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
       hi = queryClose;
       depth = tokens[query]!.depth;
       q = qualifierOf(tokens, query - 2);
-      own = false;
+      ownSelect = false;
       continue;
     }
 

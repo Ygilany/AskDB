@@ -22,7 +22,7 @@ AskDB doesn't execute queries, and it doesn't rewrite them to add a tenant filte
 Your application supplies the tenant scope per call and is responsible for authorizing it.
 
 <Aside type="caution" title="Enforce tenancy in your database">
-The tenant check is heuristic and does not parse SQL. It rejects the common ways a filter fails to filter, such as `WHERE organization_id = :tenant_organization_ids OR 1=1`, a literal tenant ID, or `SELECT organization_id FROM documents` with no filter. But within one query it doesn't tie a predicate to a particular table reference, so an unfiltered reference next to a filtered one can still pass. In production, enforce tenant isolation in the database, for example with Postgres row-level security or per-tenant views, and treat AskDB's check as an early warning. See [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
+The tenant check is heuristic and does not parse SQL. It rejects the common ways a filter fails to filter, such as `WHERE organization_id = :tenant_organization_ids OR 1=1`, a literal tenant ID, or `SELECT organization_id FROM documents` with no filter. But it doesn't prove a query is scoped: see [Known limits](#known-limits). In production, enforce tenant isolation in the database, for example with Postgres row-level security or per-tenant views, and treat AskDB's check as an early warning. See [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
 </Aside>
 
 ## What enforces isolation

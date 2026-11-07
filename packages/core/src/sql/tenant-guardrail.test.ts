@@ -335,7 +335,7 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["an equality", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids"],
     ["an IN list", "SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids)"],
     ["= ANY", "SELECT * FROM orders WHERE agency_id = ANY(:tenant_agency_ids)"],
-    ["the placeholder on the left", "SELECT * FROM orders WHERE :tenant_agency_ids = o.agency_id"],
+    ["the placeholder on the left", "SELECT * FROM orders o WHERE :tenant_agency_ids = o.agency_id"],
     ["a qualified column", "SELECT o.* FROM public.orders o WHERE public.o.agency_id = :tenant_agency_ids"],
     ["other conjuncts on both sides", "SELECT * FROM orders WHERE status = 'open' AND agency_id = :tenant_agency_ids AND total > 5"],
     ["an OR inside parentheses", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')"],
@@ -1071,8 +1071,37 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     ["a derived table that renames another column to the tenant column", `SELECT * FROM (SELECT id, total AS agency_id FROM orders) t WHERE t.agency_id = ${P}`],
     ["a derived table that doesn't expose the tenant column", `SELECT * FROM (SELECT id FROM orders) t WHERE agency_id = ${P}`],
     ["a CTE read twice, filtered once", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x`],
+    // A read with an alias goes by the alias only: the table's name then refers to another read.
+    ["a self-join whose filtered side is the unaliased one", `SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = ${P}`],
+    ["a subquery read filtered through the outer table's name", `SELECT orders.*, (SELECT sum(o2.total) FROM orders o2 WHERE orders.agency_id = ${P}) AS all_total FROM orders WHERE agency_id = ${P}`],
+    ["a CTE joined to itself, filtered through its name", `WITH x AS (SELECT * FROM orders) SELECT b.* FROM x JOIN x b ON true WHERE x.agency_id = ${P}`],
+    // A qualifier counts only for a read it names: a source the check doesn't see declared names none.
+    ["a predicate on a table function's alias", `SELECT o.* FROM orders o CROSS JOIN generate_series(1, 100) AS g(agency_id) WHERE g.agency_id = ${P}`],
+    ["a predicate on an alias spelled like a keyword", `SELECT b.* FROM orders force, orders b WHERE force.agency_id = ${P}`],
+    // A source with a column list renames its output, so its outside filter can't be followed.
+    ["a CTE with a column list, read twice and filtered once", `WITH x (id, agency_id) AS (SELECT id, agency_id FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x`],
+    ["a CTE whose column list renames another column to the tenant column", `WITH x (real_agency, agency_id) AS (SELECT o.agency_id, o.total FROM orders o) SELECT * FROM x WHERE agency_id = ${P}`],
+    ["a derived table with a column list", `SELECT * FROM (SELECT id, agency_id FROM orders) t(agency_id, id) WHERE t.agency_id = ${P}`],
+    ["a derived table whose column list follows an alias spelled like a keyword", `SELECT * FROM (SELECT total, agency_id FROM orders) force (agency_id, real_agency) WHERE agency_id = ${P}`],
+    // What a source computes over its rows runs before the outside filter, over every tenant's rows.
+    ["a source with a window over every row", `SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = ${P}`],
+    ["a source with LIMIT", `SELECT * FROM (SELECT * FROM orders LIMIT 1) t WHERE t.agency_id = ${P}`],
+    ["a source that aggregates", `SELECT * FROM (SELECT agency_id, count(*) AS n FROM orders GROUP BY agency_id) t WHERE t.agency_id = ${P}`],
+    ["a source with a set operation", `SELECT * FROM (SELECT * FROM orders UNION ALL SELECT * FROM orders) t WHERE agency_id = ${P}`],
+    ["a source with two tables under *", `SELECT * FROM (SELECT * FROM orders, lookup_states) t WHERE agency_id = ${P}`],
+    ["a source with a parenthesized join under *", `SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = ${P}`],
+    ["a source that selects another read's column", `SELECT * FROM (SELECT x.agency_id FROM orders o, orders x) t WHERE agency_id = ${P}`],
+    ["a CTE nothing reads", "WITH x AS (SELECT * FROM orders) SELECT 1"],
+    ["a source with LIMIT after a subquery", `SELECT * FROM (SELECT * FROM orders WHERE total > (SELECT min(code) FROM lookup_states) LIMIT 1) t WHERE t.agency_id = ${P}`],
+    ["a source with a second table after a derived table, under *", `SELECT * FROM (SELECT * FROM (SELECT 1 AS one) d, orders) t WHERE agency_id = ${P}`],
+    ["a source filtered only through IN (…) on another column", `SELECT * FROM (SELECT * FROM orders) t WHERE t.id IN (SELECT id FROM orders WHERE agency_id = ${P})`],
   ])("rejects %s", (_label, sql) => {
     expect(findings(sql)).toEqual(orders);
+  });
+
+  it("a polymorphic table: a discriminator on a table function's alias doesn't count", () => {
+    expect(findings(`SELECT n.* FROM notes n, unnest(ARRAY['agency']) AS u(owner_type) WHERE u.owner_type = 'agency' AND n.owner_id = ${P}`))
+      .toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
   });
 
   it("refuses the issue's shapes under a strict policy", () => {
