@@ -355,8 +355,9 @@ type ScanOutcome = {
 };
 
 /**
- * Lex and scan. With a known dialect the statement is lexed once, the way that engine
- * reads it. Without one (or for an unrecognized id) the generic reading decides scope
+ * Lex and scan. With a known dialect the statement is lexed the way that engine reads it
+ * (a Postgres-family one also the way CockroachDB ends a line comment, with the references
+ * found there added). Without one (or for an unrecognized id) the generic reading decides scope
  * issues, and references are unioned across every engine's reading that lexes cleanly —
  * so a column hidden from one reading by an engine-specific quote or comment rule (for
  * example MySQL `'\''` or Postgres `E'\''`) is still reported. Readings with an
@@ -368,13 +369,14 @@ function scanSql(
   dialect: Pick<DialectSpec, "id" | "backslashEscapes"> | undefined,
 ): SensitiveGuardrailResult {
   const profile = dialect ? lexerProfileFor(dialect) : undefined;
-  if (profile) {
-    return finalize(withPostgresOnlyIssues(scanTokens(lexSql(sql, profile), index, selectModifiersFor(dialect)), sql, dialect));
-  }
-
-  const modifiers = SELECT_MODIFIERS.any;
-  const primary = scanTokens(lexSql(sql, GENERIC_LEXER), index, modifiers);
-  for (const p of ENGINE_LEXER_PROFILES) {
+  // A `postgres` dialect may point at CockroachDB, where only `\n` ends a line comment: the
+  // references that reading finds are added too.
+  const modifiers = profile ? selectModifiersFor(dialect) : SELECT_MODIFIERS.any;
+  const primary = scanTokens(lexSql(sql, profile ?? GENERIC_LEXER), index, modifiers);
+  const others = !profile
+    ? ENGINE_LEXER_PROFILES
+    : profile.id === "postgres" ? [{ ...profile, lineCommentEndsAtLfOnly: true }] : [];
+  for (const p of others) {
     const tokens = lexSql(sql, p);
     if (hasUnterminatedToken(tokens)) continue;
     for (const [key, ref] of scanTokens(tokens, index, modifiers).found) {

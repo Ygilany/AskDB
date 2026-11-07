@@ -4,6 +4,7 @@ import type { NormalizedSchema } from "../schema/types.js";
 import type { NormalizedSchemaV2, NormalizedV2Table } from "../schema/v2/normalized.js";
 import {
   COCKROACHDB_DIALECT,
+  MARIADB_DIALECT,
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
   SQLITE_DIALECT,
@@ -796,5 +797,24 @@ describe("validateSensitiveReferences — what only the Postgres reading can hol
     // MySQL reads "…" as a string and has no E'…' strings.
     expect(issues(`SELECT u&"x" AS a, E 'a'\n, 'b' AS b FROM identity.users`, MYSQL_DIALECT)).toEqual([]);
     expect(issues(`SELECT u & "x" AS a, 'a'\n'b' AS b FROM identity.users`, POSTGRES_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateSensitiveReferences — a carriage return inside a `--` comment", () => {
+  // MySQL, MariaDB, SQLite and CockroachDB end the comment only at `\n`, so `ssn` is code there.
+  const sql = "SELECT 1 AS a -- \r'\n, ssn FROM users -- '";
+  it.each([
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["postgres, which a host may point at CockroachDB", POSTGRES_DIALECT],
+    ["no dialect", undefined],
+  ])("%s: sees the column on the line after the comment", (_label, dialect) => {
+    expect(validateSensitiveReferences(sql, ssnSchema, dialect ? { dialect } : undefined).references).toEqual([ssnRef("unqualified")]);
+  });
+
+  it("sqlserver: reads the rest as a string, as SQL Server does", () => {
+    expect(validateSensitiveReferences(sql, ssnSchema, { dialect: SQLSERVER_DIALECT }).references).toEqual([]);
   });
 });
