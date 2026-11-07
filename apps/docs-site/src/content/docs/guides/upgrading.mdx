@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.51
 
-Not published yet: these changes ship with `@askdb/rag` 0.2.0-beta.31.
+Not published yet: these changes ship with `@askdb/core` 1.0.0-beta.51, `@askdb/enrich` 0.2.0-beta.22 and `@askdb/rag` 0.2.0-beta.31.
 
 ### Replace `createOpenAiEmbedder` from `@askdb/rag`
 
@@ -44,6 +44,14 @@ Not published yet: these changes ship with `@askdb/rag` 0.2.0-beta.31.
 - **Your own code, without a config file:** build the AI SDK model yourself, such as `createOpenAI({ apiKey, baseURL }).embedding("text-embedding-3-small")` from `@ai-sdk/openai`, and pass it to `createAiSdkEmbedder({ model })`. The helper's `dimensions` and `user` options move to `createAiSdkEmbedder`'s `providerOptions: { openai: { dimensions, user } }`.
 
 The helper picked `text-embedding-3-small` when you set no `model`. Name that model and keep your `buildSchemaIndex()` `embedderId` as it was, left unset if you never set one, and an index you built with the helper stays valid.
+
+### Point each tenant-policy column at its entry's own table
+
+The tenant-policy loader now checks that each column the contract puts on an entry's own table is on that table ([#836](https://github.com/Ygilany/AskDB/issues/836)): a root's `tenantIdColumn` and `parent.foreignKey`, a hierarchy edge's `foreignKey` (on the child), a `scopeThrough` column, and a polymorphic `typeColumn` and `idColumn`. Before, it only checked that `schema.json` had the column somewhere, so a `scopeThrough` column on another table loaded without a warning and broke the scoped table's filter path.
+
+- **Under `enforcement: strict`, such a policy fails to load** with `SchemaParseError`, naming the file, the column and the table it's on, in `loadSchema()`, a bundle, and `@askdb/enrich`'s `saveTenantPolicy()` (Studio's Save). Under `warn`, it loads with the warning. Point the field at the column on the entry's own table.
+- **A `switch` over every `TenantPolicyWarning`** (in `schema.tenantPolicy.warnings`) needs a case for the new `misplaced_column_id`, with `id`, `tableId` (the table the column is on) and `context`. The schema loader's warning of the same name, in `schema.warnings`, is unchanged.
+- **If you call `normalizeTenantPolicy()` yourself,** its third argument is now a `Map` from column ID to table ID, read from `schema.json`: `new Map(tables.flatMap((t) => t.columns.map((c) => [c.id, t.id])))`.
 
 ## 1.0.0-beta.50
 

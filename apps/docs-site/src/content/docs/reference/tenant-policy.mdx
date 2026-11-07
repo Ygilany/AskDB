@@ -74,11 +74,12 @@ The full contract — including hierarchy validation rules and the five scoping 
 
 ## When the policy and the schema disagree
 
-The policy names tables and columns by stable ID. After you rename a column or re-introspect, it can name IDs that `schema.json` no longer has. `loadSchema()` checks every ID when it loads the policy, and `enforcement` decides what happens:
+The policy names tables and columns by stable ID. After you rename a column or re-introspect, it can name IDs that `schema.json` no longer has, and a slip can name a column on the wrong table. `loadSchema()` checks every ID when it loads the policy, and `enforcement` decides what happens:
 
 | Problem | `warn` | `strict` |
 | --- | --- | --- |
 | A column or foreign key ID that `schema.json` doesn't have | Warning | `loadSchema()` throws |
+| A column that `schema.json` has on another table than the field names, such as a `scopeThrough` column of another table (`misplaced_column_id`) | Warning | `loadSchema()` throws |
 | A cycle in `hierarchy` or `parent` | Warning | `loadSchema()` throws |
 | A root in `parent`, `hierarchy`, `scopeThrough` or a polymorphic `mapping` that `roots` doesn't declare | Warning | `loadSchema()` throws |
 | A table that `schema.json` doesn't have | Warning | Warning |

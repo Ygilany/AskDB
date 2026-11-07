@@ -312,7 +312,7 @@ Each table and column ends up with one `sensitive` value:
 | --- | --- | --- | --- |
 | `orphaned_table_id` | `tableFile`, `id` | The file's front-matter `id` isn't a table in `schema.json`, often after a rename. AskDB ignores the file, but still checks its `columns[]` entries and still applies their `sensitive: true`. | Change `id` to the table's current ID, or delete the file. |
 | `orphaned_column_id` | `tableFile`, `id` | A `columns[]` entry names a column that isn't in `schema.json`. | Change the entry to the column's current ID, or remove it. |
-| `misplaced_column_id` | `tableFile`, `id`, `tableId` | A `columns[]` entry names a column of another table, `tableId`. Only its `sensitive: true` applies. | Move the entry to `tableId`'s file. |
+| `misplaced_column_id` | `tableFile`, `id`, `tableId` | A `columns[]` entry names a column of another table, `tableId`. (The tenant policy's warning of the same name is in `schema.tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).) Only its `sensitive: true` applies. | Move the entry to `tableId`'s file. |
 | `duplicate_column_id` | `tableFile`, `id` | The file lists the column again. One warning for each repeat. | Merge the entries into one. |
 | `sensitivity_downgrade_ignored` | `tableFile`, `id` | Front-matter says `sensitive: false` for a table or column that is sensitive anyway. | Remove the `false`. To un-mark it, edit `schema.json`. |
 

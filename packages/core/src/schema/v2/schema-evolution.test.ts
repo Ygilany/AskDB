@@ -11,11 +11,11 @@ const multiTenantDir = join(fixturesDir, "agency-multi-tenant.schema");
 
 function buildSets(schemaJson: V2SchemaJson) {
   const tableIds = new Set<string>();
-  const columnIds = new Set<string>();
+  const columnIds = new Map<string, string>();
   for (const t of schemaJson.tables) {
     tableIds.add(t.id);
     for (const c of t.columns) {
-      columnIds.add(c.id);
+      columnIds.set(c.id, t.id);
     }
   }
   return { tableIds, columnIds };
