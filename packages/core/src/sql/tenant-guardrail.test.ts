@@ -1007,3 +1007,49 @@ describe("validateTenantGuardrails — ORDER BY and GROUP BY don't name a table 
     expect(findings(sql, dialect)).toEqual([`UNKNOWN_TABLE_REFERENCED:table:${table}`]);
   });
 });
+
+describe("validateTenantGuardrails — a name or number ends where SQL Server ends it (#623)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ";
+
+  // SQL Server reads each tail as `… OR 1=1`, so the tenant predicate is no longer a conjunct.
+  const gluedOr: Array<[string, string]> = [
+    ["U+00A0, which SQL Server reads as whitespace", "1=1 OR 1=1"],
+    ["U+200B, which SQL Server reads as whitespace", "1=1​OR 1=1"],
+    ["U+0085, which SQL Server reads as whitespace", "1=1\u0085OR 1=1"],
+    ["`0x`, an empty binary literal", "1=0xOR 1=1"],
+    ["`1E`, a float with no exponent digits", "1=1EOR 1=1"],
+  ];
+
+  it.each(gluedOr)("sqlserver: an OR after %s is read", (_label, tail) => {
+    expect(findings(scoped + tail, SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it.each(gluedOr)("a custom engine or no dialect, which may be SQL Server: an OR after %s is read", (_label, tail) => {
+    expect(findings(scoped + tail, customEngine())).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    expect(findings(scoped + tail)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(scoped + "1=0xOR 1=1", policy, agencyScope, { dialect: SQLSERVER_DIALECT }))
+      .toThrow(TenantGuardrailError);
+  });
+
+  it("the same tails with an ASCII space are refused, as before", () => {
+    for (const tail of ["1=1 OR 1=1", "1=0x OR 1=1", "1=1E OR 1=1"]) {
+      expect(findings(scoped + tail, SQLSERVER_DIALECT), tail).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    }
+  });
+
+  it("a scoped query that uses these forms without an OR still passes", () => {
+    for (const sql of [
+      `${scoped}flags = 0x AND rate = 1E`,
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids​AND\u0085status = 'open'",
+    ]) {
+      expect(findings(sql, SQLSERVER_DIALECT), sql).toEqual([]);
+    }
+  });
+});
