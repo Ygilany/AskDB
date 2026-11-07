@@ -761,7 +761,12 @@ type Analysis = {
 type Read = { readonly at: number; readonly scope: string; readonly names: ReadonlySet<string> };
 
 /** Where a tenant predicate filters: a `SELECT`, and the qualifier that ties it to a read there. */
-type Filter = { readonly scope: string; readonly qualifier: string | undefined };
+type Filter = {
+  readonly scope: string;
+  readonly qualifier: string | undefined;
+  /** The `ON` the predicate sits in, when it sits in one. */
+  readonly on?: number;
+};
 
 /** A tenant predicate for one target, and the `SELECT`s it filters. */
 type Occurrence = { readonly target: PredicateTarget; readonly filters: readonly Filter[] };
@@ -931,6 +936,9 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
   return found;
 }
 
+/** What {@link inScope} proves a read against: the policy's graph, and the placeholders of the roots allowed. */
+type JoinProof = { readonly graph: PolicyGraph; readonly allowed: ReadonlySet<string> };
+
 /**
  * Whether every read of `table` is filtered, on every reading, by a predicate from `targets`
  * (#399): a column and placeholder compared as a conjunct of a filter clause in the read's own
@@ -939,9 +947,6 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
  * derived table or CTE is also filtered from outside, when that source passes the column through
  * unrenamed and every reference to it is filtered on it. See {@link validateTenantGuardrails}.
  */
-/** What {@link inScope} proves a read against: the policy's graph, and the placeholders of the roots allowed. */
-type JoinProof = { readonly graph: PolicyGraph; readonly allowed: ReadonlySet<string> };
-
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[], joinProof?: JoinProof): boolean {
   const name = table.toLowerCase();
   return views.every((view) => {
@@ -1249,7 +1254,7 @@ type Proof = {
   readonly a: Analysis;
   readonly graph: PolicyGraph;
   readonly nodes: readonly Node[];
-  readonly equalities: ReadonlyArray<{ readonly left: ColumnRef; readonly right: ColumnRef; readonly scope: string }>;
+  readonly equalities: ReadonlyArray<{ readonly left: ColumnRef; readonly right: ColumnRef; readonly scope: string; readonly on?: number }>;
   readonly bound: Map<string, (node: Node, column: string) => ReadonlySet<string>>;
 };
 
@@ -1260,7 +1265,7 @@ function proofFor(a: Analysis, graph: PolicyGraph): Proof {
   proofs.set(a, byGraph);
   let proof = byGraph.get(graph);
   if (proof !== undefined) return proof;
-  const ctes = new Set([...a.scopes.close.keys()].map((open) => cteAt(a.tokens, open)?.name).filter((n) => n !== undefined));
+  const ctes = new Set([...a.scopes.close.keys()].map((open) => cteNameAt(a.tokens, open)).filter((n) => n !== undefined));
   const nodes = [...graph.columns.keys()]
     .filter((table) => !ctes.has(table))
     .flatMap((table) => readsOf(a, table).filter((read) => isTableReference(a.tokens, read.at)).map((read) => ({ ...read, table })));
@@ -1270,24 +1275,62 @@ function proofFor(a: Analysis, graph: PolicyGraph): Proof {
 }
 
 /**
- * Whether the name at `i` is a table read in a `FROM` clause: written right after `FROM`, `JOIN`,
- * or a comma of a `FROM` list, after any schema qualifier, and not a function's name. The alias of
- * a derived table, of a table function or of another table is not, so the policy's columns are
- * never trusted on a source that only borrows a table's name (#400).
+ * The name of the CTE whose body opens at `open`, with or without a column list (`x AS (`,
+ * `x (a, b) AS (`, `x AS MATERIALIZED (`), or undefined when it opens none.
+ */
+function cteNameAt(tokens: readonly Token[], open: number): string | undefined {
+  let k = open - 1;
+  if (tokens[k]?.kw === "materialized") k -= tokens[k - 1]?.kw === "not" ? 2 : 1;
+  if (tokens[k]?.kw !== "as") return undefined;
+  k--;
+  if (tokens[k]?.text === ")") {
+    const list = tokens[k - 1]?.text === "(" ? k - 1 : enclosing(tokens, k - 1, "(");
+    if (list < 0 || tokens[list]!.depth !== tokens[k]!.depth) return undefined;
+    k = list - 1;
+  }
+  const before = tokens[k - 1];
+  if (!isWord(tokens[k]) || !(before?.kw === "with" || before?.kw === "recursive" || before?.text === ",")) return undefined;
+  return tokens[k]!.lower;
+}
+
+/**
+ * Whether the `FROM` at `k` opens its `SELECT`'s own `FROM` clause: not `IS [NOT] DISTINCT FROM`,
+ * and not a `FROM` inside a call's parentheses (`EXTRACT(YEAR FROM d)`, `TRIM(BOTH FROM s)`).
+ */
+function opensFromClause(tokens: readonly Token[], k: number): boolean {
+  if (tokens[k]?.kw !== "from" || tokens[k - 1]?.kw === "distinct") return false;
+  const open = enclosing(tokens, k, "(");
+  return open < 0 || opensQuery(tokens, open);
+}
+
+/**
+ * Whether the name at `i` is a table read in a `FROM` clause: written right after a `SELECT`'s own
+ * `FROM`, after `JOIN` or MySQL's `STRAIGHT_JOIN`, after the `(` of a parenthesized join group in
+ * one of those places, or after a comma of that `FROM` list (joins included), after any schema
+ * qualifier, and not a function's name. The alias of a derived table, of a table function or of
+ * another table is not, so the policy's columns are never trusted on a source that only borrows a
+ * table's name (#400).
  */
 function isTableReference(tokens: readonly Token[], i: number): boolean {
   if (tokens[i + 1]?.text === "(") return false;
-  const start = qualifiedStart(tokens, i);
+  return startsSource(tokens, qualifiedStart(tokens, i));
+}
+
+/** Whether a row source can start at `start`: see {@link isTableReference}. */
+function startsSource(tokens: readonly Token[], start: number): boolean {
   const before = tokens[start - 1];
-  if (before?.kw === "from" || before?.kw === "join") return true;
+  if (before?.kw === "join" || before?.kw === "straight_join") return true;
+  if (before?.kw === "from") return opensFromClause(tokens, start - 1);
+  if (before?.text === "(") return !opensQuery(tokens, start - 1) && startsSource(tokens, start - 1);
   if (before?.text !== ",") return false;
-  const depth = tokens[i]!.depth;
+  const depth = before.depth;
   for (let k = start - 2; k >= 0; k--) {
     const t = tokens[k]!;
     if (t.depth < depth) return false;
     if (t.depth > depth) continue;
-    if (t.kw === "from") return true;
-    if (t.kw === "select" || CLAUSE_END.has(t.kw) || FILTER_CLAUSE.has(t.kw)) return false;
+    if (t.kw === "from") return opensFromClause(tokens, k);
+    // A join's words and its `ON` are part of the `FROM` list; any other clause ends it.
+    if (t.kw === "select" || t.kw === "where" || t.kw === "having" || (CLAUSE_END.has(t.kw) && !JOIN_WORDS.has(t.kw))) return false;
   }
   return false;
 }
@@ -1306,9 +1349,29 @@ function equalities(a: Analysis): Proof["equalities"] {
     while (tokens[end + 1]?.text === "." && tokens[end + 2] !== undefined && isIdentifier(tokens[end + 2]!)) end += 2;
     const left = { q: qualifierOf(tokens, i - 1), column: tokens[i - 1]!.lower };
     const right = { q: qualifierOf(tokens, end), column: tokens[end]!.lower };
-    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined, true)) found.push({ left, right, scope: f.scope });
+    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined, true)) found.push({ left, right, scope: f.scope, on: f.on });
   });
   return found;
+}
+
+/**
+ * Whether an equality in the `ON` at `on` holds for every row of the reads it names. Outside an
+ * `ON`, and in a `SELECT` with no outer join, it does. Beside an outer join, a row of the side
+ * the join keeps has it hold only when the join matched, so an `ON` equality links only a column
+ * of the item joined there (between its `JOIN` and that `ON`) with one outside it: rows that fail
+ * it lose the joined item, and a filter on the joined item drops those rows. Two columns on the
+ * same side (`ON o.agency_id = o.id`) link nothing (#400).
+ */
+function linksAcross(p: Proof, scope: string, on: number | undefined, l: Node, r: Node): boolean {
+  const { tokens } = p.a;
+  if (on === undefined || !(isOuterJoinOn(tokens, on) || hasOuterJoin(p.a, scope))) return true;
+  let join = on - 1;
+  while (join >= 0 && !(tokens[join]!.kw === "join" && tokens[join]!.depth === tokens[on]!.depth)) {
+    if (tokens[join]!.depth < tokens[on]!.depth) return false;
+    join--;
+  }
+  const joined = (n: Node) => n.at > join && n.at < on;
+  return join >= 0 && joined(l) !== joined(r);
 }
 
 /**
@@ -1344,7 +1407,7 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
     if (eq.scope !== scope) continue;
     const l = resolve(p, scope, eq.left);
     const r = resolve(p, scope, eq.right);
-    if (l && r) parent.set(find(term(l, eq.left.column)), find(term(r, eq.right.column)));
+    if (l && r && linksAcross(p, scope, eq.on, l, r)) parent.set(find(term(l, eq.left.column)), find(term(r, eq.right.column)));
   }
   const seeds = new Map<string, Set<string>>();
   const seed = (key: string, placeholders: Iterable<string>) => {
@@ -1595,7 +1658,8 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     const before = tokens[lo - 1];
     const after = tokens[hi + 1];
     const leftOk = before !== undefined && (before.kw === "and" || before.text === "(" || FILTER_CLAUSE.has(before.kw));
-    const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || endsClause(hi + 1);
+    // A `,` ends a join's `ON` when another source follows in the `FROM` list; elsewhere the opener check below refuses it.
+    const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || after.text === "," || endsClause(hi + 1);
     if (!leftOk || !rightOk) return filters;
 
     // Scan the rest of this level on both sides for a disjunction, a NOT, or the clause keyword.
@@ -1623,7 +1687,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
         break;
       }
       if (t.depth > depth) continue;
-      if (t.text === ";" || endsClause(j)) break;
+      if (t.text === ";" || t.text === "," || endsClause(j)) break;
       if (disjunction(t)) return filters;
     }
 
@@ -1631,7 +1695,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
       // An outer join keeps rows its ON doesn't match, and in a SELECT with one, an inner join's ON
       // filters only the rows that join builds; there only WHERE and HAVING filter every row (#400).
       if (!outerOn && tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || hasOuterJoin(a, scopes.of[clause]!))) return filters;
-      filters.push({ scope: scopes.of[clause]!, qualifier });
+      filters.push(tokens[clause]!.kw === "on" ? { scope: scopes.of[clause]!, qualifier, on: clause } : { scope: scopes.of[clause]!, qualifier });
       return filters;
     }
 

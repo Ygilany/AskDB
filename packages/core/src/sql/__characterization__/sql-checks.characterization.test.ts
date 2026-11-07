@@ -229,6 +229,13 @@ const HOSTILE: readonly string[] = [
   "SELECT o.* FROM orders o LEFT JOIN (agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids) ON o.agency_id = a.id",
   "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = :tenant_agency_ids",
   "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.agency_id AS sub_agency_id FROM sub_agencies s WHERE s.agency_id = :tenant_agency_ids) clients ON a.client_id = clients.id WHERE clients.sub_agency_id = :tenant_agency_ids",
+  // #400 review, round 2: an outer ON links only across the join, a FROM inside a call opens no FROM clause, a CTE
+  // with a column list shadows its table, and a parenthesized join group, STRAIGHT_JOIN and a comma after a join read tables.
+  "SELECT o.* FROM orders o LEFT JOIN lookup_states ls ON o.agency_id = o.id WHERE o.id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.agency_id AS sub_agency_id, 0 AS clients FROM sub_agencies s) clients ON a.client_id = clients.id WHERE clients.sub_agency_id = :tenant_agency_ids AND 1 IS DISTINCT FROM clients",
+  "WITH clients (id, sub_agency_id) AS (SELECT 1, 5) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN (clients c JOIN sub_agencies s ON c.sub_agency_id = s.id) ON a.client_id = c.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id, appointments a WHERE a.client_id = c.id AND s.agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
