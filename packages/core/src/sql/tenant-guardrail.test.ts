@@ -1982,10 +1982,14 @@ describe("validateTenantGuardrails — SQLite reads a single-quoted name inside 
     for (const sql of [
       "SELECT * FROM ('orders') WHERE agency_id = :tenant_agency_ids",
       "SELECT o.* FROM ('orders') o WHERE o.agency_id = :tenant_agency_ids",
-      "SELECT x.* FROM (orders) 'x' WHERE x.agency_id = :tenant_agency_ids",
     ]) {
       expect(findings(sql, dialect), sql).toEqual([]);
     }
+  });
+
+  // Under a custom id or none, the other engines' readings see no alias there, as with `orders 'x'`.
+  it("keeps a parenthesized read filtered through its quoted alias under sqlite", () => {
+    expect(findings("SELECT x.* FROM (orders) 'x' WHERE x.agency_id = :tenant_agency_ids", SQLITE_DIALECT)).toEqual([]);
   });
 });
 

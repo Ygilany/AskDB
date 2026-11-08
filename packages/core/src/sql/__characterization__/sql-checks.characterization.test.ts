@@ -11,10 +11,14 @@
  * point or exponent under `mysql` and `mariadb`, or after any number under the Postgres family; 3 refuse
  * `1=0xOR 1=1` under the Postgres family, which PostgreSQL rejects; and 36 refuse a `$N` parameter written
  * against a word wherever the SQL may be read as Postgres, rows the read-only check already refuses there
- * since #665 included), and #399 (77 tenant verdicts, all refusals, every dialect: a predicate filters
+ * since #665 included), #399 (77 tenant verdicts, all refusals, every dialect: a predicate filters
  * only the reads of its own `SELECT`, a qualifier no read goes by counts for nothing, and a self-join's
  * reads must be told apart; its 43 rows below differ from the code before it in 344 tenant verdicts, all
- * refusals but 5 that keep a read filtered through its own quoted alias with a space, `"my alias"`).
+ * refusals but 5 that keep a read filtered through its own quoted alias with a space, `"my alias"`),
+ * and the readings fixed for beta.53 (138 verdicts on 10 rows below, all refusals: 63 tenant and 75
+ * keyword-table verdicts, for a SQLite string name in a source's parentheses, `HAVING` on an ungrouped or
+ * aliased column, a `BETWEEN`'s upper bound, a spaced qualifier dot, and an `OR` after an alias spelled
+ * like a clause word; no existing verdict moves).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -291,6 +295,18 @@ const HOSTILE: readonly string[] = [
   "SELECT x.* FROM orders 'x', orders WHERE orders.agency_id = :tenant_agency_ids",
   "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t 'y', t WHERE t.agency_id = :tenant_agency_ids",
   "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids",
+  // A SQLite string name in a source's parentheses, HAVING on a GROUP BY key, the AND of a BETWEEN,
+  // a spaced qualifier dot, and an OR after an alias spelled like a clause word.
+  "SELECT * FROM ('orders')",
+  "SELECT x.* FROM (orders) 'x', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+  "SELECT agency_id, count(*), sum(total) FROM orders HAVING agency_id = :tenant_agency_ids",
+  "SELECT o.total AS agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+  "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND o.agency_id IN (:tenant_agency_ids)",
+  "SELECT * FROM orders WHERE total BETWEEN 1 AND 5 AND agency_id = :tenant_agency_ids",
+  "SELECT by.order_id, by.agency_id FROM billing . order by",
+  "SELECT * FROM orders lock WHERE agency_id = :tenant_agency_ids AND lock.id > 0 OR 1 = 1",
+  "SELECT * FROM orders limit WHERE agency_id = :tenant_agency_ids AND limit.id > 0 OR 1 = 1",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

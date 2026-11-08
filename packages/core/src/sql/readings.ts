@@ -125,9 +125,10 @@ const NOT_A_FROM_LIST = new Set(["select", "where", "group", "having", "order", 
  * The indices in `tokens` of the `'…'` strings that SQLite reads as names. SQLite takes a
  * single-quoted literal where only a name may stand as that name, so `FROM 'orders'` reads the
  * table `orders`. A string counts right after `FROM`, `JOIN` or `IN` (`IN 'orders'` reads a table),
- * after a `,` in a `FROM` list, or beside a `.` (`main.'orders'`, `'main'.orders`). With
- * `withAliases`, it also counts right after a table or CTE reference, or after `AS` following one,
- * where it is that read's alias (`FROM orders 'o'`). The tenant and sensitive checks read such a
+ * after a `,` in a `FROM` list, beside a `.` (`main.'orders'`, `'main'.orders`), or right after a
+ * `(` in one of those places that opens no query (`FROM ('orders')`). With `withAliases`, it also
+ * counts right after a table or CTE reference, after the `)` of such parentheses (`(orders) 'o'`),
+ * or after `AS` following one, where it is that read's alias (`FROM orders 'o'`). The tenant and sensitive checks read such a
  * string as a quoted name under a reading that {@link mayBeSqlite may be SQLite's}; only the tenant
  * check reads aliases, since the sensitive check already fails closed on a qualifier it can't bind.
  */
@@ -152,22 +153,38 @@ export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[], withAlias
     return false;
   };
   const names = new Set<number>();
-  /** Positions in `code` of the names that stand in a table's place: `FROM orders`, `JOIN main.orders`. */
+  /** Positions in `code` of the names that stand in a table's place: `FROM orders`, `JOIN main.orders`, and the `)` of `(orders)`. */
   const sources = new Set<number>();
+  /** Positions of the `(`s where a source starts that open no query (`FROM (orders)`, `JOIN ((orders))`). */
+  const sourceParens = new Set<number>();
+  const opens: number[] = [];
   for (let j = 0; j < code.length; j++) {
     const t = at(j)!;
     const prev = at(j - 1);
     const plainString = t.kind === "string" && t.text.startsWith("'");
-    const startsSource =
-      is(prev, "word", "from") || is(prev, "word", "join") ||
-      (is(prev, "punct", ",") && inFromList(j - 1)) || (is(prev, "punct", ".") && sources.has(j - 2));
+    const atSourceStart =
+      is(prev, "word", "from") || is(prev, "word", "join") || (is(prev, "punct", ",") && inFromList(j - 1)) ||
+      (is(prev, "punct", "(") && sourceParens.has(j - 1));
+    if (is(t, "punct", "(")) {
+      const next = at(j + 1);
+      const opensQuery = next?.kind === "word" && ["select", "with", "values", "table"].includes(next.lower);
+      if (atSourceStart && !opensQuery) sourceParens.add(j);
+      opens.push(j);
+      continue;
+    }
+    if (is(t, "punct", ")")) {
+      const open = opens.pop();
+      if (open !== undefined && sourceParens.has(open)) sources.add(j);
+      continue;
+    }
+    const startsSource = atSourceStart || (is(prev, "punct", ".") && sources.has(j - 2));
     if (startsSource && (t.kind === "word" || t.kind === "quoted_identifier" || plainString)) sources.add(j);
     if (!plainString) continue;
     const alias = withAliases && (sources.has(j - 1) || (is(prev, "word", "as") && sources.has(j - 2)));
     const named =
       alias || is(prev, "punct", ".") || is(at(j + 1), "punct", ".") ||
       is(prev, "word", "from") || is(prev, "word", "join") || is(prev, "word", "in") ||
-      (is(prev, "punct", ",") && inFromList(j - 1));
+      (is(prev, "punct", ",") && inFromList(j - 1)) || (is(prev, "punct", "(") && sourceParens.has(j - 1));
     if (named) names.add(code[j]!);
   }
   return names;
