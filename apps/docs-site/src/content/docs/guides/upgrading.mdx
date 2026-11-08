@@ -29,6 +29,8 @@ Under `strict` enforcement, some joins that passed now throw `TenantGuardrailErr
 
 Under `sqlite`, an `ON` that relies on a comma-joined read, or on a read joined after it, is refused too: SQLite lets an `ON` see those reads, and the check doesn't. Write the join out (`JOIN … ON` in order), or move the predicate to `WHERE`.
 
+In a join the check relies on, each table counts only where every engine the dialect covers reads it as the schema's table. Quoted, it has to be spelled as the schema spells it. Unquoted, any ASCII case works on Postgres, CockroachDB and SQLite, but on MySQL, MariaDB and SQL Server it has to be spelled as the schema spells it, since their servers can keep a table name's case. So `JOIN "CLIENTS" c`, which Postgres reads as another table than `clients`, no longer counts, and neither does an unquoted name with an upper-case non-ASCII letter under `postgres` or `cockroachdb`. Write each table as the schema spells it.
+
 The check is still a heuristic, and some shapes still pass, such as an unqualified predicate in an `ON` that counts for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
 
 ### Quote a table or column name CockroachDB lower-cases into another
