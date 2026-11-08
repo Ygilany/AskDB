@@ -970,6 +970,24 @@ describe("ask — parameterize", () => {
       expectDropped(await run(bound, 'SELECT count(*) FROM "cities" WHERE state = :v', "colorado"), bound);
     });
 
+    it("drops the extras when a name the engine reads as one is split in the other form", async () => {
+      const generateText = vi.fn(async () => ({
+        text: [
+          "```sql",
+          "SELECT id, 2fa_enabled FROM users WHERE email = 'a@b.c'",
+          "```",
+          "```sql-unbound",
+          "SELECT id, 2 fa_enabled FROM users WHERE email = :v",
+          "```",
+          "```json",
+          JSON.stringify({ parameters: [{ name: "v", type: "string", cardinality: "one", value: "a@b.c" }] }),
+          "```",
+        ].join("\n"),
+      }));
+      const result = await ask({ question: "who", schema: minimalSchema, model: fakeModel, dialect: "mysql", deps: { generateText } });
+      expectDropped(result, "SELECT id, 2fa_enabled FROM users WHERE email = 'a@b.c'");
+    });
+
     it("keeps the extras when only keyword case, unquoted-name case and layout differ", async () => {
       const result = await run(
         "select COUNT(*) from Cities where state = 'colorado';",

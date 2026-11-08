@@ -7,8 +7,8 @@ import {
   type BuiltInDialectId,
   type DialectSpec,
 } from "./dialect-spec.js";
-import { ENGINE_LEXER_PROFILES, lexSql, lexerProfileFor, type SqlLexerProfile, type SqlToken } from "./lexer.js";
-import { placeholderReading } from "./readings.js";
+import { lexSql, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { consistencyReadings, placeholderReading, type ReadingDialect } from "./readings.js";
 import { validateSelectSql } from "./validate.js";
 
 // ---------------------------------------------------------------------------
@@ -646,25 +646,27 @@ export function renderPreparedQuery(
 
 /**
  * Whether two renderings of one statement say the same thing, for the parameterize consistency
- * check (#359): their tokens under the dialect's lexer, ignoring layout and one trailing `;`.
- * Words (keywords and unquoted names) compare case-insensitively; every other token (strings,
- * quoted names, numbers, parameters, punctuation, comments, which MySQL can run) compares by its
- * exact text. An unterminated token on either side makes them unequal. A dialect id with no
- * built-in lexer must compare equal under every engine's.
+ * check (#359): their tokens under each of the dialect's readings (`consistencyReadings`),
+ * ignoring layout between tokens that don't touch and one trailing `;`. A word (a keyword or an
+ * unquoted name) compares as the engine folds it; every other token (strings, quoted names,
+ * numbers, parameters, punctuation, comments, which MySQL can run) compares by its exact text.
+ * Whether a token touches the one before must match too, since an engine can read two lexer
+ * tokens as one (`2fa_enabled` on MySQL, `U&'1'` and `1_000` on Postgres). An unterminated token
+ * on either side makes them unequal.
  */
-export function sqlStructurallyEqual(a: string, b: string, dialect: Pick<DialectSpec, "id" | "backslashEscapes">): boolean {
-  const profile = lexerProfileFor(dialect);
-  return (profile ? [profile] : ENGINE_LEXER_PROFILES).every((p) => sameTokens(a, b, p));
+export function sqlStructurallyEqual(a: string, b: string, dialect: ReadingDialect): boolean {
+  return consistencyReadings(dialect).every(({ profile, foldWord }) => sameTokens(a, b, profile, foldWord));
 }
 
-function sameTokens(a: string, b: string, profile: SqlLexerProfile): boolean {
+function sameTokens(a: string, b: string, profile: SqlLexerProfile, foldWord: (word: string) => string): boolean {
   const left = significantTokens(a, profile);
   const right = significantTokens(b, profile);
   if (!left || !right || left.length !== right.length) return false;
   return left.every((token, i) => {
     const other = right[i]!;
     if (token.kind !== other.kind) return false;
-    return token.kind === "word" ? token.lower === other.lower : token.text === other.text;
+    if (i > 0 && (left[i - 1]!.end === token.start) !== (right[i - 1]!.end === other.start)) return false;
+    return token.kind === "word" ? foldWord(token.value) === foldWord(other.value) : token.text === other.text;
   });
 }
 
