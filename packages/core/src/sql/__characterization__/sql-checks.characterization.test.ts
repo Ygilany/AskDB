@@ -15,10 +15,10 @@
  * only the reads of its own `SELECT`, a qualifier no read goes by counts for nothing, and a self-join's
  * reads must be told apart; its 43 rows below differ from the code before it in 344 tenant verdicts, all
  * refusals but 5 that keep a read filtered through its own quoted alias with a space, `"my alias"`),
- * and #400 (no existing verdict moves; its 21 rows below differ from the code before it in 108 tenant
- * verdicts, every dialect: 84 refuse 7 shapes now that a join counts only on the columns the
- * policy declares, and 24 accept 2 correct ones, a scoped table joined to a filtered root's ID and
- * `col IN (SELECT id FROM <root> WHERE id = :p)`).
+ * and #400 (no existing verdict moves; its 25 rows below differ from the code before it in 132 tenant
+ * verdicts, every dialect: 108 refuse 9 shapes now that a join counts only on the columns the policy
+ * declares, and on no ON in a SELECT with an outer join, and 24 accept 2 correct ones, a scoped table
+ * joined to a filtered root's ID and `col IN (SELECT id FROM <root> WHERE id = :p)`).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -320,6 +320,12 @@ const HOSTILE: readonly string[] = [
   "SELECT a.* FROM appointments a JOIN (clients c JOIN sub_agencies s ON c.sub_agency_id = s.id) ON a.client_id = c.id WHERE s.agency_id = :tenant_agency_ids",
   "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id, appointments a WHERE a.client_id = c.id AND s.agency_id = :tenant_agency_ids",
   "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT STRAIGHT JOIN orders o ON o.agency_id = a.id",
+  // #400 review, round 3: an ON column names only its join's operands, no ON equality counts beside an
+  // outer join, and a CTE name drops its trailing spaces.
+  "SELECT o.* FROM orders o, (SELECT 5 AS agency_id) d JOIN lookup_states ls ON agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN campaigns m ON m.owning_agency = g.id AND m.owning_agency = o.agency_id WHERE g.id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN lookup_states ls ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids",
+  "WITH [clients ] AS (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id JOIN sub_agencies s ON k.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
