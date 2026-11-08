@@ -77,6 +77,8 @@ sqlserver://localhost:1433;database=MyDb;user=user;password=pass;trustServerCert
 Server=localhost,1433;Database=MyDb;User Id=user;Password=pass;TrustServerCertificate=True;
 ```
 
+In both URL forms, `trustServerCertificate` and `encrypt` read `true`, `yes` and `1` as true and `false`, `no` and `0` as false. Any other value leaves the certificate untrusted and turns encryption on.
+
 AskDB also reads the key with spaces, `Trust Server Certificate=True`, which VS Code's mssql extension writes, but your own `mssql` pool reads it only without spaces. The SQL Server hint in the `.env.example` from `askdb init` leaves the key out, so the certificate is checked by default, and its comment says to add `TrustServerCertificate=True;` for a development server.
 
 <Aside type="caution">Trusting the certificate turns off the check that you're talking to the server you expect. Use it only in development.</Aside>

@@ -26,6 +26,19 @@ describe("resolveConnectionInput", () => {
       expect(result).not.toMatch(/Trust Server Certificate/i);
     });
 
+    // #595: a value holding `://` (a password, a URL-shaped option) doesn't make the string a URL.
+    it("normalises keys when a value contains ://", () => {
+      const result = asString(resolveConnectionInput("Server=h;Password=a://b;Trust Server Certificate=True"));
+      expect(result).toBe("Server=h;Password=a://b;TrustServerCertificate=True");
+    });
+
+    it("takes the URL path only for a string that starts with a scheme", () => {
+      const pg = "postgres://user:pw@h/db?Trust Server Certificate=True";
+      expect(resolveConnectionInput(pg)).toBe(pg);
+      expect(resolveConnectionInput("mssql://sa:x@h/db")).toMatchObject({ server: "h" });
+      expect(resolveConnectionInput("sqlserver://h;user=sa")).toMatchObject({ server: "h" });
+    });
+
     it("is case-insensitive for the key name", () => {
       const result = asString(resolveConnectionInput("Server=db.example.com;trust server certificate=true;"));
       expect(result.toLowerCase()).toContain("trustservercertificate=true");
@@ -278,5 +291,58 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     const now = resolveConnectionInput(input) as { user?: string; password?: string };
     expect({ user: old.user, password: old.password }).toEqual(before);
     expect({ user: now.user, password: now.password }).toEqual(after);
+  });
+  // #596 (maintainer decision Q69 A): `encrypt` and `trustServerCertificate` read `true`, `yes`
+  // and `1` as true and `false`, `no` and `0` as false, as `mssql://` does. The old parser read
+  // only `true` as true, so `encrypt=yes` connected without TLS. Any other value fails closed:
+  // encryption on, the server certificate not trusted.
+  it.each([
+    ["encrypt=yes", { encrypt: false }, { encrypt: true }],
+    ["encrypt=YES", { encrypt: false }, { encrypt: true }],
+    ["encrypt=1", { encrypt: false }, { encrypt: true }],
+    ["encrypt=maybe", { encrypt: false }, { encrypt: true }],
+    ["trustServerCertificate=yes", { trustServerCertificate: false }, { trustServerCertificate: true }],
+    ["trustServerCertificate=1", { trustServerCertificate: false }, { trustServerCertificate: true }],
+  ])("TLS flag %s: read the way mssql:// reads it", (flag, before, after) => {
+    const input = `sqlserver://h;user=sa;password=x;${flag}`;
+    expect(legacyParsePrismaSqlServerUrl(input).options).toEqual(before);
+    expect((resolveConnectionInput(input) as { options?: object }).options).toEqual(after);
+  });
+
+  it.each([
+    ["encrypt=true", { encrypt: true }],
+    ["encrypt=no", { encrypt: false }],
+    ["encrypt=0", { encrypt: false }],
+    ["encrypt=False", { encrypt: false }],
+    ["trustServerCertificate=true", { trustServerCertificate: true }],
+    ["trustServerCertificate=no", { trustServerCertificate: false }],
+    ["trustServerCertificate=maybe", { trustServerCertificate: false }],
+  ])("TLS flag %s: read as before", (flag, both) => {
+    const input = `sqlserver://h;user=sa;password=x;${flag}`;
+    expect(legacyParsePrismaSqlServerUrl(input).options).toEqual(both);
+    expect((resolveConnectionInput(input) as { options?: object }).options).toEqual(both);
+  });
+});
+
+describe("TLS flags read the same in both URL forms (#596)", () => {
+  const flagsOf = (input: string) => (resolveConnectionInput(input) as { options?: object }).options;
+
+  it.each(["true", "TRUE", "yes", "Yes", "1", "false", "no", "0", "NO", "maybe", ""])("encrypt=%s", (value) => {
+    expect(flagsOf(`sqlserver://h;user=sa;password=x;encrypt=${value}`)).toEqual(
+      value === "" ? {} : flagsOf(`mssql://sa:x@h/db?encrypt=${value}`),
+    );
+  });
+
+  it.each(["true", "yes", "1", "false", "no", "0", "maybe"])("trustServerCertificate=%s", (value) => {
+    expect(flagsOf(`sqlserver://h;user=sa;password=x;trustServerCertificate=${value}`)).toEqual(
+      flagsOf(`mssql://sa:x@h/db?trustServerCertificate=${value}`),
+    );
+  });
+
+  it("fails closed on a value it doesn't know: encryption on, the certificate not trusted", () => {
+    expect(flagsOf("mssql://sa:x@h/db?encrypt=maybe&trustServerCertificate=maybe")).toEqual({
+      encrypt: true,
+      trustServerCertificate: false,
+    });
   });
 });

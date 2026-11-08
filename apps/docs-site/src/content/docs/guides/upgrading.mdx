@@ -19,6 +19,20 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-rc.1
+
+Not published yet: these changes ship with `@askdb/sqlserver`'s next release, and with `askdb` and `@askdb/studio`, which depend on it.
+
+### Check the TLS settings in your SQL Server URLs
+
+AskDB now reads `encrypt` and `trustServerCertificate` the same way in `mssql://` and `sqlserver://` URLs (#596). `true`, `yes` and `1` mean true, and `false`, `no` and `0` mean false, in any case. Any other value turns encryption on and leaves the server certificate untrusted.
+
+- **`sqlserver://` with `encrypt=yes` or `encrypt=1` now requires TLS.** Before, only `encrypt=true` turned encryption on, so these strings connected without it. A server that doesn't offer TLS now refuses the connection. Write `encrypt=false` if you meant to connect without encryption.
+- **`sqlserver://` with `trustServerCertificate=yes` or `=1` now trusts the server certificate,** as `=true` does. Before, the certificate was checked.
+- **An unknown value no longer trusts the certificate.** In an `mssql://` URL, a `trustServerCertificate` value other than `false`, `no` or `0` used to trust it. Now only `true`, `yes` and `1` do. In a `sqlserver://` URL, an unknown `encrypt` value used to leave encryption off. Now it turns encryption on.
+
+An ADO.NET string whose value holds `://`, such as a password, now has its spaced keys read too (#595). Before, `Trust Server Certificate=True` was dropped from such a string, so the certificate was checked.
+
 ## 1.0.0-beta.54
 
 Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.54, `@askdb/studio` 0.2.0-beta.47, `@askdb/client` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.25, `@askdb/introspect` 0.3.0-beta.28, `@askdb/rag` 0.2.0-beta.34, `@askdb/postgres` 0.2.0-beta.30, `@askdb/prisma` 0.2.0-beta.28, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.29, and `@askdb/sqlserver` 0.1.0-beta.30.
