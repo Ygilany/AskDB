@@ -1,5 +1,17 @@
 # @askdb/client
 
+## 1.0.0-beta.13
+
+### Minor Changes
+
+- 0077500: New export `resolveDialect(schema, { override?, configDialect?, unknownDialect? })`, the rule `createAskDb()`'s `ask()` runs to pick a dialect (#886): the override, then the configured dialect, then the schema's `provider` when it's a built-in dialect id, then `"postgres"` for a schema with no provider. Any other provider throws `DialectNotSupportedError`, unless `unknownDialect` is `"fallback-postgres"`. It returns a `DialectResolution` and reads no config. `createAskDb()` now calls it, with the same behavior as before.
+
+### Patch Changes
+
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+  - @askdb/ai@0.1.0-beta.12
+
 ## 1.0.0-beta.12
 
 ### Minor Changes
