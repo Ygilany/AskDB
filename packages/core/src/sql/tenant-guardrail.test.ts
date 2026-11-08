@@ -2084,6 +2084,9 @@ describe("validateTenantGuardrails — the AND of a BETWEEN is no conjunction", 
     "SELECT o.* FROM orders o WHERE 0 BETWEEN RIGHT('0', 1) AND o.agency_id IN (:tenant_agency_ids)",
     "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1)::int AND o.agency_id = :tenant_agency_ids",
     "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND (o.agency_id IN (:tenant_agency_ids))",
+    // A qualified column named like a keyword is a column, not the keyword.
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN o.and AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN o.end AND o.agency_id IN (:tenant_agency_ids)",
   ])("refuses a predicate written as a BETWEEN's upper bound: %s", (sql) => {
     for (const dialect of every) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual(orders);
   });
@@ -2097,6 +2100,7 @@ describe("validateTenantGuardrails — the AND of a BETWEEN is no conjunction", 
     "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total BETWEEN 1 AND 5",
     "SELECT * FROM orders WHERE (total BETWEEN 1 AND 5) AND agency_id = :tenant_agency_ids",
     "SELECT * FROM orders WHERE total BETWEEN LEFT('1', 1) AND 5 AND agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE o.total BETWEEN 0 AND o.between AND o.agency_id = :tenant_agency_ids",
   ])("keeps a predicate beside a BETWEEN: %s", (sql) => {
     for (const dialect of every) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual([]);
   });
