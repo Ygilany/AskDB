@@ -767,14 +767,20 @@ const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
  * Split a code view into tokens with their nesting depth. Strings and comments are already blanked.
  * A quoted identifier is one token, its whole name as the lexer reads it (escapes undone), so a
  * space, dot or bracket inside it is never read as code, and a QUOTE_MARK character written inside
- * it changes nothing.
+ * it changes nothing. So is a string the reading takes as a name, as SQLite does (`FROM 'orders'`,
+ * `orders 'o'`): `'join'` there is a name, never the keyword.
  */
 function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
   const split = lexerWordEnds(view);
   const foldsCase = view.reading.profile.id === "postgres" || view.reading.profile.id === "generic";
-  const quotedAt = new Map<number, SqlToken>();
-  for (const t of view.tokens) if (t.kind === "quoted_identifier") quotedAt.set(t.start, t);
+  const quotedAt = new Map<number, { readonly end: number; readonly name: string }>();
+  for (const t of view.tokens) {
+    if (t.kind === "quoted_identifier") quotedAt.set(t.start, { end: t.end, name: t.value });
+    else if (t.kind === "string" && view.quoted[t.start] === 1 && t.text.startsWith("'") && t.unterminated !== true) {
+      quotedAt.set(t.start, { end: t.end, name: t.text.slice(1, -1).replaceAll("''", "'") });
+    }
+  }
   let depth = 0;
   let skipUntil = 0;
   for (const m of view.text.matchAll(TOKEN)) {
@@ -782,10 +788,10 @@ function tokenize(view: CodeViews[number]): Token[] {
     if (m[0] === QUOTE_MARK) {
       const q = quotedAt.get(m.index);
       if (q === undefined) continue;
-      const name = (q as { value?: string }).value ?? view.source.slice(q.start + 1, q.end - 1);
+      const name = q.name;
       // A name spelled like a mark (`"."`, `[,]`) keeps a prefix, so it never reads as that mark.
       const text = /^[^\w\u0080-\uffff]{1,2}$/.test(name) ? QUOTE_MARK + name : name;
-      tokens.push({ text, lower: name.toLowerCase(), name, kw: "", depth, offset: q.start + 1, quoted: true });
+      tokens.push({ text, lower: name.toLowerCase(), name, kw: "", depth, offset: m.index + 1, quoted: true });
       skipUntil = q.end;
       continue;
     }
