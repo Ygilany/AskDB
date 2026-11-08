@@ -63,5 +63,5 @@ For #716:
 
 - #716, #720, #343, #277, #809.
 - [ADR 0012](0012-sql-checks-are-defense-in-depth.md) (fail closed where AskDB owns the mechanism).
-- `plans/028-harden-client-error-types.md`, step 5 (the fallback this removes).
+- `plans/028-harden-client-error-types.md` at `90babc30`, step 5 (the fallback this removes). `plans/` was removed after that commit (#368).
 - `apps/http-api/src/server.ts` (`mapAskError`), `packages/client/src/client.ts` (`resolveDialect`).

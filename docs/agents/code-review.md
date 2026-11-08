@@ -18,7 +18,7 @@ Every PR before it leaves draft; always for PRs an agent authored.
 Where requirements come from, read by the Spec lens.
 
 - **Issue tracker:** `docs/agents/issue-tracker.md` (GitHub Issues on `Ygilany/AskDB`; read one with `gh issue view <n> --comments`). Implementation plans are issues labelled `plan`; specs not yet built are issues labelled `enhancement`; a PR that implements an issue says `Closes #<n>`.
-- **Spec files:** `docs/specs/` and `docs/contracts/` describe settled, built behaviour (the "constitution"); read the ones the diff touches or names. `plans/` is closed to new plans and keeps only implemented ones as history (`plans/README.md`). For a consumer lab diff, `docs/specs/consumer-lab.md`.
+- **Spec files:** `docs/specs/` and `docs/contracts/` describe settled, built behaviour (the "constitution"); read the ones the diff touches or names. Plans are GitHub issues labelled `plan`; the old `plans/` folder was removed (#368) and its files stay in git history. For a consumer lab diff, `docs/specs/consumer-lab.md`.
 
 ### Description vs diff
 
