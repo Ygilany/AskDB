@@ -37,6 +37,8 @@ Under `strict` enforcement, some SQL that passed before now throws `TenantGuardr
 
 For each, add the predicate inside that `SELECT` (in each branch of a set operation), filter through an alias or unqualified, and write an alias the same way each time.
 
+The check is still a heuristic, and some shapes still pass: a root filtered through another table's tenant column isn't checked for the join between them ([#400](https://github.com/Ygilany/AskDB/issues/400)), and an unqualified predicate in an `ON` can count for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
+
 ## 1.0.0-beta.52
 
 Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/config` 1.0.0-beta.20, `@askdb/ai` 0.1.0-beta.12, `@askdb/introspect` 0.3.0-beta.26, `@askdb/client` 1.0.0-beta.13, `@askdb/studio` 0.2.0-beta.45, and the other packages that pin `@askdb/core`.

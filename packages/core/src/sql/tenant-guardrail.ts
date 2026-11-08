@@ -1006,6 +1006,7 @@ function tableNameOf(t: Token): string {
   return t.quoted === true ? t.lower.trimEnd() : t.lower;
 }
 
+/** Whether `token` may be a name: a quoted name, whatever it holds, or a word that starts with a letter or `_`. */
 function isWord(token: Token | undefined): boolean {
   return token !== undefined && (token.quoted === true || /^[A-Za-z_\u0080-\uffff]/.test(token.text));
 }

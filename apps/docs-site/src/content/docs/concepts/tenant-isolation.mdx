@@ -41,7 +41,8 @@ AskDB's layer alone isn't enough to isolate tenants that don't trust each other.
 
 The tenant check reads the SQL's tokens and doesn't parse it, so it can pass SQL that doesn't filter every read:
 
-- **A join path.** A table scoped through a join can pass with a join on the wrong ID column, and a root filtered through another table's tenant column isn't checked for the join between them ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+- **A join path.** A table scoped through a join can pass with a join on the wrong ID column, and a root filtered through another table's tenant column isn't checked for the join between them, or for that table's read being in the same `SELECT` ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+- **A name spelled like a join word.** An unqualified predicate in an `ON` counts for the reads the check takes as that join's operands. Where SQL Server reads `NATURAL` or `USING` as an alias, or a table is named `using`, those can include a read the `ON` doesn't see.
 - **An `IN (…)` subquery.** A predicate inside `col IN (SELECT …)` counts for the outer read, whichever column `col` is ([#400](https://github.com/Ygilany/AskDB/issues/400)).
 
 Since 1.0.0-beta.53 each read of a scoped table needs its own predicate in its own `SELECT`, so a predicate inside a CTE, derived table or subquery no longer covers a read outside it ([#399](https://github.com/Ygilany/AskDB/issues/399)).
