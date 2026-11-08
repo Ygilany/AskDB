@@ -18,7 +18,7 @@ const referenceRoot = fileURLToPath(new URL("../src/content/docs/reference/", im
 /** Each package and its reference pages: a file, or a directory whose pages all count. */
 const PACKAGES = [
   { dir: "packages/core", pages: ["core-api"] },
-  { dir: "packages/client", pages: ["client-api.mdx"] },
+  { dir: "packages/client", pages: ["client-api.mdx", "client-charts-api.mdx"] },
   { dir: "packages/config", pages: ["config-api.mdx"] },
   { dir: "packages/ai", pages: ["ai-api.mdx"] },
   { dir: "apps/http-api", pages: ["http-api.mdx"] },

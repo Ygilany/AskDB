@@ -2861,3 +2861,42 @@ describe("ask — a rendered tenant literal can't change how the SQL reads (GHSA
     expect(result.verdict.outcome).toBe("allow");
   });
 });
+
+describe("ask — the default prompt carries foreign keys and concepts (#898)", () => {
+  async function defaultPrompt(schema: NormalizedSchemaV2): Promise<string> {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM orders\n```" }));
+    await ask({
+      question: "How much revenue did each user bring in?",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+
+  it("sends the schema's foreign keys and concepts without a retriever", async () => {
+    const prompt = await defaultPrompt(loadSchema(v2Dir));
+    expect(prompt).toContain("  FK (user_id) -> public.users (id)");
+    expect(prompt).toContain("-- concepts --");
+    expect(prompt).toContain("-- Revenue; synonyms: sales, gross sales, top line; links: public.orders.total_amount;");
+  });
+
+  it("sends business context and column notes without a retriever", async () => {
+    const schema = loadSchema(v2Dir);
+    schema.tables.find((t) => t.name === "orders")!.columns.find((c) => c.name === "status")!.note = "refunds flip a paid order back to pending";
+    const prompt = await defaultPrompt(schema);
+    expect(prompt).toContain("-- business context --\n-- Orders move through `pending → paid → shipped`");
+    expect(prompt).toContain("; note: refunds flip a paid order back to pending");
+  });
+
+  it("names no untracked table in a foreign key or concept", async () => {
+    const schema = loadSchema(v2Dir);
+    schema.tables.find((t) => t.name === "users")!.tracked = false;
+    const prompt = await defaultPrompt(schema);
+    expect(prompt).not.toContain("users");
+    expect(prompt).not.toContain("Customer;");
+    expect(prompt).toContain("-- Revenue;");
+  });
+});

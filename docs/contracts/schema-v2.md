@@ -121,7 +121,7 @@ The physical layer is JSON with stable IDs and relationships. The current `versi
 }
 ```
 
-`tables` has at least one entry: `loadSchema()` rejects an empty array, and introspection refuses to write one ([ADR 0037](../adrs/0037-introspection-refuses-an-empty-artifact.md)). Required table fields are `id`, `name`, `schema`, and `columns`. Required column fields are `id`, `name`, `type`, and `nullable`. `primaryKey`, `sensitive`, and `relationships` are optional at the schema level, though AskDB's generated artifacts currently emit `sensitive: false` for tables and columns so the physical layer remains explicit.
+`tables` has at least one entry: `loadSchema()` rejects an empty array, and introspection refuses to write one ([ADR 0037](../adrs/0037-introspection-refuses-an-empty-artifact.md)). Required table fields are `id`, `name`, `schema`, and `columns`. Required column fields are `id`, `name`, `type`, and `nullable`. `primaryKey`, `sensitive`, and `relationships` are optional at the schema level, though AskDB's generated artifacts currently emit `sensitive: false` for tables and columns so the physical layer remains explicit. Both NL→SQL prompts print each relationship under the table that owns its `from` column, as `FK (user_id) -> public.users (id)`. A relationship is left out when either table is untracked or, in the retrieval prompt, not shown, and under omission when either column or table is sensitive ([ADR 0043](../adrs/0043-default-prompt-carries-foreign-keys-and-concepts.md)).
 
 ### Stable ID scheme
 
@@ -229,16 +229,16 @@ Front-matter must be **complete enough to validate** — unknown keys are an err
 
 ### Markdown body — recognized H2 sections
 
-The parser recognizes these H2 headings by whole-heading match after trimming, ignoring case; if a heading repeats, the last one wins. Other H2s are stored as freeform body text. Only `Common query language` reaches the full-schema NL→SQL prompt; the other three feed only `@askdb/rag`'s chunker, so they reach the model only through retrieval:
+The parser recognizes these H2 headings by whole-heading match after trimming, ignoring case; if a heading repeats, the last one wins. Other H2s are stored as freeform body text. `Common query language`, `Business context` and `Column notes` reach the full-schema NL→SQL prompt: the loader carries the last two as a table's `businessContext` and a column's `note`, and drops both for a sensitive table or column ([ADR 0043](../adrs/0043-default-prompt-carries-foreign-keys-and-concepts.md)). `Example questions` feeds only `@askdb/rag`'s chunker, so it reaches the model only through retrieval:
 
 | H2 | Read by | Notes |
 |---|---|---|
 | `Common query language` | the NL→SQL prompt (as `--` comments under the table) and the chunker (high-priority retrieval text) | The single highest-value section for grounding NL→SQL. |
-| `Example questions` | `@askdb/rag` only (intent matching) | Each `- ` or `* ` item becomes a sub-chunk for question-style retrieval. |
-| `Business context` | `@askdb/rag` only (background) | Long-form context. |
-| `Column notes` | `@askdb/rag` only (per-column appendix) | Items of the form ``- `column_name`: note`` extend the column chunk; `-` or `—` may replace the colon. They match the column's **name**, not its id. |
+| `Example questions` | the chunker (intent matching), and the retrieval prompt when one is retrieved | Each `- ` or `* ` item becomes a sub-chunk for question-style retrieval. |
+| `Business context` | the NL→SQL prompt (under the table, after common query language; in the retrieval prompt only when it's retrieved) and the chunker (background) | Long-form context. |
+| `Column notes` | the NL→SQL prompt (on the column's line, in both prompts) and the chunker (per-column appendix) | Items of the form ``- `column_name`: note`` extend the column chunk; `-` or `—` may replace the colon. They match the column's **name**, not its id. |
 
-The **first paragraph** of the body, after an optional leading heading (by convention `# Table: <name>`; any line starting with `#` counts), is the table's primary description: its lines are joined with spaces, and it ends at a blank line or the next heading. Both the NL→SQL prompt and the chunker use it, even when no H2 is present.
+The **first paragraph** of the body, after an optional leading heading (by convention `# Table: <name>`; any line starting with `#` counts), is the table's primary description: its lines are joined with spaces, and it ends at a blank line or the next heading. A recognized section below never supplies it, even when its `##` heading is the body's first line: the description is then absent (#898). Both the NL→SQL prompt and the chunker use it, even when no H2 is present.
 
 ---
 
@@ -266,7 +266,7 @@ concepts:
 Brief prose section if humans want to elaborate.
 ```
 
-Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunking-rules)). They reach the model only through `@askdb/rag` retrieval: the full-schema NL→SQL prompt doesn't include them. `concepts` is required (it may be empty), the loader doesn't check the `concept:` prefix of an `id` or the IDs in `links`, and the body isn't read. `@askdb/enrich`'s `saveConcepts()` refuses a link that isn't a table or column ID in `schema.json`.
+Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunking-rules)). The full-schema NL→SQL prompt lists every concept after the tables: its label, synonyms, links (named as the prompt names tables and columns) and description. A link to an untracked table is dropped, and so is a concept whose links are all untracked. The retrieval prompt lists only retrieved concepts ([ADR 0043](../adrs/0043-default-prompt-carries-foreign-keys-and-concepts.md)). `concepts` is required (it may be empty), the loader doesn't check the `concept:` prefix of an `id` or the IDs in `links`, and the body isn't read. `@askdb/enrich`'s `saveConcepts()` refuses a link that isn't a table or column ID in `schema.json`.
 
 ---
 
@@ -286,6 +286,8 @@ Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chu
 | **Concept** | `<concept-id>` | label + synonyms + link IDs + description when the concept is included. |
 | **Tenant policy** | `tenant-policy#<section-slug>` | one H2 section of `tenant-policy.md` (see [`tenant-policy.md`](./tenant-policy.md)). |
 | **Relationship** (optional) | `<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
+
+A business-context chunk has `type: "table"`, like the table's own chunk. The retrieval prompt (`synthesizeRetrievedDdl`) tells them apart by the `#biz` id above and lists the chunk's body under its table, so that id is part of the contract. A column's note reaches both prompts from the schema's `note`, in the column's annotation, where the omission gate checks it with the annotation as one unit; the column chunk's `Note: ` line only feeds retrieval ([ADR 0042](../adrs/0042-retrieval-prompt-reads-business-context-by-chunk-id.md), amended for #898).
 
 ### Determinism
 
@@ -325,7 +327,7 @@ Describable-layer fields (description, aliases, enum, `Common query language`) o
 
 | Surface | Default behavior for sensitive table/column | Override |
 |---|---|---|
-| **NL→SQL DDL** (in core prompt) | Identifier listed, tagged `(sensitive)` — model can ground SQL. Describable text that mentions a sensitive column is kept, since the name is listed anyway. | `omitSensitiveIdentifiersFromNlToSqlPrompt` withholds the column's line (a sensitive table keeps a one-line stub with its name) and every describable text that mentions a sensitive column by name: a table's description and each alias on its own, a column's aliases, enum values and description as one annotation, and the whole `Common query language` block. The retrieval prompt (`synthesizeRetrievedDdl`) applies the same rule to the schema text it renders, and also withholds the text of any retrieved chunk that mentions one or carries `sensitive: true`; the chunk still picks its tables ([ADR 0022](../adrs/0022-omission-withholds-mentions-in-prompts.md)). |
+| **NL→SQL DDL** (in core prompt) | Identifier listed, tagged `(sensitive)` — model can ground SQL. Describable text that mentions a sensitive column is kept, since the name is listed anyway. | `omitSensitiveIdentifiersFromNlToSqlPrompt` withholds the column's line (a sensitive table keeps a one-line stub with its name) and every describable text that mentions a sensitive column by name: a table's description and each alias on its own, a column's aliases, enum values, description and note as one annotation, the whole `Common query language` block, a table's business context, a concept that names or links one, and a foreign-key line with a sensitive column or table on either side. The retrieval prompt (`synthesizeRetrievedDdl`) applies the same rule to the schema text it renders, and also withholds the text of any retrieved chunk that mentions one or carries `sensitive: true`; the chunk still picks its tables ([ADR 0022](../adrs/0022-omission-withholds-mentions-in-prompts.md)). |
 | **Describable layer chunks (table/column)** | Sensitive table chunks and sensitive column chunks are excluded entirely. Non-sensitive table chunks omit sensitive columns from their column headline list and refs, and drop any description, alias, primary entity, or column-headline description that mentions a sensitive column. A non-sensitive column whose description / aliases / enum values / `Column notes` line mention a sensitive column keeps only its identifier + type. | `@askdb/rag` option `includeSensitiveDescribable: true` (off by default). |
 | **`Common query language` chunk** | If the H2 body **mentions** a sensitive column by name, the chunk is **excluded entirely**. The chunker does not partial-redact prose. A table alias that mentions one is dropped from the chunk's heading, as it is from the table chunk. | Same option as above. |
 | **Example question / `Business context` chunks** | If the table is sensitive or the source text mentions a sensitive column by name, the affected chunks are excluded entirely. A primary entity that mentions one is dropped from every example-question heading, as it is from the table chunk. | Same option as above. |

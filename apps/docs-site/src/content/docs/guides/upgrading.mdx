@@ -19,9 +19,51 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.55
+
+Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.55, and the other packages that pin `@askdb/core`.
+
+### Join a path table on the columns the policy declares
+
+Under `strict` enforcement, some joins that passed now throw `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`) ([#400](https://github.com/Ygilany/AskDB/issues/400)). A table scoped through a join path passed when each join column's name appeared somewhere and the path's root was filtered, so a join on the wrong ID column passed; so did a root filtered through another table's column with no join between them. Now each hop must equate the declared columns (`appointments.client_id = clients.id`) on the reads joined, in the same `SELECT`, up to a filtered read, and a table along the path counts only through the path's next step. A path whose steps stop short of a root's table (only `shipments.order_id → orders.id`, with `orders` filtered on its own column) proves nothing now: extend the path to the root. A scoped table joined to a filtered root's ID, which was refused, now passes. A join through a CTE or derived table, or to a source that only borrows a policy table's name as its alias (`JOIN lookup_states clients`), isn't followed, and `col IN (SELECT …)` no longer carries a predicate out of its subquery, so `id IN (SELECT id FROM orders WHERE agency_id = …)` is refused: filter the read where it is. In a `SELECT` with an outer join, no `ON` counts, for a tenant predicate or for a join: the outer join keeps rows an `ON` never matched. Put the predicate in `WHERE`, and write a join path as `JOIN` when `WHERE` filters its joined side (`appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE c.id IN (…)` is refused; with `JOIN` it passes). A qualified column named `left`, `right`, `full` or `outer` (`o.full`) marks its `SELECT` the same way: quote it (`o."full"`).
+
+Under `sqlite`, an `ON` that relies on a comma-joined read, or on a read joined after it, is refused too: SQLite lets an `ON` see those reads, and the check doesn't. Write the join out (`JOIN … ON` in order), or move the predicate to `WHERE`.
+
+The check is still a heuristic, and some shapes still pass, such as an unqualified predicate in an `ON` that counts for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
+
+## 1.0.0-beta.54
+
+Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.54, and the other packages that pin `@askdb/core`.
+
+### Write a tenant column with non-ASCII letters as the schema spells it
+
+A tenant column, a polymorphic discriminator or a `HAVING` predicate's `GROUP BY` key whose name has non-ASCII letters now counts only when every engine read the same way reads it as the schema's column; otherwise the predicate is refused (`MISSING_TENANT_PREDICATE` or `MISSING_TYPE_DISCRIMINATOR`):
+
+- **Postgres and CockroachDB:** quote a column with an upper-case non-ASCII letter (`c."Égency_id"`). Unquoted, Postgres keeps the letter and CockroachDB lower-cases it, so they read different columns.
+- **MySQL, MariaDB and SQLite:** write a non-ASCII letter in the schema's case. Only ASCII letters match in any case.
+
+A schema whose column names are ASCII is unaffected by that rule. Three more changes reach any schema (`UNICODE_ESCAPED_IDENTIFIER` or `MISSING_TENANT_PREDICATE`):
+
+- **Aliases and qualifiers on Postgres and CockroachDB:** an unquoted alias or qualifier with an upper-case non-ASCII letter (`Ö.agency_id`) ties a predicate to no read. Quote it, as the alias is (`"Ö".agency_id`), or write it in lower case.
+- **`İ`, `ı`, `ſ`, the Kelvin sign and names not in NFC:** a name holding one of these letters, or not in Unicode normalization form C as written, is refused on every engine unless the schema spells it exactly. A model's own alias with `ı` (common in Turkish, as in `sayı`) is refused too; the schema's own Turkish names, written as the schema spells them, pass.
+- **Tables whose name starts or ends with a non-ASCII letter:** the check now sees `ürün` or `café` as the scoped table it is, so SQL that read one without a tenant predicate, and passed, is refused.
+
 ## 1.0.0-beta.53
 
-Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.53, and the other packages that pin `@askdb/core`.
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.53, `@askdb/studio` 0.2.0-beta.46, `@askdb/enrich` 0.2.0-beta.24, `@askdb/introspect` 0.3.0-beta.27, `@askdb/rag` 0.2.0-beta.33, `@askdb/postgres` 0.2.0-beta.29, `@askdb/prisma` 0.2.0-beta.27, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.28, and `@askdb/sqlserver` 0.1.0-beta.29.
+
+### Security: upgrade for GHSA-9w7p-c3w8-4839 and GHSA-mmrm-rfxf-ccc8
+
+Two advisories fix places where the tenant check could pass a tenant-scoped query that returned rows belonging to tenants outside the caller's scope. Both needed the generated SQL to run without database-level tenant enforcement. GHSA-9w7p-c3w8-4839 also needed a way to influence the model's reply. GHSA-mmrm-rfxf-ccc8 needs no unusual SQL, so a model's own mistake can trigger it.
+
+- **[GHSA-9w7p-c3w8-4839](https://github.com/Ygilany/AskDB/security/advisories/GHSA-9w7p-c3w8-4839):** the tenant check could read some table names, column names, `HAVING` clauses and conditions differently from the engine, so a tenant-scoped query could pass without an effective tenant predicate.
+- **[GHSA-mmrm-rfxf-ccc8](https://github.com/Ygilany/AskDB/security/advisories/GHSA-mmrm-rfxf-ccc8):** the tenant check tied a predicate to reads it doesn't filter, so a tenant-scoped query could pass without an effective tenant predicate.
+
+What to do:
+
+- **Upgrade** `@askdb/core` to 1.0.0-beta.53, and every AskDB package you install that depends on it: `askdb` and `@askdb/http-api` 1.0.0-beta.53, `@askdb/studio` 0.2.0-beta.46, `@askdb/introspect` 0.3.0-beta.27, `@askdb/enrich` 0.2.0-beta.24, `@askdb/rag` 0.2.0-beta.33, `@askdb/postgres` 0.2.0-beta.29, `@askdb/prisma` 0.2.0-beta.27, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.28, and `@askdb/sqlserver` 0.1.0-beta.29. These pin `@askdb/core` exactly (`@askdb/prisma` through `@askdb/introspect`), so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **Expect some correct queries to be refused.** [Give each read of a scoped table its own tenant predicate](#give-each-read-of-a-scoped-table-its-own-tenant-predicate) and [Put a tenant predicate in `WHERE` when a query groups](#put-a-tenant-predicate-in-where-when-a-query-groups) list them, with the change each needs.
+- **If you can't upgrade at once,** enforce tenant isolation in the database (for example row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. It limits the rows a statement can read, whatever its text.
 
 ### Give each read of a scoped table its own tenant predicate
 
@@ -37,13 +79,32 @@ Under `strict` enforcement, some SQL that passed before now throws `TenantGuardr
 
 For each, add the predicate inside that `SELECT` (in each branch of a set operation), filter through an alias or unqualified, and write an alias the same way each time.
 
-### Join a path table on the columns the policy declares
+The check is still a heuristic, and some shapes still pass: a root filtered through another table's tenant column isn't checked for the join between them ([#400](https://github.com/Ygilany/AskDB/issues/400)), and an unqualified predicate in an `ON` can count for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
 
-Under `strict` enforcement, some joins that passed now throw `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`) ([#400](https://github.com/Ygilany/AskDB/issues/400)). A table scoped through a join path passed when each join column's name appeared somewhere and the path's root was filtered, so a join on the wrong ID column passed; so did a root filtered through another table's column with no join between them. Now each hop must equate the declared columns (`appointments.client_id = clients.id`) on the reads joined, in the same `SELECT`, up to a filtered read, and a table along the path counts only through the path's next step. A path whose steps stop short of a root's table (only `shipments.order_id → orders.id`, with `orders` filtered on its own column) proves nothing now: extend the path to the root. A scoped table joined to a filtered root's ID, which was refused, now passes. A join through a CTE or derived table, or to a source that only borrows a policy table's name as its alias (`JOIN lookup_states clients`), isn't followed, and `col IN (SELECT …)` no longer carries a predicate out of its subquery, so `id IN (SELECT id FROM orders WHERE agency_id = …)` is refused: filter the read where it is. On Postgres and CockroachDB, a quoted column with an upper-case letter (`"clientId"`, as Prisma writes camelCase fields) links nothing in a join, so on such a schema a table scoped through a join path, or a covered root filtered through another table, is refused: map the columns to lower case (Prisma's `@map`), or run under `warn`. In a `SELECT` with an outer join, no `ON` counts, for a tenant predicate or for a join: the outer join keeps rows an `ON` never matched. Put the predicate in `WHERE`, and write a join path as `JOIN` when `WHERE` filters its joined side (`appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE c.id IN (…)` is refused; with `JOIN` it passes). A qualified column named `left`, `right`, `full` or `outer` (`o.full`) marks its `SELECT` the same way: quote it (`o."full"`).
+### Check what your business context and column notes tell the model
 
-Under `sqlite`, an `ON` that relies on a comma-joined read, or on a read joined after it, is refused too: SQLite lets an `ON` see those reads, and the check doesn't. Write the join out (`JOIN … ON` in order), or move the predicate to `WHERE`.
+The prompt `ask()` sends now carries each table's `## Business context` section, under the table after its common query language, and each column's `## Column notes` item, on that column's line ([#894](https://github.com/Ygilany/AskDB/issues/894), [#898](https://github.com/Ygilany/AskDB/issues/898)). With a retriever, it carries the business context retrieval picks, and every listed column's note. Before, they reached neither prompt: a retrieved business-context or column chunk only picked its table, though the schema contract said its text would reach the model. A retrieved concept also keeps its label now, and a tenant-policy section its name.
 
-The check is still a heuristic, and some shapes still pass, such as an unqualified predicate in an `ON` that counts for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
+Your language model provider now receives this text, not only your embedding provider. Read those sections in your `tables/*.md` files for anything the model shouldn't see. They follow the rules for common query language: a sensitive table's business context and a sensitive column's note never reach the prompt, and with `modes.omitSensitiveFromPrompt` (`--omit-sensitive-from-prompt`) any of it that names a sensitive column is withheld, a note together with the rest of its column's annotation. `loadSchema()` now returns them as a table's `businessContext` and a column's `note`. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists what the model sees. The index doesn't need rebuilding. If your tests compare `formatSchemaV2ForNlToSql()`'s or `synthesizeRetrievedDdl()`'s output, or `loadSchema()`'s result, expect the new lines and fields.
+
+### Check the foreign keys and concepts the prompt now sends
+
+The prompt `ask()` sends now lists each table's foreign keys and, without a retriever, your concepts ([#898](https://github.com/Ygilany/AskDB/issues/898)). Before, foreign keys reached the model only through retrieval with `emitRelationships: true`, and concepts only through retrieval. A foreign key prints after its table's columns, as `FK (user_id) -> public.users (id)`, and the concepts follow the tables, each with its label, synonyms, links and description. With a retriever, the prompt lists foreign keys only between the tables it shows, and still only the concepts retrieval picks, now in the same shape. A retrieved relationship chunk (`emitRelationships: true`) no longer adds a `-- relationships --` line: its foreign key prints under its table.
+
+Your language model provider now receives your foreign keys and concepts without a retriever. Read `concepts.md` for anything the model shouldn't see. A foreign key or concept never names an untracked table, and with `modes.omitSensitiveFromPrompt` (`--omit-sensitive-from-prompt`) a foreign key with a sensitive column or table on either side, and a concept that names or links one, are left out. The prompt grows by about 18 tokens per foreign key and 37 per concept, so past about 22 tables, consider [retrieval](/guides/rag-for-large-schemas/). If your tests compare `formatSchemaV2ForNlToSql()`'s or `synthesizeRetrievedDdl()`'s output, expect the new lines.
+
+### Put a tenant predicate in `WHERE` when a query groups
+
+A tenant predicate in `HAVING` now counts only when its column is one the `SELECT` groups by: `HAVING` filters groups, and on a column that isn't grouped, SQLite and MariaDB take one row's value for the whole group. Read the MySQL way (`mysql`, `mariadb`, a dialect id that is no built-in engine, or none), an unqualified column that a select-list item is aliased to doesn't count either, since MySQL and MariaDB read it as that item. Under `strict`, such SQL throws `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`). Move the predicate to `WHERE`, or group by the tenant column.
+
+Two more shapes that passed are refused: a tenant predicate written as a `BETWEEN`'s upper bound (`0 BETWEEN 0 AND agency_id = …`; write it as its own conjunct), and, under `sqlite`, a custom id or none, a read written `FROM ('orders')` with no predicate, which SQLite reads as the table.
+
+The tenant column and a polymorphic discriminator now count only when written as the schema spells them; otherwise the predicate is refused (`MISSING_TENANT_PREDICATE` or `MISSING_TYPE_DISCRIMINATOR`):
+
+- **Postgres and CockroachDB:** on a schema with upper-case column names (camelCase, as Prisma writes them), write the column quoted, as `c."agencyId"`. An unquoted `agencyid` or `agencyId` folds to lower case and names another column. A schema with lower-case column names is unaffected.
+- **SQL Server:** write the column as the schema spells it (`AgencyId`, not `agencyid`). A database's collation may compare names case-sensitively, and the check can't see it, so a column in another case is refused even on a case-insensitive database.
+- **SQLite:** a non-ASCII letter must be in the schema's case, since SQLite folds only ASCII letters.
+- **A custom dialect or none:** all of the above apply, so a column in another case than the schema is refused whatever the engine. Set `dialect` to avoid that.
 
 ## 1.0.0-beta.52
 

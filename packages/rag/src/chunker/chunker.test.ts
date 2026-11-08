@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { dirname, join, resolve } from "node:path";
-import type { ParsedTenantPolicyMarkdown } from "@askdb/core";
+import { loadSchema, type ParsedTenantPolicyMarkdown } from "@askdb/core";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { chunkSchemaDir, chunkSchema, chunkIdPrefix } from "./index.js";
@@ -592,3 +592,29 @@ describe("sensitive-mention filtering", () => {
     expect(optIn[0].sensitive).toBe(true);
   });
 });
+
+describe("Column notes: the chunker and loadSchema() read the same items (#898)", () => {
+  it("agrees with loadSchema() on every separator, a `*` bullet and an unmatched line", () => {
+    const root = mkdtempSync(join(tmpdir(), "askdb-rag-notes-"));
+    try {
+      const dir = join(root, "orders-users.schema");
+      cpSync(FIXTURE_DIR, dir, { recursive: true });
+      const orders = join(dir, "tables/orders.md");
+      writeFileSync(
+        orders,
+        `${readFileSync(orders, "utf8")}\n## Column notes\n\n- \`id\`: colon note\n- \`user_id\` - hyphen note\n- \`status\` — dash note\n* \`total_amount\`: star bullet\n- created: not a backticked name\n`,
+      );
+      const loaded = loadSchema(dir).tables.find((t) => t.name === "orders")!;
+      const { chunks } = chunkSchemaDir(dir);
+      for (const column of loaded.columns) {
+        const chunk = chunks.find((c) => c.id === `chunk:orders-users:${column.id}`)!;
+        const chunkNote = chunk.text.split("\n").find((line) => line.startsWith("Note: "))?.slice("Note: ".length);
+        expect(chunkNote, column.name).toBe(column.note);
+      }
+      expect(loaded.columns.map((c) => c.note)).toEqual(["colon note", "hyphen note", "dash note", undefined]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+

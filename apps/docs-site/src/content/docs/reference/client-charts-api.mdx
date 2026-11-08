@@ -1,0 +1,168 @@
+---
+title: "@askdb/client/charts API reference"
+description: "Experimental API reference for @askdb/client/charts: classifyResult(), planChart(), validateChartSpec(), the chart spec, the part-to-whole policy and the fallback."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">Reference · @askdb/client/charts · Experimental</p>
+
+<p class="doc-lede"><code>@askdb/client/charts</code> plans a chart for a query result. The model sees the question, the SQL with its literals masked, and the result's column names and kinds. It never sees a row.</p>
+
+<Aside type="caution" title="Experimental">
+This entry point is outside AskDB's stability promise: a minor release of `@askdb/client` may change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md), [ADR 0044](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0044-chart-planning-sends-no-rows.md)). The root `@askdb/client` export doesn't include it.
+</Aside>
+
+```ts
+import { classifyResult, planChart, validateChartSpec } from "@askdb/client/charts";
+```
+
+The entry point imports only `@askdb/client`'s peers, `@askdb/core` and `ai`. [Plan a chart for a query result](/guides/plan-a-chart/) shows it end to end.
+
+## `classifyResult(input)`
+
+Classifies a result's columns in your process. It makes no model call. Returns a [`ClassifiedResult`](#classifiedresult).
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `columns` | `{ name: string; type?: string }[]` | The result's columns, in order. `type` is the database type, when your driver reports it. |
+| `rowCount` | `number` | How many rows you have. |
+| `truncated` | `boolean` | True when the query had more rows than you returned. Default false. |
+| `rows` | `Record<string, unknown>[]` or `unknown[][]` | Optional. Objects keyed by column name, or arrays in column order. Read to tell numbers from text and to find negative values, distinct counts and label lengths. Not kept in the result. |
+| `schema` | `AnyNormalizedSchema` | Optional. A column takes the type of the one schema column with its name. |
+
+### Column kinds
+
+Each column gets one kind. The name decides first, then the database type, then the values.
+
+| Kind | Read from |
+| --- | --- |
+| `identifier` | A name whose last word is `id` or `uuid`: `customer_id`, `orderId`. `paid` is not one. |
+| `year` | A name with the word `year`, `yr` or `fy`. |
+| `date` | A date or time database type; values that are all `Date` objects or ISO dates; a name with a word such as `date`, `day`, `month`, `quarter` or `at`. |
+| `percent` | A number whose name has `pct`, `percent`, `rate`, `ratio` or `share`. |
+| `currency` | A number of type `money`, or whose name has a word such as `amount`, `cost`, `revenue`, `total` or `price`. |
+| `measure` | Any other number. |
+| `category` | Anything else, including a text column named like a number. |
+
+Identifiers and years are never series. `measure`, `currency` and `percent` are the kinds a series may have.
+
+### `ClassifiedResult`
+
+| Field | Description |
+| --- | --- |
+| `shape` | What the model sees: `columns` (`{ name, kind }[]`), `rowCount` and `truncated`. |
+| `local` | Per column: `additive` (false for averages, minimums, maximums and percents), and, when you passed rows, `hasNegative`, `distinctCount` and `maxLabelLength`. It stays in your process. |
+
+## `planChart(options)`
+
+Asks the model for a chart and checks it. Returns `Promise<ChartPlan>`. It never rejects because of the model.
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `question` | `string` | The user's question. |
+| `sql` | `string` | The query you ran. |
+| `result` | `ClassifiedResult` | From `classifyResult()`. Only `result.shape` reaches the model. |
+| `model` | `LanguageModel` | Any AI SDK model: one you build, or one from `@askdb/ai`'s registry. |
+| `dialect` | `AskDialectInput` | Optional. As `ask()` takes it: a built-in id, a `DialectSpec` or a custom dialect. Decides how literals are found. |
+| `schema` | `AnyNormalizedSchema` | Optional. The schema artifact the SQL was generated against. With `omitSensitiveIdentifiers`, it says which names are sensitive. |
+| `omitSensitiveIdentifiers` | `boolean` | Optional. Keeps sensitive names out of the prompt, as `ask()`'s `omitSensitiveIdentifiersFromNlToSqlPrompt` does. Pass `modes.omitSensitiveFromPrompt`. Default false. |
+| `providerOptions` | `Record<string, unknown>` | Optional. Passed to the model call unchanged, as in `ask()`. |
+| `abortSignal` | `AbortSignal` | Optional. Ends the model call; the plan comes from the fallback. |
+| `timeoutMs` | `number` | Optional. How long to wait for the model, in milliseconds. Default `15000`. `Infinity` waits for `abortSignal` only. A negative or non-number value uses the default; a fraction is rounded down. |
+
+### What the model receives
+
+- **The question.**
+- **The SQL, with every literal replaced by `?`.** Strings, numbers and bound tenant values become `?`, and comments are dropped. Names, keywords and parameters such as `$1` stay. The literals are found with the lexer the SQL checks use: under the dialect's own readings for a built-in engine, and under every engine's readings, with both string settings, for any other dialect or none. If a string or comment never closes, or a literal survives a second read, the model gets no SQL.
+- **The shape:** each column's name and kind, the row count, and whether the result is truncated. A column name that holds a literal is shown as `column_<n>`, its position in the result. SQLite and MySQL name an unaliased expression by its text, so `COUNT(CASE WHEN status = 'refunded' THEN 1 END)` would carry `'refunded'`. `planChart()` maps a label in the model's answer back to the real name.
+- **Under omission** (`omitSensitiveIdentifiers` with `schema`): no SQL when it mentions a sensitive column, by the rule the sensitive check uses, and a `column_<n>` label for a result column named like a sensitive column.
+
+A fixed system prompt states the rubric and the rules. It holds no data.
+
+The model returns a JSON object through the AI SDK's structured output (`generateText` with `Output.object`): one primary chart spec and an alternate or null.
+
+### `ChartPlan`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `primary` | `ChartSpec \| null` | The chart to draw. Null when no column holds a number to plot, or when a result of several rows has no column to group them by. |
+| `alternate` | `ChartSpec` | Optional. A second chart. An alternate that fails the checks is dropped. |
+| `source` | `"model" \| "fallback"` | Who picked the chart. |
+| `fallbackReason` | `"timeout" \| "aborted" \| "model-error" \| "invalid-spec"` | Set when `source` is `"fallback"`. |
+| `issues` | `ChartSpecIssue[]` | Set when the model's primary chart failed the checks. |
+| `latencyMs` | `number` | How long planning took. |
+
+### `ChartSpec`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `type` | `"metric" \| "line" \| "area" \| "bar" \| "horizontal-bar" \| "pie"` | The chart type. |
+| `category` | `string` | The column along the axis, or the slices. A metric has none. |
+| `series` | `string[]` | The columns to plot as numbers. |
+| `title` | `string` | A factual title. |
+| `description` | `string` | One sentence on what is plotted. |
+
+### The rubric
+
+The model and the fallback pick the type by these rules, in order:
+
+1. One row with one headline number: `metric`.
+2. A measure over ordered time: `line`. The model picks `area` only when the filled volume is the point.
+3. Part of a whole across 2–8 categories: `pie`, when the part-to-whole policy allows it.
+4. A ranking (top, bottom, highest, lowest…): `horizontal-bar`.
+5. A few short categories: `bar`, or `horizontal-bar` when the labels are long.
+
+The model judges long labels from the column names and the question; it never sees a label. The fallback switches to `horizontal-bar` when a label is longer than 16 characters, which it knows only when you passed `rows` to `classifyResult()`. The fallback reads a part-of-whole question from words such as "share", "breakdown" and "proportion", and a ranking from words such as "top" and "highest". It plots at most 4 series. It never picks `area`.
+
+## `validateChartSpec(spec, result, context?)`
+
+Checks a chart spec against a classified result. `planChart()` runs it on the model's charts; call it yourself for a spec you stored or edited. Pass `context.question` to refuse a pie for a ranking. Returns `{ ok: true }` or `{ ok: false, issues }`.
+
+| Issue `code` | When |
+| --- | --- |
+| `UNKNOWN_COLUMN` | The spec names a column the result doesn't have. |
+| `SERIES_NOT_MEASURE` | A series isn't a `measure`, `currency` or `percent` column, or there is no series. |
+| `INVALID_CATEGORY` | A chart other than a metric has no category, or its category is a measure. |
+| `METRIC_NOT_SCALAR` | A metric for more than one row, or with more than one series. |
+| `PIE_NOT_PART_TO_WHOLE` | A pie that fails the part-to-whole policy. |
+
+### The part-to-whole policy
+
+A pie shows one additive total or count across 2–8 categories. The check refuses a pie for:
+
+- more than one series;
+- an average, minimum, maximum, rate, ratio or percent;
+- negative values (known only when you passed rows);
+- a date or year category;
+- fewer than 2 or more than 8 rows, or a category that repeats across rows;
+- a truncated result;
+- a ranking question.
+
+## Types
+
+Every type the entry point exports:
+
+| Type | What it is |
+| --- | --- |
+| `ClassifyResultInput` | `classifyResult()`'s input. |
+| `ResultColumnInput` | One input column: `{ name, type? }`. |
+| `ColumnKind` | `"identifier" \| "year" \| "date" \| "currency" \| "percent" \| "category" \| "measure"`. |
+| `ClassifiedResult` | `classifyResult()`'s result. |
+| `ShapeColumn` | One column in `shape`: `{ name, kind }`. |
+| `LocalColumnFacts` | One column in `local`. |
+| `PlanChartOptions` | `planChart()`'s options. |
+| `ChartPlan` | `planChart()`'s result. |
+| `ChartFallbackReason` | `"timeout" \| "aborted" \| "model-error" \| "invalid-spec"`. |
+| `ChartSpec` | A chart spec. |
+| `ChartType` | `ChartSpec["type"]`. |
+| `ValidateChartSpecResult` | `validateChartSpec()`'s result. |
+| `ChartSpecIssue` | One issue: `{ code, column?, message }`. |
+| `ChartSpecIssueCode` | The issue codes in the table above. |
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/plan-a-chart/"><strong>Plan a chart for a query result</strong><span>The planner end to end.</span></a>
+  <a href="/reference/client-api/"><strong>@askdb/client API</strong><span><code>createAskDb()</code> and <code>client.ask()</code>.</span></a>
+</div>
