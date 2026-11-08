@@ -7,7 +7,8 @@
  * predicate. A `$` inside a name, a table named `user`, a string with the server's default
  * backslash escapes, a `--` comment that ends only at a line feed, a backticked name spelled like
  * the tenant placeholder or holding U+0001, and a letter Unicode lower-casing merges into ASCII
- * (U+212A KELVIN SIGN, which MariaDB keeps apart from `k`) are read as the server reads them, and a
+ * (U+212A KELVIN SIGN, which MariaDB keeps apart from `k`; U+0130, which MySQL reads as `i`) are read
+ * as the server reads them, and a
  * number ends after its decimal point or exponent, so a keyword written right after it is a keyword.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
@@ -70,8 +71,17 @@ fixtureSuite("the tenant check reads SQL the way MySQL and MariaDB do (live)", (
       };
       const workspaceScope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
       const check = (q: string) => validateTenantGuardrails(q, workspace, workspaceScope, { dialect }).warnings.map((w) => w.rule);
-      expect(check(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`)).toEqual(["MISSING_TENANT_PREDICATE"]);
+      expect(check(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`)).toEqual(["UNICODE_ESCAPED_IDENTIFIER", "MISSING_TENANT_PREDICATE"]);
       expect(check("SELECT c.* FROM Client c WHERE c.WORKSPACE_ID = :tenant_workspace_ids")).toEqual([]);
+    });
+
+    it("U+0130 reads as `i` on MySQL and as itself on MariaDB, so the check refuses the name", async () => {
+      const dotted = "agency_\u0130d";
+      const sql = `SELECT agency_id FROM (SELECT 1 AS ${dotted}) t`;
+      if (engine === "mysql") expect(Number((await runner()(sql)).rows[0]![0])).toBe(1);
+      else await expect(runner()(sql)).rejects.toThrow(/unknown column/i);
+      expect(findings(`SELECT d.* FROM (SELECT z.k AS ${dotted}, o.agency_id, o.id FROM orders o, (SELECT 42 AS k) z) d WHERE d.agency_id = :tenant_agency_ids`))
+        .toContain("UNICODE_ESCAPED_IDENTIFIER");
     });
 
     it("a table named after a keyword stands in table position, as the engine reads it", async () => {
