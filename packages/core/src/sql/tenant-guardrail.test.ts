@@ -2226,3 +2226,20 @@ describe("validateTenantGuardrails — a tenant column written as the engine rea
     expect(findings("SELECT c.* FROM Client c WHERE c.agencyid = :tenant_agency_ids", dialect)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a type discriminator written as the engine reads it", () => {
+  const findings = (sql: string, dialect: DialectSpec | undefined) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a discriminator spelled in another case, quoted, under $id", (dialect) => {
+    // `"OWNER_TYPE"` is another column than `owner_type` here: the derived table's, not the note's.
+    expect(findings(`SELECT n.* FROM notes n, (SELECT 'agency' AS "OWNER_TYPE") z WHERE "OWNER_TYPE" = 'agency' AND n.owner_id = :tenant_agency_ids`, dialect)).toEqual([
+      "MISSING_TYPE_DISCRIMINATOR:table:public.notes",
+    ]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps the discriminator unquoted in any case, or quoted as the schema spells it, under $id", (dialect) => {
+    expect(findings("SELECT n.* FROM notes n WHERE n.OWNER_TYPE = 'agency' AND n.owner_id = :tenant_agency_ids", dialect)).toEqual([]);
+    expect(findings(`SELECT n.* FROM notes n WHERE n."owner_type" = 'agency' AND n.owner_id = :tenant_agency_ids`, dialect)).toEqual([]);
+  });
+});
