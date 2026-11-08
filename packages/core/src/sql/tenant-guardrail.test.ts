@@ -2923,3 +2923,47 @@ describe("validateTenantGuardrails — a join proof reads a written column the w
     expect(findings(join("a.clientid = c.id"), SQLSERVER_DIALECT)).toEqual(["table:public.Appointment"]);
   });
 });
+
+describe("validateTenantGuardrails — beside an outer join, WHERE counts and a derived table keeps the unmatched side (#400)", () => {
+  const clients: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const findings = (sql: string, scope: TenantScope, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, scope, dialect ? { dialect } : {}).warnings.map((w) => w.tableId);
+
+  it("refuses a join path's equality only in an ON beside OUTER APPLY, and accepts it repeated in WHERE", () => {
+    const from = "SELECT a.*, x.code FROM appointments a JOIN clients c ON a.client_id = c.id OUTER APPLY (SELECT TOP 1 d.code FROM lookup_states d) x";
+    expect(findings(`${from} WHERE c.id IN (:tenant_client_ids)`, clients, SQLSERVER_DIALECT)).toEqual(["table:public.appointments"]);
+    expect(findings(`${from} WHERE a.client_id = c.id AND c.id IN (:tenant_client_ids)`, clients, SQLSERVER_DIALECT)).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a join-path table, in a derived table",
+      "SELECT c.id, COALESCE(x.n, 0) AS n FROM clients c LEFT JOIN (SELECT a.client_id, COUNT(*) AS n FROM appointments a JOIN clients c2 ON a.client_id = c2.id WHERE c2.id IN (:tenant_client_ids) GROUP BY a.client_id) x ON x.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
+      clients,
+    ],
+    [
+      "a column-path table, in a derived table",
+      "SELECT g.id, o.id FROM agencies g LEFT JOIN (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids",
+      agencyScope,
+    ],
+    [
+      "a column-path table, in a CTE",
+      "WITH o AS (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) SELECT g.id, o.id FROM agencies g LEFT JOIN o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids",
+      agencyScope,
+    ],
+    [
+      "a polymorphic table, in a derived table with its discriminator",
+      "SELECT c.id, n.body FROM clients c LEFT JOIN (SELECT * FROM notes WHERE owner_type = 'client' AND owner_id IN (:tenant_client_ids)) n ON n.owner_id = c.id WHERE c.id IN (:tenant_client_ids)",
+      clients,
+    ],
+  ] as const)("accepts %s on the side a LEFT JOIN may leave unmatched", (_label, sql, scope) => {
+    expect(findings(sql, scope)).toEqual([]);
+  });
+
+  it("refuses a join path's root filtered in a derived table on the unmatched side, and accepts the plain JOIN", () => {
+    expect(findings("SELECT a.*, c.name FROM appointments a LEFT JOIN (SELECT * FROM clients WHERE id IN (:tenant_client_ids)) c ON c.id = a.client_id", clients)).toEqual([
+      "table:public.appointments",
+    ]);
+    expect(findings("SELECT a.*, c.name FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", clients)).toEqual([]);
+  });
+});
