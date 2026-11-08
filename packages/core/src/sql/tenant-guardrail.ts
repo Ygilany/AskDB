@@ -1744,12 +1744,20 @@ function equalities(a: Analysis, graph: PolicyGraph): Proof["equalities"] {
 
 /**
  * Whether a `SELECT` may keep rows a join's `ON` never matched: `LEFT`, `RIGHT`, `FULL` or `OUTER`
- * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`). No `ON`
- * there filters, seeds, links or hops: only `WHERE` and `HAVING` do (#400).
+ * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`), and not as
+ * a call (`LEFT(name, 1)`) or part of a qualified name (`o.full`). No `ON` there filters, seeds,
+ * links or hops: only `WHERE` and `HAVING` do (#400).
  */
 function mayKeepUnmatchedRows(a: Analysis, scope: string): boolean {
   const { tokens, scopes } = a;
-  return tokens.some((t, i) => scopes.of[i] === scope && ["left", "right", "full", "outer"].includes(t.kw) && tokens[i + 1]?.text !== "(");
+  return tokens.some(
+    (t, i) =>
+      scopes.of[i] === scope &&
+      OUTER_JOIN_WORDS.has(t.kw) &&
+      tokens[i + 1]?.text !== "(" &&
+      tokens[i - 1]?.text !== "." &&
+      tokens[i + 1]?.text !== ".",
+  );
 }
 
 /**
