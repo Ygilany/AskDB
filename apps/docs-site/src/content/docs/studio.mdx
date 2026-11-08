@@ -97,11 +97,13 @@ The Playground is where you test whether your enrichment works:
 
 The SQL appears with an **Explain** panel that shows the result of AskDB's SQL checks. The Playground doesn't show which chunks retrieval picked: run the same question in the [RAG Index](#rag-index) Query Debugger for that. Like the CLI, the Playground follows `modes.omitSensitiveFromPrompt`.
 
+For a schema whose engine AskDB ships no dialect for, the Playground generates nothing and says so, as the CLI and the HTTP API refuse it: set [`dialect`](/reference/config/#dialect) in `askdb.config.ts` to the built-in dialect your engine speaks.
+
 Running the generated SQL against your database is off by default. [Enable Studio execute](/guides/enable-studio-execute/) turns it on.
 
 ### Get the code
 
-Once the SQL looks right, the **Get the code** panel turns the session into TypeScript you can paste: your question, the schema path, the dialect, your AI provider and, when it's on, the tenant scope. Choose the config-driven style (`createAskDb()` from `@askdb/client`, which reads the same `askdb.config.ts`) or the direct style (`ask()` from `@askdb/core` with a model you pass). Then continue with [Embed in a Node app](/guides/embed-in-node/).
+Once the SQL looks right, the **Get the code** panel turns the session into TypeScript you can paste: your question, the schema path, the dialect, your AI provider and, when it's on, the tenant scope. For a schema whose engine AskDB ships no dialect for, it shows why instead of code. Choose the config-driven style (`createAskDb()` from `@askdb/client`, which reads the same `askdb.config.ts`) or the direct style (`ask()` from `@askdb/core` with a model you pass). Then continue with [Embed in a Node app](/guides/embed-in-node/).
 
 ## Settings
 
@@ -120,6 +122,6 @@ The rail's **Dark mode** button switches Studio's theme.
 <div class="home-path-grid">
   <a href="/guides/enable-studio-execute/"><strong>Enable Studio execute</strong><span>Run the Playground's SQL against your database under a read-only role.</span></a>
   <a href="/reference/studio/"><strong>Studio reference</strong><span>Flags, files, what each AI feature sends, and the security model.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>The enrichment workflow, and keeping the artifact current.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>The enrichment workflow, and keeping the artifact current.</span></a>
   <a href="/quickstart/"><strong>Quickstart</strong><span>Create a sample database, ask a question from the CLI, and run the SQL.</span></a>
 </div>

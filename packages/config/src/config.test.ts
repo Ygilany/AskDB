@@ -981,6 +981,23 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
     setAskDbRuntimeForTests(minimalConfig({ introspection: intro, studio }));
   }
 
+  it.each([
+    ["a misspelling", "postgress"],
+    ["a schema-only introspection provider", "prisma"],
+    ["a dialect Studio can't execute against", "mariadb"],
+  ])("refuses %s as studio.execute.provider at load, listing the providers", (_case, provider) => {
+    expect(() => defineConfig(minimalConfig({ studio: { execute: { provider } } as never }))).toThrow(
+      `askdb.config: invalid studio.execute.provider "${provider}" (expected one of: postgres, mysql, sqlite, sqlserver).`,
+    );
+  });
+
+  // A connection string pasted into the wrong key could carry a password, so the error leaves it out.
+  it("names the key but not a connection string written as studio.execute.provider", () => {
+    expect(() =>
+      defineConfig(minimalConfig({ studio: { execute: { provider: "postgres://ro:s3cret@db.internal/app" } } as never })),
+    ).toThrow(/^askdb\.config: invalid studio\.execute\.provider \(expected one of: postgres, mysql, sqlite, sqlserver\)\.$/);
+  });
+
   it("uses explicit studio.execute.provider when set", () => {
     installStudio(
       { execute: { provider: "mysql", databaseUrl: "mysql://host/db" } },
@@ -1393,8 +1410,8 @@ describe("getAskDbRuntimeConfig — each setting resolves once, from the authore
     { key: "studio.execute.useIntrospectionConnection", config: withExecute("useIntrospectionConnection"), read: (rt) => rt.studio.execute.useIntrospectionConnection, valid: [true, true], wrong: 1, unset: false },
     { key: "studio.execute.timeoutMs", config: withExecute("timeoutMs"), read: (rt) => rt.studio.execute.timeoutMs, valid: ["1000", 1000], wrong: 0, unset: 30_000 },
     { key: "studio.execute.maxRows", config: withExecute("maxRows"), read: (rt) => rt.studio.execute.maxRows, valid: [25, 25], wrong: 1.5, unset: 500 },
-    // An unknown provider falls back like an unset one; only the type is checked.
-    { key: "studio.execute.provider", config: withExecute("provider"), read: (rt) => rt.studio.execute.provider, valid: ["mysql", "mysql"], wrong: 3, unset: "postgres" , nullIsUnset: true },
+    // An unknown provider fails at load (#751); only an unset one falls back.
+    { key: "studio.execute.provider", config: withExecute("provider"), read: (rt) => rt.studio.execute.provider, valid: ["mysql", "mysql"], wrong: "postgress", unset: "postgres" , nullIsUnset: true },
     { key: "studio.execute.databaseUrl", config: withExecute("databaseUrl"), read: (rt) => rt.studio.execute.databaseUrl, valid: [" postgres://ro/db ", "postgres://ro/db"], wrong: 1, unset: undefined , nullIsUnset: true },
     { key: "studio.execute.file", config: withExecute("file", { provider: "sqlite" }), read: (rt) => rt.studio.execute.file, valid: ["./ro.db", "./ro.db"], wrong: 1, unset: undefined , nullIsUnset: true },
     // No runtime section: `createAskDb` and Studio read these from the structured config as written,

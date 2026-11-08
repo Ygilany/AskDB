@@ -181,7 +181,7 @@ The `<schema>` part is the table's `schema` field:
 | SQLite | `public` |
 | A Prisma schema (`@askdb/prisma`) | The model's `@@schema`, or else `public`, for every datasource provider |
 
-Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition. Entries that name the old ID then report [warnings](#loader-warnings), and its `sensitive` marks don't carry over. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps after a rename.
+Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition. Entries that name the old ID then report [warnings](#loader-warnings), and its `sensitive` marks don't carry over. [Enrich your schema](/guides/author-your-schema/#re-introspecting) has the steps after a rename.
 
 ## Table files (`tables/*.md`)
 
@@ -347,6 +347,6 @@ This is the only format AskDB reads. Before 1.0, it can gain fields without a ne
 
 <div class="home-path-grid">
   <a href="/concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>Why the artifact is files your team owns, and how its two layers fit together.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
   <a href="/reference/core-api/schema/#loadschemapath"><strong>@askdb/core API</strong><span><code>loadSchema()</code>, <code>loadSchemaFromJson()</code> and the loaded schema's fields.</span></a>
 </div>

@@ -5,7 +5,9 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `$tag$` string, a table named after a keyword, and where a `--`
- * comment ends are all read as Postgres reads them.
+ * comment ends, nested block comments, a column list after a table's alias, an `ON` that closes an
+ * earlier outer join, a quoted column name, compared exactly, and a quoted name spelled like the tenant
+ * placeholder or holding U+0001 are all read as Postgres reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -84,6 +86,84 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     const rows = (await runner("SELECT count(*) AS c FROM (SELECT 1 AS a --\rUNION ALL SELECT 2) t")).rows;
     expect(Number(rows[0]![0])).toBe(2);
     expect(findings("SELECT id FROM agencies WHERE id = :tenant_agency_ids --\rUNION ALL SELECT agency_id FROM orders"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("block comments nest, as the engine reads them", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // The predicate sits inside the outer comment, which the `--` line comment closes, so both rows come back.
+    const rows = (await runner("SELECT count(*) AS c FROM (SELECT 1 AS agency_id UNION ALL SELECT 2) t WHERE 1=1 /* /* */ AND agency_id = 1 AND 1=1 -- */")).rows;
+    expect(Number(rows[0]![0])).toBe(2);
+    expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("a column list after a table's alias renames the table's first columns, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // people.client's first column is client_id, so `t.agency_id = 3` keeps client 3, whose agency isn't 3.
+    const rows = (await runner("SELECT count(*) AS c FROM people.client t (agency_id, real_agency) WHERE t.agency_id = 3 AND t.real_agency <> 3")).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(0);
+    for (const sql of [
+      "SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders AS t (agency_id, x) WHERE agency_id = :tenant_agency_ids",
+      "SELECT * FROM (SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids) d",
+    ]) {
+      expect(findings(sql), sql).toEqual(["MISSING_TENANT_PREDICATE"]);
+    }
+  });
+
+  it("a column list on a parenthesized join renames the join's columns, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // j's columns start order_id, agency_id, client_id, so `agency_id = 2` keeps client 2's orders,
+    // whose agency (a2) isn't 2.
+    const rows = (await runner(
+      'SELECT count(*) AS c FROM (billing."order" o JOIN ref.status s ON true) AS j (a1, a2, agency_id) WHERE agency_id = 2 AND a2 <> 2',
+    )).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(0);
+    for (const sql of [
+      "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids",
+      "SELECT * FROM (orders o JOIN lookup_states s ON true) j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql), sql).toEqual(["MISSING_TENANT_PREDICATE"]);
+    }
+    expect(findings("SELECT * FROM (orders o JOIN lookup_states s ON true) AS j WHERE agency_id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  it("an ON that closes an earlier LEFT JOIN belongs to it, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // `o LEFT JOIN (x JOIN s ON …) ON …`: the second ON is the LEFT JOIN's, which keeps every client.
+    const rows = (await runner(
+      "SELECT count(DISTINCT o.agency_id) AS c FROM people.client o LEFT JOIN org.agency x JOIN org.program s ON s.agency_id = x.agency_id ON x.agency_id = o.agency_id AND o.agency_id = 3",
+    )).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(1);
+    expect(findings("SELECT o.* FROM orders o LEFT JOIN lookup_states x JOIN service_types s ON s.id = x.id ON x.code = o.state AND o.agency_id = :tenant_agency_ids"))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("a quoted column name is compared exactly, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // "AGENCY_ID" is x's column, not people.client.agency_id, so clients of every agency come back.
+    const rows = (await runner('SELECT count(DISTINCT o.agency_id) AS c FROM people.client o CROSS JOIN (SELECT 3 AS "AGENCY_ID") x WHERE "AGENCY_ID" = 3')).rows;
+    expect(Number(rows[0]![0])).toBeGreaterThan(1);
+    expect(findings('SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids'))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids')).toEqual([]);
+  });
+
+  it("a quoted name is a name, whatever it holds, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    const agencies = async (sql: string) => Number((await runner(sql)).rows[0]![0]);
+    // ":tenant_agency_ids" is x's column, equal to o.agency_id, so clients of every agency come back.
+    expect(await agencies(
+      'SELECT count(DISTINCT o.agency_id) AS c FROM people.client o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"',
+    )).toBeGreaterThan(1);
+    // A U+0001 inside a quoted name is part of it, and the OR after it keeps every row.
+    expect(await agencies(
+      'SELECT count(DISTINCT agency_id) AS c FROM people.client CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = 3 AND "\u0001".a = 1 OR 1=1',
+    )).toBeGreaterThan(1);
+    expect(findings('SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"'))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(findings('SELECT "\u0001".a FROM orders CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = :tenant_agency_ids AND "\u0001".a = 1 OR 1=1'))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });

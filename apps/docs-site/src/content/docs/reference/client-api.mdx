@@ -50,7 +50,7 @@ Install the AI SDK package for the provider your config selects, for example `@a
 
 ### `DialectResolution`
 
-The `dialect` that `onResolve` receives:
+What [`resolveDialect()`](#resolvedialectschema-options) returns, and the `dialect` that `onResolve` receives:
 
 ```ts
 type DialectResolution = {
@@ -68,6 +68,18 @@ type DialectResolution = {
 | `"default"` | `"postgres"`: the schema records no provider, or `unknownDialect` is `"fallback-postgres"`. |
 
 `note` is set when the config dialect and the schema's `provider` disagree (the config wins), and when `"fallback-postgres"` applies. `askdb ask` prints it to stderr as `Note: …`.
+
+### `resolveDialect(schema, options?)`
+
+The rule `createAskDb()`'s `ask()` runs to pick a dialect, exported so a host that calls `@askdb/core`'s `ask()` itself picks it the same way (Studio does). It returns a [`DialectResolution`](#dialectresolution) and reads no config: pass the values in.
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `override` | `AskDialectInput` | A per-call dialect. It wins over everything (`source: "override"`). |
+| `configDialect` | `BuiltInDialectId` | The configured dialect, such as `getAskDbRuntimeConfig().nlToSql.dialect` (`source: "config"`). |
+| `unknownDialect` | `"throw" \| "fallback-postgres"` | What to do when neither is set and `schema.provider` isn't a built-in dialect id. Default `"throw"`. |
+
+Without `override` or `configDialect`, it uses the schema's `provider` when that's a built-in dialect id, and `"postgres"` when the schema records no provider. For any other `provider`, it throws [`DialectNotSupportedError`](#errors), naming the provider and the `dialect` config key, unless `unknownDialect` is `"fallback-postgres"`. Checking SQL for one engine under another engine's rules can pass SQL the real engine reads differently ([ADR 0039](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0039-http-api-refuses-a-schema-it-cant-serve.md)).
 
 ### `SchemaSource`
 
@@ -103,7 +115,7 @@ All `AskPipelineOptions` fields can be overridden per call, except that the two 
 | `model` | `AskDbLanguageModel` | Override the default model for this call only. The registry isn't used, so `reasoningEffort` doesn't apply. |
 | `dialect` | `AskDialectInput` | Override the dialect for this call only. |
 | `reasoningEffort` | `ReasoningEffort` | Reasoning effort for this call: `"minimal"`, `"low"`, `"medium"` or `"high"`. It takes precedence over `createAskDb({ reasoningEffort })` and the config. It applies only to the registry's model: it's ignored with `model`, `deps.generateText` or `dev.mockSql`, and when `deps.providerOptions` is set. |
-| `explain` | `boolean` | Include guardrail metadata in the result. |
+| `explain` | `boolean` | Include metadata on the read-only checks in the result. |
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers, and any describable text that names one, from the prompt. Config `modes.omitSensitiveFromPrompt: true` is a floor: `true` here tightens a single call, but `false` can't loosen the config setting. |
 | `abortSignal` | `AbortSignal` | Core's [`ask()` option](/reference/core-api/ask/#options), passed through: cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` to enforce a timeout. With a built-in dialect, an aborted call rejects with `SqlGenerationError`; a custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
 | `mode` | `AskDbModeV1` | Trust boundary for this call. Config `modes.askdbMode` (unset: `"schema_only"`) is the loosest mode a call gets: `"schema_only"` here tightens it, but `"bounded_results"` can't loosen it. A looser request runs at the config mode, with no error. The call's value is parsed like the config's, so an unknown mode throws `AskDbError`. |

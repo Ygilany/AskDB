@@ -56,43 +56,10 @@ function renderFence(node, file, idPrefix) {
     if (!(error instanceof PeleError)) throw error;
     // The diagram's first line is the line after the opening fence.
     const fenceLine = node.position?.start.line;
-    const line = fenceLine && error.line > 0 ? fenceLine + sourceLine(node.value, error) : fenceLine;
+    // pele counts lines in the source as written, comments and front matter included, and puts an
+    // error at the end of the diagram one line past it: on the closing fence.
+    const line = fenceLine && error.line > 0 ? fenceLine + error.line : fenceLine;
     const where = `${file.path ?? "a page"}${line ? `:${line}` : ""}`;
     throw new DiagramRenderError(`${where}: mermaid diagram failed to render (PeleError ${error.code}): ${error.message}`, error);
   }
-}
-
-/**
- * The diagram line a `PeleError` points to, counted from the diagram's first line. pele numbers
- * lines after it drops front matter, comments, directives and some blank lines, so its `line`
- * can't be used as is. Its `snippet` quotes the line itself, so this finds that line, and takes
- * the match nearest the estimate if the text occurs more than once.
- */
-function sourceLine(source, { line, snippet }) {
-  const lines = source.split("\n");
-  const estimate = estimateLine(lines, line);
-  const quoted = snippet?.split("\n")[0] ?? "";
-  if (!quoted.trim()) return estimate;
-  const matches = lines.flatMap((text, index) => (text.trim() === quoted.trim() ? [index + 1] : []));
-  if (matches.length === 0) return estimate;
-  return matches.reduce((best, match) => (Math.abs(match - estimate) < Math.abs(best - estimate) ? match : best));
-}
-
-/**
- * pele's `line` counted back to the source, skipping front matter and `%%` lines: right for a
- * diagram without blank lines. With no quoted text (the end of the diagram), a line past the last
- * one is the closing fence.
- */
-function estimateLine(lines, peleLine) {
-  let start = 0;
-  if (lines[0]?.trim() === "---") {
-    const close = lines.findIndex((text, index) => index > 0 && text.trim() === "---");
-    if (close > 0) start = close + 1;
-  }
-  let kept = 0;
-  for (let index = start; index < lines.length; index++) {
-    if (/^\s*%%/.test(lines[index])) continue;
-    if (++kept === peleLine) return index + 1;
-  }
-  return lines.length + 1;
 }

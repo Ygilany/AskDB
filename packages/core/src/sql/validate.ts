@@ -62,20 +62,23 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 4. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
  * 5. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
  * 6. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
- * 7. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
+ * 7. `SQL_FORBIDDEN_KEYWORD`, Postgres lexer only — a `$N` parameter written against a word
+ *    (`$1INTO`, `$1FOR`), which the lexer reads as one token, so the later checks can't see a
+ *    keyword a server that ends the parameter at its last digit would read (#665).
+ * 8. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
  *    built-in engine) — a second statement written without `;`, which T-SQL doesn't
  *    need, or code SQL Server may split differently from the lexer (see `tsql-batch.ts`).
- * 8. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
+ * 9. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
  *    `FOR SHARE`, `FOR KEY SHARE` or `LOCK IN SHARE MODE` on every lexer, and on the SQL Server
  *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
  *    parentheses right after a name, at any depth and with trailing spaces, and any such name
  *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
- * 9. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
+ * 10. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
  *    dialect id that is no built-in engine) — a `U&"…"` identifier, whose escapes could spell
  *    a blocked function or a sensitive column that the later checks match by name (#692).
- * 10. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 11. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 11. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 12. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions), and on every lexer
  *    `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server (#825).
  *
@@ -182,6 +185,16 @@ function checkWithProfile(
       "SQL_NOT_SELECT_OR_WITH",
       `SQL must start with SELECT or WITH (got '${got || "none"}').`,
       "Regenerate as a read-only SELECT (optionally with WITH). INSERT/UPDATE/DELETE and procedural calls are blocked in dev guardrails.",
+    );
+  }
+
+  // Before the keyword and locking checks, which can't see a word inside the parameter token.
+  const glued = profile.id === "postgres" ? tokens.find(isParameterAgainstWord) : undefined;
+  if (glued) {
+    throw validationError(
+      "SQL_FORBIDDEN_KEYWORD",
+      `A $N parameter written against a word is not allowed: generated SQL has '${glued.text}' at offset ${glued.start}.`,
+      "A server that ends the parameter at its last digit reads the rest as a separate word, such as INTO or FOR, which the check can't see. Put a space after the parameter.",
     );
   }
 
@@ -409,6 +422,16 @@ function isLoneQuotedHint(tokens: readonly SqlToken[], i: number): boolean {
 
 function isPunct(t: SqlToken | undefined, text: string): boolean {
   return t?.kind === "punct" && t.text === text;
+}
+
+/**
+ * A `$N` parameter with a word written right after its digits (`$1INTO`, `$1FOR`), which the
+ * Postgres reading lexes as one token (#665). Postgres 15 and later reject it as trailing junk; a
+ * server that ends the parameter at its last digit would read a keyword the check never saw, so it
+ * is refused rather than guessed at.
+ */
+function isParameterAgainstWord(t: SqlToken): boolean {
+  return t.kind === "parameter" && /^\$\d+\D/.test(t.text);
 }
 
 function isAdjacentPunct(t: SqlToken, next: SqlToken | undefined, text: string): boolean {

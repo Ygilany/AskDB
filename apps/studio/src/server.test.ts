@@ -1611,6 +1611,58 @@ describe("AskDB Studio server", () => {
   });
 });
 
+describe("a schema whose provider has no AskDB dialect (#886, ADR 0039)", () => {
+  const servers: ReturnType<typeof createStudioServer>[] = [];
+  afterEach(async () => {
+    resetAskDbRuntimeForTests();
+    await Promise.all(servers.splice(0).map((server) => new Promise<void>((done) => server.close(() => done()))));
+  });
+
+  function snowflakeFixture(): string {
+    const schemaDir = copyFixture();
+    const file = join(schemaDir, "schema.json");
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), provider: "snowflake" }, null, 2));
+    return schemaDir;
+  }
+
+  async function studioFor(schemaDir: string): Promise<string> {
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    return listen(server);
+  }
+
+  it("the Playground refuses it with @askdb/client's DialectNotSupportedError instead of PostgreSQL SQL", async () => {
+    installStudioRuntime({ ...STUDIO_TEST_BASE, dev: { mockSql: "select count(*) from users" } });
+    const baseUrl = await studioFor(snowflakeFixture());
+
+    const response = await postRaw(`${baseUrl}/api/ask`, { question: "How many users are there?" });
+    expect(response.status).toBe(422);
+    const message = ((await response.json()) as { error: { message: string } }).error.message;
+    expect(message).toContain("Schema declares provider 'snowflake', but AskDB does not yet ship a DialectSpec for it.");
+    expect(message).toContain("set `dialect: \"postgres\"` (or another supported id) in askdb.config.*");
+  });
+
+  it("the workspace still loads, with no dialect and the reason", async () => {
+    installStudioRuntime();
+    const baseUrl = await studioFor(snowflakeFixture());
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    expect(workspace.dialect).toBeNull();
+    expect(workspace.dialectError).toContain("Schema declares provider 'snowflake'");
+  });
+
+  it("a config dialect still wins over the schema's provider", async () => {
+    installStudioRuntime({ ...STUDIO_TEST_BASE, dialect: "postgres", dev: { mockSql: "select count(*) from users" } });
+    const baseUrl = await studioFor(snowflakeFixture());
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    expect(workspace.dialect).toBe("postgres");
+    expect(workspace.dialectError).toBeUndefined();
+    const generated = await postJson(`${baseUrl}/api/ask`, { question: "How many users are there?" });
+    expect(generated.sql).toBe("select count(*) from users");
+  });
+});
+
 function copyFixture(): string {
   const dir = mkdtempSync(join(tmpdir(), "askdb-studio-"));
   const schemaDir = join(dir, "orders-users.schema");

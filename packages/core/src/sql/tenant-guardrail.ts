@@ -9,7 +9,16 @@ import {
 import { SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
-import { readSql, tenantCodeReadings, tenantStatementReadings, type CodeViewReading, type SqlRead } from "./readings.js";
+import {
+  mayBeSqlite,
+  readSql,
+  stringsSqliteReadsAsNames,
+  tenantCodeReadings,
+  tenantStatementReadings,
+  unmatchedNonAsciiName,
+  type CodeViewReading,
+  type SqlRead,
+} from "./readings.js";
 import { EXPRESSION_KEYWORDS, EXPRESSION_PUNCTUATION } from "./tsql-batch.js";
 import { denylistFor } from "./validate.js";
 
@@ -97,12 +106,15 @@ export function validateTenantGuardrails(
 /**
  * The tenant rule alone: what {@link validateTenantGuardrails} finds in `sql`, with no
  * mode. Internal to `@askdb/core`; the guardrail checks and the validator share it.
+ * `schemaNames` are the schema's table, namespace and column names, when the caller has the
+ * schema: a name outside printable ASCII counts when it is one of them or a name in the policy.
  */
 export function tenantRuleWarnings(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+  schemaNames?: ReadonlySet<string>,
 ): TenantGuardrailWarning[] {
   // Global scope bypasses tenant guardrails
   if (scope.access.kind === "global") return [];
@@ -153,6 +165,19 @@ export function tenantRuleWarnings(
     );
   }
 
+  // The checks below match names by spelling. SQL Server reads a name through the database
+  // collation, which ignores some characters and reads others as ASCII letters, so a name outside
+  // printable ASCII may reach a table they never see: unless the schema spells it exactly, refuse it.
+  const folded = unmatchedNonAsciiName(read, dialect, knownNames(policy, schemaNames));
+  if (folded !== undefined) {
+    warnings.push(
+      warn("UNICODE_ESCAPED_IDENTIFIER", "",
+        `The SQL uses the name ${folded}, which has a character outside printable ASCII and isn't spelled that way in the schema. ` +
+        "SQL Server reads names through its collation, which ignores some characters and reads others as ASCII letters, so the " +
+        "tenant check can't tell which table or column it names. Spell the name exactly as the schema does."),
+    );
+  }
+
   // Past an E'…' string continued on a later line, Postgres and the checks below read different
   // strings, so a table or call could sit in what they take for a string: refuse it (#703).
   const continued = postgresOnly.escapeStringContinuation;
@@ -172,6 +197,18 @@ export function tenantRuleWarnings(
       warn("ESCAPED_BYTE_STRING", "",
         `The SQL has a b'…' byte string at offset ${bytes.start} with a backslash or continued on a later line, which ` +
         "CockroachDB reads with backslash escapes and the tenant check doesn't. Write the bytes as a hex string cast to bytea ('\\x00'::bytea)."),
+    );
+  }
+
+  // On a Postgres reading the lexer reads `$1OR` as one parameter, while PostgreSQL 14 and earlier
+  // and CockroachDB end the parameter at its last digit and read the word as a keyword the checks
+  // below would miss. Refuse it rather than guess how the server splits it (GHSA-rhwf-7742-8hwj).
+  const glued = parameterAgainstWord(read, dialect);
+  if (glued !== undefined) {
+    warnings.push(
+      warn("NOT_SELECT_OR_WITH", "",
+        `The SQL writes a word right after a parameter ('${glued}'), which PostgreSQL 14 and CockroachDB read as a separate ` +
+        "keyword, so the tenant check can't tell which words are keywords. Put a space after the parameter."),
     );
   }
 
@@ -353,6 +390,51 @@ function idCarriers(policy: NormalizedTenantPolicy, rootId: string): PredicateTa
   return carriers;
 }
 
+/**
+ * The names a statement may spell outside printable ASCII: every table the policy covers and its
+ * namespace, every column the policy names, and `schemaNames` when the caller has the schema.
+ */
+function knownNames(policy: NormalizedTenantPolicy, schemaNames: ReadonlySet<string> | undefined): ReadonlySet<string> {
+  const names = new Set(schemaNames);
+  const table = (id: string) => {
+    const path = id.replace(/^table:/, "");
+    const dot = path.lastIndexOf(".");
+    names.add(path.slice(dot + 1));
+    if (dot !== -1) names.add(path.slice(0, dot));
+  };
+  const column = (id: string) => {
+    const hash = id.lastIndexOf("#");
+    if (hash !== -1) table(id.slice(0, hash));
+    names.add(extractColumnName(id));
+  };
+  for (const entry of policy.coverage) table(entry.tableId);
+  for (const id of policy.globalTables) table(id);
+  for (const root of policy.roots) {
+    table(root.id);
+    column(root.tenantIdColumn);
+    if (root.parent) column(root.parent.foreignKey);
+  }
+  for (const edge of policy.hierarchy) column(edge.foreignKey);
+  for (const st of policy.scopedTables) {
+    table(st.id);
+    for (const path of st.scopeThrough) {
+      if ("column" in path) column(path.column);
+      else {
+        for (const step of path.join) {
+          column(step.from);
+          column(step.to);
+        }
+      }
+    }
+  }
+  for (const pt of policy.polymorphicTables) {
+    table(pt.id);
+    column(pt.typeColumn);
+    column(pt.idColumn);
+  }
+  return names;
+}
+
 /** `rootId` and every root above it in the policy's hierarchy (`hierarchy[]`, `roots[].parent`). */
 function selfAndAncestors(policy: NormalizedTenantPolicy, rootId: string): string[] {
   const chain = [rootId];
@@ -445,6 +527,19 @@ function nonQueryKeyword(read: SqlRead, dialect: ValidateTenantGuardrailsOptions
 }
 
 /**
+ * The first `$N` parameter with a word written right after its digits (`$1OR`) under a reading
+ * from `tenantStatementReadings` on the Postgres lexer, where the lexer reads both as one token.
+ */
+function parameterAgainstWord(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+  for (const profile of tenantStatementReadings(dialect)) {
+    if (profile.id !== "postgres") continue;
+    const token = read.tokens(profile).find((t) => t.kind === "parameter" && /^\$\d+\D/.test(t.text));
+    if (token) return token.text.slice(0, 40);
+  }
+  return undefined;
+}
+
+/**
  * Functions whose reads the tenant check can't see, lowercase (#702). A function belongs here when
  * it is built into Postgres or SQL Server, or comes from an extension that ships with Postgres
  * (`tablefunc`, `dblink`, `xml2`); any role can call it; and it runs a query passed as a string,
@@ -528,13 +623,15 @@ function extractColumnName(columnId: string): string {
 /**
  * One same-length view of the statement per reading from `tenantCodeReadings` (see
  * {@link codeView}), with the statement itself (`source`), where string literals are still
- * readable at the same offsets, and the shared lexer's tokens under that reading.
+ * readable at the same offsets, the shared lexer's tokens under that reading, and which offsets
+ * lie inside a name the view reads as quoted (`quoted`, 1 for each).
  */
 type CodeViews = ReadonlyArray<{
   readonly text: string;
   readonly source: string;
   readonly reading: CodeViewReading;
   readonly tokens: readonly SqlToken[];
+  readonly quoted: Uint8Array;
 }>;
 
 /**
@@ -550,14 +647,21 @@ type CodeViews = ReadonlyArray<{
 function codeViews(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): CodeViews {
   return tenantCodeReadings(dialect).map((reading) => {
     const tokens = read.tokens(reading.profile);
-    return { text: codeView(read.sql, tokens), source: read.sql, reading, tokens };
+    // A reading that may be SQLite's reads a '…' in a table's place as the table's name, and one right
+    // after a table or CTE reference as its alias.
+    const names = mayBeSqlite(reading.profile) ? stringsSqliteReadsAsNames(tokens, true) : new Set<number>();
+    const quoted = new Uint8Array(read.sql.length);
+    tokens.forEach((token, i) => {
+      if (token.kind === "quoted_identifier" || names.has(i)) quoted.fill(1, token.start, token.end);
+    });
+    return { text: codeView(read.sql, tokens, names), source: read.sql, reading, tokens, quoted };
   });
 }
 
 /**
  * What a quoted identifier's delimiters become in a code view: not a word character, so
- * identifier matching still sees `"agency_id"` as `agency_id`, but the tokenizer can tell
- * a quoted `"where"` (an identifier) from the keyword `WHERE`.
+ * identifier matching still sees `"agency_id"` as `agency_id`. The tokenizer skips it, and
+ * tells a quoted `"where"` (an identifier) from the keyword `WHERE` by the lexer's spans.
  */
 const QUOTE_MARK = "\u0001";
 
@@ -570,12 +674,15 @@ const QUOTE_MARK = "\u0001";
  *
  * Quoted identifiers keep their contents, and each of their delimiters becomes
  * {@link QUOTE_MARK}, a doubled one inside them too: `"agency_id"` *is* the identifier
- * `agency_id` on Postgres, and blanking it would hide `FROM "orders"` from the table check.
+ * `agency_id` on Postgres, and blanking it would hide `FROM "orders"` from the table check. The
+ * strings at the indices in `names` are read the same way, as SQLite reads them (`FROM 'orders'`).
  */
-function codeView(sql: string, tokens: readonly SqlToken[]): string {
+function codeView(sql: string, tokens: readonly SqlToken[], names: ReadonlySet<number>): string {
   const out = sql.split("");
-  for (const token of tokens) {
-    if (token.kind === "string" || token.kind === "comment") {
+  for (const [index, token] of tokens.entries()) {
+    if (names.has(index)) {
+      for (let k = token.start; k < token.end; k++) if (sql[k] === "'") out[k] = QUOTE_MARK;
+    } else if (token.kind === "string" || token.kind === "comment") {
       // A string's prefix letter (`E'…'`, `N'…'`) stays code, as the check has always read it.
       const from = token.kind === "string" && /^[A-Za-z]/.test(token.text) ? token.start + 1 : token.start;
       for (let k = from; k < token.end; k++) if (out[k] !== "\n") out[k] = " ";
@@ -612,6 +719,15 @@ function inOrderOrGroupBy(text: string, start: number, end: number): boolean {
   return word === "by" && /(?:^|[^\w$\u0080-\uffff.\u0001])(?:order|group)\s+$/i.test(text.slice(0, start));
 }
 
+/**
+ * Whether a reading sees `tableName` as a name of its own, not part of a longer one (`orders$archive`):
+ * anywhere in code, or inside a quoted name, except as a word of `ORDER BY` or `GROUP BY`.
+ */
+function mentionsAsName(view: CodeViews[number], tableName: string): boolean {
+  const pattern = new RegExp(`(?<![\\w$\\u0080-\\uffff])${escapeRegex(tableName)}(?![\\w$\\u0080-\\uffff])`, "gi");
+  return [...view.text.matchAll(pattern)].some((m) => !inOrderOrGroupBy(view.text, m.index, m.index + m[0].length));
+}
+
 /** A tenant column counts only when every reading sees it in code. */
 function mentionsIdentifier(views: CodeViews, identifier: string): boolean {
   const pattern = new RegExp(`\\b${escapeRegex(identifier)}\\b`, "i");
@@ -634,35 +750,57 @@ type Token = {
    * and exactly under MySQL and SQL Server, whose aliases can be case-sensitive.
    */
   readonly name: string;
-  /** Lower-cased for keyword comparison; empty for a quoted identifier, which is never a keyword. */
+  /** Lower-cased for keyword comparison; empty for a quoted identifier, which is never a keyword or a placeholder. */
   readonly kw: string;
   /** Parenthesis nesting of the token; a `(` or `)` has the depth outside it. */
   readonly depth: number;
   /** Offset of the token in the statement (a code view keeps the statement's offsets). */
   readonly offset: number;
+  /** A quoted identifier: always a name, whatever its characters. */
+  readonly quoted?: true;
 };
 
 const TOKEN = /:[A-Za-z0-9_]+|::|\|\||<>|!=|<=|>=|[A-Za-z_\u0080-\uffff][\w$\u0080-\uffff]*|\d[\w.]*|\S/g;
 /** A {@link TOKEN} match that is a word or a number. */
 const WORD_OR_NUMBER = /^[\w\u0080-\uffff]/;
 
-/** Split a code view into tokens with their nesting depth. Strings and comments are already blanked. */
+/**
+ * Split a code view into tokens with their nesting depth. Strings and comments are already blanked.
+ * A quoted identifier is one token, its whole name as the lexer reads it (escapes undone), so a
+ * space, dot or bracket inside it is never read as code, and a QUOTE_MARK character written inside
+ * it changes nothing. So is a string the reading takes as a name, as SQLite does (`FROM 'orders'`,
+ * `orders 'o'`): `'join'` there is a name, never the keyword.
+ */
 function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
-  const split = view.reading.profile.tsqlLiterals ? lexerWordEnds(view) : undefined;
+  const split = lexerWordEnds(view);
   const foldsCase = view.reading.profile.id === "postgres" || view.reading.profile.id === "generic";
+  const quotedAt = new Map<number, { readonly end: number; readonly name: string }>();
+  for (const t of view.tokens) {
+    if (t.kind === "quoted_identifier") quotedAt.set(t.start, { end: t.end, name: t.value });
+    else if (t.kind === "string" && view.quoted[t.start] === 1 && t.text.startsWith("'") && t.unterminated !== true) {
+      quotedAt.set(t.start, { end: t.end, name: t.text.slice(1, -1).replaceAll("''", "'") });
+    }
+  }
   let depth = 0;
-  let quoted = false;
+  let skipUntil = 0;
   for (const m of view.text.matchAll(TOKEN)) {
+    if (m.index < skipUntil) continue;
     if (m[0] === QUOTE_MARK) {
-      quoted = !quoted;
+      const q = quotedAt.get(m.index);
+      if (q === undefined) continue;
+      const name = q.name;
+      // A name spelled like a mark (`"."`, `[,]`) keeps a prefix, so it never reads as that mark.
+      const text = /^[^\w\u0080-\uffff]{1,2}$/.test(name) ? QUOTE_MARK + name : name;
+      tokens.push({ text, lower: name.toLowerCase(), name, kw: "", depth, offset: m.index + 1, quoted: true });
+      skipUntil = q.end;
       continue;
     }
-    for (const [t, offset] of split && WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
+    for (const [t, offset] of WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
       if (t === ")") depth = Math.max(0, depth - 1);
       const lower = t.toLowerCase();
-      const name = quoted || !foldsCase ? t : t.replace(/[A-Z]+/g, (s) => s.toLowerCase());
-      tokens.push({ text: t, lower, name, kw: quoted ? "" : lower, depth, offset });
+      const name = foldsCase ? t.replace(/[A-Z]+/g, (s) => s.toLowerCase()) : t;
+      tokens.push({ text: t, lower, name, kw: lower, depth, offset });
       if (t === "(") depth++;
     }
   }
@@ -670,15 +808,40 @@ function tokenize(view: CodeViews[number]): Token[] {
 }
 
 /**
- * Under a SQL Server reading, a word or number ends where the shared lexer ends it (#623): SQL
- * Server ends a number after `0x` or `1E` and a name at whitespace such as U+00A0, so in `1=0xOR 1=1`
- * or `1=1<U+00A0>OR 1=1` the `OR` is a keyword. Returns a function that cuts a word or number of the
- * view at each lexer token that starts inside it, dropping the characters the lexer reads as
+ * Where a word or number of the view ends under its reading (#623, GHSA-rhwf-7742-8hwj), so a
+ * keyword written right after one is a word of its own, as the engine reads it:
+ *
+ * - SQL Server: wherever the shared lexer ends a token. That is after `0x` or `1E`, after a number
+ *   before a word, and at whitespace such as U+00A0.
+ * - PostgreSQL and CockroachDB: after a number, before a word written right after it (`1OR`,
+ *   `1.0OR`), as PostgreSQL 14 and earlier read it. A `$N` parameter written against a word
+ *   (`$1OR`) is refused instead ({@link parameterAgainstWord}).
+ * - MySQL and MariaDB: after a number with a decimal point or an exponent (`1.0OR`, `1e1OR`). A
+ *   name that starts with digits (`3d_models`, `1OR`) is one name there.
+ *
+ * Any other reading keeps the check's own word ends. Returns a function that cuts a word or number
+ * of the view at those ends; under SQL Server it also drops the characters the lexer reads as
  * whitespace. A quoted name is one lexer token, so it is never cut.
  */
 function lexerWordEnds(view: CodeViews[number]): (text: string, offset: number) => Array<readonly [string, number]> {
+  const { profile } = view.reading;
   const owner = new Int32Array(view.text.length).fill(-1);
-  view.tokens.forEach((token, index) => owner.fill(index, token.start, token.end));
+  if (profile.tsqlLiterals) {
+    view.tokens.forEach((token, index) => owner.fill(index, token.start, token.end));
+  } else {
+    // Every character is code to this reading; a new piece starts only at a number's end.
+    owner.fill(0);
+    let piece = 0;
+    view.tokens.forEach((token, index) => {
+      const next = view.tokens[index + 1];
+      const wordAfter = next !== undefined && next.start === token.end && next.kind === "word";
+      const numberEnds =
+        token.kind === "number" &&
+        wordAfter &&
+        (profile.id === "postgres" || (profile.id === "mysql" && /^(?!0x)[\d.]*[.eE]/i.test(token.text)));
+      if (numberEnds) owner.fill(++piece, next.start);
+    });
+  }
   return (text, offset) => {
     const pieces: Array<readonly [string, number]> = [];
     let start = -1;
@@ -715,12 +878,13 @@ const PREDICATE_WORDS = new Set(["in", "any", "and", "or", "not", "xor"]);
  * Whether the unquoted word at `i` is part of `ORDER BY` or `GROUP BY`. `ORDER` and `GROUP` are
  * reserved on every engine, so a table named after one is written quoted. Any other keyword may
  * name a table, unquoted, on some engine (`user` on MySQL, `lock` on Postgres), so its spelling
- * always counts as the table.
+ * always counts as the table. After a `.` (`billing.order by`), `order` is a table's name and
+ * `by` its alias.
  */
 function isOrderOrGroupBy(tokens: readonly Token[], i: number): boolean {
   const kw = tokens[i]!.kw;
-  if (kw === "order" || kw === "group") return tokens[i + 1]?.kw === "by";
-  return kw === "by" && (tokens[i - 1]?.kw === "order" || tokens[i - 1]?.kw === "group");
+  if (kw === "order" || kw === "group") return tokens[i + 1]?.kw === "by" && tokens[i - 1]?.text !== ".";
+  return kw === "by" && (tokens[i - 1]?.kw === "order" || tokens[i - 1]?.kw === "group") && tokens[i - 2]?.text !== ".";
 }
 
 /**
@@ -764,7 +928,7 @@ type Read = { readonly at: number; readonly scope: string; readonly names: Reado
 type Filter = {
   readonly scope: string;
   readonly qualifier: string | undefined;
-  /** The `ON` the predicate sits in, when it sits in one. */
+  /** The `ON` the predicate sits in, when it sits in one: unqualified, it names only that join's operands ({@link seenByOn}). */
   readonly on?: number;
 };
 
@@ -832,8 +996,18 @@ function scopeOpen(scope: string): number {
   return Number.parseInt(scope, 10);
 }
 
+/**
+ * A token's name for matching a table or CTE: lower-cased, and for a quoted name without its
+ * trailing whitespace, which SQL Server ignores (`[orders ]` reads `orders`). Matching more
+ * spellings finds more reads, so the check only gets stricter on engines that keep it.
+ */
+function tableNameOf(t: Token): string {
+  return t.quoted === true ? t.lower.trimEnd() : t.lower;
+}
+
+/** Whether `token` may be a name: a quoted name, whatever it holds, or a word that starts with a letter or `_`. */
 function isWord(token: Token | undefined): boolean {
-  return token !== undefined && /^[A-Za-z_\u0080-￿]/.test(token.text);
+  return token !== undefined && (token.quoted === true || /^[A-Za-z_\u0080-\uffff]/.test(token.text));
 }
 
 /**
@@ -858,21 +1032,111 @@ function endsSource(a: Analysis, k: number): boolean {
   }
 }
 
-/** The token that names the row source ending at `i` (`orders o`, `orders AS o`, `) t`): its alias, if one may follow. */
+/**
+ * The alias of the row source ending at `i`, in the only forms the check reads one: `orders o`,
+ * `orders AS o`, `) t`, where the alias is followed by what ends the source ({@link endsSource})
+ * or by its column list. Anything else (`orders TABLESAMPLE …`, `orders NOT INDEXED`) is no alias
+ * the check recognises, so it returns undefined and the caller fails closed.
+ */
 function aliasAt(a: Analysis, i: number): number | undefined {
-  if (a.tokens[i + 1]?.kw === "as") return isWord(a.tokens[i + 2]) ? i + 2 : undefined;
-  return endsSource(a, i + 1) || !isWord(a.tokens[i + 1]) ? undefined : i + 1;
+  const as = a.tokens[i + 1]?.kw === "as";
+  if (!as && endsSource(a, i + 1)) return undefined;
+  const alias = as ? i + 2 : i + 1;
+  if (!isWord(a.tokens[alias])) return undefined;
+  return endsSource(a, alias + 1) || a.tokens[alias + 1]?.text === "(" ? alias : undefined;
 }
 
 /**
  * The names the table reference at `i` goes by: its alias, or its own name when what follows ends
- * it with no alias. Anything else after it may be an alias the check doesn't recognise, so the
- * read gets no name and only an unqualified predicate filters it.
+ * it with no alias. Anything else after it is a form the check doesn't read, so the read gets no
+ * name and only an unqualified predicate filters it.
  */
 function readNames(a: Analysis, i: number): Set<string> {
-  const alias = aliasAt(a, i);
-  if (alias !== undefined) return new Set([a.tokens[alias]!.name]);
-  return endsSource(a, i + 1) ? new Set([a.tokens[i]!.name]) : new Set();
+  const end = sourceEnd(a, i);
+  if (hiddenByGroupAlias(a, end)) return new Set();
+  const alias = aliasAt(a, end);
+  if (alias !== undefined) return a.tokens[alias + 1]?.text === "(" ? new Set() : new Set([a.tokens[alias]!.name]);
+  return endsSource(a, end + 1) ? new Set([a.tokens[i]!.name]) : new Set();
+}
+
+/**
+ * Whether the row source ending at `end` sits inside parentheses, in a source position, that
+ * something other than the source's end follows: an alias (`("order" x) AS y`,
+ * `(orders x CROSS JOIN s) AS j`) hides the names inside, so a predicate on `x` names another
+ * read. Any other word there is a form the check doesn't read, so it fails closed the same way.
+ */
+function hiddenByGroupAlias(a: Analysis, end: number): boolean {
+  const { tokens } = a;
+  for (let open = enclosing(tokens, end, "("); open >= 0; open = enclosing(tokens, open, "(")) {
+    if (opensQuery(tokens, open) || !inSourcePosition(tokens, open)) return false;
+    const close = enclosing(tokens, open + 1, ")");
+    if (close < 0 || !endsSource(a, close + 1)) return true;
+  }
+  return false;
+}
+
+/**
+ * Where the table reference at `i` ends: past the `)` of any parentheses that hold it alone
+ * (`ONLY (orders) a`, SQLite's `(orders) a`), since its alias follows them.
+ */
+function sourceEnd(a: Analysis, i: number): number {
+  let start = qualifiedStart(a.tokens, i);
+  let end = i;
+  // Only parentheses in a source position (after `FROM`, `JOIN`, `ONLY`, `,` or another `(`), not a call's.
+  const opensSource = (open: number) => {
+    const before = a.tokens[open - 1];
+    return before !== undefined && ((before.kw === "from" && opensFromClause(a.tokens, open - 1)) || ["join", "only", "lateral", "straight_join"].includes(before.kw) || before.text === "," || before.text === "(");
+  };
+  while (a.tokens[start - 1]?.text === "(" && a.tokens[end + 1]?.text === ")" && opensSource(start - 1)) {
+    start--;
+    end++;
+  }
+  return end;
+}
+
+/**
+ * Whether the `(` at `open` sits where a row source starts: right after `FROM`, a join word,
+ * `LATERAL`, `APPLY`, a comma of a `FROM` list, or another `(` that does.
+ */
+function inSourcePosition(tokens: readonly Token[], open: number): boolean {
+  const before = tokens[open - 1];
+  if (before === undefined) return false;
+  if (before.kw === "from") return opensFromClause(tokens, open - 1);
+  if (["join", "straight_join", "lateral", "apply"].includes(before.kw)) return true;
+  if (before.text === "(") return !opensQuery(tokens, open - 1) && inSourcePosition(tokens, open - 1);
+  if (before.text !== ",") return false;
+  for (let k = open - 2; k >= 0; k--) {
+    const t = tokens[k]!;
+    if (t.depth < before.depth) return false;
+    if (t.depth > before.depth) continue;
+    if (t.kw === "from") return opensFromClause(tokens, k);
+    if (t.kw === "select" || t.kw === "where" || t.kw === "having" || (CLAUSE_END.has(t.kw) && !JOIN_WORDS.has(t.kw))) return false;
+  }
+  return false;
+}
+
+/**
+ * Whether a table read can start at `start`: right after a `SELECT`'s own `FROM`, a join word,
+ * `ONLY`, `LATERAL`, a comma of a `FROM` list, or a `(` in one of those places that opens no query.
+ * A whole-row reference in an expression (`json_agg(orders)`, `(orders).id`) starts none.
+ */
+function startsSource(tokens: readonly Token[], start: number): boolean {
+  const before = tokens[start - 1];
+  if (before === undefined) return false;
+  if (before.kw === "from") return opensFromClause(tokens, start - 1);
+  if (["join", "straight_join", "only", "lateral"].includes(before.kw)) return true;
+  if (before.text === "(") return !opensQuery(tokens, start - 1) && startsSource(tokens, start - 1);
+  return before.text === "," && inSourcePosition(tokens, start);
+}
+
+/**
+ * Whether the `FROM` at `k` opens its `SELECT`'s own `FROM` clause: not `IS [NOT] DISTINCT FROM`,
+ * and not a `FROM` inside a call's parentheses (`EXTRACT(YEAR FROM d)`, `SUBSTRING(s FROM 2)`).
+ */
+function opensFromClause(tokens: readonly Token[], k: number): boolean {
+  if (tokens[k]?.kw !== "from" || tokens[k - 1]?.kw === "distinct") return false;
+  const open = enclosing(tokens, k, "(");
+  return open < 0 || opensQuery(tokens, open);
 }
 
 /** Whether the alias of the row source ending at `i` has a column list (`x t (a, b)`), which renames its output. */
@@ -898,7 +1162,7 @@ function cteAt(tokens: readonly Token[], open: number): { readonly name: string;
   if (tokens[k]?.kw !== "as" || !isWord(tokens[k - 1])) return undefined;
   const before = tokens[k - 2];
   if (!(before?.kw === "with" || before?.kw === "recursive" || before?.text === ",")) return undefined;
-  return { name: tokens[k - 1]!.lower, at: k - 1 };
+  return { name: tableNameOf(tokens[k - 1]!), at: k - 1 };
 }
 
 /**
@@ -910,7 +1174,7 @@ function cteAt(tokens: readonly Token[], open: number): { readonly name: string;
 function readsOf(a: Analysis, name: string): Read[] {
   const reads: Read[] = [];
   a.tokens.forEach((t, i) => {
-    if (t.lower !== name || isOrderOrGroupBy(a.tokens, i) || a.tokens[i + 1]?.text === ".") return;
+    if (tableNameOf(t) !== name || isOrderOrGroupBy(a.tokens, i) || a.tokens[i + 1]?.text === ".") return;
     reads.push({ at: i, scope: a.scopes.of[i]!, names: readNames(a, i) });
   });
   return reads;
@@ -926,8 +1190,9 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
   const found: Occurrence[] = [];
   a.tokens.forEach((t, k) => {
     for (const target of targets) {
-      if (t.text !== target.placeholder) continue;
-      const predicate = predicateAt(a.tokens, k, target.column);
+      // A quoted name spelled like the placeholder is a name, which nothing binds.
+      if (t.text !== target.placeholder || t.quoted === true) continue;
+      const predicate = predicateAt(a.tokens, k, target.column, a.view.reading.profile.id === "postgres");
       if (!predicate) continue;
       const filters = filteredScopes(a, predicate.start, predicate.end, qualifierOf(a.tokens, predicate.column));
       if (filters.length > 0) found.push({ target, filters });
@@ -951,19 +1216,118 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
   const name = table.toLowerCase();
   return views.every((view) => {
     const a = analyze(view);
+    // Read the Postgres way, a column list after a read's alias, or after a parenthesized source it
+    // sits in, renames its columns, so the read can't be checked.
+    if (view.reading.profile.id === "postgres" && renamesColumns(a.tokens, name)) return false;
     const reads = readsOf(a, name);
-    if (reads.length === 0) return true;
+    // A reading that sees the table's name but no read of it (the name only inside a longer quoted
+    // name, or only as a qualifier) can't tell what filters it, so it fails closed.
+    if (reads.length === 0) return !mentionsAsName(view, name);
     const found = occurrences(a, targets);
-    return reads.every((read) =>
-      readFiltered(a, found, targets, read, name) ||
-      (joinProof !== undefined && inScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.allowed)));
+    const tableReads = reads.filter((r) => startsSource(a.tokens, qualifiedStart(a.tokens, r.at)));
+    return reads.every((read) => {
+      const sameSelect = tableReads.filter((r) => r.scope === read.scope);
+      const selfJoin = tableReads.includes(read) && sameSelect.length > 1;
+      const filtered = selfJoin ? selfJoinReadFiltered(a, found, targets, read, name, sameSelect) : readFiltered(a, found, targets, read, name);
+      // A join proof names reads too, so a self-join's reads must be told apart for it as well.
+      return filtered || (joinProof !== undefined && (!selfJoin || distinctAliases(a, sameSelect)) &&
+        inScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.allowed));
+    });
   });
+}
+
+/**
+ * Words Postgres never takes as a bare table alias: its reserved keywords, and those it reserves
+ * except as a function or type name. So in `orders WHERE (`, `orders ON (` or `orders USING (` the
+ * word after the table is no alias, and the `(` no column list.
+ */
+const NOT_A_TABLE_ALIAS: ReadonlySet<string> = new Set([
+  "all", "analyse", "analyze", "and", "any", "array", "as", "asc", "asymmetric", "authorization", "binary", "both",
+  "case", "cast", "check", "collate", "collation", "column", "concurrently", "constraint", "create", "cross",
+  "current_catalog", "current_date", "current_role", "current_schema", "current_time", "current_timestamp",
+  "current_user", "default", "deferrable", "desc", "distinct", "do", "else", "end", "except", "false", "fetch", "for",
+  "foreign", "freeze", "from", "full", "grant", "group", "having", "ilike", "in", "initially", "inner", "intersect",
+  "into", "is", "isnull", "join", "lateral", "leading", "left", "like", "limit", "localtime", "localtimestamp",
+  "natural", "not", "notnull", "null", "offset", "on", "only", "or", "order", "outer", "overlaps", "placing",
+  "primary", "references", "returning", "right", "select", "session_user", "similar", "some", "symmetric",
+  "system_user", "table", "tablesample", "then", "to", "trailing", "true", "union", "unique", "user", "using",
+  "variadic", "verbose", "when", "where", "window", "with",
+]);
+
+/**
+ * Whether a read of the table `name` has its columns renamed by a column list after an alias, at any
+ * depth: right after the table (`orders t (a, b)`, `orders AS t (a, b)`, `orders * t (a, b)`), or
+ * after a parenthesized `FROM` item the read sits in, a join or a derived table
+ * (`(orders o JOIN s ON true) AS j (a, b, agency_id)`). Postgres and CockroachDB read the list as
+ * new names for the first columns, so a predicate on `agency_id` filters whatever column the list
+ * names that, and the real one is renamed out of the way: the read can't be checked.
+ */
+function renamesColumns(tokens: readonly Token[], name: string): boolean {
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i]!.lower !== name) continue;
+    for (let open = enclosing(tokens, i, "("); open >= 0; open = enclosing(tokens, open, "(")) {
+      if (subqueryUse(tokens, open) !== "table") continue;
+      const close = enclosing(tokens, open + 1, ")");
+      if (close >= 0 && aliasWithColumnList(tokens, close + 1)) return true;
+    }
+    if (tokens[i + 1]?.text === ".") continue;
+    if (aliasWithColumnList(tokens, tokens[i + 1]?.text === "*" ? i + 2 : i + 1)) return true;
+  }
+  return false;
+}
+
+/** Whether `tokens[j]` starts an alias and a column list: `AS t (` or `t (`, where a bare `t` is no reserved word. */
+function aliasWithColumnList(tokens: readonly Token[], j: number): boolean {
+  const as = tokens[j]?.kw === "as";
+  const alias = tokens[as ? j + 1 : j];
+  if (alias === undefined || !isIdentifier(alias) || tokens[as ? j + 2 : j + 1]?.text !== "(") return false;
+  return as || alias.kw === "" || !NOT_A_TABLE_ALIAS.has(alias.kw);
+}
+
+/**
+ * A read of a table its `SELECT` reads more than once (a self-join): it counts as filtered only
+ * when every read of the table there is canonical (`table alias` or `table AS alias`, outside
+ * parentheses, with a plain unquoted alias no other read there shares, in any case) and a
+ * predicate qualified with its own alias filters it. Anything less can't tell the reads apart, so
+ * it fails closed.
+ */
+function selfJoinReadFiltered(
+  a: Analysis,
+  found: readonly Occurrence[],
+  targets: readonly PredicateTarget[],
+  read: Read,
+  table: string,
+  sameSelect: readonly Read[],
+): boolean {
+  if (!distinctAliases(a, sameSelect)) return false;
+  const mine = canonicalAlias(a, read)!;
+  return found.some((o) =>
+    o.filters.some((f) =>
+      f.scope === read.scope && f.qualifier === mine && targets.includes(o.target) &&
+      (!o.target.discriminator || hasDiscriminator(a, read, o.target))));
+}
+
+/** Whether every read in `reads` is canonical, with a plain alias no other of them shares, in any case. */
+function distinctAliases(a: Analysis, reads: readonly Read[]): boolean {
+  const aliases = reads.map((r) => canonicalAlias(a, r));
+  return aliases.every((alias) => alias !== undefined) && new Set(aliases.map((alias) => alias!.toLowerCase())).size === aliases.length;
+}
+
+/** The plain alias of a read written `table alias` or `table AS alias`, at its `SELECT`'s own level; else undefined. */
+function canonicalAlias(a: Analysis, read: Read): string | undefined {
+  const { tokens } = a;
+  const open = scopeOpen(read.scope);
+  const depth = open < 0 ? 0 : tokens[open]!.depth + 1;
+  if (tokens[read.at]!.depth !== depth || sourceEnd(a, read.at) !== read.at) return undefined;
+  const at = aliasAt(a, read.at);
+  if (at === undefined || tokens[at]!.quoted === true || tokens[at + 1]?.text === "(") return undefined;
+  return tokens[at]!.name;
 }
 
 function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readonly PredicateTarget[], read: Read, table: string): boolean {
   for (const o of found) {
     for (const f of o.filters) {
-      if (f.scope !== read.scope || !filtersRead(f, o.target, read, table)) continue;
+      if (f.scope !== read.scope || !filtersRead(a, f, o.target, read, table)) continue;
       if (o.target.discriminator && !hasDiscriminator(a, read, o.target)) continue;
       return true;
     }
@@ -979,9 +1343,10 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
  * table function's alias, counts for nothing. A predicate on another table's column counts only
  * through a join {@link inScope} can follow (#400).
  */
-function filtersRead(filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
+function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
   if (target.table.toLowerCase() !== table) return false;
-  return filter.qualifier === undefined || read.names.has(filter.qualifier);
+  if (filter.qualifier === undefined) return filter.on === undefined || seenByOn(a.tokens, filter.on, read.at);
+  return read.names.has(filter.qualifier);
 }
 
 /**
@@ -1008,7 +1373,7 @@ function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Re
       refs.every((ref) =>
         found.some((o) =>
           o.target === target &&
-          o.filters.some((f) => f.scope === ref.scope && (f.qualifier === undefined || ref.names.has(f.qualifier)))) ||
+          o.filters.some((f) => f.scope === ref.scope && (f.qualifier === undefined ? f.on === undefined || seenByOn(a.tokens, f.on, ref.at) : ref.names.has(f.qualifier)))) ||
         filteredFromOutside(a, found, ref, target, depth + 1));
   }
   memo.set(key, filtered);
@@ -1033,21 +1398,24 @@ function readSourceRefs(a: Analysis, open: number): Read[] | undefined {
   const { tokens, scopes } = a;
   const close = scopes.close.get(open);
   if (close === undefined || subqueryUse(tokens, open) !== "table") return undefined;
+  // A derived table only in a source position: a subquery after `ON` or in an expression is no row source.
+  if (!opensAfterAs(tokens, open) && !inSourcePosition(tokens, open)) return undefined;
   if (opensAfterAs(tokens, open)) {
     const cte = cteAt(tokens, open);
     if (cte === undefined) return undefined; // a column list renames the output, or it's no CTE this check reads
     const refs: Read[] = [];
     for (let j = 0; j < tokens.length; j++) {
-      if (j === cte.at || tokens[j]!.lower !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
+      if (j === cte.at || tableNameOf(tokens[j]!) !== cte.name || tokens[j + 1]?.text === "." || isOrderOrGroupBy(tokens, j)) continue;
       if (j > open && j < close) return undefined; // recursive
-      if (tokens[j + 1]?.text === "(" || hasColumnList(a, j)) return undefined;
+      if (tokens[j + 1]?.text === "(" || hasColumnList(a, sourceEnd(a, j))) return undefined;
       refs.push({ at: j, scope: scopes.of[j]!, names: readNames(a, j) });
     }
     return refs;
   }
   if (hasColumnList(a, close)) return undefined;
   const alias = aliasAt(a, close);
-  return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined ? [] : [tokens[alias]!.name]) }];
+  const hidden = hiddenByGroupAlias(a, alias ?? close);
+  return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined || hidden ? [] : [tokens[alias]!.name]) }];
 }
 
 /** Clauses that compute over a source's rows, or pick some of them, before an outside filter runs. */
@@ -1058,7 +1426,7 @@ const COMPUTES_OVER_ROWS = new Set(["group", "having", "window", "qualify", "lim
  * its output unrenamed, and computes nothing across rows: every select-list item is a plain column
  * (`col` or `q.col`, optionally aliased), `q.*` or `*`; exactly one yields that name, and it is the
  * column itself, the read's `q.*`, or `*` over a single source; and the body has no `GROUP BY`,
- * `HAVING`, window, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
+ * `HAVING`, window, `QUALIFY`, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
  * before the outside filter. An item with a string or comment in it, `DISTINCT ON` or a nested
  * `WITH` fails closed.
  */
@@ -1166,7 +1534,8 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     // The view must read it as a string, and it must end there.
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
-    if (filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier).some((f) => f.scope === read.scope)) return true;
+    const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier);
+    if (filters.some((f) => f.scope === read.scope && (qualifier !== undefined || f.on === undefined || seenByOn(tokens, f.on, read.at)))) return true;
   }
   return false;
 }
@@ -1294,16 +1663,6 @@ function cteNameAt(tokens: readonly Token[], open: number): string | undefined {
 }
 
 /**
- * Whether the `FROM` at `k` opens its `SELECT`'s own `FROM` clause: not `IS [NOT] DISTINCT FROM`,
- * and not a `FROM` inside a call's parentheses (`EXTRACT(YEAR FROM d)`, `TRIM(BOTH FROM s)`).
- */
-function opensFromClause(tokens: readonly Token[], k: number): boolean {
-  if (tokens[k]?.kw !== "from" || tokens[k - 1]?.kw === "distinct") return false;
-  const open = enclosing(tokens, k, "(");
-  return open < 0 || opensQuery(tokens, open);
-}
-
-/**
  * Whether the name at `i` is a table read in a `FROM` clause: written right after a `SELECT`'s own
  * `FROM`, after `JOIN` or MySQL's `STRAIGHT_JOIN`, after the `(` of a parenthesized join group in
  * one of those places, or after a comma of that `FROM` list (joins included), after any schema
@@ -1316,23 +1675,14 @@ function isTableReference(tokens: readonly Token[], i: number): boolean {
   return startsSource(tokens, qualifiedStart(tokens, i));
 }
 
-/** Whether a row source can start at `start`: see {@link isTableReference}. */
-function startsSource(tokens: readonly Token[], start: number): boolean {
-  const before = tokens[start - 1];
-  if (before?.kw === "join" || before?.kw === "straight_join") return true;
-  if (before?.kw === "from") return opensFromClause(tokens, start - 1);
-  if (before?.text === "(") return !opensQuery(tokens, start - 1) && startsSource(tokens, start - 1);
-  if (before?.text !== ",") return false;
-  const depth = before.depth;
-  for (let k = start - 2; k >= 0; k--) {
-    const t = tokens[k]!;
-    if (t.depth < depth) return false;
-    if (t.depth > depth) continue;
-    if (t.kw === "from") return opensFromClause(tokens, k);
-    // A join's words and its `ON` are part of the `FROM` list; any other clause ends it.
-    if (t.kw === "select" || t.kw === "where" || t.kw === "having" || (CLAUSE_END.has(t.kw) && !JOIN_WORDS.has(t.kw))) return false;
-  }
-  return false;
+/**
+ * Whether the column at `i` is a quoted name with upper-case letters, read the Postgres way
+ * (`"AGENCY_ID"`): Postgres compares a quoted name exactly, so it is another column than the
+ * policy's, which another source may hold, and ties nothing to it.
+ */
+function quotedInAnotherCase(a: Analysis, i: number): boolean {
+  const t = a.tokens[i]!;
+  return a.view.reading.profile.id === "postgres" && t.quoted === true && t.name !== t.lower;
 }
 
 /**
@@ -1347,6 +1697,7 @@ function equalities(a: Analysis): Proof["equalities"] {
     if (t.text !== "=" || !tokens[i - 1] || !isIdentifier(tokens[i - 1]!) || !tokens[i + 1] || !isIdentifier(tokens[i + 1]!)) return;
     let end = i + 1;
     while (tokens[end + 1]?.text === "." && tokens[end + 2] !== undefined && isIdentifier(tokens[end + 2]!)) end += 2;
+    if (quotedInAnotherCase(a, i - 1) || quotedInAnotherCase(a, end)) return;
     const left = { q: qualifierOf(tokens, i - 1), column: tokens[i - 1]!.lower };
     const right = { q: qualifierOf(tokens, end), column: tokens[end]!.lower };
     for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined, true)) found.push({ left, right, scope: f.scope, on: f.on });
@@ -1433,9 +1784,10 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
     seeds.set(root, new Set([...(seeds.get(root) ?? []), ...placeholders]));
   };
   tokens.forEach((t, k) => {
-    if (!p.graph.placeholders.has(t.text)) return;
+    // A placeholder counts only outside a quoted name: `":tenant_agency_ids"` is a column.
+    if (t.quoted === true || !p.graph.placeholders.has(t.text)) return;
     const predicate = predicateAt(tokens, k);
-    if (!predicate) return;
+    if (!predicate || quotedInAnotherCase(a, predicate.column)) return;
     const ref = { q: qualifierOf(tokens, predicate.column), column: tokens[predicate.column]!.lower };
     if (!filteredScopes(a, predicate.start, predicate.end, ref.q).some((f) => seedsIn(a, f, scope))) return;
     const node = resolve(p, scope, ref);
@@ -1544,7 +1896,7 @@ function selectedColumn(a: Analysis, open: number): ColumnRef | undefined {
 
 /** An identifier token: a word that isn't one of the predicate forms' keywords. */
 function isIdentifier(token: Token): boolean {
-  return /^[A-Za-z_\u0080-\uffff]/.test(token.text) && !PREDICATE_WORDS.has(token.kw);
+  return token.quoted === true || (/^[A-Za-z_\u0080-\uffff]/.test(token.text) && !PREDICATE_WORDS.has(token.kw));
 }
 
 /**
@@ -1566,14 +1918,17 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
  * The span `[start, end]` and column index of a tenant predicate around the placeholder at `k`:
  * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a possibly
  * qualified name) is `column`, or any column when none is given. Which read the column belongs to
- * is its qualifier's to say.
+ * is its qualifier's to say. With `exactQuoted` (read the Postgres way, where a quoted name is
+ * compared exactly), a quoted `col` counts only when spelled as the policy spells the column:
+ * `"AGENCY_ID"` is another column there, which another source in the query may hold.
  */
-function predicateAt(tokens: readonly Token[], k: number, column?: string): { start: number; end: number; column: number } | undefined {
+function predicateAt(tokens: readonly Token[], k: number, column?: string, exactQuoted = false): { start: number; end: number; column: number } | undefined {
   const at = (i: number) => tokens[i];
   const name = column?.toLowerCase();
   const matches = (i: number) => {
     const t = at(i);
-    return t !== undefined && isIdentifier(t) && (name === undefined || t.lower === name);
+    if (t === undefined || !isIdentifier(t) || (name !== undefined && t.lower !== name)) return false;
+    return !(exactQuoted && column !== undefined && t.quoted === true && t.name !== column);
   };
   // col = P
   if (at(k - 1)?.text === "=" && matches(k - 2)) return { start: qualifiedStart(tokens, k - 2), end: k, column: k - 2 };
@@ -1595,7 +1950,7 @@ function predicateAt(tokens: readonly Token[], k: number, column?: string): { st
   return undefined;
 }
 
-/** How a parenthesized query block is used by the query around it. */
+/** How a parenthesized query (`(SELECT …)`) is used by the query around it. */
 type SubqueryUse = "table" | "in" | "other";
 
 /**
@@ -1636,20 +1991,85 @@ function subqueryUse(tokens: readonly Token[], open: number): SubqueryUse {
   return "other";
 }
 
-/** SQL Server join hints, written between the join kind and `JOIN` (`LEFT HASH JOIN`). */
-const JOIN_HINTS = new Set(["loop", "hash", "merge", "remote"]);
+/** Words that make a join outer, wherever they stand in it: `LEFT HASH JOIN`, `LEFT STRAIGHT JOIN`, `FULL OUTER JOIN`. */
+const OUTER_JOIN_WORDS = new Set(["left", "right", "full", "outer"]);
+/** Words a join's own words start after, at its level: the source before it begins or ends at one of these. */
+const BEFORE_A_JOIN = new Set(["from", "join", "on", "using", "apply"]);
 
-/** Whether the `ON` at `on` belongs to an outer join, whose `ON` doesn't filter the preserved side. */
+/**
+ * Whether the `ON` at `on` belongs to an outer join, whose `ON` doesn't filter the preserved side.
+ * The join is outer when `LEFT`, `RIGHT`, `FULL` or `OUTER` stands anywhere among its words, between
+ * the source before it and `JOIN`, as a keyword (not `LEFT(…)` or a qualified name), so a hint
+ * between them (SQL Server's `HASH`, CockroachDB's `STRAIGHT`, `LOOKUP` or `INVERTED`) changes nothing.
+ * An `ON` with another `ON` or `USING` between it and the nearest `JOIN` closes an earlier join
+ * (`a LEFT JOIN b JOIN c ON … ON …`), which may be outer, so it counts as outer.
+ */
 function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
   const depth = tokens[on]!.depth;
   for (let i = on - 1; i >= 0; i--) {
     const t = tokens[i]!;
     if (t.depth < depth) return false;
-    if (t.depth > depth || t.kw !== "join") continue;
-    let kind = i - 1;
-    if (JOIN_HINTS.has(tokens[kind]?.kw ?? "")) kind--;
-    if (tokens[kind]?.kw === "outer") kind--;
-    return ["left", "right", "full"].includes(tokens[kind]?.kw ?? "");
+    if (t.depth > depth) continue;
+    if (t.kw === "on" || t.kw === "using") return true;
+    if (t.kw !== "join") continue;
+    for (let k = i - 1; k >= 0; k--) {
+      const w = tokens[k]!;
+      if (w.depth < depth) break;
+      if (w.depth > depth) continue;
+      if (BEFORE_A_JOIN.has(w.kw) || w.text === ",") break;
+      const qualified = tokens[k - 1]?.text === "." || tokens[k + 1]?.text === ".";
+      if (OUTER_JOIN_WORDS.has(w.kw) && !isFunctionCall(tokens, k) && !qualified) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** Join words that may take an `ON`: MySQL's `STRAIGHT_JOIN` may, so it counts as one. */
+const TAKES_ON = new Set(["join", "straight_join"]);
+
+/**
+ * Whether the read at `at` is among the operands of the join the `ON` at `on` closes: the only reads
+ * an unqualified column there can name. They run from the join's left operand up to the `ON`. Going
+ * left from the join's own `JOIN`, the left operand stops at `FROM`, at the `(` around the join, at
+ * a `FROM`-list comma (which binds looser than a join, though not on SQLite, where this only
+ * narrows the check), or at a `JOIN` whose `ON` or `USING` hasn't come yet (`a LEFT JOIN b JOIN c
+ * ON … ON …`). `CROSS JOIN`, `NATURAL JOIN` and `APPLY` take no `ON`, so the operand runs past them.
+ */
+function seenByOn(tokens: readonly Token[], on: number, at: number): boolean {
+  if (at >= on) return false;
+  const depth = tokens[on]!.depth;
+  let join = -1;
+  for (let i = on - 1; i >= 0 && join < 0; i--) {
+    const t = tokens[i]!;
+    if (t.depth < depth) return false;
+    if (t.depth > depth) continue;
+    if (t.kw === "from" || t.text === ",") return false;
+    if (TAKES_ON.has(t.kw)) join = i;
+  }
+  if (join < 0) return false;
+  let pending = 0; // ON or USING seen going left, each closing a JOIN further left
+  for (let i = join - 1; i >= 0; i--) {
+    const t = tokens[i]!;
+    if (t.depth < depth) return at > i;
+    if (t.depth > depth) continue;
+    if (t.kw === "from" || t.text === ",") return at > i;
+    if (t.kw === "on" || t.kw === "using") pending++;
+    else if (TAKES_ON.has(t.kw) && !takesNoOn(tokens, i)) {
+      if (pending === 0) return at > i;
+      pending--;
+    }
+  }
+  return true;
+}
+
+/** Whether the `JOIN` at `join` is a `CROSS JOIN` or a `NATURAL … JOIN`, which take no `ON`. */
+function takesNoOn(tokens: readonly Token[], join: number): boolean {
+  const depth = tokens[join]!.depth;
+  for (let k = join - 1; k >= 0; k--) {
+    const w = tokens[k]!;
+    if (w.depth !== depth || BEFORE_A_JOIN.has(w.kw) || w.text === ",") return false;
+    if ((w.kw === "cross" || w.kw === "natural") && tokens[k - 1]?.text !== "." && tokens[k + 1]?.text !== ".") return true;
   }
   return false;
 }
@@ -1712,7 +2132,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     if (clause >= 0) {
       // An outer join keeps rows its ON doesn't match, and in a SELECT with one, an inner join's ON
       // filters only the rows that join builds; there only WHERE and HAVING filter every row (#400).
-      if (!outerOn && tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || hasOuterJoin(a, scopes.of[clause]!))) return filters;
+      if (!outerOn && tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || mayKeepUnmatchedRows(a, scopes.of[clause]!))) return filters;
       filters.push(tokens[clause]!.kw === "on" ? { scope: scopes.of[clause]!, qualifier, on: clause } : { scope: scopes.of[clause]!, qualifier });
       return filters;
     }
@@ -1727,23 +2147,6 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     hi = close;
     depth = tokens[open]!.depth;
   }
-}
-
-/**
- * Whether a `SELECT` has an outer join (`LEFT`, `RIGHT` or `FULL`, nested or in parentheses
- * included) or an `OUTER APPLY`. Its rows then include ones that an inner join's `ON` never saw.
- */
-function hasOuterJoin(a: Analysis, scope: string): boolean {
-  const { tokens, scopes } = a;
-  return tokens.some((t, i) => {
-    if (scopes.of[i] !== scope) return false;
-    if (t.kw === "apply") return tokens[i - 1]?.kw === "outer";
-    if (t.kw !== "join") return false;
-    let kind = i - 1;
-    if (JOIN_HINTS.has(tokens[kind]?.kw ?? "")) kind--;
-    if (tokens[kind]?.kw === "outer") kind--;
-    return ["left", "right", "full"].includes(tokens[kind]?.kw ?? "");
-  });
 }
 
 /** Index of the `(` or `)` that encloses the token at `i`, or -1 at the top level. */

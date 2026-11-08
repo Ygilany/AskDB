@@ -424,6 +424,29 @@ describe("generateSelectSql — tenant guardrail checks the returned SQL", () =>
       }),
     ).rejects.toThrow(TenantGuardrailError);
   });
+
+  it("sqlserver: accepts a non-ASCII column the schema spells exactly, and refuses another spelling of it", async () => {
+    // The tenant policy names no such column; the schema does, and the guardrail checks against both.
+    const loaded = loadSchema(multiTenantDir);
+    const schema = {
+      ...loaded,
+      tables: loaded.tables.map((t) =>
+        t.name === "orders"
+          ? { ...t, columns: [...t.columns, { id: "table:public.orders#Größe", name: "Größe", type: "text", nullable: true, primaryKey: false }] }
+          : t,
+      ),
+    };
+    const reply = (column: string) => vi.fn(async () => ({
+      text: `\`\`\`sql\nSELECT [${column}] FROM orders WHERE agency_id = :tenant_agency_ids\n\`\`\``,
+    })) as never;
+    const deps = { tenantPolicy: loaded.tenantPolicy, tenantScope: agencyScope };
+    const out = await generateSelectSql(SQLSERVER_DIALECT, "sizes", schema, fakeModel, { generateText: reply("Größe"), ...deps });
+    expect(out.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+    // Fullwidth `Größe`, which SQL Server's collation reads as the same column.
+    await expect(
+      generateSelectSql(SQLSERVER_DIALECT, "sizes", schema, fakeModel, { generateText: reply("Ｇｒößｅ"), ...deps }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
 });
 
 describe("generateSelectSql — a model call that fails before giving a reason", () => {

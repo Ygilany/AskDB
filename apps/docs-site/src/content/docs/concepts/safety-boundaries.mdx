@@ -4,7 +4,6 @@ description: "Why AskDB's SQL checks are defense in depth and not a security bou
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import defenseInDepthUrl from "../../../assets/diagrams/askdb-defense-in-depth.svg?url";
 
 <p class="doc-eyebrow">SQL checks</p>
 
@@ -52,7 +51,24 @@ AskDB's checks and your execution boundary are separate layers. AskDB's checks c
 
 A typical production stack looks like:
 
-<img src={defenseInDepthUrl} alt="Vertical flow: question → ask() (with schema artifact + model) → checked SQL → your app (logs it, optionally shows it) → read-only DB role (pool with statement_timeout) → paginated result" class="doc-diagram" />
+<figure>
+
+```mermaid
+flowchart TB
+  %% A typical production stack: AskDB's checks, then the layers in the host's runtime that hold
+  %% when a query gets past them. Source of truth: this page and Run safely in production.
+  q["question"]
+  ask["ask(), in @askdb/core<br/>its SQL checks catch<br/>common model mistakes"]
+  app["your app<br/>logs the SQL, can show it"]
+  db["read-only database role<br/>with a statement timeout:<br/>the boundary"]
+  rows["paginated result"]
+  q --> ask
+  ask -- "checked SQL" --> app
+  app --> db --> rows
+```
+
+<figcaption>AskDB's checks catch common model mistakes. The read-only role, the statement timeout and pagination in your runtime hold when a query gets past them.</figcaption>
+</figure>
 
 Each layer does one job, and no single layer is the only protection.
 

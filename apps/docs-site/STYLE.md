@@ -112,7 +112,7 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 - Use the same words in node labels as on the page: command names, package names and terms from "Terminology". Break a long label with `<br/>` where it reads best, rather than leaving pele to wrap it.
 - Put notes for maintainers, such as the source of truth for what a diagram shows, on `%%` comment lines inside the fence. They don't reach the page.
 - A diagram pele can't render fails the build. The error names the page and line, and pele's error code: `syntax`, `semantic`, `unsupported-diagram` or `limit`.
-- The older diagrams in `src/assets/diagrams/*.svg` are hand-drawn. Redraw one in Mermaid when its page changes.
+- The home page's hero art (`src/assets/diagrams/askdb-hero-visual*.svg`) is hand-drawn, with a light and a dark file. Every other diagram is Mermaid.
 
 ## Code samples
 

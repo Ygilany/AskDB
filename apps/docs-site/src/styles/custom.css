@@ -152,25 +152,6 @@
   line-height: 1.6;
 }
 
-.askdb-diagram {
-  border: 1px solid var(--sl-color-gray-5);
-  border-radius: 0.5rem;
-  display: block;
-  height: auto;
-  max-width: 100%;
-}
-
-/* doc-diagram: full-width content-column diagram; SVGs handle their own dark-mode colors. */
-.doc-diagram {
-  border: 1px solid var(--sl-color-gray-5, #e2e8f0);
-  border-radius: 0.5rem;
-  display: block;
-  height: auto;
-  margin: 1.25rem 0;
-  max-width: 100%;
-  width: 100%;
-}
-
 .doc-caption {
   color: var(--sl-color-gray-3);
   font-size: 0.85rem;
@@ -211,7 +192,6 @@ figure > svg.pele {
   margin-inline: auto;
 }
 
-figure:has(.askdb-diagram),
 figure:has(> svg.pele) {
   margin: 1.25rem 0;
 }
@@ -220,7 +200,6 @@ figure:has(> svg.pele) figcaption {
   text-align: center;
 }
 
-figure:has(.askdb-diagram) figcaption,
 figure:has(> svg.pele) figcaption {
   color: var(--sl-color-gray-2);
   font-size: 0.9rem;

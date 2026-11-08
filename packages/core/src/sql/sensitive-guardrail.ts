@@ -8,7 +8,7 @@ import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { DialectSpec } from "./dialect-spec.js";
 import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, hasUnterminatedToken, type SqlToken } from "./lexer.js";
-import { isKnownEngine, readSql, sensitiveReadings } from "./readings.js";
+import { isKnownEngine, mayBeSqlite, readSql, sensitiveReadings, stringsSqliteReadsAsNames, unmatchedNonAsciiName } from "./readings.js";
 
 export type SensitiveGuardrailMode = "warn" | "strict";
 
@@ -120,6 +120,8 @@ type SchemaIndex = {
   tables: TableEntry[];
   byName: Map<string, TableEntry[]>;
   hasSensitive: boolean;
+  /** Every table, namespace and column name, exactly as the schema spells it. */
+  names: ReadonlySet<string>;
 };
 
 /** Loaded schemas are long-lived and re-used across calls; index once per object. */
@@ -167,9 +169,23 @@ function indexSchema(schema: AnyNormalizedSchema): SchemaIndex {
     else byName.set(entry.lower, [entry]);
   });
 
-  const index: SchemaIndex = { tables, byName, hasSensitive };
+  const names = new Set<string>();
+  for (const t of tables) {
+    names.add(t.name);
+    if (t.schema !== undefined) names.add(t.schema);
+    for (const c of t.columns) names.add(c.name);
+  }
+  const index: SchemaIndex = { tables, byName, hasSensitive, names };
   indexCache.set(schema, index);
   return index;
+}
+
+/**
+ * Every table, namespace and column name in `schema`, exactly as it spells them. Internal to
+ * `@askdb/core`: the tenant check counts a name outside printable ASCII only when it is one of them.
+ */
+export function schemaNames(schema: AnyNormalizedSchema): ReadonlySet<string> {
+  return indexSchema(schema).names;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,11 +197,17 @@ type Tok = { kind: TokKind; value: string; lower: string; quoted: boolean };
 
 /**
  * Map lexer tokens onto the scanner's simpler vocabulary. Comments are dropped (MySQL
- * `/*! … *\/` bodies are already lexed as code).
+ * `/*! … *\/` bodies are already lexed as code). A `'…'` at an index in `names` is a quoted name,
+ * as SQLite reads `FROM 'users'`.
  */
-function toToks(tokens: readonly SqlToken[]): Tok[] {
+function toToks(tokens: readonly SqlToken[], names: ReadonlySet<number>): Tok[] {
   const out: Tok[] = [];
-  for (const t of tokens) {
+  for (const [index, t] of tokens.entries()) {
+    if (names.has(index)) {
+      const inner = t.text.slice(1, t.unterminated ? undefined : -1).replaceAll("''", "'");
+      out.push({ kind: "word", value: inner, lower: inner.toLowerCase(), quoted: true });
+      continue;
+    }
     switch (t.kind) {
       case "comment":
         break;
@@ -365,17 +387,21 @@ function scanSql(
   const read = readSql(sql);
   const readings = sensitiveReadings(dialect);
   const modifiers = dialect && isKnownEngine(dialect) ? selectModifiersFor(dialect) : SELECT_MODIFIERS.any;
-  const primary = scanTokens(read.tokens(readings.primary), index, modifiers);
+  const primary = scanTokens(read.tokens(readings.primary), index, modifiers, mayBeSqlite(readings.primary));
   for (const p of readings.union) {
     const tokens = read.tokens(p);
     if (hasUnterminatedToken(tokens)) continue;
-    for (const [key, ref] of scanTokens(tokens, index, modifiers).found) {
+    for (const [key, ref] of scanTokens(tokens, index, modifiers, mayBeSqlite(p)).found) {
       const existing = primary.found.get(key);
       if (!existing) primary.found.set(key, ref);
       else if (ref.matchKind === "qualified") existing.matchKind = "qualified";
     }
   }
-  return finalize(withPostgresOnlyIssues(primary, sql, dialect));
+  const outcome = withPostgresOnlyIssues(primary, sql, dialect);
+  // SQL Server's collation may read a name outside printable ASCII as a sensitive column's, which
+  // the scan above matches by spelling: unless the schema spells it exactly, fail closed.
+  if (unmatchedNonAsciiName(read, dialect, index.names) !== undefined) outcome.issues.add("UNICODE_ESCAPED_IDENTIFIER");
+  return finalize(outcome);
 }
 
 /**
@@ -416,8 +442,10 @@ function scanTokens(
   lexed: readonly SqlToken[],
   index: SchemaIndex,
   modifiers: SelectModifiers,
+  sqlite: boolean,
 ): ScanOutcome {
-  const tokens = toToks(lexed);
+  // A reading that may be SQLite's reads a '…' in a table's place as the table's name.
+  const tokens = toToks(lexed, sqlite ? stringsSqliteReadsAsNames(lexed, false) : new Set<number>());
   const isWord = (t: Tok | undefined): boolean => t?.kind === "word";
   const isPunct = (t: Tok | undefined, v: string): boolean => t?.kind === "punct" && t.value === v;
   const isKeywordTok = (t: Tok | undefined, v: string): boolean =>
@@ -992,7 +1020,7 @@ const SCOPE_ISSUE_TEXT: Record<SensitiveScopeIssue, string> = {
   UNTERMINATED_TOKEN:
     "a string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned",
   UNICODE_ESCAPED_IDENTIFIER:
-    "a Unicode-escaped name (U&\"…\") can't be matched against sensitive columns, since Postgres decodes it",
+    "a name can't be matched against sensitive columns as written: a Unicode-escaped name (U&\"…\"), which Postgres decodes, or a name outside printable ASCII that the schema doesn't spell, which SQL Server's collation may read as another",
   STRING_CONTINUATION:
     "an E'…' string continues on a later line, which Postgres reads with backslash escapes, so where the string ends is unclear",
   ESCAPED_BYTE_STRING:
