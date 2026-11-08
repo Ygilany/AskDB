@@ -2072,4 +2072,55 @@ describe("validateTenantGuardrails — a join counts only on the columns the pol
   ])("now accepts a scoped table's tenant column %s", (_label, sql) => {
     expect(findings(sql)).toEqual([]);
   });
+
+  // An unqualified column in an ON names only that join's operands, so it ties nothing to a read the
+  // ON can't see: one before a FROM-list comma, one joined after it, or one outside its parentheses.
+  it.each([
+    ["a read before a FROM-list comma", "SELECT o.* FROM orders o, (SELECT 5 AS agency_id) d JOIN lookup_states ls ON agency_id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["a read joined after the ON", "SELECT o.* FROM (SELECT 5 AS agency_id) d JOIN lookup_states ls ON agency_id = :tenant_agency_ids CROSS JOIN orders o", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["the root read before a FROM-list comma", "SELECT a.* FROM agencies a, (SELECT 5 AS id) d JOIN lookup_states ls ON id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.agencies", "agencies"],
+    ["a hop whose column only a read outside the ON has", "SELECT a.* FROM appointments a, clients c JOIN orders o ON client_id = c.id WHERE c.id IN (:tenant_client_ids)", "MISSING_TENANT_PREDICATE:table:public.appointments", "clients"],
+    ["a hop credited to a read joined after the ON", "SELECT ap.* FROM orders o JOIN clients c ON client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id CROSS JOIN appointments ap WHERE o.agency_id = :tenant_agency_ids AND s.agency_id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.appointments", "agencies"],
+  ])("rejects an unqualified ON column tied to %s", (_label, sql, finding, root) => {
+    expect(findings(sql, root)).toContain(finding);
+  });
+
+  // In a SELECT with an outer join, an ON equality holds only on the rows that join matched, so it
+  // seeds, links and hops nothing: only WHERE and HAVING do.
+  it.each([
+    ["two preserved reads linked through the nullable side", "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN campaigns m ON m.owning_agency = g.id AND m.owning_agency = o.agency_id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["the same through a RIGHT JOIN", "SELECT o.* FROM campaigns m RIGHT JOIN (orders o CROSS JOIN agencies g) ON m.owning_agency = g.id AND m.owning_agency = o.agency_id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["a root read linked through the nullable side", "SELECT x.* FROM agencies x CROSS JOIN agencies g LEFT JOIN campaigns m ON m.owning_agency = g.id AND m.owning_agency = x.id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.agencies", "agencies"],
+    ["a join path linked through the nullable side", "SELECT a.* FROM appointments a CROSS JOIN sub_agencies s LEFT JOIN clients c ON a.client_id = c.id AND c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "MISSING_TENANT_PREDICATE:table:public.appointments", "sub_agencies"],
+    ["a hop in another join's outer ON", "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN lookup_states ls ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["a join-path hop in another join's outer ON", "SELECT a.* FROM appointments a CROSS JOIN clients c LEFT JOIN lookup_states ls ON a.client_id = c.id WHERE c.sub_agency_id IN (:tenant_sub_agency_ids)", "MISSING_TENANT_PREDICATE:table:public.appointments", "sub_agencies"],
+  ])("rejects %s", (_label, sql, finding, root) => {
+    expect(findings(sql, root)).toContain(finding);
+  });
+
+  // Postgres and CockroachDB compare a quoted name exactly, so `"AGENCY_ID"` and `"ID"` are other columns.
+  it.each([["postgres", POSTGRES_DIALECT], ["cockroachdb", COCKROACHDB_DIALECT]] as const)("rejects an IN (SELECT …) link on a quoted column in another case under %s", (_label, dialect) => {
+    for (const sql of [
+      'SELECT o.* FROM orders o, (SELECT 5 AS "AGENCY_ID") d WHERE "AGENCY_ID" IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)',
+      'SELECT o.* FROM orders o, (SELECT 7 AS "ID") d WHERE o.agency_id IN (SELECT "ID" FROM agencies WHERE id = :tenant_agency_ids)',
+    ]) {
+      expect(validateTenantGuardrails(sql, warnPolicy, scoped("agencies"), { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`), sql)
+        .toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+    }
+  });
+
+  // SQL Server drops a quoted name's trailing spaces, so `[clients ]` is a CTE that shadows `clients`.
+  it("rejects a hop through a CTE named like the hop's table with a trailing space", () => {
+    for (const sql of [
+      "WITH [clients ] (id, sub_agency_id) AS (SELECT 1, '5') SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)",
+      "WITH [clients ] AS (SELECT 1 AS id, '5' AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)",
+    ]) {
+      for (const dialect of [SQLSERVER_DIALECT, undefined]) {
+        expect(validateTenantGuardrails(sql, warnPolicy, scoped("sub_agencies"), { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`), sql)
+          .toContain("MISSING_TENANT_PREDICATE:table:public.appointments");
+      }
+    }
+    const control = "WITH [clients] AS (SELECT 1 AS id, '5' AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)";
+    expect(validateTenantGuardrails(control, warnPolicy, scoped("sub_agencies"), { dialect: SQLSERVER_DIALECT }).warnings.map((w) => w.rule)).toContain("MISSING_TENANT_PREDICATE");
+  });
 });
