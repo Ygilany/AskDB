@@ -89,7 +89,7 @@ describe("retrieved chunks reach the prompt (#894)", () => {
     const concept = chunks.filter((c) => c.id === "chunk:orders-users:concept:revenue");
     expect(concept).toHaveLength(1);
 
-    expect(promptFor(FIXTURE_DIR, concept)).toContain("-- Concept: Revenue; Id: concept:revenue;");
+    expect(promptFor(FIXTURE_DIR, concept)).toContain("-- Revenue; synonyms: sales, gross sales, top line; links: public.orders.total_amount;");
   });
 
   it("keeps a retrieved tenant-policy section's heading", () => {

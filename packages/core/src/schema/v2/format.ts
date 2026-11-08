@@ -25,7 +25,8 @@ export function formatSchemaV2ForNlToSql(
   let listedSensitiveColumnCount = 0;
   let untrackedTableCount = 0;
   const lines: string[] = [];
-  const foreignKeys = foreignKeyLinesByTable(schema, { omit, unqualifiedNamespace: options.unqualifiedNamespace, quoteIdentifier });
+  const naming: PromptNaming = { unqualifiedNamespace: options.unqualifiedNamespace, quoteIdentifier };
+  const foreignKeys = foreignKeyLinesByTable(schema, { omit, ...naming });
 
   for (const t of schema.tables) {
     if (t.tracked === false) {
@@ -83,7 +84,7 @@ export function formatSchemaV2ForNlToSql(
     lines.push("");
   }
 
-  lines.push(...conceptLines(schema, gate, { unqualifiedNamespace: options.unqualifiedNamespace, quoteIdentifier }));
+  lines.push(...conceptLines(schema, gate, naming));
 
   const ddl = lines.join("\n").trimEnd();
   return {
@@ -176,7 +177,7 @@ export function promptTableName(
 }
 
 /** How a prompt names tables and columns: the options both NL→SQL prompt builders take. */
-type PromptNaming = {
+export type PromptNaming = {
   unqualifiedNamespace: string | undefined;
   quoteIdentifier: (name: string) => string;
 };
@@ -224,41 +225,68 @@ export function foreignKeyLinesByTable(
   return byTable;
 }
 
+/** A concept as both NL→SQL prompts list it: the line's text, what the gate checks, and whether it links anything sensitive. */
+export type RenderedConcept = { body: string; text: string; linksSensitive: boolean };
+
 /**
- * The schema's concepts as the full-schema prompt lists them after the tables (#898): a
- * `-- concepts --` block with one line per concept, its label, synonyms, links (named as the
- * prompt names tables and columns) and description. A link to an untracked table is dropped,
- * and so is a concept whose links are all untracked. The gate checks each line as rendered,
- * without its fixed labels; a concept that links a sensitive table or column is flagged, so
- * omission withholds it too. `[]` when no concept is left.
+ * Renders a concept as both NL→SQL prompts list it (#898): its label, synonyms, links (named as
+ * the prompt names tables and columns) and description, as one line. A link to an untracked
+ * table, or to a column of one, is dropped, and a concept whose links were all untracked
+ * renders as `undefined`; a link to a table or column the schema doesn't have is dropped too.
+ * `text` is the line without its fixed labels, for the gate (see {@link columnAnnotation});
+ * `linksSensitive` flags a concept that links a sensitive table or column.
  */
-export function conceptLines(schema: NormalizedSchemaV2, gate: PromptTextGate, naming: PromptNaming): string[] {
+export function conceptRenderer(
+  schema: NormalizedSchemaV2,
+  naming: PromptNaming,
+): (concept: NonNullable<NormalizedSchemaV2["concepts"]>[number]) => RenderedConcept | undefined {
   const refs = columnRefs(schema);
   const tables = new Map(schema.tables.map((table) => [table.id, table]));
-  const lines: string[] = [];
-  for (const concept of schema.concepts ?? []) {
+  return (concept) => {
     const links: string[] = [];
     let untracked = 0;
     let linksSensitive = false;
     for (const id of concept.links ?? []) {
+      const hash = id.indexOf("#");
       const column = refs.get(id);
-      const table = column?.table ?? tables.get(id);
-      if (!table) continue;
-      if (table.tracked === false) {
+      const table = column?.table ?? tables.get(hash === -1 ? id : id.slice(0, hash));
+      if (table?.tracked === false) {
         untracked++;
         continue;
       }
+      if (!table || (hash !== -1 && !column)) continue;
       const tableName = promptTableName(table, naming.unqualifiedNamespace, naming.quoteIdentifier);
       links.push(column ? `${tableName}.${naming.quoteIdentifier(column.column.name)}` : tableName);
       linksSensitive ||= table.sensitive || (column?.column.sensitive ?? false);
     }
-    if (untracked > 0 && links.length === 0) continue;
-    const synonyms = concept.synonyms?.length ? concept.synonyms.join(", ") : "";
-    const description = concept.description?.replace(/\s*\n\s*/g, " ") ?? "";
-    const shown = [concept.label, synonyms, links.join(", "), description].filter(Boolean).join("; ");
-    if (!gate.allows(shown, linksSensitive)) continue;
-    const parts = [concept.label, synonyms && `synonyms: ${synonyms}`, links.length > 0 && `links: ${links.join(", ")}`, description];
-    lines.push(`-- ${parts.filter(Boolean).join("; ")}`);
+    if (untracked > 0 && links.length === 0) return undefined;
+    const fields: Array<[label: string | undefined, value: string]> = [
+      [undefined, concept.label],
+      ["synonyms", concept.synonyms?.join(", ") ?? ""],
+      ["links", links.join(", ")],
+      [undefined, concept.description?.replace(/\s*\n\s*/g, " ") ?? ""],
+    ];
+    const shown = fields.filter(([, value]) => value);
+    return {
+      body: shown.map(([label, value]) => (label ? `${label}: ${value}` : value)).join("; "),
+      text: shown.map(([, value]) => value).join("; "),
+      linksSensitive,
+    };
+  };
+}
+
+/**
+ * The schema's concepts as the full-schema prompt lists them after the tables (#898): a
+ * `-- concepts --` block, one {@link conceptRenderer} line per concept the gate allows (a
+ * concept that links a sensitive table or column is flagged, so omission withholds it too).
+ * `[]` when no concept is left.
+ */
+export function conceptLines(schema: NormalizedSchemaV2, gate: PromptTextGate, naming: PromptNaming): string[] {
+  const render = conceptRenderer(schema, naming);
+  const lines: string[] = [];
+  for (const concept of schema.concepts ?? []) {
+    const rendered = render(concept);
+    if (rendered && gate.allows(rendered.text, rendered.linksSensitive)) lines.push(`-- ${rendered.body}`);
   }
   return lines.length > 0 ? ["-- concepts --", ...lines, ""] : [];
 }

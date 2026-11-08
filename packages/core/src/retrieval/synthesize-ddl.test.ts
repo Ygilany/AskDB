@@ -121,8 +121,9 @@ describe("synthesizeRetrievedDdl — text that names a sensitive column (#374)",
     expect(lines).toContain("  - region text (NULL) -- aliases: territory; values: north|south; Sales region of the account.");
     expect(lines).toContain('-- - "big orders" means `total > 10000`');
     expect(lines).toContain("-- Concept: Big order; An order over 100 dollars.");
-    // From the schema: an alias, two descriptions, two column annotations. From the retriever: seven chunks.
-    expect(mentionDroppedCount).toBe(12);
+    // From the schema: an alias, two descriptions, two column annotations. From the retriever: six chunks
+    // (the relationship chunk only picks its tables, #898).
+    expect(mentionDroppedCount).toBe(11);
   });
 
   it("keeps them when sensitive names are listed tagged", () => {
@@ -238,7 +239,10 @@ describe("synthesizeRetrievedDdl — business context, column notes and headings
       ],
     });
     const lines = ddl.split("\n");
-    expect(lines).toContain("-- Concept: Revenue; Id: concept:revenue; Synonyms: sales, top line");
+    // The schema has `concept:revenue`, so it prints as the full-schema prompt prints it (#898).
+    expect(lines).toContain(
+      "-- Revenue; synonyms: sales, gross sales, top line; links: public.orders.total_amount; Sum of `orders.total_amount` where `status = 'paid'`, expressed in cents.",
+    );
     expect(lines).toContain("-- How much revenue did we make?");
   });
 
@@ -372,6 +376,37 @@ describe("synthesizeRetrievedDdl — foreign keys and concepts (#898)", () => {
   it("lists only the concepts retrieval picked, not the schema's", () => {
     const { ddl } = synthesizeRetrievedDdl({ schema: loadSchema(ordersDir), results: [tableChunk("table:public.orders")] });
     expect(ddl).not.toContain("-- concepts --");
+  });
+
+  it("prints a retrieved relationship chunk's foreign key once, from the schema", () => {
+    const relationship: RetrievedResult = {
+      id: "chunk:s:table:public.orders#user_id->table:public.users#id",
+      score: 0.5,
+      payload: {
+        id: "chunk:s:table:public.orders#user_id->table:public.users#id",
+        type: "relationship",
+        text: "Relationship: public.orders.user_id references public.users.id",
+        schemaId: "s",
+        refs: ["table:public.orders", "table:public.users", "table:public.orders#user_id", "table:public.users#id"],
+        sensitive: false,
+      },
+    };
+    const { ddl } = synthesizeRetrievedDdl({ schema: loadSchema(ordersDir), results: [relationship], unqualifiedNamespace: "public" });
+    expect(ddl.split("\n").filter((line) => line.includes("user_id") && line.includes("users"))).toEqual(["  FK (user_id) -> users (id)"]);
+    expect(ddl).not.toContain("relationships");
+  });
+
+  it("prints a retrieved concept as the full-schema prompt does, and withholds a flagged one under omission", () => {
+    const schema = loadSchema(ordersDir);
+    const concept = (sensitive: boolean): RetrievedResult => ({
+      id: "chunk:s:concept:customer",
+      score: 0.5,
+      payload: { id: "chunk:s:concept:customer", type: "concept", text: "# Concept: Customer\nId: concept:customer", schemaId: "s", refs: ["concept:customer", "table:public.users"], sensitive },
+    });
+    const line = "-- Customer; synonyms: user, client, buyer, account holder; links: public.users; A person who has signed up and placed at least one order.";
+    expect(synthesizeRetrievedDdl({ schema, results: [concept(false)] }).ddl.split("\n")).toContain(line);
+    expect(synthesizeRetrievedDdl({ schema, results: [concept(true)] }).ddl.split("\n")).toContain(line);
+    expect(synthesizeRetrievedDdl({ schema, results: [concept(true)], omitSensitiveIdentifiersFromPrompt: true }).ddl).not.toContain("Customer;");
   });
 });
 

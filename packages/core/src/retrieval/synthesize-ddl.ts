@@ -1,6 +1,7 @@
 import {
   businessContextLines,
   columnAnnotation,
+  conceptRenderer,
   foreignKeyLinesByTable,
   listAsStored,
   promptTableName,
@@ -24,10 +25,13 @@ import type { RetrievedResult } from "./types.js";
  *   2. CQL chunks land as a `-- common query language --` block under the
  *      table, then `Business context` chunks as a `-- business context --`
  *      block, its parts in body order (#894).
- *   3. Relationship, concept, example-question and tenant-policy chunks follow
- *      the tables, each kind as its own `-- … --` block, in that order. A
- *      concept or tenant-policy chunk keeps its heading (the concept's label,
- *      the policy section's name).
+ *   3. Concept, example-question and tenant-policy chunks follow the tables,
+ *      each kind as its own `-- … --` block, in that order. A concept the
+ *      schema has prints as the full-schema prompt prints it
+ *      (`conceptRenderer`); another keeps its chunk text and heading, as a
+ *      tenant-policy chunk does (the policy section's name). A relationship
+ *      chunk only picks its two tables: their foreign key prints from the
+ *      schema (#898).
  *
  * `@askdb/rag` types a `Business context` chunk `table`; its id
  * (`…<table-id>#biz`, `…#biz#bc:<n>` for part n of a long body; the schema v2
@@ -87,8 +91,8 @@ export function synthesizeRetrievedDdl(args: {
   const notePerColumn = new Map<string, { note: string; sensitive: boolean }>();
   const concepts: string[] = [];
   const questions: string[] = [];
-  const relationships: string[] = [];
   const tenantPolicyChunks: string[] = [];
+  const renderConcept = conceptRenderer(schema, { unqualifiedNamespace: args.unqualifiedNamespace, quoteIdentifier });
 
   for (const r of results) {
     const p = r.payload;
@@ -132,7 +136,13 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "concept": {
-        shown(p, joinedLines, concepts, true);
+        const concept = schema.concepts?.find((c) => c.id === p.refs[0]);
+        if (concept) {
+          const rendered = renderConcept(concept);
+          if (rendered && gate.allows(rendered.text, p.sensitive || rendered.linksSensitive)) concepts.push(rendered.body);
+        } else {
+          shown(p, joinedLines, concepts, true);
+        }
         for (const ref of p.refs) {
           if (ref.startsWith("table:")) {
             const hash = ref.indexOf("#");
@@ -142,7 +152,6 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "relationship": {
-        shown(p, oneLine, relationships);
         for (const ref of p.refs) {
           if (ref.startsWith("table:") && !ref.includes("#")) tableIds.add(ref);
         }
@@ -210,12 +219,6 @@ export function synthesizeRetrievedDdl(args: {
     if (businessList && !t.sensitive) {
       lines.push(...businessContextLines([...businessList].sort((a, b) => a.part - b.part).map(({ text }) => text)));
     }
-    lines.push("");
-  }
-
-  if (relationships.length > 0) {
-    lines.push("-- relationships --");
-    for (const r of relationships) lines.push(`-- ${r}`);
     lines.push("");
   }
 

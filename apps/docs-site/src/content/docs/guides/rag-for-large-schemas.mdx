@@ -165,7 +165,7 @@ const { retriever, stats } = await buildSchemaIndex({
 
 ## Wire retrieval into `ask()`
 
-Pass the retriever to `ask()`. AskDB calls it with the question. The prompt then lists, in full, each table a retrieved chunk points to, instead of every table. Each listed table shows its foreign keys to the other listed tables. Retrieved common query language and business context go under their table, a retrieved column's note goes on that column's line, and the retrieved relationships, concepts, example questions and tenant policy text follow the tables. Business context and column notes reach the prompt since 1.0.0-beta.53; before that, they only steered retrieval. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists everything that reaches the model.
+Pass the retriever to `ask()`. AskDB calls it with the question. The prompt then lists, in full, each table a retrieved chunk points to, instead of every table. Each listed table shows its foreign keys to the other listed tables. Retrieved common query language and business context go under their table, a retrieved column's note goes on that column's line, and the retrieved concepts, example questions and tenant policy text follow the tables. Business context and column notes reach the prompt since 1.0.0-beta.53; before that, they only steered retrieval. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists everything that reaches the model.
 
 With a tenant policy, the prompt's tenant block names only those tables too. A table outside them appears there only on a join path a retrieved table needs, and a root whose table wasn't retrieved appears by its label and placeholder ([#771](https://github.com/Ygilany/AskDB/issues/771)).
 

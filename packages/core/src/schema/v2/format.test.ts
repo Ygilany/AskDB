@@ -251,6 +251,8 @@ describe("formatSchemaV2ForNlToSql — foreign keys and concepts (#898)", () => 
     { id: "concept:old", label: "Old order", links: ["table:public.archive"] },
     { id: "concept:mixed", label: "Mixed", links: ["table:public.archive", "table:public.orders#customer_id"] },
     { id: "concept:loose", label: "Loose", links: ["table:public.nowhere"] },
+    // A column archive no longer has: still a link into an untracked table.
+    { id: "concept:stale", label: "Stale", links: ["table:public.archive#gone"], description: "Rows from archive." },
   ];
   const conceptBlock = (ddl: string) => {
     const lines = ddl.split("\n");
@@ -290,6 +292,18 @@ describe("formatSchemaV2ForNlToSql — foreign keys and concepts (#898)", () => 
     ]);
     const withoutConcepts = formatSchemaV2ForNlToSql(schemaWith(), { omitSensitiveIdentifiersFromPrompt: true });
     expect(omitted.stats.mentionDroppedCount).toBe(withoutConcepts.stats.mentionDroppedCount + 3);
+  });
+
+  it("prints a composite key as one line per column pair", () => {
+    const schema = schemaWith();
+    const orders = schema.tables.find((t) => t.name === "orders")!;
+    orders.columns.push(col("orders", "customer_region"));
+    schema.tables.find((t) => t.name === "customers")!.columns.push(col("customers", "region"));
+    orders.relationships = [fk("orders#customer_id", "customers#id"), fk("orders#customer_region", "customers#region")];
+    expect(fkLines(formatSchemaV2ForNlToSql(schema).ddl)).toEqual([
+      "  FK (customer_id) -> public.customers (id)",
+      "  FK (customer_region) -> public.customers (region)",
+    ]);
   });
 
   it("adds no concepts block for a schema without concepts", () => {

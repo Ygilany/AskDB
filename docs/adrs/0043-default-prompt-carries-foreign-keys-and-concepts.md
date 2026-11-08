@@ -10,17 +10,17 @@ A default `ask()` call (no retriever) sends the schema block `formatSchemaV2ForN
 
 ## Options considered
 
-- **A. Print them in both prompts, with the omission gate (chosen).** Each foreign key prints once, under the table that owns its column, as `FK (user_id) -> public.users (id)`, the format #349's step 5 planned. Concepts follow the tables in a `-- concepts --` block in the full-schema prompt. The retrieval prompt prints a foreign key only between tables it shows, and keeps listing only retrieved concepts.
+- **A. Print them in both prompts, with the omission gate (chosen).** Each foreign key prints once, under the table that owns its column, as `FK (user_id) -> public.users (id)`, the format #349's step 5 planned. Concepts follow the tables in a `-- concepts --` block in the full-schema prompt. The retrieval prompt prints a foreign key only between tables it shows, and keeps listing only retrieved concepts, in the same shape.
 - **B. Add them behind an option.** Rejected by the coordinator: an option added later is easy, one removed after the rc.1 freeze isn't (ADR 0030).
 - **C. Keep them retrieval-only.** Rejected: the model then needs RAG to learn how tables join, which is the core of most multi-table questions.
 - **D. A budget or truncation rule for the bigger prompt.** Rejected: cutting the schema to fit drops grounding by table order, and a partial schema gives confidently wrong SQL. Retrieval stays the answer for a big schema, and the RAG guide's rule of thumb moves from about 30 tables to about 22.
 
 ## Decision
 
-`formatSchemaV2ForNlToSql` prints each table's foreign keys after its column lines, and the schema's concepts after the tables. `synthesizeRetrievedDdl` prints a shown table's foreign keys to the other shown tables. One renderer in `packages/core/src/schema/v2/format.ts` serves both (`foreignKeyLinesByTable`, `conceptLines`).
+`formatSchemaV2ForNlToSql` prints each table's foreign keys after its column lines, and the schema's concepts after the tables. `synthesizeRetrievedDdl` prints a shown table's foreign keys to the other shown tables, and a retrieved concept the schema has in the same shape as the full-schema prompt. One renderer in `packages/core/src/schema/v2/format.ts` serves both (`foreignKeyLinesByTable`, `conceptRenderer`). A retrieved relationship chunk (`emitRelationships`) only picks its two tables, so the key prints once, from the schema; a retrieved concept the schema doesn't have keeps its chunk text.
 
 - **Foreign keys:** names are written the way the prompt lists them (`unqualifiedNamespace`, `quoteIdentifier`). A key is left out when either column doesn't resolve or either table is untracked, and, with sensitive identifiers omitted, when either column or table is sensitive, so a key never names a column the prompt withholds. With sensitive names listed tagged, it prints, since the names are listed already. A composite key prints one line per column pair until the artifact groups them (#349).
-- **Concepts:** each line holds the label, synonyms, links (named as the prompt names tables and columns) and description. A link to an untracked table is dropped, and so is a concept whose links are all untracked. With omission on, a concept is withheld when its rendered text names a sensitive column or it links a sensitive table or column (ADR 0022); each withheld concept counts in `mentionDroppedCount`.
+- **Concepts:** each line holds the label, synonyms, links (named as the prompt names tables and columns) and description. A link to an untracked table, or to a column of one, is dropped, and so is a concept whose links are all untracked. A link to a table or column the schema doesn't have is dropped too. With omission on, a concept is withheld when its rendered text names a sensitive column or it links a sensitive table or column (ADR 0022); each withheld concept counts in `mentionDroppedCount`.
 
 ## Consequences
 
