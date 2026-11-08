@@ -2967,3 +2967,37 @@ describe("validateTenantGuardrails — beside an outer join, WHERE counts and a 
     expect(findings("SELECT a.*, c.name FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", clients)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a name CockroachDB lower-cases or normalizes into another", () => {
+  const scopedBy = (table: string, column = "agency_id"): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [...policy.scopedTables, { id: `table:public.${table}`, scopeThrough: [{ root: "table:public.agencies", column: `table:public.${table}#${column}` }] }],
+  });
+  const findings = (sql: string, p: NormalizedTenantPolicy, dialect: DialectSpec) =>
+    validateTenantGuardrails(sql, p, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  // `J` + U+030C and `Ϊ́` are in NFC as written, but lower-cased they compose into `ǰ` and `ΐ`, which CockroachDB reads.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT])("refuses an unquoted name whose lower-cased letters aren't in NFC under $id", (dialect) => {
+    for (const [table, written] of [["ǰ", "J̌"], ["πρωτεΐνη", "ΠΡΩΤΕΪ́ΝΗ"]]) {
+      expect(findings(`SELECT * FROM ${written}`, scopedBy(table), dialect), written).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+      expect(findings(`SELECT * FROM ${table}`, scopedBy(table), dialect), table).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+      expect(findings(`SELECT * FROM ${table} WHERE agency_id = :tenant_agency_ids`, scopedBy(table), dialect), table).toEqual([]);
+    }
+  });
+
+  // CockroachDB lower-cases a final capital sigma to `σ`, which `toLowerCase` writes `ς`.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a predicate on a read with a column list when the table's name ends in a capital sigma under $id", (dialect) => {
+    const table = "οσ";
+    expect(findings("SELECT * FROM ΟΣ t (id, agency_id) WHERE agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+    expect(findings("SELECT * FROM ΟΣ t WHERE t.agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a derived table that passes another column through under a capital-sigma spelling of the tenant column under $id", (dialect) => {
+    const column = "εταιρειασ_id";
+    const p = scopedBy("ledger", column);
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.ledger"];
+    expect(findings(`SELECT x.* FROM (SELECT z.k AS ΕΤΑΙΡΕΙΑΣ_ID, o.${column}, o.id FROM ledger o, (SELECT 42 AS k) z) x WHERE x.${column} = :tenant_agency_ids`, p, dialect)).toEqual(refused);
+    expect(findings(`SELECT x.* FROM (SELECT o.${column}, o.id FROM ledger o) x WHERE x.${column} = :tenant_agency_ids`, p, dialect)).toEqual([]);
+  });
+});
