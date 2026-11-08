@@ -51,6 +51,10 @@ The prompt `ask()` sends now lists each table's foreign keys and, without a retr
 
 Your language model provider now receives your foreign keys and concepts without a retriever. Read `concepts.md` for anything the model shouldn't see. A foreign key or concept never names an untracked table, and with `modes.omitSensitiveFromPrompt` (`--omit-sensitive-from-prompt`) a foreign key with a sensitive column or table on either side, and a concept that names or links one, are left out. The prompt grows by about 18 tokens per foreign key and 37 per concept, so past about 22 tables, consider [retrieval](/guides/rag-for-large-schemas/). If your tests compare `formatSchemaV2ForNlToSql()`'s or `synthesizeRetrievedDdl()`'s output, expect the new lines.
 
+### Put a tenant predicate in `WHERE` when a query groups
+
+A tenant predicate in `HAVING` now counts only when its column is one the `SELECT` groups by: `HAVING` filters groups, and on a column that isn't grouped, SQLite and MariaDB take one row's value for the whole group. Read the MySQL way (`mysql`, `mariadb`, a dialect id that is no built-in engine, or none), an unqualified column that a select-list item is aliased to doesn't count either, since MySQL and MariaDB read it as that item. Under `strict`, such SQL throws `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`). Move the predicate to `WHERE`, or group by the tenant column.
+
 ## 1.0.0-beta.52
 
 Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/config` 1.0.0-beta.20, `@askdb/client` 1.0.0-beta.13, `@askdb/ai` 0.1.0-beta.12, `@askdb/enrich` 0.2.0-beta.23, `@askdb/introspect` 0.3.0-beta.26, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27, and `@askdb/sqlserver` 0.1.0-beta.28.
