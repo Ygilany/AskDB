@@ -468,7 +468,7 @@ describe("validateTenantGuardrails — MySQL comments are read the way MySQL rea
   });
 });
 
-describe("validateTenantGuardrails — parenthesized set-operation operands are query blocks", () => {
+describe("validateTenantGuardrails — a parenthesized set-operation operand is its own SELECT", () => {
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const rules = (sql: string) => validateTenantGuardrails(sql, warnPolicy, agencyScope).warnings.map((w) => w.rule);
   const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
@@ -1227,7 +1227,7 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
 
   it("rejects a root read twice where a carrier's IN (…) filters only one read", () => {
     expect(findings(`SELECT b.* FROM agencies a, agencies b WHERE a.id IN (SELECT agency_id FROM orders WHERE agency_id = ${P})`))
-      .toContain("MISSING_TENANT_PREDICATE:table:public.agencies");
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
   });
 
   it("rejects the scope's root table read through a bracketed alias `.`", () => {
@@ -1286,7 +1286,13 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
       `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders`,
       `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f`,
     ]) {
-      expect(() => validateTenantGuardrails(sql, policy, agencyScope), sql).toThrow(TenantGuardrailError);
+      try {
+        validateTenantGuardrails(sql, policy, agencyScope);
+        expect.unreachable(`should have thrown: ${sql}`);
+      } catch (e) {
+        expect(e, sql).toBeInstanceOf(TenantGuardrailError);
+        expect((e as TenantGuardrailError).warnings.map((w) => `${w.rule}:${w.tableId}`), sql).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+      }
     }
   });
 

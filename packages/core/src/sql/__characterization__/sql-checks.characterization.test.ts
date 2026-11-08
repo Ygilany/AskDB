@@ -200,14 +200,14 @@ const HOSTILE: readonly string[] = [
   "WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE x.agency_id = :tenant_agency_ids",
   "SELECT * FROM orders o WHERE o.agency_id = :tenant_agency_ids AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = o.state)",
   "SELECT b.* FROM orders a JOIN orders b ON a.id = b.parent_id WHERE a.agency_id = :tenant_agency_ids AND b.agency_id = :tenant_agency_ids",
-  // #399 review: an aliased read goes by its alias, an unseen qualifier counts for nothing, and a source
+  // #399: an aliased read goes by its alias, an unseen qualifier counts for nothing, and a source
   // with a column list, a computation over its rows or a parenthesized join isn't followed from outside.
   "SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = :tenant_agency_ids",
   "SELECT o.* FROM orders o CROSS JOIN generate_series(1, 100) AS g(agency_id) WHERE g.agency_id = :tenant_agency_ids",
   "WITH x (id, agency_id) AS (SELECT id, agency_id FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM x",
   "SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = :tenant_agency_ids",
   "SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = :tenant_agency_ids",
-  // #399 review, round 2: a word after a read that may be an alias leaves it unnamed, a column list on a
+  // #399: a word after a read that may be an alias leaves it unnamed, a column list on a
   // source's alias or a CTE reference isn't followed, names the engine tells apart stay apart, and `*`
   // sees past an alias spelled like a clause.
   "SELECT force.* FROM orders force, orders WHERE orders.agency_id = :tenant_agency_ids",
@@ -218,7 +218,7 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders O WHERE o.agency_id = :tenant_agency_ids",
   "SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = :tenant_agency_ids",
   "WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids",
-  // #399 review, round 3: a quoted identifier is one name, a table alone in parentheses takes the alias after them,
+  // #399: a quoted identifier is one name, a table alone in parentheses takes the alias after them,
   // and a reading that sees a scoped table's name but no read of it fails closed.
   "SELECT * FROM orders [.]",
   "SELECT \"b a\".* FROM orders \"b a\" CROSS JOIN orders b WHERE b.agency_id = :tenant_agency_ids",
@@ -227,10 +227,10 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders \"my alias\" WHERE \"my alias\".agency_id = :tenant_agency_ids",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM [orders ]",
   "SELECT json_agg(orders) AS data FROM orders WHERE orders.agency_id = :tenant_agency_ids",
-  // #399 review, confirm pass: only canonical forms name a read, and a subquery is a row source only where a source starts.
+  // #399: only canonical forms name a read, and a subquery is a row source only where a source starts.
   "SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS \"tablesample\" WHERE \"tablesample\".agency_id = :tenant_agency_ids",
   "SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = :tenant_agency_ids",
-  // #399 review, confirm pass 2: a FROM that opens no FROM clause starts no source, and a SELECT that reads a
+  // #399: a FROM that opens no FROM clause starts no source, and a SELECT that reads a
   // table twice tells its reads apart only by distinct plain aliases and alias-qualified predicates.
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 2 IS NOT DISTINCT FROM (SELECT agency_id FROM orders x WHERE x.id = 99)",
   "SELECT j.* FROM (orders o CROSS JOIN lookup_states s) AS j CROSS JOIN orders o WHERE o.agency_id = :tenant_agency_ids",

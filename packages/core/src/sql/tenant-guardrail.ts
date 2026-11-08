@@ -1004,7 +1004,7 @@ function tableNameOf(t: Token): string {
 }
 
 function isWord(token: Token | undefined): boolean {
-  return token !== undefined && (token.quoted === true || /^[A-Za-z_\u0080-￿]/.test(token.text));
+  return token !== undefined && (token.quoted === true || /^[A-Za-z_\u0080-\uffff]/.test(token.text));
 }
 
 /**
@@ -1568,7 +1568,7 @@ function predicateAt(tokens: readonly Token[], k: number, column: string, exactQ
   return undefined;
 }
 
-/** How a parenthesized query block is used by the query around it. */
+/** How a parenthesized query (`(SELECT …)`) is used by the query around it. */
 type SubqueryUse = "table" | "in" | "other";
 
 /**
