@@ -2874,3 +2874,23 @@ describe("validateTenantGuardrails — the join proof reads names as the predica
     expect(findings(sql('o."full"'))).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a join proof's HAVING terms count only on GROUP BY keys (#400)", () => {
+  const clients: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const findings = (sql: string) => validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, clients).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const appointments = ["MISSING_TENANT_PREDICATE:table:public.appointments"];
+
+  it.each([
+    ["a seed on a column the SELECT doesn't group by", "SELECT a.client_id, count(*) FROM appointments a JOIN clients c ON a.client_id = c.id GROUP BY a.client_id HAVING c.id IN (:tenant_client_ids)"],
+    ["an equality with a side the SELECT doesn't group by", "SELECT a.client_id, count(*) FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids) GROUP BY a.client_id HAVING a.client_id = c.id"],
+  ])("refuses %s", (_label, sql) => {
+    expect(findings(sql)).toContain(appointments[0]);
+  });
+
+  it.each([
+    ["a seed on a GROUP BY key", "SELECT a.client_id, c.id, count(*) FROM appointments a JOIN clients c ON a.client_id = c.id GROUP BY a.client_id, c.id HAVING c.id IN (:tenant_client_ids)"],
+    ["an equality between two GROUP BY keys", "SELECT a.client_id, c.id, count(*) FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids) GROUP BY a.client_id, c.id HAVING a.client_id = c.id"],
+  ])("keeps %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+});
