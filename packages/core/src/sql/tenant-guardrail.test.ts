@@ -2453,6 +2453,20 @@ describe("validateTenantGuardrails — every name the engines of a reading read 
     expect(check("SELECT * FROM οσ WHERE agency_id = :tenant_agency_ids")).toEqual([]);
   });
 
+  // A name's edges are letters, whatever the script: a scoped table whose name starts or ends with a
+  // non-ASCII letter is mentioned, so its reads need their predicate.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT])("checks a scoped table whose name starts or ends with a non-ASCII letter under $id", (dialect) => {
+    for (const table of ["ürün", "café", "οσ"]) {
+      const withTable: NormalizedTenantPolicy = {
+        ...warnPolicy,
+        scopedTables: [...warnPolicy.scopedTables, { id: `table:public.${table}`, scopeThrough: [{ root: "table:public.agencies", column: `table:public.${table}#agency_id` }] }],
+      };
+      const check = (sql: string) => validateTenantGuardrails(sql, withTable, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+      expect(check(`SELECT * FROM ${table}`), table).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+      expect(check(`SELECT * FROM ${table} WHERE agency_id = :tenant_agency_ids`), table).toEqual([]);
+    }
+  });
+
   it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT])("keeps a non-ASCII alias in NFC under $id", (dialect) => {
     expect(findings(`SELECT o.total AS "Número", o.state AS "État" FROM orders o WHERE o.agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
     expect(findings("SELECT count(*) AS umsatz_größe FROM orders WHERE agency_id = :tenant_agency_ids", dialect)).toEqual([]);
