@@ -1370,7 +1370,7 @@ function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Re
   let filtered = false;
   if (depth <= 8 && open >= 0 && !a.scopes.branched.has(open)) {
     const refs = sourceRefs(a, open);
-    filtered = refs !== undefined && refs.length > 0 && passesThrough(a, open, read.names, target.column.toLowerCase()) &&
+    filtered = refs !== undefined && refs.length > 0 && passesThrough(a, open, read.names, target.column) &&
       refs.every((ref) =>
         found.some((o) =>
           o.target === target &&
@@ -1429,10 +1429,12 @@ const COMPUTES_OVER_ROWS = new Set(["group", "having", "window", "qualify", "lim
  * column itself, the read's `q.*`, or `*` over a single source; and the body has no `GROUP BY`,
  * `HAVING`, window, `QUALIFY`, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
  * before the outside filter. An item with a string or comment in it, `DISTINCT ON` or a nested
- * `WITH` fails closed.
+ * `WITH` fails closed. The column and the name it yields are compared as {@link namesColumn} reads
+ * them, and an item that yields the name in another case fails closed too.
  */
 function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, column: string): boolean {
   const { tokens, scopes, view } = a;
+  const exact = view.reading.profile.id === "postgres";
   const scope = scopeKey(open, 0);
   const depth = tokens[open]!.depth + 1;
   const level = (i: number) => scopes.of[i] === scope && tokens[i]!.depth === depth;
@@ -1472,20 +1474,22 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
       yields++;
       continue;
     }
-    let alias: string | undefined;
+    let alias: Token | undefined;
     let expr = ts;
     if (n >= 3 && ts[n - 2]!.kw === "as" && isWord(ts[n - 1])) {
-      alias = ts[n - 1]!.lower;
+      alias = ts[n - 1]!;
       expr = ts.slice(0, n - 2);
     } else if (n >= 2 && isWord(ts[n - 1]) && (isWord(ts[n - 2]) || ts[n - 2]!.text === ")" || /^\d/.test(ts[n - 2]!.text))) {
-      alias = ts[n - 1]!.lower;
+      alias = ts[n - 1]!;
       expr = ts.slice(0, n - 1);
     }
     const isColumn = expr.length === 1 ? isWord(expr[0]) : expr.length === 3 && isWord(expr[0]) && expr[1]!.text === "." && isWord(expr[2]);
     if (!isColumn) return false; // an expression, a call or an aggregate
-    const name = expr[expr.length - 1]!.lower;
-    if ((alias ?? name) !== column) continue;
-    if (name !== column || (expr.length === 3 && !names.has(expr[0]!.name))) return false; // another expression named like the column
+    const name = expr[expr.length - 1]!;
+    // An item that yields the name in any case is a candidate; it must name the column the way the engine reads it.
+    if ((alias ?? name).lower !== column.toLowerCase()) continue;
+    if (!namesColumn(alias ?? name, column, exact) || !namesColumn(name, column, exact)) return false;
+    if (expr.length === 3 && !names.has(expr[0]!.name)) return false; // another expression named like the column
     yields++;
   }
   return yields === 1;
