@@ -53,6 +53,8 @@ Config-aware facade over `@askdb/core`. `createAskDb()` resolves the schema, mod
 
 See the **[@askdb/client API reference](/reference/client-api/)** for the full option documentation.
 
+**Experimental: `@askdb/client/charts`.** A second entry point plans a chart for a query result without sending rows to the model: `classifyResult()`, `planChart()` and `validateChartSpec()`. It's outside the stability promise, so a minor release may change it. See the **[@askdb/client/charts API reference](/reference/client-charts-api/)**.
+
 ### `@askdb/ai`
 
 The AI provider registry, with built-in providers for OpenAI, Azure OpenAI and Microsoft Foundry, Google Gemini, Anthropic and the Vercel AI Gateway. `@askdb/client` depends on it and builds the registry for you. Import it yourself to build a model object outside the client, to restrict or extend the set of providers, or to share one registry across several clients.

@@ -176,6 +176,8 @@ export {
   type SelectGuardrailExplain,
 } from "./sql/validate.js";
 export { buildNlToSqlUserPrompt } from "./sql/prompt.js";
+// Internal: for @askdb/client/charts, no stability promise (see the core API page's internal exports).
+export { maskSqlLiterals } from "./sql/mask-literals.js";
 export { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 export { nlToSqlAmbiguityNotes } from "./sql/schema-question-precheck.js";
 export {
