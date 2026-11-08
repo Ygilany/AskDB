@@ -1823,17 +1823,19 @@ function conjunctAnd(tokens: readonly Token[], i: number): boolean {
  */
 function andOfBetween(tokens: readonly Token[], and: number): boolean {
   const depth = tokens[and]!.depth;
+  // A word beside a `.` is a name (`o.and`, `o.end`), never the keyword.
+  const dotted = (i: number) => tokens[i - 1]?.text === "." || tokens[i + 1]?.text === ".";
   let from = and - 1;
   while (from >= 0) {
     const t = tokens[from]!;
-    if (t.depth < depth || (t.depth === depth && (FILTER_CLAUSE.has(t.kw) || t.kw === "select"))) break;
+    if (t.depth < depth || (t.depth === depth && !dotted(from) && (FILTER_CLAUSE.has(t.kw) || t.kw === "select"))) break;
     from--;
   }
   let pending = 0;
   let inCase = 0;
   for (let i = from + 1; i < and; i++) {
     const t = tokens[i]!;
-    if (t.depth !== depth) continue;
+    if (t.depth !== depth || dotted(i)) continue;
     if (t.kw === "case") inCase++;
     else if (t.kw === "end" && inCase > 0) inCase--;
     else if (inCase === 0 && t.kw === "between") pending++;
