@@ -1,7 +1,7 @@
 {
   "name": "askdb-ask-question-example",
   "private": true,
-  "version": "0.0.1-beta.29",
+  "version": "0.0.1-beta.30",
   "type": "module",
   "scripts": {
     "start": "tsx main.ts",

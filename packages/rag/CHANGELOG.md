@@ -1,5 +1,18 @@
 # @askdb/rag
 
+## 0.2.0-beta.33
+
+### Patch Changes
+
+- 01415e2: Comments only: the chunker's notes say why it still reads `Business context` and `Column notes` from the table markdown, now that `loadSchema()` carries them (#898). It drops them for sensitive tables and columns, which an opt-in index still embeds.
+- 98612fb: `ask()`'s prompt now shows the text of a retrieved `Business context` chunk and a column chunk's `Column notes` line, through `@askdb/core`'s `synthesizeRetrievedDdl`, which `@askdb/rag` re-exports (#894). The chunks are unchanged, so an existing index needs no rebuild. A new test checks that the chunker's output reaches the prompt.
+- Updated dependencies [01415e2]
+- Updated dependencies [a81867a]
+- Updated dependencies [98612fb]
+- Updated dependencies [dadf211]
+- Updated dependencies [984f332]
+  - @askdb/core@1.0.0-beta.53
+
 ## 0.2.0-beta.32
 
 ### Patch Changes
