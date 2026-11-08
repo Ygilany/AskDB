@@ -1062,9 +1062,9 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
   // trailing no-break space, ideographic space or form feed as code.
   it("sqlserver: skips the leading and trailing runs trim() removes, as the read-only check does", () => {
     for (const sql of [
-      "﻿SELECT id FROM orders WHERE agency_id = :tenant_agency_ids",
-      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids ",
-      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids　",
+      "\uFEFFSELECT id FROM orders WHERE agency_id = :tenant_agency_ids",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids\u00a0",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids\u3000",
       "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids\f",
     ]) {
       expect(findings(sql, SQLSERVER_DIALECT), JSON.stringify(sql)).toEqual([]);

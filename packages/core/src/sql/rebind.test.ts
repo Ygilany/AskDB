@@ -254,12 +254,10 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
   });
 });
 
-// The tenant rule reads `:status_nameOR` as one token; a renderer that substituted
-// `:status_name` alone would leave `'open'OR 1=1`, an unscoped read the rule never saw.
 describe("bindPreparedQuery — a stored SQL Server template with a trailing no-break space", () => {
   // The read-only check reads the trimmed statement, and so does the tenant check's plain-code rule.
   it("binds it under sqlserver", () => {
-    const bound = bindPreparedQuery(template("SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'open' ", "sqlserver"), {}, {
+    const bound = bindPreparedQuery(template("SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'open'\u00a0", "sqlserver"), {}, {
       schema: strictSchema,
       tenantScope: agencyIds("2"),
     });
@@ -267,6 +265,8 @@ describe("bindPreparedQuery — a stored SQL Server template with a trailing no-
   });
 });
 
+// The tenant rule reads `:status_nameOR` as one token; a renderer that substituted
+// `:status_name` alone would leave `'open'OR 1=1`, an unscoped read the rule never saw.
 describe("bindPreparedQuery — a placeholder glued to an identifier", () => {
   it.each([":status_nameOR 1=1", ":status_name$x", ":status_nameé"])("refuses `%s` instead of rendering part of it", (tail) => {
     const sql = `SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND status = ${tail}`;
