@@ -43,6 +43,7 @@ The tenant check reads the SQL's tokens and doesn't parse it, so it can pass SQL
 
 - **Roots reached through the hierarchy.** Only the roots the scope names are checked as root tables: under an agency `ids` scope, a read of `sub_agencies` isn't. An expanded `subtree` scope names every level it covers.
 - **Joined scoped tables.** It doesn't check that two joined scoped tables share a scope.
+- **A column list on a joined table.** On Postgres and CockroachDB, `JOIN clients c (sub_agency_id, x)` renames the table's columns, and the check still reads them by the policy's names, so a join path can pass on the wrong column ([#400](https://github.com/Ygilany/AskDB/issues/400)).
 - **A name spelled like a join word.** An unqualified predicate in an `ON` counts for the reads the check takes as that join's operands. Where SQL Server reads `NATURAL` or `USING` as an alias, or a table is named `using`, those can include a read the `ON` doesn't see.
 
 Since 1.0.0-beta.53 each read of a scoped table needs its own predicate in its own `SELECT` ([#399](https://github.com/Ygilany/AskDB/issues/399)), and a join on any other pair of columns than the policy declares doesn't count ([#400](https://github.com/Ygilany/AskDB/issues/400)).
