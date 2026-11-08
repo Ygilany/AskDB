@@ -383,4 +383,3 @@ describe("synthesizeRetrievedDdl — foreign keys and concepts (#898)", () => {
     expect(synthesizeRetrievedDdl({ schema, results: [concept(true)], omitSensitiveIdentifiersFromPrompt: true }).ddl).not.toContain("Customer;");
   });
 });
-

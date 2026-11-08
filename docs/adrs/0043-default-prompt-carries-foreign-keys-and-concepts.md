@@ -14,6 +14,7 @@ A default `ask()` call (no retriever) sends the schema block `formatSchemaV2ForN
 - **B. Add them behind an option.** Rejected by the coordinator: an option added later is easy, one removed after the rc.1 freeze isn't (ADR 0030).
 - **C. Keep them retrieval-only.** Rejected: the model then needs RAG to learn how tables join, which is the core of most multi-table questions.
 - **D. A budget or truncation rule for the bigger prompt.** Rejected: cutting the schema to fit drops grounding by table order, and a partial schema gives confidently wrong SQL. Retrieval stays the answer for a big schema, and the RAG guide's rule of thumb moves from about 30 tables to about 22.
+- **E. Business context and column notes without new fields.** The formatter takes the loaded schema, which dropped both. It could read them from the table markdown through a new `ask()` or formatter input, or through a channel hidden from the types. A new input is public surface too, on every call site; a hidden channel is lost when a host copies, builds or bundles the schema itself. New optional fields keep the rule that the schema renders and chunks only pick, and work for any schema a host passes. The maintainer chose the fields (#898, Q60) on the coordinator's recommendation.
 
 ## Decision
 

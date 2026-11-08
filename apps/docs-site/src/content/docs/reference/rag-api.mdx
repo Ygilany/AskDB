@@ -230,7 +230,7 @@ import { loadChunkerSourcesFromDir } from "@askdb/rag";
 const sources = loadChunkerSourcesFromDir("./my-app.schema");
 ```
 
-Loads a schema directory into `ChunkerSources`, including the table markdown files, concepts, and tenant policy. The markdown carries text that the normalized schema leaves out, such as example questions and business context.
+Loads a schema directory into `ChunkerSources`, including the table markdown files, concepts, and tenant policy. The markdown carries text that the normalized schema leaves out: example questions, and the business context and column notes of sensitive tables and columns.
 
 The directory layout expected:
 ```

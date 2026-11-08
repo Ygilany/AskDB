@@ -238,7 +238,7 @@ The parser recognizes these H2 headings by whole-heading match after trimming, i
 | `Business context` | the NL→SQL prompt (under the table, after common query language; in the retrieval prompt only when it's retrieved) and the chunker (background) | Long-form context. |
 | `Column notes` | the NL→SQL prompt (on the column's line, in both prompts) and the chunker (per-column appendix) | Items of the form ``- `column_name`: note`` extend the column chunk; `-` or `—` may replace the colon. They match the column's **name**, not its id. |
 
-The **first paragraph** of the body, after an optional leading heading (by convention `# Table: <name>`; any line starting with `#` counts), is the table's primary description: its lines are joined with spaces, and it ends at a blank line or the next heading. Both the NL→SQL prompt and the chunker use it, even when no H2 is present.
+The **first paragraph** of the body, after an optional leading heading (by convention `# Table: <name>`; any line starting with `#` counts), is the table's primary description: its lines are joined with spaces, and it ends at a blank line or the next heading. A recognized section below never supplies it, even when its `##` heading is the body's first line: the description is then absent (#898). Both the NL→SQL prompt and the chunker use it, even when no H2 is present.
 
 ---
 

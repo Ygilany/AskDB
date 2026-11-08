@@ -605,6 +605,11 @@ function describableFilter(sensitiveMentions: MentionMatcher, includeSensitive: 
   };
 }
 
+/**
+ * A column's `Column notes` item, by the schema v2 contract's rule. `@askdb/core`'s loader reads
+ * the same items for `NormalizedV2Column.note` (`columnNoteOf` in its `loader.ts`); keep the two in
+ * step (a test runs both on the same file).
+ */
 function readColumnNote(
   md: ParsedTableMarkdown | undefined,
   columnName: string,

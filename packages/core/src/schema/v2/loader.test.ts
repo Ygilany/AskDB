@@ -600,7 +600,7 @@ describe("loadSchema — business context and column notes (#898)", () => {
   function withNotes(): string {
     const dir = copyFixture(v2Dir);
     const orders = join(dir, "tables/orders.md");
-    writeFileSync(orders, `${readFileSync(orders, "utf8")}\n## Column notes\n\n- \`status\`: refunds flip a paid order back to pending\n- \`total_amount\` — includes tax\n`);
+    writeFileSync(orders, `${readFileSync(orders, "utf8")}\n## Column notes\n\n- \`status\`: refunds flip a paid order back to pending\n- \`total_amount\` — includes tax\n- \`id\` - surrogate key\n`);
     const users = join(dir, "tables/users.md");
     writeFileSync(users, `${readFileSync(users, "utf8")}\n## Column notes\n\n- \`email\`: lowercased on write\n`);
     return dir;
@@ -614,7 +614,8 @@ describe("loadSchema — business context and column notes (#898)", () => {
     expect(table(schema, "orders").businessContext).toBe(BIZ);
     expect(column(schema, "orders", "status").note).toBe("refunds flip a paid order back to pending");
     expect(column(schema, "orders", "total_amount").note).toBe("includes tax");
-    expect(column(schema, "orders", "id").note).toBeUndefined();
+    expect(column(schema, "orders", "id").note).toBe("surrogate key");
+    expect(column(schema, "orders", "user_id").note).toBeUndefined();
   });
 
   it("leaves out a sensitive column's note, as it leaves out its description", () => {
@@ -630,5 +631,14 @@ describe("loadSchema — business context and column notes (#898)", () => {
     expect(table(schema, "orders").businessContext).toBeUndefined();
     expect(table(schema, "orders").columns.map((c) => c.note)).toEqual([undefined, undefined, undefined, undefined]);
   });
-});
 
+  it("never takes a table's description from a recognized section, even when the file has no heading before it", () => {
+    const dir = withNotes();
+    const users = join(dir, "tables/users.md");
+    const frontMatter = readFileSync(users, "utf8").split("\n---\n")[0];
+    writeFileSync(users, `${frontMatter}\n---\n\n## Column notes\n\n- \`email\`: personal addresses are hashed nightly\n`);
+    const schema = loadSchema(dir);
+    expect(table(schema, "users").description).toBeUndefined();
+    expect(column(schema, "users", "email").note).toBeUndefined();
+  });
+});

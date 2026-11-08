@@ -369,4 +369,3 @@ describe("formatSchemaV2ForNlToSql — business context and column notes (#898)"
     );
   });
 });
-

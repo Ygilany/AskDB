@@ -35,4 +35,3 @@ describe("@askdb/core public API — table and column fields (#898)", () => {
     }
   });
 });
-

@@ -2874,4 +2874,3 @@ describe("ask — the default prompt carries foreign keys and concepts (#898)", 
     expect(prompt).toContain("-- Revenue;");
   });
 });
-

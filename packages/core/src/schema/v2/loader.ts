@@ -9,7 +9,7 @@ import type {
   NormalizedV2Table,
   SchemaV2Warning,
 } from "./normalized.js";
-import type { ParsedTableMarkdown, V2ConceptsFrontmatter } from "./describable.js";
+import { RECOGNIZED_H2_SECTIONS, type ParsedTableMarkdown, type V2ConceptsFrontmatter } from "./describable.js";
 import { parseTenantPolicyMarkdown, normalizeTenantPolicy } from "./tenant-policy-loader.js";
 import type { NormalizedTenantPolicy } from "./tenant-policy.js";
 
@@ -653,6 +653,13 @@ function columnNoteOf(md: ParsedTableMarkdown | undefined, columnName: string): 
   return undefined;
 }
 
+/** Whether `line` is the H2 heading of a recognized section, matched as the parser matches it. */
+function isRecognizedSectionHeading(line: string): boolean {
+  if (!line.startsWith("## ")) return false;
+  const heading = line.slice(3).trim().toLowerCase();
+  return RECOGNIZED_H2_SECTIONS.some((section) => section.toLowerCase() === heading);
+}
+
 /** Extract the first non-heading, non-empty paragraph from a markdown body. */
 function extractFirstParagraph(body: string): string | undefined {
   const lines = body.split("\n");
@@ -664,7 +671,9 @@ function extractFirstParagraph(body: string): string | undefined {
     if (line.startsWith("#")) {
       // Skip the leading H1 (table title), but stop at any subsequent heading
       // so we don't leak content from the next section into the description.
-      if (seenHeading) break;
+      // A recognized section never supplies it, even first: its content has its
+      // own rules (a sensitive column's note is dropped, #898).
+      if (seenHeading || isRecognizedSectionHeading(line)) break;
       seenHeading = true;
       continue;
     }
