@@ -16,7 +16,9 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { integrationSuite } from "../../../../../scripts/test-utils/integration.mjs";
 import { SchemaParseError } from "../../errors.js";
+import { z } from "zod";
 import { loadSchema, loadSchemaFromJson, readSchemaDirectory } from "./loader.js";
+import { v2SchemaJsonSchema } from "./physical.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../../fixtures/schemas");
@@ -692,9 +694,33 @@ describe("loadSchema — unknown keys in schema.json warn (#690)", () => {
     expect(unknownKeys(loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir))))).toEqual(expected);
   });
 
+  it("loads a directory and its bundle to the same schema, unknown keys dropped from both", () => {
+    const dir = withSchemaJson((json) => {
+      json.tables[1].relationships[0].onDelete = "cascade";
+      json.tables[1].note = "orders";
+    });
+    const fromDirectory = loadSchema(dir);
+    expect(loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir)))).toEqual(fromDirectory);
+    expect(fromDirectory.tables[1]!.relationships).toEqual([{ from: "table:public.orders#user_id", to: "table:public.users#id" }]);
+  });
+
+  it("visits every nested object level schema.json's zod schema defines", () => {
+    // The walker's levels are written out; this pins them to the schema, so a new nested object fails here.
+    const nestedObjectPaths = (schema: z.ZodObject<z.ZodRawShape>, prefix = ""): string[] =>
+      Object.entries(schema.shape).flatMap(([key, field]) => {
+        let inner: unknown = field;
+        while (inner instanceof z.ZodOptional) inner = inner.unwrap();
+        if (inner instanceof z.ZodArray && inner.element instanceof z.ZodObject) {
+          const path = `${prefix}${key}[]`;
+          return [path, ...nestedObjectPaths(inner.element as z.ZodObject<z.ZodRawShape>, `${path}.`)];
+        }
+        return inner instanceof z.ZodObject ? [`${prefix}${key}`] : [];
+      });
+    expect(nestedObjectPaths(v2SchemaJsonSchema)).toEqual(["tables[]", "tables[].columns[]", "tables[].relationships[]"]);
+  });
+
   it("adds no warning for a schema.json with only known keys", () => {
     expect(unknownKeys(loadSchema(v2Dir))).toEqual([]);
     expect(unknownKeys(loadSchema(multiTenantDir))).toEqual([]);
   });
 });
-

@@ -764,4 +764,3 @@ describe("loadWorkspace — schema.json's unknown keys reach Studio (#690)", () 
     }
   });
 });
-

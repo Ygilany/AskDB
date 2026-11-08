@@ -318,8 +318,10 @@ function listOrEmpty(path: string): string[] {
 
 function loadFromDirectory(dir: string, schemaJsonPath?: string): NormalizedSchemaV2 {
   const files = readDirectory(dir, schemaJsonPath);
-  // Errors name the file on disk.
-  return loadFromFiles(files, files.physical, (file) => join(dir, file), dir);
+  // `files.physical` is `schema.json` as written; build from its parsed form, as a bundle does, so
+  // the directory and its bundle load the same (#690). Errors name the file on disk.
+  const physical = parsePhysicalLayer(files.physical, schemaJsonPath ?? join(dir, SCHEMA_JSON));
+  return loadFromFiles(files, physical, (file) => join(dir, file), dir);
 }
 
 function loadFromBundle(bundle: BundledSchemaV2, filePath: string): NormalizedSchemaV2 {
@@ -654,7 +656,7 @@ const KNOWN_KEYS = {
  */
 function unknownKeyWarnings(raw: unknown): SchemaV2Warning[] {
   const warnings: SchemaV2Warning[] = [];
-  const check = (value: unknown, known: readonly string[], id: string): void => {
+  const collectUnknownKeys = (value: unknown, known: readonly string[], id: string): void => {
     if (typeof value !== "object" || value === null) return;
     for (const key of Object.keys(value)) {
       if (known.includes(key)) continue;
@@ -663,16 +665,16 @@ function unknownKeyWarnings(raw: unknown): SchemaV2Warning[] {
     }
   };
   const schema = raw as { tables?: unknown };
-  check(raw, KNOWN_KEYS.schema, "schema.json");
+  collectUnknownKeys(raw, KNOWN_KEYS.schema, "schema.json");
   for (const table of Array.isArray(schema.tables) ? schema.tables : []) {
     const t = table as { id?: string; columns?: unknown; relationships?: unknown };
-    check(t, KNOWN_KEYS.table, String(t.id));
+    collectUnknownKeys(t, KNOWN_KEYS.table, String(t.id));
     for (const column of Array.isArray(t.columns) ? t.columns : []) {
-      check(column, KNOWN_KEYS.column, String((column as { id?: string }).id));
+      collectUnknownKeys(column, KNOWN_KEYS.column, String((column as { id?: string }).id));
     }
     for (const rel of Array.isArray(t.relationships) ? t.relationships : []) {
       const r = rel as { from?: string; to?: string };
-      check(r, KNOWN_KEYS.relationship, `${r.from}->${r.to}`);
+      collectUnknownKeys(r, KNOWN_KEYS.relationship, `${r.from}->${r.to}`);
     }
   }
   return warnings;

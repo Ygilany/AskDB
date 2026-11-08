@@ -47,4 +47,3 @@ describe("@askdb/core public API — the unknown_key loader warning (#690)", () 
     expect(api.loadSchemaFromJson(JSON.stringify(json)).warnings).toEqual([warning]);
   });
 });
-
