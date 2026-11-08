@@ -90,6 +90,16 @@ module.exports = Database;
 }
 
 describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
+  // `pnpm test` puts pnpm's store on NODE_PATH, where the workspace's real `better-sqlite3` sits. The kit
+  // checks NODE_PATH on disk as Node does (#669), so a "missing" `better-sqlite3` needs it cleared.
+  const nodePath = process.env.NODE_PATH;
+  beforeEach(() => {
+    delete process.env.NODE_PATH;
+  });
+  afterEach(() => {
+    if (nodePath !== undefined) process.env.NODE_PATH = nodePath;
+  });
+
   beforeEach(() => {
     vi.resetModules();
     bs3State.projectResolvedPaths.clear();

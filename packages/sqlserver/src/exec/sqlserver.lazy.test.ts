@@ -87,6 +87,16 @@ module.exports = { ConnectionPool };
 }
 
 describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
+  // `pnpm test` puts pnpm's store on NODE_PATH, where the workspace's real `mssql` sits. The kit
+  // checks NODE_PATH on disk as Node does (#669), so a "missing" `mssql` needs it cleared.
+  const nodePath = process.env.NODE_PATH;
+  beforeEach(() => {
+    delete process.env.NODE_PATH;
+  });
+  afterEach(() => {
+    if (nodePath !== undefined) process.env.NODE_PATH = nodePath;
+  });
+
   beforeEach(() => {
     vi.resetModules();
     mssqlState.projectResolvedPaths.clear();
