@@ -1088,6 +1088,7 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     ["a source with a window over every row", `SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = ${P}`],
     ["a source with LIMIT", `SELECT * FROM (SELECT * FROM orders LIMIT 1) t WHERE t.agency_id = ${P}`],
     ["a source that aggregates", `SELECT * FROM (SELECT agency_id, count(*) AS n FROM orders GROUP BY agency_id) t WHERE t.agency_id = ${P}`],
+    ["a source that groups, selecting only plain columns", `SELECT * FROM (SELECT agency_id FROM orders GROUP BY agency_id) t WHERE t.agency_id = ${P}`],
     ["a source with a set operation", `SELECT * FROM (SELECT * FROM orders UNION ALL SELECT * FROM orders) t WHERE agency_id = ${P}`],
     ["a source with two tables under *", `SELECT * FROM (SELECT * FROM orders, lookup_states) t WHERE agency_id = ${P}`],
     ["a source with a parenthesized join under *", `SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = ${P}`],
