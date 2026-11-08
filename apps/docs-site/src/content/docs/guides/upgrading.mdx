@@ -57,6 +57,8 @@ A tenant predicate in `HAVING` now counts only when its column is one the `SELEC
 
 Two more shapes that passed are refused: a tenant predicate written as a `BETWEEN`'s upper bound (`0 BETWEEN 0 AND agency_id = …`; write it as its own conjunct), and, under `sqlite`, a custom id or none, a read written `FROM ('orders')` with no predicate, which SQLite reads as the table.
 
+On a schema with upper-case column names (camelCase, as Prisma writes them), the tenant column and a polymorphic discriminator now count on Postgres and CockroachDB only when written as the engine reads the schema's spelling: quoted, as `c."agencyId"`. An unquoted `agencyid` or `agencyId` folds to lower case there and names another column, so a predicate on it is refused (`MISSING_TENANT_PREDICATE` or `MISSING_TYPE_DISCRIMINATOR`). A schema with lower-case column names is unaffected.
+
 ## 1.0.0-beta.52
 
 Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/config` 1.0.0-beta.20, `@askdb/client` 1.0.0-beta.13, `@askdb/ai` 0.1.0-beta.12, `@askdb/enrich` 0.2.0-beta.23, `@askdb/introspect` 0.3.0-beta.26, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27, and `@askdb/sqlserver` 0.1.0-beta.28.
