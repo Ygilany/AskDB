@@ -12,6 +12,7 @@ import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
 import {
   mayBeSqlite,
   readSql,
+  QUERY_START_WORDS,
   stringsSqliteReadsAsNames,
   tenantCodeReadings,
   tenantStatementReadings,
@@ -942,7 +943,7 @@ type Filter = {
 type Occurrence = { readonly target: PredicateTarget; readonly filters: readonly Filter[] };
 
 /** Words that start a query right after its `(`. */
-const QUERY_START = new Set(["select", "with", "values", "table"]);
+const QUERY_START = QUERY_START_WORDS;
 /** Words that end a row source with no alias under every reading: no engine takes one as an alias. */
 const ENDS_A_SOURCE = new Set([
   "where", "group", "order", "having", "union", "intersect", "except", "join", "inner", "left", "right", "cross", "outer", "on",
@@ -1200,7 +1201,7 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
       if (t.text !== target.placeholder || t.quoted === true) continue;
       const predicate = predicateAt(a.tokens, k, target.column, a.view.reading.profile.id === "postgres");
       if (!predicate) continue;
-      const filters = filteredScopes(a, predicate.start, predicate.end, qualifierOf(a.tokens, predicate.column));
+      const filters = filteredScopes(a, predicate.start, predicate.end, qualifierOf(a.tokens, predicate.column), predicate.column);
       if (filters.length > 0) found.push({ target, filters });
     }
   });
@@ -1534,7 +1535,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     // The view must read it as a string, and it must end there.
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
-    const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier);
+    const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier, i);
     if (filters.some((f) => f.ownSelect && f.scope === read.scope && (qualifier !== undefined || f.on === undefined || seenByOn(tokens, f.on, read.at)))) return true;
   }
   return false;
@@ -1730,7 +1731,7 @@ function takesNoOn(tokens: readonly Token[], join: number): boolean {
  * `col IN (…)` is itself such a conjunct, it filters the query around it too, through `col`'s
  * qualifier. A level opened by a function call or a comparison doesn't count.
  */
-function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined): Filter[] {
+function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined, termColumn: number): Filter[] {
   const { tokens, scopes } = a;
   const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && a.view.reading.pipesAreOr);
   const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
@@ -1740,13 +1741,12 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
   let depth = tokens[start]!.depth;
   let q = qualifier;
   let ownSelect = true;
-  let column = start;
-  while (tokens[column + 1]?.text === "." && column + 2 <= end) column += 2;
+  let column = termColumn;
   for (;;) {
     // What is directly around the term, at its level.
     const before = tokens[lo - 1];
     const after = tokens[hi + 1];
-    const leftOk = before !== undefined && ((before.kw === "and" && !andOfBetween(tokens, lo - 1)) || before.text === "(" || FILTER_CLAUSE.has(before.kw));
+    const leftOk = before !== undefined && (conjunctAnd(tokens, lo - 1) || before.text === "(" || FILTER_CLAUSE.has(before.kw));
     const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || endsClause(hi + 1);
     if (!leftOk || !rightOk) return filters;
 
@@ -1775,7 +1775,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
         break;
       }
       if (t.depth > depth) continue;
-      if (t.text === ";" || endsFilterScan(tokens, j)) break;
+      if (t.text === ";" || endsFilterScan(tokens, j, a.view.reading.profile.id)) break;
       if (disjunction(t)) return filters;
     }
 
@@ -1802,40 +1802,58 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     // WHERE/ON/HAVING, AND, or another "(". Anything else (`f(`, `IN (`, `EXISTS (`,
     // `NOT (`, `= (`) makes it something other than a filter conjunct.
     const opener = tokens[open - 1];
-    if (opener === undefined || !(FILTER_CLAUSE.has(opener.kw) || (opener.kw === "and" && !andOfBetween(tokens, open - 1)) || opener.text === "(")) return filters;
+    if (opener === undefined || !(FILTER_CLAUSE.has(opener.kw) || conjunctAnd(tokens, open - 1) || opener.text === "(")) return filters;
     lo = open;
     hi = close;
     depth = tokens[open]!.depth;
   }
 }
 
+/** Whether the token at `i` is an `AND` that joins two conjuncts, not the `AND` of a `BETWEEN`. */
+function conjunctAnd(tokens: readonly Token[], i: number): boolean {
+  return tokens[i]?.kw === "and" && !andOfBetween(tokens, i);
+}
+
 /**
- * Whether the `AND` at `and` closes a `BETWEEN` (`x BETWEEN 0 AND y`): a `BETWEEN` stands before
- * it at its level with no other `AND`, `OR` or clause word between. Then what follows is the upper
- * bound, not a conjunct: MySQL reads `0 BETWEEN 0 AND col IN (…)` with the `IN` inside the bound.
+ * Whether the `AND` at `and` closes a `BETWEEN` (`x BETWEEN 0 AND y`), so that what follows is the
+ * upper bound, not a conjunct: MySQL reads `0 BETWEEN 0 AND col IN (…)` with the `IN` inside the
+ * bound. Each `BETWEEN` at the `AND`'s level, from the start of its clause or parentheses, takes the
+ * first `AND` after it there, whatever its lower bound holds (`LEFT(…)`, a cast); an `AND` inside a
+ * `CASE … END` belongs to the `CASE`.
  */
 function andOfBetween(tokens: readonly Token[], and: number): boolean {
   const depth = tokens[and]!.depth;
-  for (let i = and - 1; i >= 0; i--) {
-    const t = tokens[i]!;
-    if (t.depth < depth) return false;
-    if (t.depth > depth) continue;
-    if (t.kw === "between") return true;
-    if (t.kw === "and" || t.kw === "or" || t.kw === "xor" || FILTER_CLAUSE.has(t.kw) || NOT_A_FILTER.has(t.kw) || CLAUSE_END.has(t.kw)) return false;
+  let from = and - 1;
+  while (from >= 0) {
+    const t = tokens[from]!;
+    if (t.depth < depth || (t.depth === depth && (FILTER_CLAUSE.has(t.kw) || t.kw === "select"))) break;
+    from--;
   }
-  return false;
+  let pending = 0;
+  let inCase = 0;
+  for (let i = from + 1; i < and; i++) {
+    const t = tokens[i]!;
+    if (t.depth !== depth) continue;
+    if (t.kw === "case") inCase++;
+    else if (t.kw === "end" && inCase > 0) inCase--;
+    else if (inCase === 0 && t.kw === "between") pending++;
+    else if (inCase === 0 && t.kw === "and" && pending > 0) pending--;
+  }
+  return pending > 0;
 }
 
 /**
  * Whether the word at `j` ends the scan for an `OR` beside a predicate: a clause start that every
  * engine reserves (`WHERE`, `HAVING`, `GROUP BY`, `ORDER BY`, a set operation, `JOIN`), not beside a
- * `.`. Other clause words (`LIMIT`, `LOCK`, `QUALIFY`, `NATURAL`, `USING`, `WINDOW`) are names on some
- * engine, so the scan goes on past them, and an `OR` after one still counts as beside the predicate.
+ * `.`, and MySQL's `STRAIGHT_JOIN` where the SQL is read as MySQL. Other clause words (`LIMIT`, `LOCK`,
+ * `QUALIFY`, `NATURAL`, `USING`, `WINDOW`) are names on some engine, so the scan goes on past them, and
+ * an `OR` after one still counts as beside the predicate.
  */
-function endsFilterScan(tokens: readonly Token[], j: number): boolean {
+function endsFilterScan(tokens: readonly Token[], j: number, engine: string): boolean {
   const t = tokens[j]!;
   if (tokens[j - 1]?.text === "." || tokens[j + 1]?.text === "." || isFunctionCall(tokens, j)) return false;
   if (t.kw === "group" || t.kw === "order") return tokens[j + 1]?.kw === "by";
+  if (t.kw === "straight_join") return engine === "mysql";
   return ["where", "having", "union", "intersect", "except", "join"].includes(t.kw);
 }
 
@@ -1844,7 +1862,8 @@ function endsFilterScan(tokens: readonly Token[], j: number): boolean {
  * only when that column is a plain key of its `SELECT`'s `GROUP BY` (`agency_id`, or `o.agency_id`
  * written the same way). On any other column, a group holds every row it covers, and SQLite and
  * MariaDB take the column's value from one of them. Read the MySQL way, an unqualified column that a
- * select-list item is aliased to is that item, not the table's column, so it never counts.
+ * select-list item is aliased to never counts: MySQL and MariaDB resolve such a `HAVING` name to the
+ * alias in some forms and to the `GROUP BY` column in others, so the check refuses the name either way.
  */
 function onGroupKey(a: Analysis, having: number, column: number): boolean {
   const { tokens } = a;
@@ -1861,7 +1880,7 @@ function onGroupKey(a: Analysis, having: number, column: number): boolean {
   if (select < 0 || groupBy < 0) return false;
   const name = tokens[column]!.lower;
   const qualifier = qualifierOf(tokens, column);
-  const items = (from: number, to: number): Array<[number, number]> => {
+  const itemRanges = (from: number, to: number): Array<[number, number]> => {
     const out: Array<[number, number]> = [];
     let itemStart = from;
     for (let i = from; i <= to; i++) {
@@ -1878,10 +1897,10 @@ function onGroupKey(a: Analysis, having: number, column: number): boolean {
     while (tokens[from]?.kw === "distinct" || tokens[from]?.kw === "all") from++;
     let fromKw = from;
     while (fromKw < having && !(tokens[fromKw]!.depth === depth && tokens[fromKw]!.kw === "from")) fromKw++;
-    const aliased = items(from, fromKw).some(([s, e]) => e > s && tokens[e - 1]?.text !== "." && isIdentifier(tokens[e]!) && tokens[e]!.lower === name);
+    const aliased = itemRanges(from, fromKw).some(([s, e]) => e > s && tokens[e - 1]?.text !== "." && isIdentifier(tokens[e]!) && tokens[e]!.lower === name);
     if (aliased) return false;
   }
-  return items(groupBy + 1, having).some(([s, e]) => {
+  return itemRanges(groupBy + 1, having).some(([s, e]) => {
     const last = tokens[e]!;
     if (!isIdentifier(last) || last.lower !== name) return false;
     const plain = e === s || (e === s + 2 && tokens[s + 1]?.text === ".");

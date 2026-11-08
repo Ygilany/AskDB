@@ -118,6 +118,9 @@ export function mayBeSqlite(profile: SqlLexerProfile): boolean {
   return profile.id === "sqlite" || profile.id === "generic";
 }
 
+/** Words that start a query right after its `(`. */
+export const QUERY_START_WORDS: ReadonlySet<string> = new Set(["select", "with", "values", "table"]);
+
 /** Words that start a clause other than `FROM`, so a `,` after one is in no `FROM` list. */
 const NOT_A_FROM_LIST = new Set(["select", "where", "group", "having", "order", "limit", "offset", "window", "values", "returning", "union", "intersect", "except", "set", "with"]);
 
@@ -126,7 +129,8 @@ const NOT_A_FROM_LIST = new Set(["select", "where", "group", "having", "order", 
  * single-quoted literal where only a name may stand as that name, so `FROM 'orders'` reads the
  * table `orders`. A string counts right after `FROM`, `JOIN` or `IN` (`IN 'orders'` reads a table),
  * after a `,` in a `FROM` list, beside a `.` (`main.'orders'`, `'main'.orders`), or right after a
- * `(` in one of those places that opens no query (`FROM ('orders')`). With `withAliases`, it also
+ * `(` that follows `FROM`, `JOIN`, a `FROM`-list comma or another such `(`, and opens no query
+ * (`FROM ('orders')`); a comma inside such parentheses is a `FROM`-list comma too. With `withAliases`, it also
  * counts right after a table or CTE reference, after the `)` of such parentheses (`(orders) 'o'`),
  * or after `AS` following one, where it is that read's alias (`FROM orders 'o'`). The tenant and sensitive checks read such a
  * string as a quoted name under a reading that {@link mayBeSqlite may be SQLite's}; only the tenant
@@ -142,7 +146,8 @@ export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[], withAlias
       const t = at(j)!;
       if (is(t, "punct", ")")) depth++;
       else if (is(t, "punct", "(")) {
-        if (depth === 0) return false;
+        // A comma inside a source's parentheses (`FROM (lookup_states, 'orders')`) is a FROM-list comma too.
+        if (depth === 0) return sourceParens.has(j);
         depth--;
       } else if (depth === 0 && is(t, "punct", ";")) return false;
       else if (depth === 0 && t.kind === "word") {
@@ -167,7 +172,7 @@ export function stringsSqliteReadsAsNames(tokens: readonly SqlToken[], withAlias
       (is(prev, "punct", "(") && sourceParens.has(j - 1));
     if (is(t, "punct", "(")) {
       const next = at(j + 1);
-      const opensQuery = next?.kind === "word" && ["select", "with", "values", "table"].includes(next.lower);
+      const opensQuery = next?.kind === "word" && QUERY_START_WORDS.has(next.lower);
       if (atSourceStart && !opensQuery) sourceParens.add(j);
       opens.push(j);
       continue;
