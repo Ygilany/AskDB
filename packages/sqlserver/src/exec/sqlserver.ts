@@ -74,7 +74,7 @@ export function resolveConnectionInput(connectionString: string): string | Mssql
   }
   // ADO.NET string: normalise multi-word keys that @tediousjs/connection-string
   // v1.x does not recognise in their spaced form.
-  if (!URL_SCHEME.test(connectionString)) {
+  if (!isConnectionUrl(connectionString)) {
     return normalizeAdoNetString(connectionString);
   }
   return connectionString;
@@ -83,14 +83,24 @@ export function resolveConnectionInput(connectionString: string): string | Mssql
 /** A leading URL scheme, `name://` (RFC 3986's scheme characters). */
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 
+/**
+ * True when `connectionString` is a URL: it starts with a scheme (`name://`).
+ * Anything else is an ADO.NET string, even when a value holds `://` (#595).
+ * The connection label uses the same test, so the two never read a string as
+ * different forms (ADR 0011). Internal to this package.
+ */
+export function isConnectionUrl(connectionString: string): boolean {
+  return URL_SCHEME.test(connectionString);
+}
+
 const TLS_TRUE = new Set(["true", "yes", "1"]);
 const TLS_FALSE = new Set(["false", "no", "0"]);
 
 /**
  * A TLS setting's value, read the same in both URL forms (#596): `true`, `yes`
  * and `1` are true, `false`, `no` and `0` are false, in any case. Any other
- * value fails closed, to `whenUnknown`: encryption on, the server certificate
- * not trusted.
+ * value fails closed, to `whenUnknown`: `true` for `encrypt` (encryption on),
+ * `false` for `trustServerCertificate` (the certificate not trusted).
  */
 function readTlsFlag(value: string, whenUnknown: boolean): boolean {
   const normalized = value.trim().toLowerCase();
@@ -195,9 +205,9 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  * default database, and reading it would change where that string connects.
  *
  * `encrypt` and `trustServerCertificate` read the way `mssql://` reads them
- * (`readTlsFlag`): `yes` and `1` are true too, and any value it doesn't know
- * turns encryption on and leaves the certificate untrusted. The parser before
- * #596 read only `true` as true (maintainer decision Q69 A).
+ * (`readTlsFlag`, #596): `yes` and `1` are true too. An unknown `encrypt`
+ * value turns encryption on, and an unknown `trustServerCertificate` value
+ * leaves the certificate untrusted.
  */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));

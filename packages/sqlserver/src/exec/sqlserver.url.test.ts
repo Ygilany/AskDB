@@ -37,6 +37,9 @@ describe("resolveConnectionInput", () => {
       expect(resolveConnectionInput(pg)).toBe(pg);
       expect(resolveConnectionInput("mssql://sa:x@h/db")).toMatchObject({ server: "h" });
       expect(resolveConnectionInput("sqlserver://h;user=sa")).toMatchObject({ server: "h" });
+      // Any case, as RFC 3986 reads a scheme; a string that doesn't start with one is ADO.NET.
+      expect(resolveConnectionInput("HTTP://h/x;Trust Server Certificate=True")).toBe("HTTP://h/x;Trust Server Certificate=True");
+      expect(resolveConnectionInput(" Server=h;Trust Server Certificate=True")).toBe(" Server=h;TrustServerCertificate=True");
     });
 
     it("is case-insensitive for the key name", () => {
@@ -292,7 +295,7 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     expect({ user: old.user, password: old.password }).toEqual(before);
     expect({ user: now.user, password: now.password }).toEqual(after);
   });
-  // #596 (maintainer decision Q69 A): `encrypt` and `trustServerCertificate` read `true`, `yes`
+  // #596: `encrypt` and `trustServerCertificate` read `true`, `yes`
   // and `1` as true and `false`, `no` and `0` as false, as `mssql://` does. The old parser read
   // only `true` as true, so `encrypt=yes` connected without TLS. Any other value fails closed:
   // encryption on, the server certificate not trusted.

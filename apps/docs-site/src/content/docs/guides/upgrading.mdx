@@ -19,13 +19,13 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
-## 1.0.0-rc.1
+## 1.0.0-beta.55
 
-Not published yet: these changes ship with `@askdb/sqlserver`'s next release, and with `askdb` and `@askdb/studio`, which depend on it.
+Not published yet: these changes ship with `@askdb/sqlserver`'s next release, and with `askdb` 1.0.0-beta.55 and `@askdb/studio`, which depend on it.
 
 ### Check the TLS settings in your SQL Server URLs
 
-AskDB now reads `encrypt` and `trustServerCertificate` the same way in `mssql://` and `sqlserver://` URLs (#596). `true`, `yes` and `1` mean true, and `false`, `no` and `0` mean false, in any case. Any other value turns encryption on and leaves the server certificate untrusted.
+AskDB now reads `encrypt` and `trustServerCertificate` the same way in `mssql://` and `sqlserver://` URLs (#596). `true`, `yes` and `1` mean true, and `false`, `no` and `0` mean false, in any case. Any other `encrypt` value turns encryption on, and any other `trustServerCertificate` value leaves the server certificate untrusted.
 
 - **`sqlserver://` with `encrypt=yes` or `encrypt=1` now requires TLS.** Before, only `encrypt=true` turned encryption on, so these strings connected without it. A server that doesn't offer TLS now refuses the connection. Write `encrypt=false` if you meant to connect without encryption.
 - **`sqlserver://` with `trustServerCertificate=yes` or `=1` now trusts the server certificate,** as `=true` does. Before, the certificate was checked.
