@@ -2990,6 +2990,7 @@ describe("validateTenantGuardrails — a name CockroachDB lower-cases or normali
   it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a predicate on a read with a column list when the table's name ends in a capital sigma under $id", (dialect) => {
     const table = "οσ";
     expect(findings("SELECT * FROM ΟΣ t (id, agency_id) WHERE agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+    expect(findings("SELECT t.x FROM ΟΣ t (agency_id, x) WHERE agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
     expect(findings("SELECT * FROM ΟΣ t WHERE t.agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([]);
   });
 
