@@ -9,7 +9,7 @@ export const v2ColumnSchema = z.object({
   sensitive: z.boolean().optional(),
 });
 
-const v2RelationshipSchema = z.object({
+export const v2RelationshipSchema = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
 });

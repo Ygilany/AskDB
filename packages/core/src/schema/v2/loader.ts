@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { SchemaParseError } from "../../errors.js";
 import { parseConceptsMarkdown, parseTableMarkdown } from "./parser.js";
-import { v2SchemaJsonSchema, type V2SchemaJson } from "./physical.js";
+import { v2ColumnSchema, v2RelationshipSchema, v2SchemaJsonSchema, v2TableSchema, type V2SchemaJson } from "./physical.js";
 import type {
   NormalizedSchemaV2,
   NormalizedV2Column,
@@ -68,7 +68,7 @@ export function loadSchemaFromJson(raw: string): NormalizedSchemaV2 {
     return loadFromBundle(parsed as BundledSchemaV2, "<inline JSON>");
   }
   const physical = parsePhysicalLayer(parsed, "<inline JSON>");
-  return buildNormalized(physical, {}, undefined, undefined);
+  return buildNormalized(physical, {}, undefined, undefined, parsed);
 }
 
 /**
@@ -128,7 +128,7 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
   // unless it sits in a schema directory (fails closed, see below).
   assertNotInSchemaDirectory(resolved);
   const physical = parsePhysicalLayer(parsed, resolved);
-  return buildNormalized(physical, {}, undefined, undefined);
+  return buildNormalized(physical, {}, undefined, undefined, parsed);
 }
 
 /**
@@ -212,7 +212,10 @@ function readDirectory(dir: string, schemaJsonPath?: string): BundledSchemaV2 {
     if (e instanceof SchemaParseError) throw e;
     throw new SchemaParseError(`Failed to parse schema.json in ${dir}`, e);
   }
-  const physical = parsePhysicalLayer(parsed, physicalPath);
+  // Checked, but kept as written: a key the loader doesn't read still reaches the bundle and its
+  // `unknown_key` warning (#690), so the directory and its bundle load the same.
+  parsePhysicalLayer(parsed, physicalPath);
+  const physical = parsed as V2SchemaJson;
 
   const tableFiles: Record<string, string> = {};
   for (const entry of tableEntries) {
@@ -409,7 +412,7 @@ function loadFromFiles(
     });
   }
 
-  return buildNormalized(physical, tableMarkdowns, concepts, tenantPolicy);
+  return buildNormalized(physical, tableMarkdowns, concepts, tenantPolicy, files.physical);
 }
 
 /**
@@ -505,8 +508,10 @@ function buildNormalized(
   tableMarkdowns: Record<string, LoadedTableMarkdown>,
   concepts: V2ConceptsFrontmatter | undefined,
   tenantPolicy: NormalizedTenantPolicy | undefined,
+  /** `schema.json` as written, before the zod parse dropped the keys it doesn't read. */
+  rawPhysical: unknown,
 ): NormalizedSchemaV2 {
-  const warnings: SchemaV2Warning[] = [];
+  const warnings: SchemaV2Warning[] = unknownKeyWarnings(rawPhysical);
 
   // Physical table ids, and each physical column id's owning table, for ID validation
   const physicalTableIds = new Set(physical.tables.map((t) => t.id));
@@ -634,6 +639,74 @@ function buildNormalized(
     tenantPolicy,
     warnings,
   };
+}
+
+const KNOWN_KEYS = {
+  schema: Object.keys(v2SchemaJsonSchema.shape),
+  table: Object.keys(v2TableSchema.shape),
+  column: Object.keys(v2ColumnSchema.shape),
+  relationship: Object.keys(v2RelationshipSchema.shape),
+};
+
+/**
+ * One `unknown_key` warning for each key of a validated `schema.json` that its zod schema doesn't
+ * define (#690), at the top level, on a table, a column or a relationship, in file order.
+ */
+function unknownKeyWarnings(raw: unknown): SchemaV2Warning[] {
+  const warnings: SchemaV2Warning[] = [];
+  const check = (value: unknown, known: readonly string[], id: string): void => {
+    if (typeof value !== "object" || value === null) return;
+    for (const key of Object.keys(value)) {
+      if (known.includes(key)) continue;
+      const suggestion = closestKey(key, known);
+      warnings.push(suggestion ? { kind: "unknown_key", id, key, suggestion } : { kind: "unknown_key", id, key });
+    }
+  };
+  const schema = raw as { tables?: unknown };
+  check(raw, KNOWN_KEYS.schema, "schema.json");
+  for (const table of Array.isArray(schema.tables) ? schema.tables : []) {
+    const t = table as { id?: string; columns?: unknown; relationships?: unknown };
+    check(t, KNOWN_KEYS.table, String(t.id));
+    for (const column of Array.isArray(t.columns) ? t.columns : []) {
+      check(column, KNOWN_KEYS.column, String((column as { id?: string }).id));
+    }
+    for (const rel of Array.isArray(t.relationships) ? t.relationships : []) {
+      const r = rel as { from?: string; to?: string };
+      check(r, KNOWN_KEYS.relationship, `${r.from}->${r.to}`);
+    }
+  }
+  return warnings;
+}
+
+/**
+ * The known key `key` most likely misspells: one that differs only in case, or by at most two
+ * single-letter edits (one for a key of four letters or fewer), ignoring case.
+ */
+function closestKey(key: string, known: readonly string[]): string | undefined {
+  const lower = key.toLowerCase();
+  let best: string | undefined;
+  let bestDistance = lower.length <= 4 ? 2 : 3;
+  for (const candidate of known) {
+    const distance = editDistance(lower, candidate.toLowerCase());
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/** Levenshtein distance between two short strings. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(previous[j]! + 1, current[j - 1]! + 1, previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = current;
+  }
+  return previous[b.length]!;
 }
 
 /**

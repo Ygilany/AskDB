@@ -642,3 +642,59 @@ describe("loadSchema — business context and column notes (#898)", () => {
     expect(column(schema, "users", "email").note).toBeUndefined();
   });
 });
+
+describe("loadSchema — unknown keys in schema.json warn (#690)", () => {
+  /** A copy of the orders-users fixture with `edit` applied to its parsed `schema.json`. */
+  function withSchemaJson(edit: (json: Record<string, any>) => void): string {
+    const dir = copyFixture(v2Dir);
+    const file = join(dir, "schema.json");
+    const json = JSON.parse(readFileSync(file, "utf8"));
+    edit(json);
+    writeFileSync(file, JSON.stringify(json, null, 2));
+    return dir;
+  }
+  const unknownKeys = (schema: ReturnType<typeof loadSchema>) => schema.warnings.filter((w) => w.kind === "unknown_key");
+
+  it("names a misspelled column flag and its column, suggests the known key, and leaves the column unprotected", () => {
+    const dir = withSchemaJson((json) => {
+      const created = json.tables[0].columns.find((c: { name: string }) => c.name === "created_at");
+      created.sensitve = true;
+    });
+    const schema = loadSchema(dir);
+    expect(unknownKeys(schema)).toEqual([
+      { kind: "unknown_key", id: "table:public.users#created_at", key: "sensitve", suggestion: "sensitive" },
+    ]);
+    expect(schema.tables[0]!.columns.find((c) => c.name === "created_at")!.sensitive).toBe(false);
+  });
+
+  it("warns on unknown table, relationship and top-level keys, suggesting a key that differs only in case", () => {
+    const dir = withSchemaJson((json) => {
+      json.schemaID = "typo";
+      json.tables[1].Sensitive = true;
+      json.tables[1].relationships[0].note = "orders belong to users";
+      json.tables[1].columns[0].comment = "from the DDL";
+    });
+    expect(unknownKeys(loadSchema(dir))).toEqual([
+      { kind: "unknown_key", id: "schema.json", key: "schemaID", suggestion: "schemaId" },
+      { kind: "unknown_key", id: "table:public.orders", key: "Sensitive", suggestion: "sensitive" },
+      { kind: "unknown_key", id: "table:public.orders#id", key: "comment" },
+      { kind: "unknown_key", id: "table:public.orders#user_id->table:public.users#id", key: "note" },
+    ]);
+  });
+
+  it("warns the same from a bare schema.json, a directory and its bundle", () => {
+    const dir = withSchemaJson((json) => {
+      json.tables[0].columns[0].nulable = false;
+    });
+    const expected = [{ kind: "unknown_key", id: "table:public.users#id", key: "nulable", suggestion: "nullable" }];
+    expect(unknownKeys(loadSchema(dir))).toEqual(expected);
+    expect(unknownKeys(loadSchemaFromJson(readFileSync(join(dir, "schema.json"), "utf8")))).toEqual(expected);
+    expect(unknownKeys(loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir))))).toEqual(expected);
+  });
+
+  it("adds no warning for a schema.json with only known keys", () => {
+    expect(unknownKeys(loadSchema(v2Dir))).toEqual([]);
+    expect(unknownKeys(loadSchema(multiTenantDir))).toEqual([]);
+  });
+});
+

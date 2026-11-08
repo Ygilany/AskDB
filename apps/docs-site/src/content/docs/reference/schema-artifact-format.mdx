@@ -143,7 +143,7 @@ The physical layer: the tables and columns AskDB read from the database. Here it
 
 ### Unknown keys and errors
 
-AskDB drops a key it doesn't know without an error or a warning. A misspelled `"sensitve": true` loads and marks nothing. Table front-matter is stricter: there, an unknown key is an error.
+AskDB ignores a key it doesn't know, and `loadSchema()` returns an `unknown_key` [loader warning](#loader-warnings) naming it, with the closest known key when one is near. A misspelled `"sensitve": true` still marks nothing, but the warning says so and suggests `sensitive`. Table front-matter is stricter: there, an unknown key is an error.
 
 | Problem | Error (`SchemaParseError`) |
 | --- | --- |
@@ -315,6 +315,7 @@ Each table and column ends up with one `sensitive` value:
 | `misplaced_column_id` | `tableFile`, `id`, `tableId` | A `columns[]` entry names a column of another table, `tableId`. (The tenant policy's warning of the same name is in `schema.tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).) Only its `sensitive: true` applies. | Move the entry to `tableId`'s file. |
 | `duplicate_column_id` | `tableFile`, `id` | The file lists the column again. One warning for each repeat. | Merge the entries into one. |
 | `sensitivity_downgrade_ignored` | `tableFile`, `id` | Front-matter says `sensitive: false` for a table or column that is sensitive anyway. | Remove the `false`. To un-mark it, edit `schema.json`. |
+| `unknown_key` | `id`, `key`, `suggestion` (optional) | `schema.json` has `key`, which AskDB doesn't read and ignores. `id` is where: `"schema.json"` for a top-level key, a table's or column's ID, or `<from>-><to>` for a relationship. `suggestion` is the known key it's closest to, when one differs only in case or by a small edit. | Rename the key to `suggestion`, or remove it. |
 
 `tableFile` is the file's path in the artifact, such as `tables/orders.md`. The same `SchemaV2Warning` type also has `missing_table_md` and `missing_column_md`. Only Studio reports those: for a table with no table file, and for a column with no `columns[]` entry in its table's file. Tenant policy warnings are separate, in `tenantPolicy.warnings`: see [When the policy and the schema disagree](/reference/tenant-policy/#when-the-policy-and-the-schema-disagree).
 

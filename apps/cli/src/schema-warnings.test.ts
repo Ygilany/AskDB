@@ -30,6 +30,14 @@ describe("schemaWarningLines", () => {
       { kind: "duplicate_column_id", tableFile: "tables/orders.md", id: "table:public.orders#id" },
       "tables/orders.md lists column table:public.orders#id more than once; only the first entry's description, aliases and enum apply",
     ],
+    [
+      { kind: "unknown_key", id: "table:public.users#email", key: "sensitve", suggestion: "sensitive" },
+      "schema.json has a key AskDB doesn't read, \"sensitve\" on table:public.users#email; did you mean \"sensitive\"?",
+    ],
+    [
+      { kind: "unknown_key", id: "schema.json", key: "comment" },
+      "schema.json has a key AskDB doesn't read, \"comment\" at the top level",
+    ],
   ];
 
   it.each(cases)("prints %j as one line", (warning, line) => {

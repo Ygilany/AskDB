@@ -19,6 +19,14 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.56
+
+Not published yet: these changes ship with `@askdb/core` and `askdb` 1.0.0-beta.56, and the other packages that pin `@askdb/core`.
+
+### Handle the new `unknown_key` loader warning
+
+`loadSchema()` now warns about a key `schema.json` doesn't define, such as a misspelled `"sensitve": true`, with a new `SchemaV2Warning` kind: `{ kind: "unknown_key", id, key, suggestion? }` ([#690](https://github.com/Ygilany/AskDB/issues/690)). The key is still ignored, so a misspelled `sensitive` still marks nothing: fix the key the warning names. If your code switches over a warning's `kind` exhaustively, add a case for `unknown_key`. `askdb ask` and `askdb bundle` print it on stderr, and Studio lists it under **Settings → Schema Warnings**. `readSchemaDirectory()` now keeps `schema.json` as written, unknown keys included, so a bundle warns like its directory. [Loader warnings](/reference/schema-artifact-format/#loader-warnings) describes it.
+
 ## 1.0.0-beta.55
 
 Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.55, and the other packages that pin `@askdb/core`.

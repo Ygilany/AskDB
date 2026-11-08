@@ -741,3 +741,27 @@ describe("workspace table filenames", () => {
     saveAllAndReload(ws);
   });
 });
+
+describe("loadWorkspace — schema.json's unknown keys reach Studio (#690)", () => {
+  it("carries the loader's unknown_key warning in workspace.warnings", () => {
+    const root = mkdtempSync(join(tmpdir(), "askdb-enrich-unknown-key-"));
+    try {
+      const dir = join(root, "orders-users.schema");
+      cpSync(FIXTURE, dir, { recursive: true });
+      const file = join(dir, "schema.json");
+      const json = JSON.parse(readFileSync(file, "utf8"));
+      json.tables[0].columns[0].sensitve = true;
+      writeFileSync(file, JSON.stringify(json, null, 2));
+
+      expect(loadWorkspace(dir).warnings).toContainEqual({
+        kind: "unknown_key",
+        id: "table:public.users#id",
+        key: "sensitve",
+        suggestion: "sensitive",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
