@@ -70,6 +70,9 @@ const SET_OPERATORS = new Set(["union", "except", "intersect"]);
 const PLAIN_CODE = /[\t\n\r\x20-\x5b\x5d-\x7e\p{L}\p{M}\p{Nd}]/u;
 const MONEY_SIGN = /^\p{Sc}$/u;
 
+/** What to write instead of code {@link findAmbiguousTsqlText} finds, for the read-only and tenant checks' messages. */
+export const AMBIGUOUS_TSQL_ADVICE = "Separate keywords, names and numbers with ASCII spaces, and keep other characters inside string literals or [bracketed] names.";
+
 /**
  * Code SQL Server may split into tokens differently from the lexer, described for an
  * error message, or `undefined`. Text inside strings and quoted identifiers is not

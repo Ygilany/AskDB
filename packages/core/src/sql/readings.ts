@@ -15,6 +15,7 @@
  * | tenant: statements and calls ({@link tenantStatementReadings}) | the engine's (Postgres family: both comment ends) | every engine's, Postgres and MySQL with both string settings |
  * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends; the Postgres and SQL Server views with block comments nested and not |
  * | placeholders ({@link placeholderReading}) | the engine's | the generic profile |
+ * | tenant: plain code SQL Server may split differently ({@link tenantPlainCodeReadings}) | `sqlserver`: the engine's; any other engine: none | none |
  * | names outside printable ASCII, tenant and sensitive ({@link unmatchedNonAsciiName}) | `sqlserver`: the engine's; any other engine: none | as for tenant statements |
  * | names some engine folds into ASCII or not in NFC (as written or, unquoted, lower-cased), tenant ({@link nameEnginesFoldApart}) | the engine's, as for tenant statements | as for tenant statements |
  * | `'…'` read as a name or an alias, tenant and sensitive ({@link stringsSqliteReadsAsNames}) | `sqlite`: its readings; any other engine: none | the generic and standard readings, and SQLite's |
@@ -28,7 +29,7 @@
  * Postgres family is read with both comment ends where that decides what is code.
  */
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
-import { ENGINE_LEXER_PROFILES, GENERIC_LEXER, lexerProfileFor, lexSql, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { ENGINE_LEXER_PROFILES, GENERIC_LEXER, lexerProfileFor, lexSql, SQLSERVER_LEXER, type SqlLexerProfile, type SqlToken } from "./lexer.js";
 
 /** The parts of a dialect that decide how its SQL is read. */
 export type ReadingDialect = Pick<DialectSpec, "id" | "backslashEscapes">;
@@ -116,6 +117,17 @@ export function tenantStatementReadings(dialect: ReadingDialect | undefined): Sq
 
 /** Printable ASCII, the only characters a name can hold for the checks to match it by spelling everywhere. */
 const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+
+/**
+ * The readings whose plain code the tenant check holds to the read-only check's plain-code rule
+ * (`findAmbiguousTsqlText`, #623 review): SQL Server's, under `sqlserver` only. The tenant check reads
+ * where SQL Server ends a token through the lexer's model of it, which can't be checked against
+ * SQL Server's own (ADR 0012), so it refuses what that model may get wrong. Under any other id, or
+ * none, the rule would refuse unquoted non-ASCII names, which needs its own rule code.
+ */
+export function tenantPlainCodeReadings(dialect: ReadingDialect | undefined): readonly SqlLexerProfile[] {
+  return dialect?.id === "sqlserver" ? [SQLSERVER_LEXER] : [];
+}
 
 /**
  * The first name in `read`, quoted or not, that holds a character outside printable ASCII and isn't
