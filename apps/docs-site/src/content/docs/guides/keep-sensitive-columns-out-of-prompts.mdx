@@ -50,6 +50,7 @@ The config setting is a floor: a single call can turn omission on, but not off. 
 | `askdb ask` | `--omit-sensitive-from-prompt` |
 | `askdb.ask()` or core's `ask()` | `omitSensitiveIdentifiersFromNlToSqlPrompt: true` |
 | HTTP API | `"omitSensitiveFromPrompt": true` in the request body |
+| `planChart()` in `@askdb/client/charts` (experimental) | `omitSensitiveIdentifiers: true`, with the schema artifact as `schema` |
 
 Studio's Playground, **Suggest** and **Draft with AI** follow the config setting.
 
