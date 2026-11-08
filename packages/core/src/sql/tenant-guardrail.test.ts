@@ -1350,6 +1350,7 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
     ["the read on the ON's right", `SELECT o.* FROM lookup_states s JOIN orders o ON agency_id = ${P}`],
     ["a read joined before an earlier ON", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code = o.state JOIN service_types t ON agency_id = ${P}`],
     ["a read inside a parenthesized operand", `SELECT o.* FROM lookup_states s JOIN (orders o CROSS JOIN service_types t) ON agency_id = ${P}`],
+    ["the read before a derived table it joins", `SELECT o.* FROM orders o JOIN (SELECT code, name FROM lookup_states) s ON agency_id = ${P}`],
   ])("accepts an unqualified ON predicate on %s", (_label, sql) => {
     expect(findings(sql)).toEqual([]);
   });
@@ -1388,7 +1389,7 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
       "MISSING_TENANT_PREDICATE:table:billing.order",
     ]);
     expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE g.agency_id = ${P}`)).toEqual(["MISSING_TENANT_PREDICATE:table:app.group"]);
-    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE by.agency_id = ${P} AND g.agency_id = ${P} ORDER BY g.id`)).toEqual([]);
+    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE g.agency_id = ${P} AND by.agency_id = ${P} ORDER BY g.id`)).toEqual([]);
   });
 });
 

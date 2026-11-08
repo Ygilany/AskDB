@@ -877,12 +877,13 @@ const PREDICATE_WORDS = new Set(["in", "any", "and", "or", "not", "xor"]);
  * Whether the unquoted word at `i` is part of `ORDER BY` or `GROUP BY`. `ORDER` and `GROUP` are
  * reserved on every engine, so a table named after one is written quoted. Any other keyword may
  * name a table, unquoted, on some engine (`user` on MySQL, `lock` on Postgres), so its spelling
- * always counts as the table.
+ * always counts as the table. After a `.` (`billing.order by`), `order` is a table's name and
+ * `by` its alias.
  */
 function isOrderOrGroupBy(tokens: readonly Token[], i: number): boolean {
   const kw = tokens[i]!.kw;
-  if (kw === "order" || kw === "group") return tokens[i + 1]?.kw === "by";
-  return kw === "by" && (tokens[i - 1]?.kw === "order" || tokens[i - 1]?.kw === "group");
+  if (kw === "order" || kw === "group") return tokens[i + 1]?.kw === "by" && tokens[i - 1]?.text !== ".";
+  return kw === "by" && (tokens[i - 1]?.kw === "order" || tokens[i - 1]?.kw === "group") && tokens[i - 2]?.text !== ".";
 }
 
 /**
@@ -928,6 +929,8 @@ type Filter = {
   readonly qualifier: string | undefined;
   /** The predicate's own `SELECT`, where the qualifier is its column's; else one it reaches through `col IN (…)`. */
   readonly ownSelect: boolean;
+  /** The `ON` the predicate is ANDed into, if it is: unqualified, it names only that join's operands ({@link seenByOn}). */
+  readonly on?: number;
 };
 
 /** A tenant predicate for one target, and the `SELECT`s it filters. */
@@ -1050,9 +1053,26 @@ function aliasAt(a: Analysis, i: number): number | undefined {
  */
 function readNames(a: Analysis, i: number): Set<string> {
   const end = sourceEnd(a, i);
+  if (hiddenByGroupAlias(a, end)) return new Set();
   const alias = aliasAt(a, end);
   if (alias !== undefined) return a.tokens[alias + 1]?.text === "(" ? new Set() : new Set([a.tokens[alias]!.name]);
   return endsSource(a, end + 1) ? new Set([a.tokens[i]!.name]) : new Set();
+}
+
+/**
+ * Whether the row source ending at `end` sits inside parentheses, in a source position, that
+ * something other than the source's end follows: an alias (`("order" x) AS y`,
+ * `(orders x CROSS JOIN s) AS j`) hides the names inside, so a predicate on `x` names another
+ * read. Any other word there is a form the check doesn't read, so it fails closed the same way.
+ */
+function hiddenByGroupAlias(a: Analysis, end: number): boolean {
+  const { tokens } = a;
+  for (let open = enclosing(tokens, end, "("); open >= 0; open = enclosing(tokens, open, "(")) {
+    if (opensQuery(tokens, open) || !inSourcePosition(tokens, open)) return false;
+    const close = enclosing(tokens, open + 1, ")");
+    if (close < 0 || !endsSource(a, close + 1)) return true;
+  }
+  return false;
 }
 
 /**
@@ -1317,7 +1337,7 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
  */
 function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
   const q = filter.qualifier;
-  if (q === undefined) return true;
+  if (q === undefined) return filter.on === undefined || seenByOn(a.tokens, filter.on, read.at);
   const owner = target.table.toLowerCase();
   if (owner === table) return read.names.has(q);
   return !filter.ownSelect || readsOf(a, owner).some((r) => r.names.has(q));
@@ -1347,7 +1367,7 @@ function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Re
       refs.every((ref) =>
         found.some((o) =>
           o.target === target &&
-          o.filters.some((f) => f.ownSelect && f.scope === ref.scope && (f.qualifier === undefined || ref.names.has(f.qualifier)))) ||
+          o.filters.some((f) => f.ownSelect && f.scope === ref.scope && (f.qualifier === undefined ? f.on === undefined || seenByOn(a.tokens, f.on, ref.at) : ref.names.has(f.qualifier)))) ||
         filteredFromOutside(a, found, ref, target, depth + 1));
   }
   memo.set(key, filtered);
@@ -1388,7 +1408,8 @@ function readSourceRefs(a: Analysis, open: number): Read[] | undefined {
   }
   if (hasColumnList(a, close)) return undefined;
   const alias = aliasAt(a, close);
-  return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined ? [] : [tokens[alias]!.name]) }];
+  const hidden = hiddenByGroupAlias(a, alias ?? close);
+  return [{ at: open, scope: scopes.of[open]!, names: new Set(alias === undefined || hidden ? [] : [tokens[alias]!.name]) }];
 }
 
 /** Clauses that compute over a source's rows, or pick some of them, before an outside filter runs. */
@@ -1507,7 +1528,8 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     // The view must read it as a string, and it must end there.
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
-    if (filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier).some((f) => f.ownSelect && f.scope === read.scope)) return true;
+    const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier);
+    if (filters.some((f) => f.ownSelect && f.scope === read.scope && (qualifier !== undefined || f.on === undefined || seenByOn(tokens, f.on, read.at)))) return true;
   }
   return false;
 }
@@ -1643,6 +1665,55 @@ function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
   return false;
 }
 
+/** Join words that may take an `ON`: MySQL's `STRAIGHT_JOIN` may, so it counts as one. */
+const TAKES_ON = new Set(["join", "straight_join"]);
+
+/**
+ * Whether the read at `at` is among the operands of the join the `ON` at `on` closes: the only reads
+ * an unqualified column there can name. They run from the join's left operand up to the `ON`. Going
+ * left from the join's own `JOIN`, the left operand stops at `FROM`, at the `(` around the join, at
+ * a `FROM`-list comma (which binds looser than a join, though not on SQLite, where this only
+ * narrows the check), or at a `JOIN` whose `ON` or `USING` hasn't come yet (`a LEFT JOIN b JOIN c
+ * ON … ON …`). `CROSS JOIN`, `NATURAL JOIN` and `APPLY` take no `ON`, so the operand runs past them.
+ */
+function seenByOn(tokens: readonly Token[], on: number, at: number): boolean {
+  if (at >= on) return false;
+  const depth = tokens[on]!.depth;
+  let join = -1;
+  for (let i = on - 1; i >= 0 && join < 0; i--) {
+    const t = tokens[i]!;
+    if (t.depth < depth) return false;
+    if (t.depth > depth) continue;
+    if (t.kw === "from" || t.text === ",") return false;
+    if (TAKES_ON.has(t.kw)) join = i;
+  }
+  if (join < 0) return false;
+  let pending = 0; // ON or USING seen going left, each closing a JOIN further left
+  for (let i = join - 1; i >= 0; i--) {
+    const t = tokens[i]!;
+    if (t.depth < depth) return at > i;
+    if (t.depth > depth) continue;
+    if (t.kw === "from" || t.text === ",") return at > i;
+    if (t.kw === "on" || t.kw === "using") pending++;
+    else if (TAKES_ON.has(t.kw) && !takesNoOn(tokens, i)) {
+      if (pending === 0) return at > i;
+      pending--;
+    }
+  }
+  return true;
+}
+
+/** Whether the `JOIN` at `join` is a `CROSS JOIN` or a `NATURAL … JOIN`, which take no `ON`. */
+function takesNoOn(tokens: readonly Token[], join: number): boolean {
+  const depth = tokens[join]!.depth;
+  for (let k = join - 1; k >= 0; k--) {
+    const w = tokens[k]!;
+    if (w.depth !== depth || BEFORE_A_JOIN.has(w.kw) || w.text === ",") return false;
+    if ((w.kw === "cross" || w.kw === "natural") && tokens[k - 1]?.text !== "." && tokens[k + 1]?.text !== ".") return true;
+  }
+  return false;
+}
+
 /**
  * The `SELECT`s whose reads the term `tokens[start..end]` filters (#399), each with the qualifier
  * that ties it to a read there. The term must be ANDed into a `WHERE`, `ON` (of an inner join) or
@@ -1703,7 +1774,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     if (clause >= 0) {
       if (tokens[clause]!.kw === "on" && isOuterJoinOn(tokens, clause)) return filters;
       const scope = scopes.of[clause]!;
-      filters.push({ scope, qualifier: q, ownSelect });
+      filters.push({ scope, qualifier: q, ownSelect, ...(tokens[clause]!.kw === "on" ? { on: clause } : {}) });
       // `col IN (<this SELECT>)` limits the query around it to the rows this SELECT returns.
       const query = scopeOpen(scope);
       const queryClose = scopes.close.get(query);
