@@ -3019,9 +3019,9 @@ describe("validateTenantGuardrails — a name CockroachDB lower-cases or normali
     expect(findings(`SELECT x.* FROM (SELECT o.${column}, o.id FROM ledger o) x WHERE x.${column} = :tenant_agency_ids`, p, dialect)).toEqual([]);
   });
 
-  // The join proof reads a hop's table and columns as CockroachDB does: `ΟΣ` is `οσ`, and an unquoted
-  // `ΕΤΑΙΡΕΙΑΣ_ID` is read apart, so it links nothing.
-  it("reads a join path's capital-sigma names as CockroachDB does", () => {
+  // The join proof reads a hop's table and columns the Postgres way: Postgres keeps an upper-case
+  // non-ASCII letter and CockroachDB lower-cases it, so an unquoted `ΟΣ` or `ΕΤΑΙΡΕΙΑΣ_ID` links nothing.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("reads a join path's capital-sigma names apart under $id", (dialect) => {
     const p: NormalizedTenantPolicy = {
       ...policy,
       enforcement: "warn",
@@ -3030,10 +3030,45 @@ describe("validateTenantGuardrails — a name CockroachDB lower-cases or normali
         { id: "table:public.lines", scopeThrough: [{ root: "table:public.agencies", join: [{ from: "table:public.lines#εταιρειασ_id", to: "table:public.οσ#id" }, { from: "table:public.οσ#agency_id", to: "table:public.agencies#id" }] }] },
       ],
     };
-    const path = (hop: string) => `SELECT l.* FROM lines l JOIN ΟΣ p ON ${hop} JOIN agencies g ON p.agency_id = g.id WHERE g.id = :tenant_agency_ids`;
+    const path = (table: string, hop: string) => `SELECT l.* FROM lines l JOIN ${table} p ON ${hop} JOIN agencies g ON p.agency_id = g.id WHERE g.id = :tenant_agency_ids`;
     const refused = ["MISSING_TENANT_PREDICATE:table:public.lines"];
-    expect(findings(path("l.εταιρειασ_id = p.id"), p, COCKROACHDB_DIALECT)).toEqual([]);
-    expect(findings(path("l.εταιρειασ_id = p.agency_id"), p, COCKROACHDB_DIALECT)).toEqual(refused);
-    expect(findings(path("l.ΕΤΑΙΡΕΙΑΣ_ID = p.id"), p, COCKROACHDB_DIALECT)).toEqual(refused);
+    expect(findings(path("οσ", "l.εταιρειασ_id = p.id"), p, dialect)).toEqual([]);
+    expect(findings(path("ΟΣ", "l.εταιρειασ_id = p.id"), p, dialect)).toEqual(refused);
+    expect(findings(path("οσ", "l.εταιρειασ_id = p.agency_id"), p, dialect)).toEqual(refused);
+    expect(findings(path("οσ", "l.ΕΤΑΙΡΕΙΑΣ_ID = p.id"), p, dialect)).toEqual(refused);
+  });
+});
+
+describe("validateTenantGuardrails — the join proof counts a read only as every engine reads the policy's table", () => {
+  const subAgencies: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.sub_agencies", ids: ["5"] } };
+  const findings = (sql: string, scope: TenantScope, dialect: DialectSpec) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, scope, { dialect }).warnings.map((w) => w.tableId);
+  const path = (clients: string) =>
+    `SELECT a.* FROM appointments a JOIN ${clients} c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)`;
+  const root = (agencies: string) => `SELECT o.* FROM orders o JOIN ${agencies} g ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids`;
+
+  // Postgres and CockroachDB read a quoted name exactly, MySQL and MariaDB keep a table name's case on
+  // some servers, and SQL Server's collation may: `"CLIENTS"` can be another table than `clients`.
+  it.each([
+    ["postgres", POSTGRES_DIALECT, '"CLIENTS"', '"clients"', '"AGENCIES"'],
+    ["cockroachdb", COCKROACHDB_DIALECT, '"CLIENTS"', '"clients"', '"AGENCIES"'],
+    ["mysql", MYSQL_DIALECT, "`CLIENTS`", "`clients`", "`AGENCIES`"],
+    ["mariadb", MARIADB_DIALECT, "`CLIENTS`", "`clients`", "`AGENCIES`"],
+    ["sqlserver", SQLSERVER_DIALECT, "[CLIENTS]", "[clients]", "[AGENCIES]"],
+  ] as const)("refuses a hop or root in another case than the schema's, quoted, under %s", (_label, dialect, other, same, otherRoot) => {
+    expect(findings(path(other), subAgencies, dialect)).toEqual(["table:public.appointments"]);
+    expect(findings(root(otherRoot), agencyScope, dialect)).toEqual(["table:public.orders"]);
+    expect(findings(path(same), subAgencies, dialect)).toEqual([]);
+    expect(findings(path("clients"), subAgencies, dialect)).toEqual([]);
+    expect(findings(root("agencies"), agencyScope, dialect)).toEqual([]);
+  });
+
+  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLSERVER_DIALECT])("refuses a hop in another case, unquoted, under $id", (dialect) => {
+    expect(findings(path("CLIENTS"), subAgencies, dialect)).toEqual(["table:public.appointments"]);
+  });
+
+  // Postgres folds the ASCII letters of an unquoted name, as CockroachDB does, and SQLite compares them in any case.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, SQLITE_DIALECT])("counts a hop in another ASCII case, unquoted, under $id", (dialect) => {
+    expect(findings(path("CLIENTS"), subAgencies, dialect)).toEqual([]);
   });
 });
