@@ -1564,18 +1564,14 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
 /**
  * The span `[start, end]` and column index of a tenant predicate around the placeholder at `k`:
  * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a possibly
- * qualified name) is `column`. Which read the column belongs to is its qualifier's to say. With
- * `exactQuoted` (read the Postgres way, where a quoted name is compared exactly), a quoted `col`
- * counts only when spelled as the policy spells the column: `"AGENCY_ID"` is another column there,
- * which another source in the query may hold.
+ * qualified name) is `column`, as {@link namesColumn} compares them with `exact`. Which read the
+ * column belongs to is its qualifier's to say.
  */
-function predicateAt(tokens: readonly Token[], k: number, column: string, exactQuoted = false): { start: number; end: number; column: number } | undefined {
+function predicateAt(tokens: readonly Token[], k: number, column: string, exact = false): { start: number; end: number; column: number } | undefined {
   const at = (i: number) => tokens[i];
-  const name = column.toLowerCase();
   const matches = (i: number) => {
     const t = at(i);
-    if (t === undefined || !isIdentifier(t) || t.lower !== name) return false;
-    return !(exactQuoted && t.quoted === true && t.name !== column);
+    return t !== undefined && isIdentifier(t) && namesColumn(t, column, exact);
   };
   // col = P
   if (at(k - 1)?.text === "=" && matches(k - 2)) return { start: qualifiedStart(tokens, k - 2), end: k, column: k - 2 };
@@ -1595,6 +1591,19 @@ function predicateAt(tokens: readonly Token[], k: number, column: string, exactQ
     if (matches(end)) return { start: k, end, column: end };
   }
   return undefined;
+}
+
+/**
+ * Whether the written column `t` is the policy's `column`, the way the engine reads the name. With
+ * `exact` (the Postgres readings: `postgres`, `cockroachdb`, a custom id or none), the engine
+ * compares the name as it reads it, a quoted name exactly and an unquoted one folded to lower case,
+ * with the column's own spelling, which the policy writes as the schema does. So `"AGENCY_ID"` is
+ * another column than `agency_id`, and an unquoted `agencyid` another than `"agencyId"`: another
+ * source in the query may hold it. Otherwise names match in any case, as MySQL, MariaDB, SQL Server
+ * and SQLite compare column names.
+ */
+function namesColumn(t: Token, column: string, exact: boolean): boolean {
+  return exact ? t.name === column : t.lower === column.toLowerCase();
 }
 
 /** How a parenthesized query (`(SELECT …)`) is used by the query around it. */
