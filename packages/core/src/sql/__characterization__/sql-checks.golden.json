@@ -12668,5 +12668,33 @@
   "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-89 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-89 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=fail[]{UNKNOWN_QUALIFIER} | pg=- | spans=c0-89 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "SELECT * FROM (lookup_states, 'orders')": {
+  "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph=",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-30 q30-38 c38-39 | ph= | tph="
+ },
+ "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND o.agency_id IN (:tenant_agency_ids)": {
+  "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  }
 }

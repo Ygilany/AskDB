@@ -15,7 +15,7 @@
  * only the reads of its own `SELECT`, a qualifier no read goes by counts for nothing, and a self-join's
  * reads must be told apart; its 43 rows below differ from the code before it in 344 tenant verdicts, all
  * refusals but 5 that keep a read filtered through its own quoted alias with a space, `"my alias"`),
- * and the readings fixed for beta.53 (138 verdicts on 10 rows below, all refusals: 63 tenant and 75
+ * and the readings fixed for beta.53 (170 verdicts on the rows below, all refusals: 79 tenant and 91
  * keyword-table verdicts, for a SQLite string name in a source's parentheses, `HAVING` on an ungrouped or
  * aliased column, a `BETWEEN`'s upper bound, a spaced qualifier dot, and an `OR` after an alias spelled
  * like a clause word; no existing verdict moves).
@@ -307,6 +307,8 @@ const HOSTILE: readonly string[] = [
   "SELECT by.order_id, by.agency_id FROM billing . order by",
   "SELECT * FROM orders lock WHERE agency_id = :tenant_agency_ids AND lock.id > 0 OR 1 = 1",
   "SELECT * FROM orders limit WHERE agency_id = :tenant_agency_ids AND limit.id > 0 OR 1 = 1",
+  "SELECT * FROM (lookup_states, 'orders')",
+  "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND o.agency_id IN (:tenant_agency_ids)",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {
