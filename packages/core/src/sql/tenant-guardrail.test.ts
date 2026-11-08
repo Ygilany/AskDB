@@ -2179,3 +2179,50 @@ describe("validateTenantGuardrails — an OR after an alias spelled like a claus
     expect(findings(sql, POSTGRES_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a tenant column written as the engine reads it", () => {
+  // A camelCase policy, as Prisma writes Postgres columns. Read the Postgres way, an unquoted
+  // `agencyid` folds to lower case, so it is another column than `"agencyId"`.
+  const camel: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+    hierarchy: [],
+    coverage: [],
+    globalTables: [],
+    polymorphicTables: [],
+    scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] }],
+  };
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+  const findings = (sql: string, dialect: DialectSpec | undefined, p: NormalizedTenantPolicy = camel, s: TenantScope = scope) =>
+    validateTenantGuardrails(sql, p, s, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const postgresReadings: Array<[string, DialectSpec | undefined]> = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ];
+
+  it.each(postgresReadings)("refuses an unquoted name for a camelCase column under %s", (_label, dialect) => {
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    expect(findings(`SELECT c.* FROM "Client" c, (SELECT generate_series(1, 100000) AS agencyid) z WHERE agencyid = :tenant_agency_ids`, dialect)).toEqual(refused);
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c.agencyId = :tenant_agency_ids`, dialect)).toEqual(refused);
+  });
+
+  it.each(postgresReadings)("keeps the camelCase column quoted as the schema spells it under %s", (_label, dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."agencyId" = :tenant_agency_ids`, dialect)).toEqual([]);
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."agencyId" IN (:tenant_agency_ids)`, dialect)).toEqual([]);
+  });
+
+  it.each(postgresReadings)("keeps a lower-case policy column written unquoted in any case under %s", (_label, dialect) => {
+    expect(findings("SELECT o.* FROM orders o WHERE o.AGENCY_ID = :tenant_agency_ids", dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps a lower-case policy column quoted as the schema spells it under $id", (dialect) => {
+    expect(findings('SELECT o.* FROM orders o WHERE o."agency_id" = :tenant_agency_ids', dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
+  });
+
+  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT])("keeps an unquoted name in any case under $id, which compares column names that way", (dialect) => {
+    expect(findings("SELECT c.* FROM Client c WHERE c.agencyid = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+});
