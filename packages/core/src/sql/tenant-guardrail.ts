@@ -1587,8 +1587,6 @@ type PolicyGraph = {
   readonly columns: ReadonlyMap<string, ReadonlySet<string>>;
   /** Every root's placeholder. */
   readonly placeholders: ReadonlySet<string>;
-  /** Each column name the policy uses, lower-cased, with the spellings the policy writes it in. */
-  readonly spellings: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
 const graphs = new WeakMap<NormalizedTenantPolicy, PolicyGraph>();
@@ -1598,13 +1596,10 @@ function policyGraph(policy: NormalizedTenantPolicy): PolicyGraph {
   if (graph !== undefined) return graph;
   const carriers = new Map<string, Map<string, Set<string>>>();
   const columns = new Map<string, Set<string>>();
-  const spellings = new Map<string, Set<string>>();
-  const spell = (column: string) => spellings.set(column.toLowerCase(), (spellings.get(column.toLowerCase()) ?? new Set()).add(column));
   const name = (columnId: string) => [tableOfColumn(columnId).toLowerCase(), extractColumnName(columnId).toLowerCase()] as const;
   const know = (columnId: string) => {
     const [table, column] = name(columnId);
     columns.set(table, (columns.get(table) ?? new Set()).add(column));
-    spell(extractColumnName(columnId));
   };
   for (const root of policy.roots) {
     for (const carrier of idCarriers(policy, root.id)) {
@@ -1613,7 +1608,6 @@ function policyGraph(policy: NormalizedTenantPolicy): PolicyGraph {
       byColumn.set(carrier.column.toLowerCase(), (byColumn.get(carrier.column.toLowerCase()) ?? new Set()).add(carrier.placeholder));
       carriers.set(table, byColumn);
       columns.set(table, (columns.get(table) ?? new Set()).add(carrier.column.toLowerCase()));
-      spell(carrier.column);
     }
   }
   const hops: Array<PolicyGraph["hops"][number]> = [];
@@ -1643,7 +1637,7 @@ function policyGraph(policy: NormalizedTenantPolicy): PolicyGraph {
       }
     }
   }
-  graph = { carriers, hops, columns, placeholders: new Set(policy.roots.map((r) => placeholderForTenantRoot(r))), spellings };
+  graph = { carriers, hops, columns, placeholders: new Set(policy.roots.map((r) => placeholderForTenantRoot(r))) };
   graphs.set(policy, graph);
   return graph;
 }
@@ -1674,7 +1668,7 @@ function proofFor(a: Analysis, graph: PolicyGraph): Proof {
   const nodes = [...graph.columns.keys()]
     .filter((table) => !ctes.has(table))
     .flatMap((table) => readsOf(a, table).filter((read) => isTableReference(a.tokens, read.at)).map((read) => ({ ...read, table })));
-  proof = { a, graph, nodes, equalities: equalities(a, graph), bound: new Map() };
+  proof = { a, graph, nodes, equalities: equalities(a), bound: new Map() };
   byGraph.set(graph, proof);
   return proof;
 }
@@ -1712,17 +1706,13 @@ function isTableReference(tokens: readonly Token[], i: number): boolean {
 }
 
 /**
- * Whether the column at `i` is a quoted name in another case than the policy's, read the Postgres
- * way: Postgres compares a quoted name exactly, so it is another column, which another source may
- * hold, and ties nothing to it. For a name the policy uses, a quoted name counts only when spelled
- * as the policy spells it (`"clientId"`, not `"clientid"`), as {@link predicateAt} reads it; for any
- * other name, only in lower case (`"AGENCY_ID"` ties nothing).
+ * Whether the column at `i` is a quoted name with upper-case letters, read the Postgres way
+ * (`"AGENCY_ID"`): Postgres compares a quoted name exactly, so it is another column than the
+ * policy's, which another source may hold, and ties nothing to it.
  */
-function quotedInAnotherCase(a: Analysis, i: number, graph: PolicyGraph): boolean {
+function quotedInAnotherCase(a: Analysis, i: number): boolean {
   const t = a.tokens[i]!;
-  if (a.view.reading.profile.id !== "postgres" || t.quoted !== true) return false;
-  const spelled = graph.spellings.get(t.lower);
-  return spelled === undefined ? t.name !== t.lower : !(spelled.size === 1 && spelled.has(t.name));
+  return a.view.reading.profile.id === "postgres" && t.quoted === true && t.name !== t.lower;
 }
 
 /**
@@ -1731,14 +1721,14 @@ function quotedInAnotherCase(a: Analysis, i: number, graph: PolicyGraph): boolea
  * an `ON` equality holds only on the rows its join matched, so it links nothing: there only `WHERE`
  * and `HAVING` count, as {@link filteredScopes} reads them (#400).
  */
-function equalities(a: Analysis, graph: PolicyGraph): Proof["equalities"] {
+function equalities(a: Analysis): Proof["equalities"] {
   const { tokens } = a;
   const found: Array<Proof["equalities"][number]> = [];
   tokens.forEach((t, i) => {
     if (t.text !== "=" || !tokens[i - 1] || !isIdentifier(tokens[i - 1]!) || !tokens[i + 1] || !isIdentifier(tokens[i + 1]!)) return;
     let end = i + 1;
     while (tokens[end + 1]?.text === "." && tokens[end + 2] !== undefined && isIdentifier(tokens[end + 2]!)) end += 2;
-    if (quotedInAnotherCase(a, i - 1, graph) || quotedInAnotherCase(a, end, graph)) return;
+    if (quotedInAnotherCase(a, i - 1) || quotedInAnotherCase(a, end)) return;
     const left = { q: qualifierOf(tokens, i - 1), column: tokens[i - 1]!.lower };
     const right = { q: qualifierOf(tokens, end), column: tokens[end]!.lower };
     for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined)) found.push({ left, right, scope: f.scope, on: f.on });
@@ -1748,20 +1738,12 @@ function equalities(a: Analysis, graph: PolicyGraph): Proof["equalities"] {
 
 /**
  * Whether a `SELECT` may keep rows a join's `ON` never matched: `LEFT`, `RIGHT`, `FULL` or `OUTER`
- * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`), and not as
- * a call (`LEFT(name, 1)`) or part of a qualified name (`o.full`). No `ON` there filters, seeds,
- * links or hops: only `WHERE` and `HAVING` do (#400).
+ * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`). No `ON`
+ * there filters, seeds, links or hops: only `WHERE` and `HAVING` do (#400).
  */
 function mayKeepUnmatchedRows(a: Analysis, scope: string): boolean {
   const { tokens, scopes } = a;
-  return tokens.some(
-    (t, i) =>
-      scopes.of[i] === scope &&
-      OUTER_JOIN_WORDS.has(t.kw) &&
-      tokens[i + 1]?.text !== "(" &&
-      tokens[i - 1]?.text !== "." &&
-      tokens[i + 1]?.text !== ".",
-  );
+  return tokens.some((t, i) => scopes.of[i] === scope && ["left", "right", "full", "outer"].includes(t.kw) && tokens[i + 1]?.text !== "(");
 }
 
 /**
@@ -1811,7 +1793,7 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
     // A placeholder counts only outside a quoted name: `":tenant_agency_ids"` is a column.
     if (t.quoted === true || !p.graph.placeholders.has(t.text)) return;
     const predicate = predicateAt(tokens, k);
-    if (!predicate || quotedInAnotherCase(a, predicate.column, p.graph)) return;
+    if (!predicate || quotedInAnotherCase(a, predicate.column)) return;
     const ref = { q: qualifierOf(tokens, predicate.column), column: tokens[predicate.column]!.lower };
     const filter = filteredScopes(a, predicate.start, predicate.end, ref.q).find((f) => f.scope === scope);
     if (filter === undefined) return;
@@ -1838,11 +1820,11 @@ function inLinks(p: Proof, scope: string): InLink[] {
   for (const [open, close] of scopes.close) {
     const column = open - 2;
     if (scopes.of[column] !== scope || scopes.branched.has(open) || subqueryUse(tokens, open) !== "in") continue;
-    if (quotedInAnotherCase(p.a, column, p.graph)) continue;
+    if (quotedInAnotherCase(p.a, column)) continue;
     const ref = { q: qualifierOf(tokens, column), column: tokens[column]!.lower };
     const filter = filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q).find((f) => f.scope === scope);
     if (filter === undefined) continue;
-    const item = selectedColumn(p.a, open, p.graph);
+    const item = selectedColumn(p.a, open);
     if (item === undefined) continue;
     const innerScope = scopeKey(open, 0);
     links.push({ ref, innerScope, item, inner: resolve(p, innerScope, item), on: filter.on });
@@ -2003,7 +1985,7 @@ function inScope(p: Proof, node: Node, allowed: ReadonlySet<string>, visited: Se
  * The column the query at `open` selects, when its select list is one plain column (`col` or
  * `q.col`, under any alias), else undefined.
  */
-function selectedColumn(a: Analysis, open: number, graph: PolicyGraph): ColumnRef | undefined {
+function selectedColumn(a: Analysis, open: number): ColumnRef | undefined {
   const { tokens, scopes, view } = a;
   const scope = scopeKey(open, 0);
   const depth = tokens[open]!.depth + 1;
@@ -2022,7 +2004,7 @@ function selectedColumn(a: Analysis, open: number, graph: PolicyGraph): ColumnRe
   const rest = item.slice(n);
   const aliased = rest.length === 0 || (rest.length === 1 && isWord(rest[0])) || (rest.length === 2 && rest[0]!.kw === "as" && isWord(rest[1]));
   if (!aliased || !isIdentifier(item[n - 1]!) || (n === 3 && !isWord(item[0]))) return undefined;
-  if (quotedInAnotherCase(a, first + n - 1, graph)) return undefined;
+  if (quotedInAnotherCase(a, first + n - 1)) return undefined;
   return { q: n === 3 ? item[0]!.name : undefined, column: item[n - 1]!.lower };
 }
 
