@@ -121,7 +121,7 @@ It prints `Created shop.db`, and a new `shop.db` file appears in the folder. Tha
 
 ## 2. Install AskDB and scaffold the config
 
-Install the AskDB CLI into the project. pnpm and Yarn install only releases that are at least a day old, and AskDB releases often: within a day of a release, they would pick an older one, which can fail. So their tabs first let AskDB's packages skip that wait. Both settings cover AskDB's packages only. Yarn's applies to this folder. pnpm's goes in your user config, so it stays after the tutorial and lets AskDB releases skip the one-day wait in every project. To undo it, run `pnpm config delete minimumReleaseAgeExclude`.
+Install the AskDB CLI into the project. pnpm and Yarn install only releases that are at least a day old, and AskDB releases often: within a day of a release, they would pick an older one, which can fail. So their tabs first let AskDB's packages skip that wait. Both settings cover AskDB's packages only, and only in this folder. pnpm writes its setting to `pnpm-workspace.yaml`, and Yarn writes its setting to `.yarnrc.yml`.
 
 <Tabs syncKey="pkg">
   <TabItem label="npm">
@@ -134,7 +134,7 @@ npm install --save-dev askdb
   <TabItem label="pnpm">
 
 ```bash
-pnpm config set minimumReleaseAgeExclude '["askdb","@askdb/*"]' --json
+pnpm config set --location project minimumReleaseAgeExclude '["askdb","@askdb/*"]' --json
 pnpm add --save-dev askdb
 ```
 
@@ -202,7 +202,7 @@ Wrote:
 Installing dependencies with pnpm in …/askdb-shop …
 …
 dependencies:
-+ @askdb/config 1.0.0-beta.19
++ @askdb/config 1.0.0-beta.20
 + better-sqlite3 13.0.3
 …
 Installed: @askdb/config, better-sqlite3.
