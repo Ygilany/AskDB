@@ -1,5 +1,19 @@
 # @askdb/docs-site
 
+## 0.0.1-beta.16
+
+### Patch Changes
+
+- 3570004: The upgrade guide's 1.0.0-beta.52 section says beta.52 is released and opens with a security subsection for GHSA-rhwf-7742-8hwj, GHSA-rpcp-322q-q738 and GHSA-cjwq-phcm-mwg7, in their published words. It tells readers to upgrade `@askdb/core` and the packages that pin it, and says SQL Server now refuses a non-ASCII name the schema doesn't spell, such as an alias `[Città]`. The SQL checks reference links the three advisories, and `SECURITY.md` lists them with 1.0.0-beta.52 as the release to upgrade to.
+- 01415e2: The privacy model, the Studio tour, the schema artifact pages, the RAG guide and the API references say that business context and column notes reach the default prompt since 1.0.0-beta.53, and the core reference names the new `businessContext` and `note` fields (#898). The beta.53 upgrade note covers both prompts.
+- a81867a: The privacy model, the Studio tour, the schema artifact pages, the RAG guide and the API references say that the prompt lists foreign keys and concepts since 1.0.0-beta.53 (#898). The RAG guide's rule of thumb moves to about 22 tables, and the beta.53 upgrade notes say what to check.
+- 984f332: The tenant-policy reference says a `HAVING` predicate counts only on a column the `SELECT` groups by, that a `BETWEEN`'s upper bound doesn't count, that SQLite reads a quoted table name in parentheses too, and that a tenant column or discriminator counts only when written as the schema spells it. The beta.53 upgrade notes cover the `HAVING` and column-name changes.
+- 4669b6b: The Quickstart's pnpm tab sets `minimumReleaseAgeExclude` for the project only, with `pnpm config set --location project` (#713). It lands in the folder's `pnpm-workspace.yaml`, and since 1.0.0-beta.52 `askdb init` still installs in a project whose `pnpm-workspace.yaml` holds only settings (#863). So the note that pnpm's setting stays in your user config, and how to undo it, is gone: both the pnpm and Yarn settings apply to this folder only. The pnpm sample output shows `@askdb/config` 1.0.0-beta.20, from a run against 1.0.0-beta.52.
+- 98612fb: The privacy model, the RAG guide, the `@askdb/rag` reference and the schema artifact format say that retrieved business context and column notes reach the prompt since 1.0.0-beta.53 (#894), and the beta.53 upgrade notes say what to check.
+- 7fbc811: The Studio tour no longer says the Playground's Full schema mode sends the whole enriched artifact (#893). It says what that prompt carries: every tracked table with its columns, descriptions, aliases, enum values and common query language notes (only names and types for a sensitive table or column), without your concepts or a table's example questions, business context and column notes.
+- e0f2388: The Studio tour's Playground step says that, since 1.0.0-beta.53, the chunks RAG mode retrieves can also carry business context and column notes, under the same sensitive rules, and links the privacy model's "What the model sees" (#894).
+- dadf211: The tenant docs say that each read of a scoped table needs its own predicate in its own `SELECT` (#399), drop the limits that fix closes (a predicate inside a CTE or derived table, and a mispaired subquery), keep the join-path limit (#400), and list the remaining limit for an unqualified predicate in an `ON` where a name is spelled like a join word. The beta.53 upgrade notes cover the change.
+
 ## 0.0.1-beta.15
 
 ### Patch Changes

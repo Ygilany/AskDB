@@ -1,6 +1,6 @@
 {
   "name": "@askdb/docs-site",
-  "version": "0.0.1-beta.15",
+  "version": "0.0.1-beta.16",
   "private": true,
   "description": "Static documentation site for AskDB.",
   "type": "module",
