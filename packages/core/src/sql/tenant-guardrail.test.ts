@@ -2317,3 +2317,35 @@ describe("validateTenantGuardrails — an ON after STRAIGHT_JOIN closes that joi
     expect(findings(hop("s.id = c.id"), dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.appointments"]);
   });
 });
+
+describe("validateTenantGuardrails — documented costs of the join proof (#400)", () => {
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a join through a quoted camelCase column under $id, spelled as the schema spells it", (dialect) => {
+    const camel: NormalizedTenantPolicy = {
+      ...policy,
+      enforcement: "warn",
+      roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+      hierarchy: [],
+      coverage: [],
+      globalTables: [],
+      polymorphicTables: [],
+      scopedTables: [
+        { id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] },
+        {
+          id: "table:public.Appointment",
+          scopeThrough: [{ root: "table:public.Agency", join: [{ from: "table:public.Appointment#clientId", to: "table:public.Client#id" }, { from: "table:public.Client#agencyId", to: "table:public.Agency#id" }] }],
+        },
+      ],
+    };
+    const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+    const findings = (sql: string) => validateTenantGuardrails(sql, camel, scope, { dialect }).warnings.map((w) => w.tableId);
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."agencyId" = :tenant_agency_ids`)).toEqual([]);
+    expect(findings(`SELECT a.* FROM "Appointment" a JOIN "Client" c ON a."clientId" = c.id WHERE c."agencyId" = :tenant_agency_ids`)).toEqual(["table:public.Appointment"]);
+  });
+
+  it("refuses an inner join's ON predicate when a qualified column is named like an outer-join word, and accepts it quoted", () => {
+    const findings = (sql: string) => validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope).warnings.map((w) => w.tableId);
+    const sql = (full: string) => `SELECT o.id, ${full} FROM orders o JOIN lookup_states d ON o.agency_id = :tenant_agency_ids AND d.code = o.state`;
+    expect(findings(sql("o.full"))).toEqual(["table:public.orders"]);
+    expect(findings(sql('o."full"'))).toEqual([]);
+  });
+});
