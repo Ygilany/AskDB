@@ -48,7 +48,7 @@ Setting the versions by hand in the PR that enters `rc` was rejected for every o
 
 ## Consequences
 
-- A breaking change to one of the 12 is a `major` changeset, unless it is confined to an experimental surface in ADR 0030, which takes a `minor` naming `askdb` or `@askdb/config`. After 1.0.0, a major in any of the 12 moves all 12.
+- A breaking change to one of the 12 is a `major` changeset, unless it is confined to an experimental surface in ADR 0030, which takes a `minor` naming `askdb`, `@askdb/config` or, for `@askdb/client/charts`, `@askdb/client`. After 1.0.0, a major in any of the 12 moves all 12.
 - `1.0.0-rc.1` freezes the public API (ADRs 0030 and 0031), so a breaking change before 1.0.0 needs the maintainer's decision. The tooling doesn't enforce the freeze: in pre mode a `major` only raises the `rc` number.
 - A breaking change to Studio, `@askdb/enrich` or `@askdb/rag` is a `minor`. A `major` would move that package to 1.0, which amends ADR 0030.
 - Pre mode applies to every package, so the three `0.x` packages publish as `0.2.0-rc.N` during the release candidates and become stable `0.2.0` at 1.0.0.

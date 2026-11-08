@@ -33,7 +33,7 @@ A breaking change is any of these:
 
 ## Experimental surfaces in the 1.0 set
 
-These follow the 0.x packages they serve. A minor release of `@askdb/config` or `askdb` can change them ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
+A minor release of the package that owns one can change it ([ADR 0030](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0030-1-0-promises-checked-sql-only.md)).
 
 | Package | Experimental surface |
 | --- | --- |
@@ -41,6 +41,7 @@ These follow the 0.x packages they serve. A minor release of `@askdb/config` or 
 | `askdb` | The `askdb studio`, `askdb enrich`, `askdb bundle` and `askdb rag` commands |
 | `askdb` | The `--rag-store`, `--pgvector-env` and `--studio-execute` flags of `askdb init`, and the `rag` and `studio` sections it writes |
 | `@askdb/config` | The `@askdb/config/scaffold` entry point: the scaffold planner and the package-manager helpers that `askdb init` and Studio's setup wizard share |
+| `@askdb/client` | The `@askdb/client/charts` entry point: `classifyResult()`, `planChart()` and `validateChartSpec()`, which plan a chart from a query's question, masked SQL and column kinds, never its rows |
 
 ## Release candidates
 
