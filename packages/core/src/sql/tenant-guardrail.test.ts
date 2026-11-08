@@ -2182,6 +2182,25 @@ describe("validateTenantGuardrails — a column-path read is proven only through
   ])("keeps it filtered through its own column: %s", (sql) => {
     expect(findings(sql)).toEqual([]);
   });
+
+  // A join path walks only its own steps, in order, then its root: `orders.agency_id` says nothing
+  // about which agency a shipment (through `orders.billing_agency_id`) or a line item (through
+  // `orders.customer_id`) belongs to. `main` refuses these too.
+  it.each([
+    ["shipments", "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id WHERE o.agency_id = :tenant_agency_ids"],
+    ["line_items", "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id WHERE o.agency_id = :tenant_agency_ids"],
+    ["line_items", "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids"],
+  ])("refuses a join-path read proven through a step's table's own scope column: %s", (table, sql) => {
+    expect(findings(sql)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+  });
+
+  it.each([
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id WHERE o.billing_agency_id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+    "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id JOIN customers cu ON o.customer_id = cu.id WHERE cu.agency_id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id JOIN agencies a ON o.billing_agency_id = a.id WHERE a.id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+  ])("keeps a join-path read proven through its own steps: %s", (sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
 });
 
 describe("validateTenantGuardrails — a qualified column in an ON names only a read that ON can see (#400)", () => {
@@ -2203,5 +2222,32 @@ describe("validateTenantGuardrails — a qualified column in an ON names only a 
 
   it("keeps a link through a read the ON sees", () => {
     expect(findings("SELECT o.* FROM agencies g JOIN orders o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  // The same holds for a table read twice in its SELECT, and for a discriminator.
+  it("refuses a self-join's read filtered only in an ON that can't see it", () => {
+    const sql = "SELECT (SELECT max(o2.total) FROM orders o1 JOIN lookup_states d ON o1.agency_id = :tenant_agency_ids AND o2.agency_id = :tenant_agency_ids JOIN orders o2 ON o2.state = d.code) AS m FROM (SELECT 42 AS agency_id) o2";
+    for (const dialect of [POSTGRES_DIALECT, MYSQL_DIALECT, undefined]) expect(findings(sql, dialect), dialect?.id ?? "none").toContain(missing);
+  });
+
+  it("keeps a self-join whose second read is filtered in its own join's ON", () => {
+    expect(findings("SELECT o2.* FROM orders o1 JOIN orders o2 ON o2.agency_id = :tenant_agency_ids AND o2.id = o1.id WHERE o1.agency_id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  it("refuses a discriminator only in an ON that can't see its read", () => {
+    const sql = "SELECT (SELECT max(n.body) FROM lookup_states d JOIN service_types e ON n.owner_type = 'agency' JOIN notes n ON n.owner_id = :tenant_agency_ids) AS b FROM (SELECT 'agency' AS owner_type) n";
+    for (const dialect of [POSTGRES_DIALECT, MYSQL_DIALECT, undefined]) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+
+  // The cost, under sqlite: SQLite lets an ON see a comma-joined read and one joined after it, which
+  // the check doesn't follow, so such a query is refused; write the join out, or filter in WHERE.
+  it("refuses, under sqlite, an ON that relies on a comma-joined or later-joined read", () => {
+    for (const sql of [
+      "SELECT o.* FROM orders o, lookup_states d JOIN service_types e ON o.agency_id = :tenant_agency_ids AND e.id = d.id",
+      "SELECT o.* FROM lookup_states d JOIN service_types e ON o.agency_id = :tenant_agency_ids AND e.id = d.id JOIN orders o ON o.state = d.code",
+    ]) {
+      expect(findings(sql, SQLITE_DIALECT), sql).toContain(missing);
+    }
+    expect(findings("SELECT o.* FROM orders o, lookup_states d JOIN service_types e ON e.id = d.id WHERE o.agency_id = :tenant_agency_ids", SQLITE_DIALECT)).toEqual([]);
   });
 });
