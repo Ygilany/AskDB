@@ -15,11 +15,21 @@ import type { RetrievedResult } from "./types.js";
  *   1. Each table referenced by any retrieved chunk gets a TABLE block with
  *      its full column definitions (so the model has complete column lists).
  *      Each column line carries the schema's own `-- aliases / values / desc`
- *      annotation; a retrieved column chunk only picks its table.
+ *      annotation, plus `note: …` from a retrieved column chunk's
+ *      `Column notes` line.
  *   2. CQL chunks land as a `-- common query language --` block under the
- *      table.
+ *      table, then `Business context` chunks as a `-- business context --`
+ *      block, its parts in body order (#894).
  *   3. Relationship, concept, example-question and tenant-policy chunks follow
- *      the tables, each kind as its own `-- … --` block, in that order.
+ *      the tables, each kind as its own `-- … --` block, in that order. A
+ *      concept or tenant-policy chunk keeps its heading (the concept's label,
+ *      the policy section's name).
+ *
+ * `@askdb/rag` types a `Business context` chunk `table`; its id
+ * (`…<table-id>#biz`, `…#biz#bc:<n>` for part n of a long body; the schema v2
+ * contract's chunking rules) tells it apart from the table chunk. A sensitive
+ * table's CQL and business context, and a sensitive column's note, never
+ * show, like the schema's own describable text.
  *
  * Sensitive identifiers retain their `(sensitive)` tagging exactly as
  * `formatSchemaV2ForNlToSql` does. With `omitSensitiveIdentifiersFromPrompt`,
@@ -55,12 +65,19 @@ export function synthesizeRetrievedDdl(args: {
     const text = render(stripHeaderLine(p.text));
     if (gate.allows(text, p.sensitive)) into.push(text);
   };
+  /** Like {@link shown}, but keeps the chunk's heading, without its `#`. */
+  const shownWithHeading = (p: RetrievedResult["payload"], render: (body: string) => string, into: string[]): void => {
+    const text = render(headingKept(p.text));
+    if (gate.allows(text, p.sensitive)) into.push(text);
+  };
   const asIs = (body: string) => body;
   const oneLine = (body: string) => body.replace(/\n+/g, " ");
   const joinedLines = (body: string) => body.replace(/\n+/g, "; ");
 
   const tableIds = new Set<string>();
   const cqlPerTable = new Map<string, string[]>();
+  const businessPerTable = new Map<string, { part: number; text: string }[]>();
+  const notePerColumn = new Map<string, string>();
   const concepts: string[] = [];
   const questions: string[] = [];
   const relationships: string[] = [];
@@ -69,10 +86,27 @@ export function synthesizeRetrievedDdl(args: {
   for (const r of results) {
     const p = r.payload;
     switch (p.type) {
-      case "table":
+      case "table": {
+        const tid = p.refs[0];
+        if (!tid) break;
+        tableIds.add(tid);
+        const part = businessContextPart(p.id, tid);
+        if (part !== undefined) {
+          const kept: string[] = [];
+          shown(p, asIs, kept);
+          const list = businessPerTable.get(tid) ?? [];
+          for (const text of kept) list.push({ part, text });
+          businessPerTable.set(tid, list);
+        }
+        break;
+      }
       case "column": {
         const tid = p.refs[0];
         if (tid) tableIds.add(tid);
+        const cid = p.refs[1];
+        const note = columnNote(p.text);
+        // Checked as rendered, without the fixed `note:` label (see `columnAnnotation`).
+        if (cid && note && gate.allows(note, p.sensitive)) notePerColumn.set(cid, note);
         break;
       }
       case "cql": {
@@ -91,7 +125,7 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "concept": {
-        shown(p, joinedLines, concepts);
+        shownWithHeading(p, joinedLines, concepts);
         for (const ref of p.refs) {
           if (ref.startsWith("table:")) {
             const hash = ref.indexOf("#");
@@ -108,7 +142,7 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "tenant-policy": {
-        shown(p, joinedLines, tenantPolicyChunks);
+        shownWithHeading(p, joinedLines, tenantPolicyChunks);
         break;
       }
     }
@@ -138,7 +172,8 @@ export function synthesizeRetrievedDdl(args: {
       const sensitiveTag = c.sensitive || t.sensitive ? " (sensitive)" : "";
       let line = `  - ${quoteIdentifier(c.name)} ${c.type} (${flags.join(" ")})${sensitiveTag}`;
       if (!c.sensitive && !t.sensitive) {
-        const annotation = columnAnnotation(c, gate);
+        const note = notePerColumn.get(c.id);
+        const annotation = [columnAnnotation(c, gate), note && `note: ${note}`].filter(Boolean).join("; ");
         if (annotation) line += ` -- ${annotation}`;
       }
       lines.push(line);
@@ -150,6 +185,16 @@ export function synthesizeRetrievedDdl(args: {
       for (const body of cqlList) {
         for (const cqlLine of body.split("\n")) {
           lines.push(`-- ${cqlLine}`);
+        }
+      }
+    }
+
+    const businessList = businessPerTable.get(t.id);
+    if (businessList && businessList.length > 0 && !t.sensitive) {
+      lines.push(`-- business context --`);
+      for (const { text } of [...businessList].sort((a, b) => a.part - b.part)) {
+        for (const businessLine of text.split("\n")) {
+          if (businessLine.trim()) lines.push(`-- ${businessLine}`);
         }
       }
     }
@@ -187,6 +232,33 @@ export function synthesizeRetrievedDdl(args: {
     chunksUsed: results.length,
     mentionDroppedCount: gate.withheld,
   };
+}
+
+/**
+ * For a `table` chunk built from `tableId`'s `Business context` section, the part's position in
+ * the body (0 when the body wasn't split); `undefined` for any other chunk, the table chunk included.
+ */
+function businessContextPart(chunkId: string, tableId: string): number | undefined {
+  const marker = `${tableId}#biz`;
+  if (chunkId.endsWith(marker)) return 0;
+  const split = /#bc:(\d+)$/.exec(chunkId);
+  if (split && chunkId.slice(0, split.index).endsWith(marker)) return Number(split[1]);
+  return undefined;
+}
+
+/** The note in a column chunk's `Note: …` line (the column's `Column notes` item), if any. */
+function columnNote(text: string): string | undefined {
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (line.startsWith("Note: ")) return line.slice("Note: ".length).trim() || undefined;
+  }
+  return undefined;
+}
+
+/** The chunk's text with its `# heading` line kept as a plain line. */
+function headingKept(text: string): string {
+  return text.trim().replace(/^#+\s*/, "");
 }
 
 function stripHeaderLine(text: string): string {

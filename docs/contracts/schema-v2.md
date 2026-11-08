@@ -287,6 +287,8 @@ Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chu
 | **Tenant policy** | `tenant-policy#<section-slug>` | one H2 section of `tenant-policy.md` (see [`tenant-policy.md`](./tenant-policy.md)). |
 | **Relationship** (optional) | `<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
 
+A business-context chunk has `type: "table"`, like the table's own chunk. The retrieval prompt (`synthesizeRetrievedDdl`) tells them apart by the `#biz` id above and lists the chunk's body under its table, so that id is part of the contract. It finds a column's note as the column chunk's line that starts `Note: ` and adds it to that column's line ([#894](https://github.com/Ygilany/AskDB/issues/894)).
+
 ### Determinism
 
 Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes: the indexer skips a chunk only when the vector store already holds the same content hash for its id (stores that cannot report hashes fall back to `schema.lock.json`). A changed embedder id or vector dimension re-embeds everything; a different store re-embeds whatever it doesn't hold (all of it, for stores that can't report hashes).

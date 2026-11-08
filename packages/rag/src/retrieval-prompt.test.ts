@@ -11,6 +11,7 @@ import type { Chunk } from "./types.js";
 // put the text it carries into the prompt `ask()` sends (#894).
 
 const FIXTURE_DIR = resolve(__dirname, "../../../fixtures/schemas/orders-users.schema");
+const TENANT_FIXTURE_DIR = resolve(__dirname, "../../../fixtures/schemas/agency-multi-tenant.schema");
 
 const tmpRoots: string[] = [];
 afterEach(() => {
@@ -28,11 +29,12 @@ function fixtureWithOrdersSection(section: string): string {
 }
 
 /** The prompt's schema block when retrieval returns exactly `picked`. */
-function promptFor(dir: string, picked: Chunk[]): string {
+function promptFor(dir: string, picked: Chunk[], omitSensitiveIdentifiersFromPrompt = false): string {
   const { schema } = loadChunkerSourcesFromDir(dir);
   const { ddl } = synthesizeRetrievedDdl({
     schema,
     results: picked.map((payload) => ({ id: payload.id, score: 1, payload })),
+    omitSensitiveIdentifiersFromPrompt,
   });
   return ddl;
 }
@@ -80,5 +82,35 @@ describe("retrieved chunks reach the prompt (#894)", () => {
     const prompt = flat(promptFor(dir, column));
 
     expect(prompt).toContain("refunds flip a paid order back to pending");
+  });
+
+  it("keeps a retrieved concept's label", () => {
+    const { chunks } = chunkSchema(loadChunkerSourcesFromDir(FIXTURE_DIR));
+    const concept = chunks.filter((c) => c.id === "chunk:orders-users:concept:revenue");
+    expect(concept).toHaveLength(1);
+
+    expect(promptFor(FIXTURE_DIR, concept)).toContain("-- Concept: Revenue; Id: concept:revenue;");
+  });
+
+  it("keeps a retrieved tenant-policy section's heading", () => {
+    const { chunks } = chunkSchema(loadChunkerSourcesFromDir(TENANT_FIXTURE_DIR));
+    const sections = chunks.filter((c) => c.type === "tenant-policy");
+    expect(sections.length).toBeGreaterThan(1);
+
+    const prompt = promptFor(TENANT_FIXTURE_DIR, sections);
+
+    expect(prompt).toContain("-- Tenant policy — Hierarchy; ");
+    expect(prompt).toContain("-- Tenant policy — Scope rules; ");
+  });
+
+  it("withholds an opt-in index's business context that names a sensitive column when omission is on", () => {
+    // users.email is sensitive and the users Business context names it: only an opt-in index keeps it, flagged.
+    const { chunks } = chunkSchema(loadChunkerSourcesFromDir(FIXTURE_DIR), { includeSensitiveDescribable: true });
+    const biz = chunks.filter((c) => c.id === "chunk:orders-users:table:public.users#biz");
+    expect(biz).toHaveLength(1);
+    expect(biz[0]!.sensitive).toBe(true);
+
+    expect(flat(promptFor(FIXTURE_DIR, biz, true))).not.toContain("unique email address");
+    expect(flat(promptFor(FIXTURE_DIR, biz, false))).toContain("Each user has a unique email address used for login.");
   });
 });
