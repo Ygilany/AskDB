@@ -33,7 +33,7 @@ The check is still a heuristic, and some shapes still pass, such as an unqualifi
 
 ### Quote a table or column name CockroachDB lower-cases into another
 
-An unquoted name whose letters, lower-cased, aren't in Unicode normalization form C is now refused (`UNICODE_ESCAPED_IDENTIFIER`) unless the schema spells it exactly: CockroachDB lower-cases such a name and then normalizes it, so `J` followed by U+030C reads as `ǰ`, and `ΠΡΩΤΕΪ́ΝΗ` as `πρωτεΐνη`. It affects about thirty letters, `ΐ` and `ΰ` among them in modern Greek. Write the name as the schema spells it. A table name ending in a capital sigma (`ΟΣ`) is now matched to `οσ` before a column list and in a derived table's items, as CockroachDB reads it.
+An unquoted name whose letters, lower-cased, aren't in Unicode normalization form C is now refused (`UNICODE_ESCAPED_IDENTIFIER`) unless the schema spells it exactly: CockroachDB lower-cases such a name and then normalizes it, so `J` followed by U+030C reads as `ǰ`, and `ΠΡΩΤΕΪ́ΝΗ` as `πρωτεΐνη`. It affects about thirty letters, `ΐ` and `ΰ` among them in modern Greek. Write the name as the schema spells it. The schema's spelling now excuses such a name, or one with `İ`, `ı`, `ſ` or the Kelvin sign, only when it is quoted, or lower-case and in NFC: CockroachDB reads an unquoted `İTEMS` as `items`, whatever the schema spells. Quote it as the schema spells it (`"İTEMS"`). A table name ending in a capital sigma (`ΟΣ`) is now matched to `οσ` before a column list and in a derived table's items, as CockroachDB reads it.
 
 ### Check the TLS settings in your SQL Server URLs
 
