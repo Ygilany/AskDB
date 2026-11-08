@@ -1618,6 +1618,8 @@ type PolicyGraph = {
   readonly hops: ReadonlyArray<{ readonly from: string; readonly fromColumn: string; readonly to: string; readonly toColumn: string }>;
   /** The columns the policy names on each table. */
   readonly columns: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Each table's name as the policy spells it, from the schema. */
+  readonly spellings: ReadonlyMap<string, ReadonlySet<string>>;
   /** Every root's placeholder. */
   readonly placeholders: ReadonlySet<string>;
 };
@@ -1635,14 +1637,20 @@ function policyGraph(policy: NormalizedTenantPolicy, reading: string): PolicyGra
   if (graph !== undefined) return graph;
   const carriers = new Map<string, Map<string, Set<string>>>();
   const columns = new Map<string, Set<string>>();
-  const name = (columnId: string) => [lowerEachLetter(tableOfColumn(columnId)), columnKey(extractColumnName(columnId), reading)] as const;
+  const spellings = new Map<string, Set<string>>();
+  const tableKey = (table: string) => {
+    const key = lowerEachLetter(table);
+    spellings.set(key, (spellings.get(key) ?? new Set()).add(table));
+    return key;
+  };
+  const name = (columnId: string) => [tableKey(tableOfColumn(columnId)), columnKey(extractColumnName(columnId), reading)] as const;
   const know = (columnId: string) => {
     const [table, column] = name(columnId);
     columns.set(table, (columns.get(table) ?? new Set()).add(column));
   };
   for (const root of policy.roots) {
     for (const carrier of idCarriers(policy, root.id)) {
-      const table = lowerEachLetter(carrier.table);
+      const table = tableKey(carrier.table);
       const column = columnKey(carrier.column, reading);
       const byColumn = carriers.get(table) ?? new Map<string, Set<string>>();
       byColumn.set(column, (byColumn.get(column) ?? new Set()).add(carrier.placeholder));
@@ -1677,7 +1685,7 @@ function policyGraph(policy: NormalizedTenantPolicy, reading: string): PolicyGra
       }
     }
   }
-  graph = { carriers, hops, columns, placeholders: new Set(policy.roots.map((r) => placeholderForTenantRoot(r))) };
+  graph = { carriers, hops, columns, spellings, placeholders: new Set(policy.roots.map((r) => placeholderForTenantRoot(r))) };
   byReading.set(reading, graph);
   return graph;
 }
@@ -1708,9 +1716,11 @@ function proofFor(a: Analysis, graph: PolicyGraph): Proof {
   if (proof !== undefined) return proof;
   // Every CTE's name, whatever its body (a data-modifying one opens no query): a read of that name may be the CTE.
   const ctes = new Set(a.tokens.flatMap((t, open) => (t.text === "(" ? [cteNameAt(a.tokens, open)] : [])).filter((n) => n !== undefined));
+  const reading = a.view.reading.profile.id;
+  const readsAsPolicyTable = (at: number, table: string) => [...(graph.spellings.get(table) ?? [])].some((spelling) => namesTable(a.tokens[at]!, spelling, reading));
   const nodes = [...graph.columns.keys()]
     .filter((table) => !ctes.has(table))
-    .flatMap((table) => readsOf(a, table).filter((read) => isTableReference(a.tokens, read.at)).map((read) => ({ ...read, table })));
+    .flatMap((table) => readsOf(a, table).filter((read) => isTableReference(a.tokens, read.at) && readsAsPolicyTable(read.at, table)).map((read) => ({ ...read, table })));
   proof = { a, graph, nodes, equalities: equalities(a), bound: new Map(), links: new Map() };
   byGraph.set(graph, proof);
   return proof;
@@ -2143,6 +2153,19 @@ const READ_APART = "\u0000";
 function namesColumn(t: Token, column: string, reading: string): boolean {
   const name = engineName(t, reading);
   return name !== undefined && name === columnKey(column, reading);
+}
+
+/**
+ * Whether the table read written `t` is the policy's `table`, spelled as the schema spells it, for
+ * every engine that shares `reading`, so the join proof may count it (#400). Read as a column is
+ * ({@link namesColumn}), except the MySQL way, where it is compared as written: MySQL and MariaDB
+ * keep a table name's case on some servers (`lower_case_table_names = 0`). The table gate finds
+ * reads more loosely ({@link tableNameOf}), which only finds more of them; the join proof counts
+ * reads, so `"CLIENTS"`, which Postgres reads as another table, isn't `clients` there.
+ */
+function namesTable(t: Token, table: string, reading: string): boolean {
+  if (reading === "mysql") return !t.name.startsWith(READ_APART) && t.name === table;
+  return namesColumn(t, table, reading);
 }
 
 /** A column's spelling, as the policy writes it from the schema, read the way `reading` compares a written name ({@link engineName}). */
