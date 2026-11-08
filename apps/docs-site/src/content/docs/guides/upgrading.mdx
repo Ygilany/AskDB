@@ -29,7 +29,21 @@ Under `sqlserver`, the tenant check now also refuses code SQL Server may split i
 
 ## 1.0.0-beta.55
 
-Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.55, and the other packages that pin `@askdb/core`.
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.55, `@askdb/studio` 0.2.0-beta.48, `@askdb/enrich` 0.2.0-beta.26, `@askdb/introspect` 0.3.0-beta.29, `@askdb/rag` 0.2.0-beta.35, `@askdb/postgres` 0.2.0-beta.31, `@askdb/prisma` 0.2.0-beta.29, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.30, and `@askdb/sqlserver` 0.1.0-beta.31.
+
+### Security: upgrade for GHSA-p2v7-pv8j-c264 and GHSA-j363-683j-2pvw
+
+Two advisories fix places where the tenant check could pass a tenant-scoped query that returned rows belonging to tenants outside the caller's scope. Both needed the generated SQL to run without database-level tenant enforcement. GHSA-p2v7-pv8j-c264 also needed a way to influence the model's reply. GHSA-j363-683j-2pvw needs no unusual SQL, so a model's own mistake can trigger it.
+
+- **[GHSA-p2v7-pv8j-c264](https://github.com/Ygilany/AskDB/security/advisories/GHSA-p2v7-pv8j-c264):** the tenant check could read a name differently from the engine, so a tenant-scoped query could pass without an effective tenant predicate.
+- **[GHSA-j363-683j-2pvw](https://github.com/Ygilany/AskDB/security/advisories/GHSA-j363-683j-2pvw):** the tenant check counted a join without checking which columns it equated, so a tenant-scoped query could pass without an effective tenant predicate ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+
+What to do:
+
+- **Upgrade** `@askdb/core` to 1.0.0-beta.55, and every AskDB package you install that depends on it: `askdb` and `@askdb/http-api` 1.0.0-beta.55, `@askdb/studio` 0.2.0-beta.48, `@askdb/introspect` 0.3.0-beta.29, `@askdb/enrich` 0.2.0-beta.26, `@askdb/rag` 0.2.0-beta.35, `@askdb/postgres` 0.2.0-beta.31, `@askdb/prisma` 0.2.0-beta.29, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.30, and `@askdb/sqlserver` 0.1.0-beta.31. These pin `@askdb/core` exactly (`@askdb/prisma` through `@askdb/introspect`), so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **Expect some correct queries to be refused.** [Join a path table on the columns the policy declares](#join-a-path-table-on-the-columns-the-policy-declares) and [Quote a table or column name CockroachDB lower-cases into another](#quote-a-table-or-column-name-cockroachdb-lower-cases-into-another) list them, with the change each needs.
+- **Check your SQL Server URLs too.** Apart from the advisories, this release changes how `encrypt` and `trustServerCertificate` read: [Check the TLS settings in your SQL Server URLs](#check-the-tls-settings-in-your-sql-server-urls).
+- **If you can't upgrade at once,** enforce tenant isolation in the database (for example row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. It limits the rows a statement can read, whatever its text.
 
 ### Join a path table on the columns the policy declares
 
