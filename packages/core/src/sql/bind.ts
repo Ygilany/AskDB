@@ -7,8 +7,8 @@ import {
   type BuiltInDialectId,
   type DialectSpec,
 } from "./dialect-spec.js";
-import { lexSql } from "./lexer.js";
-import { placeholderReading } from "./readings.js";
+import { lexSql, type SqlLexerProfile, type SqlToken } from "./lexer.js";
+import { consistencyReadings, placeholderReading, type ReadingDialect } from "./readings.js";
 import { validateSelectSql } from "./validate.js";
 
 // ---------------------------------------------------------------------------
@@ -645,17 +645,35 @@ export function renderPreparedQuery(
 }
 
 /**
- * Compare two SQL strings structurally for the parameterize consistency check.
+ * Whether two renderings of one statement say the same thing, for the parameterize consistency
+ * check (#359): their tokens under each of the dialect's readings (`consistencyReadings`),
+ * ignoring layout between tokens that don't touch and one trailing `;`. A word (a keyword or an
+ * unquoted name) compares as the engine folds it; every other token (strings, quoted names,
+ * numbers, parameters, punctuation, comments, which MySQL can run) compares by its exact text.
+ * Whether a token touches the one before must match too, since an engine can read two lexer
+ * tokens as one (`2fa_enabled` on MySQL, `U&'1'` and `1_000` on Postgres). An unterminated token
+ * on either side makes them unequal.
  */
-export function sqlStructurallyEqual(a: string, b: string): boolean {
-  // The trailing `;` goes first and the whitespace before it with the final trim:
-  // a pattern starting with `\s*` backtracks quadratically on a long whitespace run.
-  const norm = (s: string) =>
-    s
-      .trim()
-      .replace(/;$/, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-  return norm(a) === norm(b);
+export function sqlStructurallyEqual(a: string, b: string, dialect: ReadingDialect): boolean {
+  return consistencyReadings(dialect).every(({ profile, foldWord }) => sameTokens(a, b, profile, foldWord));
+}
+
+function sameTokens(a: string, b: string, profile: SqlLexerProfile, foldWord: (word: string) => string): boolean {
+  const left = significantTokens(a, profile);
+  const right = significantTokens(b, profile);
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((token, i) => {
+    const other = right[i]!;
+    if (token.kind !== other.kind) return false;
+    if (i > 0 && (left[i - 1]!.end === token.start) !== (right[i - 1]!.end === other.start)) return false;
+    return token.kind === "word" ? foldWord(token.value) === foldWord(other.value) : token.text === other.text;
+  });
+}
+
+/** The statement's tokens without one trailing `;`, or `undefined` when one is unterminated. */
+function significantTokens(sql: string, profile: SqlLexerProfile): SqlToken[] | undefined {
+  const tokens = lexSql(sql, profile);
+  if (tokens.some((token) => token.unterminated)) return undefined;
+  const last = tokens[tokens.length - 1];
+  return last?.kind === "punct" && last.text === ";" ? tokens.slice(0, -1) : tokens;
 }
