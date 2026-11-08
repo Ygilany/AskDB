@@ -3018,4 +3018,22 @@ describe("validateTenantGuardrails — a name CockroachDB lower-cases or normali
     expect(findings(`SELECT x.* FROM (SELECT z.k AS ΕΤΑΙΡΕΙΑΣ_ID, o.${column}, o.id FROM ledger o, (SELECT 42 AS k) z) x WHERE x.${column} = :tenant_agency_ids`, p, dialect)).toEqual(refused);
     expect(findings(`SELECT x.* FROM (SELECT o.${column}, o.id FROM ledger o) x WHERE x.${column} = :tenant_agency_ids`, p, dialect)).toEqual([]);
   });
+
+  // The join proof reads a hop's table and columns as CockroachDB does: `ΟΣ` is `οσ`, and an unquoted
+  // `ΕΤΑΙΡΕΙΑΣ_ID` is read apart, so it links nothing.
+  it("reads a join path's capital-sigma names as CockroachDB does", () => {
+    const p: NormalizedTenantPolicy = {
+      ...policy,
+      enforcement: "warn",
+      scopedTables: [
+        ...policy.scopedTables,
+        { id: "table:public.lines", scopeThrough: [{ root: "table:public.agencies", join: [{ from: "table:public.lines#εταιρειασ_id", to: "table:public.οσ#id" }, { from: "table:public.οσ#agency_id", to: "table:public.agencies#id" }] }] },
+      ],
+    };
+    const path = (hop: string) => `SELECT l.* FROM lines l JOIN ΟΣ p ON ${hop} JOIN agencies g ON p.agency_id = g.id WHERE g.id = :tenant_agency_ids`;
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.lines"];
+    expect(findings(path("l.εταιρειασ_id = p.id"), p, COCKROACHDB_DIALECT)).toEqual([]);
+    expect(findings(path("l.εταιρειασ_id = p.agency_id"), p, COCKROACHDB_DIALECT)).toEqual(refused);
+    expect(findings(path("l.ΕΤΑΙΡΕΙΑΣ_ID = p.id"), p, COCKROACHDB_DIALECT)).toEqual(refused);
+  });
 });
