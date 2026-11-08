@@ -1328,6 +1328,68 @@ describe("validateTenantGuardrails — each read of a scoped table needs a predi
       .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
     expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.id = ${P})`)).toEqual([]);
   });
+
+  // An `ON` sees only its join's operands: an unqualified predicate there resolves among them, so it
+  // filters no read joined after it, before a `FROM`-list comma, or outside the join's parentheses.
+  it.each([
+    ["a read joined after the ON", `SELECT o.id FROM sub_agencies sa JOIN lookup_states ls ON agency_id = ${P} CROSS JOIN orders o`],
+    ["a read outside the parentheses around the join", `SELECT o.id FROM orders o CROSS JOIN (sub_agencies sa JOIN lookup_states ls ON agency_id = ${P})`],
+    ["a read before a FROM-list comma", `SELECT o.id FROM orders o, sub_agencies sa JOIN lookup_states ls ON agency_id = ${P}`],
+    ["a read outside a nested join", `SELECT o.* FROM orders o LEFT JOIN lookup_states ls JOIN sub_agencies sa ON agency_id = ${P} ON true`],
+  ])("rejects an unqualified ON predicate standing in for %s", (_label, sql) => {
+    expect(findings(sql)).toContain(orders[0]);
+  });
+
+  it("rejects an unqualified discriminator in an ON standing in for a read joined after it", () => {
+    const sql = `SELECT n2.* FROM notes n1 JOIN lookup_states ls ON owner_type = 'agency' AND n1.owner_id = ${P} CROSS JOIN notes n2 WHERE n2.owner_id = ${P}`;
+    expect(findings(sql)).toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+
+  it.each([
+    ["the read on the ON's left", `SELECT o.* FROM orders o JOIN lookup_states s ON agency_id = ${P}`],
+    ["the read on the ON's right", `SELECT o.* FROM lookup_states s JOIN orders o ON agency_id = ${P}`],
+    ["a read joined before an earlier ON", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code = o.state JOIN service_types t ON agency_id = ${P}`],
+    ["a read inside a parenthesized operand", `SELECT o.* FROM lookup_states s JOIN (orders o CROSS JOIN service_types t) ON agency_id = ${P}`],
+  ])("accepts an unqualified ON predicate on %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  // An alias after the parentheses around a read hides the read's own alias, so a predicate on the
+  // inner alias names another read (here the outer query's, by correlation).
+  it.each([
+    ["a table", `SELECT x.id, (SELECT count(*) FROM (orders x) AS y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a table, with no AS", `SELECT x.id, (SELECT count(*) FROM (orders x) y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a join", `SELECT x.id, (SELECT count(*) FROM (orders x CROSS JOIN lookup_states s) AS j WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a CTE reference", `WITH c AS (SELECT * FROM orders) SELECT x.id, (SELECT count(*) FROM (c x) AS y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a derived table", `SELECT x.id, (SELECT count(*) FROM ((SELECT * FROM orders) x CROSS JOIN lookup_states s) AS j WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+  ])("rejects a read in parentheses that an outer alias hides: %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it("accepts a read in parentheses with no alias after them, filtered through its own alias", () => {
+    expect(findings(`SELECT o.* FROM (orders o JOIN lookup_states s ON s.code = o.state) WHERE o.agency_id = ${P}`)).toEqual([]);
+  });
+
+  // `order` and `group` after a `.` are a table's name, never `ORDER BY` or `GROUP BY`, so a read
+  // aliased `by` after one is a read like any other.
+  it.each([["postgres", POSTGRES_DIALECT], ["no dialect", undefined]] as const)("rejects an unfiltered read aliased `by` after a table named order or group under %s", (_label, dialect) => {
+    const named: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      scopedTables: ["billing.order", "app.group"].map((t) => ({
+        id: `table:${t}`,
+        scopeThrough: [{ root: "table:public.agencies", column: `table:${t}#agency_id` }],
+      })),
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    const check = (sql: string) => validateTenantGuardrails(sql, named, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+    expect(check(`SELECT by.order_id, by.agency_id FROM billing.order by CROSS JOIN billing.order o WHERE o.agency_id = ${P}`)).toEqual([
+      "MISSING_TENANT_PREDICATE:table:billing.order",
+    ]);
+    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE g.agency_id = ${P}`)).toEqual(["MISSING_TENANT_PREDICATE:table:app.group"]);
+    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE by.agency_id = ${P} AND g.agency_id = ${P} ORDER BY g.id`)).toEqual([]);
+  });
 });
 
 describe("validateTenantGuardrails — a keyword written right after a number or $N parameter (GHSA-rhwf-7742-8hwj)", () => {
