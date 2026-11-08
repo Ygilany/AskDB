@@ -5,6 +5,7 @@ import { loadSchema, loadSchemaFromJson } from "../schema/v2/loader.js";
 import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import { buildTenantPromptBlock } from "./tenant-prompt.js";
+import { validateTenantGuardrails } from "./tenant-guardrail.js";
 import { buildNlToSqlUserPrompt } from "./prompt.js";
 import { POSTGRES_DIALECT } from "./dialect-spec.js";
 import { AskDbError } from "../errors.js";
@@ -422,5 +423,22 @@ describe("buildNlToSqlUserPrompt — the tenant block needs the tables the promp
   it("refuses a tenant policy with a v1 schema, which has no tracked tables to follow", () => {
     const v1 = { tables: [{ name: "orders", columns: [{ name: "id", type: "int", nullable: false, primaryKey: true }] }] };
     expect(() => prompt(undefined, undefined, v1)).toThrow(/needs the schema artifact/);
+  });
+});
+
+describe("buildTenantPromptBlock — an outer join's ON counts for nothing (#400)", () => {
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const rule =
+    "- If the query uses a LEFT, RIGHT, FULL or OUTER join, put every tenant predicate and every join-path equality in WHERE, even where an ON already has it: in such a query, a condition in ON does not count.";
+
+  it("tells the model to put tenant predicates and join-path equalities in WHERE beside an outer join", () => {
+    expect(buildTenantPromptBlock(policy, scope, { schema }).split("\n")).toContain(rule);
+  });
+
+  it("asks for a form the tenant check accepts", () => {
+    const check = (sql: string) => validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, scope).warnings.map((w) => w.tableId);
+    const from = "SELECT a.*, d.name FROM appointments a JOIN clients c ON a.client_id = c.id LEFT JOIN lookup_states d ON d.code = c.state";
+    expect(check(`${from} WHERE c.id IN (:tenant_client_ids)`)).toEqual(["table:public.appointments"]);
+    expect(check(`${from} WHERE a.client_id = c.id AND c.id IN (:tenant_client_ids)`)).toEqual([]);
   });
 });
