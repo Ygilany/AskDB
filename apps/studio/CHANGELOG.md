@@ -1,5 +1,34 @@
 # @askdb/studio
 
+## 0.2.0-beta.48
+
+### Patch Changes
+
+- 42b6533: Studio loads a database driver it has just installed on Node 24 and 26 without a restart (#669). Node 24 and later keep a failed package lookup for the life of the process, so the execute-driver status check, which asked Node's resolver, hid the driver Studio installed next, and the load then said to restart. The kit's `isDriverInstalled` now checks for `node_modules/<package>/package.json` under `resolveFrom` and its parents, and in Node's global directories (`NODE_PATH` first), without asking the resolver (under Yarn Plug'n'Play it still asks the resolver). Studio's guided setup uses the same check. When a driver is on disk but Node can't resolve it, `createOptionalDriverLoader` reads its entry from its `package.json` (the `exports` map under the conditions Node's `require` uses, `node`, `module-sync`, `require` and `default`, or `main`) and imports that file by path. It says to restart only when it can't find the entry. The introspection API reference and the connector guide say so.
+- 18ef5a5: Security fix ([GHSA-p2v7-pv8j-c264](https://github.com/Ygilany/AskDB/security/advisories/GHSA-p2v7-pv8j-c264)). The tenant check read some names differently from the engine, so a scoped table's read could go unseen, a column the engine reads as another could count as the tenant column, or a join could count through another table:
+  
+  - **A name in NFC only before lower-casing.** CockroachDB lower-cases an unquoted name and then normalizes it to NFC, so `J` followed by U+030C reads as `ǰ`. Such an unquoted name is now refused as `UNICODE_ESCAPED_IDENTIFIER` unless the schema spells it exactly.
+  - **A name the schema spells in upper case.** The schema's spelling excused an unquoted name with `İ`, or one whose lower-cased letters aren't in NFC, though CockroachDB reads an unquoted `İTEMS` as `items` even beside a table `"İTEMS"`. It now excuses an unquoted name only when the name is lower-case and in NFC.
+  - **A final capital sigma.** CockroachDB lower-cases `Σ` to `σ`, which JavaScript's `toLowerCase` writes `ς` at the end of a word. The column-list rule and a derived table's items now match names letter by letter, as the table gate does.
+  - **A joined table in another case.** A join the check relied on counted a table by its name in any case, though Postgres reads `"CLIENTS"` as another table than `clients`. A joined table now counts only where every engine the dialect covers reads it as the schema's table.
+  
+  Upgrade notes (breaking): SQL that passed before and now throws `TenantGuardrailError` under `strict`: an unquoted name the schema doesn't spell whose lower-cased letters aren't in NFC (write it as the schema does); an unquoted name with `İ`, `ı`, `ſ`, the Kelvin sign or one of those letters that the schema spells but that isn't lower-case and in NFC (quote it as the schema spells it); and a join the check relies on whose table is spelled otherwise than the schema spells it, quoted, or unquoted on MySQL, MariaDB or SQL Server (write it as the schema does).
+- Updated dependencies [7935ce0]
+- Updated dependencies [cc5c00c]
+- Updated dependencies [8e6c55f]
+- Updated dependencies [42b6533]
+- Updated dependencies [18ef5a5]
+- Updated dependencies [568fd48]
+  - @askdb/core@1.0.0-beta.55
+  - @askdb/introspect@0.3.0-beta.29
+  - @askdb/sqlserver@0.1.0-beta.31
+  - @askdb/client@1.0.0-beta.14
+  - @askdb/enrich@0.2.0-beta.26
+  - @askdb/mysql@0.1.0-beta.30
+  - @askdb/postgres@0.2.0-beta.31
+  - @askdb/rag@0.2.0-beta.35
+  - @askdb/sqlite@0.1.0-beta.30
+
 ## 0.2.0-beta.47
 
 ### Patch Changes

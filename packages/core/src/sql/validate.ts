@@ -10,7 +10,7 @@ import {
   type SqlToken,
 } from "./lexer.js";
 import { isKnownEngine, readOnlyReadings } from "./readings.js";
-import { findAmbiguousTsqlText, findTsqlStatementBoundary } from "./tsql-batch.js";
+import { AMBIGUOUS_TSQL_ADVICE, findAmbiguousTsqlText, findTsqlStatementBoundary } from "./tsql-batch.js";
 
 /**
  * Keywords rejected in every dialect. Matched against unquoted word tokens only, so
@@ -204,7 +204,7 @@ function checkWithProfile(
       throw validationError(
         "SQL_MULTI_STATEMENT",
         `Multiple SQL statements are not allowed: SQL Server may split code at ${ambiguous}, so the check can't tell where one statement ends.`,
-        "Separate keywords, names and numbers with ASCII spaces, and keep other characters inside string literals or [bracketed] names.",
+        AMBIGUOUS_TSQL_ADVICE,
       );
     }
     const statement = isPunct(tokens[tokens.length - 1], ";") ? tokens.slice(0, -1) : tokens;

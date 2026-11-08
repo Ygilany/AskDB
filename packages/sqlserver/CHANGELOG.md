@@ -1,5 +1,27 @@
 # @askdb/sqlserver
 
+## 0.1.0-beta.31
+
+### Minor Changes
+
+- 568fd48: **Breaking for SQL Server users without TLS:** a `sqlserver://` URL with `encrypt=yes`, `encrypt=1` or an unknown `encrypt` value now requires TLS, so it fails against a server that doesn't offer TLS. Write `encrypt=false` to connect without encryption.
+  
+  `encrypt` and `trustServerCertificate` read the same in `mssql://` and Prisma-style `sqlserver://` URLs (#596). `true`, `yes` and `1` are true, and `false`, `no` and `0` are false, in any case. Any other value fails closed: an unknown `encrypt` value turns encryption on, and an unknown `trustServerCertificate` value leaves the server certificate untrusted. A `sqlserver://` URL with `encrypt=yes` or `encrypt=1` now requires TLS; before, only `encrypt=true` did. A `sqlserver://` URL with `trustServerCertificate=yes` or `=1` now trusts the certificate, as `=true` does. An `mssql://` URL with an unknown `trustServerCertificate` value no longer trusts it.
+  
+  An ADO.NET string is now any string that doesn't start with a scheme (`name://`), so a password or other value holding `://` no longer skips the normalisation of spaced keys such as `Trust Server Certificate=True` (#595). The connection label uses the same test.
+  
+  The upgrade guide's next section lists the changes, and the SQL Server guide and the `@askdb/sqlserver` README name the accepted values.
+
+### Patch Changes
+
+- Updated dependencies [7935ce0]
+- Updated dependencies [cc5c00c]
+- Updated dependencies [8e6c55f]
+- Updated dependencies [42b6533]
+- Updated dependencies [18ef5a5]
+  - @askdb/core@1.0.0-beta.55
+  - @askdb/introspect@0.3.0-beta.29
+
 ## 0.1.0-beta.30
 
 ### Patch Changes
