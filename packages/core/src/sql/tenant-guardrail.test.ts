@@ -1982,6 +1982,8 @@ describe("validateTenantGuardrails — a join counts only on the columns the pol
     // A CTE named like a policy table shadows it, with or without a column list.
     ["a CTE with a column list named like the hop's table", "WITH clients (id, sub_agency_id) AS (SELECT 1, '5') SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
     ["the same CTE over VALUES, read unaliased", "WITH clients(id, sub_agency_id) AS (VALUES (1, '5')) SELECT a.* FROM appointments a JOIN clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a MATERIALIZED CTE named like the hop's table", "WITH clients AS MATERIALIZED (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a NOT MATERIALIZED CTE named like the hop's table", "WITH clients AS NOT MATERIALIZED (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
   ])("rejects %s", (_label, sql, root) => {
     expect(findings(sql, root)).toEqual(appointments);
   });
@@ -2129,5 +2131,77 @@ describe("validateTenantGuardrails — a join counts only on the columns the pol
     }
     const control = "WITH [clients] AS (SELECT 1 AS id, '5' AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)";
     expect(validateTenantGuardrails(control, warnPolicy, scoped("sub_agencies"), { dialect: SQLSERVER_DIALECT }).warnings.map((w) => w.rule)).toContain("MISSING_TENANT_PREDICATE");
+  });
+});
+
+describe("validateTenantGuardrails — a column-path read is proven only through its own scope column (#400)", () => {
+  // Other paths declare `orders.billing_agency_id` and `orders.customer_id` as hops, which must not
+  // stand in for `orders.agency_id`, the column `orders` itself is scoped by.
+  const variant: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [
+      ...policy.scopedTables,
+      { id: "table:public.customers", scopeThrough: [{ root: "table:public.agencies", column: "table:public.customers#agency_id" }] },
+      {
+        id: "table:public.shipments",
+        scopeThrough: [{
+          root: "table:public.agencies",
+          join: [{ from: "table:public.shipments#order_id", to: "table:public.orders#id" }, { from: "table:public.orders#billing_agency_id", to: "table:public.agencies#id" }],
+        }],
+      },
+      {
+        id: "table:public.line_items",
+        scopeThrough: [{
+          root: "table:public.agencies",
+          join: [
+            { from: "table:public.line_items#order_id", to: "table:public.orders#id" },
+            { from: "table:public.orders#customer_id", to: "table:public.customers#id" },
+            { from: "table:public.customers#agency_id", to: "table:public.agencies#id" },
+          ],
+        }],
+      },
+    ],
+  };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, variant, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+
+  it.each([
+    "SELECT * FROM orders WHERE billing_agency_id = :tenant_agency_ids",
+    "SELECT o.id, o.total FROM orders o WHERE o.billing_agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o JOIN agencies a ON o.billing_agency_id = a.id WHERE a.id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o JOIN customers cu ON o.customer_id = cu.id WHERE cu.agency_id = :tenant_agency_ids",
+  ])("refuses it filtered through another path's column: %s", (sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it.each([
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids",
+  ])("keeps it filtered through its own column: %s", (sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a qualified column in an ON names only a read that ON can see (#400)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // In each, `g` in the first ON is the outer `g` (a correlated or LATERAL context), not the
+  // agencies read joined after it, so the engine links orders to a value outside the scope.
+  it.each([
+    ["a correlated subquery", "SELECT g.id, (SELECT max(o.total) FROM orders o JOIN (SELECT 1 AS z) d ON o.agency_id = g.id JOIN agencies g ON g.id = :tenant_agency_ids) AS s FROM (SELECT 1 AS id) g"],
+    ["LATERAL", "SELECT x.* FROM (SELECT 1 AS id) g CROSS JOIN LATERAL (SELECT o.* FROM orders o JOIN (SELECT 1 AS z) d ON o.agency_id = g.id JOIN agencies g ON g.id = :tenant_agency_ids) x"],
+    ["a parenthesized join", "SELECT o.* FROM agencies g JOIN (orders o JOIN lookup_states d ON o.agency_id = g.id) ON g.id = :tenant_agency_ids"],
+    ["a FROM-list comma", "SELECT o.* FROM agencies g, orders o JOIN lookup_states d ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids"],
+  ])("refuses a link through a read the ON can't see: %s", (_label, sql) => {
+    for (const dialect of [POSTGRES_DIALECT, MYSQL_DIALECT, undefined]) expect(findings(sql, dialect), dialect?.id ?? "none").toContain(missing);
+  });
+
+  it("keeps a link through a read the ON sees", () => {
+    expect(findings("SELECT o.* FROM agencies g JOIN orders o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids")).toEqual([]);
   });
 });
