@@ -5,13 +5,16 @@
  * before the refactor, and the refactor left it unchanged except for #828, which it carries: 244
  * `tgk` verdicts no longer refuse a sorted or grouped query under a table named `order` or `group`.
  * Since then it has changed only on purpose: #623 (21 tenant verdicts, under `sqlserver`, the
- * custom engines and no dialect, where SQL Server ends a name or number), #665 (5 read-only
- * verdicts on `SELECT $1SELECT 2`, under the Postgres family and the custom engines), and GHSA-rhwf-7742-8hwj
+ * custom engines and no dialect, where SQL Server ends a name or number), #665 (5 read-only verdicts on
+ * `SELECT $1SELECT 2`, under the Postgres family and the custom engines), GHSA-rhwf-7742-8hwj
  * (70 tenant verdicts, all refusals: 31 close a keyword written right after a number with a decimal
  * point or exponent under `mysql` and `mariadb`, or after any number under the Postgres family; 3 refuse
  * `1=0xOR 1=1` under the Postgres family, which PostgreSQL rejects; and 36 refuse a `$N` parameter written
  * against a word wherever the SQL may be read as Postgres, rows the read-only check already refuses there
- * since #665 included).
+ * since #665 included), and #399 (77 tenant verdicts, all refusals, every dialect: a predicate filters
+ * only the reads of its own `SELECT`, a qualifier no read goes by counts for nothing, and a self-join's
+ * reads must be told apart; its 43 rows below differ from the code before it in 344 tenant verdicts, all
+ * refusals but 5 that keep a read filtered through its own quoted alias with a space, `"my alias"`).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -179,6 +182,60 @@ const HOSTILE: readonly string[] = [
   "SELECT *\u00a0FROM orders\u00a0WHERE agency_id\u00a0=\u00a0:tenant_agency_ids",
   "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\u200bAND\u0085status = 'open'",
   "SELECT [x\u00a0OR] FROM orders WHERE agency_id = :tenant_agency_ids",
+  // #399: each read of a scoped table needs a predicate in its own SELECT.
+  "WITH mine AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders",
+  "SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = :tenant_agency_ids) f",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND EXISTS (SELECT 1 FROM orders o2 WHERE o2.total > 5)",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND id IN (SELECT id FROM orders)",
+  "SELECT o.* FROM orders o, (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids) t WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT b.* FROM orders a JOIN orders b ON a.id <> b.id WHERE a.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT id, total AS agency_id FROM orders) t WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT id FROM orders) t WHERE agency_id = :tenant_agency_ids",
+  "WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM x",
+  "SELECT name FROM agencies WHERE id = :tenant_agency_ids AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.name = 'x')",
+  "WITH mine AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders WHERE agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = :tenant_agency_ids) f WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND id IN (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids)",
+  "SELECT * FROM (SELECT o.id, o.agency_id FROM orders o) t WHERE t.agency_id = :tenant_agency_ids",
+  "WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE x.agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders o WHERE o.agency_id = :tenant_agency_ids AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = o.state)",
+  "SELECT b.* FROM orders a JOIN orders b ON a.id = b.parent_id WHERE a.agency_id = :tenant_agency_ids AND b.agency_id = :tenant_agency_ids",
+  // #399: an aliased read goes by its alias, an unseen qualifier counts for nothing, and a source
+  // with a column list, a computation over its rows or a parenthesized join isn't followed from outside.
+  "SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o CROSS JOIN generate_series(1, 100) AS g(agency_id) WHERE g.agency_id = :tenant_agency_ids",
+  "WITH x (id, agency_id) AS (SELECT id, agency_id FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM x",
+  "SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = :tenant_agency_ids",
+  // #399: a word after a read that may be an alias leaves it unnamed, a column list on a
+  // source's alias or a CTE reference isn't followed, names the engine tells apart stay apart, and `*`
+  // sees past an alias spelled like a clause.
+  "SELECT force.* FROM orders force, orders WHERE orders.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT total, agency_id FROM orders) AS lock (agency_id, x) WHERE lock.agency_id = :tenant_agency_ids",
+  "WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS t (agency_id, real_agency) WHERE t.agency_id = :tenant_agency_ids",
+  "SELECT \"A\".* FROM orders \"A\" JOIN orders a ON true WHERE a.agency_id = :tenant_agency_ids",
+  "SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders O WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = :tenant_agency_ids",
+  "WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = :tenant_agency_ids",
+  // #399: a quoted identifier is one name, a table alone in parentheses takes the alias after them,
+  // and a reading that sees a scoped table's name but no read of it fails closed.
+  "SELECT * FROM orders [.]",
+  "SELECT \"b a\".* FROM orders \"b a\" CROSS JOIN orders b WHERE b.agency_id = :tenant_agency_ids",
+  "SELECT * FROM (SELECT total, agency_id FROM orders) AS \"t x\" (agency_id, real_agency) WHERE agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM ONLY (orders) a, orders WHERE orders.agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders \"my alias\" WHERE \"my alias\".agency_id = :tenant_agency_ids",
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM [orders ]",
+  "SELECT json_agg(orders) AS data FROM orders WHERE orders.agency_id = :tenant_agency_ids",
+  // #399: only canonical forms name a read, and a subquery is a row source only where a source starts.
+  "SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS \"tablesample\" WHERE \"tablesample\".agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = :tenant_agency_ids",
+  // #399: a FROM that opens no FROM clause starts no source, and a SELECT that reads a
+  // table twice tells its reads apart only by distinct plain aliases and alias-qualified predicates.
+  "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 2 IS NOT DISTINCT FROM (SELECT agency_id FROM orders x WHERE x.id = 99)",
+  "SELECT j.* FROM (orders o CROSS JOIN lookup_states s) AS j CROSS JOIN orders o WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT b.* FROM agencies a, agencies b WHERE a.id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)",
+  "SELECT * FROM orders a, orders b WHERE agency_id = :tenant_agency_ids",
   // #665: a `$N` parameter written against a word, refused where the SQL may be read as Postgres.
   "SELECT $1INTO lab_x",
   "SELECT order_id FROM billing.order_line WHERE order_id = $1FOR SHARE",

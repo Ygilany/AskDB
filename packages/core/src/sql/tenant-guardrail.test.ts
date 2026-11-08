@@ -335,7 +335,7 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["an equality", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids"],
     ["an IN list", "SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids)"],
     ["= ANY", "SELECT * FROM orders WHERE agency_id = ANY(:tenant_agency_ids)"],
-    ["the placeholder on the left", "SELECT * FROM orders WHERE :tenant_agency_ids = o.agency_id"],
+    ["the placeholder on the left", "SELECT * FROM orders o WHERE :tenant_agency_ids = o.agency_id"],
     ["a qualified column", "SELECT o.* FROM public.orders o WHERE public.o.agency_id = :tenant_agency_ids"],
     ["other conjuncts on both sides", "SELECT * FROM orders WHERE status = 'open' AND agency_id = :tenant_agency_ids AND total > 5"],
     ["an OR inside parentheses", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')"],
@@ -468,7 +468,7 @@ describe("validateTenantGuardrails — MySQL comments are read the way MySQL rea
   });
 });
 
-describe("validateTenantGuardrails — parenthesized set-operation operands are query blocks", () => {
+describe("validateTenantGuardrails — a parenthesized set-operation operand is its own SELECT", () => {
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const rules = (sql: string) => validateTenantGuardrails(sql, warnPolicy, agencyScope).warnings.map((w) => w.rule);
   const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
@@ -1055,6 +1055,344 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
   });
 });
 
+describe("validateTenantGuardrails — each read of a scoped table needs a predicate in its own SELECT (#399)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+  const P = ":tenant_agency_ids";
+
+  it.each([
+    ["a CTE's predicate, for an unfiltered outer read", `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders`],
+    ["a derived table's predicate, for an unfiltered outer read", `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f`],
+    ["an outer predicate, for an unfiltered read inside EXISTS", `SELECT * FROM orders WHERE agency_id = ${P} AND EXISTS (SELECT 1 FROM orders o2 WHERE o2.total > 5)`],
+    ["an outer predicate, for an unfiltered read inside IN (…)", `SELECT * FROM orders WHERE agency_id = ${P} AND id IN (SELECT id FROM orders)`],
+    ["a predicate on another source's alias", `SELECT o.* FROM orders o, (SELECT agency_id FROM orders WHERE agency_id = ${P}) t WHERE t.agency_id = ${P}`],
+    ["a self-join that filters one side", `SELECT b.* FROM orders a JOIN orders b ON a.id <> b.id WHERE a.agency_id = ${P}`],
+    ["a derived table that renames another column to the tenant column", `SELECT * FROM (SELECT id, total AS agency_id FROM orders) t WHERE t.agency_id = ${P}`],
+    ["a derived table that doesn't expose the tenant column", `SELECT * FROM (SELECT id FROM orders) t WHERE agency_id = ${P}`],
+    ["a CTE read twice, filtered once", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x`],
+    // A read with an alias goes by the alias only: the table's name then refers to another read.
+    ["a self-join whose filtered side is the unaliased one", `SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = ${P}`],
+    ["a subquery read filtered through the outer table's name", `SELECT orders.*, (SELECT sum(o2.total) FROM orders o2 WHERE orders.agency_id = ${P}) AS all_total FROM orders WHERE agency_id = ${P}`],
+    ["a CTE joined to itself, filtered through its name", `WITH x AS (SELECT * FROM orders) SELECT b.* FROM x JOIN x b ON true WHERE x.agency_id = ${P}`],
+    // A qualifier counts only for a read it names: a source the check doesn't see declared names none.
+    ["a predicate on a table function's alias", `SELECT o.* FROM orders o CROSS JOIN generate_series(1, 100) AS g(agency_id) WHERE g.agency_id = ${P}`],
+    ["a predicate on an alias spelled like a keyword", `SELECT b.* FROM orders force, orders b WHERE force.agency_id = ${P}`],
+    // A source with a column list renames its output, so its outside filter can't be followed.
+    ["a CTE with a column list, read twice and filtered once", `WITH x (id, agency_id) AS (SELECT id, agency_id FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x`],
+    ["a CTE whose column list renames another column to the tenant column", `WITH x (real_agency, agency_id) AS (SELECT o.agency_id, o.total FROM orders o) SELECT * FROM x WHERE agency_id = ${P}`],
+    ["a derived table with a column list", `SELECT * FROM (SELECT id, agency_id FROM orders) t(agency_id, id) WHERE t.agency_id = ${P}`],
+    ["a derived table whose column list follows an alias spelled like a keyword", `SELECT * FROM (SELECT total, agency_id FROM orders) force (agency_id, real_agency) WHERE agency_id = ${P}`],
+    // What a source computes over its rows runs before the outside filter, over every tenant's rows.
+    ["a source with a window over every row", `SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = ${P}`],
+    ["a source with LIMIT", `SELECT * FROM (SELECT * FROM orders LIMIT 1) t WHERE t.agency_id = ${P}`],
+    ["a source that aggregates", `SELECT * FROM (SELECT agency_id, count(*) AS n FROM orders GROUP BY agency_id) t WHERE t.agency_id = ${P}`],
+    ["a source that groups, selecting only plain columns", `SELECT * FROM (SELECT agency_id FROM orders GROUP BY agency_id) t WHERE t.agency_id = ${P}`],
+    ["a source with a set operation", `SELECT * FROM (SELECT * FROM orders UNION ALL SELECT * FROM orders) t WHERE agency_id = ${P}`],
+    ["a source with two tables under *", `SELECT * FROM (SELECT * FROM orders, lookup_states) t WHERE agency_id = ${P}`],
+    ["a source with a parenthesized join under *", `SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = ${P}`],
+    ["a source that selects another read's column", `SELECT * FROM (SELECT x.agency_id FROM orders o, orders x) t WHERE agency_id = ${P}`],
+    ["a CTE nothing reads", "WITH x AS (SELECT * FROM orders) SELECT 1"],
+    ["a source with LIMIT after a subquery", `SELECT * FROM (SELECT * FROM orders WHERE total > (SELECT min(code) FROM lookup_states) LIMIT 1) t WHERE t.agency_id = ${P}`],
+    ["a source with a second table after a derived table, under *", `SELECT * FROM (SELECT * FROM (SELECT 1 AS one) d, orders) t WHERE agency_id = ${P}`],
+    ["a source filtered only through IN (…) on another column", `SELECT * FROM (SELECT * FROM orders) t WHERE t.id IN (SELECT id FROM orders WHERE agency_id = ${P})`],
+  ])("rejects %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it.each([
+    // A word after a table that may be an alias on some engine leaves the read with no name, so the
+    // table's name, which then refers to an unaliased sibling, doesn't filter it.
+    ["a sibling's predicate through the table's name, past an alias spelled `force`", `SELECT force.* FROM orders force, orders WHERE orders.agency_id = ${P}`],
+    ["the same past `lock`", `SELECT lock.* FROM orders lock, orders WHERE orders.agency_id = ${P}`],
+    ["the same past `qualify`", `SELECT qualify.* FROM orders qualify, orders WHERE orders.agency_id = ${P}`],
+    ["the same in a JOIN", `SELECT force.* FROM orders JOIN orders force ON force.id <> orders.id WHERE orders.agency_id = ${P}`],
+    ["the same for a CTE's references", `WITH x AS (SELECT * FROM orders) SELECT force.* FROM x force, x WHERE x.agency_id = ${P}`],
+    ["a correlated subquery read past an alias spelled `force`", `SELECT orders.*, (SELECT sum(force.total) FROM orders force WHERE orders.agency_id = ${P}) AS t FROM orders WHERE agency_id = ${P}`],
+    ["a read written `orders *`", `SELECT a.* FROM orders * a, orders WHERE orders.agency_id = ${P}`],
+    // After `AS`, a word and `(` are an alias with a column list; without `AS`, unless the word is a clause no engine takes as an alias.
+    ["a derived table's column list after `AS lock`", `SELECT * FROM (SELECT total, agency_id FROM orders) AS lock (agency_id, x) WHERE lock.agency_id = ${P}`],
+    ["a derived table's column list after `AS apply`", `SELECT * FROM (SELECT total, agency_id FROM orders) AS apply (agency_id, x) WHERE apply.agency_id = ${P}`],
+    ["a derived table's column list after `lock`", `SELECT * FROM (SELECT total, agency_id FROM orders) lock (agency_id, x) WHERE lock.agency_id = ${P}`],
+    ["a derived table's column list after `qualify`", `SELECT * FROM (SELECT total, agency_id FROM orders) qualify (agency_id, x) WHERE agency_id = ${P}`],
+    ["a derived table's column list after `xor`", `SELECT * FROM (SELECT total, agency_id FROM orders) xor (agency_id, x) WHERE agency_id = ${P}`],
+    ["a column list on a CTE's reference", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS t (agency_id, real_agency) WHERE t.agency_id = ${P}`],
+    ["a column list on a CTE's reference, filtered unqualified", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x t (agency_id, real_agency) WHERE agency_id = ${P}`],
+    ["`*` over two sources, the first aliased `lock`", `SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = ${P}`],
+    // What a source computes over its rows, or which of them it keeps, runs before the outside filter.
+    ["a source with HAVING", `SELECT * FROM (SELECT * FROM orders HAVING count(*) > 0) t WHERE t.agency_id = ${P}`],
+    ["a source with WINDOW", `SELECT * FROM (SELECT * FROM orders WINDOW w AS (ORDER BY id)) t WHERE t.agency_id = ${P}`],
+    ["a source with QUALIFY", `SELECT * FROM (SELECT * FROM orders QUALIFY total > 0) t WHERE t.agency_id = ${P}`],
+    ["a source with OFFSET", `SELECT * FROM (SELECT * FROM orders OFFSET 5) t WHERE t.agency_id = ${P}`],
+    ["a source with FETCH", `SELECT * FROM (SELECT * FROM orders FETCH FIRST 1 ROWS ONLY) t WHERE t.agency_id = ${P}`],
+    ["a source ordered by a window", `SELECT * FROM (SELECT * FROM orders ORDER BY sum(total) OVER ()) t WHERE t.agency_id = ${P}`],
+  ])("rejects %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  // Two names the engine tells apart count as two: a quoted name keeps its case, Postgres folds only
+  // ASCII letters, and MySQL and SQL Server can compare an alias case-sensitively.
+  it.each([
+    ["a quoted alias and an unquoted one", `SELECT "A".* FROM orders "A" JOIN orders a ON true WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["aliases that differ in a non-ASCII letter's case", `SELECT É.* FROM orders É JOIN orders é ON true WHERE é.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted derived table's alias and an unquoted one", `SELECT "T".* FROM (SELECT * FROM orders) "T", (SELECT * FROM orders WHERE agency_id = ${P}) t WHERE t.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["aliases that differ in case on MySQL", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, MYSQL_DIALECT],
+    ["aliases that differ in case on SQL Server", `SELECT A.* FROM orders A JOIN orders a ON 1 = 1 WHERE a.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["aliases that differ in case under no dialect", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, undefined],
+    // A join word one engine doesn't reserve is an alias there, so the read has that name, not its table's.
+    ["`full` as an alias on MySQL", `SELECT full.* FROM orders full, orders WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["`natural` as an alias on SQL Server", `SELECT natural.* FROM orders natural, orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["`using` as an alias on SQL Server", `SELECT using.* FROM orders using, orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["`straight_join` as an alias on Postgres", `SELECT straight_join.* FROM orders straight_join, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  // A quoted identifier is one name, whatever it holds: its dots, spaces and punctuation are never code.
+  it.each([
+    ["a quoted alias `.`", `SELECT * FROM orders "." WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a backtick-quoted alias `.`", "SELECT * FROM orders `.` WHERE orders.agency_id = " + P, MYSQL_DIALECT],
+    ["a bracketed alias `.`", `SELECT * FROM orders [.] WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a quoted alias starting with `.`", `SELECT * FROM orders ".x" WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a bracketed alias `.` under no dialect", `SELECT * FROM orders [.] WHERE orders.agency_id = ${P}`, undefined],
+    ["a CTE reference aliased `[.]`", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x [.]`, undefined],
+    ["a quoted alias with a space beside a read aliased like its first word", `SELECT "b a".* FROM orders "b a" CROSS JOIN orders b WHERE b.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the same, backtick-quoted", "SELECT `b a`.* FROM orders `b a` CROSS JOIN orders b WHERE b.agency_id = " + P, MYSQL_DIALECT],
+    ["the same, bracketed", `SELECT [b a].* FROM orders [b a] CROSS JOIN orders b WHERE b.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a quoted alias with an escaped quote", `SELECT "a""b".* FROM orders "a""b" CROSS JOIN orders a WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted alias `,` before a sibling", `SELECT ",".* FROM orders ",", orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a bracketed alias `,` before a sibling", `SELECT [,].* FROM orders [,], orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a column list after a quoted alias with a space", `SELECT * FROM (SELECT total, agency_id FROM orders) AS "t x" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a column list after a CTE reference's quoted alias with a space", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS "t y" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // Only `table`, `table alias` and `table AS alias` followed by what ends a source name a read: a
+    // clause after the table (TABLESAMPLE, NOT INDEXED, PARTITION, FOR SYSTEM_TIME) leaves it nameless.
+    ["a sibling's quoted alias spelled like TABLESAMPLE", `SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS "tablesample" WHERE "tablesample".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the same on SQLite", `SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS "tablesample" WHERE "tablesample".agency_id = ${P}`, SQLITE_DIALECT],
+    ["a sibling's quoted alias spelled like NOT INDEXED", `SELECT * FROM orders NOT INDEXED, orders AS "not" WHERE "not".agency_id = ${P}`, SQLITE_DIALECT],
+    ["a sibling's alias spelled like PARTITION", "SELECT * FROM orders partition (p0), orders AS `partition` WHERE `partition`.agency_id = " + P, MYSQL_DIALECT],
+    ["a sibling's alias spelled like FOR SYSTEM_TIME", `SELECT * FROM orders for system_time all, orders AS [for] WHERE [for].agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["the PARTITION shape under no dialect", "SELECT * FROM orders partition (p0), orders AS `partition` WHERE `partition`.agency_id = " + P, undefined],
+    // A subquery is a row source only where a source starts, never after ON or in an expression.
+    ["a scalar subquery right after ON", `SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = ${P}`, undefined],
+    ["a scalar subquery in an ON's BETWEEN", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code BETWEEN (SELECT agency_id FROM orders x) AND 9 WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // A FROM that opens no FROM clause (IS DISTINCT FROM, or inside a call) starts no row source.
+    ["a scalar subquery after IS NOT DISTINCT FROM", `SELECT * FROM orders WHERE agency_id = ${P} AND 2 IS NOT DISTINCT FROM (SELECT agency_id FROM orders x WHERE x.id = 99)`, undefined],
+    ["a scalar subquery after the FROM inside SUBSTRING", `SELECT SUBSTRING('0123456789' FROM (SELECT agency_id FROM orders x)) AS s FROM orders WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // A SELECT that reads a table twice tells the reads apart only by distinct plain aliases at its own level.
+    ["a self-join whose first read sits in an aliased parenthesized join", `SELECT j.* FROM (orders o CROSS JOIN lookup_states s) AS j CROSS JOIN orders o WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a self-join whose first read sits in aliased parentheses", `SELECT y.* FROM (orders x) AS y, orders x WHERE x.agency_id = ${P}`, SQLITE_DIALECT],
+    ["a self-join with an unaliased read", `SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = ${P} AND b.agency_id = ${P}`, undefined],
+    ["a self-join with a quoted alias", `SELECT * FROM orders "a", orders b WHERE "a".agency_id = ${P} AND b.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a self-join filtered unqualified", `SELECT * FROM orders a, orders b WHERE agency_id = ${P}`, undefined],
+    // A table alone in parentheses takes the alias that follows them.
+    ["`ONLY (orders) a` beside an unaliased sibling", `SELECT a.* FROM ONLY (orders) a, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["`(orders) a` beside an unaliased sibling", `SELECT a.* FROM (orders) a, orders WHERE orders.agency_id = ${P}`, SQLITE_DIALECT],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  // A reading that sees a scoped table's name but no read of it can't tell what filters it.
+  it.each([
+    ["the table's name only as a qualifier", "SELECT orders.total FROM lookup_states", undefined],
+    ["the table's name only inside a longer quoted name", `SELECT "my orders".id FROM lookup_states "my orders"`, POSTGRES_DIALECT],
+  ])("rejects %s, which names the table but reads it nowhere the check sees", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  // SQL Server ignores a quoted name's trailing spaces, so `[orders ]` reads `orders`.
+  it.each([
+    ["a read written `[orders ]` beside a filtered one", `SELECT * FROM orders WHERE agency_id = ${P} UNION ALL SELECT * FROM [orders ]`, SQLSERVER_DIALECT],
+    ["a read written `\"orders \"` beside a filtered one", `SELECT * FROM orders WHERE agency_id = ${P} UNION ALL SELECT * FROM "orders "`, SQLSERVER_DIALECT],
+    ["the same under no dialect", `SELECT * FROM orders WHERE agency_id = ${P} UNION ALL SELECT * FROM [orders ]`, undefined],
+    ["a CTE reference written `[x ]`", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM [x ]`, SQLSERVER_DIALECT],
+    ["a CTE named `[x ]` read as `x`", `WITH [x ] AS (SELECT * FROM orders) SELECT * FROM [x ] WHERE agency_id = ${P} UNION ALL SELECT * FROM x`, SQLSERVER_DIALECT],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  it("rejects the scope's root table read as `[agencies ]` beside a filtered read", () => {
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} UNION ALL SELECT name FROM [agencies ]`, SQLSERVER_DIALECT))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["a whole-row reference in a call beside a qualified predicate", `SELECT json_agg(orders) AS data FROM orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a whole-row count beside a qualified predicate", `SELECT count(orders) AS n FROM orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a field of a parenthesized whole row", `SELECT (orders).id FROM orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["another table whose name starts with the scoped one's", "SELECT * FROM orders$archive", POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it("rejects a root read twice where a carrier's IN (…) filters only one read", () => {
+    expect(findings(`SELECT b.* FROM agencies a, agencies b WHERE a.id IN (SELECT agency_id FROM orders WHERE agency_id = ${P})`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it("rejects the scope's root table read through a bracketed alias `.`", () => {
+    expect(findings("SELECT * FROM agencies [.]", SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["a quoted alias with a space, filtered through it", `SELECT * FROM orders "my alias" WHERE "my alias".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted table name filtered through it", `SELECT * FROM "orders" WHERE "orders".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["`ONLY (orders) a`, filtered through its alias", `SELECT * FROM ONLY (orders) a WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a subquery after ON with its own predicate", `SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT max(x.agency_id) FROM orders x WHERE x.agency_id = ${P}) = 7 WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["TABLESAMPLE after an alias, filtered unqualified", `SELECT * FROM orders o TABLESAMPLE SYSTEM (10) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it.each([
+    ["an unquoted alias written in another case on Postgres", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["an unquoted alias written in another case on SQLite", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, SQLITE_DIALECT],
+    ["the table's name before FULL JOIN on Postgres", `SELECT orders.* FROM orders FULL JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before NATURAL JOIN on Postgres", `SELECT orders.* FROM orders NATURAL JOIN lookup_states WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before USING on Postgres", `SELECT o.* FROM lookup_states s JOIN orders USING (state) WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before STRAIGHT_JOIN on MySQL", `SELECT orders.* FROM orders STRAIGHT_JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a MySQL USE INDEX hint", `SELECT * FROM orders USE INDEX (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a MySQL IGNORE KEY hint", `SELECT * FROM orders IGNORE KEY (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a SQL Server table hint", `SELECT * FROM orders WITH (NOLOCK) WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a MySQL index hint", `SELECT * FROM orders FORCE INDEX (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["an alias spelled `force`, filtered unqualified", `SELECT * FROM orders force WHERE agency_id = ${P}`, undefined],
+    ["an alias spelled `force`, filtered through it", `SELECT * FROM orders force WHERE force.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before a join", `SELECT orders.* FROM orders LEFT JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, undefined],
+    ["a filtered MATERIALIZED CTE", `WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a filtered NOT MATERIALIZED CTE", `WITH x AS NOT MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it("works out a chain of sources read several times each in bounded time", () => {
+    // Nine CTEs, each reading the one before six times: re-exploring each source once per path took seconds.
+    const levels = ["x1 AS (SELECT * FROM orders)"];
+    for (let n = 2; n <= 9; n++) {
+      levels.push(`x${n} AS (SELECT agency_id FROM ${Array.from({ length: 6 }, (_, k) => `x${n - 1} a${k}`).join(", ")})`);
+    }
+    const started = performance.now();
+    expect(findings(`WITH ${levels.join(", ")} SELECT * FROM x9 WHERE agency_id = ${P}`)).toEqual([]);
+    expect(findings(`WITH ${levels.join(", ")} SELECT * FROM x9`)).toEqual(orders);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it("a polymorphic table: a discriminator on a table function's alias doesn't count", () => {
+    expect(findings(`SELECT n.* FROM notes n, unnest(ARRAY['agency']) AS u(owner_type) WHERE u.owner_type = 'agency' AND n.owner_id = ${P}`))
+      .toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+
+  it("refuses the issue's shapes under a strict policy", () => {
+    for (const sql of [
+      `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders`,
+      `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f`,
+    ]) {
+      try {
+        validateTenantGuardrails(sql, policy, agencyScope);
+        expect.unreachable(`should have thrown: ${sql}`);
+      } catch (e) {
+        expect(e, sql).toBeInstanceOf(TenantGuardrailError);
+        expect((e as TenantGuardrailError).warnings.map((w) => `${w.rule}:${w.tableId}`), sql).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+      }
+    }
+  });
+
+  it.each([
+    ["the CTE shape, with the outer read filtered too", `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders WHERE agency_id = ${P}`],
+    ["the derived-table shape, with the outer read filtered too", `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f WHERE o.agency_id = ${P}`],
+    ["an IN (…) read with its own predicate", `SELECT * FROM orders WHERE agency_id = ${P} AND id IN (SELECT id FROM orders WHERE agency_id = ${P})`],
+    ["a filter on a derived table's output that names the column", `SELECT * FROM (SELECT o.id, o.agency_id FROM orders o) t WHERE t.agency_id = ${P}`],
+    ["a filter on a CTE's output at its one reference", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE x.agency_id = ${P}`],
+    ["a correlated subquery that only names the outer read's alias", `SELECT * FROM orders o WHERE o.agency_id = ${P} AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = o.state)`],
+    ["a correlated subquery that names the outer table", `SELECT * FROM orders WHERE agency_id = ${P} AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = orders.state)`],
+    ["a self-join that filters both sides", `SELECT b.* FROM orders a JOIN orders b ON a.id = b.parent_id WHERE a.agency_id = ${P} AND b.agency_id = ${P}`],
+  ])("accepts %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  it("a literal on one reference doesn't ride on another reference's predicate", () => {
+    expect(findings(`SELECT * FROM orders a, orders b WHERE a.agency_id = ${P} AND b.agency_id = 7`)).toEqual(orders);
+  });
+
+  it("multi_root: a scalar subquery on a root compared with another root's placeholder is refused", () => {
+    // The outer read of clients is filtered with its own placeholder; the subquery's read binds agency IDs to client IDs.
+    const multi: TenantScope = {
+      access: { kind: "multi_root", scopes: [{ tenantRoot: "table:public.agencies", ids: ["1"] }, { tenantRoot: "table:public.clients", ids: ["5"] }] },
+    };
+    const sql = "SELECT c.*, (SELECT name FROM clients WHERE id IN (:tenant_agency_ids)) AS x FROM clients c WHERE c.id IN (:tenant_client_ids)";
+    expect(validateTenantGuardrails(sql, warnPolicy, multi).warnings.map((w) => `${w.rule}:${w.tableId}`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.clients"]);
+  });
+
+  it("the scope's root table: a read inside a subquery needs its own predicate too", () => {
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.name = 'x')`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.id = ${P})`)).toEqual([]);
+  });
+
+  // An `ON` sees only its join's operands: an unqualified predicate there resolves among them, so it
+  // filters no read joined after it, before a `FROM`-list comma, or outside the join's parentheses.
+  it.each([
+    ["a read joined after the ON", `SELECT o.id FROM sub_agencies sa JOIN lookup_states ls ON agency_id = ${P} CROSS JOIN orders o`],
+    ["a read outside the parentheses around the join", `SELECT o.id FROM orders o CROSS JOIN (sub_agencies sa JOIN lookup_states ls ON agency_id = ${P})`],
+    ["a read before a FROM-list comma", `SELECT o.id FROM orders o, sub_agencies sa JOIN lookup_states ls ON agency_id = ${P}`],
+    ["a read outside a nested join", `SELECT o.* FROM orders o LEFT JOIN lookup_states ls JOIN sub_agencies sa ON agency_id = ${P} ON true`],
+  ])("rejects an unqualified ON predicate standing in for %s", (_label, sql) => {
+    expect(findings(sql)).toContain(orders[0]);
+  });
+
+  it("rejects an unqualified discriminator in an ON standing in for a read joined after it", () => {
+    const sql = `SELECT n2.* FROM notes n1 JOIN lookup_states ls ON owner_type = 'agency' AND n1.owner_id = ${P} CROSS JOIN notes n2 WHERE n2.owner_id = ${P}`;
+    expect(findings(sql)).toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+
+  it.each([
+    ["the read on the ON's left", `SELECT o.* FROM orders o JOIN lookup_states s ON agency_id = ${P}`],
+    ["the read on the ON's right", `SELECT o.* FROM lookup_states s JOIN orders o ON agency_id = ${P}`],
+    ["a read joined before an earlier ON", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code = o.state JOIN service_types t ON agency_id = ${P}`],
+    ["a read inside a parenthesized operand", `SELECT o.* FROM lookup_states s JOIN (orders o CROSS JOIN service_types t) ON agency_id = ${P}`],
+    ["the read before a derived table it joins", `SELECT o.* FROM orders o JOIN (SELECT code, name FROM lookup_states) s ON agency_id = ${P}`],
+  ])("accepts an unqualified ON predicate on %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  // An alias after the parentheses around a read hides the read's own alias, so a predicate on the
+  // inner alias names another read (here the outer query's, by correlation).
+  it.each([
+    ["a table", `SELECT x.id, (SELECT count(*) FROM (orders x) AS y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a table, with no AS", `SELECT x.id, (SELECT count(*) FROM (orders x) y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a join", `SELECT x.id, (SELECT count(*) FROM (orders x CROSS JOIN lookup_states s) AS j WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a CTE reference", `WITH c AS (SELECT * FROM orders) SELECT x.id, (SELECT count(*) FROM (c x) AS y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a derived table", `SELECT x.id, (SELECT count(*) FROM ((SELECT * FROM orders) x CROSS JOIN lookup_states s) AS j WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+  ])("rejects a read in parentheses that an outer alias hides: %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it("accepts a read in parentheses with no alias after them, filtered through its own alias", () => {
+    expect(findings(`SELECT o.* FROM (orders o JOIN lookup_states s ON s.code = o.state) WHERE o.agency_id = ${P}`)).toEqual([]);
+  });
+
+  // `order` and `group` after a `.` are a table's name, never `ORDER BY` or `GROUP BY`, so a read
+  // aliased `by` after one is a read like any other.
+  it.each([["postgres", POSTGRES_DIALECT], ["no dialect", undefined]] as const)("rejects an unfiltered read aliased `by` after a table named order or group under %s", (_label, dialect) => {
+    const named: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      scopedTables: ["billing.order", "app.group"].map((t) => ({
+        id: `table:${t}`,
+        scopeThrough: [{ root: "table:public.agencies", column: `table:${t}#agency_id` }],
+      })),
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    const check = (sql: string) => validateTenantGuardrails(sql, named, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+    expect(check(`SELECT by.order_id, by.agency_id FROM billing.order by CROSS JOIN billing.order o WHERE o.agency_id = ${P}`)).toEqual([
+      "MISSING_TENANT_PREDICATE:table:billing.order",
+    ]);
+    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE g.agency_id = ${P}`)).toEqual(["MISSING_TENANT_PREDICATE:table:app.group"]);
+    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE g.agency_id = ${P} AND by.agency_id = ${P} ORDER BY g.id`)).toEqual([]);
+  });
+});
+
 describe("validateTenantGuardrails — a keyword written right after a number or $N parameter (GHSA-rhwf-7742-8hwj)", () => {
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const findings = (sql: string, dialect?: DialectSpec, p: NormalizedTenantPolicy = warnPolicy) =>
@@ -1291,7 +1629,9 @@ describe("validateTenantGuardrails — a column list after a table's alias renam
       "SELECT * FROM orders AS t WHERE t.agency_id = :tenant_agency_ids",
       "SELECT * FROM orders WHERE (agency_id = :tenant_agency_ids)",
       "SELECT o.id FROM orders o JOIN agencies a ON (a.id = o.agency_id) WHERE o.agency_id = :tenant_agency_ids AND a.id = :tenant_agency_ids",
-      "SELECT o.id FROM agencies a JOIN orders USING (agency_id) WHERE a.id = :tenant_agency_ids AND orders.agency_id = :tenant_agency_ids",
+      // Unqualified: SQL Server takes `USING` after a table as its alias, so under a custom id or none
+      // the read has no name the check recognises (#399).
+      "SELECT a.name FROM agencies a JOIN orders USING (agency_id) WHERE a.id = :tenant_agency_ids AND agency_id = :tenant_agency_ids",
       "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION (SELECT id FROM lookup_states)",
     ]) {
       expect(findings(sql, dialect), sql).toEqual([]);
@@ -1299,7 +1639,10 @@ describe("validateTenantGuardrails — a column list after a table's alias renam
   });
 
   it("keeps SQL Server's table hint in parentheses after an alias, which SQL Server doesn't read as a column list", () => {
-    expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT o.* FROM orders o WITH (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    // Without `WITH`, the hint is no form the check names a read in, so only an unqualified predicate filters it (#399).
+    expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
   });
 
   // A column list on a parenthesized FROM item renames what it outputs: on Postgres 17,
@@ -1420,7 +1763,8 @@ describe("validateTenantGuardrails — a quoted tenant column counts only when s
   it.each(exact)("keeps the column quoted as the schema spells it, or unquoted in any case, under %s", (_label, dialect) => {
     for (const sql of [
       "SELECT * FROM orders WHERE AGENCY_ID = :tenant_agency_ids",
-      "SELECT o.* FROM orders o WHERE O.Agency_Id = :tenant_agency_ids",
+      // The alias as written: MySQL and SQL Server may compare it case-sensitively (#399).
+      "SELECT o.* FROM orders o WHERE o.Agency_Id = :tenant_agency_ids",
     ]) {
       expect(findings(sql, dialect), sql).toEqual([]);
     }
@@ -1573,14 +1917,38 @@ describe("validateTenantGuardrails — SQLite reads a single-quoted alias as the
     }
   });
 
+  // The alias is one name, whatever it spells: `'join'` is no join and `'.'` no dot, as with `"join"`.
+  it.each(maybeSqlite)("reads a quoted alias spelled like a keyword or a mark as a name under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT o.* FROM orders o LEFT JOIN lookup_states 'join' ON o.agency_id = :tenant_agency_ids",
+      "SELECT o.* FROM orders o LEFT JOIN lookup_states AS 'join' ON o.agency_id = :tenant_agency_ids",
+      "SELECT \"cross\".* FROM orders 'cross', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders 'where', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders '.' CROSS JOIN orders o WHERE o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toContain(missing);
+    }
+  });
+
   it("a strict policy refuses it", () => {
     expect(() => validateTenantGuardrails(quotedAlias[0]![1], policy, agencyScope, { dialect: SQLITE_DIALECT })).toThrow(TenantGuardrailError);
   });
 
-  it.each(maybeSqlite)("keeps a read filtered through its own quoted alias under %s", (_label, dialect) => {
+  const throughQuotedAlias = [
+    "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids",
+    "SELECT x.* FROM orders AS 'x' WHERE x.agency_id = :tenant_agency_ids",
+  ];
+
+  it("keeps a read filtered through its own quoted alias under sqlite", () => {
+    for (const sql of throughQuotedAlias) expect(findings(sql, SQLITE_DIALECT), sql).toEqual([]);
+  });
+
+  it.each(maybeSqlite.slice(1))("refuses it under %s, where the other engines read no alias there (#399)", (_label, dialect) => {
+    for (const sql of throughQuotedAlias) expect(findings(sql, dialect), sql).toContain(missing);
+  });
+
+  it.each(maybeSqlite)("keeps a read with a plain alias, or a quoted column alias, under %s", (_label, dialect) => {
     for (const sql of [
-      "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids",
-      "SELECT x.* FROM orders AS 'x' WHERE x.agency_id = :tenant_agency_ids",
       "SELECT x.* FROM orders x WHERE x.agency_id = :tenant_agency_ids",
       "SELECT count(*) AS 'n' FROM orders WHERE agency_id = :tenant_agency_ids",
     ]) {

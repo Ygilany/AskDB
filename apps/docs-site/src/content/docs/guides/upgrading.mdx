@@ -19,6 +19,26 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.53
+
+Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.53, and the other packages that pin `@askdb/core`.
+
+### Give each read of a scoped table its own tenant predicate
+
+Under `strict` enforcement, some SQL that passed before now throws `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`) ([#399](https://github.com/Ygilany/AskDB/issues/399)). The tenant check looked for a predicate per statement or `UNION` branch. So a predicate inside a CTE, derived table or subquery could cover an unfiltered read of the same table outside it, and a predicate on one reference could cover another. Now a CTE body, a derived table and a subquery are each their own `SELECT`, and a qualified predicate counts only for the read it names. A read inside a derived table or CTE still passes when every reference to it is filtered on the tenant column. AskDB now refuses some correct queries:
+
+- a root table joined for a label from a CTE, derived table or scalar subquery whose own `SELECT` doesn't filter it;
+- a read inside a correlated subquery that only the outer query filters;
+- a source that computes over its rows (an aggregate, a window, `LIMIT`), filtered only outside it;
+- a source whose body is a set operation (`UNION`, `INTERSECT`, `EXCEPT`), filtered only outside it;
+- a read with a clause right after its table or alias (`orders TABLESAMPLE …`, SQL Server's `orders o (NOLOCK)` without `WITH`), filtered only through that name;
+- a self-join where a read has no alias, a quoted alias or sits in parentheses, or that is filtered unqualified (`FROM orders a, orders b WHERE agency_id = …`): give each read a plain alias and its own predicate (`WHERE a.agency_id = … AND b.agency_id = …`);
+- on MySQL, MariaDB and SQL Server, a predicate whose qualifier spells the alias in another case (`FROM orders O WHERE o.agency_id = …`).
+
+For each, add the predicate inside that `SELECT` (in each branch of a set operation), filter through an alias or unqualified, and write an alias the same way each time.
+
+The check is still a heuristic, and some shapes still pass: a root filtered through another table's tenant column isn't checked for the join between them ([#400](https://github.com/Ygilany/AskDB/issues/400)), and an unqualified predicate in an `ON` can count for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
+
 ## 1.0.0-beta.52
 
 Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/config` 1.0.0-beta.20, `@askdb/client` 1.0.0-beta.13, `@askdb/ai` 0.1.0-beta.12, `@askdb/enrich` 0.2.0-beta.23, `@askdb/introspect` 0.3.0-beta.26, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27, and `@askdb/sqlserver` 0.1.0-beta.28.

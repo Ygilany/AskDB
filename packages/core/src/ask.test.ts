@@ -344,6 +344,31 @@ describe("ask — a `$$` inside a name opens no dollar-quoted string", () => {
   });
 });
 
+describe("ask — a predicate filters only the reads of its own SELECT (#399)", () => {
+  const run = (sql: string) =>
+    ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" })) as never },
+    });
+
+  it.each([
+    ["a CTE", "WITH mine AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders"],
+    ["a derived table", "SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = :tenant_agency_ids) f"],
+  ])("strict: refuses an unfiltered outer read beside %s that filters", async (_label, sql) => {
+    await expect(run(sql)).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+
+  it("strict: returns the same shape when the outer read is filtered too", async () => {
+    const result = await run("WITH mine AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders WHERE agency_id = :tenant_agency_ids");
+    expect(result.tenantGuardrail?.passed).toBe(true);
+  });
+});
+
 describe("ask — a keyword written right after a number is read, like the engine (GHSA-rhwf-7742-8hwj)", () => {
   it.each(["mysql", "mariadb"] as const)("%s: refuses the OR after a decimal number", async (dialect) => {
     // MySQL and MariaDB end `1.0` before `OR`, so the OR defeats the predicate.
