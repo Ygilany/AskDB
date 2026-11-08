@@ -30,7 +30,11 @@ A tenant column, a polymorphic discriminator or a `HAVING` predicate's `GROUP BY
 - **Postgres and CockroachDB:** quote a column with an upper-case non-ASCII letter (`c."Égency_id"`). Unquoted, Postgres keeps the letter and CockroachDB lower-cases it, so they read different columns.
 - **MySQL, MariaDB and SQLite:** write a non-ASCII letter in the schema's case. Only ASCII letters match in any case.
 
-A schema whose column names are ASCII is unaffected.
+A schema whose column names are ASCII is unaffected by that rule. Three more changes reach any schema (`UNICODE_ESCAPED_IDENTIFIER` or `MISSING_TENANT_PREDICATE`):
+
+- **Aliases and qualifiers on Postgres and CockroachDB:** an unquoted alias or qualifier with an upper-case non-ASCII letter (`Ö.agency_id`) ties a predicate to no read. Quote it, as the alias is (`"Ö".agency_id`), or write it in lower case.
+- **`İ`, `ı`, `ſ`, the Kelvin sign and names not in NFC:** a name holding one of these letters, or not in Unicode normalization form C, is refused on every engine unless the schema spells it exactly. A model's own alias with `ı` (common in Turkish, as in `sayı`) is refused too; the schema's own Turkish names, written as the schema spells them, pass.
+- **Tables whose name starts or ends with a non-ASCII letter:** the check now sees `ürün` or `café` as the scoped table it is, so SQL that read one without a tenant predicate, and passed, is refused.
 
 ## 1.0.0-beta.53
 
