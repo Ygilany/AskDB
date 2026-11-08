@@ -2388,3 +2388,73 @@ describe("validateTenantGuardrails — a name with non-ASCII letters, read as ev
     expect(findings("SELECT agency_id, count(*) FROM orders GROUP BY AGENCY_ID HAVING agency_id = :tenant_agency_ids", { ...policy, enforcement: "warn" }, SQLITE_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — every name the engines of a reading read apart names nothing", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const clients: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const findings = (sql: string, dialect: DialectSpec | undefined, scope: TenantScope = agencyScope) =>
+    validateTenantGuardrails(sql, warnPolicy, scope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // An unquoted `Ö` is `Ö` to Postgres and `ö` to CockroachDB, so a qualifier or alias spelled that way ties to no read.
+  describe.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("an unquoted qualifier or alias with an upper-case non-ASCII letter under $id", (dialect) => {
+    it("ties a predicate to no read", () => {
+      expect(findings(`SELECT "Ö".* FROM orders "Ö", (SELECT 42 AS agency_id) ö WHERE Ö.agency_id = :tenant_agency_ids`, dialect)).toEqual([orders]);
+      expect(findings(`SELECT Ö.* FROM orders Ö WHERE Ö.agency_id = :tenant_agency_ids`, dialect)).toEqual([orders]);
+    });
+
+    it("keeps the qualifier quoted as the alias is, or an alias in lower case", () => {
+      expect(findings(`SELECT "Ö".* FROM orders "Ö" WHERE "Ö".agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+      expect(findings("SELECT ö.* FROM orders ö WHERE ö.agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+    });
+
+    it("satisfies no discriminator", () => {
+      const sql = `SELECT "Ö".* FROM notes "Ö", (SELECT 'agency' AS owner_type) ö WHERE Ö.owner_type = 'agency' AND "Ö".owner_id = :tenant_agency_ids`;
+      expect(findings(sql, dialect)).toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+    });
+
+    it("passes no column through a derived table", () => {
+      const sql = `SELECT x.* FROM (SELECT Ö.agency_id, "Ö".id FROM orders "Ö", (SELECT 42 AS agency_id) ö) x WHERE x.agency_id = :tenant_agency_ids`;
+      expect(findings(sql, dialect)).toEqual([orders]);
+    });
+
+    it("names no read when the alias is unquoted and the qualifier quoted, in a self-join or not", () => {
+      expect(findings(`SELECT Ö.* FROM orders Ö, (SELECT 42 AS agency_id) "Ö" WHERE "Ö".agency_id = :tenant_agency_ids`, dialect)).toEqual([orders]);
+      const selfJoin = `SELECT Ö.* FROM orders Ö JOIN orders b ON TRUE, (SELECT 42 AS agency_id) "Ö" WHERE "Ö".agency_id = :tenant_agency_ids AND b.agency_id = :tenant_agency_ids`;
+      expect(findings(selfJoin, dialect)).toEqual([orders]);
+    });
+  });
+
+  // Some engine folds U+0130, U+0131, U+017F and U+212A into an ASCII letter, and CockroachDB
+  // normalizes a name to NFC: the check can't match such a name the engine's way, so it refuses it.
+  const everyDialect = [POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT, customEngine(), undefined];
+  it.each(everyDialect)("refuses a name some engine folds into ASCII, or one not in NFC, under %#", (dialect) => {
+    for (const sql of [
+      "SELECT * FROM clİents",
+      "SELECT d.* FROM (SELECT z.k AS agency_İd, o.agency_id, o.id FROM orders o, (SELECT 42 AS k) z) d WHERE d.agency_id = :tenant_agency_ids",
+      "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.Kind = 1",
+      "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.ıd = 1",
+      "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.ſtate = 1",
+      `SELECT o.* FROM orders o, (SELECT 42 AS "céntimo") z WHERE o.agency_id = :tenant_agency_ids`,
+    ]) {
+      expect(findings(sql, dialect, sql.includes("ents") && !sql.includes("orders") ? clients : agencyScope), sql).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    }
+  });
+
+  // CockroachDB lower-cases each letter on its own, so a final capital sigma reads `σ`, which JavaScript's
+  // `toLowerCase` writes `ς` at the end of a word: the table name is still the table's.
+  it.each([COCKROACHDB_DIALECT, MYSQL_DIALECT])("finds the read of a table whose name ends in a capital sigma under $id", (dialect) => {
+    const greek: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      scopedTables: [...warnPolicy.scopedTables, { id: "table:public.οσ", scopeThrough: [{ root: "table:public.agencies", column: "table:public.οσ#agency_id" }] }],
+    };
+    const check = (sql: string) => validateTenantGuardrails(sql, greek, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+    expect(check("SELECT * FROM ΟΣ")).toEqual(["MISSING_TENANT_PREDICATE:table:public.οσ"]);
+    expect(check("SELECT * FROM οσ WHERE agency_id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT])("keeps a non-ASCII alias in NFC under $id", (dialect) => {
+    expect(findings(`SELECT o.total AS "Número", o.state AS "État" FROM orders o WHERE o.agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+    expect(findings("SELECT count(*) AS umsatz_größe FROM orders WHERE agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+});
