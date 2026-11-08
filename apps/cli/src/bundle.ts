@@ -34,18 +34,26 @@ export function bundleCommand(): CommandSpec<BundleOptions> {
     },
     needsConfig: () => false,
     async run(opts) {
-      const { bundleSchemaDirectory } = await import("@askdb/enrich");
+      const [{ bundleSchemaDirectory }, { loadSchemaFromJson }, { schemaWarningLines }] = await Promise.all([
+        import("@askdb/enrich"),
+        import("@askdb/core"),
+        import("./schema-warnings.js"),
+      ]);
       const outPath = resolve(opts.out!);
+      let warnings: string[];
       try {
         // Throws the loader's error for a directory `loadSchema()` refuses, before anything is
         // written, so a bundle this command writes always loads (#796).
         const bundle = bundleSchemaDirectory(resolve(opts.schemaDir!));
-        writeFileSync(outPath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+        const json = JSON.stringify(bundle, null, 2);
+        warnings = schemaWarningLines(loadSchemaFromJson(json));
+        writeFileSync(outPath, `${json}\n`, "utf8");
       } catch (error) {
         process.stderr.write(`askdb bundle: ${errorMessage(error)}\n`);
         return 1;
       }
       process.stdout.write(`Wrote ${outPath}\n`);
+      for (const line of warnings) process.stderr.write(line);
       return 0;
     },
   };
