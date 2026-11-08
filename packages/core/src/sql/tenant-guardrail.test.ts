@@ -2352,3 +2352,27 @@ describe("validateTenantGuardrails — a quoted column spelled as the policy spe
     expect(findings(`SELECT a.* FROM "Appointment" a WHERE a."clientid" IN (SELECT id FROM "Client" WHERE "agencyId" = :tenant_agency_ids)`, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.Appointment"]);
   });
 });
+
+describe("validateTenantGuardrails — a column named like an outer-join word marks no outer join (#400)", () => {
+  const findings = (sql: string) => validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([
+    "SELECT o.id, o.full FROM orders o JOIN lookup_states d ON o.agency_id = :tenant_agency_ids AND d.code = o.state",
+    "SELECT o.id, o.right FROM orders o JOIN lookup_states d ON o.agency_id = :tenant_agency_ids AND d.code = o.state",
+    "SELECT o.id FROM orders o JOIN lookup_states d ON o.agency_id = :tenant_agency_ids AND d.code = o.state WHERE d.left IS NULL",
+  ])("keeps an inner join's ON predicate: %s", (sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  it("keeps a join path beside a qualified column named full", () => {
+    const clients: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+    const sql = "SELECT a.*, c.full FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)";
+    expect(validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, clients).warnings).toEqual([]);
+  });
+
+  it("still refuses an ON predicate beside a LEFT JOIN", () => {
+    expect(findings("SELECT o.id, o.full FROM orders o LEFT JOIN lookup_states d ON o.agency_id = :tenant_agency_ids AND d.code = o.state")).toEqual([
+      "MISSING_TENANT_PREDICATE:table:public.orders",
+    ]);
+  });
+});
