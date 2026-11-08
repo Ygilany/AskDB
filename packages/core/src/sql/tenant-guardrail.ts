@@ -1598,23 +1598,36 @@ function predicateAt(tokens: readonly Token[], k: number, column: string, readin
 }
 
 /**
- * Whether the written column `t` is the policy's `column` under the `reading`'s rule, compared with
- * the column's own spelling, which the policy writes as the schema does. A name that compares as
- * another column may be another source's, so it ties nothing to the policy's.
- * - Read the Postgres way (`postgres`, `cockroachdb`): a quoted name exactly, an unquoted one with
- *   its ASCII letters lower-cased. So `"AGENCY_ID"` is another column than `agency_id`, and an
- *   unquoted `agencyid` another than `"agencyId"`.
- * - Read the SQL Server way, the name as written: the database's collation may compare names
+ * The name every engine that shares the `reading` reads for the written name `t`, to compare with a
+ * column's spelling ({@link namesColumn}) or with another written name ({@link sameName}); undefined
+ * when those engines read it apart, so it names no column. A name read as another column may be
+ * another source's, so it ties nothing to the policy's.
+ * - Read the Postgres way (`postgres`, `cockroachdb`): a quoted name exactly; an unquoted one with
+ *   its ASCII letters lower-cased, as Postgres folds it. CockroachDB lower-cases every letter, so an
+ *   unquoted name with an upper-case non-ASCII letter (`Égency_id`) is read apart.
+ * - Read the SQL Server way, as written: the database's collation may compare names
  *   case-sensitively, and the check can't see it, so `agencyid` is another column than `agencyId`.
- * - Read the MySQL way (MySQL and MariaDB), lower-cased.
- * - Otherwise (SQLite, and the generic reading), with ASCII letters lower-cased, quoted or not, so
- *   `égency_id` is another column than `Égency_id`.
- * A custom id or none is read every way, so the column has to match under each.
+ * - Read the MySQL way (MySQL and MariaDB) and otherwise (SQLite, the generic reading), with only
+ *   ASCII letters lower-cased, quoted or not: SQLite folds only those, and MariaDB keeps apart
+ *   letters Unicode lower-casing merges (U+212A KELVIN SIGN and `k`).
+ * A custom id or none is read every way, so a name has to match under each.
  */
+function engineName(t: Token, reading: string): string | undefined {
+  if (reading === "sqlserver") return t.name;
+  if (reading === "postgres") return t.quoted === true || t.text.toLowerCase() === asciiLower(t.text) ? t.name : undefined;
+  return asciiLower(t.name);
+}
+
+/** Whether the written column `t` is the policy's `column`, whose spelling the policy writes as the schema does ({@link engineName}). */
 function namesColumn(t: Token, column: string, reading: string): boolean {
-  if (reading === "postgres" || reading === "sqlserver") return t.name === column;
-  if (reading === "mysql") return t.lower === column.toLowerCase();
-  return asciiLower(t.name) === asciiLower(column);
+  const name = engineName(t, reading);
+  return name !== undefined && name === (reading === "postgres" || reading === "sqlserver" ? column : asciiLower(column));
+}
+
+/** Whether the written names `t` and `u` are the same name for every engine that shares the `reading` ({@link engineName}). */
+function sameName(t: Token, u: Token, reading: string): boolean {
+  const name = engineName(t, reading);
+  return name !== undefined && name === engineName(u, reading);
 }
 
 /** `name` with its ASCII letters lower-cased, as SQLite folds a name. */
@@ -1887,7 +1900,7 @@ function endsFilterScan(tokens: readonly Token[], j: number, engine: string): bo
 /**
  * Whether a predicate on the column at `column`, ANDed into the `HAVING` at `having`, filters rows:
  * only when that column is a plain key of its `SELECT`'s `GROUP BY` (`agency_id`, or `o.agency_id`
- * written the same way). On any other column, a group holds every row it covers, and SQLite and
+ * written the same way, the name compared by {@link sameName}). On any other column, a group holds every row it covers, and SQLite and
  * MariaDB take the column's value from one of them. Read the MySQL way, an unqualified column that a
  * select-list item is aliased to never counts: MySQL and MariaDB resolve such a `HAVING` name to the
  * alias in some forms and to the `GROUP BY` column in others, so the check refuses the name either way.
@@ -1929,7 +1942,7 @@ function onGroupKey(a: Analysis, having: number, column: number): boolean {
   }
   return itemRanges(groupBy + 1, having).some(([s, e]) => {
     const last = tokens[e]!;
-    if (!isIdentifier(last) || last.lower !== name) return false;
+    if (!isIdentifier(last) || !sameName(last, tokens[column]!, a.view.reading.profile.id)) return false;
     const plain = e === s || (e === s + 2 && tokens[s + 1]?.text === ".");
     return plain && qualifierOf(tokens, e) === qualifier;
   });
