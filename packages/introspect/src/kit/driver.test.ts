@@ -1,5 +1,5 @@
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import Module, { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -160,6 +160,24 @@ describe("createOptionalDriverLoader", () => {
       missingMessage: "install it",
     });
     await expect(loader.load({ resolveFrom: dir })).resolves.toMatchObject({ default: { from: "require-entry" } });
+  });
+
+  it("loads from disk through a module-sync condition, which Node's require reads", async () => {
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "node_modules"));
+    expect(() => createRequire(join(dir, "package.json")).resolve(PKG)).toThrow();
+    const pkgDir = join(dir, "node_modules", PKG);
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(join(pkgDir, "package.json"), JSON.stringify({ exports: { ".": { "module-sync": "./i.mjs", import: "./i.mjs" } } }));
+    await writeFile(join(pkgDir, "i.mjs"), "export const from = 'module-sync';\n");
+    const loader = createOptionalDriverLoader<{ from: string }>({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+    await expect(loader.load({ resolveFrom: dir })).resolves.toMatchObject({ from: "module-sync" });
   });
 
   it("loads a subpath specifier from disk when the package has no exports map, as mysql2/promise", async () => {
@@ -355,16 +373,33 @@ describe("isDriverInstalled", () => {
     expect(createRequire(join(dir, "package.json")).resolve(PKG)).toBe(join(pkgDir, "index.cjs"));
   });
 
-  it("finds a package on NODE_PATH", async () => {
+  it("finds a package in Node's global directories, where NODE_PATH goes", async () => {
     const global = await tempProject(true);
     const project = await tempProject(false);
-    const before = process.env.NODE_PATH;
-    process.env.NODE_PATH = join(global, "node_modules");
+    // Node copies NODE_PATH into Module.globalPaths at startup.
+    const globalPaths = (Module as unknown as { globalPaths: string[] }).globalPaths;
+    globalPaths.unshift(join(global, "node_modules"));
     try {
       expect(isDriverInstalled(PKG, { resolveFrom: project })).toBe(true);
     } finally {
-      if (before === undefined) delete process.env.NODE_PATH;
-      else process.env.NODE_PATH = before;
+      globalPaths.shift();
+    }
+  });
+
+  it("asks the resolver under Yarn Plug'n'Play, which has no node_modules", async () => {
+    // Resolvable by Node, but not under node_modules: only the resolver can find it.
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "vendor", PKG), { recursive: true });
+    await writeFile(join(dir, "vendor", PKG, "package.json"), '{"main":"index.cjs"}\n');
+    await writeFile(join(dir, "vendor", PKG, "index.cjs"), "module.exports = {};\n");
+    await writeFile(join(dir, "package.json"), `{"type":"module","imports":{"#x":"./vendor/${PKG}/index.cjs"}}\n`);
+    expect(isDriverInstalled("#x", { resolveFrom: dir })).toBe(false);
+    const versions = process.versions as { pnp?: string };
+    versions.pnp = "3";
+    try {
+      expect(isDriverInstalled("#x", { resolveFrom: dir })).toBe(true);
+    } finally {
+      delete versions.pnp;
     }
   });
 });

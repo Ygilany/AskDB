@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symli
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
+import Module from "node:module";
 import { dirname, join } from "node:path";
 import { azureProvider, createAiRegistry } from "@askdb/ai";
 import {
@@ -982,9 +983,10 @@ describe("AskDB Studio server", () => {
     servers.push(server);
     const baseUrl = await listen(server);
 
-    // `pnpm exec` puts its own store on NODE_PATH, where this repo's mysql2 would be found.
-    const nodePath = process.env.NODE_PATH;
-    delete process.env.NODE_PATH;
+    // pnpm's bin shim puts its store on NODE_PATH (copied into Module.globalPaths), where this
+    // repo's mysql2 would be found.
+    const globalPaths = (Module as unknown as { globalPaths: string[] }).globalPaths;
+    const savedGlobalPaths = globalPaths.splice(0, globalPaths.length);
     try {
       expect(await getJson(`${baseUrl}/api/execute/status`)).toMatchObject({ packageName: "mysql2", installed: false });
       // What a finished `pnpm add mysql2` leaves on disk.
@@ -994,7 +996,7 @@ describe("AskDB Studio server", () => {
       writeFileSync(join(driverDir, "index.js"), "module.exports = {};\n");
       expect(await getJson(`${baseUrl}/api/execute/status`)).toMatchObject({ packageName: "mysql2", installed: true });
     } finally {
-      if (nodePath !== undefined) process.env.NODE_PATH = nodePath;
+      globalPaths.push(...savedGlobalPaths);
     }
   });
 

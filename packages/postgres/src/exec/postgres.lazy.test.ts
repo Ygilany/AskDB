@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { missingDriverMessage } from "@askdb/introspect/kit";
+import Module from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock `pg` so we can simulate "peer dep missing" without uninstalling the workspace dev dep.
@@ -110,14 +111,16 @@ module.exports = { Pool };
 }
 
 describe("exec/postgres — lazy `pg` peer dependency", () => {
-  // `pnpm test` puts pnpm's store on NODE_PATH, where the workspace's real `pg` sits. The kit
-  // checks NODE_PATH on disk as Node does (#669), so a "missing" `pg` needs it cleared.
-  const nodePath = process.env.NODE_PATH;
+  // pnpm's bin shim puts its store on NODE_PATH, where the workspace's real `pg` sits, and Node
+  // copies NODE_PATH into Module.globalPaths. The kit checks those directories on disk as Node
+  // does (#669), so a "missing" `pg` needs them emptied.
+  const globalPaths = (Module as unknown as { globalPaths: string[] }).globalPaths;
+  const savedGlobalPaths = [...globalPaths];
   beforeEach(() => {
-    delete process.env.NODE_PATH;
+    globalPaths.length = 0;
   });
   afterEach(() => {
-    if (nodePath !== undefined) process.env.NODE_PATH = nodePath;
+    globalPaths.splice(0, globalPaths.length, ...savedGlobalPaths);
   });
 
   beforeEach(() => {

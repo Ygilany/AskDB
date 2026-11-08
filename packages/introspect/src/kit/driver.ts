@@ -1,7 +1,7 @@
 import { AskDbError } from "@askdb/core";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
-import { delimiter, dirname, join } from "node:path";
+import Module, { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -99,21 +99,34 @@ class DriverUnresolvableError extends AggregateError {
 }
 
 /**
+ * The directories Node searches after a module's own `node_modules` chain: the
+ * `NODE_PATH` entries, then `~/.node_modules`, `~/.node_libraries` and
+ * `<prefix>/lib/node`, as Node read them at startup. `Module.globalPaths` is
+ * Node's public copy of that list (untyped in `@types/node`); reading it keeps
+ * `process.env` out of this package (ADR 0005).
+ */
+function globalModuleDirs(): readonly string[] {
+  const paths = (Module as unknown as { globalPaths?: unknown }).globalPaths;
+  return Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string" && p !== "") : [];
+}
+
+/**
  * The `node_modules` directory that holds `packageName`: under `fromDir` or one
- * of its parents, then on `NODE_PATH`, as Node searches. Checked on disk, never
- * through Node's resolver, which on Node 24+ would keep a miss (#669).
+ * of its parents, then in Node's global directories (`NODE_PATH` first), as
+ * Node searches. Checked on disk, never through Node's resolver, which on Node
+ * 24+ would keep a miss (#669).
  */
 function nodeModulesHolding(fromDir: string, packageName: string): string | undefined {
   const holds = (nodeModules: string) => existsSync(join(nodeModules, packageName, "package.json"));
-  for (let dir = fromDir; ; dir = dirname(dir)) {
+  for (let dir = resolve(fromDir); ; dir = dirname(dir)) {
     if (holds(join(dir, "node_modules"))) return join(dir, "node_modules");
     if (dirname(dir) === dir) break;
   }
-  return (process.env.NODE_PATH ?? "").split(delimiter).find((dir) => dir !== "" && holds(dir));
+  return globalModuleDirs().find(holds);
 }
 
-/** The conditions Node's `require` resolves with, which the project fallback below uses too. */
-const REQUIRE_CONDITIONS = new Set(["node", "require", "default"]);
+/** The conditions Node's `require` resolves with (`module-sync` on Node 22.12+), which the project fallback below uses too. */
+const REQUIRE_CONDITIONS = new Set(["node", "module-sync", "require", "default"]);
 
 /** An `exports` target under {@link REQUIRE_CONDITIONS}: a string, the first match in an array, or a nested condition map. */
 function exportsTarget(target: unknown): string | undefined {
@@ -240,9 +253,9 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
 
 /**
  * True when `packageName` is installed for `resolveFrom` (default
- * `process.cwd()`): in a `node_modules` directory there or in a parent, or on
- * `NODE_PATH`. A cheap, synchronous capability probe — it does not load the
- * driver.
+ * `process.cwd()`): in a `node_modules` directory there or in a parent, or in
+ * one of Node's global directories (`NODE_PATH` first). A cheap, synchronous
+ * capability probe — it does not load the driver.
  *
  * It checks the disk instead of asking Node's resolver: on Node 24 and later a
  * failed lookup is kept for the life of the process, so a resolver probe before
