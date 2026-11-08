@@ -55,6 +55,8 @@ Your language model provider now receives your foreign keys and concepts without
 
 A tenant predicate in `HAVING` now counts only when its column is one the `SELECT` groups by: `HAVING` filters groups, and on a column that isn't grouped, SQLite and MariaDB take one row's value for the whole group. Read the MySQL way (`mysql`, `mariadb`, a dialect id that is no built-in engine, or none), an unqualified column that a select-list item is aliased to doesn't count either, since MySQL and MariaDB read it as that item. Under `strict`, such SQL throws `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`). Move the predicate to `WHERE`, or group by the tenant column.
 
+Two more shapes that passed are refused: a tenant predicate written as a `BETWEEN`'s upper bound (`0 BETWEEN 0 AND agency_id = …`; write it as its own conjunct), and, under `sqlite`, a custom id or none, a read written `FROM ('orders')` with no predicate, which SQLite reads as the table.
+
 ## 1.0.0-beta.52
 
 Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/config` 1.0.0-beta.20, `@askdb/client` 1.0.0-beta.13, `@askdb/ai` 0.1.0-beta.12, `@askdb/enrich` 0.2.0-beta.23, `@askdb/introspect` 0.3.0-beta.26, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27, and `@askdb/sqlserver` 0.1.0-beta.28.

@@ -1,5 +1,5 @@
 ---
-"@askdb/core": patch
+"@askdb/core": minor
 "askdb": patch
 "@askdb/http-api": patch
 "@askdb/studio": patch
@@ -13,4 +13,4 @@ Security fix ([GHSA-9w7p-c3w8-4839](https://github.com/Ygilany/AskDB/security/ad
 - **`order` or `group` after a spaced dot.** `billing . order` is the table `billing.order`, with any whitespace or comment around the dot.
 - **An `OR` after an alias spelled like a clause word.** An `OR` later in the clause counts as beside the predicate after a word some engine takes as a name (`lock`, `qualify`, `limit`, `natural`, `using`, `window`).
 
-Upgrade notes: SQL that passed before and now throws `TenantGuardrailError` under `strict`: a tenant predicate in `HAVING` on a column the `SELECT` doesn't group by (put it in `WHERE`), and, read the MySQL way, one on a name a select-list item is aliased to.
+Upgrade notes (breaking): SQL that passed before and now throws `TenantGuardrailError` under `strict`: a tenant predicate in `HAVING` on a column the `SELECT` doesn't group by, or, read the MySQL way, on a name a select-list item is aliased to (put it in `WHERE`); a predicate written as a `BETWEEN`'s upper bound (make it its own conjunct); and, under `sqlite`, a custom id or none, an unfiltered read written `FROM ('orders')` (filter it, or write `FROM orders`).
