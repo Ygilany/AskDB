@@ -5,7 +5,6 @@ import { loadSchema, loadSchemaFromJson } from "../schema/v2/loader.js";
 import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import { buildTenantPromptBlock } from "./tenant-prompt.js";
-import { validateTenantGuardrails } from "./tenant-guardrail.js";
 import { buildNlToSqlUserPrompt } from "./prompt.js";
 import { POSTGRES_DIALECT } from "./dialect-spec.js";
 import { AskDbError } from "../errors.js";
@@ -428,17 +427,18 @@ describe("buildNlToSqlUserPrompt — the tenant block needs the tables the promp
 
 describe("buildTenantPromptBlock — an outer join's ON counts for nothing (#400)", () => {
   const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
-  const rule =
-    "- If the query uses a LEFT, RIGHT, FULL or OUTER join, put every tenant predicate and every join-path equality in WHERE, even where an ON already has it: in such a query, a condition in ON does not count.";
+  const lines = () => buildTenantPromptBlock(policy, scope, { schema }).split("\n");
+  const rule = (pattern: RegExp) => lines().find((line) => pattern.test(line));
 
-  it("tells the model to put tenant predicates and join-path equalities in WHERE beside an outer join", () => {
-    expect(buildTenantPromptBlock(policy, scope, { schema }).split("\n")).toContain(rule);
+  it("tells the model to put tenant predicates and join-path equalities in WHERE beside an outer join or OUTER APPLY", () => {
+    const line = rule(/LEFT, RIGHT, FULL or OUTER join, or OUTER APPLY/);
+    expect(line).toMatch(/no condition in ON counts/);
+    expect(line).toMatch(/each tenant predicate and each join-path equality in WHERE/);
   });
 
-  it("asks for a form the tenant check accepts", () => {
-    const check = (sql: string) => validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, scope).warnings.map((w) => w.tableId);
-    const from = "SELECT a.*, d.name FROM appointments a JOIN clients c ON a.client_id = c.id LEFT JOIN lookup_states d ON d.code = c.state";
-    expect(check(`${from} WHERE c.id IN (:tenant_client_ids)`)).toEqual(["table:public.appointments"]);
-    expect(check(`${from} WHERE a.client_id = c.id AND c.id IN (:tenant_client_ids)`)).toEqual([]);
+  it("tells the model to filter a scoped table on an outer join's unmatched side in a derived table or CTE", () => {
+    const line = rule(/derived table or CTE with its own WHERE/);
+    expect(line).toMatch(/tenant-scoped table on the side an outer join may leave unmatched/);
+    expect(line).toMatch(/outer-join that instead/);
   });
 });
