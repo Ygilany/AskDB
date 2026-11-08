@@ -4,6 +4,8 @@
 
 Accepted (2026-11-04, maintainer decision on #324's plan; recorded in [#324's comment](https://github.com/Ygilany/AskDB/issues/324#issuecomment-6649843150)). Implemented in PR #612: `tenantPolicySchemaForPrompt` and `suggestTenantPolicyDraft` in `apps/studio/src/server.ts`, and the **Withheld from the model** card in `apps/studio/src/web/views/tenancy/TenancyPage.tsx`. Contract: [`sensitive-fields-and-modes.md`](../contracts/sensitive-fields-and-modes.md).
 
+> **Amendment (2026-11, #898):** core's formatter now prints foreign keys (#349's step 5, taken over by #898; [ADR 0043](0043-default-prompt-carries-foreign-keys-and-concepts.md)), so Studio passes each tracked table's `relationships` to it and its `Foreign keys:` block is gone. The formatter's rule is the one this ADR applied: a key prints only when both of its columns are listed. Studio still writes the `warnings` for the keys omission withholds.
+
 ## Context
 
 Studio's **Draft with AI** (`POST /api/suggest-tenant-policy`) asks a model to propose a `tenant-policy.md`. Until #324 it built its prompt from the raw `schema.json` columns, so it listed every column by name. It ignored the sensitive flags in `schema.json`, the escalation in table front-matter, and `modes.omitSensitiveFromPrompt`, which `ask()` and the hosts built on `@askdb/client` all honour.

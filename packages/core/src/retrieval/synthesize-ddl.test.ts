@@ -332,3 +332,46 @@ describe("synthesizeRetrievedDdl — business context, column notes and headings
     });
   });
 });
+
+describe("synthesizeRetrievedDdl — foreign keys and concepts (#898)", () => {
+  const tableChunk = (tableId: string): RetrievedResult => ({
+    id: `chunk:s:${tableId}`,
+    score: 0.5,
+    payload: { id: `chunk:s:${tableId}`, type: "table", text: `# ${tableId.slice("table:".length)}`, schemaId: "s", refs: [tableId], sensitive: false },
+  });
+
+  it("prints a foreign key only when retrieval shows both of its tables", () => {
+    const schema = loadSchema(ordersDir);
+    const both = synthesizeRetrievedDdl({ schema, results: [tableChunk("table:public.orders"), tableChunk("table:public.users")] }).ddl.split("\n");
+    const key = both.indexOf("  FK (user_id) -> public.users (id)");
+    expect(key).toBeGreaterThan(both.findIndex((line) => line.startsWith("  - total_amount ")));
+
+    const ordersOnly = synthesizeRetrievedDdl({ schema, results: [tableChunk("table:public.orders")] }).ddl;
+    expect(ordersOnly).not.toContain("FK (");
+    expect(ordersOnly).not.toContain("users");
+  });
+
+  it("with omission on, leaves out a foreign key with a sensitive column on either side", () => {
+    // sensitive-mentions has no foreign keys, so one is added to the loaded copy: orders.customer_id -> customers.email (sensitive).
+    const schema = loadSchema(mentionsDir);
+    schema.tables.find((t) => t.name === "orders")!.relationships = [
+      { from: "table:public.orders#customer_id", to: "table:public.customers#email" },
+      { from: "table:public.orders#customer_id", to: "table:public.customers#id" },
+    ];
+    const results = [tableChunk("table:public.orders"), tableChunk("table:public.customers")];
+    const fkLines = (ddl: string) => ddl.split("\n").filter((line) => line.startsWith("  FK "));
+    expect(fkLines(synthesizeRetrievedDdl({ schema, results }).ddl)).toEqual([
+      "  FK (customer_id) -> public.customers (email)",
+      "  FK (customer_id) -> public.customers (id)",
+    ]);
+    expect(fkLines(synthesizeRetrievedDdl({ schema, results, omitSensitiveIdentifiersFromPrompt: true }).ddl)).toEqual([
+      "  FK (customer_id) -> public.customers (id)",
+    ]);
+  });
+
+  it("lists only the concepts retrieval picked, not the schema's", () => {
+    const { ddl } = synthesizeRetrievedDdl({ schema: loadSchema(ordersDir), results: [tableChunk("table:public.orders")] });
+    expect(ddl).not.toContain("-- concepts --");
+  });
+});
+

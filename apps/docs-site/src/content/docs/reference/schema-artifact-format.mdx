@@ -119,7 +119,7 @@ The physical layer: the tables and columns AskDB read from the database. Here it
 | `schema` | string | yes | The table's namespace. See [Stable IDs](#stable-ids) for what each engine puts here. |
 | `sensitive` | boolean | no | `true` marks the table and every column in it sensitive. Absent means not sensitive. |
 | `columns` | array | yes | The columns, at least one. |
-| `relationships` | array | no | Foreign keys, as `{ "from": <column ID>, "to": <column ID> }`. The loader doesn't check that either column exists. |
+| `relationships` | array | no | Foreign keys, as `{ "from": <column ID>, "to": <column ID> }`. The loader doesn't check that either column exists. Since 1.0.0-beta.53, the prompt lists each one under the table that owns its column, as `FK (user_id) -> public.users (id)`. A foreign key with an untracked table on either side is left out, and so is one with a sensitive column or table on either side when sensitive columns are omitted. |
 
 ### Column fields
 
@@ -259,7 +259,7 @@ For a sensitive table, AskDB drops its description, aliases, `primaryEntity` and
 
 ## `concepts.md`
 
-Business concepts that span tables, such as a *customer* who can be in `users` or in `leads`. Concepts reach the model only through `@askdb/rag` retrieval: the full-schema prompt doesn't include them.
+Business concepts that span tables, such as a *customer* who can be in `users` or in `leads`. Since 1.0.0-beta.53, the full-schema prompt lists every concept after the tables: its label, synonyms, links (named the way the prompt names tables and columns) and description. A link to an untracked table is left out, and so is a concept whose links are all untracked. With retrieval, the prompt lists only the concepts retrieval picks.
 
 ```markdown
 ---

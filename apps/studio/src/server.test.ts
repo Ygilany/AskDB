@@ -235,7 +235,7 @@ describe("AskDB Studio server", () => {
   it("names the withheld key columns in the draft's warnings, and still sends the visible foreign keys", async () => {
     const { draft, prompt } = await suggestTenantPolicyFor({ omitSensitiveFromPrompt: true });
 
-    expect(prompt).toContain("table:public.patients#org_id -> table:public.orgs#id");
+    expect(prompt).toContain("  FK (org_id) -> public.orgs (id)");
     expect(draft.warnings).toHaveLength(1);
     for (const key of [
       "public.payroll_ledger.ledger_key (primary key)",

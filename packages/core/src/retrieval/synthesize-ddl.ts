@@ -1,5 +1,7 @@
 import {
+  businessContextLines,
   columnAnnotation,
+  foreignKeyLinesByTable,
   listAsStored,
   promptTableName,
   promptTextGate,
@@ -17,6 +19,8 @@ import type { RetrievedResult } from "./types.js";
  *      Each column line carries the schema's own `-- aliases / values / desc`
  *      annotation, plus `note: …` from a retrieved column chunk's
  *      `Column notes` line, gated with the annotation as one unit.
+ *      Then the table's foreign keys to other shown tables, as the
+ *      full-schema prompt prints them (#898).
  *   2. CQL chunks land as a `-- common query language --` block under the
  *      table, then `Business context` chunks as a `-- business context --`
  *      block, its parts in body order (#894).
@@ -153,6 +157,12 @@ export function synthesizeRetrievedDdl(args: {
 
   const lines: string[] = [];
   const emittedIds: string[] = [];
+  const foreignKeys = foreignKeyLinesByTable(schema, {
+    omit,
+    shown: (tableId) => tableIds.has(tableId),
+    unqualifiedNamespace: args.unqualifiedNamespace,
+    quoteIdentifier,
+  });
 
   for (const t of schema.tables) {
     if (!tableIds.has(t.id)) continue;
@@ -184,6 +194,8 @@ export function synthesizeRetrievedDdl(args: {
       lines.push(line);
     }
 
+    lines.push(...(foreignKeys.get(t.id) ?? []));
+
     const cqlList = cqlPerTable.get(t.id);
     if (cqlList && cqlList.length > 0 && !t.sensitive) {
       lines.push(`-- common query language --`);
@@ -195,14 +207,8 @@ export function synthesizeRetrievedDdl(args: {
     }
 
     const businessList = businessPerTable.get(t.id);
-    if (businessList && businessList.length > 0 && !t.sensitive) {
-      lines.push(`-- business context --`);
-      // Paragraphs, unlike CQL's lines, are separated by blank lines; an empty `--` line adds nothing.
-      for (const { text } of [...businessList].sort((a, b) => a.part - b.part)) {
-        for (const businessLine of text.split("\n")) {
-          if (businessLine.trim()) lines.push(`-- ${businessLine}`);
-        }
-      }
+    if (businessList && !t.sensitive) {
+      lines.push(...businessContextLines([...businessList].sort((a, b) => a.part - b.part).map(({ text }) => text)));
     }
     lines.push("");
   }
