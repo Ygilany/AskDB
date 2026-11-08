@@ -57,7 +57,12 @@ A tenant predicate in `HAVING` now counts only when its column is one the `SELEC
 
 Two more shapes that passed are refused: a tenant predicate written as a `BETWEEN`'s upper bound (`0 BETWEEN 0 AND agency_id = …`; write it as its own conjunct), and, under `sqlite`, a custom id or none, a read written `FROM ('orders')` with no predicate, which SQLite reads as the table.
 
-On a schema with upper-case column names (camelCase, as Prisma writes them), the tenant column and a polymorphic discriminator now count on Postgres and CockroachDB only when written as the engine reads the schema's spelling: quoted, as `c."agencyId"`. An unquoted `agencyid` or `agencyId` folds to lower case there and names another column, so a predicate on it is refused (`MISSING_TENANT_PREDICATE` or `MISSING_TYPE_DISCRIMINATOR`). A schema with lower-case column names is unaffected.
+The tenant column and a polymorphic discriminator now count only when written as the schema spells them, compared the way the engine may compare names; otherwise the predicate is refused (`MISSING_TENANT_PREDICATE` or `MISSING_TYPE_DISCRIMINATOR`):
+
+- **Postgres and CockroachDB:** on a schema with upper-case column names (camelCase, as Prisma writes them), write the column quoted, as `c."agencyId"`. An unquoted `agencyid` or `agencyId` folds to lower case and names another column. A schema with lower-case column names is unaffected.
+- **SQL Server:** write the column as the schema spells it (`AgencyId`, not `agencyid`). A database's collation may compare names case-sensitively, and the check can't see it, so a column in another case is refused even on a case-insensitive database.
+- **SQLite:** a non-ASCII letter must be in the schema's case, since SQLite folds only ASCII letters.
+- **A custom dialect or none:** all of the above apply, so a column in another case than the schema is refused whatever the engine. Set `dialect` to avoid that.
 
 ## 1.0.0-beta.52
 
