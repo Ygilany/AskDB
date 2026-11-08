@@ -149,8 +149,9 @@ const FOLDS_INTO_ASCII = /[\u0130\u0131\u017F\u212A]/;
 
 /**
  * The first name in `read`, quoted or not, under any of its readings, that holds a letter some
- * engine folds into an ASCII letter ({@link FOLDS_INTO_ASCII}) or that, as written, isn't in NFC, which
- * CockroachDB normalizes a name to, and isn't one of `known` exactly; undefined when there is none.
+ * engine folds into an ASCII letter ({@link FOLDS_INTO_ASCII}), or that isn't in NFC, which
+ * CockroachDB normalizes a name to, as written or, unquoted, once lower-cased ({@link lowerCasedInNfc}),
+ * and isn't one of `known` exactly; undefined when there is none.
  * The checks can't match such a name the way every engine does, so it may reach a table or column
  * they never see. Read under every dialect.
  */
@@ -162,10 +163,21 @@ export function nameEnginesFoldApart(
   for (const profile of tenantStatementReadings(dialect)) {
     for (const token of read.tokens(profile)) {
       const name = token.kind === "word" ? token.text : token.kind === "quoted_identifier" ? token.value : undefined;
-      if (name !== undefined && (FOLDS_INTO_ASCII.test(name) || name !== name.normalize("NFC")) && !known.has(name)) return token.text;
+      if (name !== undefined && (FOLDS_INTO_ASCII.test(name) || name !== name.normalize("NFC") || (token.kind === "word" && !lowerCasedInNfc(name))) && !known.has(name)) {
+        return token.text;
+      }
     }
   }
   return undefined;
+}
+
+/**
+ * Whether `name`, with each letter lower-cased on its own as CockroachDB lower-cases an unquoted
+ * name, is still in NFC. `J` followed by U+030C is in NFC, but lower-cased it composes into `ǰ`.
+ */
+function lowerCasedInNfc(name: string): boolean {
+  const lower = Array.from(name, (c) => c.toLowerCase()).join("");
+  return lower === lower.normalize("NFC");
 }
 
 /** Whether `profile` may be SQLite's reading: SQLite's own, or the generic and standard ones a dialect that may be SQLite gets. */

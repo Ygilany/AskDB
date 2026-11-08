@@ -1318,7 +1318,8 @@ const NOT_A_TABLE_ALIAS: ReadonlySet<string> = new Set([
  */
 function renamesColumns(tokens: readonly Token[], name: string): boolean {
   for (let i = 0; i < tokens.length; i++) {
-    if (tokens[i]!.lower !== name) continue;
+    // Matched as the table's other reads are ({@link tableNameOf}): `ΟΣ` is `οσ`, as CockroachDB reads it.
+    if (tableNameOf(tokens[i]!) !== name) continue;
     for (let open = enclosing(tokens, i, "("); open >= 0; open = enclosing(tokens, open, "(")) {
       if (subqueryUse(tokens, open) !== "table") continue;
       const close = enclosing(tokens, open + 1, ")");
@@ -1551,7 +1552,7 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
     if (!isColumn) return false; // an expression, a call or an aggregate
     const name = expr[expr.length - 1]!;
     // An item that yields the name in any case is a candidate; it must name the column the way the engine reads it.
-    if ((alias ?? name).lower !== column.toLowerCase()) continue;
+    if (tableNameOf(alias ?? name) !== lowerEachLetter(column)) continue;
     if (!namesColumn(alias ?? name, column, reading) || !namesColumn(name, column, reading)) return false;
     if (expr.length === 3 && !names.has(expr[0]!.name)) return false; // another expression named like the column
     yields++;
