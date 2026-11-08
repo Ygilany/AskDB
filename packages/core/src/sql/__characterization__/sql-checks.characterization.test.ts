@@ -387,8 +387,9 @@ function verdicts(sql: string, dialect: DialectSpec | undefined): string {
   return parts.join(" | ");
 }
 
+// One test runs the whole corpus under every dialect: about 3 s on a laptop, but 22–46 s on CI's runners, past the 45 s default.
 describe("SQL checks: characterization for #815", () => {
-  it("gives every verdict the golden file records", async () => {
+  it("gives every verdict the golden file records", { timeout: 120_000 }, async () => {
     const corpus = [...new Set([...(JSON.parse(readFileSync(join(here, "sql-corpus.json"), "utf8")) as string[]), ...HOSTILE])];
     const golden: Record<string, Record<string, string>> = {};
     for (const sql of corpus) {
