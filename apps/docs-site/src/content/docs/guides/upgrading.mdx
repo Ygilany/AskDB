@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.52
 
-Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/config` 1.0.0-beta.20, `@askdb/client` 1.0.0-beta.13, `@askdb/ai` 0.1.0-beta.12, `@askdb/enrich` 0.2.0-beta.23, `@askdb/introspect` 0.3.0-beta.26, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, and `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27.
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/config` 1.0.0-beta.20, `@askdb/client` 1.0.0-beta.13, `@askdb/ai` 0.1.0-beta.12, `@askdb/enrich` 0.2.0-beta.23, `@askdb/introspect` 0.3.0-beta.26, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27, and `@askdb/sqlserver` 0.1.0-beta.28.
 
 ### Security: upgrade for GHSA-rhwf-7742-8hwj, GHSA-rpcp-322q-q738 and GHSA-cjwq-phcm-mwg7
 
@@ -33,7 +33,7 @@ Three advisories fix places where the tenant check read SQL differently from the
 
 What to do:
 
-- **Upgrade** `@askdb/core`, `askdb` and `@askdb/http-api` to 1.0.0-beta.52, and `@askdb/studio` to 0.2.0-beta.45. These pin `@askdb/core` exactly, so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **Upgrade** `@askdb/core` to 1.0.0-beta.52, and every AskDB package you install that depends on it: `askdb` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/introspect` 0.3.0-beta.26, `@askdb/enrich` 0.2.0-beta.23, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27, and `@askdb/sqlserver` 0.1.0-beta.28. These pin `@askdb/core` exactly (`@askdb/prisma` through `@askdb/introspect`), so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
 - **On SQL Server, expect a non-ASCII name to be refused.** Under `sqlserver`, a dialect id that is no built-in engine, or none, the tenant check refuses a name that holds a character outside printable ASCII (`UNICODE_ESCAPED_IDENTIFIER`), and the sensitive check reports it as unresolved scope, unless the schema spells it exactly. So a non-ASCII alias or CTE name such as `[Città]` is refused unless the schema has that name.
 - **If you can't upgrade at once,** enforce tenant isolation in the database (for example row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. Each advisory lists the narrower workarounds for its cases.
 
