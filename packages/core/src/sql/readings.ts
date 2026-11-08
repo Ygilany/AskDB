@@ -122,7 +122,7 @@ const FOLDS_INTO_ASCII = /[\u0130\u0131\u017F\u212A]/;
 
 /**
  * The first name in `read`, quoted or not, under any of its readings, that holds a letter some
- * engine folds into an ASCII letter ({@link FOLDS_INTO_ASCII}) or that isn't in NFC, which
+ * engine folds into an ASCII letter ({@link FOLDS_INTO_ASCII}) or that, as written, isn't in NFC, which
  * CockroachDB normalizes a name to, and isn't one of `known` exactly; undefined when there is none.
  * The checks can't match such a name the way every engine does, so it may reach a table or column
  * they never see. Read under every dialect.

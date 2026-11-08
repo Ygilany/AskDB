@@ -205,7 +205,7 @@ export type TenantGuardrailRuleCode =
    * ASCII and that the schema doesn't spell exactly, which SQL Server's collation may read as
    * another name (`[ｏｒｄｅｒｓ]` reads `orders`), reported under sqlserver, a custom `AskDialect`
    * or id, or no dialect; or a name the schema doesn't spell exactly that holds a letter some
-   * engine reads as an ASCII letter (U+0130, U+0131, U+017F, U+212A) or that isn't in NFC, which
+   * engine reads as an ASCII letter (U+0130, U+0131, U+017F, U+212A) or that isn't in NFC as written, which
    * CockroachDB normalizes names to, reported under every dialect. Reported for the whole SQL, with
    * `tableId: ""`; not under a `global` scope.
    */
