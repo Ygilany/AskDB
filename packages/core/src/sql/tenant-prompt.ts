@@ -216,6 +216,10 @@ export function buildTenantPromptBlock(
   lines.push("- Every query on a tenant-scoped table MUST include the tenant predicate.");
   lines.push("- Use named placeholders for tenant IDs (e.g., :tenant_agency_ids).");
   lines.push("- For inherited scope, JOIN through the specified path to reach the tenant root.");
+  // The tenant check counts no ON in a SELECT that may keep unmatched rows (#400).
+  lines.push(
+    "- If the query uses a LEFT, RIGHT, FULL or OUTER join, put every tenant predicate and every join-path equality in WHERE, even where an ON already has it: in such a query, a condition in ON does not count.",
+  );
   lines.push("- For polymorphic tables, always include the type discriminator column in WHERE.");
   lines.push("- Global/reference tables do NOT need tenant predicates.");
   if (scope.access.kind === "global") {
