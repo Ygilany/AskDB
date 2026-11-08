@@ -19,6 +19,24 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Then work through the sections below, and finish with [Check the upgrade](#check-the-upgrade).
 
+## 1.0.0-beta.53
+
+Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.53, and the other packages that pin `@askdb/core`.
+
+### Give each read of a scoped table its own tenant predicate
+
+Under `strict` enforcement, some SQL that passed before now throws `TenantGuardrailError` (`MISSING_TENANT_PREDICATE`) ([#399](https://github.com/Ygilany/AskDB/issues/399)). The tenant check looked for a predicate per statement or `UNION` branch. So a predicate inside a CTE, derived table or subquery could cover an unfiltered read of the same table outside it, and a predicate on one reference could cover another. Now a CTE body, a derived table and a subquery are each their own `SELECT`, and a qualified predicate counts only for the read it names. A read inside a derived table or CTE still passes when every reference to it is filtered on the tenant column. AskDB now refuses some correct queries:
+
+- a root table joined for a label from a CTE, derived table or scalar subquery whose own `SELECT` doesn't filter it;
+- a read inside a correlated subquery that only the outer query filters;
+- a source that computes over its rows (an aggregate, a window, `LIMIT`), filtered only outside it;
+- a source whose body is a set operation (`UNION`, `INTERSECT`, `EXCEPT`), filtered only outside it;
+- a read with a clause right after its table or alias (`orders TABLESAMPLE …`, SQL Server's `orders o (NOLOCK)` without `WITH`), filtered only through that name;
+- a self-join where a read has no alias, a quoted alias or sits in parentheses, or that is filtered unqualified (`FROM orders a, orders b WHERE agency_id = …`): give each read a plain alias and its own predicate (`WHERE a.agency_id = … AND b.agency_id = …`);
+- on MySQL, MariaDB and SQL Server, a predicate whose qualifier spells the alias in another case (`FROM orders O WHERE o.agency_id = …`).
+
+For each, add the predicate inside that `SELECT` (in each branch of a set operation), filter through an alias or unqualified, and write an alias the same way each time.
+
 ## 1.0.0-beta.52
 
 Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/config` 1.0.0-beta.20, `@askdb/ai` 0.1.0-beta.12, `@askdb/introspect` 0.3.0-beta.26, `@askdb/client` 1.0.0-beta.13, `@askdb/studio` 0.2.0-beta.45, and the other packages that pin `@askdb/core`.
@@ -78,16 +96,6 @@ Studio's Playground now refuses a schema whose `provider` has no AskDB dialect, 
 ### Other changes you may notice in beta.52
 
 - **A tenant policy with a table named `order` or `group` no longer refuses every sorted query** ([#828](https://github.com/Ygilany/AskDB/issues/828)). The tenant check read the `ORDER` of `ORDER BY` (and `GROUP` of `GROUP BY`) as a reference to a table of that name, so under `strict` enforcement a sorted, tenant-scoped query was refused with `UNKNOWN_TABLE_REFERENCED` or `MISSING_TENANT_PREDICATE`. It no longer reads those keywords as a table; a quoted or qualified `"order"`, or `order` in `FROM`/`JOIN`, still counts as the table. If you worked around this by renaming the table or dropping `ORDER BY`, you can undo that.
-- **Each read of a scoped table needs its own tenant predicate, in its own `SELECT`** ([#399](https://github.com/Ygilany/AskDB/issues/399)). The tenant check looked for a predicate per statement or `UNION` branch. So a predicate inside a CTE, derived table or subquery could cover an unfiltered read of the same table outside it, and a predicate on one reference could cover another. Now a CTE body, a derived table and a subquery are each their own `SELECT`, and a qualified predicate counts only for the read it names. A read inside a derived table or CTE still passes when every reference to it is filtered on the tenant column. AskDB now refuses some correct queries:
-  - a root table joined for a label from a CTE, derived table or scalar subquery whose own `SELECT` doesn't filter it;
-  - a read inside a correlated subquery that only the outer query filters;
-  - a source that computes over its rows (an aggregate, a window, `LIMIT`), filtered only outside it;
-  - a source whose body is a set operation (`UNION`, `INTERSECT`, `EXCEPT`), filtered only outside it;
-  - a read with a clause right after its table or alias (`orders TABLESAMPLE …`, SQL Server's `orders o (NOLOCK)` without `WITH`), filtered only through that name;
-  - a self-join where a read has no alias, a quoted alias or sits in parentheses, or that is filtered unqualified (`FROM orders a, orders b WHERE agency_id = …`): give each read a plain alias and its own predicate (`WHERE a.agency_id = … AND b.agency_id = …`);
-  - on MySQL, MariaDB and SQL Server, a predicate whose qualifier spells the alias in another case (`FROM orders O WHERE o.agency_id = …`).
-
-  For each, add the predicate inside that `SELECT` (in each branch of a set operation), filter through an alias or unqualified, and write an alias the same way each time.
 - **On SQL Server, the tenant check ends a name or number where SQL Server does** ([#623](https://github.com/Ygilany/AskDB/issues/623)). SQL Server ends a number after `0x` or `1E`, and a name at a non-breaking space (U+00A0), U+200B or U+0085, so a keyword written right after one is a keyword: it reads `1=0xOR 1=1` as `1=0x OR 1=1`. The tenant check now reads those ends the same way under `sqlserver`, and under a dialect id that is no built-in engine or no dialect, which may be SQL Server. An `OR` written that way is required to keep the tenant predicate ANDed in, as one after a space always was. `ask()` already refused these shapes through the read-only check, so the change shows in a direct call to `validateTenantGuardrails()`.
 - **A `$N` parameter written against a word is refused where the SQL may be read as Postgres** ([#665](https://github.com/Ygilany/AskDB/issues/665)). The read-only check read `$1INTO` and `$1FOR` as one parameter, so it never saw the `INTO` or `FOR`. Postgres 15 and later reject that SQL, but a server that ends the parameter at its last digit would run the keyword. It now refuses the shape with `SQL_FORBIDDEN_KEYWORD` under `postgres`, `cockroachdb` and a dialect id that is no built-in engine. If a stored template writes a parameter that way, put a space after it.
 - **Internal: every SQL check reads through the shared lexer** ([#815](https://github.com/Ygilany/AskDB/issues/815), ADR 0010). One module now sets the readings each check takes for each dialect, and the tenant check's separate scanner is gone, so a lexer fix lands in one place. #815 itself changes no public API and no verdict beyond #828.
