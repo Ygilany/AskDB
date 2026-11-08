@@ -20,7 +20,11 @@
  * cross-joined source; for a SQLite string name in a source's parentheses, `HAVING` on an ungrouped or
  * aliased column, a `BETWEEN`'s upper bound, a spaced qualifier dot, an `OR` after an alias spelled
  * like a clause word, and a column name the engine may read as another column; no other existing
- * verdict moves).
+ * verdict moves),
+ * and #400 (no existing verdict moves; its 25 rows below differ from the code before it in 132 tenant
+ * verdicts, every dialect: 108 refuse 9 shapes now that a join counts only on the columns the policy
+ * declares, and on no ON in a SELECT with an outer join, and 24 accept 2 correct ones, a scoped table
+ * joined to a filtered root's ID and `col IN (SELECT id FROM <root> WHERE id = :p)`).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -297,6 +301,37 @@ const HOSTILE: readonly string[] = [
   "SELECT x.* FROM orders 'x', orders WHERE orders.agency_id = :tenant_agency_ids",
   "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t 'y', t WHERE t.agency_id = :tenant_agency_ids",
   "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids",
+  // #400: a join counts only on the columns the policy declares.
+  "SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN clients c ON a.id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.client_id FROM appointments a, clients c, sub_agencies s WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id LEFT JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.name FROM agencies a JOIN orders o ON a.id = o.total WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT a.name, o.id FROM agencies a, orders o WHERE o.agency_id = :tenant_agency_ids",
+  "SELECT name FROM agencies WHERE id IN (SELECT total FROM orders WHERE agency_id = :tenant_agency_ids)",
+  "SELECT name FROM agencies WHERE id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)",
+  "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids",
+  "SELECT * FROM orders o WHERE o.agency_id IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)",
+  // #400 review: an inner ON doesn't filter beside an outer join, and a source named like a policy table isn't it.
+  "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT JOIN orders o ON o.agency_id = a.id",
+  "SELECT o.* FROM orders o LEFT JOIN (agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids) ON o.agency_id = a.id",
+  "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.agency_id AS sub_agency_id FROM sub_agencies s WHERE s.agency_id = :tenant_agency_ids) clients ON a.client_id = clients.id WHERE clients.sub_agency_id = :tenant_agency_ids",
+  // #400 review, round 2: an outer ON links only across the join, a FROM inside a call opens no FROM clause, a CTE
+  // with a column list shadows its table, and a parenthesized join group, STRAIGHT_JOIN and a comma after a join read tables.
+  "SELECT o.* FROM orders o LEFT JOIN lookup_states ls ON o.agency_id = o.id WHERE o.id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.agency_id AS sub_agency_id, 0 AS clients FROM sub_agencies s) clients ON a.client_id = clients.id WHERE clients.sub_agency_id = :tenant_agency_ids AND 1 IS DISTINCT FROM clients",
+  "WITH clients (id, sub_agency_id) AS (SELECT 1, 5) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM appointments a JOIN (clients c JOIN sub_agencies s ON c.sub_agency_id = s.id) ON a.client_id = c.id WHERE s.agency_id = :tenant_agency_ids",
+  "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id, appointments a WHERE a.client_id = c.id AND s.agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT STRAIGHT JOIN orders o ON o.agency_id = a.id",
+  // #400 review, round 3: an ON column names only its join's operands, no ON equality counts beside an
+  // outer join, and a CTE name drops its trailing spaces.
+  "SELECT o.* FROM orders o, (SELECT 5 AS agency_id) d JOIN lookup_states ls ON agency_id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN campaigns m ON m.owning_agency = g.id AND m.owning_agency = o.agency_id WHERE g.id = :tenant_agency_ids",
+  "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN lookup_states ls ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids",
+  "WITH [clients ] AS (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id JOIN sub_agencies s ON k.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids",
   // A SQLite string name in a source's parentheses, HAVING on a GROUP BY key, the AND of a BETWEEN,
   // a spaced qualifier dot, and an OR after an alias spelled like a clause word.
   "SELECT * FROM ('orders')",
