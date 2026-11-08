@@ -2222,6 +2222,24 @@ describe("validateTenantGuardrails — a tenant column written as the engine rea
     expect(findings('SELECT o.* FROM orders o WHERE o."agency_id" = :tenant_agency_ids', dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
   });
 
+  it.each(postgresReadings)("refuses a derived table or CTE that passes another column through as the camelCase one under %s", (_label, dialect) => {
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    const body = `SELECT c.id, agencyid AS "agencyId" FROM "Client" c, (SELECT generate_series(1, 100000) AS agencyid) z`;
+    expect(findings(`SELECT x.* FROM (${body}) x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual(refused);
+    expect(findings(`WITH x AS (${body}) SELECT x.* FROM x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual(refused);
+  });
+
+  it.each(postgresReadings)("keeps a derived table or CTE that passes the camelCase column through under %s", (_label, dialect) => {
+    expect(findings(`SELECT x.* FROM (SELECT c.id, c."agencyId" FROM "Client" c) x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual([]);
+    expect(findings(`WITH x AS (SELECT c.id, c."agencyId" AS "agencyId" FROM "Client" c) SELECT x.* FROM x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a derived table that passes a quoted name in another case through as the tenant column under $id", (dialect) => {
+    const sql = `SELECT x.* FROM (SELECT o.id, "AGENCY_ID" AS agency_id FROM orders o, (SELECT generate_series(1, 100000) AS "AGENCY_ID") z) x WHERE x.agency_id = :tenant_agency_ids`;
+    expect(findings(sql, dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    expect(findings("SELECT x.* FROM (SELECT o.id, o.agency_id FROM orders o) x WHERE x.agency_id = :tenant_agency_ids", dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
+  });
+
   it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT])("keeps an unquoted name in any case under $id, which compares column names that way", (dialect) => {
     expect(findings("SELECT c.* FROM Client c WHERE c.agencyid = :tenant_agency_ids", dialect)).toEqual([]);
   });
