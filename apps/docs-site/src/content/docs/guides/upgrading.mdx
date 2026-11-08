@@ -25,7 +25,7 @@ Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.54, `@askd
 
 ### Security: upgrade for GHSA-rx3m-m5jr-pwch
 
-**[GHSA-rx3m-m5jr-pwch](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rx3m-m5jr-pwch):** the tenant check could read a name's letters differently from the engine, so a tenant-scoped query could pass without an effective tenant predicate, and return rows belonging to tenants outside the caller's scope. Getting there needed a way to influence the model's reply, and SQL run without database-level tenant enforcement.
+**[GHSA-rx3m-m5jr-pwch](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rx3m-m5jr-pwch):** the tenant check could read a name's letters differently from the engine, so a tenant-scoped query could pass without an effective tenant predicate. The engine could then return rows belonging to tenants outside the caller's scope. Getting there needed a way to influence the model's reply. The generated SQL also had to run without database-level tenant enforcement.
 
 What to do:
 
