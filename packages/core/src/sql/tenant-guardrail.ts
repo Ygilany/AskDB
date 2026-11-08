@@ -287,7 +287,7 @@ function checkScopedTable(
       // filtered by the path's root or, up the hierarchy, one of its ancestors. A root outside that
       // chain filters nothing here, even one the scope binds.
       const allowed = new Set(selfAndAncestors(policy, path.root).map((rootId) => placeholderFor(policy, rootId)));
-      if (hasTenantPredicate(sql, table, [], { graph, allowed, path: joinPathProof(policy, path.join) })) return;
+      if (hasTenantPredicate(sql, table, [], { graph, allowed, path: joinPathProof(policy, table, path.join) })) return;
     }
   }
 
@@ -1862,7 +1862,12 @@ type RootLink = { readonly idColumn: string; readonly placeholder: string; reado
 /** A join path's own steps, in order, and the roots (by table) its end and the hierarchy above it reach. */
 type PathProof = { readonly steps: readonly Hop[]; readonly roots: ReadonlyMap<string, RootLink> };
 
-function joinPathProof(policy: NormalizedTenantPolicy, join: ReadonlyArray<{ readonly from: string; readonly to: string }>): PathProof {
+/**
+ * The proof for the join path `join` of the scoped `table`. The steps run in the order they chain from
+ * `table` (each one leaving the table the one before reached), whatever order the policy lists them in;
+ * when they don't chain that way (a fork or a gap), in the listed order.
+ */
+function joinPathProof(policy: NormalizedTenantPolicy, table: string, join: ReadonlyArray<{ readonly from: string; readonly to: string }>): PathProof {
   const hop = (fromId: string, toId: string): Hop => ({
     from: tableOfColumn(fromId).toLowerCase(),
     fromColumn: extractColumnName(fromId).toLowerCase(),
@@ -1885,7 +1890,18 @@ function joinPathProof(policy: NormalizedTenantPolicy, join: ReadonlyArray<{ rea
       parents,
     });
   }
-  return { steps: join.map((step) => hop(step.from, step.to)), roots };
+  const listed = join.map((step) => hop(step.from, step.to));
+  const left = [...listed];
+  const chained: Hop[] = [];
+  let at = table.toLowerCase();
+  while (left.length > 0) {
+    const next = left.filter((h) => h.from === at);
+    if (next.length !== 1) break;
+    chained.push(next[0]!);
+    left.splice(left.indexOf(next[0]!), 1);
+    at = next[0]!.to;
+  }
+  return { steps: left.length === 0 ? chained : listed, roots };
 }
 
 /**
@@ -2105,6 +2121,8 @@ function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
     if (t.depth < depth) return false;
     if (t.depth > depth) continue;
     if (t.kw === "on" || t.kw === "using") return true;
+    // MySQL has no outer `STRAIGHT_JOIN`, so an `ON` that closes one is an inner join's.
+    if (t.kw === "straight_join") return false;
     if (t.kw !== "join") continue;
     for (let k = i - 1; k >= 0; k--) {
       const w = tokens[k]!;
