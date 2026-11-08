@@ -10,6 +10,7 @@ import { SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { decide, tenantFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
 import {
+  lowerEachLetter,
   mayBeSqlite,
   readSql,
   QUERY_START_WORDS,
@@ -1029,14 +1030,6 @@ function scopeOpen(scope: string): number {
  */
 function tableNameOf(t: Token): string {
   return lowerEachLetter(t.quoted === true ? t.name.trimEnd() : t.text);
-}
-
-/**
- * `name` with each letter lower-cased on its own, as CockroachDB lower-cases an unquoted name: a
- * final capital sigma is `σ`, which `toLowerCase` writes `ς` at the end of a word.
- */
-function lowerEachLetter(name: string): string {
-  return Array.from(name, (c) => c.toLowerCase()).join("");
 }
 
 /** Whether `token` may be a name: a quoted name, whatever it holds, or a word that starts with a letter or `_`. */
