@@ -1701,6 +1701,8 @@ type Proof = {
   readonly nodes: readonly Node[];
   readonly equalities: ReadonlyArray<{ readonly left: ColumnRef; readonly right: ColumnRef; readonly scope: string; readonly on?: number }>;
   readonly bound: Map<string, (node: Node, column: string) => ReadonlySet<string>>;
+  /** Each `SELECT`'s `IN (SELECT …)` links, worked out once ({@link inLinks}). */
+  readonly links: Map<string, InLink[]>;
 };
 
 const proofs = new WeakMap<Analysis, WeakMap<PolicyGraph, Proof>>();
@@ -1710,11 +1712,12 @@ function proofFor(a: Analysis, graph: PolicyGraph): Proof {
   proofs.set(a, byGraph);
   let proof = byGraph.get(graph);
   if (proof !== undefined) return proof;
-  const ctes = new Set([...a.scopes.close.keys()].map((open) => cteNameAt(a.tokens, open)).filter((n) => n !== undefined));
+  // Every CTE's name, whatever its body (a data-modifying one opens no query): a read of that name may be the CTE.
+  const ctes = new Set(a.tokens.flatMap((t, open) => (t.text === "(" ? [cteNameAt(a.tokens, open)] : [])).filter((n) => n !== undefined));
   const nodes = [...graph.columns.keys()]
     .filter((table) => !ctes.has(table))
     .flatMap((table) => readsOf(a, table).filter((read) => isTableReference(a.tokens, read.at)).map((read) => ({ ...read, table })));
-  proof = { a, graph, nodes, equalities: equalities(a), bound: new Map() };
+  proof = { a, graph, nodes, equalities: equalities(a), bound: new Map(), links: new Map() };
   byGraph.set(graph, proof);
   return proof;
 }
@@ -1778,12 +1781,8 @@ function equalities(a: Analysis): Proof["equalities"] {
     if (leftColumn === undefined || rightColumn === undefined) return;
     const left = { q: qualifierOf(tokens, i - 1), column: leftColumn };
     const right = { q: qualifierOf(tokens, end), column: rightColumn };
-    // In `HAVING`, each side must be a `GROUP BY` key ({@link onGroupKey}), so filter on each column.
-    const start = qualifiedStart(tokens, i - 1);
-    const byRight = filteredScopes(a, start, end, undefined, end);
-    for (const f of filteredScopes(a, start, end, undefined, i - 1)) {
-      if (byRight.some((g) => g.scope === f.scope && g.on === f.on)) found.push({ left, right, scope: f.scope, on: f.on });
-    }
+    // In `HAVING`, each side must be a `GROUP BY` key ({@link onGroupKey}).
+    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined, [i - 1, end])) found.push({ left, right, scope: f.scope, on: f.on });
   });
   return found;
 }
@@ -1868,8 +1867,11 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
  * selects, and the read that column resolves to there, if any.
  */
 function inLinks(p: Proof, scope: string): InLink[] {
+  const cached = p.links.get(scope);
+  if (cached !== undefined) return cached;
   const { tokens, scopes } = p.a;
   const links: InLink[] = [];
+  p.links.set(scope, links);
   for (const [open, close] of scopes.close) {
     const column = open - 2;
     if (scopes.of[column] !== scope || scopes.branched.has(open) || subqueryUse(tokens, open) !== "in") continue;
@@ -2297,10 +2299,11 @@ function takesNoOn(tokens: readonly Token[], join: number): boolean {
  * `ON` (of an inner join, in a `SELECT` that keeps no unmatched rows) or `HAVING` clause: at its own level and
  * at every enclosing parenthesized level up to that clause, it sits between `AND`s (or the clause's
  * start and end), with no `OR`, `XOR` (or MySQL's `||`) at that level and no `NOT` in front of it.
- * A level opened by a function call or a comparison doesn't count. A `SELECT` used as `col IN (…)`
- * limits the query around it only through the join {@link inScope} follows (#400).
+ * A level opened by a function call or a comparison doesn't count. In `HAVING`, each of the term's
+ * columns at `termColumn` must be a `GROUP BY` key ({@link onGroupKey}). A `SELECT` used as
+ * `col IN (…)` limits the query around it only through the join {@link inScope} follows (#400).
  */
-function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined, termColumn: number): Filter[] {
+function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined, termColumn: number | readonly number[]): Filter[] {
   const { tokens, scopes } = a;
   const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && a.view.reading.pipesAreOr);
   const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
@@ -2350,7 +2353,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
       // An outer join keeps rows its ON doesn't match, and in a SELECT with one, an inner join's ON
       // filters only the rows that join builds; there only WHERE and HAVING filter every row (#400).
       if (tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || mayKeepUnmatchedRows(a, scopes.of[clause]!))) return filters;
-      if (tokens[clause]!.kw === "having" && !onGroupKey(a, clause, termColumn)) return filters;
+      if (tokens[clause]!.kw === "having" && !(typeof termColumn === "number" ? [termColumn] : termColumn).every((c) => onGroupKey(a, clause, c))) return filters;
       filters.push(tokens[clause]!.kw === "on" ? { scope: scopes.of[clause]!, qualifier, on: clause } : { scope: scopes.of[clause]!, qualifier });
       return filters;
     }
