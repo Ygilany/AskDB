@@ -21,7 +21,20 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.53
 
-Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.53, and the other packages that pin `@askdb/core`.
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.53, `@askdb/studio` 0.2.0-beta.46, `@askdb/enrich` 0.2.0-beta.24, `@askdb/introspect` 0.3.0-beta.27, `@askdb/rag` 0.2.0-beta.33, `@askdb/postgres` 0.2.0-beta.29, `@askdb/prisma` 0.2.0-beta.27, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.28, and `@askdb/sqlserver` 0.1.0-beta.29.
+
+### Security: upgrade for GHSA-9w7p-c3w8-4839 and GHSA-mmrm-rfxf-ccc8
+
+Two advisories fix places where the tenant check could pass a tenant-scoped query that returned rows belonging to tenants outside the caller's scope. Both needed the generated SQL to run without database-level tenant enforcement. GHSA-9w7p-c3w8-4839 also needed a way to influence the model's reply. GHSA-mmrm-rfxf-ccc8 needs no unusual SQL, so a model's own mistake can trigger it.
+
+- **[GHSA-9w7p-c3w8-4839](https://github.com/Ygilany/AskDB/security/advisories/GHSA-9w7p-c3w8-4839):** the tenant check could read some table names, column names, `HAVING` clauses and conditions differently from the engine, so a tenant-scoped query could pass without an effective tenant predicate.
+- **[GHSA-mmrm-rfxf-ccc8](https://github.com/Ygilany/AskDB/security/advisories/GHSA-mmrm-rfxf-ccc8):** the tenant check tied a predicate to reads it doesn't filter, so a tenant-scoped query could pass without an effective tenant predicate.
+
+What to do:
+
+- **Upgrade** `@askdb/core` to 1.0.0-beta.53, and every AskDB package you install that depends on it: `askdb` and `@askdb/http-api` 1.0.0-beta.53, `@askdb/studio` 0.2.0-beta.46, `@askdb/introspect` 0.3.0-beta.27, `@askdb/enrich` 0.2.0-beta.24, `@askdb/rag` 0.2.0-beta.33, `@askdb/postgres` 0.2.0-beta.29, `@askdb/prisma` 0.2.0-beta.27, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.28, and `@askdb/sqlserver` 0.1.0-beta.29. These pin `@askdb/core` exactly (`@askdb/prisma` through `@askdb/introspect`), so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **Expect some correct queries to be refused.** [Give each read of a scoped table its own tenant predicate](#give-each-read-of-a-scoped-table-its-own-tenant-predicate) and [Put a tenant predicate in `WHERE` when a query groups](#put-a-tenant-predicate-in-where-when-a-query-groups) list them, with the change each needs.
+- **If you can't upgrade at once,** enforce tenant isolation in the database (for example row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. It limits the rows a statement can read, whatever its text.
 
 ### Give each read of a scoped table its own tenant predicate
 
