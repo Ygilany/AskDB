@@ -33,7 +33,17 @@ The check is still a heuristic, and some shapes still pass, such as an unqualifi
 
 ## 1.0.0-beta.54
 
-Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.54, and the other packages that pin `@askdb/core`.
+Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.54, `@askdb/studio` 0.2.0-beta.47, `@askdb/client` 1.0.0-beta.14, `@askdb/enrich` 0.2.0-beta.25, `@askdb/introspect` 0.3.0-beta.28, `@askdb/rag` 0.2.0-beta.34, `@askdb/postgres` 0.2.0-beta.30, `@askdb/prisma` 0.2.0-beta.28, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.29, and `@askdb/sqlserver` 0.1.0-beta.30.
+
+### Security: upgrade for GHSA-rx3m-m5jr-pwch
+
+**[GHSA-rx3m-m5jr-pwch](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rx3m-m5jr-pwch):** the tenant check could read a name's letters differently from the engine, so a tenant-scoped query could pass without an effective tenant predicate. The engine could then return rows belonging to tenants outside the caller's scope. Getting there needed a way to influence the model's reply. The generated SQL also had to run without database-level tenant enforcement.
+
+What to do:
+
+- **Upgrade** `@askdb/core` to 1.0.0-beta.54, and every AskDB package you install that depends on it: `askdb` and `@askdb/http-api` 1.0.0-beta.54, `@askdb/studio` 0.2.0-beta.47, `@askdb/introspect` 0.3.0-beta.28, `@askdb/enrich` 0.2.0-beta.25, `@askdb/rag` 0.2.0-beta.34, `@askdb/postgres` 0.2.0-beta.30, `@askdb/prisma` 0.2.0-beta.28, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.29, and `@askdb/sqlserver` 0.1.0-beta.30. These pin `@askdb/core` exactly (`@askdb/prisma` through `@askdb/introspect`), so check with `npm ls @askdb/core` or `pnpm why @askdb/core` that no older copy remains under them. `@askdb/client` runs your app's own `@askdb/core`.
+- **Expect some correct queries to be refused.** [Write a tenant column with non-ASCII letters as the schema spells it](#write-a-tenant-column-with-non-ascii-letters-as-the-schema-spells-it) lists them, with the change each needs.
+- **If you can't upgrade at once,** enforce tenant isolation in the database (for example row-level security), as [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely) recommends. It limits the rows a statement can read, whatever its text.
 
 ### Write a tenant column with non-ASCII letters as the schema spells it
 

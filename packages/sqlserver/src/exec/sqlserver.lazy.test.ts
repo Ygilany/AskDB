@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { missingDriverMessage } from "@askdb/introspect/kit";
+import Module from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mssqlState = vi.hoisted(() => ({
@@ -87,6 +88,18 @@ module.exports = { ConnectionPool };
 }
 
 describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
+  // pnpm's bin shim puts its store on NODE_PATH, where the workspace's real `mssql` sits, and Node
+  // copies NODE_PATH into Module.globalPaths. The kit checks those directories on disk as Node
+  // does (#669), so a "missing" `mssql` needs them emptied.
+  const globalPaths = (Module as unknown as { globalPaths: string[] }).globalPaths;
+  const savedGlobalPaths = [...globalPaths];
+  beforeEach(() => {
+    globalPaths.length = 0;
+  });
+  afterEach(() => {
+    globalPaths.splice(0, globalPaths.length, ...savedGlobalPaths);
+  });
+
   beforeEach(() => {
     vi.resetModules();
     mssqlState.projectResolvedPaths.clear();

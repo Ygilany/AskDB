@@ -2,7 +2,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symli
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import Module from "node:module";
+import { dirname, join } from "node:path";
 import { azureProvider, createAiRegistry } from "@askdb/ai";
 import {
   getAskDbRuntimeConfig,
@@ -964,6 +965,39 @@ describe("AskDB Studio server", () => {
 
     const status = await getJson(`${baseUrl}/api/execute/status`);
     expect(status).toMatchObject({ ...expected, configured: true });
+  });
+
+  // #669: on Node 24+, a resolver probe that misses keeps the miss for the life of the process,
+  // so the driver Studio installs next would read as missing until Studio restarts.
+  it("GET /api/execute/status sees a driver installed after a status check that found none", async () => {
+    installStudioRuntime({
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "mysql", providerConfig: { mysql: { databaseUrl: "mysql://localhost/db" } }, outputDir: "./askdb/" },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
+    });
+    const schemaDir = copyFixture();
+    const projectRoot = dirname(schemaDir);
+    writeFileSync(join(projectRoot, "package.json"), '{"name":"host"}\n');
+    mkdirSync(join(projectRoot, "node_modules"));
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    // pnpm's bin shim puts its store on NODE_PATH (copied into Module.globalPaths), where this
+    // repo's mysql2 would be found.
+    const globalPaths = (Module as unknown as { globalPaths: string[] }).globalPaths;
+    const savedGlobalPaths = globalPaths.splice(0, globalPaths.length);
+    try {
+      expect(await getJson(`${baseUrl}/api/execute/status`)).toMatchObject({ packageName: "mysql2", installed: false });
+      // What a finished `pnpm add mysql2` leaves on disk.
+      const driverDir = join(projectRoot, "node_modules", "mysql2");
+      mkdirSync(driverDir);
+      writeFileSync(join(driverDir, "package.json"), '{"name":"mysql2","main":"index.js"}\n');
+      writeFileSync(join(driverDir, "index.js"), "module.exports = {};\n");
+      expect(await getJson(`${baseUrl}/api/execute/status`)).toMatchObject({ packageName: "mysql2", installed: true });
+    } finally {
+      globalPaths.push(...savedGlobalPaths);
+    }
   });
 
   it("POST /api/execute/install-driver rejects unknown and inherited provider keys with 400", async () => {

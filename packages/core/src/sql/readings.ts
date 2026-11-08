@@ -10,6 +10,7 @@
  * | Check | A built-in engine | Any other id, or no dialect |
  * |---|---|---|
  * | read-only ({@link readOnlyReadings}) | the engine's profile | every engine's profile |
+ * | parameterize consistency ({@link consistencyReadings}) | the engine's profile, with its word fold | every engine's profile, each with its fold |
  * | sensitive ({@link sensitiveReadings}) | the engine's (Postgres family: plus CockroachDB's comment end) | the generic profile, plus each engine's that lexes cleanly |
  * | tenant: statements and calls ({@link tenantStatementReadings}) | the engine's (Postgres family: both comment ends) | every engine's, Postgres and MySQL with both string settings |
  * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends; the Postgres and SQL Server views with block comments nested and not |
@@ -52,6 +53,32 @@ function asCockroachDb(profile: SqlLexerProfile): SqlLexerProfile {
 export function readOnlyReadings(dialect: ReadingDialect): readonly SqlLexerProfile[] {
   const profile = lexerProfileFor(dialect);
   return profile ? [profile] : ENGINE_LEXER_PROFILES;
+}
+
+/** A reading of the parameterize consistency check: a lexer profile, and how its engine folds an unquoted word. */
+export type ConsistencyReading = { profile: SqlLexerProfile; foldWord: (word: string) => string };
+
+/**
+ * The parameterize consistency check (`sqlStructurallyEqual`, #359): the read-only check's
+ * readings, each with how that engine folds an unquoted word (a keyword or name). SQL Server reads
+ * a word as written, since the database's collation may compare names case-sensitively; the other
+ * engines fold only ASCII letters, as Postgres and SQLite do and as MariaDB keeps apart letters
+ * Unicode lower-casing merges (U+212A KELVIN SIGN and `k`). The tenant check folds names the same
+ * way (`engineName` in `tenant-guardrail.ts`).
+ */
+export function consistencyReadings(dialect: ReadingDialect): readonly ConsistencyReading[] {
+  return readOnlyReadings(dialect).map((profile) => ({
+    profile,
+    foldWord: profile.id === "sqlserver" ? asWritten : asciiLower,
+  }));
+}
+
+function asWritten(word: string): string {
+  return word;
+}
+
+function asciiLower(word: string): string {
+  return word.replace(/[A-Z]+/g, (s) => s.toLowerCase());
 }
 
 /**
