@@ -25,7 +25,7 @@ Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/ht
 
 ### Separate keywords, names and numbers with ASCII spaces under `sqlserver`
 
-Under `sqlserver`, the tenant check now also refuses code SQL Server may split into tokens differently ([#623](https://github.com/Ygilany/AskDB/issues/623)). A direct `validateTenantGuardrails()` call with the built-in `sqlserver` dialect now reports `NOT_SELECT_OR_WITH` for a character outside plain code (such as a non-breaking space), a bare `$`, a `\`, or a number written against a word, as the read-only check already did. Through `ask()` nothing changes, since that check runs first. Separate keywords, names and numbers with ASCII spaces, and keep other characters inside string literals.
+Under `sqlserver`, the tenant check now also refuses code SQL Server may split into tokens differently ([#623](https://github.com/Ygilany/AskDB/issues/623)). A direct `validateTenantGuardrails()` call with the built-in `sqlserver` dialect now reports `NOT_SELECT_OR_WITH` for a character outside plain code (such as a non-breaking space), a bare money sign (such as `$` or `€`), a `\`, a number written against a word, or a `?` written against a name, as the read-only check already did. Through `ask()` nothing changes, since that check runs first. Separate keywords, names and numbers with ASCII spaces, and keep other characters inside string literals.
 
 ## 1.0.0-beta.55
 
