@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, delimiter, dirname, join, resolve, isAbsolute, relative } from "node:path";
+import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
+import { isDriverInstalled } from "@askdb/introspect/kit";
 import { getBuiltinAiProviderSetup } from "@askdb/ai";
 import {
   ASKDB_AI_PROVIDERS,
@@ -260,27 +261,13 @@ function ensureProjectDependencies(cwd: string, install: AskDbScaffoldPlan["inst
 }
 
 /**
- * Whether `packageName` is installed for `dir`: in a `node_modules` of `dir` or a parent,
- * or in a `NODE_PATH` directory. Checked on disk, not with Node's resolver: Node 24 and
- * later can keep a failed lookup until the process exits, so resolving a package this
- * step then installs would hide it from the introspection step's load. Under Yarn
- * Plug'n'Play there is no `node_modules`, and its resolver is the only record, so it asks that.
+ * Whether `packageName` is installed for `dir`. The kit's `isDriverInstalled` checks on disk,
+ * not with Node's resolver: Node 24 and later can keep a failed lookup until the process
+ * exits, so resolving a package this step then installs would hide it from the
+ * introspection step's load (#669).
  */
 function isInstalledFor(dir: string, packageName: string): boolean {
-  if (process.versions.pnp) {
-    try {
-      createRequire(join(dir, "package.json")).resolve(packageName);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  const roots = (process.env.NODE_PATH ?? "").split(delimiter).filter(Boolean);
-  for (let current = resolve(dir); ; current = dirname(current)) {
-    roots.push(join(current, "node_modules"));
-    if (dirname(current) === current) break;
-  }
-  return roots.some((root) => existsSync(join(root, packageName, "package.json")));
+  return isDriverInstalled(packageName, { resolveFrom: dir });
 }
 
 /**
