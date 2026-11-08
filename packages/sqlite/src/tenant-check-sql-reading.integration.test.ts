@@ -6,8 +6,8 @@
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `--` comment that ends only at a line feed, a `'…'` in a
  * table's place, which SQLite reads as the table's name, a `'…'` right after a table, which it
- * reads as the table's alias, and a column name with a non-ASCII letter in another case, which it
- * doesn't fold, are read as SQLite reads them.
+ * reads as the table's alias, and a column name or `GROUP BY` key with a non-ASCII letter in
+ * another case, which it doesn't fold, are read as SQLite reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real engine.
  *
@@ -70,6 +70,26 @@ fixtureSuite("the tenant check reads SQL the way SQLite does (live SQLite)", () 
     const check = (sql: string) => validateTenantGuardrails(sql, accented, accentedScope, { dialect }).warnings.map((w) => w.rule);
     expect(check(`SELECT c.* FROM Client c, (SELECT 42 AS "égency_id") z WHERE "égency_id" = :tenant_agency_ids`)).toEqual(["MISSING_TENANT_PREDICATE"]);
     expect(check(`SELECT c.* FROM Client c WHERE c."Égency_id" = :tenant_agency_ids`)).toEqual([]);
+  });
+
+  it("a GROUP BY key with a non-ASCII letter in another case is another column, as the engine reads it", async () => {
+    const runner = createSqliteCatalogQueryRunner(SQLITE_FILE);
+    // "égency_id" is z's constant, so every tenant's rows land in one group: 2 rows, not tenant 42's 1.
+    const rows = (await runner(`WITH c (id, "Égency_id") AS (VALUES (1, 42), (2, 999)) SELECT count(*) AS n FROM c, (SELECT 1 AS "égency_id") z GROUP BY "égency_id" HAVING max(c."Égency_id" = 42) = 1`)).rows;
+    expect(Number(rows[0]![0])).toBe(2);
+    const accented: NormalizedTenantPolicy = {
+      ...policy,
+      roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+      hierarchy: [],
+      scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#Égency_id" }] }],
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    const accentedScope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+    const check = (sql: string) => validateTenantGuardrails(sql, accented, accentedScope, { dialect }).warnings.map((w) => w.rule);
+    expect(check(`SELECT count(*) AS n FROM Client c, (SELECT 1 AS "égency_id") z GROUP BY "égency_id" HAVING "Égency_id" = :tenant_agency_ids`)).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(check(`SELECT c."Égency_id", count(*) FROM Client c GROUP BY c."Égency_id" HAVING c."Égency_id" = :tenant_agency_ids`)).toEqual([]);
   });
 
   it("a single-quoted name in a table's place is the table, as the engine reads it", async () => {

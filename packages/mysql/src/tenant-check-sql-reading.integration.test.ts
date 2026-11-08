@@ -5,9 +5,10 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a table named `user`, a string with the server's default
- * backslash escapes, a `--` comment that ends only at a line feed, and a backticked name spelled like
- * the tenant placeholder or holding U+0001 are read as the server reads them, and a number ends after its
- * decimal point or exponent, so a keyword written right after it is a keyword.
+ * backslash escapes, a `--` comment that ends only at a line feed, a backticked name spelled like
+ * the tenant placeholder or holding U+0001, and a letter Unicode lower-casing merges into ASCII
+ * (U+212A KELVIN SIGN, which MariaDB keeps apart from `k`) are read as the server reads them, and a
+ * number ends after its decimal point or exponent, so a keyword written right after it is a keyword.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -49,6 +50,28 @@ fixtureSuite("the tenant check reads SQL the way MySQL and MariaDB do (live)", (
       expect(Number(rows[0]![0])).toBe(2);
       expect(findings("SELECT id AS x$$y FROM agencies WHERE id = :tenant_agency_ids UNION ALL SELECT agency_id FROM orders ORDER BY x$$y"))
         .toEqual(["MISSING_TENANT_PREDICATE"]);
+    });
+
+    it("a letter Unicode lower-casing merges into ASCII is another letter, as MariaDB reads it", async () => {
+      // U+212A KELVIN SIGN: MariaDB keeps it apart from `k`, so z's column is read and both tenants come back;
+      // MySQL reads it as `k` and rejects the name as ambiguous.
+      const kelvin = "wor\u212Aspace_id";
+      const sql = `SELECT count(DISTINCT c.workspace_id) AS n FROM (SELECT 1 AS id, 42 AS workspace_id UNION ALL SELECT 2, 999) c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = 42`;
+      if (engine === "mariadb") expect(Number((await runner()(sql)).rows[0]![0])).toBe(2);
+      else await expect(runner()(sql)).rejects.toThrow(/ambiguous/i);
+      const workspace: NormalizedTenantPolicy = {
+        ...policy,
+        roots: [{ id: "table:public.Agency", label: "workspace", tenantIdColumn: "table:public.Agency#id" }],
+        hierarchy: [],
+        scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#workspace_id" }] }],
+        polymorphicTables: [],
+        globalTables: [],
+        coverage: [],
+      };
+      const workspaceScope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+      const check = (q: string) => validateTenantGuardrails(q, workspace, workspaceScope, { dialect }).warnings.map((w) => w.rule);
+      expect(check(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`)).toEqual(["MISSING_TENANT_PREDICATE"]);
+      expect(check("SELECT c.* FROM Client c WHERE c.WORKSPACE_ID = :tenant_workspace_ids")).toEqual([]);
     });
 
     it("a table named after a keyword stands in table position, as the engine reads it", async () => {
