@@ -1,6 +1,6 @@
 # @askdb/studio
 
-Local React browser UI for editing AskDB Schema v2 enrichment, checking RAG retrieval, and generating sample NL-to-SQL output.
+Local React browser UI for editing AskDB schema enrichment, checking RAG retrieval, and generating sample NL-to-SQL output.
 
 ```sh
 askdb-studio --schema ./my-app.schema
@@ -31,9 +31,9 @@ Schema browsing, enrichment, and SQL generation do not require a database driver
 
 Execute is off by default. Enable it with `studio.execute.enabled: true` plus an execute connection (`studio.execute.databaseUrl`, or `file` for SQLite), ideally a read-only database role. Studio only reuses the introspection connection when `studio.execute.useIntrospectionConnection` is `true`. Each query is validated as a single read-only SELECT and runs in a read-only (SQL Server: always-rolled-back) transaction with a timeout (`studio.execute.timeoutMs`, default 30 s) and a row cap (`studio.execute.maxRows`, default 500).
 
-The execute provider is resolved from `studio.execute.provider` in `askdb.config.ts`, falling back to the active introspection provider, then defaulting to Postgres for backward compatibility. The Playground displays the configured provider, connection status, and driver readiness near the Execute button. When running locally, Studio can install the missing driver for you.
+The execute provider is resolved from `studio.execute.provider` in `askdb.config.ts` (a value other than `postgres`, `mysql`, `sqlite` or `sqlserver` fails to load), falling back to the active introspection provider when the key is unset, then defaulting to Postgres. The Playground displays the configured provider, connection status, and driver readiness near the Execute button. When running locally, Studio can install the missing driver for you.
 
-Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic: workspace loading, editable drafts, markdown/frontmatter preservation, save helpers, and suggestion context.
+Studio uses `@askdb/enrich` for the shared non-UI schema authoring logic: workspace loading, editable drafts, markdown/frontmatter preservation, save helpers, and suggestion context.
 
 ## Development
 

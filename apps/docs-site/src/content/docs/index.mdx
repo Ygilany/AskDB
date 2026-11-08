@@ -21,7 +21,6 @@ import HomeDifferentiators from "../../components/HomeDifferentiators.astro";
 import HomeWorkflow from "../../components/HomeWorkflow.astro";
 import HomeEngines from "../../components/HomeEngines.astro";
 import HomePrivacyBoundary from "../../components/HomePrivacyBoundary.astro";
-import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 <div class="home-landing">
 
@@ -31,7 +30,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
   <span class="home-pill" role="listitem">Postgres · MySQL · MariaDB · SQLite · SQL Server</span>
   <span class="home-pill" role="listitem">Open source · Apache 2.0</span>
   <span class="home-pill" role="listitem">SQL returned · Your app executes</span>
-  <span class="home-pill" role="listitem">No data leaves your stack</span>
+  <span class="home-pill" role="listitem">Rows never reach the model</span>
 </div>
 
 ## Why this toolkit exists
@@ -48,56 +47,7 @@ NL-to-SQL isn't a new problem. Academic research goes back to LUNAR in 1972, and
 
 ## Embed it in your app
 
-<p class="home-terminal-intro">A few lines of TypeScript: load a schema, ask a question, run the SQL through your own connection pool.</p>
-
-<Tabs syncKey="wiring">
-  <TabItem label="Config-driven (@askdb/client)">
-
-```ts
-import { createAskDb } from "@askdb/client";
-import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { Pool } from "pg";
-
-// Resolve schema, model, and dialect from askdb.config.ts — same config the CLI and Studio use.
-bootstrapAskDbEnv({ cwd: process.cwd() });
-const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(), // ai.provider picks the model (npm i @ai-sdk/openai for OpenAI)
-  schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit
-});
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const { sql } = await askdb.ask("Which customers signed up last week?");
-
-// Log or approve `sql` here, then run it through your own pool.
-const result = await pool.query(sql);
-```
-
-  </TabItem>
-  <TabItem label="Direct (Vercel AI SDK)">
-
-```ts
-import { ask, loadSchema } from "@askdb/core";
-import { openai } from "@ai-sdk/openai";
-import { Pool } from "pg";
-
-// Load schema once at startup — no config file needed.
-const schema = loadSchema("./my-app.schema");
-const model = openai("gpt-4o-mini"); // any Vercel AI SDK LanguageModel
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const { sql } = await ask({
-  question: "Which customers signed up last week?",
-  schema,
-  model,
-  dialect: "postgres",
-});
-
-// Log or approve `sql` here, then run it through your own pool.
-const result = await pool.query(sql);
-```
-
-  </TabItem>
-</Tabs>
+There are two ways to call AskDB from TypeScript. `createAskDb()` from `@askdb/client` takes the model, the schema and the dialect from your `askdb.config.ts`, the same config the CLI and Studio use. `ask()` from `@askdb/core` takes a schema you loaded and any Vercel AI SDK model. Both return checked SQL, and your code runs it through your own connection. [Embed in a Node app](/guides/embed-in-node/) walks through both.
 
 ## Works with the database you already have
 

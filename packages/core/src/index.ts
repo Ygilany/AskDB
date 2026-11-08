@@ -17,8 +17,6 @@ export {
 export {
   DEFAULT_TENANT_SQL_MODE,
   resolveTenantSql,
-  extractTenantPlaceholders,
-  placeholderForRoot,
   placeholderForTenantRoot,
   type TenantSqlOutputMode,
   type TenantPlaceholderResult,
@@ -64,7 +62,7 @@ export {
   isSupportedAskDbLogLevel,
   SUPPORTED_ASKDB_LOG_LEVELS,
 } from "./logging/pino-supported-levels.js";
-export { loadNormalizedSchemaFromJson, parseAskDbSchemaJson } from "./schema/parse.js";
+export { loadNormalizedSchemaFromJson } from "./schema/parse.js";
 export type {
   AskDbSchemaFile,
   NormalizedSchema,
@@ -82,25 +80,11 @@ export {
   saveSchemaFile,
   formatSchemaV2ForNlToSql,
   v2SchemaJsonSchema,
-  v2TableSchema,
-  v2ColumnSchema,
-  v2TableFrontmatterSchema,
-  v2ColumnFrontmatterSchema,
-  v2ConceptsFrontmatterSchema,
-  v2ConceptSchema,
-  RECOGNIZED_H2_SECTIONS,
   parseTenantPolicyMarkdown,
   normalizeTenantPolicy,
   formatTenantPolicyWarning,
   tenantPolicyFrontmatterSchema,
-  tenantRootSchema,
-  hierarchyEdgeSchema,
-  scopedTableSchema,
-  polymorphicTableSchema,
-  enforcementModeSchema,
   tenantScopeSchema,
-  tenantAccessSchema,
-  TENANT_POLICY_H2_SECTIONS,
   createMentionMatcher,
   findMentionedNames,
   sensitiveMentionNames,
@@ -144,12 +128,7 @@ export type {
   TableTenantClassification,
   TenantPolicyH2Section,
 } from "./schema/v2/index.js";
-export {
-  ENRICHMENT_SYSTEM_PROMPT,
-  buildEnrichmentUserPrompt,
-  parseCandidates,
-  suggestEnrichment,
-} from "./enrichment/index.js";
+export { suggestEnrichment } from "./enrichment/index.js";
 export type {
   EnrichmentCandidate,
   EnrichmentContext,
@@ -159,18 +138,16 @@ export type {
 } from "./enrichment/index.js";
 export {
   formatSchemaForNlToSql,
-  normalizeAskDbSchema,
   type FormatNlToSqlOptions,
   type NlToSqlSchemaFormatStats,
 } from "./schema/normalize.js";
 export { extractSqlFromModelText, extractUnboundSqlFromModelText } from "./sql/extract-sql.js";
-export {
-  escapeSqlLiteral,
-  type QueryParameterType,
-  type QueryParameterValue,
-  type QueryParamSlot,
-  type QueryParameterBinding,
-  type PreparedQuery,
+export type {
+  QueryParameterType,
+  QueryParameterValue,
+  QueryParamSlot,
+  QueryParameterBinding,
+  PreparedQuery,
 } from "./sql/bind.js";
 export { bindPreparedQuery, type BindGuardrails, type BoundQuery } from "./sql/rebind.js";
 export {
@@ -196,18 +173,13 @@ export {
 } from "./sql/generate.js";
 export {
   validateSelectSql,
-  buildSelectGuardrailExplanation,
   type SelectGuardrailExplain,
 } from "./sql/validate.js";
-export {
-  buildNlToSqlUserPrompt,
-  buildNlToSqlSystemPrompt,
-} from "./sql/prompt.js";
+export { buildNlToSqlUserPrompt } from "./sql/prompt.js";
+// Internal: for @askdb/client/charts, no stability promise (see the core API page's internal exports).
+export { maskSqlLiterals } from "./sql/mask-literals.js";
 export { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
-export {
-  assertNlToSqlInputs,
-  nlToSqlAmbiguityNotes,
-} from "./sql/schema-question-precheck.js";
+export { nlToSqlAmbiguityNotes } from "./sql/schema-question-precheck.js";
 export {
   type AskDbLanguageModel,
 } from "./ai/types.js";

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loadSchema, loadSchemaFromJson } from "./loader.js";
 import { formatSchemaV2ForNlToSql } from "./format.js";
+import type { NormalizedSchemaV2, NormalizedV2Column, NormalizedV2Table } from "./normalized.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const v2Dir = join(here, "../../../../../fixtures/schemas/orders-users.schema");
@@ -150,5 +151,221 @@ describe("formatSchemaV2ForNlToSql — ignored tables", () => {
     expect(ddl).not.toContain("TABLE public.orders");
     expect(ddl).toContain("TABLE public.users");
     expect(stats.untrackedTableCount).toBe(1);
+  });
+});
+
+describe("formatSchemaV2ForNlToSql — foreign keys and concepts (#898)", () => {
+  const col = (table: string, name: string, extra: Partial<NormalizedV2Column> = {}): NormalizedV2Column => ({
+    id: `table:public.${table}#${name}`,
+    name,
+    type: "integer",
+    nullable: false,
+    primaryKey: name === "id",
+    sensitive: false,
+    ...extra,
+  });
+  const tbl = (name: string, columns: NormalizedV2Column[], extra: Partial<NormalizedV2Table> = {}): NormalizedV2Table => ({
+    id: `table:public.${name}`,
+    name,
+    schema: "public",
+    sensitive: false,
+    columns,
+    ...extra,
+  });
+  const fk = (from: string, to: string) => ({ from: `table:public.${from}`, to: `table:public.${to}` });
+  // customers.ssn is a sensitive column, vault a sensitive table, archive untracked.
+  const schemaWith = (concepts?: NormalizedSchemaV2["concepts"]): NormalizedSchemaV2 => ({
+    schemaId: "fk",
+    warnings: [],
+    concepts,
+    tables: [
+      // Listed again on the target table: still printed once, under the table that owns the column.
+      tbl("customers", [col("customers", "id"), col("customers", "ssn", { sensitive: true })], {
+        relationships: [fk("orders#customer_id", "customers#id")],
+      }),
+      tbl("vault", [col("vault", "id", { sensitive: true, sensitiveFromTable: true })], { sensitive: true }),
+      tbl("archive", [col("archive", "id")], { tracked: false }),
+      tbl(
+        "orders",
+        [
+          col("orders", "id"),
+          col("orders", "customer_id"),
+          col("orders", "vault_id"),
+          col("orders", "tax_ref"),
+          col("orders", "secret_ref", { sensitive: true }),
+          col("orders", "archive_id"),
+        ],
+        {
+          relationships: [
+            fk("orders#customer_id", "customers#id"),
+            fk("orders#vault_id", "vault#id"),
+            fk("orders#tax_ref", "customers#ssn"),
+            fk("orders#secret_ref", "customers#id"),
+            fk("orders#archive_id", "archive#id"),
+            fk("orders#missing", "customers#id"),
+          ],
+        },
+      ),
+    ],
+  });
+  const fkLines = (ddl: string) => ddl.split("\n").filter((line) => line.startsWith("  FK "));
+
+  it("prints a foreign key after its table's columns, before its common query language", () => {
+    const lines = formatSchemaV2ForNlToSql(loadSchema(v2Dir)).ddl.split("\n");
+    const orders = lines.indexOf("TABLE public.orders -- aliases: purchases, sales, transactions");
+    const key = lines.indexOf("  FK (user_id) -> public.users (id)");
+    expect(key).toBeGreaterThan(lines.findIndex((line, i) => i > orders && line.startsWith("  - total_amount ")));
+    expect(key).toBeLessThan(lines.findIndex((line, i) => i > orders && line === "-- common query language --"));
+  });
+
+  it("names a foreign key's tables and columns the way the prompt lists them", () => {
+    const schema = loadSchema(v2Dir);
+    expect(fkLines(formatSchemaV2ForNlToSql(schema, { unqualifiedNamespace: "public" }).ddl)).toEqual(["  FK (user_id) -> users (id)"]);
+    expect(fkLines(formatSchemaV2ForNlToSql(schema, { quoteIdentifier: (name) => `"${name}"` }).ddl)).toEqual([
+      '  FK ("user_id") -> "public"."users" ("id")',
+    ]);
+  });
+
+  it("lists sensitive columns' foreign keys when sensitive names are listed tagged, never an untracked or unresolved one", () => {
+    const { ddl } = formatSchemaV2ForNlToSql(schemaWith());
+    expect(fkLines(ddl)).toEqual([
+      "  FK (customer_id) -> public.customers (id)",
+      "  FK (vault_id) -> public.vault (id)",
+      "  FK (tax_ref) -> public.customers (ssn)",
+      "  FK (secret_ref) -> public.customers (id)",
+    ]);
+    expect(ddl).not.toContain("archive (id)");
+  });
+
+  it("with omission on, leaves out every foreign key with a sensitive column or table on either side", () => {
+    const { ddl } = formatSchemaV2ForNlToSql(schemaWith(), { omitSensitiveIdentifiersFromPrompt: true });
+    expect(fkLines(ddl)).toEqual(["  FK (customer_id) -> public.customers (id)"]);
+    expect(ddl).not.toMatch(/ssn|secret_ref|public\.vault \(|public\.archive/);
+  });
+
+  const concepts: NormalizedSchemaV2["concepts"] = [
+    { id: "concept:buyer", label: "Buyer", synonyms: ["client"], links: ["table:public.customers"], description: "A customer with an order." },
+    { id: "concept:identity", label: "Identity", links: ["table:public.customers#ssn"], description: "How we verify a customer." },
+    { id: "concept:vaulted", label: "Vaulted", links: ["table:public.vault"] },
+    { id: "concept:taxed", label: "Taxed", description: "Orders whose ssn was checked." },
+    { id: "concept:old", label: "Old order", links: ["table:public.archive"] },
+    { id: "concept:mixed", label: "Mixed", links: ["table:public.archive", "table:public.orders#customer_id"] },
+    { id: "concept:loose", label: "Loose", links: ["table:public.nowhere"] },
+    // A column archive no longer has: still a link into an untracked table.
+    { id: "concept:stale", label: "Stale", links: ["table:public.archive#gone"], description: "Rows from archive." },
+  ];
+  const conceptBlock = (ddl: string) => {
+    const lines = ddl.split("\n");
+    const start = lines.indexOf("-- concepts --");
+    return start === -1 ? [] : lines.slice(start);
+  };
+
+  it("lists the schema's concepts after the tables", () => {
+    const { ddl } = formatSchemaV2ForNlToSql(loadSchema(v2Dir));
+    expect(conceptBlock(ddl)).toEqual([
+      "-- concepts --",
+      "-- Customer; synonyms: user, client, buyer, account holder; links: public.users; A person who has signed up and placed at least one order.",
+      "-- Revenue; synonyms: sales, gross sales, top line; links: public.orders.total_amount; Sum of `orders.total_amount` where `status = 'paid'`, expressed in cents.",
+    ]);
+  });
+
+  it("drops untracked links and a concept that only links untracked tables; keeps the rest tagged", () => {
+    const { ddl } = formatSchemaV2ForNlToSql(schemaWith(concepts));
+    expect(conceptBlock(ddl)).toEqual([
+      "-- concepts --",
+      "-- Buyer; synonyms: client; links: public.customers; A customer with an order.",
+      "-- Identity; links: public.customers.ssn; How we verify a customer.",
+      "-- Vaulted; links: public.vault",
+      "-- Taxed; Orders whose ssn was checked.",
+      "-- Mixed; links: public.orders.customer_id",
+      "-- Loose",
+    ]);
+  });
+
+  it("with omission on, withholds a concept that names or links a sensitive column or table", () => {
+    const omitted = formatSchemaV2ForNlToSql(schemaWith(concepts), { omitSensitiveIdentifiersFromPrompt: true });
+    expect(conceptBlock(omitted.ddl)).toEqual([
+      "-- concepts --",
+      "-- Buyer; synonyms: client; links: public.customers; A customer with an order.",
+      "-- Mixed; links: public.orders.customer_id",
+      "-- Loose",
+    ]);
+    const withoutConcepts = formatSchemaV2ForNlToSql(schemaWith(), { omitSensitiveIdentifiersFromPrompt: true });
+    expect(omitted.stats.mentionDroppedCount).toBe(withoutConcepts.stats.mentionDroppedCount + 3);
+  });
+
+  it("prints a composite key as one line per column pair", () => {
+    const schema = schemaWith();
+    const orders = schema.tables.find((t) => t.name === "orders")!;
+    orders.columns.push(col("orders", "customer_region"));
+    schema.tables.find((t) => t.name === "customers")!.columns.push(col("customers", "region"));
+    orders.relationships = [fk("orders#customer_id", "customers#id"), fk("orders#customer_region", "customers#region")];
+    expect(fkLines(formatSchemaV2ForNlToSql(schema).ddl)).toEqual([
+      "  FK (customer_id) -> public.customers (id)",
+      "  FK (customer_region) -> public.customers (region)",
+    ]);
+  });
+
+  it("adds no concepts block for a schema without concepts", () => {
+    expect(formatSchemaV2ForNlToSql(schemaWith([])).ddl).not.toContain("-- concepts --");
+    expect(formatSchemaV2ForNlToSql(schemaWith()).ddl).not.toContain("-- concepts --");
+  });
+});
+
+describe("formatSchemaV2ForNlToSql — business context and column notes (#898)", () => {
+  const ORDERS_BIZ = "-- Orders move through `pending → paid → shipped` and may end in `cancelled`. The `total_amount` column is stored in cents.";
+  const ordersWithNote = () => {
+    const schema = loadSchema(v2Dir);
+    schema.tables.find((t) => t.name === "orders")!.columns.find((c) => c.name === "status")!.note = "refunds flip a paid order back to pending";
+    return schema;
+  };
+
+  it("lists a table's business context after its common query language, and a column's note on its line", () => {
+    const lines = formatSchemaV2ForNlToSql(ordersWithNote()).ddl.split("\n");
+    const orders = lines.indexOf("TABLE public.orders -- aliases: purchases, sales, transactions");
+    const cql = lines.findIndex((line, i) => i > orders && line === "-- common query language --");
+    const block = lines.findIndex((line, i) => i > orders && line === "-- business context --");
+    expect(block).toBeGreaterThan(cql);
+    expect(lines[block + 1]).toBe(ORDERS_BIZ);
+    expect(lines).toContain(
+      "  - status text (NOT NULL) -- aliases: order_status; values: pending|paid|shipped|cancelled; Order lifecycle state. Most reporting filters on `paid`.; note: refunds flip a paid order back to pending",
+    );
+  });
+
+  it("with omission on, withholds a business context that names a sensitive column", () => {
+    // users' business context names the sensitive `email`; orders' names none.
+    const tagged = formatSchemaV2ForNlToSql(loadSchema(v2Dir));
+    const omitted = formatSchemaV2ForNlToSql(loadSchema(v2Dir), { omitSensitiveIdentifiersFromPrompt: true });
+    expect(tagged.ddl).toContain("-- Each user has a unique email address used for login.");
+    expect(omitted.ddl).not.toContain("unique email address");
+    expect(omitted.ddl).toContain(ORDERS_BIZ);
+    const withoutBusiness = loadSchema(v2Dir);
+    for (const t of withoutBusiness.tables) delete t.businessContext;
+    expect(omitted.stats.mentionDroppedCount).toBe(
+      formatSchemaV2ForNlToSql(withoutBusiness, { omitSensitiveIdentifiersFromPrompt: true }).stats.mentionDroppedCount + 1,
+    );
+  });
+
+  it("never lists a sensitive table's business context or a sensitive column's note, with omission on or off", () => {
+    // Set on the loaded copy, as a host-built schema could: loadSchema() itself leaves both out.
+    const schema = loadSchema(mentionsDir);
+    schema.tables.find((t) => t.name === "users")!.businessContext = "Accounts are audited every year.";
+    schema.tables.find((t) => t.name === "users")!.columns.find((c) => c.name === "ssn")!.note = "nine digits, no dashes";
+    schema.tables.find((t) => t.name === "customers")!.columns.find((c) => c.name === "email")!.note = "the address we write to";
+    for (const omit of [false, true]) {
+      const { ddl } = formatSchemaV2ForNlToSql(schema, { omitSensitiveIdentifiersFromPrompt: omit });
+      expect(ddl).not.toMatch(/audited|nine digits|write to|note:/);
+    }
+  });
+
+  it("with omission on, withholds a column's note and annotation together when either names a sensitive column", () => {
+    const schema = loadSchema(mentionsDir);
+    schema.tables.find((t) => t.name === "customers")!.columns.find((c) => c.name === "region")!.note = "matches the area code of the phone";
+    const omitted = formatSchemaV2ForNlToSql(schema, { omitSensitiveIdentifiersFromPrompt: true }).ddl.split("\n");
+    expect(omitted).toContain("  - region text (NULL)");
+    const tagged = formatSchemaV2ForNlToSql(schema).ddl.split("\n");
+    expect(tagged).toContain(
+      "  - region text (NULL) -- aliases: territory; values: north|south; Sales region of the account.; note: matches the area code of the phone",
+    );
   });
 });

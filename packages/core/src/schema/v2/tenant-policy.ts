@@ -101,18 +101,6 @@ export function placeholderForTenantRoot(root: Pick<TenantRoot, "id" | "label">)
 }
 
 /**
- * The placeholder for a root label, from the label alone.
- *
- * @deprecated Use {@link placeholderForTenantRoot} with the root. For a label with no
- * ASCII letter or digit this returns `:tenant___ids`, which is not the placeholder core
- * prompts for and binds (that one comes from the root's table name). For every other
- * label the two agree.
- */
-export function placeholderForRoot(label: string): string {
-  return `:tenant_${placeholderName(label)}_ids`;
-}
-
-/**
  * Throw `SchemaParseError` when two roots' labels derive the same placeholder
  * (`Agency` and `agency`, `Sub-Agency` and `Sub Agency`). Each root's IDs bind through
  * its placeholder, so a shared one would bind one root's IDs where the other root's

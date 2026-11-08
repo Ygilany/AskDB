@@ -115,7 +115,7 @@ describe("runWizard", () => {
     }) as InitPrompter["select"];
     const answers = await runWizard(prompter);
     expect(answers.ragStore).toBe("pgvector");
-    expect(answers.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
+    expect(answers.pgvectorEnv).toBe("PGVECTOR_URL");
     expect(messages.some((m) => m.toLowerCase().includes("env var"))).toBe(false);
   });
 
@@ -289,7 +289,7 @@ describe("runInitCli --yes --skip-install", () => {
 
   it.each([
     { flags: ["--database", "prisma", "--studio-execute"], envName: "DATABASE_URL" },
-    { flags: ["--rag-store", "pgvector"], envName: "ASKDB_PGVECTOR_URL" },
+    { flags: ["--rag-store", "pgvector"], envName: "PGVECTOR_URL" },
   ])("$flags: .env.example lists $envName, which the config reads, once", async ({ flags, envName }) => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
     try {

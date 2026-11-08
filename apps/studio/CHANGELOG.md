@@ -1,5 +1,150 @@
 # @askdb/studio
 
+## 0.2.0-beta.48
+
+### Patch Changes
+
+- 42b6533: Studio loads a database driver it has just installed on Node 24 and 26 without a restart (#669). Node 24 and later keep a failed package lookup for the life of the process, so the execute-driver status check, which asked Node's resolver, hid the driver Studio installed next, and the load then said to restart. The kit's `isDriverInstalled` now checks for `node_modules/<package>/package.json` under `resolveFrom` and its parents, and in Node's global directories (`NODE_PATH` first), without asking the resolver (under Yarn Plug'n'Play it still asks the resolver). Studio's guided setup uses the same check. When a driver is on disk but Node can't resolve it, `createOptionalDriverLoader` reads its entry from its `package.json` (the `exports` map under the conditions Node's `require` uses, `node`, `module-sync`, `require` and `default`, or `main`) and imports that file by path. It says to restart only when it can't find the entry. The introspection API reference and the connector guide say so.
+- 18ef5a5: Security fix ([GHSA-p2v7-pv8j-c264](https://github.com/Ygilany/AskDB/security/advisories/GHSA-p2v7-pv8j-c264)). The tenant check read some names differently from the engine, so a scoped table's read could go unseen, a column the engine reads as another could count as the tenant column, or a join could count through another table:
+  
+  - **A name in NFC only before lower-casing.** CockroachDB lower-cases an unquoted name and then normalizes it to NFC, so `J` followed by U+030C reads as `ǰ`. Such an unquoted name is now refused as `UNICODE_ESCAPED_IDENTIFIER` unless the schema spells it exactly.
+  - **A name the schema spells in upper case.** The schema's spelling excused an unquoted name with `İ`, or one whose lower-cased letters aren't in NFC, though CockroachDB reads an unquoted `İTEMS` as `items` even beside a table `"İTEMS"`. It now excuses an unquoted name only when the name is lower-case and in NFC.
+  - **A final capital sigma.** CockroachDB lower-cases `Σ` to `σ`, which JavaScript's `toLowerCase` writes `ς` at the end of a word. The column-list rule and a derived table's items now match names letter by letter, as the table gate does.
+  - **A joined table in another case.** A join the check relied on counted a table by its name in any case, though Postgres reads `"CLIENTS"` as another table than `clients`. A joined table now counts only where every engine the dialect covers reads it as the schema's table.
+  
+  Upgrade notes (breaking): SQL that passed before and now throws `TenantGuardrailError` under `strict`: an unquoted name the schema doesn't spell whose lower-cased letters aren't in NFC (write it as the schema does); an unquoted name with `İ`, `ı`, `ſ`, the Kelvin sign or one of those letters that the schema spells but that isn't lower-case and in NFC (quote it as the schema spells it); and a join the check relies on whose table is spelled otherwise than the schema spells it, quoted, or unquoted on MySQL, MariaDB or SQL Server (write it as the schema does).
+- Updated dependencies [7935ce0]
+- Updated dependencies [cc5c00c]
+- Updated dependencies [8e6c55f]
+- Updated dependencies [42b6533]
+- Updated dependencies [18ef5a5]
+- Updated dependencies [568fd48]
+  - @askdb/core@1.0.0-beta.55
+  - @askdb/introspect@0.3.0-beta.29
+  - @askdb/sqlserver@0.1.0-beta.31
+  - @askdb/client@1.0.0-beta.14
+  - @askdb/enrich@0.2.0-beta.26
+  - @askdb/mysql@0.1.0-beta.30
+  - @askdb/postgres@0.2.0-beta.31
+  - @askdb/rag@0.2.0-beta.35
+  - @askdb/sqlite@0.1.0-beta.30
+
+## 0.2.0-beta.47
+
+### Patch Changes
+
+- f258449: Security fix ([GHSA-rx3m-m5jr-pwch](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rx3m-m5jr-pwch)). The tenant check folded some names' letters differently from the engine, so a column the engine reads as another column could count as the tenant column, a discriminator or a `GROUP BY` key:
+  
+  - **CockroachDB** lower-cases every letter of an unquoted name, where Postgres folds only ASCII ones; both are read the Postgres way.
+  - **MariaDB** keeps apart letters Unicode lower-casing merges, such as U+212A KELVIN SIGN and `k`.
+  - **SQLite** folds only ASCII letters, and a `HAVING` predicate's `GROUP BY` key was compared with Unicode lower-casing.
+  - **Aliases and qualifiers** with an upper-case non-ASCII letter were still compared the Postgres way, so on CockroachDB an unquoted `Ö.agency_id` could tie the predicate to another source.
+  - **`İ` (U+0130), the Kelvin sign and names not in NFC as written:** CockroachDB and MySQL read `clİents` as `clients`, which the check never saw, and CockroachDB normalizes names to NFC.
+  - **A scoped table whose name starts or ends with a non-ASCII letter** (`ürün`, `café`) was never seen as mentioned, so its reads needed no predicate.
+  
+  A name the engines of a reading read apart (read the Postgres way, an unquoted name with an upper-case non-ASCII letter) names nothing as a column, an alias, a qualifier or a CTE name. A name with a letter some engine folds into ASCII (U+0130, U+0131, U+017F, U+212A), or one that isn't in NFC as written, is refused as `UNICODE_ESCAPED_IDENTIFIER` unless the schema spells it exactly, and a table's name is found between characters that can't continue a name in any script.
+  
+  Upgrade notes (breaking): SQL that passed before and now throws `TenantGuardrailError` under `strict`: read the Postgres way, an unquoted tenant column or discriminator with an upper-case non-ASCII letter (quote it, as the schema spells it); read the MySQL way or under `sqlite`, one whose non-ASCII letters are in another case than the schema's (write them as the schema does); read the Postgres way, an unquoted alias or qualifier with an upper-case non-ASCII letter (quote it); a name the schema doesn't spell that holds U+0130, U+0131, U+017F or U+212A, or isn't in NFC as written; and a read of a scoped table whose name starts or ends with a non-ASCII letter with no predicate.
+- Updated dependencies [30a3bc6]
+- Updated dependencies [f258449]
+  - @askdb/client@1.0.0-beta.14
+  - @askdb/core@1.0.0-beta.54
+  - @askdb/enrich@0.2.0-beta.25
+  - @askdb/introspect@0.3.0-beta.28
+  - @askdb/mysql@0.1.0-beta.29
+  - @askdb/postgres@0.2.0-beta.30
+  - @askdb/rag@0.2.0-beta.34
+  - @askdb/sqlite@0.1.0-beta.29
+  - @askdb/sqlserver@0.1.0-beta.30
+
+## 0.2.0-beta.46
+
+### Patch Changes
+
+- 984f332: Security fix ([GHSA-9w7p-c3w8-4839](https://github.com/Ygilany/AskDB/security/advisories/GHSA-9w7p-c3w8-4839)). The tenant check read some table names, `HAVING` clauses and conditions differently from the engine, so a tenant-scoped query could pass while the engine read it without its tenant filter. The check now reads them the way each engine does:
+  
+  - **SQLite string names in parentheses.** SQLite reads `FROM ('orders')` as the table `orders`, and `(orders) 'o'` as that read aliased `o`. Under `sqlite`, a dialect id that is no built-in engine, or none, the tenant check reads them that way.
+  - **`HAVING` on an ungrouped column.** A tenant predicate in `HAVING` counts only when its column is a key of the `SELECT`'s `GROUP BY`. Read the MySQL way, an unqualified column that a select-list item is aliased to doesn't count there.
+  - **`BETWEEN`.** The `AND` that closes a `BETWEEN` is no conjunction, so a predicate written as its upper bound doesn't count.
+  - **`order` or `group` after a spaced dot.** `billing . order` is the table `billing.order`, with any whitespace or comment around the dot.
+  - **An `OR` after an alias spelled like a clause word.** An `OR` later in the clause counts as beside the predicate after a word some engine takes as a name (`lock`, `qualify`, `limit`, `natural`, `using`, `window`).
+  - **Column names in another case.** A column name the engine reads as another column counted as the tenant column or a polymorphic discriminator, directly or passed through a derived table: on Postgres and CockroachDB, an unquoted `agencyid` beside a camelCase `"agencyId"`, or `"OWNER_TYPE"` beside `owner_type`; on SQL Server under a case-sensitive collation, `agencyid` beside `agencyId`; on SQLite, `égency_id` beside `Égency_id` in a filter. They now count only when written as the schema spells them: read the Postgres way, a quoted name exactly and an unquoted one with its ASCII letters lower-cased; the SQL Server way, as written; the MySQL way, lower-cased; the SQLite way, with ASCII letters lower-cased. A dialect id that is no built-in engine, or none, is read every way.
+  
+  Upgrade notes (breaking): SQL that passed before and now throws `TenantGuardrailError` under `strict`: a tenant predicate in `HAVING` on a column the `SELECT` doesn't group by, or, read the MySQL way, on a name a select-list item is aliased to (put it in `WHERE`); a predicate written as a `BETWEEN`'s upper bound (make it its own conjunct); under `sqlite`, a custom id or none, an unfiltered read written `FROM ('orders')` (filter it, or write `FROM orders`); and a tenant column or discriminator written in another case than the schema spells it, under `sqlserver`, a custom id or none, or, read the Postgres way on a schema with upper-case column names, written unquoted (write it as the schema spells it, quoted on Postgres: `c."agencyId"`).
+- a81867a: The tenant-policy draft lists foreign keys with core's formatter (#898): each one prints under its table as `FK (org_id) -> public.orgs (id)`, in place of Studio's own `Foreign keys:` block. The rule is unchanged: a key goes in only when both of its columns are listed, and the withheld keys still come back as warnings (ADR 0021).
+- Updated dependencies [01415e2]
+- Updated dependencies [a81867a]
+- Updated dependencies [98612fb]
+- Updated dependencies [dadf211]
+- Updated dependencies [01415e2]
+- Updated dependencies [98612fb]
+- Updated dependencies [984f332]
+  - @askdb/core@1.0.0-beta.53
+  - @askdb/rag@0.2.0-beta.33
+  - @askdb/client@1.0.0-beta.13
+  - @askdb/enrich@0.2.0-beta.24
+  - @askdb/introspect@0.3.0-beta.27
+  - @askdb/mysql@0.1.0-beta.28
+  - @askdb/postgres@0.2.0-beta.29
+  - @askdb/sqlite@0.1.0-beta.28
+  - @askdb/sqlserver@0.1.0-beta.29
+
+## 0.2.0-beta.45
+
+### Minor Changes
+
+- 0077500: **Breaking:** Studio picks the dialect with `@askdb/client`'s `resolveDialect()`, so a schema whose `provider` has no AskDB dialect is refused, as the CLI and the HTTP API already refused it (#886, ADR 0039). The Playground answers `422` with the client's `DialectNotSupportedError` message and generates nothing, instead of PostgreSQL SQL checked under PostgreSQL's rules. The workspace still loads: its `dialect` is `null`, with the reason in `dialectError`, and the Get the code panel shows the reason instead of code. Set `dialect` in `askdb.config.ts` to the built-in dialect your engine speaks. `askdb studio`, which runs Studio, refuses the same way. `@askdb/studio` now depends on `@askdb/client`.
+
+### Patch Changes
+
+- 109c581: Security fix ([GHSA-rhwf-7742-8hwj](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rhwf-7742-8hwj)). The tenant check read a number written right against a keyword (`1.0OR`, `1OR`) as one word, and likewise a `$N` parameter (`$1OR`). MySQL and MariaDB end such a number after its decimal point or exponent, PostgreSQL 14 and earlier at its last digit, and PostgreSQL 14 and CockroachDB end a `$N` parameter at its last digit. So the check missed an `OR` that the engine read, and a tenant-scoped query could pass with its tenant predicate beside it. The check now ends a number where each engine does: after its decimal point or exponent on MySQL and MariaDB, where a name that starts with digits (`3d_models`) stays one name, and at its last digit on PostgreSQL and CockroachDB. Wherever the SQL may be read as Postgres (`postgres`, `cockroachdb`, a dialect id that is no built-in engine, or none), it refuses a `$N` parameter written against a word, as `NOT_SELECT_OR_WITH`. Enforce tenant isolation in the database (for example row-level security) regardless.
+- a7756fd: Security fix ([GHSA-rpcp-322q-q738](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rpcp-322q-q738)). The tenant check read some names, comments and joins differently from the engine, so a tenant-scoped query could pass while the engine read it without its tenant filter. The check now reads them the way each engine does:
+  
+  - **`]]` and nested comments.** On SQL Server, `]]` inside a bracketed name is an escaped `]`, so `[o]] WHERE … AND [x]` is one name. On SQL Server, PostgreSQL and CockroachDB, block comments nest, so the check reads them both nested and not, and a predicate counts only when both readings see it. A predicate inside such a name or comment no longer counts.
+  - **Names outside printable ASCII.** SQL Server resolves a name through the database collation, which ignores some characters (U+200D, U+FEFF, any emoji) and reads others as ASCII letters (fullwidth letters, small capitals), so `[ｏｒｄｅｒｓ]` reads `orders`. Under `sqlserver`, a dialect id that is no built-in engine, or none, the tenant check refuses a name, quoted or not, that holds a character outside printable ASCII as `UNICODE_ESCAPED_IDENTIFIER`, and the sensitive check reports it as unresolved scope, unless the schema spells it exactly. This covers aliases and CTE names too.
+  - **Column lists after an alias.** PostgreSQL and CockroachDB read `orders t (agency_id, x)` as new names for the table's first columns, so `t.agency_id` filtered another column. A column list on a parenthesized join or derived table renames its output the same way, so in `(orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id)` an unqualified `agency_id` was the join's third column. Wherever the SQL may be read as Postgres, such a read is refused as `MISSING_TENANT_PREDICATE`.
+  - **Outer joins with a hint.** A join with `LEFT`, `RIGHT`, `FULL` or `OUTER` among its words is outer, whatever hint stands beside it, so CockroachDB's `LEFT STRAIGHT JOIN`, `LEFT LOOKUP JOIN` and `LEFT INVERTED JOIN` no longer count their `ON` as a filter. Neither does an `ON` that closes an earlier join (`a LEFT JOIN b JOIN c ON … ON …`).
+  - **Quoted tenant columns.** PostgreSQL and CockroachDB compare a quoted name exactly, so `"AGENCY_ID"` can be another source's column. Wherever the SQL may be read as Postgres, a quoted tenant column counts only when spelled as the schema spells it.
+  - **SQLite's single-quoted table names.** SQLite reads a `'…'` in a table's place as the table's name, so `SELECT * FROM 'orders'` read `orders` with no tenant predicate, and `SELECT * FROM 'users'` reached its sensitive columns. Under `sqlite`, a dialect id that is no built-in engine, or none, such a string right after `FROM`, `JOIN` or `IN`, after a `,` in a `FROM` list, or beside a `.` is now read as the table's name by the tenant and sensitive checks. SQLite also reads a `'…'` right after a table or CTE reference as its alias, so in `FROM sub_agencies 'o', orders` a predicate on `o.agency_id` filters `sub_agencies`, not `orders`; the tenant check now reads it as that alias.
+  - **Quoted names spelled like a placeholder.** A quoted name such as `":tenant_agency_ids"`, `` `:tenant_agency_ids` `` or `[:tenant_agency_ids]` is a column to the engine and nothing binds it, but the check counted it as the placeholder. It no longer does. A U+0001 inside a quoted name no longer changes which later words the check reads as keywords.
+  
+  Enforce tenant isolation in the database (for example row-level security) regardless.
+- 6320c85: The README says that an unknown `studio.execute.provider` fails to load, and that the introspection-provider fallback applies only when the key is unset (#751).
+- 30d2348: `askdb-studio --help` (and `askdb studio --help`) and the package description say "schema directory" or "schema artifact" instead of "Schema v2" (#273) and says Studio is experimental, with a link to ADR 0030 (#662). The pgvector RAG error names the config key to set, `rag.storeConfig.pgvector.databaseUrl`, instead of an internal `ASKDB_*` name (#629).
+- 2da504c: Studio's setup wizard writes a config that reads a pgvector store's connection URL from `PGVECTOR_URL` by default, not `ASKDB_PGVECTOR_URL`, matching `askdb init`. The variable field still takes another name. A config that already reads `env("ASKDB_PGVECTOR_URL")` keeps working.
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [0077500]
+- Updated dependencies [f59a7e1]
+- Updated dependencies [30d2348]
+- Updated dependencies [dc750be]
+- Updated dependencies [6320c85]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4188c04]
+- Updated dependencies [97312e1]
+- Updated dependencies [39a4a5e]
+- Updated dependencies [8069854]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [109c581]
+- Updated dependencies [a7756fd]
+  - @askdb/ai@0.1.0-beta.12
+  - @askdb/client@1.0.0-beta.13
+  - @askdb/config@1.0.0-beta.20
+  - @askdb/core@1.0.0-beta.52
+  - @askdb/introspect@0.3.0-beta.26
+  - @askdb/enrich@0.2.0-beta.23
+  - @askdb/rag@0.2.0-beta.32
+  - @askdb/postgres@0.2.0-beta.28
+  - @askdb/mysql@0.1.0-beta.27
+  - @askdb/sqlite@0.1.0-beta.27
+  - @askdb/sqlserver@0.1.0-beta.28
+
 ## 0.2.0-beta.44
 
 ### Patch Changes

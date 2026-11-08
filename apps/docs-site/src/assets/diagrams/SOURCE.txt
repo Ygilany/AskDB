@@ -1,16 +1,16 @@
-New diagrams are D2 sources in d2/, rendered to inline SVG at build time by
-astro-d2 (see STYLE.md, "Diagrams"). Current D2 sources and their pages:
+New diagrams are Mermaid, written in a ```mermaid fence in the page itself and
+rendered to inline SVG at build time by pele (see STYLE.md, "Diagrams", and
+ADR 0041). Pages with a Mermaid diagram:
 
-  d2/quickstart-flow.d2           → src/content/docs/quickstart.mdx
-  d2/package-dependencies.d2      → src/content/docs/reference/packages.mdx
-  d2/rag-index-query.d2           → src/content/docs/guides/rag-for-large-schemas.mdx
-
-The SVG diagrams in this folder are older, hand-drawn build artifacts. They are
-imported via the Vite `?url` suffix and rendered as <img> elements so paths
-respect Astro `base`. Current page importers:
-
-  askdb-runtime-boundary.svg      → src/content/docs/concepts/how-askdb-works.mdx
-  askdb-defense-in-depth.svg      → src/content/docs/concepts/safety-boundaries.mdx
+  src/content/docs/quickstart.mdx
+  src/content/docs/concepts/how-askdb-works.mdx
+  src/content/docs/concepts/safety-boundaries.mdx
+  src/content/docs/guides/deploy-as-http-service.mdx
+  src/content/docs/reference/packages.mdx
+  src/content/docs/reference/ai-api.mdx
+  src/content/docs/reference/config-api.mdx
+  src/content/docs/reference/sql-checks.mdx
+  src/content/docs/guides/rag-for-large-schemas.mdx
 
 The splash home hero diagram uses two editable vector files (theme toggle in
 `custom.css`): `askdb-hero-visual.svg` (light) and `askdb-hero-visual-dark.svg`

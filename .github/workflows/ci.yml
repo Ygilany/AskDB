@@ -344,7 +344,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Docs-only = every changed file is under apps/docs-site/, docs/ or plans/,
+      # Docs-only = every changed file is under apps/docs-site/ or docs/,
       # a top-level *.md, or a README.md / CHANGELOG.md. Other Markdown is not
       # docs-only: schema artifacts (fixtures/schemas/**, lab overlays) are .md.
       - name: Detect docs-only pull requests
@@ -359,7 +359,7 @@ jobs:
           fi
           changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           if [ -n "$changed" ] && ! printf '%s\n' "$changed" \
-            | grep -Eqv '^(apps/docs-site/|docs/|plans/)|^[^/]+\.md$|(^|/)(README|CHANGELOG)\.md$'; then
+            | grep -Eqv '^(apps/docs-site/|docs/)|^[^/]+\.md$|(^|/)(README|CHANGELOG)\.md$'; then
             echo "lab=false" >> "$GITHUB_OUTPUT"
             echo "Docs-only pull request; skipping the consumer lab."
           else

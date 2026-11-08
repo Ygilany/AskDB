@@ -17,9 +17,26 @@ description: "The read-only, tenant and sensitive checks AskDB runs on generated
 
 `ask()` runs each check on the model's bound SQL and on its `sql-unbound` block, while the `:tenant_<root>_ids` placeholders are still in place, before it renders tenant IDs or binds values. `bindPreparedQuery()` and `askdb.bind()` run all three again on the stored template, under the schema, scope and dialect rules you pass then. `generateSelectSql()` runs the read-only and tenant checks. [Guardrail verdict](/reference/core-api/ask/#guardrail-verdict) says how the findings become an outcome, and which error a refusal throws.
 
-<figure style="--d2-width: 593px">
+<figure>
 
-```d2 src="../../../assets/diagrams/d2/sql-checks-flow.d2"
+```mermaid
+flowchart TB
+  %% The SQL checks: which run on the model's SQL, in order, and how their findings become one
+  %% outcome. Source of truth: packages/core/src/ask.ts (the enforceGuardrails call) and
+  %% sql/guardrails.ts (the decision: read-only always denies; tenant by enforcement; sensitive by
+  %% sensitiveGuardrailMode).
+  sql["the model's SQL<br/>and its sql-unbound block"]
+  readonly["read-only check<br/>built-in id or<br/>DialectSpec only"]
+  tenant["tenant check<br/>with a tenant policy"]
+  sensitive["sensitive check<br/>with sensitive marks"]
+  verdict["verdict<br/>every finding"]
+  allow["allow"]
+  warn["warn:<br/>returned, reported"]
+  deny["deny:<br/>throws"]
+  sql --> readonly --> tenant --> sensitive --> verdict
+  verdict --> allow
+  verdict --> warn
+  verdict --> deny
 ```
 
 <figcaption>The checks run in this order on the model's SQL. Every check runs, then one decision maps their findings to an outcome.</figcaption>
@@ -38,6 +55,8 @@ The checks don't parse SQL. They split it into tokens and skip strings, quoted n
 | Where a `--` comment ends | At a line feed or a carriage return on Postgres, at a line feed only on CockroachDB. Both ids are read both ways. | At a line feed | At a line feed | At a line feed or a carriage return |
 | `$` | Inside a name, such as `a$$b`, part of the name. Elsewhere, `$$` or `$tag$` starts a dollar-quoted string (`$tag$…$tag$`), read only on these engines. Since 1.0.0-beta.51, a tag with non-ASCII letters (`$é$ … $é$`) is read as a string, as the engine does ([GHSA-rmjw-pffc-5hjr](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rmjw-pffc-5hjr)). | Inside a name, part of the name | Inside a name, part of the name | Starts a money literal such as `$1.5` |
 
+On SQL Server, a number also ends after `0x` or `1E` with no digits after it, and a name at whitespace such as a non-breaking space (U+00A0), U+200B or U+0085, so a keyword written right after one is read as a keyword, as SQL Server reads it ([#623](https://github.com/Ygilany/AskDB/issues/623)).
+
 ### Forms the checks refuse to read
 
 The checks refuse four forms rather than guess where they end or what they name:
@@ -55,7 +74,7 @@ The read-only check refuses each with its own rule, the tenant check reports it 
 
 The readings above assume each engine's default string settings. If your server reads backslashes differently, such as MySQL with `NO_BACKSLASH_ESCAPES` or Postgres with `standard_conforming_strings = off`, set `backslashEscapes` on a `DialectSpec` to match, or the checks can read a string differently from the server. [Match your server's string settings](/guides/match-server-string-settings/) shows how.
 
-### Readings changed in 1.0.0-beta.50 and 1.0.0-beta.51
+### Readings changed since 1.0.0-beta.50
 
 [GHSA-8pwj-6hfv-5pm4](https://github.com/Ygilany/AskDB/security/advisories/GHSA-8pwj-6hfv-5pm4) found four places where the tenant check read SQL differently from the engine. In the advisory's words, since 1.0.0-beta.50:
 
@@ -65,7 +84,15 @@ Since 1.0.0-beta.51, a dollar-quote tag with non-ASCII letters (`$é$ … $é$`)
 
 > The tenant check's scanner now reads a dollar tag with the same character set as the shared lexer and the engine, so a `$é$ … $é$` string ends where the engine ends it.
 
-The upgrade guide says what each fix asks of your app: [GHSA-8pwj-6hfv-5pm4 in 1.0.0-beta.50](/guides/upgrading/#security-upgrade-for-ghsa-8pwj-6hfv-5pm4) and [GHSA-rmjw-pffc-5hjr in 1.0.0-beta.51](/guides/upgrading/#security-upgrade-for-ghsa-rmjw-pffc-5hjr).
+Since 1.0.0-beta.52 the tenant check has no scanner of its own: it reads SQL through the shared lexer ([#815](https://github.com/Ygilany/AskDB/issues/815)).
+
+Three advisories fixed in 1.0.0-beta.52 cover more places where the tenant check read SQL differently from the engine: a number or `$N` parameter written right against a keyword ([GHSA-rhwf-7742-8hwj](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rhwf-7742-8hwj)), a name, placeholder, column or join ([GHSA-rpcp-322q-q738](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rpcp-322q-q738)), and where a SQL Server name or number ends ([GHSA-cjwq-phcm-mwg7](https://github.com/Ygilany/AskDB/security/advisories/GHSA-cjwq-phcm-mwg7)).
+
+Two advisories fixed in 1.0.0-beta.53 cover more of the tenant check: it could read some table names, column names, `HAVING` clauses and conditions differently from the engine ([GHSA-9w7p-c3w8-4839](https://github.com/Ygilany/AskDB/security/advisories/GHSA-9w7p-c3w8-4839)), and it tied a predicate to reads it doesn't filter ([GHSA-mmrm-rfxf-ccc8](https://github.com/Ygilany/AskDB/security/advisories/GHSA-mmrm-rfxf-ccc8)).
+
+One advisory fixed in 1.0.0-beta.54 covers how the tenant check compares names: it could read a name's letters differently from the engine ([GHSA-rx3m-m5jr-pwch](https://github.com/Ygilany/AskDB/security/advisories/GHSA-rx3m-m5jr-pwch)). [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) gives its rules as they are now.
+
+The upgrade guide says what each fix asks of your app: [GHSA-8pwj-6hfv-5pm4 in 1.0.0-beta.50](/guides/upgrading/#security-upgrade-for-ghsa-8pwj-6hfv-5pm4), [GHSA-rmjw-pffc-5hjr in 1.0.0-beta.51](/guides/upgrading/#security-upgrade-for-ghsa-rmjw-pffc-5hjr), [the three in 1.0.0-beta.52](/guides/upgrading/#security-upgrade-for-ghsa-rhwf-7742-8hwj-ghsa-rpcp-322q-q738-and-ghsa-cjwq-phcm-mwg7), [the two in 1.0.0-beta.53](/guides/upgrading/#security-upgrade-for-ghsa-9w7p-c3w8-4839-and-ghsa-mmrm-rfxf-ccc8), and [GHSA-rx3m-m5jr-pwch in 1.0.0-beta.54](/guides/upgrading/#security-upgrade-for-ghsa-rx3m-m5jr-pwch).
 
 ## The read-only check
 
@@ -77,7 +104,7 @@ The upgrade guide says what each fix asks of your app: [GHSA-8pwj-6hfv-5pm4 in 1
 | `SQL_NOT_SELECT_OR_WITH` | A first keyword, after any opening parentheses, other than `SELECT` or `WITH`. |
 | `SQL_MULTI_STATEMENT` | A `;` that separates a second statement. A single trailing `;` is kept, as the model wrote it, and anything after it is refused. If you wrap the SQL, for example in a row-cap subquery, remove the `;` first (see [Row limits](/guides/run-safely-in-prod/#row-limits)). On SQL Server, also a second statement written without a `;`: see [SQL Server statements](#sql-server-statements). |
 | `SQL_COMMENT` | A `--` or `/* … */` comment, or `#` on MySQL and MariaDB. |
-| `SQL_FORBIDDEN_KEYWORD` | An unquoted keyword from the shared list or the dialect's `extraForbiddenKeywords`: see [Keywords and functions](#keywords-and-functions). |
+| `SQL_FORBIDDEN_KEYWORD` | An unquoted keyword from the shared list or the dialect's `extraForbiddenKeywords`: see [Keywords and functions](#keywords-and-functions). Also a `$N` parameter written against a word (`$1INTO`, `$1FOR`), where the SQL may be read as Postgres: a server that ends the parameter at its last digit reads the word as a keyword the check can't see ([#665](https://github.com/Ygilany/AskDB/issues/665)). Put a space after the parameter. |
 | `SQL_FORBIDDEN_FUNCTION` | A call to a function in the dialect's `blockedFunctions`, or `NEXT VALUE FOR` on any engine. |
 | `SQL_LOCKING_READ` | A locking read: see [Locking reads](#locking-reads). |
 | `SQL_UNICODE_ESCAPED_IDENTIFIER` | A Unicode-escaped name, where the SQL may be read as Postgres. |
@@ -115,10 +142,20 @@ Code outside strings and quoted names must also be plain, because SQL Server may
 
 With a tenant policy, `ask()` refuses to run without a `tenantScope`, and checks the model's SQL before it binds the tenant IDs. The check runs under every dialect, a custom `AskDialect` included. [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists what passes: a query that starts with `SELECT` or `WITH`, no call it can't read through, and for each tenant-scoped table and each root table the scope covers, its tenant column compared with its placeholder, ANDed into the filter. Each finding has a rule from [`TenantGuardrailError` rules](/reference/core-api/errors/#tenantguardrailerror-rules).
 
-- **Statements.** A statement ends at each `;`, and on SQL Server also at a verb such as `EXEC`.
+- **Statements.** A statement ends at each `;`, and on SQL Server also at a verb such as `EXEC`. Under `sqlserver`, code that SQL Server may split differently (see [SQL Server statements](#sql-server-statements)) is refused as `NOT_SELECT_OR_WITH` too, so in plain code, where SQL Server's token ends are unambiguous, the tenant check reads the same text the read-only check does ([#623](https://github.com/Ygilany/AskDB/issues/623)).
 - **Outcome.** The policy's `enforcement` decides it: `strict` throws `TenantGuardrailError`, and `warn` returns the SQL with the findings in `result.tenantGuardrail.warnings` and `result.verdict`. At rebind, a `warn` finding refuses the template unless you pass `acceptWarnings: ["tenant"]`. AskDB never adds a missing tenant filter.
 - **`global` scope.** The tenant check doesn't run, and SQL that still has a tenant placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), since there are no IDs to bind.
-- **Known limit.** Within one statement, including its CTEs, derived tables and subqueries (only `UNION`, `INTERSECT` and `EXCEPT` branches are checked on their own), the check doesn't tie a predicate to a particular table reference, so an unfiltered reference can pass beside a filtered one: `WITH t AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders` passes ([#399](https://github.com/Ygilany/AskDB/issues/399)).
+- **Each read, in its own `SELECT`.** Every read of a scoped table, and of a root the scope covers, needs its own predicate in the `SELECT` it appears in ([#399](https://github.com/Ygilany/AskDB/issues/399)).
+  - A CTE body, a derived table, a subquery and each `UNION` branch are each their own `SELECT`.
+  - A qualified predicate (`o.agency_id`) counts only for the read it names. A read has a name only when written `table`, `table alias` or `table AS alias`, followed by what ends the source (for example a join, `ON`, `WHERE`, `GROUP BY`, a comma or a closing parenthesis); after any other clause, only an unqualified predicate filters it.
+  - When a `SELECT` reads a table more than once, each read needs a distinct plain alias (`orders a JOIN orders b`), outside parentheses, and its own predicate qualified with that alias.
+  - On MySQL, MariaDB and SQL Server, write an alias the same way each time. A qualifier in another case doesn't count.
+  - A read inside a derived table or CTE also passes when every reference to that source is filtered on the tenant column. The source must pass the column through unrenamed (`SELECT *` over one table, or the column itself).
+  - The source must also compute nothing across its rows: no aggregate, window, `GROUP BY`, `HAVING`, `QUALIFY`, `LIMIT`, `OFFSET`, `FETCH` or `TOP`.
+  - A set operation in the source's body, or a column list on it or on a reference to it, fails closed.
+  - So AskDB refuses `WITH t AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders`, and a root joined for a label from a CTE, derived table or scalar subquery needs its own predicate there.
+- **Joins on the declared columns.** A table scoped through a join path, and a root filtered through another table's column, count only when each join equates the columns the policy declares (`appointments.client_id = clients.id`), as a `col = col` conjunct or `col IN (SELECT col …)` in the same `SELECT`, and the last read is filtered with an allowed root's placeholder. A join on any other pair of columns links nothing, and in a `SELECT` with an outer join no `ON` equality does ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+- **Known limit.** It doesn't check that two joined scoped tables share a scope, and only the roots the scope names are checked as root tables. An unqualified predicate in an `ON` can count for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias).
 
 ## The sensitive check
 

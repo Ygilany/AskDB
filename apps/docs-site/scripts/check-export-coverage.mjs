@@ -1,6 +1,6 @@
 // Fails when a package exports a name that its API reference pages never mention, so a new
 // export can't ship undocumented (#713). It covers each package that has an API page:
-// @askdb/core, @askdb/client, @askdb/config and @askdb/ai.
+// @askdb/core, @askdb/client, @askdb/config, @askdb/ai and @askdb/http-api.
 //
 // It reads every entry point in the package's `exports` from source, with the TypeScript
 // compiler, so `export *` and re-exports resolve without a build. A name counts as documented
@@ -18,18 +18,22 @@ const referenceRoot = fileURLToPath(new URL("../src/content/docs/reference/", im
 /** Each package and its reference pages: a file, or a directory whose pages all count. */
 const PACKAGES = [
   { dir: "packages/core", pages: ["core-api"] },
-  { dir: "packages/client", pages: ["client-api.mdx"] },
+  { dir: "packages/client", pages: ["client-api.mdx", "client-charts-api.mdx"] },
   { dir: "packages/config", pages: ["config-api.mdx"] },
   { dir: "packages/ai", pages: ["ai-api.mdx"] },
+  { dir: "apps/http-api", pages: ["http-api.mdx"] },
 ];
 
 const ts = createRequire(join(repoRoot, "package.json"))("typescript");
 
-/** The source file behind each entry point in `packageJson.exports`: `./dist/x.js` → `src/x.ts`. */
+/**
+ * The source file behind each entry point in `packageJson.exports`: `./dist/x.js` → `src/x.ts`.
+ * A JSON target, such as `"./package.json"`, exports a file and no names, so it has none.
+ */
 export function entryPoints(packageDir, packageJson) {
-  const targets = Object.values(packageJson.exports ?? {}).map((target) =>
-    typeof target === "string" ? target : (target.import ?? target.default ?? target.types),
-  );
+  const targets = Object.values(packageJson.exports ?? {})
+    .map((target) => (typeof target === "string" ? target : (target.import ?? target.default ?? target.types)))
+    .filter((target) => !target.endsWith(".json"));
   return targets.map((target) => {
     const match = /^\.\/dist\/(.+)\.(?:d\.ts|js)$/.exec(target);
     if (!match) throw new Error(`${packageDir}: can't map the export target ${target} to a source file`);
@@ -96,7 +100,8 @@ function main() {
     console.error("Document each one on its package's API page, or list it under the page's internal exports.");
     process.exit(1);
   }
-  console.log("Every export of core, client, config and ai is named on its API page.");
+  const names = PACKAGES.map(({ dir }) => dir.split("/").pop());
+  console.log(`Every export of ${names.slice(0, -1).join(", ")} and ${names.at(-1)} is named on its API page.`);
 }
 
 // Compare real paths, so a run through a symbolic link (macOS's /tmp) still runs the check.

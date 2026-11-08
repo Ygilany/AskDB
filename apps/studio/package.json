@@ -1,7 +1,7 @@
 {
   "name": "@askdb/studio",
-  "version": "0.2.0-beta.44",
-  "description": "AskDB Studio: local browser UI for Schema v2 enrichment and sample NL-to-SQL checks.",
+  "version": "0.2.0-beta.48",
+  "description": "AskDB Studio: local browser UI for schema artifact enrichment and sample NL-to-SQL checks.",
   "keywords": [
     "askdb",
     "studio",
@@ -61,6 +61,7 @@
     "@ai-sdk/google": "^4.0.109",
     "@ai-sdk/openai": "^4.0.106",
     "@askdb/ai": "workspace:*",
+    "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/enrich": "workspace:*",
@@ -112,7 +113,7 @@
     "clsx": "^2.1.1",
     "eslint": "^10.14.0",
     "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-import-x": "^4.18.0",
     "lucide-react": "^1.66.0",
     "mssql": "^12.7.13",
     "mysql2": "^3.24.6",

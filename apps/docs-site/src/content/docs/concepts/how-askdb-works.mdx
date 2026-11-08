@@ -3,8 +3,6 @@ title: "How AskDB works"
 description: "The end-to-end flow from a natural-language question to checked SQL that your application runs."
 ---
 
-import runtimeBoundaryUrl from "../../../assets/diagrams/askdb-runtime-boundary.svg?url";
-
 <p class="doc-eyebrow">The pipeline</p>
 
 <p class="doc-lede">AskDB is a function that turns a question and a schema artifact into checked SQL. Everything else — execution, approval, audit — happens in your application, not in AskDB.</p>
@@ -17,13 +15,34 @@ When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB runs these s
 2. **Retrieve relevant chunks (optional).** When you pass a retriever, AskDB pulls only the slice of the artifact that's relevant to the question, using `@askdb/rag`. If you also pass the artifact's chunk count and it's at or below `retrievalThresholdChunks` (30 by default), AskDB uses the whole artifact instead.
 3. **Build the prompt.** The question, the schema text and the selected SQL dialect get assembled into the context the model sees, plus the tenant policy and the scope's advisory context when you use one. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists everything it holds.
 4. **Generate.** AskDB calls the model you supplied — any provider compatible with the [Vercel AI SDK](/guides/bring-your-own-model/) — and the model returns SQL. AskDB does not host inference; your key, your billing.
-5. **Check.** The returned SQL goes through AskDB's heuristic guardrails: single statement (with a SQL Server caveat), must start with `SELECT` or `WITH`, no comments, no DDL/DML keywords, no locking reads, no calls to known side-effecting functions. SQL that fails these is rejected. When your artifact declares a tenant policy or `sensitive` markers, the tenant and sensitive-column checks also run. Depending on their mode, they either reject the SQL or return it with warnings. These checks catch common model mistakes but aren't a security boundary. The exact checks, and what they miss, are in [Safety boundaries](/concepts/safety-boundaries/).
+5. **Check.** AskDB runs its SQL checks on the returned SQL. The read-only check looks for one statement that only reads, and refuses SQL that isn't. When your artifact has a tenant policy, the tenant check looks for a tenant filter on each tenant-scoped table, and refuses or reports SQL that lacks one. When it marks tables or columns `sensitive`, the sensitive check reports SQL that reads one, or refuses it in strict mode. The checks catch common model mistakes but can miss things, so they aren't a security boundary. [SQL checks](/reference/sql-checks/) gives each check's rules, and [Safety boundaries](/concepts/safety-boundaries/) lists what they miss.
 
 `ask()` returns the checked SQL, the values to bind when the SQL has parameters, and what the checks found. [`AskPipelineResult`](/reference/core-api/ask/#result--askpipelineresult) lists every field. What happens next is your call.
 
 ## The runtime boundary
 
-<img src={runtimeBoundaryUrl} alt="Flow from question and schema through ask() to checked SQL, with execution owned by your application" class="doc-diagram" />
+<figure>
+
+```mermaid
+flowchart TB
+  %% ask()'s steps, and where AskDB stops. Your code (loadSchema()) or the CLI, the HTTP API or
+  %% @askdb/client loads the artifact; ask() takes it loaded. Source of truth:
+  %% packages/core/src/ask.ts (maybeRetrieveDdl, generateSelectSqlForAsk, which builds the
+  %% prompt, then enforceGuardrails).
+  load["1. load the schema artifact"]
+  subgraph askdb["ask()"]
+    retrieve["2. retrieve relevant<br/>chunks (optional)"]
+    prompt["3. build the prompt"]
+    generate["4. generate, with<br/>your model provider"]
+    check["5. check"]
+  end
+  run["your application: review,<br/>approve and run it<br/>under a read-only role"]
+  load --> retrieve --> prompt --> generate --> check
+  check -- "checked SQL" --> run
+```
+
+<figcaption>Your code or the CLI loads the schema artifact, and <code>ask()</code> runs the other four steps, calling your model provider in step 4. It stops at checked SQL: your application reviews, approves and runs it.</figcaption>
+</figure>
 
 AskDB stops at checked SQL. Your application — the code that imports `@askdb/core` or calls the HTTP API — owns everything past that:
 
@@ -45,7 +64,7 @@ The same model never sees your database connection, your credentials, or the row
 
 <div class="home-path-grid">
   <a href="/concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>The file the model reads — what's in it, who owns it, how it evolves.</span></a>
-  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>Every check AskDB runs before returning SQL.</span></a>
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>Why the SQL checks are defense in depth, and what keeps generated SQL safe.</span></a>
   <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What crosses the boundary to the model, and what doesn't.</span></a>
   <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Put the pipeline behind your own HTTP handler in twenty lines.</span></a>
 </div>

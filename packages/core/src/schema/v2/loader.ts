@@ -9,7 +9,7 @@ import type {
   NormalizedV2Table,
   SchemaV2Warning,
 } from "./normalized.js";
-import type { V2ConceptsFrontmatter } from "./describable.js";
+import { RECOGNIZED_H2_SECTIONS, type ParsedTableMarkdown, type V2ConceptsFrontmatter } from "./describable.js";
 import { parseTenantPolicyMarkdown, normalizeTenantPolicy } from "./tenant-policy-loader.js";
 import type { NormalizedTenantPolicy } from "./tenant-policy.js";
 
@@ -486,7 +486,7 @@ function parsePhysicalLayer(data: unknown, filePath: string): V2SchemaJson {
   ) {
     throw new SchemaParseError(
       `AskDB schema format \`version: 1\` is not supported as of \`@askdb/core@0.2.0\`. ` +
-        `Migrate to Schema v2 format. See \`docs/contracts/schema-v2.md\` for the format contract.`,
+        `Migrate to the schema artifact format (\`"version": 2\`): see https://askdb.tools/reference/schema-artifact-format/.`,
     );
   }
 
@@ -587,6 +587,8 @@ function buildNormalized(
         if (mdCol.aliases?.length) normalized.aliases = mdCol.aliases;
         if (mdCol.enum?.length) normalized.enum = mdCol.enum;
       }
+      const note = colSensitive ? undefined : columnNoteOf(md, physCol.name);
+      if (note) normalized.note = note;
 
       return normalized;
     });
@@ -616,6 +618,9 @@ function buildNormalized(
 
       const cql = md.sections["Common query language"];
       if (cql?.trim()) normalized.commonQueryLanguage = cql.trim();
+
+      const businessContext = md.sections["Business context"]?.trim();
+      if (businessContext) normalized.businessContext = businessContext;
     }
 
     return normalized;
@@ -631,6 +636,30 @@ function buildNormalized(
   };
 }
 
+/**
+ * A column's item in its table file's `Column notes` section: a line ``- `column_name`: note``,
+ * where `-` or `—` may replace the colon, matched by the column's name (schema v2 contract).
+ * `@askdb/rag`'s chunker reads the same items with the same rule.
+ */
+function columnNoteOf(md: ParsedTableMarkdown | undefined, columnName: string): string | undefined {
+  const body = md?.sections["Column notes"];
+  if (!body) return undefined;
+  for (const raw of body.split("\n")) {
+    const line = raw.trim();
+    if (!line.startsWith("-")) continue;
+    const match = line.slice(1).trim().match(/^`([^`]+)`\s*[:\-—]\s*(.+)$/);
+    if (match && match[1] === columnName) return match[2]!.trim();
+  }
+  return undefined;
+}
+
+/** Whether `line` is the H2 heading of a recognized section, matched as the parser matches it. */
+function isRecognizedSectionHeading(line: string): boolean {
+  if (!line.startsWith("## ")) return false;
+  const heading = line.slice(3).trim().toLowerCase();
+  return RECOGNIZED_H2_SECTIONS.some((section) => section.toLowerCase() === heading);
+}
+
 /** Extract the first non-heading, non-empty paragraph from a markdown body. */
 function extractFirstParagraph(body: string): string | undefined {
   const lines = body.split("\n");
@@ -642,7 +671,9 @@ function extractFirstParagraph(body: string): string | undefined {
     if (line.startsWith("#")) {
       // Skip the leading H1 (table title), but stop at any subsequent heading
       // so we don't leak content from the next section into the description.
-      if (seenHeading) break;
+      // A recognized section never supplies it, even first: its content has its
+      // own rules (a sensitive column's note is dropped, #898).
+      if (seenHeading || isRecognizedSectionHeading(line)) break;
       seenHeading = true;
       continue;
     }

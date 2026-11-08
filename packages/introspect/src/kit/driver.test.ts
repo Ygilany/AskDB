@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import Module, { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +37,8 @@ const originalCwd = process.cwd();
 let tempDirs: string[] = [];
 
 async function tempProject(withDriver: boolean): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "askdb-kit-driver-"));
+  // realpath: macOS tmpdir is a symlink, and Node reports resolved paths through it.
+  const dir = await realpath(await mkdtemp(join(tmpdir(), "askdb-kit-driver-")));
   tempDirs.push(dir);
   await writeFile(join(dir, "package.json"), '{"type":"module"}\n');
   if (withDriver) {
@@ -112,9 +114,10 @@ describe("createOptionalDriverLoader", () => {
     expect(importDriver).toHaveBeenCalledTimes(2);
   });
 
-  // Node 24 and later keep a failed package lookup for the life of the process, so the retry
-  // can't always see a package installed after it. It must then say to restart, not to install.
-  it("never reports a driver installed after a failed load as missing", async () => {
+  // Node 24 and later keep a failed package lookup for the life of the process (#669): a
+  // package written after a miss doesn't resolve again in that process. The loader then loads
+  // it from disk, so a driver Studio installs works without a restart.
+  it("loads a driver installed after a failed load, in the same process", async () => {
     const dir = await tempProject(false);
     await mkdir(join(dir, "node_modules"));
     const loader = createOptionalDriverLoader<{ default: { from: string } }>({
@@ -130,18 +133,99 @@ describe("createOptionalDriverLoader", () => {
     await mkdir(join(pkgDir, "dist"), { recursive: true });
     await writeFile(join(pkgDir, "package.json"), '{"exports":{".":"./dist/index.cjs"}}\n');
     await writeFile(join(pkgDir, "dist", "index.cjs"), "module.exports = { from: 'project' };\n");
-    const retry = await loader.load({ resolveFrom: dir }).catch((e: Error) => e);
+    await expect(loader.load({ resolveFrom: dir })).resolves.toMatchObject({ default: { from: "project" } });
+  });
 
-    if (retry instanceof Error) {
-      expect(retry.name).toBe("AskDbError");
-      expect(retry.message).toBe(
-        `\`${PKG}\` is in ${join(dir, "node_modules")}, but Node can't load it in this process. ` +
-          "If it was installed while the process was running, restart the process: " +
-          "Node 24 and later can keep a failed package lookup until the process exits.",
-      );
-    } else {
-      expect(retry.default.from).toBe("project");
+  it("loads from disk through nested conditional exports, as pg declares them", async () => {
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "node_modules"));
+    // Miss first, so this process can't resolve the package by name afterwards on Node 24+.
+    expect(() => createRequire(join(dir, "package.json")).resolve(PKG)).toThrow();
+    const pkgDir = join(dir, "node_modules", PKG);
+    await mkdir(join(pkgDir, "lib"), { recursive: true });
+    await writeFile(
+      join(pkgDir, "package.json"),
+      JSON.stringify({
+        exports: {
+          ".": { import: { types: "./x.d.ts", default: "./esm/index.mjs" }, require: { types: "./x.d.ts", default: "./lib/index.js" } },
+        },
+      }),
+    );
+    await writeFile(join(pkgDir, "lib", "index.js"), "module.exports = { from: 'require-entry' };\n");
+    const loader = createOptionalDriverLoader<{ default: { from: string } }>({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+    await expect(loader.load({ resolveFrom: dir })).resolves.toMatchObject({ default: { from: "require-entry" } });
+  });
+
+  it("loads from disk through a module-sync condition, which Node's require reads", async () => {
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "node_modules"));
+    expect(() => createRequire(join(dir, "package.json")).resolve(PKG)).toThrow();
+    const pkgDir = join(dir, "node_modules", PKG);
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(join(pkgDir, "package.json"), JSON.stringify({ exports: { ".": { "module-sync": "./i.mjs", import: "./i.mjs" } } }));
+    await writeFile(join(pkgDir, "i.mjs"), "export const from = 'module-sync';\n");
+    const loader = createOptionalDriverLoader<{ from: string }>({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+    await expect(loader.load({ resolveFrom: dir })).resolves.toMatchObject({ from: "module-sync" });
+  });
+
+  it("loads a subpath specifier from disk when the package has no exports map, as mysql2/promise", async () => {
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "node_modules"));
+    expect(() => createRequire(join(dir, "package.json")).resolve(`${PKG}/promise`)).toThrow();
+    const pkgDir = join(dir, "node_modules", PKG);
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(join(pkgDir, "package.json"), '{"main":"index.js"}\n');
+    await writeFile(join(pkgDir, "promise.js"), "module.exports = { from: 'promise' };\n");
+    const loader = createOptionalDriverLoader<{ default: { from: string } }>({
+      packageName: PKG,
+      specifier: `${PKG}/promise`,
+      importDriver: async () => {
+        throw notFound(`${PKG}/promise`);
+      },
+      missingMessage: "install it",
+    });
+    await expect(loader.load({ resolveFrom: dir })).resolves.toMatchObject({ default: { from: "promise" } });
+  });
+
+  it("says to restart when the package is on disk but its entry can't be read from its package.json", async () => {
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "node_modules"));
+    expect(() => createRequire(join(dir, "package.json")).resolve(PKG)).toThrow();
+    const pkgDir = join(dir, "node_modules", PKG);
+    await mkdir(pkgDir, { recursive: true });
+    // A main that names a missing file: nothing to load from disk, on any Node version.
+    await writeFile(join(pkgDir, "package.json"), '{"main":"missing.js"}\n');
+    const loader = createOptionalDriverLoader<unknown>({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+    const err = (await loader.load({ resolveFrom: dir }).catch((e: Error) => e)) as Error;
+    expect(err.name).toBe("AskDbError");
+    // Node 22 keeps no miss: it resolves the package again and reports its missing main file.
+    if (Number(process.versions.node.split(".")[0]) < 24) {
+      expect(err.message).toMatch(/failed to load: Cannot find module '.*missing\.js'/);
+      return;
     }
+    expect(err.message).toBe(
+      `\`${PKG}\` is in ${join(dir, "node_modules")}, but Node can't load it in this process. ` +
+        "If it was installed while the process was running, restart the process: " +
+        "Node 24 and later can keep a failed package lookup until the process exits.",
+    );
   });
 
   it("keeps independent cache slots per resolveFrom", async () => {
@@ -266,9 +350,57 @@ describe("createOptionalDriverLoader", () => {
 });
 
 describe("isDriverInstalled", () => {
-  it("reports whether the package resolves from resolveFrom", async () => {
-    expect(isDriverInstalled(PKG, { resolveFrom: await tempProject(true) })).toBe(true);
+  it("reports whether the package is in node_modules under resolveFrom or a parent", async () => {
+    const project = await tempProject(true);
+    expect(isDriverInstalled(PKG, { resolveFrom: project })).toBe(true);
+    const nested = join(project, "apps", "web");
+    await mkdir(nested, { recursive: true });
+    expect(isDriverInstalled(PKG, { resolveFrom: nested })).toBe(true);
     expect(isDriverInstalled(PKG, { resolveFrom: await tempProject(false) })).toBe(false);
+  });
+
+  // #669: the probe must not ask Node's resolver, which on Node 24+ keeps the miss and then
+  // can't see the driver Studio installs next, in the probe or in the load.
+  it("sees a package installed after a negative probe, and leaves nothing for Node to keep", async () => {
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "node_modules"));
+    expect(isDriverInstalled(PKG, { resolveFrom: dir })).toBe(false);
+    const pkgDir = join(dir, "node_modules", PKG);
+    await mkdir(pkgDir, { recursive: true });
+    await writeFile(join(pkgDir, "package.json"), '{"main":"index.cjs"}\n');
+    await writeFile(join(pkgDir, "index.cjs"), "module.exports = {};\n");
+    expect(isDriverInstalled(PKG, { resolveFrom: dir })).toBe(true);
+    expect(createRequire(join(dir, "package.json")).resolve(PKG)).toBe(join(pkgDir, "index.cjs"));
+  });
+
+  it("finds a package in Node's global directories, where NODE_PATH goes", async () => {
+    const global = await tempProject(true);
+    const project = await tempProject(false);
+    // Node copies NODE_PATH into Module.globalPaths at startup.
+    const globalPaths = (Module as unknown as { globalPaths: string[] }).globalPaths;
+    globalPaths.unshift(join(global, "node_modules"));
+    try {
+      expect(isDriverInstalled(PKG, { resolveFrom: project })).toBe(true);
+    } finally {
+      globalPaths.shift();
+    }
+  });
+
+  it("asks the resolver under Yarn Plug'n'Play, which has no node_modules", async () => {
+    // Resolvable by Node, but not under node_modules: only the resolver can find it.
+    const dir = await tempProject(false);
+    await mkdir(join(dir, "vendor", PKG), { recursive: true });
+    await writeFile(join(dir, "vendor", PKG, "package.json"), '{"main":"index.cjs"}\n');
+    await writeFile(join(dir, "vendor", PKG, "index.cjs"), "module.exports = {};\n");
+    await writeFile(join(dir, "package.json"), `{"type":"module","imports":{"#x":"./vendor/${PKG}/index.cjs"}}\n`);
+    expect(isDriverInstalled("#x", { resolveFrom: dir })).toBe(false);
+    const versions = process.versions as { pnp?: string };
+    versions.pnp = "3";
+    try {
+      expect(isDriverInstalled("#x", { resolveFrom: dir })).toBe(true);
+    } finally {
+      delete versions.pnp;
+    }
   });
 });
 

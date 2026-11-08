@@ -2,7 +2,7 @@
 
 Prisma-style helpers for AskDB: `env()`, `defineConfig()`, plus discovery and loading of `askdb.config.*` / `.config/askdb.*` files used by first-party apps (`askdb` CLI, `@askdb/http-api`, `@askdb/studio`).
 
-**`@askdb/config` is the single package that reads `process.env` directly** (during dotenv load, while `askdb.config.*` evaluates, for a tiny bootstrap-time overlay allowlist, and for the `ASKDB_DEBUG` diagnostics switch). All other packages obtain configuration through **`getAskDbRuntimeConfig()`**.
+**`@askdb/config` is the single package that reads `process.env` directly** (during dotenv load, while `askdb.config.*` evaluates, and for the `ASKDB_DEBUG` diagnostics switch). All other packages obtain configuration through **`getAskDbRuntimeConfig()`**.
 
 ## Install
 
@@ -90,8 +90,7 @@ const embeddingModel = config.ai.embedding
 - `env(name)` / `requiredEnv(name)` — read `process.env` while authoring `askdb.config.*` only.
 - `isAskDbDebugEnabled()` — `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`. Binaries use it to print stack traces; it reads `process.env` directly so it works even when the config fails to load.
 - `defineConfig(config)` — returns an `AskDbEnvProjection` with `config` (structured) and `entries` (flattened canonical map).
-- `flattenAskDbConfig(config)` — nested config → flat canonical map, for a child process's env. It holds no AI keys. Resolves the config first, so it throws the same errors as `defineConfig`.
-- `bootstrapAskDbEnv(options?)` / `bootstrapAskDbRuntime` — load dotenv, load config, install the runtime snapshot.
+- `bootstrapAskDbEnv(options?)` — load dotenv, load config, install the runtime snapshot.
 - `isAskDbRuntimeInitialized()` — `true` once the runtime snapshot is installed. Code that may run before or after its host's bootstrap uses it to call `bootstrapAskDbEnv()` only when needed, as `@askdb/http-api`'s `createAskDbHttpServer()` does. The snapshot is process-wide: every copy of `@askdb/config` in the process sees the same one.
 - `loadAskDbConfigProjection(cwd)` / `loadAskDbConfigProjectionSync(cwd)` — load projection without installing the singleton (advanced / tests).
 - `discoverAskDbConfigPath(cwd)` — returns the resolved config path, if any.
@@ -104,7 +103,6 @@ Tooling for `askdb init` and AskDB Studio's setup wizard. It is experimental, li
 
 - `planAskDbScaffold(answers, versions)` — a new project's `askdb.config.ts` source, `.env.example`, the env vars the config reads, and the packages to install, from its answers (engine, connection variable or SQLite file, schema directory, `ai`, RAG store, Studio execute). Pure; it throws `AskDbScaffoldInputError`, with the answer's `field`, for an env var name that isn't uppercase POSIX (`^[A-Z_][A-Z0-9_]*$`), a control character in a path, an unknown id, or a missing answer. The caller supplies the defaults.
 - `isAskDbScaffoldEnvName(name)` — the planner's env var name rule: POSIX, uppercase (`^[A-Z_][A-Z0-9_]*$`).
-- `renderAskDbAiConfigScaffold(input)` — the `ai` block of a new `askdb.config.ts`, plus the env vars it reads.
 - `detectPackageManager(dir, env?)` — the package manager for `dir`: a lockfile in `dir` or a parent, then the nearest `package.json`'s `packageManager` or `devEngines.packageManager`, then `npm_config_user_agent`, then npm.
 - `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` — project and install-command helpers.
 - `packageManagerSpawnSpec(pm, args, platform?)` — how to spawn the package manager: allowlisted arguments, and `shell: true` on Windows, where package managers are `.cmd` shims.

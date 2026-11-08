@@ -4,8 +4,9 @@ import type { AskDbConfig } from "./types.js";
 export type AskDbRuntimeStore = {
   readonly structured: AskDbConfig;
   /**
-   * Canonical string map from {@link flattenAskDbConfig}. Written for copies of `@askdb/config`
-   * that still read it; this copy resolves every value from `structured` and never reads it back.
+   * Canonical string map, the projection's `entries` from {@link defineConfig}. Written for
+   * copies of `@askdb/config` that still read it; this copy resolves every value from `structured`
+   * and never reads it back.
    */
   readonly flat: Readonly<Record<string, string>>;
 };
@@ -36,7 +37,7 @@ export function getAskDbRuntimeStore(): AskDbRuntimeStore {
   const stored = runtimeHolder[RUNTIME_STORE_KEY];
   if (!stored) {
     throw new Error(
-      "AskDB runtime is not initialized. Call bootstrapAskDbEnv() (or bootstrapAskDbRuntime()) from @askdb/config after startup, " +
+      "AskDB runtime is not initialized. Call bootstrapAskDbEnv() from @askdb/config after startup, " +
         "typically with the project cwd, and ensure askdb.config.* exists.",
     );
   }

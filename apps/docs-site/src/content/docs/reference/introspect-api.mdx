@@ -51,7 +51,7 @@ Runs `options.connector.describe(input)`. The connector's package owns the shape
 | `renderToSchemaV2(schema, options)` | Writes `<outDir>/schema.json` from a `SqlSchema` and returns a `RenderResult`. It creates `outDir` if it's missing, and writes through `@askdb/core`'s `saveSchemaFile()`, which refuses a `schema.json` that is a symbolic link and renames a temporary file into place. It writes only `schema.json`. |
 | `renderSchemaV2Body(schema, options)` | The same output without writing: returns `{ json, body, warnings }` (a `RenderBodyResult`), where `body` is the exact file contents. `askdb introspect --out`, `--print` and `--diff` all use it. |
 | `isSchemaV2Json(value)` | `true` when a parsed `schema.json` passes the check the merge applies first: `version` 2, a schema id, and each table's `id`, `name` and `schema` and each column's `id`, `name`, `type` and `nullable`, with optional boolean `sensitive` flags. It never throws. |
-| `toV2SchemaJson(schema, schemaId, provider?)` | Builds the Schema v2 document without writing it. Views become tables. Every `sensitive` flag is `false`. |
+| `toV2SchemaJson(schema, schemaId, provider?)` | Builds the `schema.json` document without writing it. Views become tables. Every `sensitive` flag is `false`. |
 | `compactPostgresType(dataType, udtName)` | Shortens Postgres type names the way the artifact stores them (`timestamp with time zone` → `timestamptz`, `character varying(80)` → `varchar(80)`). Other strings pass through. `udtName` is unused. |
 
 The output is deterministic: tables sorted by schema and name, columns in their ordinal order, and `JSON.stringify(json, null, 2)` plus a newline, so the same catalog gives the same bytes.
@@ -119,7 +119,6 @@ const registry = createConnectorRegistry([
 | Export | Description |
 | --- | --- |
 | `BUILT_IN_CONNECTOR_PROVIDERS` | The first-party ids: `["postgres", "prisma", "mysql", "sqlite", "sqlserver"]`. |
-| `connectorProviderMissingMessage(provider)` | The error text for an unregistered provider. For a built-in id it says to install `@askdb/<id>`. |
 | `connectorPackageMissingMessage({ provider, packageName, allowBuilds? })` | The CLI's and Studio's error text for a registered engine whose package isn't installed: an install command and the one-off `npx -p askdb -p <package>` form. With `allowBuilds` (dependencies whose install scripts pnpm must approve), it gives `npm install <package>`, or on pnpm 10.4 or later `pnpm add --allow-build=<dependency> <package>`. It names the `askdb` binary, so a third-party host writes its own message. |
 
 ### Connector contract
@@ -217,9 +216,9 @@ import { compileTableFilters, createOptionalDriverLoader, makeTableId } from "@a
 | --- | --- |
 | `createOptionalDriverLoader(spec)` | A lazy, cached loader for an optional driver peer. Call it once at module scope. It returns an `OptionalDriverLoader`. |
 | `OptionalDriverSpec<T>` | `{ packageName, specifier?, importDriver, missingMessage }`. `importDriver` must be a literal `() => import("pg").catch(rethrowDriverImportError)` written in your engine package, so bundlers see the optional dependency there. `specifier` defaults to `packageName`; set it for a subpath entry point such as `"mysql2/promise"`. |
-| `OptionalDriverLoader<T>` | `{ load(options?) }`. `load` tries the engine package's own import first, then resolves the driver from `resolveFrom` (default `process.cwd()`). Results are cached per `resolveFrom`, and a failure clears the cache so a later call retries. It rejects with an `AskDbError` whose message is `missingMessage` when the driver resolves from nowhere, with one naming the failure when the driver is installed but fails to load, and with one saying to restart the process when the driver is on disk but Node can't resolve it. |
+| `OptionalDriverLoader<T>` | `{ load(options?) }`. `load` tries the engine package's own import first, then resolves the driver from `resolveFrom` (default `process.cwd()`). Results are cached per `resolveFrom`, and a failure clears the cache so a later call retries. It rejects with an `AskDbError` whose message is `missingMessage` when the driver resolves from nowhere, with one naming the failure when the driver is installed but fails to load. When the driver is on disk but Node can't resolve it (Node 24 and later keep a failed lookup for the life of the process), `load` reads the entry from the driver's `package.json` and imports that file by path; it says to restart the process only when it can't find that entry. |
 | `DriverLoadOptions` | `{ resolveFrom? }`: the directory to resolve the driver from when the engine package can't see it. Default `process.cwd()`. |
-| `isDriverInstalled(packageName, options?)` | `true` when `packageName` resolves from `resolveFrom`. A synchronous check that doesn't load the driver. |
+| `isDriverInstalled(packageName, options?)` | `true` when `packageName` is in a `node_modules` directory under `resolveFrom` or one of its parents, or on `NODE_PATH`. A synchronous check on disk that doesn't load the driver or ask Node's resolver, so a negative check doesn't hide a driver installed after it. Under Yarn Plug'n'Play it asks the resolver. |
 | `missingDriverMessage({ engine, packageName })` | The first-party engines' install hint for a missing driver. It names the `askdb` binary, so a third-party engine writes its own `missingMessage`. |
 | `rethrowDriverImportError(error)` | Rethrows `error` unchanged. Chain it on your driver's `import()`: that is how bundlers such as esbuild tell an optional dependency from a required one. |
 

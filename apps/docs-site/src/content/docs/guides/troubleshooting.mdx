@@ -82,7 +82,7 @@ Rename each file the error names, for example `git mv Tenant-Policy.md tenant-po
 
 `schema.json` doesn't have the shape AskDB reads. `askdb ask` prints `Failed to parse schema.`, followed by the loader's message after `Details:`. That message, `Invalid schema.json at <path>:`, lists each field that's missing or has the wrong type, with its `path`, such as `["schemaId"]`.
 
-`askdb introspect` writes `schema.json`, so the usual cause is a hand edit or a merge. Fix the field the message names. Or write the file again: `askdb introspect` won't overwrite a `schema.json` it can't read (`@askdb/introspect: invalid Schema v2 file at …`), so delete it first. Your `tables/*.md`, `concepts.md` and `tenant-policy.md` stay as they are.
+`askdb introspect` writes `schema.json`, so the usual cause is a hand edit or a merge. Fix the field the message names. Or write the file again: `askdb introspect` won't overwrite a `schema.json` it can't read (`@askdb/introspect: invalid schema artifact file at …`), so delete it first. Your `tables/*.md`, `concepts.md` and `tenant-policy.md` stay as they are.
 
 ```bash
 rm my-app.schema/schema.json
@@ -120,7 +120,7 @@ The model wrote more than one statement. Ask for a single result, or split the q
 
 ### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The SQL has a comment, a forbidden keyword or a call to a blocked function. Keywords count only as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword, such as `update`, trips the check. [Keywords and functions](/reference/sql-checks/#keywords-and-functions) lists them for each engine. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+The SQL has a comment, a forbidden keyword or a call to a blocked function. Keywords count only as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword, such as `update`, trips the check. Where the SQL may be read as Postgres, so does a `$N` parameter written against a word, such as `$1INTO`: put a space after the parameter. [Keywords and functions](/reference/sql-checks/#keywords-and-functions) lists them for each engine. If one fires on a legitimate query, file an issue with the question and schema excerpt.
 
 ### `SqlValidationError: SQL_LOCKING_READ`
 
@@ -293,7 +293,7 @@ Your tenant policy uses `enforcement: strict`, and the SQL failed the tenant che
 
 ### `QueryParameterError: DIALECT_SPEC_REQUIRED`
 
-`bindPreparedQuery()` or `askdb.bind()` got a template whose dialect rules it can't recover, and no `dialect` in its guardrails. That's a template `ask()` made under your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), or one stored before 1.0.0-beta.46, which has no `dialectRules`. Pass the spec you gave `ask()` as `dialect`. If `ask()` ran with the built-in rules, the built-in id is enough, such as `dialect: "postgres"`. An app that loads two copies of `@askdb/core`, such as ESM beside CJS, gets `"host"` templates from the built-in constants of the other copy, and the same fix applies. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
+`bindPreparedQuery()` or `askdb.bind()` got a template whose dialect rules it can't recover, and no `dialect` in its `guardrails` argument. That's a template `ask()` made under your own `DialectSpec` (`preparedQuery.dialectRules: "host"`), or one stored before 1.0.0-beta.46, which has no `dialectRules`. Pass the spec you gave `ask()` as `dialect`. If `ask()` ran with the built-in rules, the built-in id is enough, such as `dialect: "postgres"`. An app that loads two copies of `@askdb/core`, such as ESM beside CJS, gets `"host"` templates from the built-in constants of the other copy, and the same fix applies. See [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails).
 
 ### `QueryParameterError: MISSING_GUARDRAIL_CONTEXT`
 
@@ -309,7 +309,7 @@ When `ask()` skips retrieval, it puts the full schema in the prompt instead. Pas
 | --- | --- | --- |
 | `below_threshold` | You passed a `totalSchemaChunkCount` at or below `retrievalThresholdChunks` (default 30). With the default, a schema of 30 chunks or fewer goes into the prompt whole. | None needed. To retrieve anyway, lower `retrievalThresholdChunks`. |
 | `no_results` | The retriever found no chunks for the schema's `schemaId`: the index is empty, or you built it from a schema with another `schemaId`. | Build the index from the schema you pass to `ask()`. |
-| `schema_not_v2` | The schema object isn't Schema v2: it has no `schemaId`. | Load the schema with `loadSchema()`. |
+| `schema_not_v2` | The schema object isn't a schema artifact: it has no `schemaId`. | Load the schema with `loadSchema()`. |
 
 ```ts
 import { createAskDbLogger } from "@askdb/core";

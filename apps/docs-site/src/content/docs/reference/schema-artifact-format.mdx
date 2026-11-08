@@ -7,7 +7,7 @@ description: "Every file in a schema artifact: the schema.json fields, the table
 
 <p class="doc-lede">A schema artifact is a folder of files that <code>loadSchema()</code> reads, or one bundle file that holds them. This page lists each file, every field it accepts, and what AskDB does with it. For why the artifact is split this way, see <a href="/concepts/the-schema-artifact/">The schema artifact</a>.</p>
 
-The format is Schema v2, the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
+It's the only format AskDB reads. `@askdb/core` owns it: `loadSchema()`, `loadSchemaFromJson()` and `readSchemaDirectory()` are in the [`@askdb/core` API reference](/reference/core-api/schema/#loadschemapath).
 
 ## Layout
 
@@ -119,7 +119,7 @@ The physical layer: the tables and columns AskDB read from the database. Here it
 | `schema` | string | yes | The table's namespace. See [Stable IDs](#stable-ids) for what each engine puts here. |
 | `sensitive` | boolean | no | `true` marks the table and every column in it sensitive. Absent means not sensitive. |
 | `columns` | array | yes | The columns, at least one. |
-| `relationships` | array | no | Foreign keys, as `{ "from": <column ID>, "to": <column ID> }`. The loader doesn't check that either column exists. |
+| `relationships` | array | no | Foreign keys, as `{ "from": <column ID>, "to": <column ID> }`. The loader doesn't check that either column exists. Since 1.0.0-beta.53, the prompt lists each one under the table that owns its column, as `FK (user_id) -> public.users (id)`. A foreign key with an untracked table on either side is left out, and so is one with a sensitive column or table on either side when sensitive columns are omitted. |
 
 ### Column fields
 
@@ -147,7 +147,7 @@ AskDB drops a key it doesn't know without an error or a warning. A misspelled `"
 
 | Problem | Error (`SchemaParseError`) |
 | --- | --- |
-| `"version": 1` | ``AskDB schema format `version: 1` is not supported as of `@askdb/core@0.2.0`. Migrate to Schema v2 format. …`` |
+| `"version": 1` | ``AskDB schema format `version: 1` is not supported as of `@askdb/core@0.2.0`. Migrate to the schema artifact format (`"version": 2`): …`` |
 | Any other invalid field | `Invalid schema.json at <path>: <details>` |
 | Text that isn't JSON | `Failed to parse schema.json in <dir>` |
 
@@ -181,7 +181,7 @@ The `<schema>` part is the table's `schema` field:
 | SQLite | `public` |
 | A Prisma schema (`@askdb/prisma`) | The model's `@@schema`, or else `public`, for every datasource provider |
 
-Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition. Entries that name the old ID then report [warnings](#loader-warnings), and its `sensitive` marks don't carry over. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps after a rename.
+Renaming a table or column in the database changes its ID. AskDB treats a rename as a removal plus an addition. Entries that name the old ID then report [warnings](#loader-warnings), and its `sensitive` marks don't carry over. [Enrich your schema](/guides/author-your-schema/#re-introspecting) has the steps after a rename.
 
 ## Table files (`tables/*.md`)
 
@@ -245,21 +245,21 @@ List each column once. If a column appears again in the same file, only its firs
 
 ### Body
 
-- **Description.** The first paragraph after the first heading is the table's description. The prompt shows it as a comment under the table's name. The lines of the paragraph are joined with spaces.
+- **Description.** The first paragraph after the first heading is the table's description. One of the four sections below never supplies it, even when its heading comes first. The prompt shows it as a comment under the table's name. The lines of the paragraph are joined with spaces.
 - **Sections.** AskDB recognizes four `##` sections by their exact heading, ignoring case. Other sections stay in the file, and AskDB doesn't use them.
 
 | Section | Used by | Format |
 | --- | --- | --- |
 | `## Common query language` | The prompt and `@askdb/rag` | Free text. The prompt shows each line as a comment under the table. |
-| `## Example questions` | `@askdb/rag` only | Each `- ` or `* ` item becomes one indexed question. |
-| `## Business context` | `@askdb/rag` only | Free text. |
-| `## Column notes` | `@askdb/rag` only | ``- `column_name`: note``, with the column's name, not its ID. `-` or `—` can replace the colon. |
+| `## Example questions` | `@askdb/rag`, and the prompt when retrieval picks one | Each `- ` or `* ` item becomes one indexed question. |
+| `## Business context` | The prompt and `@askdb/rag` | Free text. The prompt shows it under the table, after common query language; with retrieval, only when retrieval picks it. |
+| `## Column notes` | The prompt and `@askdb/rag` | ``- `column_name`: note``, with the column's name, not its ID. `-` or `—` can replace the colon. The prompt adds the note to the column's line. |
 
-For a sensitive table, AskDB drops its description, aliases, `primaryEntity` and common query language when it loads the file. For a sensitive column, it drops the column's description, aliases and `enum`.
+For a sensitive table, AskDB drops its description, aliases, `primaryEntity`, common query language and business context when it loads the file. For a sensitive column, it drops the column's description, aliases, `enum` and note.
 
 ## `concepts.md`
 
-Business concepts that span tables, such as a *customer* who can be in `users` or in `leads`. Concepts reach the model only through `@askdb/rag` retrieval: the full-schema prompt doesn't include them.
+Business concepts that span tables, such as a *customer* who can be in `users` or in `leads`. Since 1.0.0-beta.53, the full-schema prompt lists every concept after the tables: its label, synonyms, links (named the way the prompt names tables and columns) and description. A link to an untracked table is left out, and so is a concept whose links are all untracked. With retrieval, the prompt lists only the concepts retrieval picks.
 
 ```markdown
 ---
@@ -306,7 +306,7 @@ Each table and column ends up with one `sensitive` value:
 
 ## Loader warnings
 
-`loadSchema()` returns its warnings in the loaded schema's `warnings` array (`SchemaV2Warning[]`). They never stop loading. The CLI doesn't print them. Studio lists them under **Settings → Schema Warnings**. Each warning is an object with a `kind` and the fields below.
+`loadSchema()` returns its warnings in the loaded schema's `warnings` array (`SchemaV2Warning[]`). They never stop loading. `askdb ask` and `askdb bundle` print each one as a `Warning:` line on stderr, the tenant policy's too, and keep their exit code. Studio lists them under **Settings → Schema Warnings**. Each warning is an object with a `kind` and the fields below.
 
 | `kind` | Fields | Cause | Fix |
 | --- | --- | --- | --- |
@@ -341,12 +341,12 @@ A bundle is one JSON file that holds a whole artifact. Loading it gives the same
 
 ## Versioning
 
-Schema v2 is the only format AskDB reads. Before 1.0, v2 can gain fields without a new version number. After 1.0, a breaking change to the format gets a new `version`. The [Schema v2 contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) records the policy.
+This is the only format AskDB reads. Before 1.0, it can gain fields without a new `version` number. After 1.0, a breaking change to the format gets a new `version`. The [schema artifact contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) records the policy.
 
 ## Read next
 
 <div class="home-path-grid">
   <a href="/concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>Why the artifact is files your team owns, and how its two layers fit together.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
   <a href="/reference/core-api/schema/#loadschemapath"><strong>@askdb/core API</strong><span><code>loadSchema()</code>, <code>loadSchemaFromJson()</code> and the loaded schema's fields.</span></a>
 </div>

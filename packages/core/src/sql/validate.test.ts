@@ -594,6 +594,52 @@ describe("validateSelectSql — CockroachDB b'…' byte strings (#730)", () => {
   });
 });
 
+describe("validateSelectSql — a `$N` parameter written against a word (#665)", () => {
+  // The lexer reads `$1INTO` as one parameter. Postgres 15+ rejects it, but a server that ends the
+  // parameter at its last digit reads `$1` then the keyword, which the check never saw.
+  const cockroach = BUILT_IN_DIALECTS.cockroachdb;
+  const custom = { ...POSTGRES_DIALECT, id: "legacy-engine" } as unknown as DialectSpec;
+
+  it.each([
+    ["SELECT … INTO, which creates a table", "SELECT $1INTO lab_x"],
+    ["FOR SHARE, a locking read", "SELECT order_id FROM billing.order_line WHERE order_id = $1FOR SHARE"],
+    ["any word", "SELECT $1abc AS x"],
+    ["a word after a longer number", "SELECT $12_x AS x"],
+  ])("rejects %s on Postgres, CockroachDB and a dialect id that is no built-in engine", (_label, sql) => {
+    for (const dialect of [POSTGRES_DIALECT, cockroach, custom]) {
+      expectRule(sql, "SQL_FORBIDDEN_KEYWORD", dialect);
+    }
+  });
+
+  it("names the parameter and the word", () => {
+    try {
+      validateSelectSql(POSTGRES_DIALECT, "SELECT $1INTO lab_x");
+      expect.fail("expected SqlValidationError");
+    } catch (e) {
+      expect((e as SqlValidationError).message).toContain("'$1INTO'");
+    }
+  });
+
+  it("accepts a parameter that a space, an operator or punctuation ends", () => {
+    for (const sql of [
+      "SELECT * FROM orders WHERE id = $1",
+      "SELECT * FROM orders WHERE id = $1 OR id = $12",
+      "SELECT $1::int AS x",
+      "SELECT * FROM orders WHERE id IN ($1, $2)",
+      "SELECT * FROM orders WHERE id = $1\nORDER BY id",
+    ]) {
+      expect(validateSelectSql(POSTGRES_DIALECT, sql), sql).toBe(sql);
+      expect(validateSelectSql(cockroach, sql), sql).toBe(sql);
+    }
+  });
+
+  it("leaves engines that read `$1abc` as one name or parameter alone", () => {
+    // SQLite reads `$1abc` as one named parameter; MySQL as one identifier.
+    expect(validateSelectSql(SQLITE_DIALECT, "SELECT $1abc AS x")).toBe("SELECT $1abc AS x");
+    expect(validateSelectSql(MYSQL_DIALECT, "SELECT $1abc AS x")).toBe("SELECT $1abc AS x");
+  });
+});
+
 describe("validateSelectSql — legitimate SQL still accepted", () => {
   const accept = (dialect: DialectSpec, sql: string) => {
     expect(validateSelectSql(dialect, sql)).toBe(sql);

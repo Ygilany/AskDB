@@ -216,7 +216,7 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `dialect` | `"postgres" \| "cockroachdb" \| "mysql" \| "mariadb" \| "sqlite" \| "sqlserver"` | The schema artifact's recorded provider, else `postgres` | The NL-to-SQL dialect `createAskDb` uses, and so the CLI and the HTTP API. `askdb-http` applies it to its own schema only: a request `schemaJson` uses the artifact's recorded provider. `@askdb/core`'s `ask()` reads no config: pass `dialect` to it yourself. |
+| `dialect` | `"postgres" \| "cockroachdb" \| "mysql" \| "mariadb" \| "sqlite" \| "sqlserver"` | The schema artifact's recorded provider, else `postgres` | The NL-to-SQL dialect `createAskDb` uses, and so the CLI, Studio and the HTTP API. When it's unset and the artifact records a provider with no built-in dialect, they refuse with `DialectNotSupportedError` rather than guess. `askdb-http` applies it to its own schema only: a request `schemaJson` uses the artifact's recorded provider. `@askdb/core`'s `ask()` reads no config: pass `dialect` to it yourself. |
 
 The dialect normally resolves from the schema artifact (the engine recorded at introspection time). Set `dialect` only when that inference is wrong — for example, a Prisma schema that declares `provider = "postgresql"` while your runtime target is a different engine:
 
@@ -319,7 +319,7 @@ The `studio.execute` block configures the Playground's live execution. It's **of
 
 **Provider resolution order:**
 
-1. `studio.execute.provider`.
+1. `studio.execute.provider`. Any other value fails to load, so a typo can't point Execute at another engine.
 2. The active `introspection.provider` when it is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`).
 3. `"postgres"` for backward compatibility.
 
@@ -357,7 +357,7 @@ AskDB loads `.env` first, then your `askdb.config.*`. **You choose the variable 
 | --- | --- | --- |
 | `DATABASE_URL` | `introspection.providerConfig.<engine>.databaseUrl`; with `--studio-execute`, `studio.execute.databaseUrl` too | `--database postgres`, `mysql` or `sqlserver`. `--connection-env` gives another name. |
 | `SQLITE_FILE` | `introspection.providerConfig.sqlite.file` | `--database sqlite`, unless `--sqlite-file` gives a path or another name. Studio's setup wizard asks for the file's path instead. |
-| `ASKDB_PGVECTOR_URL` | `rag.storeConfig.pgvector.databaseUrl` | `--rag-store pgvector`. `--pgvector-env` gives another name. |
+| `PGVECTOR_URL` | `rag.storeConfig.pgvector.databaseUrl` | `--rag-store pgvector`. `--pgvector-env` gives another name. |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | `ai.providerConfig.openai.apiKey`, `ai.language.model` | `--ai-provider openai`, the default. |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | `ai.providerConfig.anthropic.apiKey`, `ai.language.model` | `--ai-provider anthropic`. |
 | `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_AI_MODEL` | `ai.providerConfig.google.apiKey`, `ai.language.model` | `--ai-provider google`. |

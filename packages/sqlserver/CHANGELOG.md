@@ -1,5 +1,66 @@
 # @askdb/sqlserver
 
+## 0.1.0-beta.31
+
+### Minor Changes
+
+- 568fd48: **Breaking for SQL Server users without TLS:** a `sqlserver://` URL with `encrypt=yes`, `encrypt=1` or an unknown `encrypt` value now requires TLS, so it fails against a server that doesn't offer TLS. Write `encrypt=false` to connect without encryption.
+  
+  `encrypt` and `trustServerCertificate` read the same in `mssql://` and Prisma-style `sqlserver://` URLs (#596). `true`, `yes` and `1` are true, and `false`, `no` and `0` are false, in any case. Any other value fails closed: an unknown `encrypt` value turns encryption on, and an unknown `trustServerCertificate` value leaves the server certificate untrusted. A `sqlserver://` URL with `encrypt=yes` or `encrypt=1` now requires TLS; before, only `encrypt=true` did. A `sqlserver://` URL with `trustServerCertificate=yes` or `=1` now trusts the certificate, as `=true` does. An `mssql://` URL with an unknown `trustServerCertificate` value no longer trusts it.
+  
+  An ADO.NET string is now any string that doesn't start with a scheme (`name://`), so a password or other value holding `://` no longer skips the normalisation of spaced keys such as `Trust Server Certificate=True` (#595). The connection label uses the same test.
+  
+  The upgrade guide's next section lists the changes, and the SQL Server guide and the `@askdb/sqlserver` README name the accepted values.
+
+### Patch Changes
+
+- Updated dependencies [7935ce0]
+- Updated dependencies [cc5c00c]
+- Updated dependencies [8e6c55f]
+- Updated dependencies [42b6533]
+- Updated dependencies [18ef5a5]
+  - @askdb/core@1.0.0-beta.55
+  - @askdb/introspect@0.3.0-beta.29
+
+## 0.1.0-beta.30
+
+### Patch Changes
+
+- Updated dependencies [30a3bc6]
+- Updated dependencies [f258449]
+  - @askdb/core@1.0.0-beta.54
+  - @askdb/introspect@0.3.0-beta.28
+
+## 0.1.0-beta.29
+
+### Patch Changes
+
+- Updated dependencies [01415e2]
+- Updated dependencies [a81867a]
+- Updated dependencies [98612fb]
+- Updated dependencies [dadf211]
+- Updated dependencies [984f332]
+  - @askdb/core@1.0.0-beta.53
+  - @askdb/introspect@0.3.0-beta.27
+
+## 0.1.0-beta.28
+
+### Patch Changes
+
+- Updated dependencies [30d2348]
+- Updated dependencies [4188c04]
+- Updated dependencies [97312e1]
+- Updated dependencies [39a4a5e]
+- Updated dependencies [8069854]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [109c581]
+- Updated dependencies [a7756fd]
+  - @askdb/core@1.0.0-beta.52
+  - @askdb/introspect@0.3.0-beta.26
+
 ## 0.1.0-beta.27
 
 ### Patch Changes

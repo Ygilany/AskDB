@@ -310,11 +310,10 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 | `tenant-strict-unfiltered` | A reply with no tenant filter returns every agency's rows when run raw, and strict mode rejects it with `TenantGuardrailError`. |
 | `tenant-strict-column-only`, `-wrong-tenant`, `-or-true`, `-root-table` | Each reply, run raw, returns rows outside agency 2, and strict mode rejects it with `TenantGuardrailError` (#315). If strict mode returns the SQL instead, the test runs it and fails on the leaked rows. |
 | `tenant-warn` | With `enforcement: warn`, the unfiltered reply's SQL is returned, and `tenantGuardrail` reports `MISSING_TENANT_PREDICATE`. |
-| `tenant-warn-claims` | The docs name warn mode's warnings `tenantWarnings`; `ask()`'s result has no such field: `known (#316)`. If #316 renames the docs to `tenantGuardrail`, this case is removed. |
 | `tenant-missing-scope` | No `tenantScope` with a policy: `TenantScopeError` `MISSING_SCOPE`, and no model call. Runs once, as `[postgres]`. |
 | `tenant-subtree-no-resolver` | `subtree` access with no resolver: `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`, and no model call. Runs once, as `[postgres]`. |
 
-The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`. The `known (#316)` case fails because a result field is missing, not on a leak.
+The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`.
 
 ### Row-level security (informational)
 
@@ -372,7 +371,7 @@ Below the test rows, the `unique-constraints *` and `view-marker *` rows are **a
 
 ### In CI
 
-The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. `lab:matrix` runs `lab:up`, so the job also starts the lab's Postgres for `tenant-rls` (a few seconds, on the `postgres:17` image the fixture already pulled), and the test seeds it. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/`, `docs/` or `plans/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
+The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. `lab:matrix` runs `lab:up`, so the job also starts the lab's Postgres for `tenant-rls` (a few seconds, on the `postgres:17` image the fixture already pulled), and the test seeds it. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/` or `docs/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
 
 ### Published packages
 

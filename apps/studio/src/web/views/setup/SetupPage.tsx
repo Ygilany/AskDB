@@ -36,7 +36,7 @@ export function SetupPage({
   const aiModelEnvTouched = useRef(false);
   const [schemaOut, setSchemaOut] = useState("./askdb");
   const [ragStore, setRagStore] = useState<SetupRagStore>("file");
-  const [pgvectorEnv, setPgvectorEnv] = useState("ASKDB_PGVECTOR_URL");
+  const [pgvectorEnv, setPgvectorEnv] = useState("PGVECTOR_URL");
   // Studio execute is opt-in: it runs generated SQL against a live database.
   const [studioExecuteEnabled, setStudioExecuteEnabled] = useState(false);
   const [studioExecuteProvider, setStudioExecuteProvider] = useState<SetupExecuteProvider>("postgres");

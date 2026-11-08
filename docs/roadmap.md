@@ -216,7 +216,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 - **1.0 promises checked SQL only** — the library, the CLI and the HTTP API return checked SQL and never execute it (Studio's optional Playground **Execute** is a local development tool). Reports, result summaries and a non-stub `bounded_results` come after 1.0 (Phase 12).
 - **Surfaces at 1.0** — the library (`@askdb/core`, `@askdb/client`), the `askdb` CLI, the HTTP API (`@askdb/http-api`) and Studio (0.x and experimental, see below). Agents use the CLI and the HTTP API; MCP comes after 1.0 (Phase 14).
 - **The 1.0 package set** — `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. Studio, `@askdb/enrich` and `@askdb/rag` stay 0.x, and their APIs may still move (#354).
-- **Experimental surfaces in the 1.0 set** — the `studio` and `rag` blocks of `defineConfig` in `@askdb/config` (with the types and environment variables that feed them), the `askdb studio`, `enrich`, `bundle` and `rag` commands, and `askdb init`'s RAG and Studio flags follow their 0.x packages. They are experimental, and a minor release may change them.
+- **Experimental surfaces in the 1.0 set** — the `studio` and `rag` blocks of `defineConfig` in `@askdb/config` (with the types and environment variables that feed them), the `askdb studio`, `enrich`, `bundle` and `rag` commands, `askdb init`'s RAG and Studio flags, the `@askdb/config/scaffold` entry point and the `@askdb/client/charts` entry point (chart planning that sends no rows, [ADR 0044](adrs/0044-chart-planning-sends-no-rows.md)) are experimental, and a minor release may change them.
 - **Engines** — all five engine families (PostgreSQL, MySQL, MariaDB, SQLite, SQL Server) are supported, and the consumer lab covers each one, including its tenant suite.
 - **Gates** — an item blocks rc.1 only if it is a security or cross-tenant bug, a breaking change that can't happen after the API freeze, docs that overstate a safety or trust guarantee, a break on the first-run path, or the RC release pipeline. The release process is in [`release.md`](release.md).
 
@@ -246,11 +246,11 @@ Phases 12 to 14 come after the stable 1.0.0 release.
 
 **Goal:** Move beyond the Phase 10 proof into first-class tenant scoping for production deployments.
 
-Fixes that close gaps in the existing tenant check (such as #399) don't wait for this phase: they ship before it, in the 1.0.0 stable milestone.
+Fixes that close gaps in the existing tenant check (such as #399 and #400) don't wait for this phase: they ship before it, in the 1.0.0 stable milestone.
 
 - Harden policy composition across surfaces, database engines, and report-generation modes.
 - Support richer tenant-policy authoring, audit output, and host integration hooks for production access-control systems.
-- When metadata/policies define **tenant scope**, query generation requires a scope and prompts the model to filter by it, and tenant placeholders the model writes are bound to the scope's IDs. The tenant check rejects the common unscoped shapes (a literal ID, a column that's only selected, an `OR`-widened predicate), but it doesn't prove scoping: anywhere in one statement, including its CTEs, derived tables and subqueries, it doesn't tie a predicate to a particular table reference, so a filtered CTE can cover an unfiltered outer read of the same table (#399). Execution paths enforce tenancy in the database (row-level security or equivalent) ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
+- When metadata/policies define **tenant scope**, query generation requires a scope and prompts the model to filter by it, and tenant placeholders the model writes are bound to the scope's IDs. The tenant check rejects the common unscoped shapes (a literal ID, a column that's only selected, an `OR`-widened predicate), but it doesn't prove scoping: it doesn't check that joined scoped tables share a scope. Execution paths enforce tenancy in the database (row-level security or equivalent) ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
 
 ## Phase 14 — MCP server surface
 

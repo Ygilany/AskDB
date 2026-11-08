@@ -2,8 +2,8 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 // CLIs call `bootstrapAskDbEnv`, which loads `.env` (a missing file is OK), then evaluates this file and
 // installs the AskDB runtime snapshot, so this file doesn't load `.env` itself.
-// Use `env("VAR")` for every value read from the environment; `flattenAskDbConfig` applies defaults
-// for optional fields (see `@askdb/config` / `defaults.ts`).
+// Use `env("VAR")` for every value read from the environment; `@askdb/config` applies defaults
+// for optional fields (see its `defaults.ts`).
 export default defineConfig({
   ai: {
     // openai | azure | foundry | anthropic | google | gateway — the default provider for both sections below
@@ -33,12 +33,12 @@ export default defineConfig({
     provider: "postgres",
     providerConfig: {
       postgres: {
-        // Postgres URL for `askdb introspect` — maps to ASKDB_INTROSPECT_POSTGRES_URL
+        // Postgres URL for `askdb introspect`
         // Multi-engine fixture (`pnpm fixture:up`): postgres://fixture_reader:fixture_reader@127.0.0.1:15432/askdb_fixture
         databaseUrl: env("DATABASE_URL"),
       },
     },
-    // Default Schema v2 output when you omit `askdb introspect --out` (maps to ASKDB_INTROSPECT_OUT)
+    // Default schema directory when you omit `askdb introspect --out`
     outputDir: env("MY_INTROSPECT_OUTPUT_DIR"),
   },
 
@@ -69,7 +69,7 @@ export default defineConfig({
     execute: {
       // Studio execute is opt-in; this repo's dev setup turns it on.
       enabled: true,
-      // Connection URL for the Studio playground query runner (maps to ASKDB_STUDIO_DATABASE_URL)
+      // Connection URL for the Studio playground query runner
       databaseUrl: env("DATABASE_URL"),
     },
   },

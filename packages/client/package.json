@@ -1,6 +1,6 @@
 {
   "name": "@askdb/client",
-  "version": "1.0.0-beta.12",
+  "version": "1.0.0-beta.14",
   "description": "Config-aware AskDB facade: resolves schema, model, and dialect from config so callers only pass a question.",
   "keywords": [
     "askdb",
@@ -28,6 +28,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./charts": {
+      "types": "./dist/charts/index.d.ts",
+      "import": "./dist/charts/index.js",
+      "default": "./dist/charts/index.js"
     }
   },
   "files": [

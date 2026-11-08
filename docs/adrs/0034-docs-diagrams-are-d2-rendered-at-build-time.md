@@ -4,6 +4,8 @@
 
 Accepted (2026-11-06, the coordinating thread's answer to Stop 1 of #713, Q3). Implemented in PR #736.
 
+Superseded 2026-11-07 by [ADR 0041](0041-docs-diagrams-are-mermaid-rendered-by-pele.md): docs-site diagrams are now Mermaid, rendered at build time by pele, and `astro-d2` is gone. The text below is kept as written.
+
 ## Context
 
 The docs site (`apps/docs-site`, Astro Starlight) had five hand-drawn SVG diagrams and no way to write a diagram as source. A hand-drawn SVG drifts from the page around it with nothing to catch it, and redrawing one takes a vector editor.

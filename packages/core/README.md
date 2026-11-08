@@ -4,7 +4,7 @@ NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, mo
 
 > **Status:** pre-release beta (`1.0.0-beta.x`); public APIs may still change before 1.0. `0.3.0` moved the Postgres dialect and `@askdb/core/postgres` to `@askdb/postgres`. Runtime AI provider construction lives in `@askdb/ai`; core remains BYO-model and does not read `process.env`. See [`docs/adrs/0002-integration-package-layout.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0002-integration-package-layout.md), [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md), and [`docs/adrs/0006-ai-provider-integration-strategy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0006-ai-provider-integration-strategy.md).
 
-> **Security model:** `ask()` returns SQL and never executes it. Its SQL checks (single `SELECT`/`WITH` statement (with a SQL Server caveat), no comments, no write/DDL keywords, no locking reads, no known side-effecting functions, no Unicode-escaped `U&"…"` names on Postgres, and the tenant and sensitive-column checks) are heuristic defense in depth that catch common model mistakes. The read-only and sensitive-column checks use a dialect-aware lexer; the tenant check uses a simpler scanner of its own ([#342](https://github.com/Ygilany/AskDB/issues/342)). They are not a SQL parser and not a security boundary. Run generated SQL under a read-only, least-privilege database role and enforce tenant isolation in the database. See [Safety boundaries](https://askdb.tools/concepts/safety-boundaries/).
+> **Security model:** `ask()` returns SQL and never executes it. Its SQL checks (single `SELECT`/`WITH` statement (with a SQL Server caveat), no comments, no write/DDL keywords, no locking reads, no known side-effecting functions, no Unicode-escaped `U&"…"` names on Postgres, and the tenant and sensitive-column checks) are heuristic defense in depth that catch common model mistakes. The read-only, sensitive-column and tenant checks all read SQL through one dialect-aware lexer, under readings that one module sets for each check and dialect ([#815](https://github.com/Ygilany/AskDB/issues/815), which replaced the tenant check's separate scanner, [#342](https://github.com/Ygilany/AskDB/issues/342)). They are not a SQL parser and not a security boundary. Run generated SQL under a read-only, least-privilege database role and enforce tenant isolation in the database. See [Safety boundaries](https://askdb.tools/concepts/safety-boundaries/).
 
 ## Install
 
@@ -29,7 +29,7 @@ Runtime AI configuration helpers live in `@askdb/ai`, which has built-in provide
 
 ## Schema format
 
-`@askdb/core` uses **Schema v2** — a split artifact designed for business-context enrichment and RAG chunking. See [`docs/contracts/schema-v2.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) for the full contract.
+`@askdb/core` reads the **schema artifact**: a split format designed for business-context enrichment and RAG chunking. See the [schema artifact format](https://askdb.tools/reference/schema-artifact-format/) for the full contract.
 
 ### Directory layout
 
@@ -42,7 +42,7 @@ my-app.schema/
   concepts.md        # optional — cross-table vocabulary
 ```
 
-### Load a v2 directory
+### Load a schema directory
 
 ```ts
 import { loadSchema } from "@askdb/core";
@@ -109,9 +109,9 @@ Key rules:
 - `AskDbLanguageModel` — AskDB's public name for the AI SDK language model contract.
 - `DialectSpec` and the built-in specs (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …, `BUILT_IN_DIALECTS`) — the SQL rules for each built-in engine. The engine packages re-export them.
 - `AskDialect` — the escape-hatch contract for a fully custom generator.
-- `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.
-- `loadSchemaFromJson(raw)` — parse a Schema v2 bundled JSON string (e.g. from an env var).
-- `readSchemaDirectory(dir)` — read a Schema v2 directory into its bundle form (what `askdb bundle` writes).
+- `loadSchema(path)` — load a schema directory, bundled JSON, or `schema.json` path.
+- `loadSchemaFromJson(raw)` — parse a bundled schema artifact JSON string (e.g. from an env var).
+- `readSchemaDirectory(dir)` — read a schema directory into its bundle form (what `askdb bundle` writes).
 - `saveSchemaFile(schemaDir, relativePath, content)` — write one file inside a schema directory; refuses a symbolic link and replaces the target through a temp file.
 - `parseTableMarkdown` / `writeTableMarkdown` — round-trippable describable-layer parser/writer.
 - `extractSqlFromModelText` — generic fenced-code extractor (dialect-agnostic).

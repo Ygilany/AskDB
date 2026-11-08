@@ -1,7 +1,7 @@
 import { AskDbError } from "@askdb/core";
-import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import Module, { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -44,9 +44,11 @@ export type OptionalDriverLoader<T> = {
    * installed but fails to load.
    *
    * Node 24 and later can keep a failed package lookup until the process exits,
-   * so a retry may still miss a peer installed after the first attempt. When
-   * the peer is on disk under `resolveFrom` but Node can't resolve it, the
-   * `AskDbError` says to restart the process instead of to install it.
+   * so a retry may still miss a peer installed after the first attempt (#669).
+   * When the peer is on disk under `resolveFrom` (or on `NODE_PATH`) but Node
+   * can't resolve it, the loader reads its entry from its `package.json` and
+   * imports that file by path. Only when it can't find the entry that way does
+   * the `AskDbError` say to restart the process.
    */
   load(options?: DriverLoadOptions): Promise<T>;
 };
@@ -97,14 +99,86 @@ class DriverUnresolvableError extends AggregateError {
 }
 
 /**
- * The `node_modules` directory under `fromDir` or one of its parents that holds
- * `packageName`, checked on disk rather than through Node's resolver.
+ * The directories Node searches after a module's own `node_modules` chain: the
+ * `NODE_PATH` entries, then `~/.node_modules`, `~/.node_libraries` and
+ * `<prefix>/lib/node`, as Node read them at startup. `Module.globalPaths` is
+ * Node's public copy of that list (untyped in `@types/node`); reading it keeps
+ * `process.env` out of this package (ADR 0005).
+ */
+function globalModuleDirs(): readonly string[] {
+  const paths = (Module as unknown as { globalPaths?: unknown }).globalPaths;
+  return Array.isArray(paths) ? paths.filter((p): p is string => typeof p === "string" && p !== "") : [];
+}
+
+/**
+ * The `node_modules` directory that holds `packageName`: under `fromDir` or one
+ * of its parents, then in Node's global directories (`NODE_PATH` first), as
+ * Node searches. Checked on disk, never through Node's resolver, which on Node
+ * 24+ would keep a miss (#669).
  */
 function nodeModulesHolding(fromDir: string, packageName: string): string | undefined {
-  for (let dir = fromDir; ; dir = dirname(dir)) {
-    if (existsSync(join(dir, "node_modules", packageName, "package.json"))) return join(dir, "node_modules");
-    if (dirname(dir) === dir) return undefined;
+  const holds = (nodeModules: string) => existsSync(join(nodeModules, packageName, "package.json"));
+  for (let dir = resolve(fromDir); ; dir = dirname(dir)) {
+    if (holds(join(dir, "node_modules"))) return join(dir, "node_modules");
+    if (dirname(dir) === dir) break;
   }
+  return globalModuleDirs().find(holds);
+}
+
+/** The conditions Node's `require` resolves with (`module-sync` on Node 22.12+), which the project fallback below uses too. */
+const REQUIRE_CONDITIONS = new Set(["node", "module-sync", "require", "default"]);
+
+/** An `exports` target under {@link REQUIRE_CONDITIONS}: a string, the first match in an array, or a nested condition map. */
+function exportsTarget(target: unknown): string | undefined {
+  if (typeof target === "string") return target;
+  if (Array.isArray(target)) {
+    for (const entry of target) {
+      const found = exportsTarget(entry);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (target !== null && typeof target === "object") {
+    for (const [condition, value] of Object.entries(target)) {
+      if (!REQUIRE_CONDITIONS.has(condition)) continue;
+      const found = exportsTarget(value);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+/** A file as `require` finds it: as written, with `.js`, `.cjs` or `.json`, or the directory's `index.js`. */
+function existingFile(path: string): string | undefined {
+  const isFile = (p: string) => existsSync(p) && statSync(p).isFile();
+  for (const candidate of [path, `${path}.js`, `${path}.cjs`, `${path}.json`, join(path, "index.js")]) {
+    if (isFile(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * The file `specifier` names inside the installed package at `packageDir`, read
+ * from its `package.json` the way `require` would: its `exports` map (exact
+ * subpaths only) or, with none, `main` for the package and the path itself for
+ * a subpath. Undefined when it can't tell.
+ */
+function entryOnDisk(packageDir: string, packageName: string, specifier: string): string | undefined {
+  let manifest: { exports?: unknown; main?: unknown };
+  try {
+    manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
+  } catch {
+    return undefined;
+  }
+  const subpath = specifier === packageName ? "." : `.${specifier.slice(packageName.length)}`;
+  const { exports } = manifest;
+  if (exports !== undefined && exports !== null) {
+    const keyed = typeof exports === "object" && !Array.isArray(exports) && Object.keys(exports).some((k) => k.startsWith("."));
+    const target = exportsTarget(keyed ? (exports as Record<string, unknown>)[subpath] : subpath === "." ? exports : undefined);
+    return target?.startsWith("./") ? existingFile(join(packageDir, target)) : undefined;
+  }
+  if (subpath !== ".") return existingFile(join(packageDir, subpath));
+  return existingFile(join(packageDir, typeof manifest.main === "string" ? manifest.main : "index.js"));
 }
 
 /**
@@ -130,7 +204,13 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
       } catch (projectCause) {
         if (!isModuleResolutionFailure(projectCause, packageName, specifier)) throw projectCause;
         const nodeModules = nodeModulesHolding(fromDir, packageName);
-        if (nodeModules) throw new DriverUnresolvableError([cause, projectCause], nodeModules);
+        if (nodeModules) {
+          // On disk, but Node won't resolve it: on Node 24+, a lookup earlier in this process
+          // missed and Node kept the miss (#669). Load the entry by path instead.
+          const entry = entryOnDisk(join(nodeModules, packageName), packageName, specifier);
+          if (entry === undefined) throw new DriverUnresolvableError([cause, projectCause], nodeModules);
+          return (await import(pathToFileURL(entry).href)) as T;
+        }
         throw new DriverNotFoundError(
           [cause, projectCause],
           `Unable to resolve optional \`${packageName}\` peer dependency`,
@@ -172,13 +252,22 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
 }
 
 /**
- * True when `packageName` resolves from `resolveFrom` (default `process.cwd()`).
- * A cheap, synchronous capability probe — it does not load the driver.
+ * True when `packageName` is installed for `resolveFrom` (default
+ * `process.cwd()`): in a `node_modules` directory there or in a parent, or in
+ * one of Node's global directories (`NODE_PATH` first). A cheap, synchronous
+ * capability probe — it does not load the driver.
+ *
+ * It checks the disk instead of asking Node's resolver: on Node 24 and later a
+ * failed lookup is kept for the life of the process, so a resolver probe before
+ * an install would hide the installed package from this process (#669). Under
+ * Yarn Plug'n'Play, which has no `node_modules`, it asks the resolver.
  */
 export function isDriverInstalled(packageName: string, options?: DriverLoadOptions): boolean {
+  const fromDir = options?.resolveFrom ?? process.cwd();
+  if (nodeModulesHolding(fromDir, packageName) !== undefined) return true;
+  if (!process.versions.pnp) return false;
   try {
-    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
-    req.resolve(packageName);
+    createRequire(join(fromDir, "package.json")).resolve(packageName);
     return true;
   } catch {
     return false;

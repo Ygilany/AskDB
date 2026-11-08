@@ -16,6 +16,7 @@ import {
 import { errorMessage, printCliError } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { createCliLogger, loggingFlags, resolveCliLogLevel, type CliLoggingFlags } from "./logger.js";
+import { schemaWarningLines } from "./schema-warnings.js";
 
 // Batteries-included surface: every built-in provider is registered, and each
 // loads its @ai-sdk/* package only when first used, so env config alone
@@ -35,7 +36,7 @@ const ASK_FLAGS: readonly Flag<AskOptions>[] = [
   {
     names: ["-s", "--schema"],
     value: "<path>",
-    help: "Schema v2 directory, bundled JSON, or schema.json. Default: introspection.outputDir, or ./askdb/.",
+    help: "Schema directory, bundled JSON, or schema.json. Default: introspection.outputDir, or ./askdb/.",
     apply: (opts, value) => (opts.schema = value),
   },
   {
@@ -80,6 +81,10 @@ export function askCommand(): CommandSpec<AskOptions> {
     initial: () => ({}),
     check(opts) {
       if (opts.question === undefined) throw new Error("Missing --question <text>.");
+      // Core's own message names ask()'s `question` option; here it's the flag (#719).
+      if (!opts.question.trim()) {
+        throw new Error("Question is empty. Pass a non-blank natural-language question with -q / --question.");
+      }
     },
     needsConfig: () => true,
     run: runAsk,
@@ -117,6 +122,7 @@ async function runAsk(opts: AskOptions): Promise<number> {
 
   try {
     const schema = loadSchemaFromPath(opts.schema ?? runtime.introspection.outputDir);
+    for (const line of schemaWarningLines(schema)) process.stderr.write(line);
 
     const askdb = createAskDb({
       config: runtime,

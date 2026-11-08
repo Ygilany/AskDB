@@ -25,7 +25,7 @@ The markdown doesn't repeat table or column names. It refers to them by ID, such
 
 AskDB builds each ID from the names in the database, so the same database always gives the same IDs. That is what lets your markdown keep matching after every re-introspection.
 
-The cost is renames. A renamed table or column gets a new ID, and AskDB can't tell a rename from a removal plus an addition. The markdown that named the old ID stops applying, and the loader reports it as a warning instead of guessing. [Author your schema](/guides/author-your-schema/#re-introspecting) has the steps to follow after a rename.
+The cost is renames. A renamed table or column gets a new ID, and AskDB can't tell a rename from a removal plus an addition. The markdown that named the old ID stops applying, and the loader reports it as a warning instead of guessing. [Enrich your schema](/guides/author-your-schema/#re-introspecting) has the steps to follow after a rename.
 
 ## Sensitivity only escalates
 
@@ -35,7 +35,7 @@ This is deliberate. Markdown is the layer many people edit, often in Studio, so 
 
 ## What the model actually receives
 
-The model never sees the directory you author. At generation time AskDB merges the physical layer and the enrichment into a single compact, model-facing text — a DDL-style description where each table is rendered as a block and your enrichment is folded in as inline comments (descriptions, aliases, and "common query language" attached to the table and columns they describe). Sensitive fields are tagged or withheld here according to your mode.
+The model never sees the directory you author. At generation time AskDB merges the physical layer and the enrichment into a single compact, model-facing text — a DDL-style description where each table is rendered as a block and your enrichment is folded in as inline comments (descriptions, aliases, column notes, "common query language" and business context attached to the table and columns they describe). Each table lists its foreign keys, and your concepts follow the tables. Sensitive fields are tagged or withheld here according to your mode.
 
 So the two layers you maintain separately on disk — `schema.json` for structure, markdown for meaning — are assembled into one annotated schema description the model reads. The prompt carries that repackaged text and the question, never your rows, your credentials, or your query results. When your schema has a tenant policy, the prompt also carries a tenant policy block and the `context` from your `tenantScope`, as advisory text. The block names tenant IDs only by placeholder, such as `:tenant_agency_ids`, never by value. See [Privacy model](/concepts/privacy-model/) for the full list of what reaches the model. When a schema is too large to send whole, the same rendering is applied to only the relevant slice retrieved for the question (see [RAG for large schemas](/guides/rag-for-large-schemas/)).
 
@@ -62,6 +62,6 @@ A versionable file means:
 
 <div class="home-path-grid">
   <a href="/reference/schema-artifact-format/"><strong>Schema artifact format</strong><span>Every file and field, the stable IDs, the loader's warnings, and the bundle format.</span></a>
-  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Enrich your schema</strong><span>Enrich the artifact in Studio and keep it current as the database changes.</span></a>
   <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What reaches the model in each mode, and how sensitive columns are handled.</span></a>
 </div>

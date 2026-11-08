@@ -335,7 +335,7 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["an equality", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids"],
     ["an IN list", "SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids)"],
     ["= ANY", "SELECT * FROM orders WHERE agency_id = ANY(:tenant_agency_ids)"],
-    ["the placeholder on the left", "SELECT * FROM orders WHERE :tenant_agency_ids = o.agency_id"],
+    ["the placeholder on the left", "SELECT * FROM orders o WHERE :tenant_agency_ids = o.agency_id"],
     ["a qualified column", "SELECT o.* FROM public.orders o WHERE public.o.agency_id = :tenant_agency_ids"],
     ["other conjuncts on both sides", "SELECT * FROM orders WHERE status = 'open' AND agency_id = :tenant_agency_ids AND total > 5"],
     ["an OR inside parentheses", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')"],
@@ -468,7 +468,7 @@ describe("validateTenantGuardrails — MySQL comments are read the way MySQL rea
   });
 });
 
-describe("validateTenantGuardrails — parenthesized set-operation operands are query blocks", () => {
+describe("validateTenantGuardrails — a parenthesized set-operation operand is its own SELECT", () => {
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const rules = (sql: string) => validateTenantGuardrails(sql, warnPolicy, agencyScope).warnings.map((w) => w.rule);
   const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
@@ -854,7 +854,9 @@ describe("validateTenantGuardrails — `$` in names, and dollar quotes only wher
     ["a custom engine", customEngine()],
     ["no dialect", undefined],
   ])("%s: $a$ … $a$ is code where the engine may have no dollar quotes", (_label, dialect) => {
-    expect(findings(dollarName, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    // Under sqlserver the bare `$` is also code SQL Server may split differently, refused as such.
+    const orders = "MISSING_TENANT_PREDICATE:table:public.orders";
+    expect(findings(dollarName, dialect)).toEqual(dialect?.id === "sqlserver" ? ["NOT_SELECT_OR_WITH:", orders] : [orders]);
   });
 
   it("postgres and cockroachdb: $a$ … $a$ is still a string", () => {
@@ -957,5 +959,2149 @@ describe("validateTenantGuardrails — a table named after a word only some engi
       expect(findings(name, "SELECT id FROM lookup_states GROUP BY id ORDER BY id", POSTGRES_DIALECT), name).toEqual([]);
       expect(findings(name, `SELECT id FROM "${name}" GROUP BY id ORDER BY id`, POSTGRES_DIALECT), name).toEqual([`MISSING_TENANT_PREDICATE:table:app.${name}`]);
     }
+  });
+});
+
+describe("validateTenantGuardrails — ORDER BY and GROUP BY don't name a table called order or group (#828)", () => {
+  // As the multi-engine fixture leaves `billing.order`: any query naming these tables is refused.
+  const keywordTables: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    coverage: [
+      ...policy.coverage,
+      { tableId: "table:billing.order", classification: "unknown" },
+      { tableId: "table:app.group", classification: "unknown" },
+    ],
+  };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, keywordTables, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const dialects: Array<[string, DialectSpec | undefined]> = [
+    ["postgres", POSTGRES_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["no dialect", undefined],
+  ];
+
+  it.each(dialects)("%s: a sorted, grouped query passes", (_label, dialect) => {
+    for (const sql of [
+      "SELECT status, count(*) FROM orders WHERE agency_id = :tenant_agency_ids GROUP BY status ORDER BY status",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER /* newest */ BY id",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids order\nby id",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  it.each([
+    ["FROM, quoted", POSTGRES_DIALECT, 'SELECT * FROM billing."order" ORDER BY id', "billing.order"],
+    ["JOIN, quoted", POSTGRES_DIALECT, 'SELECT * FROM orders o JOIN "order" b ON b.id = o.id WHERE o.agency_id = :tenant_agency_ids ORDER BY o.id', "billing.order"],
+    ["FROM, backticks", MYSQL_DIALECT, "SELECT * FROM `order` ORDER BY id", "billing.order"],
+    ["FROM, brackets", SQLSERVER_DIALECT, "SELECT * FROM [order] ORDER BY id", "billing.order"],
+    ["a quoted qualifier in ORDER BY", POSTGRES_DIALECT, 'SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY "order".id', "billing.order"],
+    ["GROUP BY on the table named group", POSTGRES_DIALECT, 'SELECT g.id FROM app."group" g GROUP BY g.id', "app.group"],
+    // Postgres reads both as the table `order` with the alias `by`.
+    ["a quoted name, then an alias by", POSTGRES_DIALECT, 'SELECT * FROM "order" by WHERE by.id > 0', "billing.order"],
+    ["a qualified name, then an alias by", POSTGRES_DIALECT, "SELECT * FROM billing.order by WHERE by.id > 0", "billing.order"],
+    // No built-in engine accepts `order` unquoted as a table, and the check still counts it.
+    ["FROM, unquoted", POSTGRES_DIALECT, "SELECT * FROM order o ORDER BY id", "billing.order"],
+  ])("%s still names the table", (_label, dialect, sql, table) => {
+    expect(findings(sql, dialect)).toEqual([`UNKNOWN_TABLE_REFERENCED:table:${table}`]);
+  });
+});
+
+describe("validateTenantGuardrails — a name or number ends where SQL Server ends it (#623)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ";
+
+  // SQL Server reads each tail as `… OR 1=1`, so the tenant predicate is no longer a conjunct.
+  const gluedOr: Array<[string, string]> = [
+    ["U+00A0, which SQL Server reads as whitespace", "1=1\u00a0OR 1=1"],
+    ["U+200B, which SQL Server reads as whitespace", "1=1\u200bOR 1=1"],
+    ["U+0085, which SQL Server reads as whitespace", "1=1\u0085OR 1=1"],
+    ["`0x`, an empty binary literal", "1=0xOR 1=1"],
+    ["`1E`, a float with no exponent digits", "1=1EOR 1=1"],
+  ];
+
+  it.each(gluedOr)("sqlserver: an OR after %s is read", (_label, tail) => {
+    // Refused twice under sqlserver: the OR is read, and the text is code SQL Server may split differently.
+    expect(findings(scoped + tail, SQLSERVER_DIALECT)).toEqual(["NOT_SELECT_OR_WITH:", "MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it.each(gluedOr)("a custom engine or no dialect, which may be SQL Server: an OR after %s is read", (_label, tail) => {
+    // The other readings take `\u200bOR` and `\u0085OR` for one name outside printable ASCII, which is refused too.
+    expect(findings(scoped + tail, customEngine())).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+    expect(findings(scoped + tail)).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(scoped + "1=0xOR 1=1", policy, agencyScope, { dialect: SQLSERVER_DIALECT }))
+      .toThrow(TenantGuardrailError);
+  });
+
+  it("the same tails with an ASCII space are refused, as before", () => {
+    for (const tail of ["1=1 OR 1=1", "1=0x OR 1=1", "1=1E OR 1=1"]) {
+      expect(findings(scoped + tail, SQLSERVER_DIALECT), tail).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    }
+  });
+
+  it("a scoped query that uses these forms without an OR passes, unless SQL Server may split its text differently", () => {
+    expect(findings(`${scoped}flags = 0x AND rate = 1E`, SQLSERVER_DIALECT)).toEqual([]);
+    // Unicode whitespace between words is code the plain-code rule refuses under sqlserver, as the read-only check does.
+    for (const sql of [
+      "SELECT *\u00a0FROM orders\u00a0WHERE agency_id\u00a0=\u00a0:tenant_agency_ids",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\u200bAND\u0085status = 'open'",
+    ]) {
+      expect(findings(sql, SQLSERVER_DIALECT), sql).toEqual(["NOT_SELECT_OR_WITH:"]);
+    }
+  });
+
+  // The read-only check reads the trimmed statement, so neither check reads a leading BOM or a
+  // trailing no-break space, ideographic space or form feed as code.
+  it("sqlserver: skips the leading and trailing runs trim() removes, as the read-only check does", () => {
+    for (const sql of [
+      "\uFEFFSELECT id FROM orders WHERE agency_id = :tenant_agency_ids",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids\u00a0",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids\u3000",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids\f",
+    ]) {
+      expect(findings(sql, SQLSERVER_DIALECT), JSON.stringify(sql)).toEqual([]);
+    }
+  });
+
+  it("sqlserver only: code SQL Server may split differently is refused, the way the read-only check refuses it", () => {
+    for (const sql of [
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND id = 1ESELECT",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total > $ 5",
+    ]) {
+      expect(findings(sql, SQLSERVER_DIALECT), sql).toContain("NOT_SELECT_OR_WITH:");
+      expect(findings(sql, customEngine()), sql).not.toContain("NOT_SELECT_OR_WITH:");
+      expect(findings(sql), sql).not.toContain("NOT_SELECT_OR_WITH:");
+    }
+    // Text inside comments and strings is not code, and neither is a bracketed name; unquoted Unicode letters
+    // are plain code. A non-ASCII name the schema doesn't spell is refused by its own rule instead.
+    expect(findings("SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND note = 'café\u00a0' -- é\u00a0", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT [Größe\u00a0x] FROM orders WHERE agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(["UNICODE_ESCAPED_IDENTIFIER:"]);
+    expect(findings("SELECT Größe FROM orders WHERE agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(["UNICODE_ESCAPED_IDENTIFIER:"]);
+  });
+});
+
+describe("validateTenantGuardrails — each read of a scoped table needs a predicate in its own SELECT (#399)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+  const P = ":tenant_agency_ids";
+
+  it.each([
+    ["a CTE's predicate, for an unfiltered outer read", `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders`],
+    ["a derived table's predicate, for an unfiltered outer read", `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f`],
+    ["an outer predicate, for an unfiltered read inside EXISTS", `SELECT * FROM orders WHERE agency_id = ${P} AND EXISTS (SELECT 1 FROM orders o2 WHERE o2.total > 5)`],
+    ["an outer predicate, for an unfiltered read inside IN (…)", `SELECT * FROM orders WHERE agency_id = ${P} AND id IN (SELECT id FROM orders)`],
+    ["a predicate on another source's alias", `SELECT o.* FROM orders o, (SELECT agency_id FROM orders WHERE agency_id = ${P}) t WHERE t.agency_id = ${P}`],
+    ["a self-join that filters one side", `SELECT b.* FROM orders a JOIN orders b ON a.id <> b.id WHERE a.agency_id = ${P}`],
+    ["a derived table that renames another column to the tenant column", `SELECT * FROM (SELECT id, total AS agency_id FROM orders) t WHERE t.agency_id = ${P}`],
+    ["a derived table that doesn't expose the tenant column", `SELECT * FROM (SELECT id FROM orders) t WHERE agency_id = ${P}`],
+    ["a CTE read twice, filtered once", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x`],
+    // A read with an alias goes by the alias only: the table's name then refers to another read.
+    ["a self-join whose filtered side is the unaliased one", `SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = ${P}`],
+    ["a subquery read filtered through the outer table's name", `SELECT orders.*, (SELECT sum(o2.total) FROM orders o2 WHERE orders.agency_id = ${P}) AS all_total FROM orders WHERE agency_id = ${P}`],
+    ["a CTE joined to itself, filtered through its name", `WITH x AS (SELECT * FROM orders) SELECT b.* FROM x JOIN x b ON true WHERE x.agency_id = ${P}`],
+    // A qualifier counts only for a read it names: a source the check doesn't see declared names none.
+    ["a predicate on a table function's alias", `SELECT o.* FROM orders o CROSS JOIN generate_series(1, 100) AS g(agency_id) WHERE g.agency_id = ${P}`],
+    ["a predicate on an alias spelled like a keyword", `SELECT b.* FROM orders force, orders b WHERE force.agency_id = ${P}`],
+    // A source with a column list renames its output, so its outside filter can't be followed.
+    ["a CTE with a column list, read twice and filtered once", `WITH x (id, agency_id) AS (SELECT id, agency_id FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x`],
+    ["a CTE whose column list renames another column to the tenant column", `WITH x (real_agency, agency_id) AS (SELECT o.agency_id, o.total FROM orders o) SELECT * FROM x WHERE agency_id = ${P}`],
+    ["a derived table with a column list", `SELECT * FROM (SELECT id, agency_id FROM orders) t(agency_id, id) WHERE t.agency_id = ${P}`],
+    ["a derived table whose column list follows an alias spelled like a keyword", `SELECT * FROM (SELECT total, agency_id FROM orders) force (agency_id, real_agency) WHERE agency_id = ${P}`],
+    // What a source computes over its rows runs before the outside filter, over every tenant's rows.
+    ["a source with a window over every row", `SELECT * FROM (SELECT o.*, sum(o.total) OVER () AS grand_total FROM orders o) t WHERE t.agency_id = ${P}`],
+    ["a source with LIMIT", `SELECT * FROM (SELECT * FROM orders LIMIT 1) t WHERE t.agency_id = ${P}`],
+    ["a source that aggregates", `SELECT * FROM (SELECT agency_id, count(*) AS n FROM orders GROUP BY agency_id) t WHERE t.agency_id = ${P}`],
+    ["a source that groups, selecting only plain columns", `SELECT * FROM (SELECT agency_id FROM orders GROUP BY agency_id) t WHERE t.agency_id = ${P}`],
+    ["a source with a set operation", `SELECT * FROM (SELECT * FROM orders UNION ALL SELECT * FROM orders) t WHERE agency_id = ${P}`],
+    ["a source with two tables under *", `SELECT * FROM (SELECT * FROM orders, lookup_states) t WHERE agency_id = ${P}`],
+    ["a source with a parenthesized join under *", `SELECT * FROM (SELECT * FROM (orders o JOIN orders b ON 1=1)) t WHERE t.agency_id = ${P}`],
+    ["a source that selects another read's column", `SELECT * FROM (SELECT x.agency_id FROM orders o, orders x) t WHERE agency_id = ${P}`],
+    ["a CTE nothing reads", "WITH x AS (SELECT * FROM orders) SELECT 1"],
+    ["a source with LIMIT after a subquery", `SELECT * FROM (SELECT * FROM orders WHERE total > (SELECT min(code) FROM lookup_states) LIMIT 1) t WHERE t.agency_id = ${P}`],
+    ["a source with a second table after a derived table, under *", `SELECT * FROM (SELECT * FROM (SELECT 1 AS one) d, orders) t WHERE agency_id = ${P}`],
+    ["a source filtered only through IN (…) on another column", `SELECT * FROM (SELECT * FROM orders) t WHERE t.id IN (SELECT id FROM orders WHERE agency_id = ${P})`],
+  ])("rejects %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it.each([
+    // A word after a table that may be an alias on some engine leaves the read with no name, so the
+    // table's name, which then refers to an unaliased sibling, doesn't filter it.
+    ["a sibling's predicate through the table's name, past an alias spelled `force`", `SELECT force.* FROM orders force, orders WHERE orders.agency_id = ${P}`],
+    ["the same past `lock`", `SELECT lock.* FROM orders lock, orders WHERE orders.agency_id = ${P}`],
+    ["the same past `qualify`", `SELECT qualify.* FROM orders qualify, orders WHERE orders.agency_id = ${P}`],
+    ["the same in a JOIN", `SELECT force.* FROM orders JOIN orders force ON force.id <> orders.id WHERE orders.agency_id = ${P}`],
+    ["the same for a CTE's references", `WITH x AS (SELECT * FROM orders) SELECT force.* FROM x force, x WHERE x.agency_id = ${P}`],
+    ["a correlated subquery read past an alias spelled `force`", `SELECT orders.*, (SELECT sum(force.total) FROM orders force WHERE orders.agency_id = ${P}) AS t FROM orders WHERE agency_id = ${P}`],
+    ["a read written `orders *`", `SELECT a.* FROM orders * a, orders WHERE orders.agency_id = ${P}`],
+    // After `AS`, a word and `(` are an alias with a column list; without `AS`, unless the word is a clause no engine takes as an alias.
+    ["a derived table's column list after `AS lock`", `SELECT * FROM (SELECT total, agency_id FROM orders) AS lock (agency_id, x) WHERE lock.agency_id = ${P}`],
+    ["a derived table's column list after `AS apply`", `SELECT * FROM (SELECT total, agency_id FROM orders) AS apply (agency_id, x) WHERE apply.agency_id = ${P}`],
+    ["a derived table's column list after `lock`", `SELECT * FROM (SELECT total, agency_id FROM orders) lock (agency_id, x) WHERE lock.agency_id = ${P}`],
+    ["a derived table's column list after `qualify`", `SELECT * FROM (SELECT total, agency_id FROM orders) qualify (agency_id, x) WHERE agency_id = ${P}`],
+    ["a derived table's column list after `xor`", `SELECT * FROM (SELECT total, agency_id FROM orders) xor (agency_id, x) WHERE agency_id = ${P}`],
+    ["a column list on a CTE's reference", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS t (agency_id, real_agency) WHERE t.agency_id = ${P}`],
+    ["a column list on a CTE's reference, filtered unqualified", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x t (agency_id, real_agency) WHERE agency_id = ${P}`],
+    ["`*` over two sources, the first aliased `lock`", `SELECT * FROM (SELECT * FROM orders lock, orders b) t WHERE t.agency_id = ${P}`],
+    // What a source computes over its rows, or which of them it keeps, runs before the outside filter.
+    ["a source with HAVING", `SELECT * FROM (SELECT * FROM orders HAVING count(*) > 0) t WHERE t.agency_id = ${P}`],
+    ["a source with WINDOW", `SELECT * FROM (SELECT * FROM orders WINDOW w AS (ORDER BY id)) t WHERE t.agency_id = ${P}`],
+    ["a source with QUALIFY", `SELECT * FROM (SELECT * FROM orders QUALIFY total > 0) t WHERE t.agency_id = ${P}`],
+    ["a source with OFFSET", `SELECT * FROM (SELECT * FROM orders OFFSET 5) t WHERE t.agency_id = ${P}`],
+    ["a source with FETCH", `SELECT * FROM (SELECT * FROM orders FETCH FIRST 1 ROWS ONLY) t WHERE t.agency_id = ${P}`],
+    ["a source ordered by a window", `SELECT * FROM (SELECT * FROM orders ORDER BY sum(total) OVER ()) t WHERE t.agency_id = ${P}`],
+  ])("rejects %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  // Two names the engine tells apart count as two: a quoted name keeps its case, Postgres folds only
+  // ASCII letters, and MySQL and SQL Server can compare an alias case-sensitively.
+  it.each([
+    ["a quoted alias and an unquoted one", `SELECT "A".* FROM orders "A" JOIN orders a ON true WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["aliases that differ in a non-ASCII letter's case", `SELECT É.* FROM orders É JOIN orders é ON true WHERE é.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted derived table's alias and an unquoted one", `SELECT "T".* FROM (SELECT * FROM orders) "T", (SELECT * FROM orders WHERE agency_id = ${P}) t WHERE t.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["aliases that differ in case on MySQL", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, MYSQL_DIALECT],
+    ["aliases that differ in case on SQL Server", `SELECT A.* FROM orders A JOIN orders a ON 1 = 1 WHERE a.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["aliases that differ in case under no dialect", `SELECT A.* FROM orders A JOIN orders a ON true WHERE a.agency_id = ${P}`, undefined],
+    // A join word one engine doesn't reserve is an alias there, so the read has that name, not its table's.
+    ["`full` as an alias on MySQL", `SELECT full.* FROM orders full, orders WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["`natural` as an alias on SQL Server", `SELECT natural.* FROM orders natural, orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["`using` as an alias on SQL Server", `SELECT using.* FROM orders using, orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["`straight_join` as an alias on Postgres", `SELECT straight_join.* FROM orders straight_join, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  // A quoted identifier is one name, whatever it holds: its dots, spaces and punctuation are never code.
+  it.each([
+    ["a quoted alias `.`", `SELECT * FROM orders "." WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a backtick-quoted alias `.`", "SELECT * FROM orders `.` WHERE orders.agency_id = " + P, MYSQL_DIALECT],
+    ["a bracketed alias `.`", `SELECT * FROM orders [.] WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a quoted alias starting with `.`", `SELECT * FROM orders ".x" WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a bracketed alias `.` under no dialect", `SELECT * FROM orders [.] WHERE orders.agency_id = ${P}`, undefined],
+    ["a CTE reference aliased `[.]`", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM x [.]`, undefined],
+    ["a quoted alias with a space beside a read aliased like its first word", `SELECT "b a".* FROM orders "b a" CROSS JOIN orders b WHERE b.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the same, backtick-quoted", "SELECT `b a`.* FROM orders `b a` CROSS JOIN orders b WHERE b.agency_id = " + P, MYSQL_DIALECT],
+    ["the same, bracketed", `SELECT [b a].* FROM orders [b a] CROSS JOIN orders b WHERE b.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a quoted alias with an escaped quote", `SELECT "a""b".* FROM orders "a""b" CROSS JOIN orders a WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted alias `,` before a sibling", `SELECT ",".* FROM orders ",", orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a bracketed alias `,` before a sibling", `SELECT [,].* FROM orders [,], orders WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a column list after a quoted alias with a space", `SELECT * FROM (SELECT total, agency_id FROM orders) AS "t x" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a column list after a CTE reference's quoted alias with a space", `WITH x AS (SELECT total, agency_id FROM orders) SELECT * FROM x AS "t y" (agency_id, real_agency) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // Only `table`, `table alias` and `table AS alias` followed by what ends a source name a read: a
+    // clause after the table (TABLESAMPLE, NOT INDEXED, PARTITION, FOR SYSTEM_TIME) leaves it nameless.
+    ["a sibling's quoted alias spelled like TABLESAMPLE", `SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS "tablesample" WHERE "tablesample".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the same on SQLite", `SELECT * FROM orders TABLESAMPLE SYSTEM (100), orders AS "tablesample" WHERE "tablesample".agency_id = ${P}`, SQLITE_DIALECT],
+    ["a sibling's quoted alias spelled like NOT INDEXED", `SELECT * FROM orders NOT INDEXED, orders AS "not" WHERE "not".agency_id = ${P}`, SQLITE_DIALECT],
+    ["a sibling's alias spelled like PARTITION", "SELECT * FROM orders partition (p0), orders AS `partition` WHERE `partition`.agency_id = " + P, MYSQL_DIALECT],
+    ["a sibling's alias spelled like FOR SYSTEM_TIME", `SELECT * FROM orders for system_time all, orders AS [for] WHERE [for].agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["the PARTITION shape under no dialect", "SELECT * FROM orders partition (p0), orders AS `partition` WHERE `partition`.agency_id = " + P, undefined],
+    // A subquery is a row source only where a source starts, never after ON or in an expression.
+    ["a scalar subquery right after ON", `SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT agency_id FROM orders x WHERE x.total > 5) = 7 WHERE agency_id = ${P}`, undefined],
+    ["a scalar subquery in an ON's BETWEEN", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code BETWEEN (SELECT agency_id FROM orders x) AND 9 WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // A FROM that opens no FROM clause (IS DISTINCT FROM, or inside a call) starts no row source.
+    ["a scalar subquery after IS NOT DISTINCT FROM", `SELECT * FROM orders WHERE agency_id = ${P} AND 2 IS NOT DISTINCT FROM (SELECT agency_id FROM orders x WHERE x.id = 99)`, undefined],
+    ["a scalar subquery after the FROM inside SUBSTRING", `SELECT SUBSTRING('0123456789' FROM (SELECT agency_id FROM orders x)) AS s FROM orders WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    // A SELECT that reads a table twice tells the reads apart only by distinct plain aliases at its own level.
+    ["a self-join whose first read sits in an aliased parenthesized join", `SELECT j.* FROM (orders o CROSS JOIN lookup_states s) AS j CROSS JOIN orders o WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a self-join whose first read sits in aliased parentheses", `SELECT y.* FROM (orders x) AS y, orders x WHERE x.agency_id = ${P}`, SQLITE_DIALECT],
+    ["a self-join with an unaliased read", `SELECT b.* FROM orders JOIN orders b ON b.id <> orders.id WHERE orders.agency_id = ${P} AND b.agency_id = ${P}`, undefined],
+    ["a self-join with a quoted alias", `SELECT * FROM orders "a", orders b WHERE "a".agency_id = ${P} AND b.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a self-join filtered unqualified", `SELECT * FROM orders a, orders b WHERE agency_id = ${P}`, undefined],
+    // A table alone in parentheses takes the alias that follows them.
+    ["`ONLY (orders) a` beside an unaliased sibling", `SELECT a.* FROM ONLY (orders) a, orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["`(orders) a` beside an unaliased sibling", `SELECT a.* FROM (orders) a, orders WHERE orders.agency_id = ${P}`, SQLITE_DIALECT],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  // A reading that sees a scoped table's name but no read of it can't tell what filters it.
+  it.each([
+    ["the table's name only as a qualifier", "SELECT orders.total FROM lookup_states", undefined],
+    ["the table's name only inside a longer quoted name", `SELECT "my orders".id FROM lookup_states "my orders"`, POSTGRES_DIALECT],
+  ])("rejects %s, which names the table but reads it nowhere the check sees", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  // SQL Server ignores a quoted name's trailing spaces, so `[orders ]` reads `orders`.
+  it.each([
+    ["a read written `[orders ]` beside a filtered one", `SELECT * FROM orders WHERE agency_id = ${P} UNION ALL SELECT * FROM [orders ]`, SQLSERVER_DIALECT],
+    ["a read written `\"orders \"` beside a filtered one", `SELECT * FROM orders WHERE agency_id = ${P} UNION ALL SELECT * FROM "orders "`, SQLSERVER_DIALECT],
+    ["the same under no dialect", `SELECT * FROM orders WHERE agency_id = ${P} UNION ALL SELECT * FROM [orders ]`, undefined],
+    ["a CTE reference written `[x ]`", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P} UNION ALL SELECT * FROM [x ]`, SQLSERVER_DIALECT],
+    ["a CTE named `[x ]` read as `x`", `WITH [x ] AS (SELECT * FROM orders) SELECT * FROM [x ] WHERE agency_id = ${P} UNION ALL SELECT * FROM x`, SQLSERVER_DIALECT],
+  ])("rejects %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual(orders);
+  });
+
+  it("rejects the scope's root table read as `[agencies ]` beside a filtered read", () => {
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} UNION ALL SELECT name FROM [agencies ]`, SQLSERVER_DIALECT))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["a whole-row reference in a call beside a qualified predicate", `SELECT json_agg(orders) AS data FROM orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a whole-row count beside a qualified predicate", `SELECT count(orders) AS n FROM orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a field of a parenthesized whole row", `SELECT (orders).id FROM orders WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["another table whose name starts with the scoped one's", "SELECT * FROM orders$archive", POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it("rejects a root read twice where a carrier's IN (…) filters only one read", () => {
+    expect(findings(`SELECT b.* FROM agencies a, agencies b WHERE a.id IN (SELECT agency_id FROM orders WHERE agency_id = ${P})`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it("rejects the scope's root table read through a bracketed alias `.`", () => {
+    expect(findings("SELECT * FROM agencies [.]", SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["a quoted alias with a space, filtered through it", `SELECT * FROM orders "my alias" WHERE "my alias".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a quoted table name filtered through it", `SELECT * FROM "orders" WHERE "orders".agency_id = ${P}`, POSTGRES_DIALECT],
+    ["`ONLY (orders) a`, filtered through its alias", `SELECT * FROM ONLY (orders) a WHERE a.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a subquery after ON with its own predicate", `SELECT o.* FROM orders o JOIN lookup_states s ON (SELECT max(x.agency_id) FROM orders x WHERE x.agency_id = ${P}) = 7 WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["TABLESAMPLE after an alias, filtered unqualified", `SELECT * FROM orders o TABLESAMPLE SYSTEM (10) WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it.each([
+    ["an unquoted alias written in another case on Postgres", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["an unquoted alias written in another case on SQLite", `SELECT * FROM orders O WHERE o.agency_id = ${P}`, SQLITE_DIALECT],
+    ["the table's name before FULL JOIN on Postgres", `SELECT orders.* FROM orders FULL JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before NATURAL JOIN on Postgres", `SELECT orders.* FROM orders NATURAL JOIN lookup_states WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before USING on Postgres", `SELECT o.* FROM lookup_states s JOIN orders USING (state) WHERE orders.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before STRAIGHT_JOIN on MySQL", `SELECT orders.* FROM orders STRAIGHT_JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a MySQL USE INDEX hint", `SELECT * FROM orders USE INDEX (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a MySQL IGNORE KEY hint", `SELECT * FROM orders IGNORE KEY (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["a SQL Server table hint", `SELECT * FROM orders WITH (NOLOCK) WHERE orders.agency_id = ${P}`, SQLSERVER_DIALECT],
+    ["a MySQL index hint", `SELECT * FROM orders FORCE INDEX (idx) WHERE orders.agency_id = ${P}`, MYSQL_DIALECT],
+    ["an alias spelled `force`, filtered unqualified", `SELECT * FROM orders force WHERE agency_id = ${P}`, undefined],
+    ["an alias spelled `force`, filtered through it", `SELECT * FROM orders force WHERE force.agency_id = ${P}`, POSTGRES_DIALECT],
+    ["the table's name before a join", `SELECT orders.* FROM orders LEFT JOIN lookup_states s ON s.code = orders.state WHERE orders.agency_id = ${P}`, undefined],
+    ["a filtered MATERIALIZED CTE", `WITH x AS MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+    ["a filtered NOT MATERIALIZED CTE", `WITH x AS NOT MATERIALIZED (SELECT * FROM orders) SELECT * FROM x WHERE agency_id = ${P}`, POSTGRES_DIALECT],
+  ])("accepts %s", (_label, sql, dialect) => {
+    expect(findings(sql, dialect)).toEqual([]);
+  });
+
+  it("works out a chain of sources read several times each in bounded time", () => {
+    // Nine CTEs, each reading the one before six times: re-exploring each source once per path took seconds.
+    const levels = ["x1 AS (SELECT * FROM orders)"];
+    for (let n = 2; n <= 9; n++) {
+      levels.push(`x${n} AS (SELECT agency_id FROM ${Array.from({ length: 6 }, (_, k) => `x${n - 1} a${k}`).join(", ")})`);
+    }
+    const started = performance.now();
+    expect(findings(`WITH ${levels.join(", ")} SELECT * FROM x9 WHERE agency_id = ${P}`)).toEqual([]);
+    expect(findings(`WITH ${levels.join(", ")} SELECT * FROM x9`)).toEqual(orders);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it("a polymorphic table: a discriminator on a table function's alias doesn't count", () => {
+    expect(findings(`SELECT n.* FROM notes n, unnest(ARRAY['agency']) AS u(owner_type) WHERE u.owner_type = 'agency' AND n.owner_id = ${P}`))
+      .toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+
+  it("refuses the issue's shapes under a strict policy", () => {
+    for (const sql of [
+      `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders`,
+      `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f`,
+    ]) {
+      try {
+        validateTenantGuardrails(sql, policy, agencyScope);
+        expect.unreachable(`should have thrown: ${sql}`);
+      } catch (e) {
+        expect(e, sql).toBeInstanceOf(TenantGuardrailError);
+        expect((e as TenantGuardrailError).warnings.map((w) => `${w.rule}:${w.tableId}`), sql).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+      }
+    }
+  });
+
+  it.each([
+    ["the CTE shape, with the outer read filtered too", `WITH mine AS (SELECT id FROM orders WHERE agency_id = ${P}) SELECT * FROM orders WHERE agency_id = ${P}`],
+    ["the derived-table shape, with the outer read filtered too", `SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = ${P}) f WHERE o.agency_id = ${P}`],
+    ["an IN (…) read with its own predicate", `SELECT * FROM orders WHERE agency_id = ${P} AND id IN (SELECT id FROM orders WHERE agency_id = ${P})`],
+    ["a filter on a derived table's output that names the column", `SELECT * FROM (SELECT o.id, o.agency_id FROM orders o) t WHERE t.agency_id = ${P}`],
+    ["a filter on a CTE's output at its one reference", `WITH x AS (SELECT * FROM orders) SELECT * FROM x WHERE x.agency_id = ${P}`],
+    ["a correlated subquery that only names the outer read's alias", `SELECT * FROM orders o WHERE o.agency_id = ${P} AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = o.state)`],
+    ["a correlated subquery that names the outer table", `SELECT * FROM orders WHERE agency_id = ${P} AND EXISTS (SELECT 1 FROM lookup_states d WHERE d.code = orders.state)`],
+    ["a self-join that filters both sides", `SELECT b.* FROM orders a JOIN orders b ON a.id = b.parent_id WHERE a.agency_id = ${P} AND b.agency_id = ${P}`],
+  ])("accepts %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  it("a literal on one reference doesn't ride on another reference's predicate", () => {
+    expect(findings(`SELECT * FROM orders a, orders b WHERE a.agency_id = ${P} AND b.agency_id = 7`)).toEqual(orders);
+  });
+
+  it("multi_root: a scalar subquery on a root compared with another root's placeholder is refused", () => {
+    // The outer read of clients is filtered with its own placeholder; the subquery's read binds agency IDs to client IDs.
+    const multi: TenantScope = {
+      access: { kind: "multi_root", scopes: [{ tenantRoot: "table:public.agencies", ids: ["1"] }, { tenantRoot: "table:public.clients", ids: ["5"] }] },
+    };
+    const sql = "SELECT c.*, (SELECT name FROM clients WHERE id IN (:tenant_agency_ids)) AS x FROM clients c WHERE c.id IN (:tenant_client_ids)";
+    expect(validateTenantGuardrails(sql, warnPolicy, multi).warnings.map((w) => `${w.rule}:${w.tableId}`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.clients"]);
+  });
+
+  it("the scope's root table: a read inside a subquery needs its own predicate too", () => {
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.name = 'x')`))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+    expect(findings(`SELECT name FROM agencies WHERE id = ${P} AND EXISTS (SELECT 1 FROM agencies a2 WHERE a2.id = ${P})`)).toEqual([]);
+  });
+
+  // An `ON` sees only its join's operands: an unqualified predicate there resolves among them, so it
+  // filters no read joined after it, before a `FROM`-list comma, or outside the join's parentheses.
+  it.each([
+    ["a read joined after the ON", `SELECT o.id FROM sub_agencies sa JOIN lookup_states ls ON agency_id = ${P} CROSS JOIN orders o`],
+    ["a read outside the parentheses around the join", `SELECT o.id FROM orders o CROSS JOIN (sub_agencies sa JOIN lookup_states ls ON agency_id = ${P})`],
+    ["a read before a FROM-list comma", `SELECT o.id FROM orders o, sub_agencies sa JOIN lookup_states ls ON agency_id = ${P}`],
+    ["a read outside a nested join", `SELECT o.* FROM orders o LEFT JOIN lookup_states ls JOIN sub_agencies sa ON agency_id = ${P} ON true`],
+  ])("rejects an unqualified ON predicate standing in for %s", (_label, sql) => {
+    expect(findings(sql)).toContain(orders[0]);
+  });
+
+  it("rejects an unqualified discriminator in an ON standing in for a read joined after it", () => {
+    const sql = `SELECT n2.* FROM notes n1 JOIN lookup_states ls ON owner_type = 'agency' AND n1.owner_id = ${P} CROSS JOIN notes n2 WHERE n2.owner_id = ${P}`;
+    expect(findings(sql)).toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+
+  it.each([
+    ["the read on the ON's left", `SELECT o.* FROM orders o JOIN lookup_states s ON agency_id = ${P}`],
+    ["the read on the ON's right", `SELECT o.* FROM lookup_states s JOIN orders o ON agency_id = ${P}`],
+    ["a read joined before an earlier ON", `SELECT o.* FROM orders o JOIN lookup_states s ON s.code = o.state JOIN service_types t ON agency_id = ${P}`],
+    ["a read inside a parenthesized operand", `SELECT o.* FROM lookup_states s JOIN (orders o CROSS JOIN service_types t) ON agency_id = ${P}`],
+    ["the read before a derived table it joins", `SELECT o.* FROM orders o JOIN (SELECT code, name FROM lookup_states) s ON agency_id = ${P}`],
+  ])("accepts an unqualified ON predicate on %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  // An alias after the parentheses around a read hides the read's own alias, so a predicate on the
+  // inner alias names another read (here the outer query's, by correlation).
+  it.each([
+    ["a table", `SELECT x.id, (SELECT count(*) FROM (orders x) AS y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a table, with no AS", `SELECT x.id, (SELECT count(*) FROM (orders x) y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a join", `SELECT x.id, (SELECT count(*) FROM (orders x CROSS JOIN lookup_states s) AS j WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a CTE reference", `WITH c AS (SELECT * FROM orders) SELECT x.id, (SELECT count(*) FROM (c x) AS y WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+    ["a derived table", `SELECT x.id, (SELECT count(*) FROM ((SELECT * FROM orders) x CROSS JOIN lookup_states s) AS j WHERE x.agency_id = ${P}) AS n FROM orders x WHERE x.agency_id = ${P}`],
+  ])("rejects a read in parentheses that an outer alias hides: %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it("accepts a read in parentheses with no alias after them, filtered through its own alias", () => {
+    expect(findings(`SELECT o.* FROM (orders o JOIN lookup_states s ON s.code = o.state) WHERE o.agency_id = ${P}`)).toEqual([]);
+  });
+
+  // `order` and `group` after a `.` are a table's name, never `ORDER BY` or `GROUP BY`, so a read
+  // aliased `by` after one is a read like any other.
+  it.each([["postgres", POSTGRES_DIALECT], ["no dialect", undefined]] as const)("rejects an unfiltered read aliased `by` after a table named order or group under %s", (_label, dialect) => {
+    const named: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      scopedTables: ["billing.order", "app.group"].map((t) => ({
+        id: `table:${t}`,
+        scopeThrough: [{ root: "table:public.agencies", column: `table:${t}#agency_id` }],
+      })),
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    const check = (sql: string) => validateTenantGuardrails(sql, named, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+    expect(check(`SELECT by.order_id, by.agency_id FROM billing.order by CROSS JOIN billing.order o WHERE o.agency_id = ${P}`)).toEqual([
+      "MISSING_TENANT_PREDICATE:table:billing.order",
+    ]);
+    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE g.agency_id = ${P}`)).toEqual(["MISSING_TENANT_PREDICATE:table:app.group"]);
+    expect(check(`SELECT by.id FROM app.group by CROSS JOIN app.group g WHERE g.agency_id = ${P} AND by.agency_id = ${P} ORDER BY g.id`)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a keyword written right after a number or $N parameter (GHSA-rhwf-7742-8hwj)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec, p: NormalizedTenantPolicy = warnPolicy) =>
+    validateTenantGuardrails(sql, p, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND ";
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+
+  // MySQL and MariaDB end a number after its decimal point or exponent and read the word after it.
+  it.each(["1=1.0OR 1=1", "1=1e1OR 1=1", "1=.5OR 1=1", "1=1.XOR 1=1"])("mysql and mariadb: an OR after the number in %s is read", (tail) => {
+    for (const dialect of [MYSQL_DIALECT, MARIADB_DIALECT]) expect(findings(scoped + tail, dialect), dialect.id).toEqual(orders);
+  });
+
+  // PostgreSQL 14 and earlier end a number at its last digit and read the word after it.
+  it.each(["1=1OR 1=1", "1=1.0OR 1=1", "1=1e1OR 1=1"])("postgres: an OR after the number in %s is read", (tail) => {
+    expect(findings(scoped + tail, POSTGRES_DIALECT)).toEqual(orders);
+  });
+
+  // PostgreSQL 14 and CockroachDB end a `$N` parameter at its last digit and read the word after it,
+  // so the tenant check refuses a parameter written against a word wherever the SQL may be read as Postgres.
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom engine", customEngine()],
+    ["no dialect", undefined],
+  ])("%s: a $N parameter written against a word is refused", (_label, dialect) => {
+    expect(findings(scoped + "0 < $1OR TRUE", dialect)).toContain("NOT_SELECT_OR_WITH:");
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND id = $1UNION SELECT * FROM orders", dialect)).toContain("NOT_SELECT_OR_WITH:");
+  });
+
+  it("mysql and mariadb: `$1OR` is one name there, so no parameter refusal", () => {
+    for (const dialect of [MYSQL_DIALECT, MARIADB_DIALECT]) expect(findings(scoped + "0 < $1OR TRUE", dialect), dialect.id).not.toContain("NOT_SELECT_OR_WITH:");
+  });
+
+  it("the same tails with an ASCII space are refused, as before", () => {
+    for (const tail of ["1=1.0 OR 1=1", "1=1 OR 1=1", "0 < $1 OR TRUE"]) {
+      expect(findings(scoped + tail, MYSQL_DIALECT), tail).toEqual(orders);
+      expect(findings(scoped + tail), tail).toEqual(orders);
+    }
+  });
+
+  it("a scoped query with numbers and parameters that hide no keyword still passes", () => {
+    for (const sql of [
+      `${scoped}total > 1.5 AND total < 1e3 AND status = 'open'`,
+      `${scoped}total > $1 AND x$1y = 1`,
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY 1",
+    ]) {
+      for (const dialect of [MYSQL_DIALECT, POSTGRES_DIALECT, undefined]) expect(findings(sql, dialect), `${dialect?.id}: ${sql}`).toEqual([]);
+    }
+  });
+
+  it("mysql: a name that starts with digits is one name, as MySQL reads it", () => {
+    // MySQL reads `3d_models` as one name, and `1OR` too (a syntax error where a value goes).
+    const digitTable: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      scopedTables: [{ id: "table:app.3d_models", scopeThrough: [{ root: "table:public.agencies", column: "table:app.3d_models#agency_id" }] }],
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    expect(findings("SELECT * FROM 3d_models", MYSQL_DIALECT, digitTable)).toEqual(["MISSING_TENANT_PREDICATE:table:app.3d_models"]);
+    expect(findings("SELECT * FROM 3d_models WHERE agency_id = :tenant_agency_ids", MYSQL_DIALECT, digitTable)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — `]]` in a bracketed name, and nested block comments", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const missing = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+
+  // SQL Server reads `]]` inside `[…]` as an escaped `]`, so `[o]] WHERE … AND [x]` is one alias, and on
+  // SQL Server 2022 the statement returned every row.
+  it.each([["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const)(
+    "refuses a `]]` alias that runs over the predicate under %s",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM orders AS [o]] WHERE agency_id = :tenant_agency_ids AND [x]", dialect)).toEqual(missing);
+    },
+  );
+
+  // SQL Server, Postgres and CockroachDB nest block comments, so the predicate is inside one: each returned every row.
+  it.each([
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const)(
+    "refuses a predicate inside a nested block comment under %s",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */", dialect)).toEqual(missing);
+    },
+  );
+
+  it("a strict policy refuses both", () => {
+    for (const sql of [
+      "SELECT * FROM orders AS [o]] WHERE agency_id = :tenant_agency_ids AND [x]",
+      "SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids AND 1=1 -- */",
+    ]) {
+      expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect: SQLSERVER_DIALECT }), sql).toThrow(TenantGuardrailError);
+    }
+  });
+
+  it.each([["sqlserver", SQLSERVER_DIALECT], ["postgres", POSTGRES_DIALECT], ["no dialect", undefined]] as const)(
+    "keeps bracketed names and closed comments under %s",
+    (_label, dialect) => {
+      for (const sql of [
+        "SELECT [agency_id] FROM [orders] WHERE [agency_id] = :tenant_agency_ids",
+        "SELECT [a]]b] FROM orders WHERE agency_id = :tenant_agency_ids",
+        "SELECT * FROM orders /* a /* b */ c */ WHERE agency_id = :tenant_agency_ids",
+        "SELECT * FROM orders /* note */ WHERE agency_id = :tenant_agency_ids",
+      ]) {
+        expect(findings(sql, dialect), sql).toEqual([]);
+      }
+    },
+  );
+
+  it("reads a comment MySQL doesn't nest the way MySQL does", () => {
+    // MySQL ends the comment at the first `*/`, so the predicate is code there.
+    expect(findings("SELECT * FROM orders WHERE 1=1 /* /* */ AND agency_id = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
+  });
+
+  // Block comments are read both nested and not, so a statement is refused whenever one reading sees
+  // code the other doesn't, even where the engine's nesting would comment the OR out.
+  it.each([["postgres", POSTGRES_DIALECT], ["sqlserver", SQLSERVER_DIALECT]] as const)(
+    "still refuses an OR that only a nested reading comments out under %s",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids /* a /* b */ OR 1=1 */", dialect)).toEqual(missing);
+    },
+  );
+});
+
+describe("validateTenantGuardrails — a name outside printable ASCII that the schema doesn't spell", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec, p: NormalizedTenantPolicy = warnPolicy) =>
+    validateTenantGuardrails(sql, p, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  /** `orders` in fullwidth letters. */
+  const orders = "ｏｒｄｅｒｓ";
+  const folding = [["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+
+  // SQL Server resolves a name through the database collation, which ignores some characters and reads
+  // others as ASCII letters: on SQL Server 2022 each of these spellings of people.client read all 25
+  // clients across 7 agencies, so the table they name is the scoped one.
+  const quoted: Array<[string, string]> = [
+    ["fullwidth letters", `SELECT * FROM [${orders}]`],
+    ["fullwidth letters in double quotes", `SELECT * FROM "${orders}"`],
+    ["a zero-width joiner", "SELECT * FROM [ord‍ers]"],
+    ["U+FEFF", "SELECT * FROM public.[ord﻿ers]"],
+    ["a word joiner", "SELECT * FROM [ord⁠ers]"],
+    ["small capitals", "SELECT * FROM [oʀdeʀs]"],
+    ["an emoji", "SELECT * FROM [ord\u{1f600}ers]"],
+    ["the root table in fullwidth letters", "SELECT * FROM [ａｇｅｎｃｉｅｓ]"],
+  ];
+
+  it.each(folding)("refuses a quoted name the collation may fold under %s", (_label, dialect) => {
+    for (const [label, sql] of quoted) expect(findings(sql, dialect), label).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+
+  it.each(folding)("refuses an unquoted name outside printable ASCII under %s", (_label, dialect) => {
+    expect(findings(`SELECT * FROM ${orders}`, dialect)).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(`SELECT * FROM [${orders}]`, policy, agencyScope, { dialect: SQLSERVER_DIALECT }))
+      .toThrow(TenantGuardrailError);
+  });
+
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+  ] as const)("leaves %s alone, which compares such a name as written", (_label, dialect) => {
+    expect(findings(`SELECT * FROM [${orders}]`, dialect)).toEqual([]);
+    expect(findings('SELECT * FROM "ord‍ers"', dialect)).toEqual([]);
+  });
+
+  it.each(folding)("accepts a non-ASCII name the schema spells exactly under %s, and refuses another spelling of it", (_label, dialect) => {
+    const withTable: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      coverage: [...warnPolicy.coverage, { tableId: "table:public.Größe", classification: "global" }],
+    };
+    expect(findings("SELECT * FROM [Größe]", dialect, withTable)).toEqual([]);
+    expect(findings("SELECT * FROM [GRÖSSE]", dialect, withTable)).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+  });
+
+  it.each(folding)("reads non-ASCII text in strings and comments as text under %s", (_label, dialect) => {
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = N'ｏｐｅｎ'", dialect)).toEqual([]);
+    expect(findings("SELECT * FROM orders /* ｎｏｔｅ */ WHERE agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+
+  it.each(folding)("keeps ASCII quoted names under %s", (_label, dialect) => {
+    expect(findings("SELECT [agency_id] FROM [orders] WHERE [agency_id] = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a column list after a table's alias renames the table's columns", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const postgresFamily = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+
+  // Postgres and CockroachDB read `t (agency_id, x)` as new names for the table's first columns, so
+  // `t.agency_id` is its first column: on Postgres 17, `people.client t (agency_id, real_agency)`
+  // filtered on client_id and returned clients of other agencies.
+  const renamed: Array<[string, string, string]> = [
+    ["after a bare alias", "SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids", "orders"],
+    ["after AS", "SELECT * FROM orders AS t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids", "orders"],
+    ["with an unqualified predicate", "SELECT * FROM orders t (agency_id, x) WHERE agency_id = :tenant_agency_ids", "orders"],
+    ["inside a derived table", "SELECT * FROM (SELECT * FROM orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids) d", "orders"],
+    ["after a quoted alias", 'SELECT * FROM orders "t" (agency_id, x) WHERE "t".agency_id = :tenant_agency_ids', "orders"],
+    ["on a schema-qualified table", "SELECT * FROM public.orders t (agency_id, x) WHERE t.agency_id = :tenant_agency_ids", "orders"],
+    ["on the root table", "SELECT * FROM agencies a (x, id) WHERE a.id = :tenant_agency_ids", "agencies"],
+  ];
+
+  it.each(postgresFamily)("refuses a renamed read under %s", (_label, dialect) => {
+    for (const [label, sql, table] of renamed) {
+      expect(findings(sql, dialect), label).toContain(`MISSING_TENANT_PREDICATE:table:public.${table}`);
+    }
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(renamed[0]![1], policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(postgresFamily)("keeps a read with no column list under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM orders t WHERE t.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders AS t WHERE t.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders WHERE (agency_id = :tenant_agency_ids)",
+      "SELECT o.id FROM orders o JOIN agencies a ON (a.id = o.agency_id) WHERE o.agency_id = :tenant_agency_ids AND a.id = :tenant_agency_ids",
+      // Unqualified: SQL Server takes `USING` after a table as its alias, so under a custom id or none
+      // the read has no name the check recognises (#399).
+      "SELECT a.name FROM agencies a JOIN orders USING (agency_id) WHERE a.id = :tenant_agency_ids AND agency_id = :tenant_agency_ids",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION (SELECT id FROM lookup_states)",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  it("keeps SQL Server's table hint in parentheses after an alias, which SQL Server doesn't read as a column list", () => {
+    expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT o.* FROM orders o WITH (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    // Without `WITH`, the hint is no form the check names a read in, so only an unqualified predicate filters it (#399).
+    expect(findings("SELECT o.* FROM orders o (NOLOCK) WHERE o.agency_id = :tenant_agency_ids", SQLSERVER_DIALECT)).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+  });
+
+  // A column list on a parenthesized FROM item renames what it outputs: on Postgres 17,
+  // `(billing."order" o JOIN ref.status s ON true) AS j (a1, a2, agency_id)` made `agency_id` the
+  // join's third column (client_id), and `agency_id = 2` returned agency 1's orders.
+  const renamedItem: Array<[string, string]> = [
+    ["a join after AS", "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a join with a bare alias", "SELECT * FROM (orders o JOIN lookup_states s ON true) j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a join in double parentheses", "SELECT * FROM ((orders o JOIN lookup_states s ON true)) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a join after a comma in FROM", "SELECT * FROM service_types t, (orders o JOIN lookup_states s ON true) AS j (a1, a2, agency_id) WHERE agency_id = :tenant_agency_ids"],
+    ["a derived table", "SELECT * FROM (SELECT total, agency_id FROM orders) AS t (agency_id, real_agency) WHERE agency_id = :tenant_agency_ids"],
+  ];
+
+  it.each(postgresFamily)("refuses a read inside a parenthesized FROM item with a column list under %s", (_label, dialect) => {
+    for (const [label, sql] of renamedItem) expect(findings(sql, dialect), label).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+  });
+
+  it.each(postgresFamily)("keeps a parenthesized FROM item without a column list under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM (orders o JOIN lookup_states s ON true) AS j WHERE agency_id = :tenant_agency_ids",
+      "SELECT * FROM (orders o JOIN lookup_states s ON o.state = s.code) WHERE o.agency_id = :tenant_agency_ids",
+      "SELECT * FROM (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) AS t",
+      "SELECT o.* FROM (VALUES (1, 2)) AS v (a, b), orders o WHERE o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+});
+
+describe("validateTenantGuardrails — a join with LEFT, RIGHT, FULL or OUTER in it is outer, whatever hint it carries", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const every = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+  const on = "ON x.code = o.state AND o.agency_id = :tenant_agency_ids";
+
+  // An outer join's ON doesn't filter the side it keeps: on CockroachDB, each hinted join below kept
+  // every order, and Postgres and CockroachDB both kept every row for the nested form.
+  const outer: Array<[string, string]> = [
+    ["LEFT STRAIGHT JOIN", `SELECT o.* FROM orders o LEFT STRAIGHT JOIN lookup_states x ${on}`],
+    ["LEFT LOOKUP JOIN", `SELECT o.* FROM orders o LEFT LOOKUP JOIN lookup_states x ${on}`],
+    ["LEFT INVERTED JOIN", `SELECT o.* FROM orders o LEFT INVERTED JOIN lookup_states x ${on}`],
+    ["LEFT OUTER STRAIGHT JOIN", `SELECT o.* FROM orders o LEFT OUTER STRAIGHT JOIN lookup_states x ${on}`],
+    ["RIGHT STRAIGHT JOIN, with orders on the kept side", `SELECT o.* FROM lookup_states x RIGHT STRAIGHT JOIN orders o ${on}`],
+    ["FULL STRAIGHT JOIN", `SELECT o.* FROM orders o FULL STRAIGHT JOIN lookup_states x ${on}`],
+    ["an ON that closes an earlier LEFT JOIN", `SELECT o.* FROM orders o LEFT JOIN lookup_states x JOIN service_types s ON s.id = x.id ${on}`],
+  ];
+
+  it.each(every)("refuses the predicate in an outer join's ON under %s", (_label, dialect) => {
+    for (const [label, sql] of outer) expect(findings(sql, dialect), label).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(outer[0]![1], policy, agencyScope, { dialect: COCKROACHDB_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(every)("keeps the predicate in an inner join's ON under %s", (_label, dialect) => {
+    for (const sql of [
+      `SELECT o.* FROM orders o INNER STRAIGHT JOIN lookup_states x ${on}`,
+      `SELECT o.* FROM orders o INNER HASH JOIN lookup_states x ${on}`,
+      "SELECT o.* FROM orders o JOIN lookup_states x ON LEFT(x.code, 2) = o.state AND o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  // In a SELECT with an outer join, only WHERE and HAVING filter every row, so an inner join's ON there counts for nothing (#400).
+  it.each(every)("refuses the predicate in an inner join's ON beside an outer join under %s", (_label, dialect) => {
+    expect(findings(`SELECT o.* FROM orders o LEFT JOIN service_types s ON s.id = o.id JOIN lookup_states x ${on}`, dialect)).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+  });
+});
+
+describe("validateTenantGuardrails — a quoted tenant column counts only when spelled as the schema spells it", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const exact = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+
+  // Postgres and CockroachDB compare a quoted name exactly, so "AGENCY_ID" is x's column, not
+  // orders.agency_id: on Postgres 17 the statement returned every agency's rows.
+  it.each(exact)("refuses another source's quoted column spelled in another case under %s", (_label, dialect) => {
+    for (const sql of [
+      'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids',
+      'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "Agency_Id") x WHERE :tenant_agency_ids = "Agency_Id"',
+      'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" IN (:tenant_agency_ids)',
+    ]) {
+      expect(findings(sql, dialect), sql).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+    }
+  });
+
+  it.each([["a custom id", customEngine()], ["no dialect", undefined]] as const)(
+    "refuses it in backticks or brackets under %s, whose engine may compare those exactly too",
+    (_label, dialect) => {
+      for (const sql of [
+        "SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS `AGENCY_ID`) x WHERE `AGENCY_ID` = :tenant_agency_ids",
+        "SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS [AGENCY_ID]) x WHERE [AGENCY_ID] = :tenant_agency_ids",
+      ]) {
+        expect(findings(sql, dialect), sql).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+      }
+    },
+  );
+
+  it("a strict policy refuses it", () => {
+    const sql = 'SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids';
+    expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each([exact[0], exact[1]])("keeps the column unquoted in any case under %s, which folds it to lower case", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM orders WHERE AGENCY_ID = :tenant_agency_ids",
+      // The alias as written: MySQL and SQL Server may compare it case-sensitively (#399).
+      "SELECT o.* FROM orders o WHERE o.Agency_Id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  // A custom id or none is also read the SQL Server way, which compares the name as written: the
+  // server's collation may be case-sensitive, and the check can't see it.
+  it.each([exact[2], exact[3]])("keeps the column as the schema spells it, and refuses it unquoted in another case, under %s", (_label, dialect) => {
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+    expect(findings("SELECT * FROM orders WHERE AGENCY_ID = :tenant_agency_ids", dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
+  it("keeps a quoted column in the schema's spelling under postgres and cockroachdb", () => {
+    for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT]) {
+      expect(findings('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids', dialect)).toEqual([]);
+    }
+  });
+
+  it("keeps a quoted column in another case where the engine compares column names without case", () => {
+    expect(findings("SELECT * FROM orders WHERE `AGENCY_ID` = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
+    // SQLite folds ASCII letters, quoted or not.
+    expect(findings('SELECT * FROM orders WHERE "AGENCY_ID" = :tenant_agency_ids', SQLITE_DIALECT)).toEqual([]);
+  });
+
+  it("refuses a column in another case under sqlserver, whose collation may compare names case-sensitively", () => {
+    expect(findings("SELECT * FROM orders WHERE [AGENCY_ID] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    expect(findings("SELECT * FROM orders WHERE [agency_id] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a quoted name is a name, whatever it holds", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const every = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ] as const;
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // The engine reads each quoted ":tenant_agency_ids" as x's column, equal to o.agency_id, so the WHERE
+  // keeps every row (Postgres, CockroachDB and SQL Server for "…" and […], MySQL for `…`).
+  const spelledLikeThePlaceholder: Array<[string, string]> = [
+    ["double quotes", 'SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"'],
+    ["backticks", "SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS `:tenant_agency_ids`) x WHERE o.agency_id = `:tenant_agency_ids`"],
+    ["brackets", "SELECT o.* FROM orders o CROSS APPLY (SELECT o.agency_id AS [:tenant_agency_ids]) x WHERE o.agency_id = [:tenant_agency_ids]"],
+  ];
+
+  it.each(every)("doesn't count a quoted name spelled like the placeholder as the placeholder under %s", (_label, dialect) => {
+    for (const [label, sql] of spelledLikeThePlaceholder) expect(findings(sql, dialect), label).toContain(missing);
+  });
+
+  // A quoted name may hold U+0001. It is part of the name, so the OR after it is still a keyword: on
+  // Postgres, SQL Server and MySQL each statement returned every agency's rows.
+  const holdingU0001: Array<[string, string]> = [
+    ["double quotes", 'SELECT "\u0001".a FROM orders CROSS JOIN (SELECT 1 AS a) "\u0001" WHERE agency_id = :tenant_agency_ids AND "\u0001".a = 1 OR 1=1'],
+    ["backticks", "SELECT `\u0001`.a FROM orders CROSS JOIN (SELECT 1 AS a) `\u0001` WHERE agency_id = :tenant_agency_ids AND `\u0001`.a = 1 OR 1=1"],
+    ["brackets", "SELECT [\u0001].a FROM orders CROSS JOIN (SELECT 1 AS a) [\u0001] WHERE agency_id = :tenant_agency_ids AND [\u0001].a = 1 OR 1=1"],
+  ];
+
+  it.each(every)("reads the OR after a quoted name that holds U+0001 under %s", (_label, dialect) => {
+    for (const [label, sql] of holdingU0001) expect(findings(sql, dialect), label).toContain(missing);
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(spelledLikeThePlaceholder[0]![1], policy, agencyScope, { dialect: POSTGRES_DIALECT }))
+      .toThrow(TenantGuardrailError);
+  });
+
+  it.each(every)("keeps the real placeholder beside a quoted name spelled like it under %s", (_label, dialect) => {
+    expect(findings('SELECT ":tenant_agency_ids" AS label, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids', dialect)).toEqual([]);
+  });
+});
+
+
+describe("validateTenantGuardrails — SQLite reads a single-quoted name in a table's place as the table", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+
+  // SQLite takes a '…' literal where only a name may stand as that name: on SQLite 3.54, each of these
+  // read every row of orders.
+  const named: Array<[string, string, string]> = [
+    ["after FROM", "SELECT * FROM 'orders'", "orders"],
+    ["in a UNION branch", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM 'orders'", "orders"],
+    ["after a schema", "SELECT * FROM main.'orders'", "orders"],
+    ["after a comma in FROM", "SELECT * FROM lookup_states, 'orders'", "orders"],
+    ["after JOIN", "SELECT o.* FROM lookup_states x JOIN 'orders' o ON o.state = x.code", "orders"],
+    ["after IN, which reads a table", "SELECT * FROM lookup_states WHERE code IN 'orders'", "orders"],
+    ["the root table", "SELECT * FROM 'agencies'", "agencies"],
+  ];
+
+  it.each(maybeSqlite)("refuses an unfiltered read of a single-quoted table under %s", (_label, dialect) => {
+    for (const [label, sql, table] of named) {
+      expect(findings(sql, dialect), label).toContain(`MISSING_TENANT_PREDICATE:table:public.${table}`);
+    }
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails("SELECT * FROM 'orders'", policy, agencyScope, { dialect: SQLITE_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  it.each(maybeSqlite)("keeps a filtered read, and string literals elsewhere, under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM 'orders' WHERE agency_id = :tenant_agency_ids",
+      "SELECT 'orders' AS label, o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids",
+      "SELECT 'a', 'orders' FROM lookup_states",
+      "SELECT * FROM lookup_states WHERE code IN ('orders', 'x')",
+      "SELECT CASE WHEN code = 'x' THEN 'orders' ELSE 'other' END AS kind FROM lookup_states",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  it.each([["postgres", POSTGRES_DIALECT], ["mysql", MYSQL_DIALECT], ["sqlserver", SQLSERVER_DIALECT]] as const)(
+    "leaves %s alone, which rejects a literal in a table's place",
+    (_label, dialect) => {
+      expect(findings("SELECT * FROM 'orders'", dialect)).toEqual([]);
+    },
+  );
+});
+
+describe("validateTenantGuardrails — SQLite reads a single-quoted alias as the read's alias", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // SQLite takes `'o'` after a table or CTE reference as its alias, so `o.agency_id` filters that read,
+  // not orders: on SQLite 3.54, `FROM sub_agencies 'o', orders WHERE o.agency_id = 42` returned every order.
+  const quotedAlias: Array<[string, string]> = [
+    ["after a table", "SELECT orders.* FROM sub_agencies 'o', orders WHERE o.agency_id = :tenant_agency_ids"],
+    ["after AS", "SELECT orders.* FROM sub_agencies AS 'o', orders WHERE o.agency_id = :tenant_agency_ids"],
+    ["after a CTE reference", "WITH s AS (SELECT * FROM sub_agencies) SELECT orders.* FROM s 'o', orders WHERE o.agency_id = :tenant_agency_ids"],
+  ];
+
+  it.each(maybeSqlite)("reads a quoted alias that names another read under %s", (_label, dialect) => {
+    for (const [label, sql] of quotedAlias) expect(findings(sql, dialect), label).toContain(missing);
+  });
+
+  it.each(maybeSqlite)("reads it the way it reads the same plain alias under %s", (_label, dialect) => {
+    // The plain alias is refused for the same reason.
+    expect(findings("SELECT orders.* FROM sub_agencies o, orders WHERE o.agency_id = :tenant_agency_ids", dialect)).toContain(missing);
+    // On SQLite, `orders 'x', orders` and `t 'y', t` read two sources with the alias on the first, as
+    // with a plain alias, so the check gives each form the plain alias's verdict.
+    for (const [quoted, plain] of [
+      ["SELECT x.* FROM orders 'x', orders WHERE orders.agency_id = :tenant_agency_ids", "SELECT x.* FROM orders x, orders WHERE orders.agency_id = :tenant_agency_ids"],
+      [
+        "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t 'y', t WHERE t.agency_id = :tenant_agency_ids",
+        "WITH t AS (SELECT * FROM orders) SELECT y.* FROM t y, t WHERE t.agency_id = :tenant_agency_ids",
+      ],
+    ] as const) {
+      expect(findings(quoted, dialect), quoted).toEqual(findings(plain, dialect));
+    }
+  });
+
+  // The alias is one name, whatever it spells: `'join'` is no join and `'.'` no dot, as with `"join"`.
+  it.each(maybeSqlite)("reads a quoted alias spelled like a keyword or a mark as a name under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT o.* FROM orders o LEFT JOIN lookup_states 'join' ON o.agency_id = :tenant_agency_ids",
+      "SELECT o.* FROM orders o LEFT JOIN lookup_states AS 'join' ON o.agency_id = :tenant_agency_ids",
+      "SELECT \"cross\".* FROM orders 'cross', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders 'where', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders '.' CROSS JOIN orders o WHERE o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toContain(missing);
+    }
+  });
+
+  it("a strict policy refuses it", () => {
+    expect(() => validateTenantGuardrails(quotedAlias[0]![1], policy, agencyScope, { dialect: SQLITE_DIALECT })).toThrow(TenantGuardrailError);
+  });
+
+  const throughQuotedAlias = [
+    "SELECT x.* FROM orders 'x' WHERE x.agency_id = :tenant_agency_ids",
+    "SELECT x.* FROM orders AS 'x' WHERE x.agency_id = :tenant_agency_ids",
+  ];
+
+  it("keeps a read filtered through its own quoted alias under sqlite", () => {
+    for (const sql of throughQuotedAlias) expect(findings(sql, SQLITE_DIALECT), sql).toEqual([]);
+  });
+
+  it.each(maybeSqlite.slice(1))("refuses it under %s, where the other engines read no alias there (#399)", (_label, dialect) => {
+    for (const sql of throughQuotedAlias) expect(findings(sql, dialect), sql).toContain(missing);
+  });
+
+  it.each(maybeSqlite)("keeps a read with a plain alias, or a quoted column alias, under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT x.* FROM orders x WHERE x.agency_id = :tenant_agency_ids",
+      "SELECT count(*) AS 'n' FROM orders WHERE agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+});
+
+describe("validateTenantGuardrails — SQLite reads a single-quoted name inside a source's parentheses as the table", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // SQLite takes `('orders')` as the table `orders`, and `(orders) 'x'` as that read aliased `x`.
+  it.each(maybeSqlite)("refuses an unfiltered read written that way under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM ('orders')",
+      "SELECT * FROM (('orders'))",
+      "SELECT o.* FROM lookup_states s JOIN ('orders') o ON 1 = 1",
+      "SELECT o.* FROM lookup_states s, ('orders') o",
+      "SELECT x.* FROM (orders) 'x', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT x.* FROM ('orders') 'x', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      // A comma inside a source's parentheses is a FROM-list comma too.
+      "SELECT * FROM (lookup_states, 'orders')",
+      "SELECT o.* FROM (lookup_states s, 'orders' o)",
+      "SELECT o.* FROM lookup_states t JOIN (lookup_states s, ('orders') o) ON 1 = 1",
+      "SELECT x.* FROM (lookup_states s, orders 'x'), sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toContain(missing);
+    }
+  });
+
+  it.each(maybeSqlite)("still reads the strings of an IN (…) list as values under %s", (_label, dialect) => {
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status IN ('a', 'orders')", dialect)).toEqual([]);
+  });
+
+  it.each(maybeSqlite)("keeps such a read filtered through its own name under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM ('orders') WHERE agency_id = :tenant_agency_ids",
+      "SELECT o.* FROM ('orders') o WHERE o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  // Under a custom id or none, the other engines' readings see no alias there, as with `orders 'x'`.
+  it("keeps a parenthesized read filtered through its quoted alias under sqlite", () => {
+    expect(findings("SELECT x.* FROM (orders) 'x' WHERE x.agency_id = :tenant_agency_ids", SQLITE_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a HAVING predicate counts only on a GROUP BY key", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+  const every = [
+    ["postgres", POSTGRES_DIALECT], ["mysql", MYSQL_DIALECT], ["mariadb", MARIADB_DIALECT], ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined],
+  ] as const;
+  const mysqlFamily = [["mysql", MYSQL_DIALECT], ["mariadb", MARIADB_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+
+  // HAVING filters groups. On a column that isn't grouped, SQLite and MariaDB take an arbitrary
+  // row's value, so the group holds every tenant's rows.
+  it.each(every)("refuses a HAVING predicate on a column that isn't grouped under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT agency_id, count(*), sum(total) FROM orders HAVING agency_id = :tenant_agency_ids",
+      "SELECT agency_id, count(*) FROM orders GROUP BY status HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.agency_id, count(*) FROM orders o GROUP BY o.status HAVING o.agency_id IN (:tenant_agency_ids)",
+      // The key must be the predicate's own column, written the same way.
+      "SELECT o.agency_id, count(*) FROM orders o JOIN sub_agencies s ON s.id = o.id GROUP BY s.agency_id HAVING o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual(orders);
+    }
+  });
+
+  it.each(every)("keeps a HAVING predicate on a GROUP BY key under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.agency_id, count(*) FROM orders o GROUP BY o.status, o.agency_id HAVING o.agency_id IN (:tenant_agency_ids)",
+      "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING :tenant_agency_ids = agency_id",
+      "SELECT DISTINCT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      // A qualified select item is the column itself, not an alias.
+      "SELECT o.agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  // MySQL and MariaDB resolve an unqualified name in HAVING (and GROUP BY) to a select-list alias first.
+  it.each(mysqlFamily)("refuses an unqualified HAVING name that a select-list item is aliased to under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT o.total AS agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.total agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.id, o.total AS agency_id FROM orders o HAVING agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual(orders);
+    }
+  });
+
+  it("keeps it under postgres, where HAVING and GROUP BY read the table's column", () => {
+    const sql = "SELECT o.total AS agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids";
+    expect(findings(sql, POSTGRES_DIALECT)).toEqual([]);
+  });
+
+  it.each(mysqlFamily)("refuses a discriminator in HAVING that a select-list item is aliased to under %s", (_label, dialect) => {
+    const sql = "SELECT n.id, 'agency' AS owner_type FROM notes n WHERE n.owner_id = :tenant_agency_ids GROUP BY owner_type HAVING owner_type = 'agency'";
+    expect(findings(sql, dialect)).toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+});
+
+describe("validateTenantGuardrails — the AND of a BETWEEN is no conjunction", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+  const every = [
+    POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT, customEngine(), undefined,
+  ];
+
+  // MySQL and MariaDB read `0 BETWEEN 0 AND o.agency_id IN (…)` with the IN as the upper bound,
+  // which is always true; with `=`, the comparison is against the BETWEEN's result.
+  it.each([
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND o.agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN SYMMETRIC 0 AND o.agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND (o.agency_id = :tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE o.status = 'a' AND 0 BETWEEN 0 AND o.agency_id = :tenant_agency_ids",
+    // Whatever the lower bound holds, the BETWEEN takes the next AND.
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN RIGHT('0', 1) AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1)::int AND o.agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND (o.agency_id IN (:tenant_agency_ids))",
+    // A qualified column named like a keyword is a column, not the keyword.
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN o.and AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN o.end AND o.agency_id IN (:tenant_agency_ids)",
+  ])("refuses a predicate written as a BETWEEN's upper bound: %s", (sql) => {
+    for (const dialect of every) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual(orders);
+  });
+
+  it("keeps refusing one after NOT BETWEEN", () => {
+    expect(findings("SELECT o.* FROM orders o WHERE 0 NOT BETWEEN 1 AND o.agency_id = :tenant_agency_ids")).toEqual(orders);
+  });
+
+  it.each([
+    "SELECT * FROM orders WHERE total BETWEEN 1 AND 5 AND agency_id = :tenant_agency_ids",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total BETWEEN 1 AND 5",
+    "SELECT * FROM orders WHERE (total BETWEEN 1 AND 5) AND agency_id = :tenant_agency_ids",
+    "SELECT * FROM orders WHERE total BETWEEN LEFT('1', 1) AND 5 AND agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE o.total BETWEEN 0 AND o.between AND o.agency_id = :tenant_agency_ids",
+  ])("keeps a predicate beside a BETWEEN: %s", (sql) => {
+    for (const dialect of every) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — `order` or `group` after a dot, with a space or comment between, is a table", () => {
+  const named: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    scopedTables: ["billing.order", "app.group"].map((t) => ({
+      id: `table:${t}`,
+      scopeThrough: [{ root: "table:public.agencies", column: `table:${t}#agency_id` }],
+    })),
+    polymorphicTables: [],
+    globalTables: [],
+    coverage: [],
+  };
+  const check = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, named, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([
+    ["postgres", POSTGRES_DIALECT], ["cockroachdb", COCKROACHDB_DIALECT], ["mysql", MYSQL_DIALECT], ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT], ["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined],
+  ] as const)("refuses an unfiltered read written that way under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT by.order_id, by.agency_id FROM billing . order by",
+      "SELECT by.order_id FROM billing ./**/order by",
+      "SELECT by.order_id FROM billing.\norder by",
+      "SELECT by.order_id FROM billing .\n order by WHERE by.order_id > 0",
+    ]) {
+      expect(check(sql, dialect), JSON.stringify(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:billing.order"]);
+    }
+    expect(check("SELECT by.id FROM app . group by", dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:app.group"]);
+  });
+
+  it("keeps such a read filtered through its alias, with ORDER BY after it", () => {
+    expect(check("SELECT o.order_id FROM billing . order o WHERE o.agency_id = :tenant_agency_ids ORDER BY o.order_id", POSTGRES_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — an OR after an alias spelled like a clause word is still beside the predicate", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // Postgres takes `lock` and `qualify` as aliases, and SQL Server `limit`, `natural` and `using`,
+  // so the OR after them applies to the whole WHERE.
+  it.each([
+    ["lock", POSTGRES_DIALECT],
+    ["qualify", POSTGRES_DIALECT],
+    ["limit", SQLSERVER_DIALECT],
+    ["natural", SQLSERVER_DIALECT],
+    ["using", SQLSERVER_DIALECT],
+    ["window", SQLSERVER_DIALECT],
+  ] as const)("refuses an OR after the alias %s", (alias, dialect) => {
+    const sql = `SELECT * FROM orders ${alias} WHERE agency_id = :tenant_agency_ids AND ${alias}.id > 0 OR 1 = 1`;
+    expect(findings(sql, dialect), sql).toContain(missing);
+    for (const other of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT, customEngine(), undefined]) {
+      expect(findings(sql, other), `${sql} (${other?.id ?? "none"})`).toContain(missing);
+    }
+  });
+
+  it("keeps an OR in the ON of a later STRAIGHT_JOIN under mysql", () => {
+    const sql = "SELECT o.* FROM orders o JOIN lookup_states s ON o.agency_id = :tenant_agency_ids STRAIGHT_JOIN service_types t ON t.id = 1 OR t.id = 2";
+    expect(findings(sql, MYSQL_DIALECT)).toEqual([]);
+  });
+
+  it.each([
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY id",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids GROUP BY id HAVING count(*) > 1 OR count(*) = 0",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids LIMIT 10",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION SELECT id FROM lookup_states WHERE code = 'a' OR code = 'b'",
+    "SELECT o.* FROM orders o JOIN lookup_states s ON o.agency_id = :tenant_agency_ids JOIN service_types t ON t.id = 1 OR t.id = 2",
+  ])("keeps an OR in a later clause: %s", (sql) => {
+    expect(findings(sql, POSTGRES_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a tenant column written as the engine reads it", () => {
+  // A camelCase policy, as Prisma writes Postgres columns. Read the Postgres way, an unquoted
+  // `agencyid` folds to lower case, so it is another column than `"agencyId"`.
+  const camel: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+    hierarchy: [],
+    coverage: [],
+    globalTables: [],
+    polymorphicTables: [],
+    scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] }],
+  };
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+  const findings = (sql: string, dialect: DialectSpec | undefined, p: NormalizedTenantPolicy = camel, s: TenantScope = scope) =>
+    validateTenantGuardrails(sql, p, s, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const postgresReadings: Array<[string, DialectSpec | undefined]> = [
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+    ["a custom id", customEngine()],
+    ["no dialect", undefined],
+  ];
+
+  it.each(postgresReadings)("refuses an unquoted name for a camelCase column under %s", (_label, dialect) => {
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    expect(findings(`SELECT c.* FROM "Client" c, (SELECT generate_series(1, 100000) AS agencyid) z WHERE agencyid = :tenant_agency_ids`, dialect)).toEqual(refused);
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c.agencyId = :tenant_agency_ids`, dialect)).toEqual(refused);
+  });
+
+  it.each(postgresReadings)("keeps the camelCase column quoted as the schema spells it under %s", (_label, dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."agencyId" = :tenant_agency_ids`, dialect)).toEqual([]);
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."agencyId" IN (:tenant_agency_ids)`, dialect)).toEqual([]);
+  });
+
+  it.each([postgresReadings[0]!, postgresReadings[1]!])("keeps a lower-case policy column written unquoted in any case under %s", (_label, dialect) => {
+    expect(findings("SELECT o.* FROM orders o WHERE o.AGENCY_ID = :tenant_agency_ids", dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps a lower-case policy column quoted as the schema spells it under $id", (dialect) => {
+    expect(findings('SELECT o.* FROM orders o WHERE o."agency_id" = :tenant_agency_ids', dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
+  });
+
+  it.each(postgresReadings)("refuses a derived table or CTE that passes another column through as the camelCase one under %s", (_label, dialect) => {
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    const body = `SELECT c.id, agencyid AS "agencyId" FROM "Client" c, (SELECT generate_series(1, 100000) AS agencyid) z`;
+    expect(findings(`SELECT x.* FROM (${body}) x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual(refused);
+    expect(findings(`WITH x AS (${body}) SELECT x.* FROM x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual(refused);
+  });
+
+  it.each(postgresReadings)("keeps a derived table or CTE that passes the camelCase column through under %s", (_label, dialect) => {
+    expect(findings(`SELECT x.* FROM (SELECT c.id, c."agencyId" FROM "Client" c) x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual([]);
+    expect(findings(`WITH x AS (SELECT c.id, c."agencyId" AS "agencyId" FROM "Client" c) SELECT x.* FROM x WHERE x."agencyId" = :tenant_agency_ids`, dialect)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a derived table that passes a quoted name in another case through as the tenant column under $id", (dialect) => {
+    const sql = `SELECT x.* FROM (SELECT o.id, "AGENCY_ID" AS agency_id FROM orders o, (SELECT generate_series(1, 100000) AS "AGENCY_ID") z) x WHERE x.agency_id = :tenant_agency_ids`;
+    expect(findings(sql, dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    expect(findings("SELECT x.* FROM (SELECT o.id, o.agency_id FROM orders o) x WHERE x.agency_id = :tenant_agency_ids", dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
+  });
+
+  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT])("keeps an ASCII name in any case under $id, which compares ASCII column names that way", (dialect) => {
+    expect(findings("SELECT c.* FROM Client c WHERE c.agencyid = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+
+  it("refuses a name in another case under sqlserver, whose collation may be case-sensitive, and keeps the schema's spelling", () => {
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    expect(findings("SELECT c.* FROM Client c CROSS JOIN (SELECT 42 AS agencyid) z WHERE agencyid = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(refused);
+    expect(findings("SELECT c.* FROM Client c CROSS JOIN (SELECT 42 AS agencyid) z WHERE [agencyid] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(refused);
+    expect(findings("SELECT c.* FROM Client c WHERE c.agencyId = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT c.* FROM Client c WHERE c.[agencyId] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+  });
+
+  it("refuses a non-ASCII name in another case under sqlite, which folds only ASCII letters", () => {
+    const accented: NormalizedTenantPolicy = {
+      ...camel,
+      scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#Égency_id" }] }],
+    };
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS "égency_id") z WHERE "égency_id" = :tenant_agency_ids`, SQLITE_DIALECT, accented)).toEqual(refused);
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS égency_id) z WHERE égency_id = :tenant_agency_ids`, SQLITE_DIALECT, accented)).toEqual(refused);
+    expect(findings(`SELECT c.* FROM Client c WHERE c."Égency_id" = :tenant_agency_ids`, SQLITE_DIALECT, accented)).toEqual([]);
+    expect(findings("SELECT c.* FROM Client c WHERE c.ÉGENCY_ID = :tenant_agency_ids", SQLITE_DIALECT, accented)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a type discriminator written as the engine reads it", () => {
+  const findings = (sql: string, dialect: DialectSpec | undefined) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a discriminator spelled in another case, quoted, under $id", (dialect) => {
+    // `"OWNER_TYPE"` is another column than `owner_type` here: the derived table's, not the note's.
+    expect(findings(`SELECT n.* FROM notes n, (SELECT 'agency' AS "OWNER_TYPE") z WHERE "OWNER_TYPE" = 'agency' AND n.owner_id = :tenant_agency_ids`, dialect)).toEqual([
+      "MISSING_TYPE_DISCRIMINATOR:table:public.notes",
+    ]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses an unquoted name for a camelCase discriminator under $id, and keeps it quoted as the schema spells it", (dialect) => {
+    const camel: NormalizedTenantPolicy = {
+      ...policy,
+      enforcement: "warn",
+      roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+      hierarchy: [],
+      coverage: [],
+      globalTables: [],
+      scopedTables: [],
+      polymorphicTables: [{ id: "table:public.Note", typeColumn: "table:public.Note#ownerType", idColumn: "table:public.Note#ownerId", mapping: { agency: "table:public.Agency" } }],
+    };
+    const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+    const camelFindings = (sql: string) => validateTenantGuardrails(sql, camel, scope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+    expect(camelFindings(`SELECT n.* FROM "Note" n, (SELECT 'agency' AS ownertype) z WHERE ownertype = 'agency' AND n."ownerId" = :tenant_agency_ids`)).toEqual([
+      "MISSING_TYPE_DISCRIMINATOR:table:public.Note",
+    ]);
+    expect(camelFindings(`SELECT n.* FROM "Note" n WHERE n."ownerType" = 'agency' AND n."ownerId" = :tenant_agency_ids`)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps the discriminator unquoted in any case, or quoted as the schema spells it, under $id", (dialect) => {
+    expect(findings("SELECT n.* FROM notes n WHERE n.OWNER_TYPE = 'agency' AND n.owner_id = :tenant_agency_ids", dialect)).toEqual([]);
+    expect(findings(`SELECT n.* FROM notes n WHERE n."owner_type" = 'agency' AND n.owner_id = :tenant_agency_ids`, dialect)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a name with non-ASCII letters, read as every engine of the reading reads it", () => {
+  const scopedBy = (column: string, label = "agency"): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    roots: [{ id: "table:public.Agency", label, tenantIdColumn: "table:public.Agency#id" }],
+    hierarchy: [],
+    coverage: [],
+    globalTables: [],
+    polymorphicTables: [],
+    scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: `table:public.Client#${column}` }] }],
+  });
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+  const findings = (sql: string, p: NormalizedTenantPolicy, dialect: DialectSpec | undefined) =>
+    validateTenantGuardrails(sql, p, scope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+
+  // CockroachDB lower-cases every letter of an unquoted name, Postgres only ASCII ones, and the check
+  // reads both the Postgres way: such a name is another column on one of them.
+  const accented = scopedBy("Égency_id");
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+  ] as const)("refuses an unquoted name with an upper-case non-ASCII letter under %s", (_label, dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c, (SELECT 42 AS égency_id) z WHERE Égency_id = :tenant_agency_ids`, accented, dialect)).toEqual(refused);
+    expect(findings(`SELECT x.* FROM (SELECT c.id, Égency_id AS "Égency_id" FROM "Client" c, (SELECT 42 AS égency_id) z) x WHERE x."Égency_id" = :tenant_agency_ids`, accented, dialect)).toEqual(refused);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps the non-ASCII column quoted as the schema spells it, or unquoted in lower case, under $id", (dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."Égency_id" = :tenant_agency_ids`, accented, dialect)).toEqual([]);
+    expect(findings("SELECT c.* FROM Client c WHERE c.STÄDTE_ID = :tenant_agency_ids", scopedBy("städte_id"), dialect)).toEqual(refused);
+    expect(findings("SELECT c.* FROM Client c WHERE c.städte_id = :tenant_agency_ids", scopedBy("städte_id"), dialect)).toEqual([]);
+  });
+
+  // MariaDB keeps U+212A KELVIN SIGN apart from `k`, which Unicode lower-casing merges. Such a name is
+  // also refused outright now, and the predicate still ties to no column.
+  const workspace = scopedBy("workspace_id", "workspace");
+  const kelvin = "worKspace_id";
+  it.each([
+    ["mariadb", MARIADB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+  ] as const)("refuses a name with a letter Unicode folding merges into ASCII under %s", (_label, dialect) => {
+    const both = ["UNICODE_ESCAPED_IDENTIFIER:", ...refused];
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`, workspace, dialect)).toEqual(both);
+    expect(findings(`SELECT x.* FROM (SELECT c.id, ${kelvin} AS workspace_id FROM Client c, (SELECT 42 AS ${kelvin}) z) x WHERE x.workspace_id = :tenant_workspace_ids`, workspace, dialect)).toEqual(both);
+  });
+
+  // A custom id or none is also read the SQL Server way, which refuses a non-ASCII name the schema doesn't spell.
+  it.each([customEngine(), undefined])("refuses both non-ASCII forms under a custom id or none", (dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c, (SELECT 42 AS égency_id) z WHERE Égency_id = :tenant_agency_ids`, accented, dialect)).not.toEqual([]);
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`, workspace, dialect)).not.toEqual([]);
+  });
+
+  it.each([MARIADB_DIALECT, MYSQL_DIALECT])("keeps an ASCII name in any case under $id", (dialect) => {
+    expect(findings("SELECT c.* FROM Client c WHERE c.WORKSPACE_ID = :tenant_workspace_ids", workspace, dialect)).toEqual([]);
+  });
+
+  it.each([MARIADB_DIALECT, MYSQL_DIALECT])("refuses a discriminator written with a letter Unicode folding merges into ASCII under $id", (dialect) => {
+    const polymorphic: NormalizedTenantPolicy = {
+      ...workspace,
+      scopedTables: [],
+      polymorphicTables: [{ id: "table:public.Note", typeColumn: "table:public.Note#kind", idColumn: "table:public.Note#owner_id", mapping: { workspace: "table:public.Agency" } }],
+    };
+    const k = "Kind";
+    expect(findings(`SELECT n.* FROM Note n, (SELECT 'workspace' AS ${k}) z WHERE ${k} = 'workspace' AND n.owner_id = :tenant_workspace_ids AND n.kind IS NOT NULL`, polymorphic, dialect)).toEqual([
+      "UNICODE_ESCAPED_IDENTIFIER:",
+      "MISSING_TYPE_DISCRIMINATOR:table:public.Note",
+    ]);
+    expect(findings("SELECT n.* FROM Note n WHERE n.KIND = 'workspace' AND n.owner_id = :tenant_workspace_ids", polymorphic, dialect)).toEqual([]);
+  });
+
+  // SQLite folds only ASCII letters, so a GROUP BY key in another non-ASCII case is another column.
+  it("refuses a HAVING predicate whose GROUP BY key has a non-ASCII letter in another case under sqlite", () => {
+    const sql = `SELECT count(*) AS n, sum(c.amount) AS total FROM Client c, (SELECT 1 AS "égency_id") z GROUP BY "égency_id" HAVING "Égency_id" = :tenant_agency_ids`;
+    expect(findings(sql, accented, SQLITE_DIALECT)).toEqual(refused);
+    expect(findings(`SELECT c."Égency_id", count(*) FROM Client c GROUP BY c."Égency_id" HAVING c."Égency_id" = :tenant_agency_ids`, accented, SQLITE_DIALECT)).toEqual([]);
+    expect(findings("SELECT agency_id, count(*) FROM orders GROUP BY AGENCY_ID HAVING agency_id = :tenant_agency_ids", { ...policy, enforcement: "warn" }, SQLITE_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — every name the engines of a reading read apart names nothing", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const clients: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const findings = (sql: string, dialect: DialectSpec | undefined, scope: TenantScope = agencyScope) =>
+    validateTenantGuardrails(sql, warnPolicy, scope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // An unquoted `Ö` is `Ö` to Postgres and `ö` to CockroachDB, so a qualifier or alias spelled that way ties to no read.
+  describe.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("an unquoted qualifier or alias with an upper-case non-ASCII letter under $id", (dialect) => {
+    it("ties a predicate to no read", () => {
+      expect(findings(`SELECT "Ö".* FROM orders "Ö", (SELECT 42 AS agency_id) ö WHERE Ö.agency_id = :tenant_agency_ids`, dialect)).toEqual([orders]);
+      expect(findings(`SELECT Ö.* FROM orders Ö WHERE Ö.agency_id = :tenant_agency_ids`, dialect)).toEqual([orders]);
+    });
+
+    it("keeps the qualifier quoted as the alias is, or an alias in lower case", () => {
+      expect(findings(`SELECT "Ö".* FROM orders "Ö" WHERE "Ö".agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+      expect(findings("SELECT ö.* FROM orders ö WHERE ö.agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+    });
+
+    it("satisfies no discriminator", () => {
+      const sql = `SELECT "Ö".* FROM notes "Ö", (SELECT 'agency' AS owner_type) ö WHERE Ö.owner_type = 'agency' AND "Ö".owner_id = :tenant_agency_ids`;
+      expect(findings(sql, dialect)).toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+    });
+
+    it("passes no column through a derived table", () => {
+      const sql = `SELECT x.* FROM (SELECT Ö.agency_id, "Ö".id FROM orders "Ö", (SELECT 42 AS agency_id) ö) x WHERE x.agency_id = :tenant_agency_ids`;
+      expect(findings(sql, dialect)).toEqual([orders]);
+    });
+
+    it("names no read when the alias is unquoted and the qualifier quoted, in a self-join or not", () => {
+      expect(findings(`SELECT Ö.* FROM orders Ö, (SELECT 42 AS agency_id) "Ö" WHERE "Ö".agency_id = :tenant_agency_ids`, dialect)).toEqual([orders]);
+      const selfJoin = `SELECT Ö.* FROM orders Ö JOIN orders b ON TRUE, (SELECT 42 AS agency_id) "Ö" WHERE "Ö".agency_id = :tenant_agency_ids AND b.agency_id = :tenant_agency_ids`;
+      expect(findings(selfJoin, dialect)).toEqual([orders]);
+    });
+  });
+
+  // Some engine folds U+0130, U+0131, U+017F and U+212A into an ASCII letter, and CockroachDB
+  // normalizes a name to NFC: the check can't match such a name the engine's way, so it refuses it.
+  const everyDialect = [POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT, customEngine(), undefined];
+  /** `name` quoted the way the dialect's engine quotes a name: MySQL and MariaDB read `"…"` as a string. */
+  const quoted = (dialect: DialectSpec | undefined, name: string) => (dialect?.id === "mysql" || dialect?.id === "mariadb" ? `\`${name}\`` : `"${name}"`);
+  it.each(everyDialect)("refuses a name some engine folds into ASCII, or one not in NFC, under %#", (dialect) => {
+    for (const sql of [
+      "SELECT * FROM clİents",
+      "SELECT d.* FROM (SELECT z.k AS agency_İd, o.agency_id, o.id FROM orders o, (SELECT 42 AS k) z) d WHERE d.agency_id = :tenant_agency_ids",
+      "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.Kind = 1",
+      "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.ıd = 1",
+      "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.ſtate = 1",
+      `SELECT o.* FROM orders o, (SELECT 42 AS ${quoted(dialect, "céntimo")}) z WHERE o.agency_id = :tenant_agency_ids`,
+    ]) {
+      expect(findings(sql, dialect, sql.includes("ents") && !sql.includes("orders") ? clients : agencyScope), sql).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    }
+  });
+
+  // CockroachDB lower-cases each letter on its own, so a final capital sigma reads `σ`, which JavaScript's
+  // `toLowerCase` writes `ς` at the end of a word: the table name is still the table's.
+  it.each([COCKROACHDB_DIALECT, MYSQL_DIALECT])("finds the read of a table whose name ends in a capital sigma under $id", (dialect) => {
+    const greek: NormalizedTenantPolicy = {
+      ...warnPolicy,
+      scopedTables: [...warnPolicy.scopedTables, { id: "table:public.οσ", scopeThrough: [{ root: "table:public.agencies", column: "table:public.οσ#agency_id" }] }],
+    };
+    const check = (sql: string) => validateTenantGuardrails(sql, greek, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+    expect(check("SELECT * FROM ΟΣ")).toEqual(["MISSING_TENANT_PREDICATE:table:public.οσ"]);
+    expect(check("SELECT * FROM οσ WHERE agency_id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  // A name's edges are letters, whatever the script: a scoped table whose name starts or ends with a
+  // non-ASCII letter is mentioned, so its reads need their predicate.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT])("checks a scoped table whose name starts or ends with a non-ASCII letter under $id", (dialect) => {
+    for (const table of ["ürün", "café", "οσ"]) {
+      const withTable: NormalizedTenantPolicy = {
+        ...warnPolicy,
+        scopedTables: [...warnPolicy.scopedTables, { id: `table:public.${table}`, scopeThrough: [{ root: "table:public.agencies", column: `table:public.${table}#agency_id` }] }],
+      };
+      const check = (sql: string) => validateTenantGuardrails(sql, withTable, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+      expect(check(`SELECT * FROM ${table}`), table).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+      expect(check(`SELECT * FROM ${table} WHERE agency_id = :tenant_agency_ids`), table).toEqual([]);
+    }
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT])("keeps a non-ASCII alias in NFC under $id", (dialect) => {
+    expect(findings(`SELECT o.total AS "Número", o.state AS "État" FROM orders o WHERE o.agency_id = :tenant_agency_ids`, dialect)).toEqual([]);
+    expect(findings("SELECT count(*) AS umsatz_größe FROM orders WHERE agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a join counts only on the columns the policy declares (#400)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const scoped = (tenantRoot: string): TenantScope => ({ access: { kind: "ids", tenantRoot: `table:public.${tenantRoot}`, ids: ["5"] } });
+  const findings = (sql: string, root = "agencies") =>
+    validateTenantGuardrails(sql, warnPolicy, scoped(root)).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const appointments = ["MISSING_TENANT_PREDICATE:table:public.appointments"];
+
+  it.each([
+    ["the issue's join on the wrong ID column", "SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a hop on the wrong column of the right table", "SELECT a.client_id FROM appointments a JOIN clients c ON a.id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    // A source named like a policy table is not that table: the policy's columns can't be trusted on it.
+    ["a derived table aliased like the hop's table", "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, s.id AS sub_agency_id FROM sub_agencies s WHERE s.id IN (:tenant_sub_agency_ids)) clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a CTE named like the hop's table", "WITH clients AS (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["another table aliased like the hop's table", "SELECT a.* FROM appointments a JOIN lookup_states clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the path's tables with no join between them", "SELECT a.client_id FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids)", "clients"],
+    // A FROM inside a call or in IS DISTINCT FROM opens no FROM clause.
+    ["a name after IS DISTINCT FROM", "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, '5' AS sub_agency_id, 0 AS clients) clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids) AND 1 IS DISTINCT FROM clients", "sub_agencies"],
+    ["a name after FROM inside EXTRACT", "SELECT a.* FROM appointments a JOIN (SELECT 1 AS id, '5' AS sub_agency_id, 0 AS clients) clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids) AND EXTRACT(YEAR FROM clients) = 1", "sub_agencies"],
+    // A CTE named like a policy table shadows it, with or without a column list.
+    ["a CTE with a column list named like the hop's table", "WITH clients (id, sub_agency_id) AS (SELECT 1, '5') SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the same CTE over VALUES, read unaliased", "WITH clients(id, sub_agency_id) AS (VALUES (1, '5')) SELECT a.* FROM appointments a JOIN clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a MATERIALIZED CTE named like the hop's table", "WITH clients AS MATERIALIZED (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a NOT MATERIALIZED CTE named like the hop's table", "WITH clients AS NOT MATERIALIZED (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a data-modifying CTE named like the hop's table", "WITH clients AS (UPDATE lookup_states SET code = code RETURNING 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+  ])("rejects %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toEqual(appointments);
+  });
+
+  // An outer join keeps rows its ON doesn't match, so an equality there between two columns on the same side holds for none of them.
+  it.each([
+    ["a scoped table's tenant column equal to its own ID in an outer ON", "SELECT o.* FROM orders o LEFT JOIN lookup_states ls ON o.agency_id = o.id WHERE o.id = :tenant_agency_ids", "agencies", "MISSING_TENANT_PREDICATE:table:public.orders"],
+    ["a hop column equal to the read's own ID in an outer ON", "SELECT a.* FROM appointments a LEFT JOIN lookup_states ls ON a.client_id = a.id WHERE a.id IN (:tenant_client_ids)", "clients", appointments[0]],
+  ])("rejects %s", (_label, sql, root, finding) => {
+    expect(findings(sql, root)).toContain(finding);
+  });
+
+  // An inner join's ON filters only the rows that join builds: a later RIGHT or FULL JOIN, or an outer join around it, keeps the rest.
+  it.each([
+    ["a RIGHT JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a FULL JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids FULL JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a LEFT JOIN around a parenthesized inner join that filters", "SELECT o.* FROM orders o LEFT JOIN (agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids) ON o.agency_id = a.id", "agencies"],
+    ["a nested join written without parentheses", "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = g.id AND g.id = :tenant_agency_ids", "agencies"],
+    ["a direct predicate in that nested join's outer ON", "SELECT o.* FROM orders o LEFT JOIN agencies g JOIN sub_agencies s ON s.agency_id = g.id ON o.agency_id = :tenant_agency_ids", "agencies"],
+    ["a join path read on the preserved side of a RIGHT JOIN", "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id AND s.id IN (:tenant_sub_agency_ids) RIGHT JOIN appointments a ON a.client_id = c.id", "sub_agencies"],
+    // A join hint between the join kind and JOIN (CockroachDB's STRAIGHT) leaves it an outer join.
+    ["a RIGHT STRAIGHT JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT STRAIGHT JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a RIGHT OUTER STRAIGHT JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids RIGHT OUTER STRAIGHT JOIN orders o ON o.agency_id = a.id", "agencies"],
+    ["a FULL STRAIGHT JOIN after a filter in an inner ON", "SELECT o.* FROM agencies a JOIN campaigns m ON m.owning_agency = a.id AND a.id = :tenant_agency_ids FULL STRAIGHT JOIN orders o ON o.agency_id = a.id", "agencies"],
+  ])("rejects %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toContain(sql.startsWith("SELECT o.*") ? "MISSING_TENANT_PREDICATE:table:public.orders" : appointments[0]);
+  });
+
+  it.each([
+    ["a polymorphic id in IN (…) over its own filtered rows", "SELECT * FROM notes WHERE owner_type = 'agency' AND owner_id IN (SELECT owner_id FROM notes n2 WHERE n2.owner_type = 'agency' AND n2.owner_id = :tenant_agency_ids)"],
+    ["a scoped table's id in IN (…) over its own filtered rows", "SELECT * FROM orders o WHERE o.id IN (SELECT o2.id FROM orders o2 WHERE o2.agency_id = :tenant_agency_ids)"],
+  ])("now refuses %s: IN (…) no longer carries a predicate out on its own (documented)", (_label, sql) => {
+    expect(findings(sql)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${sql.includes("FROM notes") ? "notes" : "orders"}`]);
+  });
+
+  it("rejects a filter only in an outer join's ON, which keeps every appointment (and leaves the covered root unfiltered)", () => {
+    expect(findings("SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id AND c.id IN (:tenant_client_ids)", "clients"))
+      .toEqual(["MISSING_TENANT_PREDICATE:table:public.clients", ...appointments]);
+  });
+
+  it.each([
+    ["the issue's correct join", "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["the join written the other way round, in WHERE", "SELECT a.* FROM appointments a, clients c WHERE c.id = a.client_id AND c.id IN (:tenant_client_ids)", "clients"],
+    ["the last hop's column filtered directly", "SELECT a.* FROM appointments a WHERE a.client_id IN (:tenant_client_ids)", "clients"],
+    ["a parenthesized join group", "SELECT a.* FROM appointments a JOIN (clients c JOIN sub_agencies s ON c.sub_agency_id = s.id) ON a.client_id = c.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a FROM-list comma after a join", "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id, appointments a WHERE a.client_id = c.id AND s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+  ])("accepts %s", (_label, sql, root) => {
+    expect(findings(sql, root)).toEqual([]);
+  });
+
+  // A root read filtered through another table's column needs its own join to a filtered read of that
+  // table in its own SELECT: a read of the table elsewhere, or a second read of the root, gets nothing from it.
+  it.each([
+    ["a carrier read in an EXISTS subquery", "SELECT a.* FROM agencies a, (SELECT 2 AS agency_id) o WHERE o.agency_id = :tenant_agency_ids AND EXISTS (SELECT 1 FROM orders o WHERE o.agency_id = :tenant_agency_ids)"],
+    ["a carrier read in a CTE body", "WITH c AS (SELECT * FROM orders o WHERE o.agency_id = :tenant_agency_ids) SELECT a.* FROM agencies a, (SELECT 2 AS agency_id) o WHERE o.agency_id = :tenant_agency_ids"],
+    ["a second root read beside an alias spelled like a clause", "SELECT b.* FROM agencies lock, agencies b, orders o WHERE o.agency_id = :tenant_agency_ids AND o.agency_id = lock.id"],
+    ["a second root read after a MySQL index hint", "SELECT b.* FROM agencies a FORCE INDEX FOR JOIN (PRIMARY), agencies b, orders o WHERE o.agency_id = :tenant_agency_ids AND o.agency_id = a.id"],
+    ["a second root read in a parenthesized FROM list", "SELECT b.* FROM (agencies a, agencies b) JOIN orders o ON o.agency_id = a.id WHERE o.agency_id = :tenant_agency_ids"],
+  ])("rejects a root filtered only through %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  // The cost of reading no ON in a SELECT with an outer join: a join path written as LEFT JOIN, with
+  // WHERE filtering the joined side, is refused. With that WHERE it is an inner join; write JOIN.
+  it("refuses a join path written as a LEFT JOIN, though WHERE filters the joined side", () => {
+    expect(findings("SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients"))
+      .toEqual(appointments);
+    expect(findings("SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients")).toEqual([]);
+  });
+
+  // With no dialect, the Postgres reading takes `STRAIGHT_JOIN` as no join word, so the read has no name there (#399).
+  it("accepts MySQL's STRAIGHT_JOIN under mysql", () => {
+    const sql = "SELECT a.* FROM appointments a STRAIGHT_JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)";
+    expect(validateTenantGuardrails(sql, warnPolicy, scoped("clients"), { dialect: MYSQL_DIALECT }).warnings).toEqual([]);
+  });
+
+  it.each([
+    ["joined on a column that isn't its ID", "SELECT a.name FROM agencies a JOIN orders o ON a.id = o.total WHERE o.agency_id = :tenant_agency_ids"],
+    ["cross-joined to a filtered scoped table", "SELECT a.name, o.id FROM agencies a, orders o WHERE o.agency_id = :tenant_agency_ids"],
+    ["IN (…) over a column that doesn't carry its IDs", "SELECT name FROM agencies WHERE id IN (SELECT total FROM orders WHERE agency_id = :tenant_agency_ids)"],
+  ])("the scope's root table: rejects one %s", (_label, sql) => {
+    expect(findings(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  it.each([
+    ["joined on the scoped table's tenant column", "SELECT o.id, a.name FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE o.agency_id IN (:tenant_agency_ids)"],
+    ["IN (…) over the scoped table's tenant column", "SELECT name FROM agencies WHERE id IN (SELECT agency_id FROM orders WHERE agency_id = :tenant_agency_ids)"],
+  ])("the scope's root table: accepts one %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  it.each([
+    ["equal to the filtered root's ID", "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids"],
+    ["IN (…) the filtered root's IDs", "SELECT * FROM orders o WHERE o.agency_id IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)"],
+  ])("now accepts a scoped table's tenant column %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  // An unqualified column in an ON names only that join's operands, so it ties nothing to a read the
+  // ON can't see: one before a FROM-list comma, one joined after it, or one outside its parentheses.
+  it.each([
+    ["a read before a FROM-list comma", "SELECT o.* FROM orders o, (SELECT 5 AS agency_id) d JOIN lookup_states ls ON agency_id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["a read joined after the ON", "SELECT o.* FROM (SELECT 5 AS agency_id) d JOIN lookup_states ls ON agency_id = :tenant_agency_ids CROSS JOIN orders o", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["the root read before a FROM-list comma", "SELECT a.* FROM agencies a, (SELECT 5 AS id) d JOIN lookup_states ls ON id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.agencies", "agencies"],
+    ["a hop whose column only a read outside the ON has", "SELECT a.* FROM appointments a, clients c JOIN orders o ON client_id = c.id WHERE c.id IN (:tenant_client_ids)", "MISSING_TENANT_PREDICATE:table:public.appointments", "clients"],
+    ["a hop credited to a read joined after the ON", "SELECT ap.* FROM orders o JOIN clients c ON client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id CROSS JOIN appointments ap WHERE o.agency_id = :tenant_agency_ids AND s.agency_id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.appointments", "agencies"],
+  ])("rejects an unqualified ON column tied to %s", (_label, sql, finding, root) => {
+    expect(findings(sql, root)).toContain(finding);
+  });
+
+  // In a SELECT with an outer join, an ON equality holds only on the rows that join matched, so it
+  // seeds, links and hops nothing: only WHERE and HAVING do.
+  it.each([
+    ["two preserved reads linked through the nullable side", "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN campaigns m ON m.owning_agency = g.id AND m.owning_agency = o.agency_id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["the same through a RIGHT JOIN", "SELECT o.* FROM campaigns m RIGHT JOIN (orders o CROSS JOIN agencies g) ON m.owning_agency = g.id AND m.owning_agency = o.agency_id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["a root read linked through the nullable side", "SELECT x.* FROM agencies x CROSS JOIN agencies g LEFT JOIN campaigns m ON m.owning_agency = g.id AND m.owning_agency = x.id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.agencies", "agencies"],
+    ["a join path linked through the nullable side", "SELECT a.* FROM appointments a CROSS JOIN sub_agencies s LEFT JOIN clients c ON a.client_id = c.id AND c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "MISSING_TENANT_PREDICATE:table:public.appointments", "sub_agencies"],
+    ["a hop in another join's outer ON", "SELECT o.* FROM orders o CROSS JOIN agencies g LEFT JOIN lookup_states ls ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids", "MISSING_TENANT_PREDICATE:table:public.orders", "agencies"],
+    ["a join-path hop in another join's outer ON", "SELECT a.* FROM appointments a CROSS JOIN clients c LEFT JOIN lookup_states ls ON a.client_id = c.id WHERE c.sub_agency_id IN (:tenant_sub_agency_ids)", "MISSING_TENANT_PREDICATE:table:public.appointments", "sub_agencies"],
+  ])("rejects %s", (_label, sql, finding, root) => {
+    expect(findings(sql, root)).toContain(finding);
+  });
+
+  // Postgres and CockroachDB compare a quoted name exactly, so `"AGENCY_ID"` and `"ID"` are other columns.
+  it.each([["postgres", POSTGRES_DIALECT], ["cockroachdb", COCKROACHDB_DIALECT]] as const)("rejects an IN (SELECT …) link on a quoted column in another case under %s", (_label, dialect) => {
+    for (const sql of [
+      'SELECT o.* FROM orders o, (SELECT 5 AS "AGENCY_ID") d WHERE "AGENCY_ID" IN (SELECT id FROM agencies WHERE id = :tenant_agency_ids)',
+      'SELECT o.* FROM orders o, (SELECT 7 AS "ID") d WHERE o.agency_id IN (SELECT "ID" FROM agencies WHERE id = :tenant_agency_ids)',
+    ]) {
+      expect(validateTenantGuardrails(sql, warnPolicy, scoped("agencies"), { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`), sql)
+        .toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+    }
+  });
+
+  // SQL Server drops a quoted name's trailing spaces, so `[clients ]` is a CTE that shadows `clients`.
+  it("rejects a hop through a CTE named like the hop's table with a trailing space", () => {
+    for (const sql of [
+      "WITH [clients ] (id, sub_agency_id) AS (SELECT 1, '5') SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)",
+      "WITH [clients ] AS (SELECT 1 AS id, '5' AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)",
+    ]) {
+      for (const dialect of [SQLSERVER_DIALECT, undefined]) {
+        expect(validateTenantGuardrails(sql, warnPolicy, scoped("sub_agencies"), { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`), sql)
+          .toContain("MISSING_TENANT_PREDICATE:table:public.appointments");
+      }
+    }
+    const control = "WITH [clients] AS (SELECT 1 AS id, '5' AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)";
+    expect(validateTenantGuardrails(control, warnPolicy, scoped("sub_agencies"), { dialect: SQLSERVER_DIALECT }).warnings.map((w) => w.rule)).toContain("MISSING_TENANT_PREDICATE");
+  });
+});
+
+describe("validateTenantGuardrails — a column-path read is proven only through its own scope column (#400)", () => {
+  // Other paths declare `orders.billing_agency_id` and `orders.customer_id` as hops, which must not
+  // stand in for `orders.agency_id`, the column `orders` itself is scoped by.
+  const variant: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [
+      ...policy.scopedTables,
+      { id: "table:public.customers", scopeThrough: [{ root: "table:public.agencies", column: "table:public.customers#agency_id" }] },
+      {
+        id: "table:public.shipments",
+        scopeThrough: [{
+          root: "table:public.agencies",
+          join: [{ from: "table:public.shipments#order_id", to: "table:public.orders#id" }, { from: "table:public.orders#billing_agency_id", to: "table:public.agencies#id" }],
+        }],
+      },
+      {
+        id: "table:public.line_items",
+        scopeThrough: [{
+          root: "table:public.agencies",
+          join: [
+            { from: "table:public.line_items#order_id", to: "table:public.orders#id" },
+            { from: "table:public.orders#customer_id", to: "table:public.customers#id" },
+            { from: "table:public.customers#agency_id", to: "table:public.agencies#id" },
+          ],
+        }],
+      },
+    ],
+  };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, variant, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+
+  it.each([
+    "SELECT * FROM orders WHERE billing_agency_id = :tenant_agency_ids",
+    "SELECT o.id, o.total FROM orders o WHERE o.billing_agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o JOIN agencies a ON o.billing_agency_id = a.id WHERE a.id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o JOIN customers cu ON o.customer_id = cu.id WHERE cu.agency_id = :tenant_agency_ids",
+  ])("refuses it filtered through another path's column: %s", (sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it.each([
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids",
+  ])("keeps it filtered through its own column: %s", (sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+
+  // A join path walks only its own steps, in order, then its root: `orders.agency_id` says nothing
+  // about which agency a shipment (through `orders.billing_agency_id`) or a line item (through
+  // `orders.customer_id`) belongs to. `main` refuses these too.
+  it.each([
+    ["shipments", "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id WHERE o.agency_id = :tenant_agency_ids"],
+    ["line_items", "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id WHERE o.agency_id = :tenant_agency_ids"],
+    ["line_items", "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id JOIN agencies a ON a.id = o.agency_id WHERE a.id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids"],
+  ])("refuses a join-path read proven through a step's table's own scope column: %s", (table, sql) => {
+    expect(findings(sql)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+  });
+
+  it.each([
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id WHERE o.billing_agency_id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+    "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id JOIN customers cu ON o.customer_id = cu.id WHERE cu.agency_id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id JOIN agencies a ON o.billing_agency_id = a.id WHERE a.id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+  ])("keeps a join-path read proven through its own steps: %s", (sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a qualified column in an ON names only a read that ON can see (#400)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // In each, `g` in the first ON is the outer `g` (a correlated or LATERAL context), not the
+  // agencies read joined after it, so the engine links orders to a value outside the scope.
+  it.each([
+    ["a correlated subquery", "SELECT g.id, (SELECT max(o.total) FROM orders o JOIN (SELECT 1 AS z) d ON o.agency_id = g.id JOIN agencies g ON g.id = :tenant_agency_ids) AS s FROM (SELECT 1 AS id) g"],
+    ["LATERAL", "SELECT x.* FROM (SELECT 1 AS id) g CROSS JOIN LATERAL (SELECT o.* FROM orders o JOIN (SELECT 1 AS z) d ON o.agency_id = g.id JOIN agencies g ON g.id = :tenant_agency_ids) x"],
+    ["a parenthesized join", "SELECT o.* FROM agencies g JOIN (orders o JOIN lookup_states d ON o.agency_id = g.id) ON g.id = :tenant_agency_ids"],
+    ["a FROM-list comma", "SELECT o.* FROM agencies g, orders o JOIN lookup_states d ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids"],
+  ])("refuses a link through a read the ON can't see: %s", (_label, sql) => {
+    for (const dialect of [POSTGRES_DIALECT, MYSQL_DIALECT, undefined]) expect(findings(sql, dialect), dialect?.id ?? "none").toContain(missing);
+  });
+
+  it("keeps a link through a read the ON sees", () => {
+    expect(findings("SELECT o.* FROM agencies g JOIN orders o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  // The same holds for a table read twice in its SELECT, and for a discriminator.
+  it("refuses a self-join's read filtered only in an ON that can't see it", () => {
+    const sql = "SELECT (SELECT max(o2.total) FROM orders o1 JOIN lookup_states d ON o1.agency_id = :tenant_agency_ids AND o2.agency_id = :tenant_agency_ids JOIN orders o2 ON o2.state = d.code) AS m FROM (SELECT 42 AS agency_id) o2";
+    for (const dialect of [POSTGRES_DIALECT, MYSQL_DIALECT, undefined]) expect(findings(sql, dialect), dialect?.id ?? "none").toContain(missing);
+  });
+
+  it("keeps a self-join whose second read is filtered in its own join's ON", () => {
+    expect(findings("SELECT o2.* FROM orders o1 JOIN orders o2 ON o2.agency_id = :tenant_agency_ids AND o2.id = o1.id WHERE o1.agency_id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  it("refuses a discriminator only in an ON that can't see its read", () => {
+    const sql = "SELECT (SELECT max(n.body) FROM lookup_states d JOIN service_types e ON n.owner_type = 'agency' JOIN notes n ON n.owner_id = :tenant_agency_ids) AS b FROM (SELECT 'agency' AS owner_type) n";
+    for (const dialect of [POSTGRES_DIALECT, MYSQL_DIALECT, undefined]) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+
+  // The cost, under sqlite: SQLite lets an ON see a comma-joined read and one joined after it, which
+  // the check doesn't follow, so such a query is refused; write the join out, or filter in WHERE.
+  it("refuses, under sqlite, an ON that relies on a comma-joined or later-joined read", () => {
+    for (const sql of [
+      "SELECT o.* FROM orders o, lookup_states d JOIN service_types e ON o.agency_id = :tenant_agency_ids AND e.id = d.id",
+      "SELECT o.* FROM lookup_states d JOIN service_types e ON o.agency_id = :tenant_agency_ids AND e.id = d.id JOIN orders o ON o.state = d.code",
+    ]) {
+      expect(findings(sql, SQLITE_DIALECT), sql).toContain(missing);
+    }
+    expect(findings("SELECT o.* FROM orders o, lookup_states d JOIN service_types e ON e.id = d.id WHERE o.agency_id = :tenant_agency_ids", SQLITE_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a join path's steps chain from its table, in any listed order (#400)", () => {
+  const line = (steps: Array<[string, string]>): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [
+      ...policy.scopedTables,
+      { id: "table:public.customers", scopeThrough: [{ root: "table:public.agencies", column: "table:public.customers#agency_id" }] },
+      { id: "table:public.line_items", scopeThrough: [{ root: "table:public.agencies", join: steps.map(([from, to]) => ({ from, to })) }] },
+    ],
+  });
+  const steps: Array<[string, string]> = [
+    ["table:public.line_items#order_id", "table:public.orders#id"],
+    ["table:public.orders#customer_id", "table:public.customers#id"],
+    ["table:public.customers#agency_id", "table:public.agencies#id"],
+  ];
+  const findings = (sql: string, p: NormalizedTenantPolicy) =>
+    validateTenantGuardrails(sql, p, agencyScope).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const correct = "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id JOIN customers cu ON o.customer_id = cu.id WHERE cu.agency_id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids";
+  const throughOrdersOwnColumn = "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id WHERE o.agency_id = :tenant_agency_ids";
+
+  it.each([
+    ["listed from the table", steps],
+    ["listed from the root", [...steps].reverse()],
+    ["shuffled", [steps[1]!, steps[2]!, steps[0]!]],
+  ] as const)("keeps the correct join and refuses another path's column, with the steps %s", (_label, listed) => {
+    const p = line([...listed]);
+    expect(findings(correct, p)).toEqual([]);
+    expect(findings(throughOrdersOwnColumn, p)).toEqual(["MISSING_TENANT_PREDICATE:table:public.line_items"]);
+  });
+});
+
+describe("validateTenantGuardrails — a join path that stops short of its root proves nothing (#400)", () => {
+  // `shipments` declares only `shipments.order_id → orders.id`, which never reaches `agencies`.
+  const short: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [
+      ...policy.scopedTables,
+      { id: "table:public.shipments", scopeThrough: [{ root: "table:public.agencies", join: [{ from: "table:public.shipments#order_id", to: "table:public.orders#id" }] }] },
+    ],
+  };
+  const findings = (sql: string) => validateTenantGuardrails(sql, short, agencyScope).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id WHERE o.agency_id = :tenant_agency_ids",
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id JOIN agencies g ON g.id = o.agency_id WHERE g.id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+  ])("refuses the path's table, while the end table passes on its own column: %s", (sql) => {
+    expect(findings(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:public.shipments"]);
+  });
+});
+
+describe("validateTenantGuardrails — an ON after STRAIGHT_JOIN closes that join, not an outer one (#400)", () => {
+  // MySQL and MariaDB read `a JOIN c ON … STRAIGHT_JOIN s ON …` as two inner joins, so the second ON is a join-path hop.
+  const findings = (sql: string, dialect: DialectSpec | undefined) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const hop = (on: string) => `SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id STRAIGHT_JOIN sub_agencies s ON ${on} WHERE s.agency_id = :tenant_agency_ids`;
+
+  it.each([undefined, MYSQL_DIALECT, MARIADB_DIALECT])("keeps the hop under %s", (dialect) => {
+    expect(findings(hop("s.id = c.sub_agency_id"), dialect)).toEqual([]);
+  });
+
+  it.each([undefined, MYSQL_DIALECT, MARIADB_DIALECT])("refuses a hop on the wrong column under %s", (dialect) => {
+    expect(findings(hop("s.id = c.id"), dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.appointments"]);
+  });
+});
+
+describe("validateTenantGuardrails — the join proof reads names as the predicate does, and its documented cost (#400)", () => {
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("links a join through a quoted camelCase column under $id, spelled as the schema spells it, and no other spelling", (dialect) => {
+    const camel: NormalizedTenantPolicy = {
+      ...policy,
+      enforcement: "warn",
+      roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+      hierarchy: [],
+      coverage: [],
+      globalTables: [],
+      polymorphicTables: [],
+      scopedTables: [
+        { id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] },
+        {
+          id: "table:public.Appointment",
+          scopeThrough: [{ root: "table:public.Agency", join: [{ from: "table:public.Appointment#clientId", to: "table:public.Client#id" }, { from: "table:public.Client#agencyId", to: "table:public.Agency#id" }] }],
+        },
+      ],
+    };
+    const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+    const findings = (sql: string) => validateTenantGuardrails(sql, camel, scope, { dialect }).warnings.map((w) => w.tableId);
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."agencyId" = :tenant_agency_ids`)).toEqual([]);
+    expect(findings(`SELECT a.* FROM "Appointment" a JOIN "Client" c ON a."clientId" = c.id WHERE c."agencyId" = :tenant_agency_ids`)).toEqual([]);
+    expect(findings(`SELECT a.* FROM "Appointment" a WHERE a."clientId" IN (SELECT id FROM "Client" WHERE "agencyId" = :tenant_agency_ids)`)).toEqual([]);
+    for (const on of ["a.clientid = c.id", 'a."clientid" = c.id', 'a."CLIENTID" = c.id']) {
+      expect(findings(`SELECT a.* FROM "Appointment" a JOIN "Client" c ON ${on} WHERE c."agencyId" = :tenant_agency_ids`), on).toEqual(["table:public.Appointment"]);
+    }
+  });
+
+  it("refuses an inner join's ON predicate when a qualified column is named like an outer-join word, and accepts it quoted", () => {
+    const findings = (sql: string) => validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope).warnings.map((w) => w.tableId);
+    const sql = (full: string) => `SELECT o.id, ${full} FROM orders o JOIN lookup_states d ON o.agency_id = :tenant_agency_ids AND d.code = o.state`;
+    expect(findings(sql("o.full"))).toEqual(["table:public.orders"]);
+    expect(findings(sql('o."full"'))).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a join proof's HAVING terms count only on GROUP BY keys (#400)", () => {
+  const clients: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const findings = (sql: string) => validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, clients).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const appointments = ["MISSING_TENANT_PREDICATE:table:public.appointments"];
+
+  it.each([
+    ["a seed on a column the SELECT doesn't group by", "SELECT a.client_id, count(*) FROM appointments a JOIN clients c ON a.client_id = c.id GROUP BY a.client_id HAVING c.id IN (:tenant_client_ids)"],
+    ["an equality with a side the SELECT doesn't group by", "SELECT a.client_id, count(*) FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids) GROUP BY a.client_id HAVING a.client_id = c.id"],
+  ])("refuses %s", (_label, sql) => {
+    expect(findings(sql)).toContain(appointments[0]);
+  });
+
+  it.each([
+    ["a seed on a GROUP BY key", "SELECT a.client_id, c.id, count(*) FROM appointments a JOIN clients c ON a.client_id = c.id GROUP BY a.client_id, c.id HAVING c.id IN (:tenant_client_ids)"],
+    ["an equality between two GROUP BY keys", "SELECT a.client_id, c.id, count(*) FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids) GROUP BY a.client_id, c.id HAVING a.client_id = c.id"],
+  ])("keeps %s", (_label, sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a join proof reads a written column the way each engine compares names (#400)", () => {
+  const camel: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+    hierarchy: [],
+    coverage: [],
+    globalTables: [],
+    polymorphicTables: [],
+    scopedTables: [
+      { id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] },
+      { id: "table:public.Appointment", scopeThrough: [{ root: "table:public.Agency", join: [{ from: "table:public.Appointment#clientId", to: "table:public.Client#id" }, { from: "table:public.Client#agencyId", to: "table:public.Agency#id" }] }] },
+    ],
+  };
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+  const findings = (sql: string, dialect: DialectSpec) => validateTenantGuardrails(sql, camel, scope, { dialect }).warnings.map((w) => w.tableId);
+  const join = (on: string) => `SELECT a.* FROM Appointment a JOIN Client c ON ${on} WHERE c.agencyId = :tenant_agency_ids`;
+
+  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT])("links a join hop written in any ASCII case under $id", (dialect) => {
+    for (const on of ["a.clientId = c.id", "a.clientid = c.id", "a.CLIENTID = c.id"]) expect(findings(join(on), dialect), on).toEqual([]);
+  });
+
+  it("links a join hop under sqlserver only as the schema spells it", () => {
+    expect(findings(join("a.clientId = c.id"), SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings(join("a.clientid = c.id"), SQLSERVER_DIALECT)).toEqual(["table:public.Appointment"]);
+  });
+});
+
+describe("validateTenantGuardrails — beside an outer join, WHERE counts and a derived table keeps the unmatched side (#400)", () => {
+  const clients: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const findings = (sql: string, scope: TenantScope, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, scope, dialect ? { dialect } : {}).warnings.map((w) => w.tableId);
+
+  it("refuses a join path's equality only in an ON beside OUTER APPLY, and accepts it repeated in WHERE", () => {
+    const from = "SELECT a.*, x.code FROM appointments a JOIN clients c ON a.client_id = c.id OUTER APPLY (SELECT TOP 1 d.code FROM lookup_states d) x";
+    expect(findings(`${from} WHERE c.id IN (:tenant_client_ids)`, clients, SQLSERVER_DIALECT)).toEqual(["table:public.appointments"]);
+    expect(findings(`${from} WHERE a.client_id = c.id AND c.id IN (:tenant_client_ids)`, clients, SQLSERVER_DIALECT)).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a join-path table, in a derived table",
+      "SELECT c.id, COALESCE(x.n, 0) AS n FROM clients c LEFT JOIN (SELECT a.client_id, COUNT(*) AS n FROM appointments a JOIN clients c2 ON a.client_id = c2.id WHERE c2.id IN (:tenant_client_ids) GROUP BY a.client_id) x ON x.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
+      clients,
+    ],
+    [
+      "a column-path table, in a derived table",
+      "SELECT g.id, o.id FROM agencies g LEFT JOIN (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids",
+      agencyScope,
+    ],
+    [
+      "a column-path table, in a CTE",
+      "WITH o AS (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) SELECT g.id, o.id FROM agencies g LEFT JOIN o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids",
+      agencyScope,
+    ],
+    [
+      "a polymorphic table, in a derived table with its discriminator",
+      "SELECT c.id, n.body FROM clients c LEFT JOIN (SELECT * FROM notes WHERE owner_type = 'client' AND owner_id IN (:tenant_client_ids)) n ON n.owner_id = c.id WHERE c.id IN (:tenant_client_ids)",
+      clients,
+    ],
+  ] as const)("accepts %s on the side a LEFT JOIN may leave unmatched", (_label, sql, scope) => {
+    expect(findings(sql, scope)).toEqual([]);
+  });
+
+  it("refuses a join path's root filtered in a derived table on the unmatched side, and accepts the plain JOIN", () => {
+    expect(findings("SELECT a.*, c.name FROM appointments a LEFT JOIN (SELECT * FROM clients WHERE id IN (:tenant_client_ids)) c ON c.id = a.client_id", clients)).toEqual([
+      "table:public.appointments",
+    ]);
+    expect(findings("SELECT a.*, c.name FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", clients)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a name CockroachDB lower-cases or normalizes into another", () => {
+  const scopedBy = (table: string, column = "agency_id"): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [...policy.scopedTables, { id: `table:public.${table}`, scopeThrough: [{ root: "table:public.agencies", column: `table:public.${table}#${column}` }] }],
+  });
+  const findings = (sql: string, p: NormalizedTenantPolicy, dialect: DialectSpec) =>
+    validateTenantGuardrails(sql, p, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  // `J` + U+030C and `Ϊ́` are in NFC as written, but lower-cased they compose into `ǰ` and `ΐ`, which CockroachDB reads.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT])("refuses an unquoted name whose lower-cased letters aren't in NFC under $id", (dialect) => {
+    for (const [table, written] of [["ǰ", "J̌"], ["πρωτεΐνη", "ΠΡΩΤΕΪ́ΝΗ"]]) {
+      expect(findings(`SELECT * FROM ${written}`, scopedBy(table), dialect), written).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+      expect(findings(`SELECT * FROM ${table}`, scopedBy(table), dialect), table).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+      expect(findings(`SELECT * FROM ${table} WHERE agency_id = :tenant_agency_ids`, scopedBy(table), dialect), table).toEqual([]);
+    }
+  });
+
+  // The schema's spelling excuses such a name only as CockroachDB reads it: unquoted, `İTEMS` reads
+  // `items`, `J̌` reads `ǰ` and `ΠΡΩΤΕΪ́ΝΗ` reads `πρωτεΐνη`, whichever table the schema also has.
+  const upperCaseBeside: ReadonlyArray<readonly [string, string]> = [["items", "İTEMS"], ["ǰ", "J̌"], ["πρωτεΐνη", "ΠΡΩΤΕΪ́ΝΗ"]];
+  const withGlobal = (table: string, written: string): NormalizedTenantPolicy => ({ ...scopedBy(table), globalTables: [...policy.globalTables, `table:public.${written}`] });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT])("refuses an unquoted upper-case name the schema also spells under $id", (dialect) => {
+    for (const [table, written] of upperCaseBeside) {
+      expect(findings(`SELECT * FROM ${written}`, withGlobal(table, written), dialect), written).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    }
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("accepts the upper-case name quoted as the schema spells it under $id", (dialect) => {
+    for (const [table, written] of upperCaseBeside) {
+      expect(findings(`SELECT * FROM "${written}"`, withGlobal(table, written), dialect), written).toEqual([]);
+    }
+  });
+
+  // CockroachDB lower-cases a final capital sigma to `σ`, which `toLowerCase` writes `ς`.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a predicate on a read with a column list when the table's name ends in a capital sigma under $id", (dialect) => {
+    const table = "οσ";
+    expect(findings("SELECT * FROM ΟΣ t (id, agency_id) WHERE agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+    expect(findings("SELECT t.x FROM ΟΣ t (agency_id, x) WHERE agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([`MISSING_TENANT_PREDICATE:table:public.${table}`]);
+    expect(findings("SELECT * FROM ΟΣ t WHERE t.agency_id = :tenant_agency_ids", scopedBy(table), dialect)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a derived table that passes another column through under a capital-sigma spelling of the tenant column under $id", (dialect) => {
+    const column = "εταιρειασ_id";
+    const p = scopedBy("ledger", column);
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.ledger"];
+    expect(findings(`SELECT x.* FROM (SELECT z.k AS ΕΤΑΙΡΕΙΑΣ_ID, o.${column}, o.id FROM ledger o, (SELECT 42 AS k) z) x WHERE x.${column} = :tenant_agency_ids`, p, dialect)).toEqual(refused);
+    expect(findings(`SELECT x.* FROM (SELECT o.${column}, o.id FROM ledger o) x WHERE x.${column} = :tenant_agency_ids`, p, dialect)).toEqual([]);
+  });
+
+  // The join proof reads a hop's table and columns the Postgres way: Postgres keeps an upper-case
+  // non-ASCII letter and CockroachDB lower-cases it, so an unquoted `ΟΣ` or `ΕΤΑΙΡΕΙΑΣ_ID` links nothing.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("reads a join path's capital-sigma names apart under $id", (dialect) => {
+    const p: NormalizedTenantPolicy = {
+      ...policy,
+      enforcement: "warn",
+      scopedTables: [
+        ...policy.scopedTables,
+        { id: "table:public.lines", scopeThrough: [{ root: "table:public.agencies", join: [{ from: "table:public.lines#εταιρειασ_id", to: "table:public.οσ#id" }, { from: "table:public.οσ#agency_id", to: "table:public.agencies#id" }] }] },
+      ],
+    };
+    const path = (table: string, hop: string) => `SELECT l.* FROM lines l JOIN ${table} p ON ${hop} JOIN agencies g ON p.agency_id = g.id WHERE g.id = :tenant_agency_ids`;
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.lines"];
+    expect(findings(path("οσ", "l.εταιρειασ_id = p.id"), p, dialect)).toEqual([]);
+    expect(findings(path("ΟΣ", "l.εταιρειασ_id = p.id"), p, dialect)).toEqual(refused);
+    expect(findings(path("οσ", "l.εταιρειασ_id = p.agency_id"), p, dialect)).toEqual(refused);
+    expect(findings(path("οσ", "l.ΕΤΑΙΡΕΙΑΣ_ID = p.id"), p, dialect)).toEqual(refused);
+  });
+});
+
+describe("validateTenantGuardrails — the join proof counts a read only as every engine reads the policy's table", () => {
+  const subAgencies: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.sub_agencies", ids: ["5"] } };
+  const findings = (sql: string, scope: TenantScope, dialect: DialectSpec) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, scope, { dialect }).warnings.map((w) => w.tableId);
+  const path = (clients: string) =>
+    `SELECT a.* FROM appointments a JOIN ${clients} c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)`;
+  const root = (agencies: string) => `SELECT o.* FROM orders o JOIN ${agencies} g ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids`;
+
+  // Postgres and CockroachDB read a quoted name exactly, MySQL and MariaDB keep a table name's case on
+  // some servers, and SQL Server's collation may: `"CLIENTS"` can be another table than `clients`.
+  it.each([
+    ["postgres", POSTGRES_DIALECT, '"CLIENTS"', '"clients"', '"AGENCIES"'],
+    ["cockroachdb", COCKROACHDB_DIALECT, '"CLIENTS"', '"clients"', '"AGENCIES"'],
+    ["mysql", MYSQL_DIALECT, "`CLIENTS`", "`clients`", "`AGENCIES`"],
+    ["mariadb", MARIADB_DIALECT, "`CLIENTS`", "`clients`", "`AGENCIES`"],
+    ["sqlserver", SQLSERVER_DIALECT, "[CLIENTS]", "[clients]", "[AGENCIES]"],
+  ] as const)("refuses a hop or root in another case than the schema's, quoted, under %s", (_label, dialect, other, same, otherRoot) => {
+    expect(findings(path(other), subAgencies, dialect)).toEqual(["table:public.appointments"]);
+    expect(findings(root(otherRoot), agencyScope, dialect)).toEqual(["table:public.orders"]);
+    expect(findings(path(same), subAgencies, dialect)).toEqual([]);
+    expect(findings(path("clients"), subAgencies, dialect)).toEqual([]);
+    expect(findings(root("agencies"), agencyScope, dialect)).toEqual([]);
+  });
+
+  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLSERVER_DIALECT])("refuses a hop in another case, unquoted, under $id", (dialect) => {
+    expect(findings(path("CLIENTS"), subAgencies, dialect)).toEqual(["table:public.appointments"]);
+  });
+
+  // Postgres folds the ASCII letters of an unquoted name, as CockroachDB does, and SQLite compares them in any case.
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, SQLITE_DIALECT])("counts a hop in another ASCII case, unquoted, under $id", (dialect) => {
+    expect(findings(path("CLIENTS"), subAgencies, dialect)).toEqual([]);
   });
 });

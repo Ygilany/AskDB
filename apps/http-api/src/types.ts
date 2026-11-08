@@ -3,7 +3,7 @@ import type { AskDbModeV1, AskUsage, SensitiveGuardrailResult } from "@askdb/cor
 export type AskHttpRequest = {
   question: string;
   /**
-   * Optional override: AskDB Schema v2 bundled JSON as a string.
+   * Optional override: a bundled schema artifact, as a JSON string.
    *
    * Rejected with `403 schema_override_disabled` unless the server sets
    * `httpApi.allowSchemaOverride: true`. Preferred: configure a server-default

@@ -10,13 +10,10 @@ import {
   type TenantSqlDialect,
 } from "./tenant-placeholders.js";
 import { ask, type AskDialect } from "../ask.js";
-import { SchemaParseError, TenantScopeError, UnknownDialectError } from "../errors.js";
+import { SchemaParseError, TenantGuardrailError, TenantScopeError, UnknownDialectError } from "../errors.js";
 import { getDialectSpec, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
-import {
-  placeholderForRoot as publicPlaceholderForRoot,
-  placeholderForTenantRoot as publicPlaceholderForTenantRoot,
-} from "../index.js";
+import { placeholderForTenantRoot as publicPlaceholderForTenantRoot } from "../index.js";
 
 function reasonOf(fn: () => unknown): string | undefined {
   try {
@@ -653,8 +650,7 @@ describe("resolveTenantSql — placeholders derived per root", () => {
 });
 
 // A host that computes a placeholder itself (to write or rebind SQL) must get the one
-// core binds. The public `placeholderForTenantRoot` is that derivation; the deprecated
-// label-only `placeholderForRoot` keeps its old output (#375 review).
+// core binds. The public `placeholderForTenantRoot` is that derivation (#375 review).
 describe("placeholderForTenantRoot — the public derivation agrees with the binder", () => {
   const relabelled: NormalizedTenantPolicy = {
     ...policy,
@@ -675,11 +671,30 @@ describe("placeholderForTenantRoot — the public derivation agrees with the bin
       p.roots.map((root, i) => [placeholders[i], root.id]),
     );
   });
+});
 
-  it("keeps the deprecated label-only placeholderForRoot output unchanged", () => {
-    expect(publicPlaceholderForRoot("Agency")).toBe(":tenant_agency_ids");
-    expect(publicPlaceholderForRoot("Sub-Agency")).toBe(":tenant_sub_agency_ids");
-    expect(publicPlaceholderForRoot("My Cool Root")).toBe(":tenant_my_cool_root_ids");
-    expect(publicPlaceholderForRoot("Клиент")).toBe(":tenant___ids");
+describe("ask() — a quoted name spelled like a tenant placeholder", () => {
+  // Postgres reads ":tenant_agency_ids" as x's column, which equals o.agency_id, so the WHERE keeps
+  // every row: on Postgres 17 it returned all 25 clients across 7 agencies.
+  const sql =
+    'SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"';
+
+  it("is never bound: resolveTenantSql() leaves the quoted name as it is", () => {
+    const out = resolveTenantSql(sql, policy, agencyOne, "sql-params", 1, getDialectSpec("postgres"));
+    expect(out.sql).toBe(sql);
+    expect(out.mode === "sql-params" ? out.params : undefined).toEqual([]);
+  });
+
+  it("isn't counted as the tenant predicate, so ask() refuses the statement", async () => {
+    await expect(
+      ask({
+        question: "orders",
+        schema,
+        model: fakeModel,
+        dialect: "postgres",
+        tenantScope: agencyOne,
+        deps: { generateText: (async () => ({ text: "```sql\n" + sql + "\n```" })) as never },
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
   });
 });

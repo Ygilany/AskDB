@@ -1,17 +1,16 @@
 import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import { BUILT_IN_DIALECTS, type DialectSpec } from "./dialect-spec.js";
 import {
-  ENGINE_LEXER_PROFILES,
   findEscapeStringContinuation,
   findEscapedByteString,
   findUnicodeEscapedIdentifier,
   GENERIC_LEXER,
   lexSql,
-  lexerProfileFor,
   type SqlLexerProfile,
   type SqlToken,
 } from "./lexer.js";
-import { findAmbiguousTsqlText, findTsqlStatementBoundary } from "./tsql-batch.js";
+import { isKnownEngine, readOnlyReadings } from "./readings.js";
+import { AMBIGUOUS_TSQL_ADVICE, findAmbiguousTsqlText, findTsqlStatementBoundary } from "./tsql-batch.js";
 
 /**
  * Keywords rejected in every dialect. Matched against unquoted word tokens only, so
@@ -63,20 +62,23 @@ function validationError(rule: SqlValidationRuleCode, summary: string, hint: str
  * 4. `SQL_MULTI_STATEMENT` — any `;` other than a single trailing one.
  * 5. `SQL_COMMENT` — any comment (`--`, `/* *\/`, and MySQL `#`).
  * 6. `SQL_NOT_SELECT_OR_WITH` — the first token (after any `(`) is not `SELECT`/`WITH`.
- * 7. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
+ * 7. `SQL_FORBIDDEN_KEYWORD`, Postgres lexer only — a `$N` parameter written against a word
+ *    (`$1INTO`, `$1FOR`), which the lexer reads as one token, so the later checks can't see a
+ *    keyword a server that ends the parameter at its last digit would read (#665).
+ * 8. `SQL_MULTI_STATEMENT`, SQL Server lexer only (so also for a dialect id that is no
  *    built-in engine) — a second statement written without `;`, which T-SQL doesn't
  *    need, or code SQL Server may split differently from the lexer (see `tsql-batch.ts`).
- * 8. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
+ * 9. `SQL_LOCKING_READ` — a locking read, at any depth: `FOR UPDATE`, `FOR NO KEY UPDATE`,
  *    `FOR SHARE`, `FOR KEY SHARE` or `LOCK IN SHARE MODE` on every lexer, and on the SQL Server
  *    lexer a lock hint such as `UPDLOCK` or `HOLDLOCK` unquoted anywhere, or quoted alone in
  *    parentheses right after a name, at any depth and with trailing spaces, and any such name
  *    that isn't printable ASCII, which SQL Server may read as a hint (#319).
- * 9. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
+ * 10. `SQL_UNICODE_ESCAPED_IDENTIFIER`, Postgres lexer only (postgres, cockroachdb, and a
  *    dialect id that is no built-in engine) — a `U&"…"` identifier, whose escapes could spell
  *    a blocked function or a sensitive column that the later checks match by name (#692).
- * 10. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
+ * 11. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword from the shared denylist or the
  *    dialect's `extraForbiddenKeywords`.
- * 11. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
+ * 12. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`) to a function in the dialect's
  *    `blockedFunctions` (side-effecting or file/network/sleep functions), and on every lexer
  *    `NEXT VALUE FOR`, which advances a sequence on MariaDB and SQL Server (#825).
  *
@@ -99,17 +101,13 @@ export function validateSelectSql(dialect: DialectSpec, sql: string): string {
     );
   }
 
-  const profile = lexerProfileFor(dialect);
-  let tokens: SqlToken[];
   const keywords = denylistFor(dialect);
-  if (profile) {
-    tokens = checkWithProfile(trimmed, profile, keywords, blockedFunctionsFor(dialect));
-  } else {
-    // Unknown engine: every plausible reading of the SQL must be safe.
-    const functions = new Set([...blockedFunctionsFor(dialect), ...allBuiltInFunctions()]);
-    tokens = [];
-    for (const p of ENGINE_LEXER_PROFILES) tokens = checkWithProfile(trimmed, p, keywords, functions);
-  }
+  // Unknown engine: every plausible reading of the SQL must be safe, against every built-in spec's functions.
+  const functions = isKnownEngine(dialect)
+    ? blockedFunctionsFor(dialect)
+    : new Set([...blockedFunctionsFor(dialect), ...allBuiltInFunctions()]);
+  let tokens: SqlToken[] = [];
+  for (const profile of readOnlyReadings(dialect)) tokens = checkWithProfile(trimmed, profile, keywords, functions);
 
   const last = tokens[tokens.length - 1];
   dialect.extraValidate?.(isPunct(last, ";") ? trimmed.slice(0, last!.start).trim() : trimmed);
@@ -190,13 +188,23 @@ function checkWithProfile(
     );
   }
 
+  // Before the keyword and locking checks, which can't see a word inside the parameter token.
+  const glued = profile.id === "postgres" ? tokens.find(isParameterAgainstWord) : undefined;
+  if (glued) {
+    throw validationError(
+      "SQL_FORBIDDEN_KEYWORD",
+      `A $N parameter written against a word is not allowed: generated SQL has '${glued.text}' at offset ${glued.start}.`,
+      "A server that ends the parameter at its last digit reads the rest as a separate word, such as INTO or FOR, which the check can't see. Put a space after the parameter.",
+    );
+  }
+
   if (profile.id === "sqlserver") {
     const ambiguous = findAmbiguousTsqlText(sql, tokens);
     if (ambiguous) {
       throw validationError(
         "SQL_MULTI_STATEMENT",
         `Multiple SQL statements are not allowed: SQL Server may split code at ${ambiguous}, so the check can't tell where one statement ends.`,
-        "Separate keywords, names and numbers with ASCII spaces, and keep other characters inside string literals or [bracketed] names.",
+        AMBIGUOUS_TSQL_ADVICE,
       );
     }
     const statement = isPunct(tokens[tokens.length - 1], ";") ? tokens.slice(0, -1) : tokens;
@@ -297,8 +305,7 @@ export function keywordsRejectedUnquoted(
  * engine's way. The NL→SQL prompt follows it (#319).
  */
 export function checkedAsTsql(dialect: Pick<DialectSpec, "id" | "backslashEscapes">): boolean {
-  const profile = lexerProfileFor(dialect);
-  return !profile || profile.id === "sqlserver";
+  return readOnlyReadings(dialect).some((profile) => profile.id === "sqlserver");
 }
 
 /**
@@ -308,7 +315,7 @@ export function checkedAsTsql(dialect: Pick<DialectSpec, "id" | "backslashEscape
  */
 export function denylistFor(dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">): Set<string> {
   const keywords = new Set([...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])].map((w) => w.toLowerCase()));
-  if (!lexerProfileFor(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
+  if (!isKnownEngine(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
   return keywords;
 }
 
@@ -415,6 +422,16 @@ function isLoneQuotedHint(tokens: readonly SqlToken[], i: number): boolean {
 
 function isPunct(t: SqlToken | undefined, text: string): boolean {
   return t?.kind === "punct" && t.text === text;
+}
+
+/**
+ * A `$N` parameter with a word written right after its digits (`$1INTO`, `$1FOR`), which the
+ * Postgres reading lexes as one token (#665). Postgres 15 and later reject it as trailing junk; a
+ * server that ends the parameter at its last digit would read a keyword the check never saw, so it
+ * is refused rather than guessed at.
+ */
+function isParameterAgainstWord(t: SqlToken): boolean {
+  return t.kind === "parameter" && /^\$\d+\D/.test(t.text);
 }
 
 function isAdjacentPunct(t: SqlToken, next: SqlToken | undefined, text: string): boolean {

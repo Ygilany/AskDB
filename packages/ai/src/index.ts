@@ -16,7 +16,7 @@ export {
   type AiRegistry,
   type CreateEmbeddingModelOptions,
 } from "./provider.js";
-export { createAiRegistry, aiKeyMissingMessage, aiProviderMissingMessage } from "./registry.js";
+export { createAiRegistry } from "./registry.js";
 export { AiBaseUrlCredentialsError } from "./base-url.js";
 export {
   BUILTIN_AI_PROVIDERS,
@@ -34,7 +34,6 @@ export {
 export { withEmbeddingProviderOptions } from "./embedding.js";
 export {
   REASONING_EFFORTS,
-  isReasoningEffort,
   resolveReasoningEffort,
   resolveReasoningEffortFromSection,
   type AiReasoningSection,

@@ -344,6 +344,75 @@ describe("ask — a `$$` inside a name opens no dollar-quoted string", () => {
   });
 });
 
+describe("ask — a predicate filters only the reads of its own SELECT (#399)", () => {
+  const run = (sql: string) =>
+    ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" })) as never },
+    });
+
+  it.each([
+    ["a CTE", "WITH mine AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders"],
+    ["a derived table", "SELECT o.* FROM orders o CROSS JOIN (SELECT 1 FROM orders WHERE agency_id = :tenant_agency_ids) f"],
+  ])("strict: refuses an unfiltered outer read beside %s that filters", async (_label, sql) => {
+    await expect(run(sql)).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+
+  it("strict: returns the same shape when the outer read is filtered too", async () => {
+    const result = await run("WITH mine AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders WHERE agency_id = :tenant_agency_ids");
+    expect(result.tenantGuardrail?.passed).toBe(true);
+  });
+});
+
+describe("ask — a join-path table counts only when joined on the declared columns (#400)", () => {
+  const subAgencyScope = { access: { kind: "ids" as const, tenantRoot: "table:public.sub_agencies", ids: ["5"] } };
+  const run = (sql: string) =>
+    ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: subAgencyScope,
+      parameterize: false,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" })) as never },
+    });
+
+  it("strict: refuses appointments joined to sub_agencies on the client column", async () => {
+    await expect(run("SELECT a.* FROM appointments a JOIN sub_agencies s ON a.client_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)"))
+      .rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.appointments" }] });
+  });
+
+  it("strict: returns the join through clients", async () => {
+    const result = await run(
+      "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)",
+    );
+    expect(result.tenantGuardrail?.passed).toBe(true);
+  });
+});
+
+describe("ask — a keyword written right after a number is read, like the engine (GHSA-rhwf-7742-8hwj)", () => {
+  it.each(["mysql", "mariadb"] as const)("%s: refuses the OR after a decimal number", async (dialect) => {
+    // MySQL and MariaDB end `1.0` before `OR`, so the OR defeats the predicate.
+    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND 1=1.0OR 1=1";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const rejection = ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect,
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    await expect(rejection).rejects.toMatchObject({ warnings: [{ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }] });
+  });
+});
+
 describe("ask — a non-ASCII dollar tag is read as a string, like the engine", () => {
   it.each(["postgres", "cockroachdb"] as const)("%s: refuses the OR the tag exposes", async (dialect) => {
     // `$é$ … $é$` is a dollar-quoted string, so the OR after it is code and defeats the predicate.
@@ -886,6 +955,74 @@ describe("ask — parameterize", () => {
     expect(result.unboundSql).toBeUndefined();
     expect(result.params).toBeUndefined();
     expect(result.preparedQuery).toBeUndefined();
+  });
+
+  describe("the consistency check reads literals and quoted names exactly (#359)", () => {
+    const run = async (bound: string, unbound: string, value: string) => {
+      const generateText = vi.fn(async () => ({
+        text: [
+          "```sql",
+          bound,
+          "```",
+          "```sql-unbound",
+          unbound,
+          "```",
+          "```json",
+          JSON.stringify({ parameters: [{ name: "v", type: "string", cardinality: "one", value }] }),
+          "```",
+        ].join("\n"),
+      }));
+      return ask({ question: "how many", schema: minimalSchema, model: fakeModel, dialect: "postgres", deps: { generateText } });
+    };
+    const expectDropped = (result: Awaited<ReturnType<typeof run>>, bound: string) => {
+      expect(result.sql).toBe(bound);
+      expect(result.unboundSql).toBeUndefined();
+      expect(result.params).toBeUndefined();
+      expect(result.preparedQuery).toBeUndefined();
+    };
+
+    it("drops the extras when a string literal differs from sql only in case", async () => {
+      const bound = "SELECT count(*) FROM cities WHERE state = 'Colorado'";
+      expectDropped(await run(bound, "SELECT count(*) FROM cities WHERE state = :v", "colorado"), bound);
+    });
+
+    it("drops the extras when a string literal differs from sql only in whitespace", async () => {
+      const bound = "SELECT count(*) FROM cities WHERE city = 'New  York'";
+      expectDropped(await run(bound, "SELECT count(*) FROM cities WHERE city = :v", "New York"), bound);
+    });
+
+    it("drops the extras when a quoted name differs from sql only in case", async () => {
+      const bound = 'SELECT count(*) FROM "Cities" WHERE state = \'colorado\'';
+      expectDropped(await run(bound, 'SELECT count(*) FROM "cities" WHERE state = :v', "colorado"), bound);
+    });
+
+    it("drops the extras when a name the engine reads as one is split in the other form", async () => {
+      const generateText = vi.fn(async () => ({
+        text: [
+          "```sql",
+          "SELECT id, 2fa_enabled FROM users WHERE email = 'a@b.c'",
+          "```",
+          "```sql-unbound",
+          "SELECT id, 2 fa_enabled FROM users WHERE email = :v",
+          "```",
+          "```json",
+          JSON.stringify({ parameters: [{ name: "v", type: "string", cardinality: "one", value: "a@b.c" }] }),
+          "```",
+        ].join("\n"),
+      }));
+      const result = await ask({ question: "who", schema: minimalSchema, model: fakeModel, dialect: "mysql", deps: { generateText } });
+      expectDropped(result, "SELECT id, 2fa_enabled FROM users WHERE email = 'a@b.c'");
+    });
+
+    it("keeps the extras when only keyword case, unquoted-name case and layout differ", async () => {
+      const result = await run(
+        "select COUNT(*) from Cities where state = 'colorado';",
+        "SELECT count(*)\n  FROM cities WHERE state = :v",
+        "colorado",
+      );
+      expect(result.unboundSql).toBe("SELECT count(*)\n  FROM cities WHERE state = $1");
+      expect(result.params).toEqual(["colorado"]);
+    });
   });
 
   it("parameterize: false produces today's shape with no extras", async () => {
@@ -2790,5 +2927,44 @@ describe("ask — a rendered tenant literal can't change how the SQL reads (GHSA
     });
     expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '42'");
     expect(result.verdict.outcome).toBe("allow");
+  });
+});
+
+describe("ask — the default prompt carries foreign keys and concepts (#898)", () => {
+  async function defaultPrompt(schema: NormalizedSchemaV2): Promise<string> {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM orders\n```" }));
+    await ask({
+      question: "How much revenue did each user bring in?",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+
+  it("sends the schema's foreign keys and concepts without a retriever", async () => {
+    const prompt = await defaultPrompt(loadSchema(v2Dir));
+    expect(prompt).toContain("  FK (user_id) -> public.users (id)");
+    expect(prompt).toContain("-- concepts --");
+    expect(prompt).toContain("-- Revenue; synonyms: sales, gross sales, top line; links: public.orders.total_amount;");
+  });
+
+  it("sends business context and column notes without a retriever", async () => {
+    const schema = loadSchema(v2Dir);
+    schema.tables.find((t) => t.name === "orders")!.columns.find((c) => c.name === "status")!.note = "refunds flip a paid order back to pending";
+    const prompt = await defaultPrompt(schema);
+    expect(prompt).toContain("-- business context --\n-- Orders move through `pending → paid → shipped`");
+    expect(prompt).toContain("; note: refunds flip a paid order back to pending");
+  });
+
+  it("names no untracked table in a foreign key or concept", async () => {
+    const schema = loadSchema(v2Dir);
+    schema.tables.find((t) => t.name === "users")!.tracked = false;
+    const prompt = await defaultPrompt(schema);
+    expect(prompt).not.toContain("users");
+    expect(prompt).not.toContain("Customer;");
+    expect(prompt).toContain("-- Revenue;");
   });
 });

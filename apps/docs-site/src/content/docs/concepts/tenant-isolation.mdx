@@ -22,7 +22,7 @@ AskDB doesn't execute queries, and it doesn't rewrite them to add a tenant filte
 Your application supplies the tenant scope per call and is responsible for authorizing it.
 
 <Aside type="caution" title="Enforce tenancy in your database">
-The tenant check is heuristic and does not parse SQL. It rejects the common ways a filter fails to filter, such as `WHERE organization_id = :tenant_organization_ids OR 1=1`, a literal tenant ID, or `SELECT organization_id FROM documents` with no filter. But within one query it doesn't tie a predicate to a particular table reference, so an unfiltered reference next to a filtered one can still pass. In production, enforce tenant isolation in the database, for example with Postgres row-level security or per-tenant views, and treat AskDB's check as an early warning. See [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
+The tenant check is heuristic and does not parse SQL. It rejects the common ways a filter fails to filter, such as `WHERE organization_id = :tenant_organization_ids OR 1=1`, a literal tenant ID, or `SELECT organization_id FROM documents` with no filter. But it doesn't prove a query is scoped: see [Known limits](#known-limits). In production, enforce tenant isolation in the database, for example with Postgres row-level security or per-tenant views, and treat AskDB's check as an early warning. See [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
 </Aside>
 
 ## What enforces isolation
@@ -33,7 +33,7 @@ Three layers can keep a query to the caller's tenants. Only the database holds w
 | --- | --- | --- |
 | **The database** | Row-level security, per-tenant views, or per-tenant roles return only the caller's rows. | Yes, once it's set up and checked as in the guide below. It doesn't depend on the SQL. |
 | **Your application** | Adds or checks the tenant filter itself before it runs the query. | Only as far as your code covers every shape of query. |
-| **AskDB's policy and check** | The prompt tells the model to filter by tenant, and the check rejects or flags SQL that looks unscoped. | No. It's a lint over the SQL's tokens, not a boundary. |
+| **AskDB's policy and check** | The prompt tells the model to filter by tenant, and the check rejects or flags SQL that looks unscoped. | No. It's a heuristic over the SQL's tokens, not a boundary. |
 
 AskDB's layer alone isn't enough to isolate tenants that don't trust each other. It still earns its place: the model writes the filter, so queries return the right rows and can use your tenant indexes, and `enforcement: strict` stops the common mistakes before anything runs. The database makes a mistake that gets past the check harmless. To set that up on Postgres, follow [Enforce tenancy in the database](/guides/enforce-tenancy-in-the-database/).
 
@@ -41,15 +41,18 @@ AskDB's layer alone isn't enough to isolate tenants that don't trust each other.
 
 The tenant check reads the SQL's tokens and doesn't parse it, so it can pass SQL that doesn't filter every read:
 
-- **A predicate isn't tied to a table reference.** Within one query, an unfiltered reference next to a filtered one can still pass.
-- **A CTE or derived table.** A predicate inside a CTE or derived table can satisfy the check for an unfiltered outer read of the same table ([#399](https://github.com/Ygilany/AskDB/issues/399)).
-- **A join path.** A table scoped through a join can pass with a join on the wrong ID column ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+- **Roots reached through the hierarchy.** Only the roots the scope names are checked as root tables: under an agency `ids` scope, a read of `sub_agencies` isn't. An expanded `subtree` scope names every level it covers.
+- **Joined scoped tables.** It doesn't check that two joined scoped tables share a scope.
+- **A column list on a joined table.** On Postgres and CockroachDB, `JOIN clients c (sub_agency_id, x)` renames the table's columns, and the check still reads them by the policy's names, so a join path can pass on the wrong column ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+- **A name spelled like a join word.** An unqualified predicate in an `ON` counts for the reads the check takes as that join's operands. Where SQL Server reads `NATURAL` or `USING` as an alias, or a table is named `using`, those can include a read the `ON` doesn't see.
+
+Since 1.0.0-beta.53 each read of a scoped table needs its own predicate in its own `SELECT` ([#399](https://github.com/Ygilany/AskDB/issues/399)), and since 1.0.0-beta.55 a join on any other pair of columns than the policy declares doesn't count ([#400](https://github.com/Ygilany/AskDB/issues/400)).
 
 [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) lists what it does refuse. These limits are why the database should be the tenant boundary.
 
 ## Other engines
 
-This recipe is for Postgres. On every engine, AskDB's tenant check stays a lint, so the database or your application must keep each query to its tenants. The other engines AskDB supports haven't been tested with a recipe like this one:
+This recipe is for Postgres. On every engine, AskDB's tenant check stays a heuristic, so the database or your application must keep each query to its tenants. The other engines AskDB supports haven't been tested with a recipe like this one:
 
 - **CockroachDB** has row-level security from v25.2, with `FORCE ROW LEVEL SECURITY` for table owners. Its docs pass the tenant in `application_name` rather than a custom setting, and list features that skip the policies. See [Row-level security](https://www.cockroachlabs.com/docs/stable/row-level-security).
 - **SQL Server and Azure SQL** have row-level security from SQL Server 2016: a security policy with a filter predicate function, which can read a tenant ID your application sets with `sp_set_session_context` and `@read_only = 1`. Microsoft warns that crafted queries can infer filtered rows from errors, which matters for generated SQL. See [Row-level security](https://learn.microsoft.com/en-us/sql/relational-databases/security/row-level-security).

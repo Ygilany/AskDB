@@ -53,6 +53,8 @@ Config-aware facade over `@askdb/core`. `createAskDb()` resolves the schema, mod
 
 See the **[@askdb/client API reference](/reference/client-api/)** for the full option documentation.
 
+**Experimental: `@askdb/client/charts`.** A second entry point plans a chart for a query result without sending rows to the model: `classifyResult()`, `planChart()` and `validateChartSpec()`. It's outside the stability promise, so a minor release may change it. See the **[@askdb/client/charts API reference](/reference/client-charts-api/)**.
+
 ### `@askdb/ai`
 
 The AI provider registry, with built-in providers for OpenAI, Azure OpenAI and Microsoft Foundry, Google Gemini, Anthropic and the Vercel AI Gateway. `@askdb/client` depends on it and builds the registry for you. Import it yourself to build a model object outside the client, to restrict or extend the set of providers, or to share one registry across several clients.
@@ -191,6 +193,7 @@ Minimal HTTP server wrapping `ask()`. Two endpoints (`/health`, `POST /ask`), de
 | Symbol | Purpose |
 | --- | --- |
 | `createAskDbHttpServer(options)` | Build the server. |
+| `AskDbHttpServerOptions` | The server's options type. |
 | `AskHttpRequest` / `AskHttpSuccessResponse` / `AskHttpErrorResponse` | Request and response types. |
 
 See [the HTTP API reference](/reference/http-api/) for endpoints and error codes.
@@ -205,9 +208,46 @@ See [the CLI reference](/reference/cli/).
 
 ## Dependency direction
 
-<figure style="--d2-width: 684px">
+<figure>
 
-```d2 src="../../../assets/diagrams/d2/package-dependencies.d2"
+```mermaid
+flowchart TB
+  %% AskDB's packages and what each depends on (dependencies and peers), top to bottom.
+  %% Each arrow points to a direct dependency, left out when the package already reaches that
+  %% dependency through another arrow: askdb reaches the engine packages through Studio.
+  %% Dashed: optional peer, which isn't installed for dependents, so each package that declares
+  %% one gets its own arrow (askdb and Studio both point at prisma).
+  %% Source of truth: the "Dependency direction" table on this page.
+  %% The invisible links (~~~) are layout only: they put rag and enrich a row lower.
+  cli["askdb (CLI)"]
+  studio["studio"]
+  http["http-api"]
+  client["client"]
+  prisma["prisma"]
+  engines["engine<br/>packages"]
+  aicfg["ai, config"]
+  rag["rag"]
+  enrich["enrich"]
+  introspect["introspect"]
+  core["core"]
+  cli --> studio
+  cli --> client
+  cli -.-> prisma
+  studio -.-> prisma
+  studio --> engines
+  studio --> aicfg
+  studio --> rag
+  studio --> enrich
+  http --> client
+  client --> aicfg
+  client --> core
+  prisma --> introspect
+  engines --> introspect
+  rag --> core
+  enrich --> core
+  introspect --> core
+  engines ~~~ rag
+  engines ~~~ enrich
 ```
 
 <figcaption>Each arrow points to a package's dependency or peer. An arrow is left out when the package already reaches that dependency through another one: `askdb` gets the engine packages through Studio. Dashed arrows are optional peers, drawn for each package that declares one. Boxes name `@askdb/*` packages without the scope (`ai` is `@askdb/ai`), except `askdb` itself. Not drawn: the AI SDK package `ai`, the `@ai-sdk/*` providers and the database drivers.</figcaption>
