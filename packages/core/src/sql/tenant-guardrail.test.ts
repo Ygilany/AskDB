@@ -2312,3 +2312,79 @@ describe("validateTenantGuardrails — a type discriminator written as the engin
     expect(findings(`SELECT n.* FROM notes n WHERE n."owner_type" = 'agency' AND n.owner_id = :tenant_agency_ids`, dialect)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a name with non-ASCII letters, read as every engine of the reading reads it", () => {
+  const scopedBy = (column: string, label = "agency"): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    roots: [{ id: "table:public.Agency", label, tenantIdColumn: "table:public.Agency#id" }],
+    hierarchy: [],
+    coverage: [],
+    globalTables: [],
+    polymorphicTables: [],
+    scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: `table:public.Client#${column}` }] }],
+  });
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+  const findings = (sql: string, p: NormalizedTenantPolicy, dialect: DialectSpec | undefined) =>
+    validateTenantGuardrails(sql, p, scope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+
+  // CockroachDB lower-cases every letter of an unquoted name, Postgres only ASCII ones, and the check
+  // reads both the Postgres way: such a name is another column on one of them.
+  const accented = scopedBy("Égency_id");
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["cockroachdb", COCKROACHDB_DIALECT],
+  ] as const)("refuses an unquoted name with an upper-case non-ASCII letter under %s", (_label, dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c, (SELECT 42 AS égency_id) z WHERE Égency_id = :tenant_agency_ids`, accented, dialect)).toEqual(refused);
+    expect(findings(`SELECT x.* FROM (SELECT c.id, Égency_id AS "Égency_id" FROM "Client" c, (SELECT 42 AS égency_id) z) x WHERE x."Égency_id" = :tenant_agency_ids`, accented, dialect)).toEqual(refused);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps the non-ASCII column quoted as the schema spells it, or unquoted in lower case, under $id", (dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c WHERE c."Égency_id" = :tenant_agency_ids`, accented, dialect)).toEqual([]);
+    expect(findings("SELECT c.* FROM Client c WHERE c.STÄDTE_ID = :tenant_agency_ids", scopedBy("städte_id"), dialect)).toEqual(refused);
+    expect(findings("SELECT c.* FROM Client c WHERE c.städte_id = :tenant_agency_ids", scopedBy("städte_id"), dialect)).toEqual([]);
+  });
+
+  // MariaDB keeps U+212A KELVIN SIGN apart from `k`, which Unicode lower-casing merges.
+  const workspace = scopedBy("workspace_id", "workspace");
+  const kelvin = "worKspace_id";
+  it.each([
+    ["mariadb", MARIADB_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+  ] as const)("refuses a name with a letter Unicode folding merges into ASCII under %s", (_label, dialect) => {
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`, workspace, dialect)).toEqual(refused);
+    expect(findings(`SELECT x.* FROM (SELECT c.id, ${kelvin} AS workspace_id FROM Client c, (SELECT 42 AS ${kelvin}) z) x WHERE x.workspace_id = :tenant_workspace_ids`, workspace, dialect)).toEqual(refused);
+  });
+
+  // A custom id or none is also read the SQL Server way, which refuses a non-ASCII name the schema doesn't spell.
+  it.each([customEngine(), undefined])("refuses both non-ASCII forms under a custom id or none", (dialect) => {
+    expect(findings(`SELECT c.* FROM "Client" c, (SELECT 42 AS égency_id) z WHERE Égency_id = :tenant_agency_ids`, accented, dialect)).not.toEqual([]);
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`, workspace, dialect)).not.toEqual([]);
+  });
+
+  it.each([MARIADB_DIALECT, MYSQL_DIALECT])("keeps an ASCII name in any case under $id", (dialect) => {
+    expect(findings("SELECT c.* FROM Client c WHERE c.WORKSPACE_ID = :tenant_workspace_ids", workspace, dialect)).toEqual([]);
+  });
+
+  it.each([MARIADB_DIALECT, MYSQL_DIALECT])("refuses a discriminator written with a letter Unicode folding merges into ASCII under $id", (dialect) => {
+    const polymorphic: NormalizedTenantPolicy = {
+      ...workspace,
+      scopedTables: [],
+      polymorphicTables: [{ id: "table:public.Note", typeColumn: "table:public.Note#kind", idColumn: "table:public.Note#owner_id", mapping: { workspace: "table:public.Agency" } }],
+    };
+    const k = "Kind";
+    expect(findings(`SELECT n.* FROM Note n, (SELECT 'workspace' AS ${k}) z WHERE ${k} = 'workspace' AND n.owner_id = :tenant_workspace_ids AND n.kind IS NOT NULL`, polymorphic, dialect)).toEqual([
+      "MISSING_TYPE_DISCRIMINATOR:table:public.Note",
+    ]);
+    expect(findings("SELECT n.* FROM Note n WHERE n.KIND = 'workspace' AND n.owner_id = :tenant_workspace_ids", polymorphic, dialect)).toEqual([]);
+  });
+
+  // SQLite folds only ASCII letters, so a GROUP BY key in another non-ASCII case is another column.
+  it("refuses a HAVING predicate whose GROUP BY key has a non-ASCII letter in another case under sqlite", () => {
+    const sql = `SELECT count(*) AS n, sum(c.amount) AS total FROM Client c, (SELECT 1 AS "égency_id") z GROUP BY "égency_id" HAVING "Égency_id" = :tenant_agency_ids`;
+    expect(findings(sql, accented, SQLITE_DIALECT)).toEqual(refused);
+    expect(findings(`SELECT c."Égency_id", count(*) FROM Client c GROUP BY c."Égency_id" HAVING c."Égency_id" = :tenant_agency_ids`, accented, SQLITE_DIALECT)).toEqual([]);
+    expect(findings("SELECT agency_id, count(*) FROM orders GROUP BY AGENCY_ID HAVING agency_id = :tenant_agency_ids", { ...policy, enforcement: "warn" }, SQLITE_DIALECT)).toEqual([]);
+  });
+});
