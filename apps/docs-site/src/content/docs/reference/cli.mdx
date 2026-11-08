@@ -248,7 +248,7 @@ Both are required. Without either, `bundle` prints that usage line on stderr and
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
-Before it writes anything, it checks the bundle with the loader `ask()` uses (through `@askdb/enrich`'s `bundleSchemaDirectory()`), so it refuses whatever `loadSchema()` refuses. That includes a file name in the wrong case, such as `Tenant-Policy.md`, an optional file that exists but can't be read, an invalid `schema.json`, front-matter that isn't YAML or doesn't parse, a tenant policy that doesn't fit `schema.json`, and two table files with the same `id`. It then exits with status 1 and the loader's error, and writes nothing: a file already at `--out` stays as it was. So a bundle it writes always loads. The [Schema artifact format](/reference/schema-artifact-format/#bundle-format) describes the bundle.
+Before it writes anything, it checks the bundle with the loader `ask()` uses (through `@askdb/enrich`'s `bundleSchemaDirectory()`), so it refuses whatever `loadSchema()` refuses. That includes a file name in the wrong case, such as `Tenant-Policy.md`, an optional file that exists but can't be read, an invalid `schema.json`, front-matter that isn't YAML or doesn't parse, a tenant policy that doesn't fit `schema.json`, and two table files with the same `id`. It then exits with status 1 and the loader's error, and writes nothing: a file already at `--out` stays as it was. So a bundle it writes always loads. The [Schema artifact format](/reference/schema-artifact-format/#bundle-format) describes the bundle. After writing, it prints a `Warning:` line on stderr for each [loader warning](/reference/schema-artifact-format/#loader-warnings), a tenant policy's included, and still exits `0`.
 
 ```bash
 askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
@@ -286,7 +286,7 @@ SELECT customer_id, SUM(total) AS lifetime_value FROM orders GROUP BY customer_i
 { … }
 ```
 
-Everything else goes to stderr, so stdout stays parseable: errors, `Note:` lines (a dialect note, or a sensitive-scope note), and the sensitive warning. Execution is not part of the CLI.
+Everything else goes to stderr, so stdout stays parseable: errors, `Note:` lines (a dialect note, or a sensitive-scope note), a `Warning:` line for each [loader warning](/reference/schema-artifact-format/#loader-warnings) the schema has (a tenant policy's included), and the sensitive warning. Execution is not part of the CLI.
 
 If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/checks/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict`, rely on `bindPreparedQuery()` re-running it on a rebind, or call it directly on cached SQL.
 

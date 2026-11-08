@@ -16,6 +16,7 @@ import {
 import { errorMessage, printCliError } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { createCliLogger, loggingFlags, resolveCliLogLevel, type CliLoggingFlags } from "./logger.js";
+import { schemaWarningLines } from "./schema-warnings.js";
 
 // Batteries-included surface: every built-in provider is registered, and each
 // loads its @ai-sdk/* package only when first used, so env config alone
@@ -121,6 +122,7 @@ async function runAsk(opts: AskOptions): Promise<number> {
 
   try {
     const schema = loadSchemaFromPath(opts.schema ?? runtime.introspection.outputDir);
+    for (const line of schemaWarningLines(schema)) process.stderr.write(line);
 
     const askdb = createAskDb({
       config: runtime,

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -87,5 +87,26 @@ describe("askdb ask", () => {
       process.chdir(project);
       rmSync(empty, { recursive: true, force: true });
     }
+  });
+});
+
+describe("askdb ask prints the loader's warnings on stderr", () => {
+  it("prints each warning as one line, and still answers", async () => {
+    const dir = join(project, "orders-users.schema");
+    cpSync(FIXTURE_DIR, dir, { recursive: true });
+    const orders = join(dir, "tables/orders.md");
+    writeFileSync(
+      orders,
+      readFileSync(orders, "utf8").replace(
+        "  - id: table:public.orders#id\n    aliases: [order_id]\n",
+        "  - id: table:public.orders#id\n    aliases: [order_id]\n  - id: table:public.orders#id\n    aliases: [again]\n",
+      ),
+    );
+
+    expect(await runAskCli(["-q", "Which users?", "--mock-sql", "SELECT id FROM users", "--schema", dir])).toBe(0);
+    expect(stderr).toBe(
+      "Warning: tables/orders.md lists column table:public.orders#id more than once; only the first entry's description, aliases and enum apply\n",
+    );
+    expect(stdout).toContain("SELECT id FROM users");
   });
 });
