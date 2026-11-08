@@ -2505,6 +2505,7 @@ describe("validateTenantGuardrails — a join counts only on the columns the pol
     ["the same CTE over VALUES, read unaliased", "WITH clients(id, sub_agency_id) AS (VALUES (1, '5')) SELECT a.* FROM appointments a JOIN clients ON a.client_id = clients.id WHERE clients.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
     ["a MATERIALIZED CTE named like the hop's table", "WITH clients AS MATERIALIZED (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
     ["a NOT MATERIALIZED CTE named like the hop's table", "WITH clients AS NOT MATERIALIZED (SELECT 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients k ON a.client_id = k.id WHERE k.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
+    ["a data-modifying CTE named like the hop's table", "WITH clients AS (UPDATE lookup_states SET code = code RETURNING 1 AS id, 5 AS sub_agency_id) SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.sub_agency_id IN (:tenant_sub_agency_ids)", "sub_agencies"],
   ])("rejects %s", (_label, sql, root) => {
     expect(findings(sql, root)).toEqual(appointments);
   });
@@ -2892,5 +2893,33 @@ describe("validateTenantGuardrails — a join proof's HAVING terms count only on
     ["an equality between two GROUP BY keys", "SELECT a.client_id, c.id, count(*) FROM appointments a, clients c WHERE c.id IN (:tenant_client_ids) GROUP BY a.client_id, c.id HAVING a.client_id = c.id"],
   ])("keeps %s", (_label, sql) => {
     expect(findings(sql)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — a join proof reads a written column the way each engine compares names (#400)", () => {
+  const camel: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+    hierarchy: [],
+    coverage: [],
+    globalTables: [],
+    polymorphicTables: [],
+    scopedTables: [
+      { id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] },
+      { id: "table:public.Appointment", scopeThrough: [{ root: "table:public.Agency", join: [{ from: "table:public.Appointment#clientId", to: "table:public.Client#id" }, { from: "table:public.Client#agencyId", to: "table:public.Agency#id" }] }] },
+    ],
+  };
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+  const findings = (sql: string, dialect: DialectSpec) => validateTenantGuardrails(sql, camel, scope, { dialect }).warnings.map((w) => w.tableId);
+  const join = (on: string) => `SELECT a.* FROM Appointment a JOIN Client c ON ${on} WHERE c.agencyId = :tenant_agency_ids`;
+
+  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT])("links a join hop written in any ASCII case under $id", (dialect) => {
+    for (const on of ["a.clientId = c.id", "a.clientid = c.id", "a.CLIENTID = c.id"]) expect(findings(join(on), dialect), on).toEqual([]);
+  });
+
+  it("links a join hop under sqlserver only as the schema spells it", () => {
+    expect(findings(join("a.clientId = c.id"), SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings(join("a.clientid = c.id"), SQLSERVER_DIALECT)).toEqual(["table:public.Appointment"]);
   });
 });
