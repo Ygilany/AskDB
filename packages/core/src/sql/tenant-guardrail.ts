@@ -277,8 +277,11 @@ function checkScopedTable(
     const placeholder = placeholderFor(policy, path.root);
     if ("column" in path) {
       // The table's tenant column compared with its root's placeholder, directly or through a join.
+      // Through a join, only from that column: another path's column on this table (a join-path step's
+      // key) proves nothing about the rows this path scopes.
       const target = { placeholder, column: extractColumnName(path.column), table };
-      if (hasTenantPredicate(sql, table, [target], { graph, allowed: new Set([placeholder]) })) return;
+      const start = extractColumnName(path.column).toLowerCase();
+      if (hasTenantPredicate(sql, table, [target], { graph, allowed: new Set([placeholder]), start })) return;
     } else {
       // Inherited via JOINs (#400): each hop joined on the columns the policy declares, to a read
       // filtered by the path's root or, up the hierarchy, one of its ancestors. A root outside that
@@ -1202,7 +1205,11 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
 }
 
 /** What {@link inScope} proves a read against: the policy's graph, and the placeholders of the roots allowed. */
-type JoinProof = { readonly graph: PolicyGraph; readonly allowed: ReadonlySet<string> };
+/**
+ * How a read may also count through joins (#400): the policy's graph, the placeholders allowed at the
+ * end, and, for a table scoped by a column, that column: the proof leaves the read only through it.
+ */
+type JoinProof = { readonly graph: PolicyGraph; readonly allowed: ReadonlySet<string>; readonly start?: string };
 
 /**
  * Whether every read of `table` is filtered, on every reading, by a predicate from `targets`
@@ -1231,7 +1238,7 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
       const filtered = selfJoin ? selfJoinReadFiltered(a, found, targets, read, name, sameSelect) : readFiltered(a, found, targets, read, name);
       // A join proof names reads too, so a self-join's reads must be told apart for it as well.
       return filtered || (joinProof !== undefined && (!selfJoin || distinctAliases(a, sameSelect)) &&
-        inScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.allowed));
+        inScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.allowed, undefined, joinProof.start));
     });
   });
 }
@@ -1350,11 +1357,13 @@ function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read:
 
 /**
  * Whether a column written with qualifier `q`, in the `ON` at `on` if it sits in one, can name
- * `read`: qualified, the qualifier must name it; unqualified, an `ON` names only its join's operands
- * ({@link seenByOn}), and anywhere else any read of its `SELECT`.
+ * `read`: qualified, the qualifier must name it. In an `ON`, qualified or not, it names only one of
+ * its join's operands ({@link seenByOn}): a qualifier for a read joined after it, or outside its
+ * parentheses, names some other read, such as an outer query's by correlation. Anywhere else it
+ * names any read of its `SELECT`.
  */
 function canName(tokens: readonly Token[], q: string | undefined, on: number | undefined, read: Read): boolean {
-  if (q !== undefined) return read.names.has(q);
+  if (q !== undefined && !read.names.has(q)) return false;
   return on === undefined || seenByOn(tokens, on, read.at);
 }
 
@@ -1841,15 +1850,17 @@ function hopTargets(p: Proof, node: Node, hop: PolicyGraph["hops"][number]): Nod
  * (#400): a column of its table that holds an allowed root's IDs (by the policy) is bound to that
  * root's placeholder in its `SELECT` (see {@link boundIn}), or a foreign key the policy declares links
  * it, on exactly the declared columns, to a read that is itself within that scope. A join on any
- * other pair of columns links nothing.
+ * other pair of columns links nothing. With `start`, `node` counts only through that column of its
+ * table: a table scoped by a column is proven through that column, never another path's key on it.
  */
-function inScope(p: Proof, node: Node, allowed: ReadonlySet<string>, visited: Set<number> = new Set([node.at])): boolean {
+function inScope(p: Proof, node: Node, allowed: ReadonlySet<string>, visited: Set<number> = new Set([node.at]), start?: string): boolean {
   const bound = boundIn(p, node.scope);
   for (const [column, holds] of p.graph.carriers.get(node.table) ?? []) {
+    if (start !== undefined && column !== start) continue;
     for (const placeholder of bound(node, column)) if (holds.has(placeholder) && allowed.has(placeholder)) return true;
   }
   for (const hop of p.graph.hops) {
-    if (hop.from !== node.table) continue;
+    if (hop.from !== node.table || (start !== undefined && hop.fromColumn !== start)) continue;
     for (const next of hopTargets(p, node, hop)) {
       if (visited.has(next.at)) continue;
       visited.add(next.at);
