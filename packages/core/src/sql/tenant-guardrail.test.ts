@@ -2251,3 +2251,69 @@ describe("validateTenantGuardrails — a qualified column in an ON names only a 
     expect(findings("SELECT o.* FROM orders o, lookup_states d JOIN service_types e ON e.id = d.id WHERE o.agency_id = :tenant_agency_ids", SQLITE_DIALECT)).toEqual([]);
   });
 });
+
+describe("validateTenantGuardrails — a join path's steps chain from its table, in any listed order (#400)", () => {
+  const line = (steps: Array<[string, string]>): NormalizedTenantPolicy => ({
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [
+      ...policy.scopedTables,
+      { id: "table:public.customers", scopeThrough: [{ root: "table:public.agencies", column: "table:public.customers#agency_id" }] },
+      { id: "table:public.line_items", scopeThrough: [{ root: "table:public.agencies", join: steps.map(([from, to]) => ({ from, to })) }] },
+    ],
+  });
+  const steps: Array<[string, string]> = [
+    ["table:public.line_items#order_id", "table:public.orders#id"],
+    ["table:public.orders#customer_id", "table:public.customers#id"],
+    ["table:public.customers#agency_id", "table:public.agencies#id"],
+  ];
+  const findings = (sql: string, p: NormalizedTenantPolicy) =>
+    validateTenantGuardrails(sql, p, agencyScope).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const correct = "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id JOIN customers cu ON o.customer_id = cu.id WHERE cu.agency_id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids";
+  const throughOrdersOwnColumn = "SELECT li.* FROM line_items li JOIN orders o ON li.order_id = o.id WHERE o.agency_id = :tenant_agency_ids";
+
+  it.each([
+    ["listed from the table", steps],
+    ["listed from the root", [...steps].reverse()],
+    ["shuffled", [steps[1]!, steps[2]!, steps[0]!]],
+  ] as const)("keeps the correct join and refuses another path's column, with the steps %s", (_label, listed) => {
+    const p = line([...listed]);
+    expect(findings(correct, p)).toEqual([]);
+    expect(findings(throughOrdersOwnColumn, p)).toEqual(["MISSING_TENANT_PREDICATE:table:public.line_items"]);
+  });
+});
+
+describe("validateTenantGuardrails — a join path that stops short of its root proves nothing (#400)", () => {
+  // `shipments` declares only `shipments.order_id → orders.id`, which never reaches `agencies`.
+  const short: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [
+      ...policy.scopedTables,
+      { id: "table:public.shipments", scopeThrough: [{ root: "table:public.agencies", join: [{ from: "table:public.shipments#order_id", to: "table:public.orders#id" }] }] },
+    ],
+  };
+  const findings = (sql: string) => validateTenantGuardrails(sql, short, agencyScope).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id WHERE o.agency_id = :tenant_agency_ids",
+    "SELECT s.* FROM shipments s JOIN orders o ON s.order_id = o.id JOIN agencies g ON g.id = o.agency_id WHERE g.id = :tenant_agency_ids AND o.agency_id = :tenant_agency_ids",
+  ])("refuses the path's table, while the end table passes on its own column: %s", (sql) => {
+    expect(findings(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:public.shipments"]);
+  });
+});
+
+describe("validateTenantGuardrails — an ON after STRAIGHT_JOIN closes that join, not an outer one (#400)", () => {
+  // MySQL and MariaDB read `a JOIN c ON … STRAIGHT_JOIN s ON …` as two inner joins, so the second ON is a join-path hop.
+  const findings = (sql: string, dialect: DialectSpec | undefined) =>
+    validateTenantGuardrails(sql, { ...policy, enforcement: "warn" }, agencyScope, dialect ? { dialect } : {}).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const hop = (on: string) => `SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id STRAIGHT_JOIN sub_agencies s ON ${on} WHERE s.agency_id = :tenant_agency_ids`;
+
+  it.each([undefined, MYSQL_DIALECT, MARIADB_DIALECT])("keeps the hop under %s", (dialect) => {
+    expect(findings(hop("s.id = c.sub_agency_id"), dialect)).toEqual([]);
+  });
+
+  it.each([undefined, MYSQL_DIALECT, MARIADB_DIALECT])("refuses a hop on the wrong column under %s", (dialect) => {
+    expect(findings(hop("s.id = c.id"), dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.appointments"]);
+  });
+});
