@@ -24,13 +24,19 @@ describe("maskSqlLiterals", () => {
   });
 
   it("masks MySQL double-quoted strings and executable-comment bodies", () => {
-    const out = maskSqlLiterals(`SELECT "Acme" AS c, /*!50000 'hidden' */ 1`, MYSQL_DIALECT)!;
-    expect(out).not.toMatch(/Acme|hidden|1/);
+    // The executable comment is code under one reading and a comment under the other: masked either way.
+    expect(maskSqlLiterals(`SELECT "Acme" AS c, /*!50000 'hidden' */ 1`, MYSQL_DIALECT)).toBe("SELECT ? AS c, ? ?");
+  });
+
+  it("masks the rest of a number the lexer ends early: digit separators, 0o and 0b", () => {
+    for (const dialect of [POSTGRES_DIALECT, undefined]) {
+      expect(maskSqlLiterals("SELECT 1_000_000, 0o17, 0b101, 0x1F FROM t", dialect)).toBe("SELECT ?, ?, ?, ? FROM t");
+    }
   });
 
   it("reads SQL every engine's way when the dialect is unknown or missing", () => {
     // Under MySQL `"…"` is a string, so the safe reading masks it even though Postgres reads a name.
-    for (const dialect of [undefined, { id: "duckdb" }]) {
+    for (const dialect of [undefined, "duckdb" as never]) {
       const out = maskSqlLiterals(`SELECT "Acme Corp", 'x', 42 FROM t`, dialect)!;
       expect(out).not.toMatch(/Acme|'x'|42/);
     }
@@ -44,8 +50,14 @@ describe("maskSqlLiterals", () => {
     expect(maskSqlLiterals("SELECT 1 /* open", undefined)).toBeUndefined();
   });
 
-  it("names a dialect by id the same as by spec", () => {
-    const sql = "SELECT 'v' FROM t";
-    expect(maskSqlLiterals(sql, { id: "postgres" })).toBe(maskSqlLiterals(sql, POSTGRES_DIALECT));
+  it("takes a dialect the way ask() does: an id, a spec, or a custom dialect", () => {
+    const sql = `SELECT "Acme", 'v' FROM t`;
+    expect(maskSqlLiterals(sql, "postgres")).toBe(maskSqlLiterals(sql, POSTGRES_DIALECT));
+    expect(maskSqlLiterals(sql, "mysql")).toBe(maskSqlLiterals(sql, MYSQL_DIALECT));
+    // Postgres reads "Acme" as a name; a custom dialect is read every engine's way, so it's masked.
+    expect(maskSqlLiterals(sql, "postgres")).toBe(`SELECT "Acme", ? FROM t`);
+    const custom = { generate: async () => ({ sql: "SELECT 1" }) };
+    expect(maskSqlLiterals(sql, custom)).toBe("SELECT ?, ? FROM t");
+    expect(maskSqlLiterals(sql, "duckdb" as never)).toBe("SELECT ?, ? FROM t");
   });
 });

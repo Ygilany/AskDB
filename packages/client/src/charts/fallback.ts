@@ -1,3 +1,4 @@
+import { words } from "./classify.js";
 import type { ChartSpec, ChartType, ClassifiedResult } from "./types.js";
 import { RANKING, isMeasure, isTime, pieRefusal } from "./validate.js";
 
@@ -7,7 +8,7 @@ const MAX_SERIES = 4;
 
 /** `order_count` → `order count`. */
 function label(name: string): string {
-  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\s]+/g, " ").trim().toLowerCase();
+  return words(name).join(" ");
 }
 
 function capitalize(text: string): string {

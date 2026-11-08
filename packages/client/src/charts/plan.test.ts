@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
+import { MYSQL_DIALECT, POSTGRES_DIALECT, type NormalizedSchema } from "@askdb/core";
 import { classifyResult } from "./classify.js";
 import { planChart } from "./plan.js";
 import type { ChartSpec, ClassifiedResult } from "./types.js";
@@ -35,6 +36,9 @@ const hangingModel = () =>
         options.abortSignal?.addEventListener("abort", () => reject(options.abortSignal!.reason));
       }),
   );
+
+// A model that ignores the abort signal and never settles.
+const neverSettlingModel = () => modelFrom(() => new Promise(() => {}));
 
 const bar: ChartSpec = { type: "bar", category: "region", series: ["order_count"], title: "Orders by region", description: "Order count per region." };
 
@@ -94,11 +98,66 @@ describe("planChart — the prompt carries no rows and no literals", () => {
     expect(sent).toContain("SQL: not shown");
   });
 
+  it("shows a column name that holds a literal under a neutral label, and maps the model's answer back", async () => {
+    // SQLite and MySQL name an unaliased expression by its own text.
+    const name = "COUNT(CASE WHEN status = 'SENTINEL-STATUS' THEN 1 END)";
+    const result = classifyResult({ columns: [{ name: "region" }, { name, type: "bigint" }], rowCount: 4 });
+    const model = modelReturning(JSON.stringify({ primary: { ...bar, series: ["column_2"] }, alternate: null }));
+    const plan = await planChart({ ...base, result, model, dialect: "sqlite" });
+    const sent = JSON.stringify(model.doGenerateCalls[0]!.prompt);
+    expect(sent).not.toContain("SENTINEL");
+    expect(sent).toContain("- column_2 (measure)");
+    expect(plan).toMatchObject({ source: "model", primary: { series: [name] } });
+  });
+
+  it("keeps sensitive names out under omission: no SQL that mentions one, and a label for the column", async () => {
+    const schema: NormalizedSchema = {
+      tables: [{ name: "patients", columns: [{ name: "diagnosis", type: "text", nullable: true, primaryKey: false, sensitive: true }, { name: "id", type: "int", nullable: false, primaryKey: true }] }],
+    };
+    const result = classifyResult({ columns: [{ name: "diagnosis" }, { name: "patient_count", type: "bigint" }], rowCount: 3 });
+    const sql = "SELECT diagnosis, COUNT(*) AS patient_count FROM patients GROUP BY diagnosis";
+    const omitted = modelReturning(JSON.stringify({ primary: { ...bar, category: "column_1", series: ["patient_count"] }, alternate: null }));
+    const plan = await planChart({ ...base, sql, result, model: omitted, schema, omitSensitiveIdentifiers: true });
+    const sent = JSON.stringify(omitted.doGenerateCalls[0]!.prompt);
+    expect(sent).not.toContain("diagnosis");
+    expect(sent).toContain("SQL: not shown");
+    expect(plan).toMatchObject({ source: "model", primary: { category: "diagnosis" } });
+
+    const tagged = modelReturning(JSON.stringify({ primary: bar, alternate: null }));
+    await planChart({ ...base, sql, result, model: tagged, schema });
+    expect(JSON.stringify(tagged.doGenerateCalls[0]!.prompt)).toContain("diagnosis");
+  });
+
+  it("reads the SQL under the dialect it's given: an id, a spec or a custom dialect", async () => {
+    const sql = `SELECT "SENTINEL-NAME" AS region, COUNT(*) AS order_count FROM t GROUP BY 1`;
+    const sentFor = async (dialect: Parameters<typeof planChart>[0]["dialect"]) => {
+      const model = modelReturning(JSON.stringify({ primary: bar, alternate: null }));
+      await planChart({ ...base, sql, result: byRegion(), model, dialect });
+      return JSON.stringify(model.doGenerateCalls[0]!.prompt);
+    };
+    // Postgres reads "…" as a name, so it stays; MySQL, a custom dialect and none read a string.
+    expect(await sentFor("postgres")).toContain("SENTINEL-NAME");
+    expect(await sentFor(POSTGRES_DIALECT)).toContain("SENTINEL-NAME");
+    expect(await sentFor(MYSQL_DIALECT)).not.toContain("SENTINEL-NAME");
+    expect(await sentFor({ generate: async () => ({ sql: "SELECT 1" }) })).not.toContain("SENTINEL-NAME");
+    expect(await sentFor(undefined)).not.toContain("SENTINEL-NAME");
+  });
+
   it("states the rubric and the rules in the system prompt", async () => {
     const model = modelReturning(JSON.stringify({ primary: bar, alternate: null }));
     await planChart({ ...base, result: byRegion(), model });
     const system = model.doGenerateCalls[0]!.prompt.find((m) => m.role === "system")!.content as string;
-    for (const rule of [/one row.*metric/i, /time.*line/i, /area/i, /part of a whole.*2.?8.*pie/i, /rank.*horizontal-bar/i, /bar/i, /never invent/i, /identifier.*year.*never.*series|never.*series.*identifier/i, /factual/i]) {
+    for (const rule of [
+      /one row with one headline number: metric/i,
+      /measure over ordered time.*: line/i,
+      /use area only when the filled volume is the point/i,
+      /part of a whole across 2–8 categories: pie/i,
+      /a ranking .*: horizontal-bar/i,
+      /a few short categories: bar/i,
+      /never invent a column, a formula or an aggregation/i,
+      /an identifier or a year is a category, never a series/i,
+      /keep titles and descriptions factual/i,
+    ]) {
       expect(system).toMatch(rule);
     }
   });
@@ -155,6 +214,22 @@ describe("planChart — the fallback", () => {
     expect(plan).toMatchObject({ source: "fallback", fallbackReason: "timeout", primary: { type: "bar" } });
   });
 
+  it("falls back on a timeout even when the model ignores the signal and never settles", async () => {
+    const plan = await planChart({ ...base, result: byRegion(), model: neverSettlingModel(), timeoutMs: 20 });
+    expect(plan).toMatchObject({ source: "fallback", fallbackReason: "timeout" });
+    const controller = new AbortController();
+    const pending = planChart({ ...base, result: byRegion(), model: neverSettlingModel(), abortSignal: controller.signal, timeoutMs: Infinity });
+    controller.abort();
+    expect(await pending).toMatchObject({ source: "fallback", fallbackReason: "aborted" });
+  });
+
+  it("never rejects for a timeoutMs a timer can't take", async () => {
+    for (const timeoutMs of [12.5, -1, Number.NaN, 2 ** 40]) {
+      const plan = await planChart({ ...base, result: byRegion(), model: modelReturning(JSON.stringify({ primary: bar, alternate: null })), timeoutMs });
+      expect(plan.source).toBe("model");
+    }
+  });
+
   it("falls back when the host aborts", async () => {
     const controller = new AbortController();
     const pending = planChart({ ...base, result: byRegion(), model: hangingModel(), abortSignal: controller.signal });
@@ -207,10 +282,13 @@ describe("planChart — the rubric (fallback)", () => {
     expect(await fallbackFor("Orders per region", long)).toMatchObject({ type: "horizontal-bar" });
   });
 
-  it("prefers a category over an identifier, and never plots an identifier or a year", async () => {
-    const result = classifyResult({ columns: [{ name: "customer_id" }, { name: "segment" }, { name: "fiscal_year" }, { name: "spend", type: "numeric" }], rowCount: 6 });
-    const primary = await fallbackFor("Spend per segment", result);
-    expect(primary?.series).toEqual(["spend"]);
-    expect(primary?.category).toBe("fiscal_year");
+  it("prefers a category over an identifier", async () => {
+    const result = classifyResult({ columns: [{ name: "customer_id" }, { name: "segment" }, { name: "spend", type: "numeric" }], rowCount: 6 });
+    expect(await fallbackFor("Spend per segment", result)).toMatchObject({ category: "segment", series: ["spend"] });
+  });
+
+  it("plots a year as the time axis, never as a series", async () => {
+    const result = classifyResult({ columns: [{ name: "customer_id" }, { name: "fiscal_year" }, { name: "spend", type: "numeric" }], rowCount: 6 });
+    expect(await fallbackFor("Spend per year", result)).toMatchObject({ type: "line", category: "fiscal_year", series: ["spend"] });
   });
 });

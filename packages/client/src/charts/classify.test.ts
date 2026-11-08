@@ -67,13 +67,26 @@ describe("classifyResult", () => {
   it("takes a column's type from the schema artifact when exactly one schema column has its name", () => {
     const schema: NormalizedSchema = {
       tables: [
-        { name: "orders", columns: [{ name: "placed_on", type: "date", nullable: false }, { name: "qty", type: "integer", nullable: false }] },
-        { name: "shipments", columns: [{ name: "qty", type: "text", nullable: false }] },
+        { name: "orders", columns: [{ name: "placed", type: "date", nullable: false, primaryKey: false }, { name: "n", type: "integer", nullable: false, primaryKey: false }, { name: "code", type: "integer", nullable: false, primaryKey: false }] },
+        { name: "shipments", columns: [{ name: "code", type: "text", nullable: false, primaryKey: false }] },
       ],
-    } as NormalizedSchema;
-    const result = classifyResult({ columns: [{ name: "placed_on" }, { name: "qty" }], rowCount: 4, schema });
-    // `qty` matches two schema columns, so the schema doesn't decide it; its name does.
-    expect(kinds(result)).toEqual({ placed_on: "date", qty: "measure" });
+    };
+    const result = classifyResult({ columns: [{ name: "placed" }, { name: "n" }, { name: "code" }], rowCount: 4, schema });
+    // `placed` and `n` say nothing by name; their schema types decide. `code` matches two schema
+    // columns, so the schema doesn't decide it, and its name reads as a category.
+    expect(kinds(result)).toEqual({ placed: "date", n: "measure", code: "category" });
+  });
+
+  it("doesn't read a quantity per unit of time as a year or a date", () => {
+    const result = classifyResult({
+      columns: [{ name: "revenue_per_year", type: "numeric" }, { name: "orders_per_day" }, { name: "avg_response_time" }],
+      rowCount: 2,
+      rows: [
+        { revenue_per_year: 10, orders_per_day: 4, avg_response_time: 3.2 },
+        { revenue_per_year: 12, orders_per_day: 5, avg_response_time: 2.9 },
+      ],
+    });
+    expect(kinds(result)).toEqual({ revenue_per_year: "currency", orders_per_day: "measure", avg_response_time: "measure" });
   });
 
   it("checks values locally and keeps what it learns out of the shape", () => {

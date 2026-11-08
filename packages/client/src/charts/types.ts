@@ -45,7 +45,10 @@ export type ClassifiedResult = {
   local: Record<string, LocalColumnFacts>;
 };
 
-export type ChartType = "metric" | "line" | "area" | "bar" | "horizontal-bar" | "pie";
+/** Every chart type, the one list the type, the model's JSON schema and the spec check read. */
+export const CHART_TYPES = ["metric", "line", "area", "bar", "horizontal-bar", "pie"] as const;
+
+export type ChartType = (typeof CHART_TYPES)[number];
 
 /**
  * A declarative chart: which columns of the host's own rows to plot, and how. `category` is

@@ -15,7 +15,7 @@ const ISO_DATE = /^\d{4}-\d{2}(-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{
 const NUMERIC_STRING = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
 
 /** Splits `fiscalYear`, `fiscal_year` and `fiscal year` into lower-case words. */
-function words(name: string): string[] {
+export function words(name: string): string[] {
   return name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
@@ -57,9 +57,12 @@ function kindOf(name: string, type: string | undefined, values: ValueFacts | und
   const w = words(name);
   const last = w.at(-1);
   if (last === "id" || last === "uuid") return "identifier";
-  if (w.some((x) => YEAR.has(x))) return "year";
   if ((type && DATE_TYPE.test(type) && !NUMERIC_TYPE.test(type)) || (values?.date && !values.numeric)) return "date";
-  if (w.some((x) => DATE.has(x)) && !(type && NUMERIC_TYPE.test(type))) return "date";
+  // A year or date word names the column's time only when nothing says it is a quantity of
+  // something per unit of time: `revenue_per_year`, `orders_per_day`, `avg_response_time`.
+  const quantity = w.some((x) => x === "per" || PERCENT.has(x) || CURRENCY.has(x) || MEASURE.has(x));
+  if (!quantity && w.some((x) => YEAR.has(x))) return "year";
+  if (!quantity && w.some((x) => DATE.has(x)) && !(type && NUMERIC_TYPE.test(type)) && !values?.numeric) return "date";
 
   // Numbers: the database type decides first, then the values, then the name.
   const numeric = type ? NUMERIC_TYPE.test(type) : values ? values.numeric : w.some((x) => PERCENT.has(x) || CURRENCY.has(x) || MEASURE.has(x));

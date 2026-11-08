@@ -10,6 +10,8 @@
  * Returns `undefined`, so the caller sends no SQL at all, when a token never ends or a literal
  * survives a re-read of the masked text.
  */
+import type { AskDialect, AskDialectInput } from "../ask.js";
+import { getDialectSpec, isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { lexSql, type SqlToken } from "./lexer.js";
 import { tenantStatementReadings, type ReadingDialect } from "./readings.js";
 
@@ -18,16 +20,35 @@ const LITERAL: ReadonlySet<SqlToken["kind"]> = new Set(["string", "number"]);
 
 type Range = { start: number; end: number; literal: boolean };
 
-export function maskSqlLiterals(sql: string, dialect?: ReadingDialect): string | undefined {
-  const readings = tenantStatementReadings(dialect);
+/**
+ * How `dialect` is read, resolved as `ask()` resolves it: a built-in id to its spec, a spec as
+ * itself. An id that isn't built in, or a custom `AskDialect`, has no reading of its own, so
+ * every engine's reading applies.
+ */
+function readingOf(dialect: AskDialectInput | undefined): ReadingDialect | undefined {
+  if (dialect === undefined) return undefined;
+  if (typeof dialect === "string") return isBuiltInDialectId(dialect) ? getDialectSpec(dialect) : undefined;
+  if (typeof (dialect as AskDialect).generate === "function") return undefined;
+  return dialect as DialectSpec;
+}
+
+export function maskSqlLiterals(sql: string, dialect?: AskDialectInput): string | undefined {
+  const readings = tenantStatementReadings(readingOf(dialect));
   const ranges: Range[] = [];
   for (const profile of readings) {
-    for (const token of lexSql(sql, profile)) {
-      if (token.unterminated) return undefined;
+    const tokens = lexSql(sql, profile);
+    tokens.forEach((token, i) => {
       if (MASKED.has(token.kind)) {
         ranges.push({ start: token.start, end: token.end, literal: LITERAL.has(token.kind) });
       }
-    }
+      // A word right after a number is the rest of it on an engine that reads more number
+      // forms than the lexer (`1_000`, `0o17`, `0b101`), so it is masked with it.
+      const next = tokens[i + 1];
+      if (token.kind === "number" && next?.kind === "word" && next.start === token.end) {
+        ranges.push({ start: next.start, end: next.end, literal: true });
+      }
+    });
+    if (tokens.some((t) => t.unterminated)) return undefined;
   }
   ranges.sort((a, b) => a.start - b.start || b.end - a.end);
   let out = "";
@@ -40,7 +61,8 @@ export function maskSqlLiterals(sql: string, dialect?: ReadingDialect): string |
     current = undefined;
   };
   for (const range of ranges) {
-    if (current && range.start < current.end) {
+    // Overlapping ranges merge, and so do literals that touch (`0` and `o17` in `0o17`).
+    if (current && (range.start < current.end || (range.start === current.end && range.literal && current.literal))) {
       current.end = Math.max(current.end, range.end);
       current.literal ||= range.literal;
       continue;

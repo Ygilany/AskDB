@@ -4,6 +4,7 @@ description: "Pick a chart for the rows your application got from AskDB's SQL, w
 ---
 
 import { Aside } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Build · Experimental</p>
 
@@ -17,7 +18,11 @@ import { Aside } from "@astrojs/starlight/components";
 
 - A service that calls `ask()` or `client.ask()` and runs the SQL under your own connection. [Embed in a Node app](/guides/embed-in-node/) builds one.
 - A row cap on that connection. A chart from a cut result needs to know it was cut; [Cap the rows a query returns](/guides/cap-the-rows-a-query-returns/) returns `{ rows, truncated }`.
-- `@askdb/client`, which brings `@askdb/core` and `ai` as peers. The chart planner adds no other package.
+- The packages below. `@askdb/client/charts` imports only `@askdb/client`'s peers, `@askdb/core` and `ai`; the rest are for steps 1 and 3.
+
+<InstallTabs pkgs="@askdb/client @askdb/core @askdb/config @askdb/ai ai @ai-sdk/openai" />
+
+Swap `@ai-sdk/openai` for the AI SDK package your config selects.
 
 ## 1. Run the query
 
@@ -25,8 +30,9 @@ Generate the SQL and run it yourself. AskDB returns the SQL and never runs it.
 
 ```ts
 import { createAskDb } from "@askdb/client";
-import { getAskDbRuntimeConfig } from "@askdb/config";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 
+bootstrapAskDbEnv({ cwd: process.cwd() });
 const askdb = createAskDb({ config: getAskDbRuntimeConfig(), schema: { path: "./my-app.schema" } });
 const question = "How many orders did each region place last quarter?";
 const { sql } = await askdb.ask(question);
@@ -60,10 +66,17 @@ import { planChart } from "@askdb/client/charts";
 import { createAiRegistry } from "@askdb/ai";
 
 const model = await createAiRegistry().createLanguageModelFromEnv(process.env); // or openai("gpt-4o-mini")
-const plan = await planChart({ question, sql, result, model: model!, dialect: "postgres" });
+if (!model) throw new Error("No AI provider is configured: set its API key.");
+const plan = await planChart({ question, sql, result, model, dialect: "postgres" });
 ```
 
-Before the model call, `planChart()` replaces every literal in the SQL with `?`: strings, numbers and tenant values bound into the SQL. It finds them with the SQL checks' own lexer, for the `dialect` you pass. An id that isn't built in, a custom dialect, or no dialect reads the SQL the way every built-in engine would, which masks more. If the SQL can't be read safely, for example a string that never closes, the model gets no SQL at all.
+Before the model call, `planChart()` replaces every literal in the SQL with `?`: strings, numbers and tenant values bound into the SQL. It finds them with the SQL checks' own lexer, for the `dialect` you pass. An id that isn't built in, a custom dialect, or no dialect reads the SQL the way every built-in engine would, which masks more. If the SQL can't be read safely, for example a string that never closes, the model gets no SQL at all. A column name that holds a literal, such as the name SQLite and MySQL give an unaliased `COUNT(CASE WHEN status = 'refunded' THEN 1 END)`, is shown as `column_2`, and `planChart()` maps the model's answer back to the real name.
+
+If you keep sensitive columns out of prompts (`modes.omitSensitiveFromPrompt`), pass that setting as `omitSensitiveIdentifiers` with the schema artifact as `schema`, as `ask()` takes it. The model then gets no SQL that mentions a sensitive column, and a result column named like one is shown under a `column_<n>` label.
+
+```ts
+const plan = await planChart({ question, sql, result, model, dialect: "postgres", schema, omitSensitiveIdentifiers: true });
+```
 
 `planChart()` never rejects because of the model. When the model errors, takes longer than `timeoutMs` (15000 by default), returns something that isn't a chart spec, or names a chart that fails the checks, `plan.source` is `"fallback"` and `plan.fallbackReason` says why. The fallback picks a chart from the classified columns with the same rules.
 
@@ -78,11 +91,11 @@ if (plan.primary) {
 }
 ```
 
-`plan.primary` is null when no column holds a number to plot. Show the table instead. `plan.alternate`, when set, is a second chart you can offer.
+`plan.primary` is null when no column holds a number to plot, or when a result of several rows has no column to group them by. Show the table instead. `plan.alternate`, when set, is a second chart you can offer.
 
 ## What the model sees
 
-For the question above, the model gets this and nothing else:
+For the question above, the model gets this, after fixed instructions that state the rules and hold no data:
 
 ```text
 Question: How many orders did each region place last quarter?
@@ -96,7 +109,7 @@ Columns:
 - order_count (measure)
 ```
 
-The column names reach the model, as they do in the prompt `ask()` sends. Values don't.
+The column names reach the model, as they do in the prompt `ask()` sends, unless omission withholds them. Values don't.
 
 ## Read next
 

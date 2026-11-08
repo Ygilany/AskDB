@@ -17,7 +17,7 @@ This entry point is outside AskDB's stability promise: a minor release of `@askd
 import { classifyResult, planChart, validateChartSpec } from "@askdb/client/charts";
 ```
 
-It needs `@askdb/client`'s peers, `@askdb/core` and `ai`, and no other package. [Plan a chart for a query result](/guides/plan-a-chart/) shows it end to end.
+The entry point imports only `@askdb/client`'s peers, `@askdb/core` and `ai`. [Plan a chart for a query result](/guides/plan-a-chart/) shows it end to end.
 
 ## `classifyResult(input)`
 
@@ -65,15 +65,20 @@ Asks the model for a chart and checks it. Returns `Promise<ChartPlan>`. It never
 | `result` | `ClassifiedResult` | From `classifyResult()`. Only `result.shape` reaches the model. |
 | `model` | `LanguageModel` | Any AI SDK model: one you build, or one from `@askdb/ai`'s registry. |
 | `dialect` | `AskDialectInput` | Optional. As `ask()` takes it: a built-in id, a `DialectSpec` or a custom dialect. Decides how literals are found. |
+| `schema` | `AnyNormalizedSchema` | Optional. The schema artifact the SQL was generated against. With `omitSensitiveIdentifiers`, it says which names are sensitive. |
+| `omitSensitiveIdentifiers` | `boolean` | Optional. Keeps sensitive names out of the prompt, as `ask()`'s `omitSensitiveIdentifiersFromNlToSqlPrompt` does. Pass `modes.omitSensitiveFromPrompt`. Default false. |
 | `providerOptions` | `Record<string, unknown>` | Optional. Passed to the model call unchanged, as in `ask()`. |
 | `abortSignal` | `AbortSignal` | Optional. Ends the model call; the plan comes from the fallback. |
-| `timeoutMs` | `number` | Optional. How long to wait for the model. Default `15000`. |
+| `timeoutMs` | `number` | Optional. How long to wait for the model, in milliseconds. Default `15000`. `Infinity` waits for `abortSignal` only. A negative or non-number value uses the default; a fraction is rounded down. |
 
 ### What the model receives
 
 - **The question.**
 - **The SQL, with every literal replaced by `?`.** Strings, numbers and bound tenant values become `?`, and comments are dropped. Names, keywords and parameters such as `$1` stay. The literals are found with the lexer the SQL checks use: under the dialect's own readings for a built-in engine, and under every engine's readings, with both string settings, for any other dialect or none. If a string or comment never closes, or a literal survives a second read, the model gets no SQL.
-- **The shape:** each column's name and kind, the row count, and whether the result is truncated.
+- **The shape:** each column's name and kind, the row count, and whether the result is truncated. A column name that holds a literal is shown as `column_<n>`, its position in the result. SQLite and MySQL name an unaliased expression by its text, so `COUNT(CASE WHEN status = 'refunded' THEN 1 END)` would carry `'refunded'`. `planChart()` maps a label in the model's answer back to the real name.
+- **Under omission** (`omitSensitiveIdentifiers` with `schema`): no SQL when it mentions a sensitive column, by the rule the sensitive check uses, and a `column_<n>` label for a result column named like a sensitive column.
+
+A fixed system prompt states the rubric and the rules. It holds no data.
 
 The model returns a JSON object through the AI SDK's structured output (`generateText` with `Output.object`): one primary chart spec and an alternate or null.
 
@@ -81,7 +86,7 @@ The model returns a JSON object through the AI SDK's structured output (`generat
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `primary` | `ChartSpec \| null` | The chart to draw. Null when no column holds a number to plot. |
+| `primary` | `ChartSpec \| null` | The chart to draw. Null when no column holds a number to plot, or when a result of several rows has no column to group them by. |
 | `alternate` | `ChartSpec` | Optional. A second chart. An alternate that fails the checks is dropped. |
 | `source` | `"model" \| "fallback"` | Who picked the chart. |
 | `fallbackReason` | `"timeout" \| "aborted" \| "model-error" \| "invalid-spec"` | Set when `source` is `"fallback"`. |
@@ -106,9 +111,9 @@ The model and the fallback pick the type by these rules, in order:
 2. A measure over ordered time: `line`. The model picks `area` only when the filled volume is the point.
 3. Part of a whole across 2–8 categories: `pie`, when the part-to-whole policy allows it.
 4. A ranking (top, bottom, highest, lowest…): `horizontal-bar`.
-5. A few short categories: `bar`, or `horizontal-bar` when a label is longer than 16 characters.
+5. A few short categories: `bar`, or `horizontal-bar` when the labels are long.
 
-The fallback reads a part-of-whole question from words such as "share", "breakdown" and "proportion", and a ranking from words such as "top" and "highest". It plots at most 4 series. It never picks `area`.
+The model judges long labels from the column names and the question; it never sees a label. The fallback switches to `horizontal-bar` when a label is longer than 16 characters, which it knows only when you passed `rows` to `classifyResult()`. The fallback reads a part-of-whole question from words such as "share", "breakdown" and "proportion", and a ranking from words such as "top" and "highest". It plots at most 4 series. It never picks `area`.
 
 ## `validateChartSpec(spec, result, context?)`
 

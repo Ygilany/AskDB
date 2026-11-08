@@ -32,7 +32,8 @@ A chart doesn't need the values. The question gives intent, and the column names
 ## Decision
 
 - **No rows reach the model.** `classifyResult()` runs in the host process and splits its result into `shape` (column names and kinds, the row count, the truncated flag), the only part the prompt reads, and `local` (negatives, distinct counts, label lengths), which the validator and the fallback read. A test captures the exact prompt the model receives and checks that sentinel row values and SQL literals never appear in it.
-- **No SQL literals reach the model.** The planner sends `maskSqlLiterals()`'s output, or no SQL. `maskSqlLiterals` is an internal core export, listed on the core API page with no stability promise.
+- **No SQL literals reach the model.** The planner sends `maskSqlLiterals()`'s output, or no SQL. `maskSqlLiterals` is an internal core export, listed on the core API page with no stability promise. It takes a dialect as `ask()` does and resolves it in core. A result column name that holds a literal (SQLite and MySQL name an unaliased expression by its text) is shown as `column_<n>`, and the planner maps the model's answer back.
+- **Omission is a floor here too** ([ADR 0026](0026-every-prompt-follows-omission.md)). With `omitSensitiveIdentifiers` and the schema artifact, the prompt carries no SQL that mentions a sensitive column, and a result column named like one is shown as `column_<n>`.
 - **The model returns a declarative spec,** following a fixed rubric: one value gives a metric, time gives a line, part of a whole gives a pie, a ranking gives a horizontal bar, and categories give a bar.
 - **`validateChartSpec()` checks every spec:** each column exists, each series is a measure (identifiers and years never are), a chart other than a metric has a category that isn't a measure, a metric is one row and one series, and a pie passes the part-to-whole policy (one additive series across 2–8 distinct categories, no negatives, no time series, no ranking, not truncated).
 - **A chart never fails the report.** On a timeout, an abort, a model error or an invalid spec, `planChart()` returns a deterministic pick from the classified columns, with `source: "fallback"` and the reason. The fallback is internal.
@@ -41,7 +42,7 @@ A chart doesn't need the values. The question gives intent, and the column names
 ## Consequences
 
 - Hosts get a chart without consenting to send data, under any mode: chart planning reads no `mode`, because it sends nothing `schema_only` withholds.
-- Column names reach the model, as they do in the NL→SQL prompt. A host that keeps sensitive names out of prompts ([`omitSensitiveIdentifiersFromNlToSqlPrompt`](../contracts/sensitive-fields-and-modes.md)) should know the planner doesn't read that option: the names are the result's own columns.
+- Column names reach the model, as they do in the NL→SQL prompt, unless omission withholds them. The planner reads no config: the host passes `modes.omitSensitiveFromPrompt` as `omitSensitiveIdentifiers`, as it passes the setting to `ask()` ([`sensitive-fields-and-modes.md`](../contracts/sensitive-fields-and-modes.md#which-prompts-follow-omission)).
 - A change to the lexer's readings changes what `maskSqlLiterals` masks. It reads through `tenantStatementReadings`, so it follows the tenant check.
 - Moving the subpath to its own package is a move of `packages/client/src/charts/` plus a new package entry. Leaving the client then is a breaking change to an experimental surface: a minor.
 - Result summaries, which do send rows, still wait for Phase 12 and its consent model. Nothing here sends a row.
