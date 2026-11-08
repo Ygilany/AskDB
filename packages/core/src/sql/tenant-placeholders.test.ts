@@ -10,7 +10,7 @@ import {
   type TenantSqlDialect,
 } from "./tenant-placeholders.js";
 import { ask, type AskDialect } from "../ask.js";
-import { SchemaParseError, TenantScopeError, UnknownDialectError } from "../errors.js";
+import { SchemaParseError, TenantGuardrailError, TenantScopeError, UnknownDialectError } from "../errors.js";
 import { getDialectSpec, type BuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
 import { placeholderForTenantRoot as publicPlaceholderForTenantRoot } from "../index.js";
@@ -670,5 +670,31 @@ describe("placeholderForTenantRoot — the public derivation agrees with the bin
     expect(result.bindings.map((b) => [b.placeholder, b.rootId])).toEqual(
       p.roots.map((root, i) => [placeholders[i], root.id]),
     );
+  });
+});
+
+describe("ask() — a quoted name spelled like a tenant placeholder", () => {
+  // Postgres reads ":tenant_agency_ids" as x's column, which equals o.agency_id, so the WHERE keeps
+  // every row: on Postgres 17 it returned all 25 clients across 7 agencies.
+  const sql =
+    'SELECT o.* FROM orders o CROSS JOIN LATERAL (SELECT o.agency_id AS ":tenant_agency_ids") x WHERE o.agency_id = ":tenant_agency_ids"';
+
+  it("is never bound: resolveTenantSql() leaves the quoted name as it is", () => {
+    const out = resolveTenantSql(sql, policy, agencyOne, "sql-params", 1, getDialectSpec("postgres"));
+    expect(out.sql).toBe(sql);
+    expect(out.mode === "sql-params" ? out.params : undefined).toEqual([]);
+  });
+
+  it("isn't counted as the tenant predicate, so ask() refuses the statement", async () => {
+    await expect(
+      ask({
+        question: "orders",
+        schema,
+        model: fakeModel,
+        dialect: "postgres",
+        tenantScope: agencyOne,
+        deps: { generateText: (async () => ({ text: "```sql\n" + sql + "\n```" })) as never },
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
   });
 });

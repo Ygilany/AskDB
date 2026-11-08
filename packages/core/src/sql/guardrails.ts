@@ -24,6 +24,7 @@ import {
 import {
   scanSensitiveReferences,
   schemaHasSensitiveIdentifiers,
+  schemaNames,
   type SensitiveGuardrailMode,
   type SensitiveGuardrailResult,
 } from "./sensitive-guardrail.js";
@@ -165,8 +166,8 @@ const CHECKS: Record<GuardrailCheckId, GuardrailCheck> = {
       ];
     }
   },
-  tenant: ({ tenant, dialect }, form, sql) =>
-    tenant ? tenantFindings(tenantRuleWarnings(sql, tenant.policy, tenant.scope, dialect), form) : [],
+  tenant: ({ tenant, dialect, schema }, form, sql) =>
+    tenant ? tenantFindings(tenantRuleWarnings(sql, tenant.policy, tenant.scope, dialect, schemaNames(schema)), form) : [],
   sensitive: ({ schema, dialect }, form, sql) =>
     sensitiveFindings(scanSensitiveReferences(sql, schema, dialect), form),
 };

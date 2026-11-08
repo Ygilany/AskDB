@@ -21,7 +21,7 @@ Then work through the sections below, and finish with [Check the upgrade](#check
 
 ## 1.0.0-beta.52
 
-Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/config` 1.0.0-beta.20, `@askdb/ai` 0.1.0-beta.12, `@askdb/introspect` 0.3.0-beta.26, and the other packages that pin `@askdb/core`.
+Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/config` 1.0.0-beta.20, `@askdb/ai` 0.1.0-beta.12, `@askdb/introspect` 0.3.0-beta.26, `@askdb/client` 1.0.0-beta.13, `@askdb/studio` 0.2.0-beta.45, and the other packages that pin `@askdb/core`.
 
 ### Replace the removed internal exports
 
@@ -71,6 +71,10 @@ Not published yet: these changes ship with `@askdb/core`, `askdb` and `@askdb/ht
 
 A `studio.execute.provider` that isn't `postgres`, `mysql`, `sqlite` or `sqlserver` now fails to load with `askdb.config: invalid studio.execute.provider "postgress" (expected one of: postgres, mysql, sqlite, sqlserver).` ([#751](https://github.com/Ygilany/AskDB/issues/751)). Before, Studio quietly ran Execute against the introspection provider, or `postgres`, so a typo could point it at an engine you didn't name. Fix the value, or remove the key to keep that fallback: an unset provider still uses the introspection provider when it's a live engine, else `postgres`.
 
+### Set `dialect` for a schema whose engine AskDB doesn't ship, in Studio
+
+Studio's Playground now refuses a schema whose `provider` has no AskDB dialect, as the CLI and the HTTP API already did ([#886](https://github.com/Ygilany/AskDB/issues/886), ADR 0039). It answers `422` with `@askdb/client`'s `DialectNotSupportedError` message and generates nothing. Before, it generated PostgreSQL SQL and checked it under PostgreSQL's rules, which can pass SQL your engine reads differently. The workspace still loads for browsing and enrichment, and the **Get the code** panel shows the reason instead of code. If your engine speaks a dialect AskDB ships, set `dialect` in `askdb.config.ts`, such as `"postgres"` for a PostgreSQL-compatible warehouse.
+
 ### Other changes you may notice in beta.52
 
 - **A tenant policy with a table named `order` or `group` no longer refuses every sorted query** ([#828](https://github.com/Ygilany/AskDB/issues/828)). The tenant check read the `ORDER` of `ORDER BY` (and `GROUP` of `GROUP BY`) as a reference to a table of that name, so under `strict` enforcement a sorted, tenant-scoped query was refused with `UNKNOWN_TABLE_REFERENCED` or `MISSING_TENANT_PREDICATE`. It no longer reads those keywords as a table; a quoted or qualified `"order"`, or `order` in `FROM`/`JOIN`, still counts as the table. If you worked around this by renaming the table or dropping `ORDER BY`, you can undo that.
@@ -79,7 +83,7 @@ A `studio.execute.provider` that isn't `postgres`, `mysql`, `sqlite` or `sqlserv
   - a read inside a correlated subquery that only the outer query filters;
   - a source that computes over its rows (an aggregate, a window, `LIMIT`), filtered only outside it;
   - a source whose body is a set operation (`UNION`, `INTERSECT`, `EXCEPT`), filtered only outside it;
-  - a read with a clause right after its table (`orders TABLESAMPLE …`), filtered only through the table's name;
+  - a read with a clause right after its table or alias (`orders TABLESAMPLE …`, SQL Server's `orders o (NOLOCK)` without `WITH`), filtered only through that name;
   - a self-join where a read has no alias, a quoted alias or sits in parentheses, or that is filtered unqualified (`FROM orders a, orders b WHERE agency_id = …`): give each read a plain alias and its own predicate (`WHERE a.agency_id = … AND b.agency_id = …`);
   - on MySQL, MariaDB and SQL Server, a predicate whose qualifier spells the alias in another case (`FROM orders O WHERE o.agency_id = …`).
 
@@ -89,6 +93,7 @@ A `studio.execute.provider` that isn't `postgres`, `mysql`, `sqlite` or `sqlserv
 - **Internal: every SQL check reads through the shared lexer** ([#815](https://github.com/Ygilany/AskDB/issues/815), ADR 0010). One module now sets the readings each check takes for each dialect, and the tenant check's separate scanner is gone, so a lexer fix lands in one place. #815 itself changes no public API and no verdict beyond #828.
 - **`askdb init` installs in a one-package project whose `pnpm-workspace.yaml` holds only settings** ([#863](https://github.com/Ygilany/AskDB/issues/863)), such as `minimumReleaseAgeExclude`, which pnpm also keeps in that file. It used to skip the install there and print the `pnpm add` command instead. It still skips at a workspace root: a `pnpm-workspace.yaml` that lists at least one package under `packages`, or a `package.json` with `workspaces`. Studio's guided setup reads the file the same way.
 - **`askdb init` and Studio's setup read a pgvector store's URL from `PGVECTOR_URL`,** not `ASKDB_PGVECTOR_URL`, when you don't name a variable. That's the name the rest of these docs use. `--pgvector-env`, or the variable field in Studio's setup, still picks another. A config that already reads `env("ASKDB_PGVECTOR_URL")` keeps working: the name is whatever its `env()` call passes.
+- **`@askdb/client` exports `resolveDialect(schema, options?)`**, the rule `createAskDb()` runs to pick a dialect ([#886](https://github.com/Ygilany/AskDB/issues/886)). A host that calls `@askdb/core`'s `ask()` itself can pick the dialect the CLI, Studio and the HTTP API pick, and refuse the same schemas.
 
 ## 1.0.0-beta.51
 

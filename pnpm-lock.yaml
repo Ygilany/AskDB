@@ -206,6 +206,9 @@ importers:
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@askdb/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@askdb/config':
         specifier: workspace:*
         version: link:../../packages/config
