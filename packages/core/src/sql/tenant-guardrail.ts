@@ -1598,17 +1598,17 @@ function predicateAt(tokens: readonly Token[], k: number, column: string, readin
 }
 
 /**
- * Whether the written column `t` is the policy's `column`, the way the `reading`'s engine compares
- * the name with the column's own spelling, which the policy writes as the schema does. A name that
- * compares as another column may be another source's, so it ties nothing to the policy's.
- * - Read the Postgres way (`postgres`, `cockroachdb`), the name as the engine reads it: a quoted
- *   name exactly, an unquoted one folded to lower case. So `"AGENCY_ID"` is another column than
- *   `agency_id`, and an unquoted `agencyid` another than `"agencyId"`.
+ * Whether the written column `t` is the policy's `column` under the `reading`'s rule, compared with
+ * the column's own spelling, which the policy writes as the schema does. A name that compares as
+ * another column may be another source's, so it ties nothing to the policy's.
+ * - Read the Postgres way (`postgres`, `cockroachdb`): a quoted name exactly, an unquoted one with
+ *   its ASCII letters lower-cased. So `"AGENCY_ID"` is another column than `agency_id`, and an
+ *   unquoted `agencyid` another than `"agencyId"`.
  * - Read the SQL Server way, the name as written: the database's collation may compare names
  *   case-sensitively, and the check can't see it, so `agencyid` is another column than `agencyId`.
- * - Read the MySQL way (MySQL and MariaDB), in any case, as they always compare column names.
- * - Otherwise (SQLite, and the generic reading), with ASCII letters folded, quoted or not, as
- *   SQLite compares them: `égency_id` is another column than `Égency_id`.
+ * - Read the MySQL way (MySQL and MariaDB), lower-cased.
+ * - Otherwise (SQLite, and the generic reading), with ASCII letters lower-cased, quoted or not, so
+ *   `égency_id` is another column than `Égency_id`.
  * A custom id or none is read every way, so the column has to match under each.
  */
 function namesColumn(t: Token, column: string, reading: string): boolean {
