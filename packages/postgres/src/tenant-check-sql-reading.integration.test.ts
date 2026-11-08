@@ -6,8 +6,9 @@
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `$tag$` string, a table named after a keyword, and where a `--`
  * comment ends, nested block comments, a column list after a table's alias, an `ON` that closes an
- * earlier outer join, a quoted column name, compared exactly, and a quoted name spelled like the tenant
- * placeholder or holding U+0001 are all read as Postgres reads them.
+ * earlier outer join, a quoted column name, compared exactly, an unquoted one, folded to lower case,
+ * a discriminator's quoted name, and a quoted name spelled like the tenant placeholder or holding
+ * U+0001 are all read as Postgres reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real server.
  *
@@ -148,6 +149,37 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     expect(findings('SELECT o.* FROM orders o CROSS JOIN (SELECT 42 AS "AGENCY_ID") x WHERE "AGENCY_ID" = :tenant_agency_ids'))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
     expect(findings('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids')).toEqual([]);
+  });
+
+  it("an unquoted column name folds to lower case, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // On a camelCase schema, unquoted agencyid is z's column, not "agencyId", so every agency's rows come back.
+    const rows = (await runner('WITH c (id, "agencyId") AS (VALUES (1, 42), (2, 999)) SELECT count(DISTINCT c."agencyId") AS n FROM c, (SELECT generate_series(1, 1000) AS agencyid) z WHERE agencyid = 42')).rows;
+    expect(Number(rows[0]![0])).toBe(2);
+    const camel: NormalizedTenantPolicy = {
+      ...policy,
+      roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+      hierarchy: [],
+      scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] }],
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    const camelScope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+    const camelFindings = (sql: string) => validateTenantGuardrails(sql, camel, camelScope, { dialect }).warnings.map((w) => w.rule);
+    expect(camelFindings('SELECT c.* FROM "Client" c, (SELECT generate_series(1, 1000) AS agencyid) z WHERE agencyid = :tenant_agency_ids'))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(camelFindings('SELECT c.* FROM "Client" c WHERE c."agencyId" = :tenant_agency_ids')).toEqual([]);
+  });
+
+  it("a discriminator's quoted name is compared exactly, as the engine reads it", async () => {
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    // "OWNER_TYPE" is z's column, not owner_type, so a client's note with an agency's ID comes back too.
+    const rows = (await runner(`WITH notes (id, owner_type, owner_id) AS (VALUES (1, 'agency', 42), (2, 'client', 42)) SELECT count(*) AS n FROM notes n, (SELECT 'agency' AS "OWNER_TYPE") z WHERE "OWNER_TYPE" = 'agency' AND n.owner_id = 42`)).rows;
+    expect(Number(rows[0]![0])).toBe(2);
+    expect(findings(`SELECT n.* FROM notes n, (SELECT 'agency' AS "OWNER_TYPE") z WHERE "OWNER_TYPE" = 'agency' AND n.owner_id = :tenant_agency_ids`))
+      .toEqual(["MISSING_TYPE_DISCRIMINATOR"]);
+    expect(findings("SELECT n.* FROM notes n WHERE n.owner_type = 'agency' AND n.owner_id = :tenant_agency_ids")).toEqual([]);
   });
 
   it("a quoted name is a name, whatever it holds, as the engine reads it", async () => {
