@@ -31,6 +31,10 @@ Under `sqlite`, an `ON` that relies on a comma-joined read, or on a read joined 
 
 The check is still a heuristic, and some shapes still pass, such as an unqualified predicate in an `ON` that counts for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
 
+### Quote a table or column name CockroachDB lower-cases into another
+
+An unquoted name whose letters, lower-cased, aren't in Unicode normalization form C is now refused (`UNICODE_ESCAPED_IDENTIFIER`) unless the schema spells it exactly: CockroachDB lower-cases such a name and then normalizes it, so `J` followed by U+030C reads as `ǰ`, and `ΠΡΩΤΕΪ́ΝΗ` as `πρωτεΐνη`. It affects about thirty letters, `ΐ` and `ΰ` among them in modern Greek. Write the name as the schema spells it. A table name ending in a capital sigma (`ΟΣ`) is now matched to `οσ` before a column list and in a derived table's items, as CockroachDB reads it.
+
 ### Check the TLS settings in your SQL Server URLs
 
 AskDB now reads `encrypt` and `trustServerCertificate` the same way in `mssql://` and `sqlserver://` URLs (#596). `true`, `yes` and `1` mean true, and `false`, `no` and `0` mean false, in any case. Any other `encrypt` value turns encryption on, and any other `trustServerCertificate` value leaves the server certificate untrusted.

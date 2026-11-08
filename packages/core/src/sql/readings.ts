@@ -16,7 +16,7 @@
  * | tenant: predicates ({@link tenantCodeReadings}) | the engine's view | the standard, Postgres, MySQL and SQL Server views, the first two with both comment ends; the Postgres and SQL Server views with block comments nested and not |
  * | placeholders ({@link placeholderReading}) | the engine's | the generic profile |
  * | names outside printable ASCII, tenant and sensitive ({@link unmatchedNonAsciiName}) | `sqlserver`: the engine's; any other engine: none | as for tenant statements |
- * | names some engine folds into ASCII or not in NFC, tenant ({@link nameEnginesFoldApart}) | the engine's, as for tenant statements | as for tenant statements |
+ * | names some engine folds into ASCII or not in NFC (as written or, unquoted, lower-cased), tenant ({@link nameEnginesFoldApart}) | the engine's, as for tenant statements | as for tenant statements |
  * | `'…'` read as a name or an alias, tenant and sensitive ({@link stringsSqliteReadsAsNames}) | `sqlite`: its readings; any other engine: none | the generic and standard readings, and SQLite's |
  * | Postgres-only forms (`postgresReadingProfiles` in `lexer.ts`) | the engine's, when it is on the Postgres lexer | Postgres's, with backslash escapes too when set |
  *
