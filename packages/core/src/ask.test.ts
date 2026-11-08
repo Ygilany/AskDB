@@ -931,6 +931,56 @@ describe("ask — parameterize", () => {
     expect(result.preparedQuery).toBeUndefined();
   });
 
+  describe("the consistency check reads literals and quoted names exactly (#359)", () => {
+    const run = async (bound: string, unbound: string, value: string) => {
+      const generateText = vi.fn(async () => ({
+        text: [
+          "```sql",
+          bound,
+          "```",
+          "```sql-unbound",
+          unbound,
+          "```",
+          "```json",
+          JSON.stringify({ parameters: [{ name: "v", type: "string", cardinality: "one", value }] }),
+          "```",
+        ].join("\n"),
+      }));
+      return ask({ question: "how many", schema: minimalSchema, model: fakeModel, dialect: "postgres", deps: { generateText } });
+    };
+    const expectDropped = (result: Awaited<ReturnType<typeof run>>, bound: string) => {
+      expect(result.sql).toBe(bound);
+      expect(result.unboundSql).toBeUndefined();
+      expect(result.params).toBeUndefined();
+      expect(result.preparedQuery).toBeUndefined();
+    };
+
+    it("drops the extras when a string literal differs from sql only in case", async () => {
+      const bound = "SELECT count(*) FROM cities WHERE state = 'Colorado'";
+      expectDropped(await run(bound, "SELECT count(*) FROM cities WHERE state = :v", "colorado"), bound);
+    });
+
+    it("drops the extras when a string literal differs from sql only in whitespace", async () => {
+      const bound = "SELECT count(*) FROM cities WHERE city = 'New  York'";
+      expectDropped(await run(bound, "SELECT count(*) FROM cities WHERE city = :v", "New York"), bound);
+    });
+
+    it("drops the extras when a quoted name differs from sql only in case", async () => {
+      const bound = 'SELECT count(*) FROM "Cities" WHERE state = \'colorado\'';
+      expectDropped(await run(bound, 'SELECT count(*) FROM "cities" WHERE state = :v', "colorado"), bound);
+    });
+
+    it("keeps the extras when only keyword case, unquoted-name case and layout differ", async () => {
+      const result = await run(
+        "select COUNT(*) from Cities where state = 'colorado';",
+        "SELECT count(*)\n  FROM cities WHERE state = :v",
+        "colorado",
+      );
+      expect(result.unboundSql).toBe("SELECT count(*)\n  FROM cities WHERE state = $1");
+      expect(result.params).toEqual(["colorado"]);
+    });
+  });
+
   it("parameterize: false produces today's shape with no extras", async () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT id FROM users\n```",

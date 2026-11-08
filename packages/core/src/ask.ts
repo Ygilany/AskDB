@@ -451,7 +451,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     }
     try {
       const rendered = renderTemplate(prepared, values, dialectSpec, tenant);
-      if (!sqlStructurallyEqual(rendered.businessSql, generated.sql)) {
+      if (!sqlStructurallyEqual(rendered.businessSql, generated.sql, dialectSpec)) {
         logParameterizeDropped(logger, "consistency_mismatch");
       } else {
         result.preparedQuery = prepared;

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { QueryParameterError } from "../errors.js";
-import { escapeSqlLiteral, scanPlaceholders, tokenizeSqlSpans, type PreparedQuery } from "./bind.js";
+import { escapeSqlLiteral, scanPlaceholders, sqlStructurallyEqual, tokenizeSqlSpans, type PreparedQuery } from "./bind.js";
 import { bindPreparedQuery as checkedBind } from "./rebind.js";
 import { validateSelectSql } from "./validate.js";
-import { MYSQL_DIALECT, POSTGRES_DIALECT } from "./dialect-spec.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT, type DialectSpec } from "./dialect-spec.js";
 
 /** Render spans as `kind:text` pairs for compact assertions. */
 function spansOf(sql: string, dialect?: Parameters<typeof tokenizeSqlSpans>[1]): string[] {
@@ -305,5 +305,24 @@ describe("bindPreparedQuery — escaping matrix for business values", () => {
     expect(myTwo.sql).toBe("SELECT * FROM t WHERE s = '\\\\' AND t = ' OR 1=1'");
     const pg = bindPreparedQuery(prepared("postgres", "SELECT * FROM t WHERE s = :s", params), { s: "\\" });
     expect(pg.sql).toBe("SELECT * FROM t WHERE s = '\\'");
+  });
+});
+
+describe("sqlStructurallyEqual — the parameterize consistency check (#359)", () => {
+  // ask()'s tests cover literal case, literal whitespace and quoted-name case on postgres.
+  const customEngine = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+
+  it("with a dialect id that has no built-in lexer, still reads literals exactly and folds only keyword case", () => {
+    expect(sqlStructurallyEqual("SELECT 1 FROM t WHERE s = 'Colorado'", "SELECT 1 FROM t WHERE s = 'colorado'", customEngine)).toBe(false);
+    expect(sqlStructurallyEqual("select 1 from T where s = 'x';", "SELECT 1\nFROM t WHERE s = 'x'", customEngine)).toBe(true);
+  });
+
+  it("treats an unterminated token as unequal, even on both sides", () => {
+    expect(sqlStructurallyEqual("SELECT 'open", "SELECT 'open", POSTGRES_DIALECT)).toBe(false);
+  });
+
+  it("compares comments exactly, since MySQL runs a `/*!` comment", () => {
+    expect(sqlStructurallyEqual("SELECT 1 /*!50000 , 2 */", "SELECT 1 /*!50001 , 2 */", MYSQL_DIALECT)).toBe(false);
+    expect(sqlStructurallyEqual("SELECT 1 -- note", "SELECT 1 -- note", MYSQL_DIALECT)).toBe(true);
   });
 });
