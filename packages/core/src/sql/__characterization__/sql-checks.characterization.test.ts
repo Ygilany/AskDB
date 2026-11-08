@@ -15,10 +15,11 @@
  * only the reads of its own `SELECT`, a qualifier no read goes by counts for nothing, and a self-join's
  * reads must be told apart; its 43 rows below differ from the code before it in 344 tenant verdicts, all
  * refusals but 5 that keep a read filtered through its own quoted alias with a space, `"my alias"`),
- * and the readings fixed for beta.53 (170 verdicts on the rows below, all refusals: 79 tenant and 91
+ * and the readings fixed for beta.53 (176 verdicts on the rows below, all refusals: 82 tenant and 94
  * keyword-table verdicts, for a SQLite string name in a source's parentheses, `HAVING` on an ungrouped or
- * aliased column, a `BETWEEN`'s upper bound, a spaced qualifier dot, and an `OR` after an alias spelled
- * like a clause word; no existing verdict moves).
+ * aliased column, a `BETWEEN`'s upper bound, a spaced qualifier dot, an `OR` after an alias spelled
+ * like a clause word, and a discriminator name the engine reads as another column; no existing
+ * verdict moves).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
@@ -309,6 +310,9 @@ const HOSTILE: readonly string[] = [
   "SELECT * FROM orders limit WHERE agency_id = :tenant_agency_ids AND limit.id > 0 OR 1 = 1",
   "SELECT * FROM (lookup_states, 'orders')",
   "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND o.agency_id IN (:tenant_agency_ids)",
+  // A column name the engine reads as another column, read the Postgres way, and its control.
+  `SELECT n.* FROM notes n, (SELECT 'agency' AS "OWNER_TYPE") z WHERE "OWNER_TYPE" = 'agency' AND n.owner_id = :tenant_agency_ids`,
+  "SELECT o.* FROM orders o WHERE o.AGENCY_ID = :tenant_agency_ids",
 ];
 
 function verdicts(sql: string, dialect: DialectSpec | undefined): string {

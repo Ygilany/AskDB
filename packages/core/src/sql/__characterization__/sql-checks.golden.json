@@ -12696,5 +12696,33 @@
   "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.orders | tgk=MISSING_TENANT_PREDICATE:table:public.orders | sens=pass[] | pg=- | spans=c0-46 q46-49 c49-93 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "SELECT n.* FROM notes n, (SELECT 'agency' AS \"OWNER_TYPE\") z WHERE \"OWNER_TYPE\" = 'agency' AND n.owner_id = :tenant_agency_ids": {
+  "postgres": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TYPE_DISCRIMINATOR:table:public.notes | tgk=MISSING_TYPE_DISCRIMINATOR:table:public.notes | sens=pass[] | pg=- | spans=c0-33 q33-41 c41-45 q45-57 c57-67 q67-79 c79-82 q82-90 c90-126 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+ },
+ "SELECT o.* FROM orders o WHERE o.AGENCY_ID = :tenant_agency_ids": {
+  "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-63 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  }
 }
