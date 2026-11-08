@@ -15,11 +15,12 @@
  * only the reads of its own `SELECT`, a qualifier no read goes by counts for nothing, and a self-join's
  * reads must be told apart; its 43 rows below differ from the code before it in 344 tenant verdicts, all
  * refusals but 5 that keep a read filtered through its own quoted alias with a space, `"my alias"`),
- * and the readings fixed for beta.53 (182 verdicts on the rows below, all refusals: 85 tenant and 97
- * keyword-table verdicts, for a SQLite string name in a source's parentheses, `HAVING` on an ungrouped or
+ * and the readings fixed for beta.53 (196 verdicts, all refusals: 92 tenant and 104 keyword-table
+ * verdicts, on the rows below and on one existing row under `sqlserver`, `"AGENCY_ID"` from a
+ * cross-joined source; for a SQLite string name in a source's parentheses, `HAVING` on an ungrouped or
  * aliased column, a `BETWEEN`'s upper bound, a spaced qualifier dot, an `OR` after an alias spelled
- * like a clause word, and a discriminator or derived-table column name the engine reads as another
- * column; no existing verdict moves).
+ * like a clause word, and a column name the engine may read as another column; no other existing
+ * verdict moves).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it

@@ -1199,7 +1199,7 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
     for (const target of targets) {
       // A quoted name spelled like the placeholder is a name, which nothing binds.
       if (t.text !== target.placeholder || t.quoted === true) continue;
-      const predicate = predicateAt(a.tokens, k, target.column, a.view.reading.profile.id === "postgres");
+      const predicate = predicateAt(a.tokens, k, target.column, a.view.reading.profile.id);
       if (!predicate) continue;
       const filters = filteredScopes(a, predicate.start, predicate.end, qualifierOf(a.tokens, predicate.column), predicate.column);
       if (filters.length > 0) found.push({ target, filters });
@@ -1434,7 +1434,7 @@ const COMPUTES_OVER_ROWS = new Set(["group", "having", "window", "qualify", "lim
  */
 function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, column: string): boolean {
   const { tokens, scopes, view } = a;
-  const exact = view.reading.profile.id === "postgres";
+  const reading = view.reading.profile.id;
   const scope = scopeKey(open, 0);
   const depth = tokens[open]!.depth + 1;
   const level = (i: number) => scopes.of[i] === scope && tokens[i]!.depth === depth;
@@ -1488,7 +1488,7 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
     const name = expr[expr.length - 1]!;
     // An item that yields the name in any case is a candidate; it must name the column the way the engine reads it.
     if ((alias ?? name).lower !== column.toLowerCase()) continue;
-    if (!namesColumn(alias ?? name, column, exact) || !namesColumn(name, column, exact)) return false;
+    if (!namesColumn(alias ?? name, column, reading) || !namesColumn(name, column, reading)) return false;
     if (expr.length === 3 && !names.has(expr[0]!.name)) return false; // another expression named like the column
     yields++;
   }
@@ -1526,7 +1526,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     const eq = tokens[i + 1];
-    if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || !namesColumn(t, column, view.reading.profile.id === "postgres") || eq?.text !== "=") continue;
+    if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || !namesColumn(t, column, view.reading.profile.id) || eq?.text !== "=") continue;
     const qualifier = qualifierOf(tokens, i);
     if (qualifier !== undefined && !read.names.has(qualifier)) continue;
     let open = eq.offset + 1;
@@ -1568,14 +1568,14 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
 /**
  * The span `[start, end]` and column index of a tenant predicate around the placeholder at `k`:
  * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a possibly
- * qualified name) is `column`, as {@link namesColumn} compares them with `exact`. Which read the
- * column belongs to is its qualifier's to say.
+ * qualified name) is `column`, as {@link namesColumn} compares them under `reading`. Which read
+ * the column belongs to is its qualifier's to say.
  */
-function predicateAt(tokens: readonly Token[], k: number, column: string, exact = false): { start: number; end: number; column: number } | undefined {
+function predicateAt(tokens: readonly Token[], k: number, column: string, reading: string): { start: number; end: number; column: number } | undefined {
   const at = (i: number) => tokens[i];
   const matches = (i: number) => {
     const t = at(i);
-    return t !== undefined && isIdentifier(t) && namesColumn(t, column, exact);
+    return t !== undefined && isIdentifier(t) && namesColumn(t, column, reading);
   };
   // col = P
   if (at(k - 1)?.text === "=" && matches(k - 2)) return { start: qualifiedStart(tokens, k - 2), end: k, column: k - 2 };
@@ -1598,16 +1598,28 @@ function predicateAt(tokens: readonly Token[], k: number, column: string, exact 
 }
 
 /**
- * Whether the written column `t` is the policy's `column`, the way the engine reads the name. With
- * `exact` (the Postgres readings: `postgres`, `cockroachdb`, a custom id or none), the engine
- * compares the name as it reads it, a quoted name exactly and an unquoted one folded to lower case,
- * with the column's own spelling, which the policy writes as the schema does. So `"AGENCY_ID"` is
- * another column than `agency_id`, and an unquoted `agencyid` another than `"agencyId"`: another
- * source in the query may hold it. Otherwise names match in any case, as MySQL, MariaDB, SQL Server
- * and SQLite compare column names.
+ * Whether the written column `t` is the policy's `column`, the way the `reading`'s engine compares
+ * the name with the column's own spelling, which the policy writes as the schema does. A name that
+ * compares as another column may be another source's, so it ties nothing to the policy's.
+ * - Read the Postgres way (`postgres`, `cockroachdb`), the name as the engine reads it: a quoted
+ *   name exactly, an unquoted one folded to lower case. So `"AGENCY_ID"` is another column than
+ *   `agency_id`, and an unquoted `agencyid` another than `"agencyId"`.
+ * - Read the SQL Server way, the name as written: the database's collation may compare names
+ *   case-sensitively, and the check can't see it, so `agencyid` is another column than `agencyId`.
+ * - Read the MySQL way (MySQL and MariaDB), in any case, as they always compare column names.
+ * - Otherwise (SQLite, and the generic reading), with ASCII letters folded, quoted or not, as
+ *   SQLite compares them: `égency_id` is another column than `Égency_id`.
+ * A custom id or none is read every way, so the column has to match under each.
  */
-function namesColumn(t: Token, column: string, exact: boolean): boolean {
-  return exact ? t.name === column : t.lower === column.toLowerCase();
+function namesColumn(t: Token, column: string, reading: string): boolean {
+  if (reading === "postgres" || reading === "sqlserver") return t.name === column;
+  if (reading === "mysql") return t.lower === column.toLowerCase();
+  return asciiLower(t.name) === asciiLower(column);
+}
+
+/** `name` with its ASCII letters lower-cased, as SQLite folds a name. */
+function asciiLower(name: string): string {
+  return name.replace(/[A-Z]+/g, (s) => s.toLowerCase());
 }
 
 /** How a parenthesized query (`(SELECT …)`) is used by the query around it. */
