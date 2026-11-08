@@ -28,5 +28,10 @@ function formatSchemaWarning(warning: SchemaV2Warning): string {
       return `${warning.tableFile} lists column ${warning.id}, which is on ${warning.tableId}; only its sensitive: true applies, so move the entry to that table's file`;
     case "duplicate_column_id":
       return `${warning.tableFile} lists column ${warning.id} more than once; only the first entry's description, aliases and enum apply`;
+    case "unknown_key": {
+      const where = warning.id === "schema.json" ? "at the top level" : `on ${warning.id}`;
+      const hint = warning.suggestion ? `; did you mean "${warning.suggestion}"?` : "";
+      return `schema.json has a key AskDB doesn't read, "${warning.key}" ${where}${hint}`;
+    }
   }
 }

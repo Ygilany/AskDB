@@ -33,6 +33,8 @@ A table or column can be marked sensitive in `schema.json` or in its markdown. T
 
 This is deliberate. Markdown is the layer many people edit, often in Studio, so a mistake there is likely. A `sensitive: false` in markdown can't expose a column that `schema.json` marks sensitive. Un-marking takes a change to `schema.json`, which is a small, visible diff for a reviewer, and re-introspection keeps it.
 
+The two layers check spelling differently. Markdown front-matter refuses a key it doesn't know, so a typo there fails the load. `schema.json` stays open to keys a newer AskDB adds, so it ignores a key it doesn't know, and `loadSchema()` reports it as an `unknown_key` warning with the closest known key. A misspelled `"sensitve": true` marks nothing, and the warning is how you find out: [Loader warnings](/reference/schema-artifact-format/#loader-warnings) lists it.
+
 ## What the model actually receives
 
 The model never sees the directory you author. At generation time AskDB merges the physical layer and the enrichment into a single compact, model-facing text — a DDL-style description where each table is rendered as a block and your enrichment is folded in as inline comments (descriptions, aliases, column notes, "common query language" and business context attached to the table and columns they describe). Each table lists its foreign keys, and your concepts follow the tables. Sensitive fields are tagged or withheld here according to your mode.
