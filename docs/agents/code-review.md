@@ -61,7 +61,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 
 ### Decision records
 
-- Records: `docs/adrs/NNNN-title.md`, each with Status, Context, Decision, Alternatives and Consequences. Numbering skips 0020 and 0040.
+- Records: `docs/adrs/NNNN-title.md`, each with Status, Context, Decision, Alternatives and Consequences. Numbering skips 0020.
 - Index: `docs/adrs/README.md`, one row per ADR: its status, the decision, and what not to regress. Start there, then read the Status, Decision and amendments of each ADR whose row touches the changed paths.
 - Needs a record: any choice between two or more clean options, any reversal of an accepted record. A change that contradicts an ADR amends or supersedes it in the same PR (`docs/agents/domain.md`, "Flag ADR conflicts").
 - A new record adds its row to the index in the same PR, and an amendment updates the row's status and summary.
