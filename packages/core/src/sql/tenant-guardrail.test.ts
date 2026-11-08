@@ -2317,3 +2317,38 @@ describe("validateTenantGuardrails — an ON after STRAIGHT_JOIN closes that joi
     expect(findings(hop("s.id = c.id"), dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.appointments"]);
   });
 });
+
+describe("validateTenantGuardrails — a quoted column spelled as the policy spells it joins, read the Postgres way (#400)", () => {
+  // A camelCase policy, as Prisma writes Postgres columns: `"clientId"` is the policy's column, `"clientid"` another one.
+  const camel: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+    hierarchy: [],
+    coverage: [],
+    globalTables: [],
+    polymorphicTables: [],
+    scopedTables: [
+      { id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#agencyId" }] },
+      {
+        id: "table:public.Appointment",
+        scopeThrough: [{ root: "table:public.Agency", join: [{ from: "table:public.Appointment#clientId", to: "table:public.Client#id" }, { from: "table:public.Client#agencyId", to: "table:public.Agency#id" }] }],
+      },
+    ],
+  };
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+  const findings = (sql: string, dialect: DialectSpec) =>
+    validateTenantGuardrails(sql, camel, scope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const join = (on: string, where: string) => `SELECT a.* FROM "Appointment" a JOIN "Client" c ON ${on} WHERE ${where}`;
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps the join on the policy's spelling under $id", (dialect) => {
+    expect(findings(join('a."clientId" = c.id', 'c."agencyId" = :tenant_agency_ids'), dialect)).toEqual([]);
+    expect(findings(`SELECT a.* FROM "Appointment" a WHERE a."clientId" IN (SELECT id FROM "Client" WHERE "agencyId" = :tenant_agency_ids)`, dialect)).toEqual([]);
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a quoted column in another case under $id", (dialect) => {
+    expect(findings(join('a."clientid" = c.id', 'c."agencyId" = :tenant_agency_ids'), dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.Appointment"]);
+    expect(findings(join('a."CLIENTID" = c.id', 'c."agencyId" = :tenant_agency_ids'), dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.Appointment"]);
+    expect(findings(`SELECT a.* FROM "Appointment" a WHERE a."clientid" IN (SELECT id FROM "Client" WHERE "agencyId" = :tenant_agency_ids)`, dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.Appointment"]);
+  });
+});
