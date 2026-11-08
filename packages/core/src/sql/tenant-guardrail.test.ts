@@ -1956,3 +1956,181 @@ describe("validateTenantGuardrails — SQLite reads a single-quoted alias as the
     }
   });
 });
+
+describe("validateTenantGuardrails — SQLite reads a single-quoted name inside a source's parentheses as the table", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // SQLite takes `('orders')` as the table `orders`, and `(orders) 'x'` as that read aliased `x`.
+  it.each(maybeSqlite)("refuses an unfiltered read written that way under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM ('orders')",
+      "SELECT * FROM (('orders'))",
+      "SELECT o.* FROM lookup_states s JOIN ('orders') o ON 1 = 1",
+      "SELECT o.* FROM lookup_states s, ('orders') o",
+      "SELECT x.* FROM (orders) 'x', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT x.* FROM ('orders') 'x', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toContain(missing);
+    }
+  });
+
+  it.each(maybeSqlite)("keeps such a read filtered through its own name under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT * FROM ('orders') WHERE agency_id = :tenant_agency_ids",
+      "SELECT o.* FROM ('orders') o WHERE o.agency_id = :tenant_agency_ids",
+      "SELECT x.* FROM (orders) 'x' WHERE x.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+});
+
+describe("validateTenantGuardrails — a HAVING predicate counts only on a GROUP BY key", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+  const every = [
+    ["postgres", POSTGRES_DIALECT], ["mysql", MYSQL_DIALECT], ["mariadb", MARIADB_DIALECT], ["sqlite", SQLITE_DIALECT],
+    ["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined],
+  ] as const;
+  const mysqlFamily = [["mysql", MYSQL_DIALECT], ["mariadb", MARIADB_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined]] as const;
+
+  // HAVING filters groups. On a column that isn't grouped, SQLite and MariaDB take an arbitrary
+  // row's value, so the group holds every tenant's rows.
+  it.each(every)("refuses a HAVING predicate on a column that isn't grouped under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT agency_id, count(*), sum(total) FROM orders HAVING agency_id = :tenant_agency_ids",
+      "SELECT agency_id, count(*) FROM orders GROUP BY status HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.agency_id, count(*) FROM orders o GROUP BY o.status HAVING o.agency_id IN (:tenant_agency_ids)",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual(orders);
+    }
+  });
+
+  it.each(every)("keeps a HAVING predicate on a GROUP BY key under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.agency_id, count(*) FROM orders o GROUP BY o.status, o.agency_id HAVING o.agency_id IN (:tenant_agency_ids)",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual([]);
+    }
+  });
+
+  // MySQL and MariaDB resolve an unqualified name in HAVING (and GROUP BY) to a select-list alias first.
+  it.each(mysqlFamily)("refuses an unqualified HAVING name that a select-list item is aliased to under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT o.total AS agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.total agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      "SELECT o.id, o.total AS agency_id FROM orders o HAVING agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toEqual(orders);
+    }
+  });
+
+  it("keeps it under postgres, where HAVING and GROUP BY read the table's column", () => {
+    const sql = "SELECT o.total AS agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids";
+    expect(findings(sql, POSTGRES_DIALECT)).toEqual([]);
+  });
+
+  it.each(mysqlFamily)("refuses a discriminator in HAVING that a select-list item is aliased to under %s", (_label, dialect) => {
+    const sql = "SELECT n.id, 'agency' AS owner_type FROM notes n WHERE n.owner_id = :tenant_agency_ids GROUP BY owner_type HAVING owner_type = 'agency'";
+    expect(findings(sql, dialect)).toEqual(["MISSING_TYPE_DISCRIMINATOR:table:public.notes"]);
+  });
+});
+
+describe("validateTenantGuardrails — the AND of a BETWEEN is no conjunction", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+
+  // MySQL and MariaDB read `0 BETWEEN 0 AND o.agency_id IN (…)` with the IN as the upper bound,
+  // which is always true; with `=`, the comparison is against the BETWEEN's result.
+  it.each([
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND o.agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE 0 NOT BETWEEN 1 AND o.agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN SYMMETRIC 0 AND o.agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND (o.agency_id = :tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE o.status = 'a' AND 0 BETWEEN 0 AND o.agency_id = :tenant_agency_ids",
+  ])("refuses a predicate written as a BETWEEN's upper bound: %s", (sql) => {
+    expect(findings(sql)).toEqual(orders);
+  });
+
+  it.each([
+    "SELECT * FROM orders WHERE total BETWEEN 1 AND 5 AND agency_id = :tenant_agency_ids",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total BETWEEN 1 AND 5",
+    "SELECT * FROM orders WHERE (total BETWEEN 1 AND 5) AND agency_id = :tenant_agency_ids",
+  ])("keeps a predicate beside a BETWEEN: %s", (sql) => {
+    expect(findings(sql)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — `order` or `group` after a dot, with a space or comment between, is a table", () => {
+  const named: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    scopedTables: ["billing.order", "app.group"].map((t) => ({
+      id: `table:${t}`,
+      scopeThrough: [{ root: "table:public.agencies", column: `table:${t}#agency_id` }],
+    })),
+    polymorphicTables: [],
+    globalTables: [],
+    coverage: [],
+  };
+  const check = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, named, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+
+  it.each([["postgres", POSTGRES_DIALECT], ["no dialect", undefined]] as const)("refuses an unfiltered read written that way under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT by.order_id, by.agency_id FROM billing . order by",
+      "SELECT by.order_id FROM billing ./**/order by",
+      "SELECT by.order_id FROM billing.\norder by",
+      "SELECT by.order_id FROM billing .\n order by WHERE by.order_id > 0",
+    ]) {
+      expect(check(sql, dialect), JSON.stringify(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:billing.order"]);
+    }
+    expect(check("SELECT by.id FROM app . group by", dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:app.group"]);
+  });
+
+  it("keeps such a read filtered through its alias, with ORDER BY after it", () => {
+    expect(check("SELECT o.order_id FROM billing . order o WHERE o.agency_id = :tenant_agency_ids ORDER BY o.order_id", POSTGRES_DIALECT)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — an OR after an alias spelled like a clause word is still beside the predicate", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const findings = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+  const missing = "MISSING_TENANT_PREDICATE:table:public.orders";
+
+  // Postgres takes `lock` and `qualify` as aliases, and SQL Server `limit`, `natural` and `using`,
+  // so the OR after them applies to the whole WHERE.
+  it.each([
+    ["lock", POSTGRES_DIALECT],
+    ["qualify", POSTGRES_DIALECT],
+    ["limit", SQLSERVER_DIALECT],
+    ["natural", SQLSERVER_DIALECT],
+    ["using", SQLSERVER_DIALECT],
+    ["window", SQLSERVER_DIALECT],
+  ] as const)("refuses an OR after the alias %s", (alias, dialect) => {
+    const sql = `SELECT * FROM orders ${alias} WHERE agency_id = :tenant_agency_ids AND ${alias}.id > 0 OR 1 = 1`;
+    expect(findings(sql, dialect), sql).toContain(missing);
+    expect(findings(sql), sql).toContain(missing);
+  });
+
+  it.each([
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY id",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids GROUP BY id HAVING count(*) > 1 OR count(*) = 0",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids LIMIT 10",
+    "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION SELECT id FROM lookup_states WHERE code = 'a' OR code = 'b'",
+    "SELECT o.* FROM orders o JOIN lookup_states s ON o.agency_id = :tenant_agency_ids JOIN service_types t ON t.id = 1 OR t.id = 2",
+  ])("keeps an OR in a later clause: %s", (sql) => {
+    expect(findings(sql, POSTGRES_DIALECT)).toEqual([]);
+  });
+});
