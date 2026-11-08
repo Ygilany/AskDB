@@ -2025,7 +2025,6 @@ describe("validateTenantGuardrails — a join counts only on the columns the pol
   it.each([
     ["the issue's correct join", "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
     ["the join written the other way round, in WHERE", "SELECT a.* FROM appointments a, clients c WHERE c.id = a.client_id AND c.id IN (:tenant_client_ids)", "clients"],
-    ["the path's root filtered through an outer join", "SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients"],
     ["the last hop's column filtered directly", "SELECT a.* FROM appointments a WHERE a.client_id IN (:tenant_client_ids)", "clients"],
     ["a parenthesized join group", "SELECT a.* FROM appointments a JOIN (clients c JOIN sub_agencies s ON c.sub_agency_id = s.id) ON a.client_id = c.id WHERE s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
     ["a FROM-list comma after a join", "SELECT a.* FROM clients c JOIN sub_agencies s ON c.sub_agency_id = s.id, appointments a WHERE a.client_id = c.id AND s.id IN (:tenant_sub_agency_ids)", "sub_agencies"],
@@ -2043,6 +2042,14 @@ describe("validateTenantGuardrails — a join counts only on the columns the pol
     ["a second root read in a parenthesized FROM list", "SELECT b.* FROM (agencies a, agencies b) JOIN orders o ON o.agency_id = a.id WHERE o.agency_id = :tenant_agency_ids"],
   ])("rejects a root filtered only through %s", (_label, sql) => {
     expect(findings(sql)).toEqual(["MISSING_TENANT_PREDICATE:table:public.agencies"]);
+  });
+
+  // The cost of reading no ON in a SELECT with an outer join: a join path written as LEFT JOIN, with
+  // WHERE filtering the joined side, is refused. With that WHERE it is an inner join; write JOIN.
+  it("refuses a join path written as a LEFT JOIN, though WHERE filters the joined side", () => {
+    expect(findings("SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients"))
+      .toEqual(appointments);
+    expect(findings("SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", "clients")).toEqual([]);
   });
 
   // With no dialect, the Postgres reading takes `STRAIGHT_JOIN` as no join word, so the read has no name there (#399).

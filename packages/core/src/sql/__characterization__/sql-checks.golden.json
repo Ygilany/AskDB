@@ -12614,18 +12614,18 @@
   "none": "tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-104 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT a.* FROM appointments a LEFT JOIN clients c ON a.client_id = c.id LEFT JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id = :tenant_agency_ids": {
-  "postgres": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "postgres+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "cockroachdb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "mysql": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "mysql-escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "mysql-unset": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "mariadb": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlite": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "sqlserver": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "custom+escapes": "ro=ok | tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
-  "none": "tg=ok | tgk=ok | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
+  "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "postgres+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "cockroachdb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mysql-unset": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "mariadb": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlite": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "sqlserver": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "custom+escapes": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids",
+  "none": "tg=MISSING_TENANT_PREDICATE:table:public.appointments | tgk=MISSING_TENANT_PREDICATE:table:public.appointments | sens=pass[] | pg=- | spans=c0-162 | ph=tenant_agency_ids | tph=:tenant_agency_ids"
  },
  "SELECT a.name FROM agencies a JOIN orders o ON a.id = o.total WHERE o.agency_id = :tenant_agency_ids": {
   "postgres": "ro=ok | tg=MISSING_TENANT_PREDICATE:table:public.agencies | tgk=MISSING_TENANT_PREDICATE:table:public.agencies | sens=pass[] | pg=- | spans=c0-100 | ph=tenant_agency_ids | tph=:tenant_agency_ids",

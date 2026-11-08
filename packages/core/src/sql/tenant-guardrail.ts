@@ -1345,8 +1345,17 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
  */
 function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
   if (target.table.toLowerCase() !== table) return false;
-  if (filter.qualifier === undefined) return filter.on === undefined || seenByOn(a.tokens, filter.on, read.at);
-  return read.names.has(filter.qualifier);
+  return canName(a.tokens, filter.qualifier, filter.on, read);
+}
+
+/**
+ * Whether a column written with qualifier `q`, in the `ON` at `on` if it sits in one, can name
+ * `read`: qualified, the qualifier must name it; unqualified, an `ON` names only its join's operands
+ * ({@link seenByOn}), and anywhere else any read of its `SELECT`.
+ */
+function canName(tokens: readonly Token[], q: string | undefined, on: number | undefined, read: Read): boolean {
+  if (q !== undefined) return read.names.has(q);
+  return on === undefined || seenByOn(tokens, on, read.at);
 }
 
 /**
@@ -1373,7 +1382,7 @@ function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Re
       refs.every((ref) =>
         found.some((o) =>
           o.target === target &&
-          o.filters.some((f) => f.scope === ref.scope && (f.qualifier === undefined ? f.on === undefined || seenByOn(a.tokens, f.on, ref.at) : ref.names.has(f.qualifier)))) ||
+          o.filters.some((f) => f.scope === ref.scope && canName(a.tokens, f.qualifier, f.on, ref))) ||
         filteredFromOutside(a, found, ref, target, depth + 1));
   }
   memo.set(key, filtered);
@@ -1535,7 +1544,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
     const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier);
-    if (filters.some((f) => f.scope === read.scope && (qualifier !== undefined || f.on === undefined || seenByOn(tokens, f.on, read.at)))) return true;
+    if (filters.some((f) => f.scope === read.scope && (qualifier !== undefined || canName(tokens, undefined, f.on, read)))) return true;
   }
   return false;
 }
@@ -1659,7 +1668,7 @@ function cteNameAt(tokens: readonly Token[], open: number): string | undefined {
   }
   const before = tokens[k - 1];
   if (!isWord(tokens[k]) || !(before?.kw === "with" || before?.kw === "recursive" || before?.text === ",")) return undefined;
-  return tokens[k]!.lower;
+  return tableNameOf(tokens[k]!);
 }
 
 /**
@@ -1686,9 +1695,10 @@ function quotedInAnotherCase(a: Analysis, i: number): boolean {
 }
 
 /**
- * The `col = col` terms ANDed into a `WHERE`, `ON` or `HAVING` clause, with their `SELECT`. An outer
- * join's `ON` counts here: an equality only links two reads, and a row it doesn't link has nulls on one
- * side, which a filter elsewhere in the `SELECT` (never an outer join's `ON`) has to pass.
+ * The `col = col` terms ANDed into a `WHERE`, `ON` or `HAVING` clause, with their `SELECT` and the
+ * `ON` they sit in, if any. In a `SELECT` that may keep unmatched rows ({@link mayKeepUnmatchedRows}),
+ * an `ON` equality holds only on the rows its join matched, so it links nothing: there only `WHERE`
+ * and `HAVING` count, as {@link filteredScopes} reads them (#400).
  */
 function equalities(a: Analysis): Proof["equalities"] {
   const { tokens } = a;
@@ -1700,43 +1710,15 @@ function equalities(a: Analysis): Proof["equalities"] {
     if (quotedInAnotherCase(a, i - 1) || quotedInAnotherCase(a, end)) return;
     const left = { q: qualifierOf(tokens, i - 1), column: tokens[i - 1]!.lower };
     const right = { q: qualifierOf(tokens, end), column: tokens[end]!.lower };
-    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined, true)) found.push({ left, right, scope: f.scope, on: f.on });
+    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined)) found.push({ left, right, scope: f.scope, on: f.on });
   });
   return found;
 }
 
 /**
- * Whether an equality in the `ON` at `on` holds for every row of the reads it names. Outside an
- * `ON`, and in a `SELECT` with no outer join, it does. Beside an outer join, a row of the side
- * the join keeps has it hold only when the join matched, so an `ON` equality links only a column
- * of the item joined there (between its `JOIN` and that `ON`) with one outside it: rows that fail
- * it lose the joined item, and a filter on the joined item drops those rows. Two columns on the
- * same side (`ON o.agency_id = o.id`) link nothing (#400).
- */
-function linksAcross(p: Proof, scope: string, on: number | undefined, l: Node, r: Node): boolean {
-  const { tokens } = p.a;
-  if (on === undefined || !(isOuterJoinOn(tokens, on) || mayKeepUnmatchedRows(p.a, scope))) return true;
-  let join = on - 1;
-  while (join >= 0 && !(tokens[join]!.kw === "join" && tokens[join]!.depth === tokens[on]!.depth)) {
-    if (tokens[join]!.depth < tokens[on]!.depth) return false;
-    join--;
-  }
-  const joined = (n: Node) => n.at > join && n.at < on;
-  return join >= 0 && joined(l) !== joined(r);
-}
-
-/**
- * Whether a filter seeds a column's IDs in `scope`: it filters that `SELECT`, from `WHERE` or
- * `HAVING`, or from an `ON` in a `SELECT` that no join word marks as possibly outer.
- */
-function seedsIn(a: Analysis, f: Filter, scope: string): boolean {
-  return f.scope === scope && (f.on === undefined || !mayKeepUnmatchedRows(a, scope));
-}
-
-/**
  * Whether a `SELECT` may keep rows a join's `ON` never matched: `LEFT`, `RIGHT`, `FULL` or `OUTER`
- * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`). A join
- * proof takes no seed or link from an `ON` there (#400).
+ * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`). No `ON`
+ * there filters, seeds, links or hops: only `WHERE` and `HAVING` do (#400).
  */
 function mayKeepUnmatchedRows(a: Analysis, scope: string): boolean {
   const { tokens, scopes } = a;
@@ -1745,11 +1727,14 @@ function mayKeepUnmatchedRows(a: Analysis, scope: string): boolean {
 
 /**
  * The read a column refers to in `scope`: the one its qualifier names, or, unqualified, the one
- * whose table the policy says has the column. Another source with the same column would make the
- * SQL ambiguous, so it can't name a different one. Undefined when no single read fits.
+ * whose table the policy says has the column, among the reads it can name ({@link canName}: in an
+ * `ON`, that join's operands). Another source with the same column would make the SQL ambiguous,
+ * so it can't name a different one. Undefined when no single read fits.
  */
-function resolve(p: Proof, scope: string, ref: ColumnRef): Node | undefined {
-  const hits = p.nodes.filter((n) => n.scope === scope && (ref.q !== undefined ? n.names.has(ref.q) : p.graph.columns.get(n.table)?.has(ref.column)));
+function resolve(p: Proof, scope: string, ref: ColumnRef, on?: number): Node | undefined {
+  const hits = p.nodes.filter(
+    (n) => n.scope === scope && canName(p.a.tokens, ref.q, on, n) && (ref.q !== undefined || p.graph.columns.get(n.table)?.has(ref.column)),
+  );
   return hits.length === 1 ? hits[0] : undefined;
 }
 
@@ -1774,9 +1759,9 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
   const term = (node: Node, column: string) => `${node.at}.${column}`;
   for (const eq of p.equalities) {
     if (eq.scope !== scope) continue;
-    const l = resolve(p, scope, eq.left);
-    const r = resolve(p, scope, eq.right);
-    if (l && r && linksAcross(p, scope, eq.on, l, r)) parent.set(find(term(l, eq.left.column)), find(term(r, eq.right.column)));
+    const l = resolve(p, scope, eq.left, eq.on);
+    const r = resolve(p, scope, eq.right, eq.on);
+    if (l && r) parent.set(find(term(l, eq.left.column)), find(term(r, eq.right.column)));
   }
   const seeds = new Map<string, Set<string>>();
   const seed = (key: string, placeholders: Iterable<string>) => {
@@ -1789,12 +1774,13 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
     const predicate = predicateAt(tokens, k);
     if (!predicate || quotedInAnotherCase(a, predicate.column)) return;
     const ref = { q: qualifierOf(tokens, predicate.column), column: tokens[predicate.column]!.lower };
-    if (!filteredScopes(a, predicate.start, predicate.end, ref.q).some((f) => seedsIn(a, f, scope))) return;
-    const node = resolve(p, scope, ref);
+    const filter = filteredScopes(a, predicate.start, predicate.end, ref.q).find((f) => f.scope === scope);
+    if (filter === undefined) return;
+    const node = resolve(p, scope, ref, filter.on);
     if (node) seed(term(node, ref.column), [t.text]);
   });
   for (const link of inLinks(p, scope)) {
-    const node = resolve(p, scope, link.ref);
+    const node = resolve(p, scope, link.ref, link.on);
     if (link.inner && node) seed(term(node, link.ref.column), boundIn(p, link.innerScope)(link.inner, link.item.column));
   }
   const lookup = (node: Node, column: string): ReadonlySet<string> => seeds.get(find(term(node, column))) ?? new Set();
@@ -1807,21 +1793,26 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
  * operation that selects one plain column: `col` as written, the subquery's `SELECT`, the column it
  * selects, and the read that column resolves to there, if any.
  */
-function inLinks(p: Proof, scope: string): Array<{ ref: ColumnRef; innerScope: string; item: ColumnRef; inner: Node | undefined }> {
+function inLinks(p: Proof, scope: string): InLink[] {
   const { tokens, scopes } = p.a;
-  const links: Array<{ ref: ColumnRef; innerScope: string; item: ColumnRef; inner: Node | undefined }> = [];
+  const links: InLink[] = [];
   for (const [open, close] of scopes.close) {
     const column = open - 2;
     if (scopes.of[column] !== scope || scopes.branched.has(open) || subqueryUse(tokens, open) !== "in") continue;
+    if (quotedInAnotherCase(p.a, column)) continue;
     const ref = { q: qualifierOf(tokens, column), column: tokens[column]!.lower };
-    if (!filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q).some((f) => seedsIn(p.a, f, scope))) continue;
+    const filter = filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q).find((f) => f.scope === scope);
+    if (filter === undefined) continue;
     const item = selectedColumn(p.a, open);
     if (item === undefined) continue;
     const innerScope = scopeKey(open, 0);
-    links.push({ ref, innerScope, item, inner: resolve(p, innerScope, item) });
+    links.push({ ref, innerScope, item, inner: resolve(p, innerScope, item), on: filter.on });
   }
   return links;
 }
+
+/** A `col IN (SELECT x …)` link: `col` as written, the subquery's `SELECT`, `x`, the read `x` resolves to there, and the `ON` the link sits in. */
+type InLink = { readonly ref: ColumnRef; readonly innerScope: string; readonly item: ColumnRef; readonly inner: Node | undefined; readonly on?: number };
 
 /**
  * The reads that `node`'s `hop` links it to in its `SELECT`: a conjunct `node.fromColumn = y.toColumn`
@@ -1833,13 +1824,13 @@ function hopTargets(p: Proof, node: Node, hop: PolicyGraph["hops"][number]): Nod
   for (const eq of p.equalities) {
     if (eq.scope !== node.scope) continue;
     for (const [mine, theirs] of [[eq.left, eq.right], [eq.right, eq.left]] as const) {
-      if (mine.column !== hop.fromColumn || theirs.column !== hop.toColumn || resolve(p, node.scope, mine)?.at !== node.at) continue;
-      const y = resolve(p, node.scope, theirs);
+      if (mine.column !== hop.fromColumn || theirs.column !== hop.toColumn || resolve(p, node.scope, mine, eq.on)?.at !== node.at) continue;
+      const y = resolve(p, node.scope, theirs, eq.on);
       if (y?.table === hop.to) targets.push(y);
     }
   }
   for (const link of inLinks(p, node.scope)) {
-    if (link.ref.column !== hop.fromColumn || resolve(p, node.scope, link.ref)?.at !== node.at) continue;
+    if (link.ref.column !== hop.fromColumn || resolve(p, node.scope, link.ref, link.on)?.at !== node.at) continue;
     if (link.item.column === hop.toColumn && link.inner?.table === hop.to) targets.push(link.inner);
   }
   return targets;
@@ -1891,6 +1882,7 @@ function selectedColumn(a: Analysis, open: number): ColumnRef | undefined {
   const rest = item.slice(n);
   const aliased = rest.length === 0 || (rest.length === 1 && isWord(rest[0])) || (rest.length === 2 && rest[0]!.kw === "as" && isWord(rest[1]));
   if (!aliased || !isIdentifier(item[n - 1]!) || (n === 3 && !isWord(item[0]))) return undefined;
+  if (quotedInAnotherCase(a, first + n - 1)) return undefined;
   return { q: n === 3 ? item[0]!.name : undefined, column: item[n - 1]!.lower };
 }
 
@@ -2077,13 +2069,13 @@ function takesNoOn(tokens: readonly Token[], join: number): boolean {
 /**
  * The `SELECT` whose reads the term `tokens[start..end]` filters (#399), with `qualifier`, its
  * column's, which ties it to a read there: none, or one. The term must be ANDed into a `WHERE`,
- * `ON` (of an inner join, or of any join with `outerOn`) or `HAVING` clause: at its own level and
+ * `ON` (of an inner join, in a `SELECT` that keeps no unmatched rows) or `HAVING` clause: at its own level and
  * at every enclosing parenthesized level up to that clause, it sits between `AND`s (or the clause's
  * start and end), with no `OR`, `XOR` (or MySQL's `||`) at that level and no `NOT` in front of it.
  * A level opened by a function call or a comparison doesn't count. A `SELECT` used as `col IN (…)`
  * limits the query around it only through the join {@link inScope} follows (#400).
  */
-function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined, outerOn = false): Filter[] {
+function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined): Filter[] {
   const { tokens, scopes } = a;
   const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && a.view.reading.pipesAreOr);
   const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
@@ -2132,7 +2124,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     if (clause >= 0) {
       // An outer join keeps rows its ON doesn't match, and in a SELECT with one, an inner join's ON
       // filters only the rows that join builds; there only WHERE and HAVING filter every row (#400).
-      if (!outerOn && tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || mayKeepUnmatchedRows(a, scopes.of[clause]!))) return filters;
+      if (tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || mayKeepUnmatchedRows(a, scopes.of[clause]!))) return filters;
       filters.push(tokens[clause]!.kw === "on" ? { scope: scopes.of[clause]!, qualifier, on: clause } : { scope: scopes.of[clause]!, qualifier });
       return filters;
     }
