@@ -1760,7 +1760,7 @@ describe("validateTenantGuardrails — a quoted tenant column counts only when s
     expect(() => validateTenantGuardrails(sql, policy, agencyScope, { dialect: POSTGRES_DIALECT })).toThrow(TenantGuardrailError);
   });
 
-  it.each(exact)("keeps the column quoted as the schema spells it, or unquoted in any case, under %s", (_label, dialect) => {
+  it.each([exact[0], exact[1]])("keeps the column unquoted in any case under %s, which folds it to lower case", (_label, dialect) => {
     for (const sql of [
       "SELECT * FROM orders WHERE AGENCY_ID = :tenant_agency_ids",
       // The alias as written: MySQL and SQL Server may compare it case-sensitively (#399).
@@ -1770,6 +1770,13 @@ describe("validateTenantGuardrails — a quoted tenant column counts only when s
     }
   });
 
+  // A custom id or none is also read the SQL Server way, which compares the name as written: the
+  // server's collation may be case-sensitive, and the check can't see it.
+  it.each([exact[2], exact[3]])("keeps the column as the schema spells it, and refuses it unquoted in another case, under %s", (_label, dialect) => {
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids", dialect)).toEqual([]);
+    expect(findings("SELECT * FROM orders WHERE AGENCY_ID = :tenant_agency_ids", dialect)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+  });
+
   it("keeps a quoted column in the schema's spelling under postgres and cockroachdb", () => {
     for (const dialect of [POSTGRES_DIALECT, COCKROACHDB_DIALECT]) {
       expect(findings('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids', dialect)).toEqual([]);
@@ -1777,9 +1784,14 @@ describe("validateTenantGuardrails — a quoted tenant column counts only when s
   });
 
   it("keeps a quoted column in another case where the engine compares column names without case", () => {
-    expect(findings("SELECT * FROM orders WHERE [AGENCY_ID] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
     expect(findings("SELECT * FROM orders WHERE `AGENCY_ID` = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
+    // SQLite folds ASCII letters, quoted or not.
     expect(findings('SELECT * FROM orders WHERE "AGENCY_ID" = :tenant_agency_ids', SQLITE_DIALECT)).toEqual([]);
+  });
+
+  it("refuses a column in another case under sqlserver, whose collation may compare names case-sensitively", () => {
+    expect(findings("SELECT * FROM orders WHERE [AGENCY_ID] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE:table:public.orders"]);
+    expect(findings("SELECT * FROM orders WHERE [agency_id] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
   });
 });
 
@@ -2214,7 +2226,7 @@ describe("validateTenantGuardrails — a tenant column written as the engine rea
     expect(findings(`SELECT c.* FROM "Client" c WHERE c."agencyId" IN (:tenant_agency_ids)`, dialect)).toEqual([]);
   });
 
-  it.each(postgresReadings)("keeps a lower-case policy column written unquoted in any case under %s", (_label, dialect) => {
+  it.each([postgresReadings[0]!, postgresReadings[1]!])("keeps a lower-case policy column written unquoted in any case under %s", (_label, dialect) => {
     expect(findings("SELECT o.* FROM orders o WHERE o.AGENCY_ID = :tenant_agency_ids", dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
   });
 
@@ -2240,8 +2252,28 @@ describe("validateTenantGuardrails — a tenant column written as the engine rea
     expect(findings("SELECT x.* FROM (SELECT o.id, o.agency_id FROM orders o) x WHERE x.agency_id = :tenant_agency_ids", dialect, { ...policy, enforcement: "warn" }, agencyScope)).toEqual([]);
   });
 
-  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLSERVER_DIALECT, SQLITE_DIALECT])("keeps an unquoted name in any case under $id, which compares column names that way", (dialect) => {
+  it.each([MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT])("keeps an ASCII name in any case under $id, which compares ASCII column names that way", (dialect) => {
     expect(findings("SELECT c.* FROM Client c WHERE c.agencyid = :tenant_agency_ids", dialect)).toEqual([]);
+  });
+
+  it("refuses a name in another case under sqlserver, whose collation may be case-sensitive, and keeps the schema's spelling", () => {
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    expect(findings("SELECT c.* FROM Client c CROSS JOIN (SELECT 42 AS agencyid) z WHERE agencyid = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(refused);
+    expect(findings("SELECT c.* FROM Client c CROSS JOIN (SELECT 42 AS agencyid) z WHERE [agencyid] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual(refused);
+    expect(findings("SELECT c.* FROM Client c WHERE c.agencyId = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+    expect(findings("SELECT c.* FROM Client c WHERE c.[agencyId] = :tenant_agency_ids", SQLSERVER_DIALECT)).toEqual([]);
+  });
+
+  it("refuses a non-ASCII name in another case under sqlite, which folds only ASCII letters", () => {
+    const accented: NormalizedTenantPolicy = {
+      ...camel,
+      scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#Égency_id" }] }],
+    };
+    const refused = ["MISSING_TENANT_PREDICATE:table:public.Client"];
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS "égency_id") z WHERE "égency_id" = :tenant_agency_ids`, SQLITE_DIALECT, accented)).toEqual(refused);
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS égency_id) z WHERE égency_id = :tenant_agency_ids`, SQLITE_DIALECT, accented)).toEqual(refused);
+    expect(findings(`SELECT c.* FROM Client c WHERE c."Égency_id" = :tenant_agency_ids`, SQLITE_DIALECT, accented)).toEqual([]);
+    expect(findings("SELECT c.* FROM Client c WHERE c.ÉGENCY_ID = :tenant_agency_ids", SQLITE_DIALECT, accented)).toEqual([]);
   });
 });
 
