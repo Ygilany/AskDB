@@ -1,5 +1,17 @@
 # @askdb/docs-site
 
+## 0.0.1-beta.17
+
+### Patch Changes
+
+- 30a3bc6: `@askdb/client` gains an experimental entry point, `@askdb/client/charts`, that plans a chart for a query result without sending a row to the model (#906, ADR 0044). `classifyResult()` classifies the result's columns in your process: identifier, year, date, currency, percent, category or measure. `planChart()` sends the model the question, the SQL with every literal replaced by `?`, and the columns' names and kinds, the row count and the truncated flag. It returns a declarative chart spec (metric, line, area, bar, horizontal bar or pie) that `validateChartSpec()` checks against the result, with a part-to-whole policy for pies. A result column name that holds a literal is shown under a neutral label. With `omitSensitiveIdentifiers` and the schema artifact, it follows prompt omission like every other model call. On a timeout, an abort, a model error or an invalid spec it returns a deterministic fallback and says so, and it never rejects because of the model. The entry point is outside the stability promise: a minor release may change it (ADR 0030, ADR 0031). The root `@askdb/client` export doesn't include it, and it adds no dependency.
+  
+  `@askdb/core` adds `maskSqlLiterals(sql, dialect?)`, an internal export for `@askdb/client/charts` with no stability promise. It replaces a statement's literals with `?` and drops its comments, under the readings the tenant check uses, and returns `undefined` when the statement can't be read safely.
+  
+  The docs site adds the guide "Plan a chart for a query result" and the `@askdb/client/charts` API reference, both marked experimental, lists `maskSqlLiterals` among core's internal exports, and adds the planner to the privacy model and the sensitive-columns guide.
+- cd28b58: The upgrade guide's 1.0.0-beta.53 section says beta.53 is released and opens with a security subsection for GHSA-9w7p-c3w8-4839 and GHSA-mmrm-rfxf-ccc8, in their published words. It tells readers to upgrade `@askdb/core` and the packages that pin it, and points to the sections that list the queries now refused. The SQL checks reference links the two advisories, and `SECURITY.md` lists them with 1.0.0-beta.53 as the release to upgrade to.
+- f258449: The tenant-policy reference says to quote a tenant column with an upper-case non-ASCII letter on Postgres and CockroachDB, to write non-ASCII letters in the schema's case on MySQL, MariaDB and SQLite, to quote such an alias or qualifier on Postgres and CockroachDB, and that a name with U+0130, U+0131, U+017F, U+212A or not in NFC as written is refused unless the schema spells it. The upgrade notes cover the change.
+
 ## 0.0.1-beta.16
 
 ### Patch Changes
