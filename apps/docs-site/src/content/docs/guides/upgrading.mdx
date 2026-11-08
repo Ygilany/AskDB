@@ -39,6 +39,12 @@ For each, add the predicate inside that `SELECT` (in each branch of a set operat
 
 The check is still a heuristic, and some shapes still pass: a root filtered through another table's tenant column isn't checked for the join between them ([#400](https://github.com/Ygilany/AskDB/issues/400)), and an unqualified predicate in an `ON` can count for a read the join doesn't see where a name is spelled like a join word (`NATURAL` or `USING` as a SQL Server alias). [Known limits](/concepts/tenant-isolation/#known-limits) lists them. Keep row-level security in the database as the tenant boundary.
 
+### Check what your business context and column notes tell the model
+
+With a retriever, the prompt `ask()` sends now carries the text of a retrieved `## Business context` section, under its table, and of a retrieved column's `## Column notes` item, on that column's line ([#894](https://github.com/Ygilany/AskDB/issues/894)). Before, these chunks only picked their table, and the model never saw their text, though the schema contract said it would. A retrieved concept also keeps its label now, and a tenant-policy section its name.
+
+Your language model provider now receives this text, not only your embedding provider. Read those sections in your `tables/*.md` files for anything the model shouldn't see. They follow the rules for common query language: a sensitive table's business context and a sensitive column's note never reach the prompt, and with `modes.omitSensitiveFromPrompt` (`--omit-sensitive-from-prompt`) any of it that names a sensitive column is withheld. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists what the model sees. The index doesn't need rebuilding. If your tests compare `synthesizeRetrievedDdl()`'s output, expect the new lines.
+
 ## 1.0.0-beta.52
 
 Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.52, `@askdb/studio` 0.2.0-beta.45, `@askdb/config` 1.0.0-beta.20, `@askdb/client` 1.0.0-beta.13, `@askdb/ai` 0.1.0-beta.12, `@askdb/enrich` 0.2.0-beta.23, `@askdb/introspect` 0.3.0-beta.26, `@askdb/rag` 0.2.0-beta.32, `@askdb/postgres` 0.2.0-beta.28, `@askdb/prisma` 0.2.0-beta.26, `@askdb/mysql` and `@askdb/sqlite` 0.1.0-beta.27, and `@askdb/sqlserver` 0.1.0-beta.28.

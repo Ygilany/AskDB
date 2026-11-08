@@ -251,9 +251,9 @@ List each column once. If a column appears again in the same file, only its firs
 | Section | Used by | Format |
 | --- | --- | --- |
 | `## Common query language` | The prompt and `@askdb/rag` | Free text. The prompt shows each line as a comment under the table. |
-| `## Example questions` | `@askdb/rag` only | Each `- ` or `* ` item becomes one indexed question. |
-| `## Business context` | `@askdb/rag` only | Free text. |
-| `## Column notes` | `@askdb/rag` only | ``- `column_name`: note``, with the column's name, not its ID. `-` or `—` can replace the colon. |
+| `## Example questions` | `@askdb/rag`, and the prompt when retrieval picks one | Each `- ` or `* ` item becomes one indexed question. |
+| `## Business context` | `@askdb/rag`, and the prompt when retrieval picks it | Free text. The prompt shows it under the table. |
+| `## Column notes` | `@askdb/rag`, and the prompt when retrieval picks the column | ``- `column_name`: note``, with the column's name, not its ID. `-` or `—` can replace the colon. The prompt adds the note to the column's line. |
 
 For a sensitive table, AskDB drops its description, aliases, `primaryEntity` and common query language when it loads the file. For a sensitive column, it drops the column's description, aliases and `enum`.
 
