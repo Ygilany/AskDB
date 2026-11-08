@@ -119,6 +119,7 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 - TypeScript for library code; bash for commands. Standalone command snippets use `npx` (readers substitute `pnpm dlx` / `yarn dlx`); multi-command flows use `pkg` tabs.
 - Samples show AskDB returning SQL; any execution runs through the reader's own connection (`pg`, Prisma, …), never through AskDB.
 - Placeholders: environment variables (`process.env.OPENAI_API_KEY`) rather than inline fake keys.
+- Configuration: point readers at the `askdb.config.ts` field, the `env("…")` name they choose for it, or the CLI flag. Never present an internal `ASKDB_*` name as a variable the reader sets, and give variables in the reader's own code neutral names (`DATABASE_URL`, not `ASKDB_DATABASE_URL`) (#133).
 
 ## Sources of truth
 
