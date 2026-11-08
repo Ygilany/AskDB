@@ -855,7 +855,8 @@ describe("validateTenantGuardrails — `$` in names, and dollar quotes only wher
     ["no dialect", undefined],
   ])("%s: $a$ … $a$ is code where the engine may have no dollar quotes", (_label, dialect) => {
     // Under sqlserver the bare `$` is also code SQL Server may split differently, refused as such.
-    expect(findings(dollarName, dialect)).toContain("MISSING_TENANT_PREDICATE:table:public.orders");
+    const orders = "MISSING_TENANT_PREDICATE:table:public.orders";
+    expect(findings(dollarName, dialect)).toEqual(dialect?.id === "sqlserver" ? ["NOT_SELECT_OR_WITH:", orders] : [orders]);
   });
 
   it("postgres and cockroachdb: $a$ … $a$ is still a string", () => {
@@ -1054,6 +1055,19 @@ describe("validateTenantGuardrails — a name or number ends where SQL Server en
       "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids\u200bAND\u0085status = 'open'",
     ]) {
       expect(findings(sql, SQLSERVER_DIALECT), sql).toEqual(["NOT_SELECT_OR_WITH:"]);
+    }
+  });
+
+  // The read-only check reads the trimmed statement, so neither check reads a leading BOM or a
+  // trailing no-break space, ideographic space or form feed as code.
+  it("sqlserver: skips the leading and trailing runs trim() removes, as the read-only check does", () => {
+    for (const sql of [
+      "﻿SELECT id FROM orders WHERE agency_id = :tenant_agency_ids",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids ",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids　",
+      "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids\f",
+    ]) {
+      expect(findings(sql, SQLSERVER_DIALECT), JSON.stringify(sql)).toEqual([]);
     }
   });
 

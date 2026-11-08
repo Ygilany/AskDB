@@ -24,8 +24,9 @@
  * and #400 (no existing verdict moves; its 25 rows below differ from the code before it in 132 tenant
  * verdicts, every dialect: 108 refuse 9 shapes now that a join counts only on the columns the policy
  * declares, and on no ON in a SELECT with an outer join, and 24 accept 2 correct ones, a scoped table
- * joined to a filtered root's ID and `col IN (SELECT id FROM <root> WHERE id = :p)`), and the #623 review's
- * plain-code rule (62 tenant verdicts under `sqlserver`, all on SQL the read-only check already refuses there).
+ * joined to a filtered root's ID and `col IN (SELECT id FROM <root> WHERE id = :p)`), and the
+ * #623 review's plain-code rule (62 tenant verdicts under `sqlserver`, all on SQL the read-only
+ * check already refuses there).
  *
  * Corpus: `sql-corpus.json` (every SQL string in the check tests at capture time) and the hostile
  * strings below. `vitest run -u` on this file accepts the new verdicts as the baseline, so run it
