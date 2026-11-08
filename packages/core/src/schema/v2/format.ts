@@ -133,18 +133,27 @@ export function tableAliasNote(t: NormalizedSchemaV2["tables"][0], gate: PromptT
 }
 
 /**
- * A non-sensitive column's annotation (`aliases: …; values: …; description`), or `""`.
- * The three are one unit, checked as rendered: when they name a sensitive column, the gate
- * withholds all of them.
+ * A non-sensitive column's annotation (`aliases: …; values: …; description; note: …`), or `""`.
+ * The parts are one unit, checked as rendered: when they name a sensitive column, the gate
+ * withholds all of them. `retrieved` is a retrieved column chunk's `Column notes` line and its
+ * `sensitive` flag (the retrieval prompt only): the note joins the unit, as it joins the column's
+ * describable layer in `@askdb/rag`'s chunker, so a flagged chunk withholds the whole annotation.
  */
-export function columnAnnotation(c: NormalizedSchemaV2["tables"][0]["columns"][0], gate: PromptTextGate): string {
+export function columnAnnotation(
+  c: NormalizedSchemaV2["tables"][0]["columns"][0],
+  gate: PromptTextGate,
+  retrieved: { note: string; sensitive: boolean } | undefined = undefined,
+): string {
   const aliases = c.aliases?.length ? c.aliases.join(", ") : "";
   const values = c.enum?.length ? c.enum.join("|") : "";
   const description = c.description ?? "";
-  const shown = [aliases, values, description].filter(Boolean);
+  const note = retrieved?.note ?? "";
+  const shown = [aliases, values, description, note].filter(Boolean);
   // The fixed labels stay out of the check: a sensitive column named `values` names no annotation.
-  if (shown.length === 0 || !gate.allows(shown.join("; "))) return "";
-  return [aliases && `aliases: ${aliases}`, values && `values: ${values}`, description].filter(Boolean).join("; ");
+  if (shown.length === 0 || !gate.allows(shown.join("; "), retrieved?.sensitive)) return "";
+  return [aliases && `aliases: ${aliases}`, values && `values: ${values}`, description, note && `note: ${note}`]
+    .filter(Boolean)
+    .join("; ");
 }
 
 /**

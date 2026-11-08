@@ -214,6 +214,21 @@ describe("synthesizeRetrievedDdl — business context, column notes and headings
     expect(lines).toContain("  - user_id uuid (NOT NULL) -- note: null for guest checkouts");
   });
 
+  it("doesn't repeat a description that starts with `Note: ` as the column's note", () => {
+    const schema = loadSchema(ordersDir);
+    const userId = schema.tables.find((t) => t.name === "orders")!.columns.find((c) => c.name === "user_id")!;
+    userId.description = "Note: stored as a UUID.";
+    // No `Column notes` item: the chunker's last line is the description.
+    const chunk = result(
+      "chunk:s:table:public.orders#user_id",
+      "column",
+      "Column: public.orders.user_id uuid (NOT NULL)\nId: table:public.orders#user_id\nNote: stored as a UUID.",
+      ["table:public.orders", "table:public.orders#user_id"],
+    );
+    const lines = synthesizeRetrievedDdl({ schema, results: [chunk] }).ddl.split("\n");
+    expect(lines).toContain("  - user_id uuid (NOT NULL) -- Note: stored as a UUID.");
+  });
+
   it("keeps a concept's label and leaves an example question's heading out", () => {
     const { ddl } = synthesizeRetrievedDdl({
       schema: loadSchema(ordersDir),
@@ -250,6 +265,12 @@ describe("synthesizeRetrievedDdl — business context, column notes and headings
       const omitted = synthesizeRetrievedDdl({ schema, results, omitSensitiveIdentifiersFromPrompt: true });
       expect(omitted.ddl).not.toContain("business context");
       expect(omitted.ddl).not.toMatch(/email first|manual review/);
+      const tablesOnly = synthesizeRetrievedDdl({
+        schema,
+        results: [plainTable("table:public.customers"), plainTable("table:public.orders")],
+        omitSensitiveIdentifiersFromPrompt: true,
+      });
+      expect(omitted.mentionDroppedCount).toBe(tablesOnly.mentionDroppedCount + 2);
 
       const tagged = synthesizeRetrievedDdl({ schema, results });
       expect(tagged.ddl).toContain("-- Reach customers by email first.");
@@ -270,15 +291,44 @@ describe("synthesizeRetrievedDdl — business context, column notes and headings
       expect(tagged).toContain("  - email text (NULL) (sensitive)");
     });
 
-    it("with omission on, withholds a note that names a sensitive column", () => {
-      const results = [columnWithNote("table:public.customers#region", "matches the area code of the phone")];
-      const omitted = synthesizeRetrievedDdl({ schema, results, omitSensitiveIdentifiersFromPrompt: true }).ddl.split("\n");
-      expect(omitted).toContain("  - region text (NULL) -- aliases: territory; values: north|south; Sales region of the account.");
+    it("with omission on, withholds a column's note and annotation together when either names a sensitive column", () => {
+      const results = [
+        // The note names `phone`.
+        columnWithNote("table:public.customers#region", "matches the area code of the phone"),
+        // The description names `phone` ("Closed when the phone number bounces."); the note doesn't.
+        columnWithNote("table:public.customers#status", "set by the nightly bounce job"),
+      ];
+      const omitted = synthesizeRetrievedDdl({ schema, results, omitSensitiveIdentifiersFromPrompt: true });
+      const lines = omitted.ddl.split("\n");
+      expect(lines).toContain("  - region text (NULL)");
+      expect(lines).toContain("  - status text (NOT NULL)");
+      expect(omitted.ddl).not.toMatch(/area code|bounce job/);
+      // Each column's annotation counts once: region's is newly withheld, status's was already.
+      const tableOnly = synthesizeRetrievedDdl({
+        schema,
+        results: [plainTable("table:public.customers")],
+        omitSensitiveIdentifiersFromPrompt: true,
+      });
+      expect(omitted.mentionDroppedCount).toBe(tableOnly.mentionDroppedCount + 1);
 
       const tagged = synthesizeRetrievedDdl({ schema, results }).ddl.split("\n");
       expect(tagged).toContain(
         "  - region text (NULL) -- aliases: territory; values: north|south; Sales region of the account.; note: matches the area code of the phone",
       );
+      expect(tagged).toContain(
+        "  - status text (NOT NULL) -- values: active|closed; Closed when the phone number bounces.; note: set by the nightly bounce job",
+      );
+    });
+
+    it("with omission on, withholds a note whose chunk is flagged sensitive", () => {
+      // An opt-in index flags the chunk; neither the note nor `orders.total` names a sensitive column.
+      const results = [columnWithNote("table:public.orders#total", "includes shipping", true)];
+      const omitted = synthesizeRetrievedDdl({ schema, results, omitSensitiveIdentifiersFromPrompt: true });
+      expect(omitted.ddl.split("\n")).toContain("  - total integer (NOT NULL)");
+      expect(omitted.ddl).not.toContain("includes shipping");
+
+      const tagged = synthesizeRetrievedDdl({ schema, results }).ddl.split("\n");
+      expect(tagged).toContain("  - total integer (NOT NULL) -- note: includes shipping");
     });
   });
 });

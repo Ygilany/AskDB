@@ -16,7 +16,7 @@ import type { RetrievedResult } from "./types.js";
  *      its full column definitions (so the model has complete column lists).
  *      Each column line carries the schema's own `-- aliases / values / desc`
  *      annotation, plus `note: …` from a retrieved column chunk's
- *      `Column notes` line.
+ *      `Column notes` line, gated with the annotation as one unit.
  *   2. CQL chunks land as a `-- common query language --` block under the
  *      table, then `Business context` chunks as a `-- business context --`
  *      block, its parts in body order (#894).
@@ -60,14 +60,17 @@ export function synthesizeRetrievedDdl(args: {
   const omit = args.omitSensitiveIdentifiersFromPrompt === true;
   const quoteIdentifier = args.quoteIdentifier ?? listAsStored;
   const gate = promptTextGate(schema, omit);
-  /** Renders a retrieved chunk's text as the prompt shows it, then lets the gate check exactly that. */
-  const shown = (p: RetrievedResult["payload"], render: (body: string) => string, into: string[]): void => {
-    const text = render(stripHeaderLine(p.text));
-    if (gate.allows(text, p.sensitive)) into.push(text);
-  };
-  /** Like {@link shown}, but keeps the chunk's heading, without its `#`. */
-  const shownWithHeading = (p: RetrievedResult["payload"], render: (body: string) => string, into: string[]): void => {
-    const text = render(headingKept(p.text));
+  /**
+   * Renders a retrieved chunk's text as the prompt shows it, then lets the gate check exactly that.
+   * `keepHeading` keeps the chunk's `# heading` line, without its `#`.
+   */
+  const shown = (
+    p: RetrievedResult["payload"],
+    render: (body: string) => string,
+    into: string[],
+    keepHeading = false,
+  ): void => {
+    const text = render(keepHeading ? headingKept(p.text) : stripHeaderLine(p.text));
     if (gate.allows(text, p.sensitive)) into.push(text);
   };
   const asIs = (body: string) => body;
@@ -77,7 +80,7 @@ export function synthesizeRetrievedDdl(args: {
   const tableIds = new Set<string>();
   const cqlPerTable = new Map<string, string[]>();
   const businessPerTable = new Map<string, { part: number; text: string }[]>();
-  const notePerColumn = new Map<string, string>();
+  const notePerColumn = new Map<string, { note: string; sensitive: boolean }>();
   const concepts: string[] = [];
   const questions: string[] = [];
   const relationships: string[] = [];
@@ -105,8 +108,8 @@ export function synthesizeRetrievedDdl(args: {
         if (tid) tableIds.add(tid);
         const cid = p.refs[1];
         const note = columnNote(p.text);
-        // Checked as rendered, without the fixed `note:` label (see `columnAnnotation`).
-        if (cid && note && gate.allows(note, p.sensitive)) notePerColumn.set(cid, note);
+        // Gated with the column's annotation, where it renders (`columnAnnotation`).
+        if (cid && note) notePerColumn.set(cid, { note, sensitive: p.sensitive });
         break;
       }
       case "cql": {
@@ -125,7 +128,7 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "concept": {
-        shownWithHeading(p, joinedLines, concepts);
+        shown(p, joinedLines, concepts, true);
         for (const ref of p.refs) {
           if (ref.startsWith("table:")) {
             const hash = ref.indexOf("#");
@@ -142,7 +145,7 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "tenant-policy": {
-        shownWithHeading(p, joinedLines, tenantPolicyChunks);
+        shown(p, joinedLines, tenantPolicyChunks, true);
         break;
       }
     }
@@ -172,8 +175,10 @@ export function synthesizeRetrievedDdl(args: {
       const sensitiveTag = c.sensitive || t.sensitive ? " (sensitive)" : "";
       let line = `  - ${quoteIdentifier(c.name)} ${c.type} (${flags.join(" ")})${sensitiveTag}`;
       if (!c.sensitive && !t.sensitive) {
-        const note = notePerColumn.get(c.id);
-        const annotation = [columnAnnotation(c, gate), note && `note: ${note}`].filter(Boolean).join("; ");
+        const retrieved = notePerColumn.get(c.id);
+        // A description that itself starts `Note: ` is the chunk's last line when the column has no note.
+        const note = retrieved && c.description?.trim() !== `Note: ${retrieved.note}` ? retrieved : undefined;
+        const annotation = columnAnnotation(c, gate, note);
         if (annotation) line += ` -- ${annotation}`;
       }
       lines.push(line);
@@ -192,6 +197,7 @@ export function synthesizeRetrievedDdl(args: {
     const businessList = businessPerTable.get(t.id);
     if (businessList && businessList.length > 0 && !t.sensitive) {
       lines.push(`-- business context --`);
+      // Paragraphs, unlike CQL's lines, are separated by blank lines; an empty `--` line adds nothing.
       for (const { text } of [...businessList].sort((a, b) => a.part - b.part)) {
         for (const businessLine of text.split("\n")) {
           if (businessLine.trim()) lines.push(`-- ${businessLine}`);
