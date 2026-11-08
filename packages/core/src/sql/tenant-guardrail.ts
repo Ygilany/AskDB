@@ -1212,6 +1212,7 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
 type JoinProof = {
   readonly graph: PolicyGraph;
   readonly allowed: ReadonlySet<string>;
+  /** For a table scoped by a column path, that column: the proof leaves the read only through it. */
   readonly start?: string;
   /** For a table scoped by a join path, that path: the proof walks only its own steps ({@link pathInScope}). */
   readonly path?: PathProof;
@@ -1223,7 +1224,10 @@ type JoinProof = {
  * `SELECT`, and tied to that read by its qualifier. Each branch of a `UNION` / `INTERSECT` /
  * `EXCEPT` is its own `SELECT`, and so is every CTE body, derived table and subquery. A read in a
  * derived table or CTE is also filtered from outside, when that source passes the column through
- * unrenamed and every reference to it is filtered on it. See {@link validateTenantGuardrails}.
+ * unrenamed and every reference to it is filtered on it. With `joinProof`, a read also counts when
+ * the policy's keys prove it in scope through joins in its `SELECT` (#400): {@link pathInScope} for
+ * a join path, else {@link inScope}. `checkScopedTable` passes one for each scope path, and
+ * {@link validateTenantGuardrails} one for each root the scope covers.
  */
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[], joinProof?: JoinProof): boolean {
   const name = table.toLowerCase();
