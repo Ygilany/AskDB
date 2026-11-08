@@ -1509,8 +1509,8 @@ function singleSource(a: Analysis, open: number, scope: string, depth: number): 
 }
 
 /**
- * Whether `read`'s `SELECT` ANDs in `col = '<value>'` for `target.discriminator`: its column
- * (unqualified, or qualified with the read's table or alias), `=`, and a plain `'…'` literal,
+ * Whether `read`'s `SELECT` ANDs in `col = '<value>'` for `target.discriminator`: its column, as
+ * {@link namesColumn} compares it (unqualified, or qualified with the read's table or alias), `=`, and a plain `'…'` literal,
  * read from the statement at the offsets where the view blanked it, whose value is one of the
  * discriminator's values and which nothing but whitespace follows up to the next token (no
  * `''`-escape, no adjacent literal, no comment).
@@ -1522,7 +1522,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     const eq = tokens[i + 1];
-    if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || t.lower !== column.toLowerCase() || eq?.text !== "=") continue;
+    if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || !namesColumn(t, column, view.reading.profile.id === "postgres") || eq?.text !== "=") continue;
     const qualifier = qualifierOf(tokens, i);
     if (qualifier !== undefined && !read.names.has(qualifier)) continue;
     let open = eq.offset + 1;
