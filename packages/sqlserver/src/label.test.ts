@@ -31,6 +31,8 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["Server=tcp:host,1433;User Id=sa;Password=S3c&ret word;Trust Server Certificate=true", "sqlserver://host:1433"],
   ["Data Source=host;UID=sa;PWD='a;b';", "sqlserver://host"],
   ["Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;", "sqlserver://db:1433/app"],
+  // A value holding :// doesn't make the string a URL (#595): the label reads it as the connection does.
+  ["Server=db.example.com;Database=app;Password=a://b", "sqlserver://db.example.com/app"],
   ["Server=db;Initial Catalog=app;Password={a}}b;c};", "sqlserver://db/app"],
   ["Server=(local);Database=app", "sqlserver://localhost/app"],
   // The original #189 leak: Studio's new URL() label showed the Prisma form's password.

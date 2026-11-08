@@ -1,6 +1,6 @@
 import type { ConnectionLabelParts } from "@askdb/introspect/kit";
 import { MSSQL_SCHEMA, parse } from "@tediousjs/connection-string";
-import { isPrismaSqlServerUrlAmbiguous, resolveConnectionInput } from "./exec/sqlserver.js";
+import { isConnectionUrl, isPrismaSqlServerUrlAmbiguous, resolveConnectionInput } from "./exec/sqlserver.js";
 
 /**
  * The display-safe parts of a SQL Server connection string, read by the same
@@ -34,7 +34,7 @@ export function parseSqlServerConnection(input: string): ConnectionLabelParts | 
     return undefined;
   }
   if (typeof resolved === "string") {
-    return resolved.includes("://") ? undefined : adoNetParts(resolved);
+    return isConnectionUrl(resolved) ? undefined : adoNetParts(resolved);
   }
   if (input.startsWith("sqlserver://") && (input.includes("@") || isPrismaSqlServerUrlAmbiguous(input))) {
     return undefined;
