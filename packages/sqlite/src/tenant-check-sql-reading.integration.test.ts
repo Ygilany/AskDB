@@ -5,8 +5,9 @@
  * Protects: for each shape where the check once read SQL differently from the engine, the engine's
  * reading is confirmed on the fixture, and the tenant check now requires the scoped table's
  * predicate. A `$` inside a name, a `--` comment that ends only at a line feed, a `'…'` in a
- * table's place, which SQLite reads as the table's name, and a `'…'` right after a table, which it
- * reads as the table's alias, are read as SQLite reads them.
+ * table's place, which SQLite reads as the table's name, a `'…'` right after a table, which it
+ * reads as the table's alias, and a column name with a non-ASCII letter in another case, which it
+ * doesn't fold, are read as SQLite reads them.
  * Catches: a reading that drifts back from the engine's, which the unit tests pin but can't prove
  * against a real engine.
  *
@@ -49,6 +50,26 @@ fixtureSuite("the tenant check reads SQL the way SQLite does (live SQLite)", () 
     expect(Number(rows[0]![0])).toBe(1);
     expect(findings("SELECT * FROM orders WHERE 1=1 -- x\rAND agency_id = :tenant_agency_ids"))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("a non-ASCII letter in another case names another column, as the engine reads it", async () => {
+    const runner = createSqliteCatalogQueryRunner(SQLITE_FILE);
+    // SQLite folds only ASCII letters, so "égency_id" is z's column, not "Égency_id": both clients come back.
+    const rows = (await runner(`WITH c (id, "Égency_id") AS (VALUES (1, 42), (2, 999)) SELECT count(DISTINCT c.id) AS n FROM c, (SELECT 42 AS "égency_id") z WHERE "égency_id" = 42`)).rows;
+    expect(Number(rows[0]![0])).toBe(2);
+    const accented: NormalizedTenantPolicy = {
+      ...policy,
+      roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+      hierarchy: [],
+      scopedTables: [{ id: "table:public.Client", scopeThrough: [{ root: "table:public.Agency", column: "table:public.Client#Égency_id" }] }],
+      polymorphicTables: [],
+      globalTables: [],
+      coverage: [],
+    };
+    const accentedScope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+    const check = (sql: string) => validateTenantGuardrails(sql, accented, accentedScope, { dialect }).warnings.map((w) => w.rule);
+    expect(check(`SELECT c.* FROM Client c, (SELECT 42 AS "égency_id") z WHERE "égency_id" = :tenant_agency_ids`)).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(check(`SELECT c.* FROM Client c WHERE c."Égency_id" = :tenant_agency_ids`)).toEqual([]);
   });
 
   it("a single-quoted name in a table's place is the table, as the engine reads it", async () => {
