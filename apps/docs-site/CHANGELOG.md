@@ -1,5 +1,24 @@
 # @askdb/docs-site
 
+## 0.0.1-beta.18
+
+### Patch Changes
+
+- 41195de: The upgrade guide's 1.0.0-beta.54 section says beta.54 is released and opens with a security subsection for GHSA-rx3m-m5jr-pwch, in its published words. It tells readers to upgrade `@askdb/core` and the packages that pin it, and links the section that lists the queries now refused. The SQL checks reference links the advisory, and `SECURITY.md` lists it with 1.0.0-beta.54 as the release to upgrade to. The `@askdb/core` errors reference adds beta.54's every-dialect case to `UNICODE_ESCAPED_IDENTIFIER`.
+- 1df6a8d: The CLI reference and the schema artifact format say that `askdb ask` and `askdb bundle` print loader warnings on stderr.
+- 18ef5a5: The tenant-policy reference says a name not in NFC once lower-cased is refused unless the schema spells it, that the schema's spelling excuses an unquoted name only when it is lower-case and in NFC, and that a joined table counts only spelled as the schema spells it. The upgrade notes cover all three changes.
+- 7935ce0: The tenant docs say that a join counts only on the columns the policy declares (#400), drop the join-path limit, and name the limits that remain (hierarchy roots the scope doesn't name, and joined scoped tables' shared scope). The beta.55 upgrade notes cover the change.
+- 9567d18: The `ask()` reference says what a consistent unbound block means: bound with the manifest, it matches `sql` token for token, with letter case ignored only in keywords and unquoted names (#359).
+- 8e6c55f: The beta.55 upgrade note says the tenant prompt now tells the model to put tenant predicates and join-path equalities in `WHERE` in a query with an outer join or `OUTER APPLY`, and to filter a scoped table on an outer join's unmatched side in a derived table or CTE (#400).
+- 42b6533: Studio loads a database driver it has just installed on Node 24 and 26 without a restart (#669). Node 24 and later keep a failed package lookup for the life of the process, so the execute-driver status check, which asked Node's resolver, hid the driver Studio installed next, and the load then said to restart. The kit's `isDriverInstalled` now checks for `node_modules/<package>/package.json` under `resolveFrom` and its parents, and in Node's global directories (`NODE_PATH` first), without asking the resolver (under Yarn Plug'n'Play it still asks the resolver). Studio's guided setup uses the same check. When a driver is on disk but Node can't resolve it, `createOptionalDriverLoader` reads its entry from its `package.json` (the `exports` map under the conditions Node's `require` uses, `node`, `module-sync`, `require` and `default`, or `main`) and imports that file by path. It says to restart only when it can't find the entry. The introspection API reference and the connector guide say so.
+- 568fd48: **Breaking for SQL Server users without TLS:** a `sqlserver://` URL with `encrypt=yes`, `encrypt=1` or an unknown `encrypt` value now requires TLS, so it fails against a server that doesn't offer TLS. Write `encrypt=false` to connect without encryption.
+  
+  `encrypt` and `trustServerCertificate` read the same in `mssql://` and Prisma-style `sqlserver://` URLs (#596). `true`, `yes` and `1` are true, and `false`, `no` and `0` are false, in any case. Any other value fails closed: an unknown `encrypt` value turns encryption on, and an unknown `trustServerCertificate` value leaves the server certificate untrusted. A `sqlserver://` URL with `encrypt=yes` or `encrypt=1` now requires TLS; before, only `encrypt=true` did. A `sqlserver://` URL with `trustServerCertificate=yes` or `=1` now trusts the certificate, as `=true` does. An `mssql://` URL with an unknown `trustServerCertificate` value no longer trusts it.
+  
+  An ADO.NET string is now any string that doesn't start with a scheme (`name://`), so a password or other value holding `://` no longer skips the normalisation of spaced keys such as `Trust Server Certificate=True` (#595). The connection label uses the same test.
+  
+  The upgrade guide's next section lists the changes, and the SQL Server guide and the `@askdb/sqlserver` README name the accepted values.
+
 ## 0.0.1-beta.17
 
 ### Patch Changes
