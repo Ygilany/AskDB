@@ -311,3 +311,62 @@ describe("formatSchemaV2ForNlToSql — foreign keys and concepts (#898)", () => 
     expect(formatSchemaV2ForNlToSql(schemaWith()).ddl).not.toContain("-- concepts --");
   });
 });
+
+describe("formatSchemaV2ForNlToSql — business context and column notes (#898)", () => {
+  const ORDERS_BIZ = "-- Orders move through `pending → paid → shipped` and may end in `cancelled`. The `total_amount` column is stored in cents.";
+  const ordersWithNote = () => {
+    const schema = loadSchema(v2Dir);
+    schema.tables.find((t) => t.name === "orders")!.columns.find((c) => c.name === "status")!.note = "refunds flip a paid order back to pending";
+    return schema;
+  };
+
+  it("lists a table's business context after its common query language, and a column's note on its line", () => {
+    const lines = formatSchemaV2ForNlToSql(ordersWithNote()).ddl.split("\n");
+    const orders = lines.indexOf("TABLE public.orders -- aliases: purchases, sales, transactions");
+    const cql = lines.findIndex((line, i) => i > orders && line === "-- common query language --");
+    const block = lines.findIndex((line, i) => i > orders && line === "-- business context --");
+    expect(block).toBeGreaterThan(cql);
+    expect(lines[block + 1]).toBe(ORDERS_BIZ);
+    expect(lines).toContain(
+      "  - status text (NOT NULL) -- aliases: order_status; values: pending|paid|shipped|cancelled; Order lifecycle state. Most reporting filters on `paid`.; note: refunds flip a paid order back to pending",
+    );
+  });
+
+  it("with omission on, withholds a business context that names a sensitive column", () => {
+    // users' business context names the sensitive `email`; orders' names none.
+    const tagged = formatSchemaV2ForNlToSql(loadSchema(v2Dir));
+    const omitted = formatSchemaV2ForNlToSql(loadSchema(v2Dir), { omitSensitiveIdentifiersFromPrompt: true });
+    expect(tagged.ddl).toContain("-- Each user has a unique email address used for login.");
+    expect(omitted.ddl).not.toContain("unique email address");
+    expect(omitted.ddl).toContain(ORDERS_BIZ);
+    const withoutBusiness = loadSchema(v2Dir);
+    for (const t of withoutBusiness.tables) delete t.businessContext;
+    expect(omitted.stats.mentionDroppedCount).toBe(
+      formatSchemaV2ForNlToSql(withoutBusiness, { omitSensitiveIdentifiersFromPrompt: true }).stats.mentionDroppedCount + 1,
+    );
+  });
+
+  it("never lists a sensitive table's business context or a sensitive column's note, with omission on or off", () => {
+    // Set on the loaded copy, as a host-built schema could: loadSchema() itself leaves both out.
+    const schema = loadSchema(mentionsDir);
+    schema.tables.find((t) => t.name === "users")!.businessContext = "Accounts are audited every year.";
+    schema.tables.find((t) => t.name === "users")!.columns.find((c) => c.name === "ssn")!.note = "nine digits, no dashes";
+    schema.tables.find((t) => t.name === "customers")!.columns.find((c) => c.name === "email")!.note = "the address we write to";
+    for (const omit of [false, true]) {
+      const { ddl } = formatSchemaV2ForNlToSql(schema, { omitSensitiveIdentifiersFromPrompt: omit });
+      expect(ddl).not.toMatch(/audited|nine digits|write to|note:/);
+    }
+  });
+
+  it("with omission on, withholds a column's note and annotation together when either names a sensitive column", () => {
+    const schema = loadSchema(mentionsDir);
+    schema.tables.find((t) => t.name === "customers")!.columns.find((c) => c.name === "region")!.note = "matches the area code of the phone";
+    const omitted = formatSchemaV2ForNlToSql(schema, { omitSensitiveIdentifiersFromPrompt: true }).ddl.split("\n");
+    expect(omitted).toContain("  - region text (NULL)");
+    const tagged = formatSchemaV2ForNlToSql(schema).ddl.split("\n");
+    expect(tagged).toContain(
+      "  - region text (NULL) -- aliases: territory; values: north|south; Sales region of the account.; note: matches the area code of the phone",
+    );
+  });
+});
+

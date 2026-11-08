@@ -5,10 +5,10 @@ import { createMentionMatcher, sensitiveMentionNames } from "./mentions.js";
 /**
  * Format a NormalizedSchemaV2 for NL→SQL prompts.
  *
- * Interleaves table descriptions, aliases, column descriptions, each table's
- * foreign keys ({@link foreignKeyLinesByTable}) and `Common query language`
- * blocks when present in the describable layer, then the schema's concepts
- * ({@link conceptLines}). Sensitive describable-layer fields
+ * Interleaves table descriptions, aliases, column descriptions and notes, each
+ * table's foreign keys ({@link foreignKeyLinesByTable}), `Common query language`
+ * and `Business context` blocks when present in the describable layer, then the
+ * schema's concepts ({@link conceptLines}). Sensitive describable-layer fields
  * (descriptions/aliases/enum) are excluded per the schema-v2 contract. With
  * `omitSensitiveIdentifiersFromPrompt`, describable text that names a sensitive
  * column is withheld too ({@link promptTextGate}).
@@ -81,6 +81,11 @@ export function formatSchemaV2ForNlToSql(
       }
     }
 
+    // Business context block, under the same rules as common query language (#898)
+    if (!t.sensitive && t.businessContext && gate.allows(t.businessContext)) {
+      lines.push(...businessContextLines([t.businessContext]));
+    }
+
     lines.push("");
   }
 
@@ -142,22 +147,17 @@ export function tableAliasNote(t: NormalizedSchemaV2["tables"][0], gate: PromptT
 /**
  * A non-sensitive column's annotation (`aliases: …; values: …; description; note: …`), or `""`.
  * The parts are one unit, checked as rendered: when they name a sensitive column, the gate
- * withholds all of them. `retrieved` is a retrieved column chunk's `Column notes` line and its
- * `sensitive` flag (the retrieval prompt only): the note joins the unit, as it joins the column's
- * describable layer in `@askdb/rag`'s chunker, so a flagged chunk withholds the whole annotation.
+ * withholds all of them. The note joins the unit, as it joins the column's describable layer in
+ * `@askdb/rag`'s chunker (ADR 0042).
  */
-export function columnAnnotation(
-  c: NormalizedSchemaV2["tables"][0]["columns"][0],
-  gate: PromptTextGate,
-  retrieved: { note: string; sensitive: boolean } | undefined = undefined,
-): string {
+export function columnAnnotation(c: NormalizedSchemaV2["tables"][0]["columns"][0], gate: PromptTextGate): string {
   const aliases = c.aliases?.length ? c.aliases.join(", ") : "";
   const values = c.enum?.length ? c.enum.join("|") : "";
   const description = c.description ?? "";
-  const note = retrieved?.note ?? "";
+  const note = c.note ?? "";
   const shown = [aliases, values, description, note].filter(Boolean);
   // The fixed labels stay out of the check: a sensitive column named `values` names no annotation.
-  if (shown.length === 0 || !gate.allows(shown.join("; "), retrieved?.sensitive)) return "";
+  if (shown.length === 0 || !gate.allows(shown.join("; "))) return "";
   return [aliases && `aliases: ${aliases}`, values && `values: ${values}`, description, note && `note: ${note}`]
     .filter(Boolean)
     .join("; ");

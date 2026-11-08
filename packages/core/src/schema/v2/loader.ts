@@ -9,7 +9,7 @@ import type {
   NormalizedV2Table,
   SchemaV2Warning,
 } from "./normalized.js";
-import type { V2ConceptsFrontmatter } from "./describable.js";
+import type { ParsedTableMarkdown, V2ConceptsFrontmatter } from "./describable.js";
 import { parseTenantPolicyMarkdown, normalizeTenantPolicy } from "./tenant-policy-loader.js";
 import type { NormalizedTenantPolicy } from "./tenant-policy.js";
 
@@ -587,6 +587,8 @@ function buildNormalized(
         if (mdCol.aliases?.length) normalized.aliases = mdCol.aliases;
         if (mdCol.enum?.length) normalized.enum = mdCol.enum;
       }
+      const note = colSensitive ? undefined : columnNoteOf(md, physCol.name);
+      if (note) normalized.note = note;
 
       return normalized;
     });
@@ -616,6 +618,9 @@ function buildNormalized(
 
       const cql = md.sections["Common query language"];
       if (cql?.trim()) normalized.commonQueryLanguage = cql.trim();
+
+      const businessContext = md.sections["Business context"]?.trim();
+      if (businessContext) normalized.businessContext = businessContext;
     }
 
     return normalized;
@@ -629,6 +634,23 @@ function buildNormalized(
     tenantPolicy,
     warnings,
   };
+}
+
+/**
+ * A column's item in its table file's `Column notes` section: a line ``- `column_name`: note``,
+ * where `-` or `—` may replace the colon, matched by the column's name (schema v2 contract).
+ * `@askdb/rag`'s chunker reads the same items with the same rule.
+ */
+function columnNoteOf(md: ParsedTableMarkdown | undefined, columnName: string): string | undefined {
+  const body = md?.sections["Column notes"];
+  if (!body) return undefined;
+  for (const raw of body.split("\n")) {
+    const line = raw.trim();
+    if (!line.startsWith("-")) continue;
+    const match = line.slice(1).trim().match(/^`([^`]+)`\s*[:\-—]\s*(.+)$/);
+    if (match && match[1] === columnName) return match[2]!.trim();
+  }
+  return undefined;
 }
 
 /** Extract the first non-heading, non-empty paragraph from a markdown body. */

@@ -45,8 +45,10 @@ export type ChunkResult = {
  * Deterministic chunker for a Schema v2 artifact.
  *
  * Inputs are pre-loaded sources (the `loadSchema` normalized form **plus** the
- * raw parsed markdowns — the normalized form intentionally drops example
- * questions, business context, and column-notes which the chunker needs).
+ * raw parsed markdowns). The normalized form drops example questions, and
+ * drops business context and column notes for sensitive tables and columns,
+ * which an opt-in index (`includeSensitiveDescribable`) still embeds, so the
+ * chunker reads all three from the markdown.
  *
  * Determinism is a contract: same artifact → same chunk ids and same chunk
  * texts on every run, regardless of file-system ordering, OS, or Node version.

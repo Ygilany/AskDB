@@ -2857,6 +2857,14 @@ describe("ask — the default prompt carries foreign keys and concepts (#898)", 
     expect(prompt).toContain("-- Revenue; synonyms: sales, gross sales, top line; links: public.orders.total_amount;");
   });
 
+  it("sends business context and column notes without a retriever", async () => {
+    const schema = loadSchema(v2Dir);
+    schema.tables.find((t) => t.name === "orders")!.columns.find((c) => c.name === "status")!.note = "refunds flip a paid order back to pending";
+    const prompt = await defaultPrompt(schema);
+    expect(prompt).toContain("-- business context --\n-- Orders move through `pending → paid → shipped`");
+    expect(prompt).toContain("; note: refunds flip a paid order back to pending");
+  });
+
   it("names no untracked table in a foreign key or concept", async () => {
     const schema = loadSchema(v2Dir);
     schema.tables.find((t) => t.name === "users")!.tracked = false;

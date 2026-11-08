@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-11-07). The coordinator chose option B on 2026-11-07 for #894, after the author's investigation. Implemented in PR #896.
+Accepted (2026-11-07; amended 2026-11-08, #898). The coordinator chose option B on 2026-11-07 for #894, after the author's investigation. Implemented in PR #896.
+
+> **Amendment (2026-11, #898):** `loadSchema()` now carries a column's `Column notes` item as `NormalizedV2Column.note` (the maintainer's decision on #898), so the retrieval prompt reads every shown column's note from the schema, inside `columnAnnotation`, as the full-schema prompt does. It no longer reads a column chunk's `Note: ` line, and a column chunk only picks its table again. The note stays one gated unit with the column's annotation; a flagged column chunk no longer matters to it, since the gate already withholds an annotation that names a sensitive column, and a sensitive column has no annotation. Business context under retrieval is unchanged: it still comes from retrieved `#biz` chunks, so that id stays part of the contract.
 
 ## Context
 
