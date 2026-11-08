@@ -216,9 +216,14 @@ export function buildTenantPromptBlock(
   lines.push("- Every query on a tenant-scoped table MUST include the tenant predicate.");
   lines.push("- Use named placeholders for tenant IDs (e.g., :tenant_agency_ids).");
   lines.push("- For inherited scope, JOIN through the specified path to reach the tenant root.");
-  // The tenant check counts no ON in a SELECT that may keep unmatched rows (#400).
+  // The tenant check counts no ON in a SELECT that may keep unmatched rows (#400). A condition in
+  // WHERE on a table an outer join may leave unmatched drops those rows, so that table is filtered
+  // in its own SELECT instead.
   lines.push(
-    "- If the query uses a LEFT, RIGHT, FULL or OUTER join, put every tenant predicate and every join-path equality in WHERE, even where an ON already has it: in such a query, a condition in ON does not count.",
+    "- If the query uses a LEFT, RIGHT, FULL or OUTER join, or OUTER APPLY, no condition in ON counts for the tenant check: put each tenant predicate and each join-path equality in WHERE, even where an ON already has it, except for a table on the side an outer join may leave unmatched.",
+  );
+  lines.push(
+    "- For a tenant-scoped table on the side an outer join may leave unmatched (the right of a LEFT JOIN, the left of a RIGHT JOIN, either side of a FULL JOIN), filter it in a derived table or CTE with its own WHERE, and outer-join that instead: a condition on it in the outer WHERE would drop the unmatched rows.",
   );
   lines.push("- For polymorphic tables, always include the type discriminator column in WHERE.");
   lines.push("- Global/reference tables do NOT need tenant predicates.");
