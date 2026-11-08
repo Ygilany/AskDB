@@ -170,6 +170,11 @@ fixtureSuite("the tenant check reads SQL the way Postgres does (live Postgres)",
     expect(camelFindings('SELECT c.* FROM "Client" c, (SELECT generate_series(1, 1000) AS agencyid) z WHERE agencyid = :tenant_agency_ids'))
       .toEqual(["MISSING_TENANT_PREDICATE"]);
     expect(camelFindings('SELECT c.* FROM "Client" c WHERE c."agencyId" = :tenant_agency_ids')).toEqual([]);
+    // Passed through a derived table as "agencyId", it is still z's column: both clients come back.
+    const passed = (await runner('WITH c (id, "agencyId") AS (VALUES (1, 42), (2, 999)) SELECT count(DISTINCT x.id) AS n FROM (SELECT c.id, agencyid AS "agencyId" FROM c, (SELECT generate_series(1, 1000) AS agencyid) z) x WHERE x."agencyId" = 42')).rows;
+    expect(Number(passed[0]![0])).toBe(2);
+    expect(camelFindings('SELECT x.* FROM (SELECT c.id, agencyid AS "agencyId" FROM "Client" c, (SELECT generate_series(1, 1000) AS agencyid) z) x WHERE x."agencyId" = :tenant_agency_ids'))
+      .toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 
   it("a discriminator's quoted name is compared exactly, as the engine reads it", async () => {
