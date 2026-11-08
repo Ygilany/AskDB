@@ -57,18 +57,20 @@ export type ValidateTenantGuardrailsOptions = {
  * enclosing level, under `NOT`, or anywhere but a filter clause (the select list,
  * a `CASE`) doesn't count, and neither does a literal ID or a bare mention of the
  * column. A root table the scope covers (`org.agency` under an `agency` scope)
- * needs the same predicate on its tenant ID column. Down a join path, the predicate
- * must be on a column that carries the IDs of the path's root or one of its ancestors
- * in the hierarchy. A polymorphic table also needs `typeColumn = '<key>'` ANDed into
+ * needs the same predicate on its tenant ID column, or a join on it to a read whose
+ * column holding its IDs is filtered. Down a join path, each hop must be joined on the
+ * columns the policy declares, up to a read filtered by the path's root or one of its
+ * ancestors in the hierarchy; a join on other columns links nothing (#400). A
+ * polymorphic table also needs `typeColumn = '<key>'` ANDed into
  * the same `SELECT`, with a `mapping` key of the root whose placeholder filters
  * its id column. Each read of a table needs its own predicate in its own `SELECT`
  * (#399): a CTE body, a derived table and a subquery are each their own, and a
  * qualified predicate counts only for the read its qualifier names. A read in a
  * derived table or CTE also counts as filtered when every reference to that source
  * is filtered on the column, which the source passes through unrenamed without
- * computing across its rows. It doesn't
- * check which columns a join or an `IN (…)` subquery equates (#400); database-side
- * row-level security is the sound boundary.
+ * computing across its rows. A join it can't follow (through a derived table or CTE,
+ * or across `SELECT`s) fails closed; database-side row-level security is the sound
+ * boundary.
  *
  * **This is not a security boundary.** Its purpose is to catch model mistakes
  * (a forgotten or widened tenant filter, an unclassified table) early and
@@ -232,9 +234,11 @@ export function tenantRuleWarnings(
     const root = policy.roots.find((r) => r.id === rootId);
     if (!root || !mentionsTable(views, extractTableName(root.id))) continue;
     const column = extractColumnName(root.tenantIdColumn);
-    // Filtered on its own tenant ID column, or on a column that carries its IDs (a query
-    // that joins the root for a label, filtered on the scoped table's tenant column).
-    if (!hasTenantPredicate(views, extractTableName(root.id), idCarriers(policy, root.id))) {
+    // Filtered on its own tenant ID column, or joined on it to a column that holds its IDs (a
+    // query that joins the root for a label, filtered on the scoped table's tenant column; #400).
+    const placeholder = placeholderForTenantRoot(root);
+    const ownIdTarget = { placeholder, column, table: extractTableName(root.id) };
+    if (!hasTenantPredicate(views, ownIdTarget.table, [ownIdTarget], { policy, allowed: new Set([placeholder]) })) {
       warnings.push(
         warn("MISSING_TENANT_PREDICATE", root.id,
           `Tenant root table '${extractTableName(root.id)}' is missing required tenant predicate. ` +
@@ -286,19 +290,17 @@ function checkScopedTable(
   for (const path of st.scopeThrough) {
     const placeholder = placeholderFor(policy, path.root);
     if ("column" in path) {
-      // The table's tenant column compared with its root's placeholder.
-      if (hasTenantPredicate(sql, table, [{ placeholder, column: extractColumnName(path.column), table }])) return;
+      // The table's tenant column compared with its root's placeholder, directly or through a join.
+      // Through a join, only from that column: another path's column on this table (a join-path step's
+      // key) proves nothing about the rows this path scopes.
+      const target = { placeholder, column: extractColumnName(path.column), table };
+      if (hasTenantPredicate(sql, table, [target], { policy, allowed: new Set([placeholder]), start: target.column })) return;
     } else {
-      // Inherited via JOINs: every join column appears, and a tenant predicate filters
-      // the root: on its tenant ID column, or, up the hierarchy, on a column that carries
-      // the IDs of one of its ancestors. A root outside that chain filters nothing here,
-      // even one the scope binds.
-      const allStepsPresent = path.join.every(
-        (step) => mentionsIdentifier(sql, extractColumnName(step.from)) && mentionsIdentifier(sql, extractColumnName(step.to)),
-      );
-      if (!allStepsPresent) continue;
-      const targets = selfAndAncestors(policy, path.root).flatMap((rootId) => idCarriers(policy, rootId));
-      if (hasTenantPredicate(sql, table, targets)) return;
+      // Inherited via JOINs (#400): each hop joined on the columns the policy declares, to a read
+      // filtered by the path's root or, up the hierarchy, one of its ancestors. A root outside that
+      // chain filters nothing here, even one the scope binds.
+      const allowed = new Set(selfAndAncestors(policy, path.root).map((rootId) => placeholderFor(policy, rootId)));
+      if (hasTenantPredicate(sql, table, [], { policy, allowed, join: path.join })) return;
     }
   }
 
@@ -952,9 +954,7 @@ type Read = { readonly at: number; readonly scope: string; readonly names: Reado
 type Filter = {
   readonly scope: string;
   readonly qualifier: string | undefined;
-  /** The predicate's own `SELECT`, where the qualifier is its column's; else one it reaches through `col IN (…)`. */
-  readonly ownSelect: boolean;
-  /** The `ON` the predicate is ANDed into, if it is: unqualified, it names only that join's operands ({@link seenByOn}). */
+  /** The `ON` the predicate sits in, when it sits in one: unqualified, it names only that join's operands ({@link seenByOn}). */
   readonly on?: number;
 };
 
@@ -1235,15 +1235,32 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
   return found;
 }
 
+/** What {@link inScope} proves a read against: the policy's graph, and the placeholders of the roots allowed. */
+/**
+ * How a read may also count through joins (#400): the policy's graph, the placeholders allowed at the
+ * end, and, for a table scoped by a column, that column: the proof leaves the read only through it.
+ */
+type JoinProof = {
+  readonly policy: NormalizedTenantPolicy;
+  readonly allowed: ReadonlySet<string>;
+  /** For a table scoped by a column path, that column as the policy spells it: the proof leaves the read only through it. */
+  readonly start?: string;
+  /** For a table scoped by a join path, that path's steps: the proof walks only its own steps ({@link pathInScope}). */
+  readonly join?: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+};
+
 /**
  * Whether every read of `table` is filtered, on every reading, by a predicate from `targets`
  * (#399): a column and placeholder compared as a conjunct of a filter clause in the read's own
  * `SELECT`, and tied to that read by its qualifier. Each branch of a `UNION` / `INTERSECT` /
  * `EXCEPT` is its own `SELECT`, and so is every CTE body, derived table and subquery. A read in a
  * derived table or CTE is also filtered from outside, when that source passes the column through
- * unrenamed and every reference to it is filtered on it. See {@link validateTenantGuardrails}.
+ * unrenamed and every reference to it is filtered on it. With `joinProof`, a read also counts when
+ * the policy's keys prove it in scope through joins in its `SELECT` (#400): {@link pathInScope} for
+ * a join path, else {@link inScope}. `checkScopedTable` passes one for each scope path, and
+ * {@link validateTenantGuardrails} one for each root the scope covers.
  */
-function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[]): boolean {
+function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[], joinProof?: JoinProof): boolean {
   const name = lowerEachLetter(table);
   return views.every((view) => {
     const a = analyze(view);
@@ -1258,9 +1275,17 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
     const tableReads = reads.filter((r) => startsSource(a.tokens, qualifiedStart(a.tokens, r.at)));
     return reads.every((read) => {
       const sameSelect = tableReads.filter((r) => r.scope === read.scope);
-      return tableReads.includes(read) && sameSelect.length > 1
-        ? selfJoinReadFiltered(a, found, targets, read, name, sameSelect)
-        : readFiltered(a, found, targets, read, name);
+      const selfJoin = tableReads.includes(read) && sameSelect.length > 1;
+      const filtered = selfJoin ? selfJoinReadFiltered(a, found, targets, read, name, sameSelect) : readFiltered(a, found, targets, read, name);
+      // A join proof names reads too, so a self-join's reads must be told apart for it as well.
+      if (filtered) return true;
+      if (joinProof === undefined || (selfJoin && !distinctAliases(a, sameSelect))) return false;
+      // The policy's names, read the way this view's reading compares a written name ({@link columnKey}).
+      const reading = a.view.reading.profile.id;
+      const proof = proofFor(a, policyGraph(joinProof.policy, reading));
+      return joinProof.join !== undefined
+        ? pathInScope(proof, { ...read, table: name }, joinPathProof(joinProof.policy, table, joinProof.join, reading), joinProof.allowed)
+        : inScope(proof, { ...read, table: name }, joinProof.allowed, undefined, joinProof.start === undefined ? undefined : columnKey(joinProof.start, reading));
     });
   });
 }
@@ -1328,14 +1353,18 @@ function selfJoinReadFiltered(
   table: string,
   sameSelect: readonly Read[],
 ): boolean {
-  const aliases = sameSelect.map((r) => canonicalAlias(a, r));
-  if (aliases.some((alias) => alias === undefined)) return false;
-  if (new Set(aliases.map((alias) => alias!.toLowerCase())).size !== aliases.length) return false;
+  if (!distinctAliases(a, sameSelect)) return false;
   const mine = canonicalAlias(a, read)!;
   return found.some((o) =>
     o.filters.some((f) =>
-      f.scope === read.scope && f.qualifier === mine && targets.includes(o.target) &&
+      f.scope === read.scope && f.qualifier === mine && canName(a.tokens, mine, f.on, read) && targets.includes(o.target) &&
       (!o.target.discriminator || hasDiscriminator(a, read, o.target))));
+}
+
+/** Whether every read in `reads` is canonical, with a plain alias no other of them shares, in any case. */
+function distinctAliases(a: Analysis, reads: readonly Read[]): boolean {
+  const aliases = reads.map((r) => canonicalAlias(a, r));
+  return aliases.every((alias) => alias !== undefined) && new Set(aliases.map((alias) => alias!.toLowerCase())).size === aliases.length;
 }
 
 /** The plain alias of a read written `table alias` or `table AS alias`, at its `SELECT`'s own level; else undefined. */
@@ -1361,20 +1390,28 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
 }
 
 /**
- * Whether a predicate that filters `read`'s `SELECT` through `filter` filters `read` itself.
- * Unqualified, it does: the read's table has the column, so the name resolves to it or the SQL is
- * ambiguous. On the read's own column, its qualifier must name that read ({@link readNames});
- * on another table's column (a root filtered through a column
- * that carries its IDs), a read of that table. A qualifier that names no read the check sees,
- * such as a table function's alias, counts for nothing. Through `col IN (…)`, which read of
- * another table `col` filters is left to the join.
+ * Whether a predicate on the read's own table that filters `read`'s `SELECT` through `filter`
+ * filters `read` itself. Unqualified, it does: the read's table has the column, so the name
+ * resolves to it or the SQL is ambiguous. Qualified, its qualifier must name that read
+ * ({@link readNames}); a qualifier that names no read the check sees, such as a
+ * table function's alias, counts for nothing. A predicate on another table's column counts only
+ * through a join {@link inScope} can follow (#400).
  */
 function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
-  const q = filter.qualifier;
-  if (q === undefined) return filter.on === undefined || seenByOn(a.tokens, filter.on, read.at);
-  const owner = lowerEachLetter(target.table);
-  if (owner === table) return read.names.has(q);
-  return !filter.ownSelect || readsOf(a, owner).some((r) => r.names.has(q));
+  if (lowerEachLetter(target.table) !== table) return false;
+  return canName(a.tokens, filter.qualifier, filter.on, read);
+}
+
+/**
+ * Whether a column written with qualifier `q`, in the `ON` at `on` if it sits in one, can name
+ * `read`: qualified, the qualifier must name it. In an `ON`, qualified or not, it names only one of
+ * its join's operands ({@link seenByOn}): a qualifier for a read joined after it, or outside its
+ * parentheses, names some other read, such as an outer query's by correlation. Anywhere else it
+ * names any read of its `SELECT`.
+ */
+function canName(tokens: readonly Token[], q: string | undefined, on: number | undefined, read: Read): boolean {
+  if (q !== undefined && !read.names.has(q)) return false;
+  return on === undefined || seenByOn(tokens, on, read.at);
 }
 
 /**
@@ -1401,7 +1438,7 @@ function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Re
       refs.every((ref) =>
         found.some((o) =>
           o.target === target &&
-          o.filters.some((f) => f.ownSelect && f.scope === ref.scope && (f.qualifier === undefined ? f.on === undefined || seenByOn(a.tokens, f.on, ref.at) : ref.names.has(f.qualifier)))) ||
+          o.filters.some((f) => f.scope === ref.scope && canName(a.tokens, f.qualifier, f.on, ref))) ||
         filteredFromOutside(a, found, ref, target, depth + 1));
   }
   memo.set(key, filtered);
@@ -1567,9 +1604,465 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
     const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier, i);
-    if (filters.some((f) => f.ownSelect && f.scope === read.scope && (qualifier !== undefined || f.on === undefined || seenByOn(tokens, f.on, read.at)))) return true;
+    if (filters.some((f) => f.scope === read.scope && canName(tokens, qualifier, f.on, read))) return true;
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Proving a read is in scope through joins (#400)
+// ---------------------------------------------------------------------------
+
+/** What the policy says about tables and columns, for proving a read is in scope through joins (#400). */
+type PolicyGraph = {
+  /** Each table's columns that hold a root's IDs, with the placeholders of the roots each one holds. */
+  readonly carriers: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>;
+  /**
+   * The foreign keys the policy declares, as hops from one table's column to another's: each join-path
+   * step, each hierarchy edge's and root parent's key, and each scope column to its root's ID column.
+   */
+  readonly hops: ReadonlyArray<{ readonly from: string; readonly fromColumn: string; readonly to: string; readonly toColumn: string }>;
+  /** The columns the policy names on each table. */
+  readonly columns: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Every root's placeholder. */
+  readonly placeholders: ReadonlySet<string>;
+};
+
+const graphs = new WeakMap<NormalizedTenantPolicy, Map<string, PolicyGraph>>();
+
+/**
+ * {@link PolicyGraph} for `policy`, its table names lower-cased letter by letter ({@link tableNameOf})
+ * and its column names read the way `reading` compares a written name ({@link columnKey}).
+ */
+function policyGraph(policy: NormalizedTenantPolicy, reading: string): PolicyGraph {
+  const byReading = graphs.get(policy) ?? new Map<string, PolicyGraph>();
+  graphs.set(policy, byReading);
+  let graph = byReading.get(reading);
+  if (graph !== undefined) return graph;
+  const carriers = new Map<string, Map<string, Set<string>>>();
+  const columns = new Map<string, Set<string>>();
+  const name = (columnId: string) => [lowerEachLetter(tableOfColumn(columnId)), columnKey(extractColumnName(columnId), reading)] as const;
+  const know = (columnId: string) => {
+    const [table, column] = name(columnId);
+    columns.set(table, (columns.get(table) ?? new Set()).add(column));
+  };
+  for (const root of policy.roots) {
+    for (const carrier of idCarriers(policy, root.id)) {
+      const table = lowerEachLetter(carrier.table);
+      const column = columnKey(carrier.column, reading);
+      const byColumn = carriers.get(table) ?? new Map<string, Set<string>>();
+      byColumn.set(column, (byColumn.get(column) ?? new Set()).add(carrier.placeholder));
+      carriers.set(table, byColumn);
+      columns.set(table, (columns.get(table) ?? new Set()).add(column));
+    }
+  }
+  const hops: Array<PolicyGraph["hops"][number]> = [];
+  const hop = (fromId: string, toId: string) => {
+    know(fromId);
+    know(toId);
+    const [from, fromColumn] = name(fromId);
+    const [to, toColumn] = name(toId);
+    hops.push({ from, fromColumn, to, toColumn });
+  };
+  const idColumn = (rootId: string) => policy.roots.find((r) => r.id === rootId)?.tenantIdColumn;
+  for (const edge of policy.hierarchy) {
+    const to = idColumn(edge.parent);
+    if (to !== undefined) hop(edge.foreignKey, to);
+  }
+  for (const root of policy.roots) {
+    const to = root.parent ? idColumn(root.parent.root) : undefined;
+    if (root.parent && to !== undefined) hop(root.parent.foreignKey, to);
+  }
+  for (const st of policy.scopedTables) {
+    for (const path of st.scopeThrough) {
+      if ("column" in path) {
+        const to = idColumn(path.root);
+        if (to !== undefined) hop(path.column, to);
+      } else {
+        for (const step of path.join) hop(step.from, step.to);
+      }
+    }
+  }
+  graph = { carriers, hops, columns, placeholders: new Set(policy.roots.map((r) => placeholderForTenantRoot(r))) };
+  byReading.set(reading, graph);
+  return graph;
+}
+
+/** A read of a table the policy names. */
+type Node = Read & { readonly table: string };
+
+/** A column as written: its qualifier, if any, and its name. */
+type ColumnRef = { readonly q: string | undefined; readonly column: string };
+
+/** One view's reads of the policy's tables, the `col = col` conjuncts of each `SELECT`, and the values they bind. */
+type Proof = {
+  readonly a: Analysis;
+  readonly graph: PolicyGraph;
+  readonly nodes: readonly Node[];
+  readonly equalities: ReadonlyArray<{ readonly left: ColumnRef; readonly right: ColumnRef; readonly scope: string; readonly on?: number }>;
+  readonly bound: Map<string, (node: Node, column: string) => ReadonlySet<string>>;
+  /** Each `SELECT`'s `IN (SELECT …)` links, worked out once ({@link inLinks}). */
+  readonly links: Map<string, InLink[]>;
+};
+
+const proofs = new WeakMap<Analysis, WeakMap<PolicyGraph, Proof>>();
+
+function proofFor(a: Analysis, graph: PolicyGraph): Proof {
+  const byGraph = proofs.get(a) ?? new WeakMap<PolicyGraph, Proof>();
+  proofs.set(a, byGraph);
+  let proof = byGraph.get(graph);
+  if (proof !== undefined) return proof;
+  // Every CTE's name, whatever its body (a data-modifying one opens no query): a read of that name may be the CTE.
+  const ctes = new Set(a.tokens.flatMap((t, open) => (t.text === "(" ? [cteNameAt(a.tokens, open)] : [])).filter((n) => n !== undefined));
+  const nodes = [...graph.columns.keys()]
+    .filter((table) => !ctes.has(table))
+    .flatMap((table) => readsOf(a, table).filter((read) => isTableReference(a.tokens, read.at)).map((read) => ({ ...read, table })));
+  proof = { a, graph, nodes, equalities: equalities(a), bound: new Map(), links: new Map() };
+  byGraph.set(graph, proof);
+  return proof;
+}
+
+/**
+ * The name of the CTE whose body opens at `open`, with or without a column list (`x AS (`,
+ * `x (a, b) AS (`, `x AS MATERIALIZED (`), or undefined when it opens none.
+ */
+function cteNameAt(tokens: readonly Token[], open: number): string | undefined {
+  let k = open - 1;
+  if (tokens[k]?.kw === "materialized") k -= tokens[k - 1]?.kw === "not" ? 2 : 1;
+  if (tokens[k]?.kw !== "as") return undefined;
+  k--;
+  if (tokens[k]?.text === ")") {
+    const list = tokens[k - 1]?.text === "(" ? k - 1 : enclosing(tokens, k - 1, "(");
+    if (list < 0 || tokens[list]!.depth !== tokens[k]!.depth) return undefined;
+    k = list - 1;
+  }
+  const before = tokens[k - 1];
+  if (!isWord(tokens[k]) || !(before?.kw === "with" || before?.kw === "recursive" || before?.text === ",")) return undefined;
+  return tableNameOf(tokens[k]!);
+}
+
+/**
+ * Whether the name at `i` is a table read in a `FROM` clause: written right after a `SELECT`'s own
+ * `FROM`, after `JOIN` or MySQL's `STRAIGHT_JOIN`, after the `(` of a parenthesized join group in
+ * one of those places, or after a comma of that `FROM` list (joins included), after any schema
+ * qualifier, and not a function's name. The alias of a derived table, of a table function or of
+ * another table is not, so the policy's columns are never trusted on a source that only borrows a
+ * table's name (#400).
+ */
+function isTableReference(tokens: readonly Token[], i: number): boolean {
+  if (tokens[i + 1]?.text === "(") return false;
+  return startsSource(tokens, qualifiedStart(tokens, i));
+}
+
+/**
+ * The column written at `i`, read the way the view's reading compares it with the policy's
+ * ({@link engineName}, {@link columnKey}); undefined when the engines of that reading read it apart,
+ * so it ties nothing. `"AGENCY_ID"`, read the Postgres way, is another column than `agency_id`.
+ */
+function writtenColumn(a: Analysis, i: number): string | undefined {
+  return engineName(a.tokens[i]!, a.view.reading.profile.id);
+}
+
+/**
+ * The `col = col` terms ANDed into a `WHERE`, `ON` or `HAVING` clause, with their `SELECT` and the
+ * `ON` they sit in, if any. In a `SELECT` that may keep unmatched rows ({@link mayKeepUnmatchedRows}),
+ * an `ON` equality holds only on the rows its join matched, so it links nothing: there only `WHERE`
+ * and `HAVING` count, as {@link filteredScopes} reads them (#400).
+ */
+function equalities(a: Analysis): Proof["equalities"] {
+  const { tokens } = a;
+  const found: Array<Proof["equalities"][number]> = [];
+  tokens.forEach((t, i) => {
+    if (t.text !== "=" || !tokens[i - 1] || !isIdentifier(tokens[i - 1]!) || !tokens[i + 1] || !isIdentifier(tokens[i + 1]!)) return;
+    let end = i + 1;
+    while (tokens[end + 1]?.text === "." && tokens[end + 2] !== undefined && isIdentifier(tokens[end + 2]!)) end += 2;
+    const leftColumn = writtenColumn(a, i - 1);
+    const rightColumn = writtenColumn(a, end);
+    if (leftColumn === undefined || rightColumn === undefined) return;
+    const left = { q: qualifierOf(tokens, i - 1), column: leftColumn };
+    const right = { q: qualifierOf(tokens, end), column: rightColumn };
+    // In `HAVING`, each side must be a `GROUP BY` key ({@link onGroupKey}).
+    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined, [i - 1, end])) found.push({ left, right, scope: f.scope, on: f.on });
+  });
+  return found;
+}
+
+/**
+ * Whether a `SELECT` may keep rows a join's `ON` never matched: `LEFT`, `RIGHT`, `FULL` or `OUTER`
+ * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`). No `ON`
+ * there filters, seeds, links or hops: only `WHERE` and `HAVING` do (#400).
+ */
+function mayKeepUnmatchedRows(a: Analysis, scope: string): boolean {
+  const { tokens, scopes } = a;
+  return tokens.some((t, i) => scopes.of[i] === scope && ["left", "right", "full", "outer"].includes(t.kw) && tokens[i + 1]?.text !== "(");
+}
+
+/**
+ * The read a column refers to in `scope`: the one its qualifier names, or, unqualified, the one
+ * whose table the policy says has the column, among the reads it can name ({@link canName}: in an
+ * `ON`, that join's operands). Another source with the same column would make the SQL ambiguous,
+ * so it can't name a different one. Undefined when no single read fits.
+ */
+function resolve(p: Proof, scope: string, ref: ColumnRef, on?: number): Node | undefined {
+  const hits = p.nodes.filter(
+    (n) => n.scope === scope && canName(p.a.tokens, ref.q, on, n) && (ref.q !== undefined || p.graph.columns.get(n.table)?.has(ref.column)),
+  );
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+/**
+ * The placeholders whose IDs each column of a read holds in `scope`: a column compared with a
+ * placeholder (`= P`, `IN (P)`, `= ANY(P)`), ANDed into a filter clause, holds its root's IDs; so does
+ * a column equal to one that does, through `col = col` conjuncts; and so does `col IN (SELECT x …)`
+ * when the subquery's `x` does in its own `SELECT`.
+ */
+function boundIn(p: Proof, scope: string): (node: Node, column: string) => ReadonlySet<string> {
+  const cached = p.bound.get(scope);
+  if (cached !== undefined) return cached;
+  const { a } = p;
+  const { tokens, scopes } = a;
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.has(r) && parent.get(r) !== r) r = parent.get(r)!;
+    parent.set(x, r);
+    return r;
+  };
+  const term = (node: Node, column: string) => `${node.at}.${column}`;
+  for (const eq of p.equalities) {
+    if (eq.scope !== scope) continue;
+    const l = resolve(p, scope, eq.left, eq.on);
+    const r = resolve(p, scope, eq.right, eq.on);
+    if (l && r) parent.set(find(term(l, eq.left.column)), find(term(r, eq.right.column)));
+  }
+  const seeds = new Map<string, Set<string>>();
+  const seed = (key: string, placeholders: Iterable<string>) => {
+    const root = find(key);
+    seeds.set(root, new Set([...(seeds.get(root) ?? []), ...placeholders]));
+  };
+  tokens.forEach((t, k) => {
+    // A placeholder counts only outside a quoted name: `":tenant_agency_ids"` is a column.
+    if (t.quoted === true || !p.graph.placeholders.has(t.text)) return;
+    const predicate = predicateAt(tokens, k, undefined, a.view.reading.profile.id);
+    const column = predicate === undefined ? undefined : writtenColumn(a, predicate.column);
+    if (predicate === undefined || column === undefined) return;
+    const ref = { q: qualifierOf(tokens, predicate.column), column };
+    const filter = filteredScopes(a, predicate.start, predicate.end, ref.q, predicate.column).find((f) => f.scope === scope);
+    if (filter === undefined) return;
+    const node = resolve(p, scope, ref, filter.on);
+    if (node) seed(term(node, ref.column), [t.text]);
+  });
+  for (const link of inLinks(p, scope)) {
+    const node = resolve(p, scope, link.ref, link.on);
+    if (link.inner && node) seed(term(node, link.ref.column), boundIn(p, link.innerScope)(link.inner, link.item.column));
+  }
+  const lookup = (node: Node, column: string): ReadonlySet<string> => seeds.get(find(term(node, column))) ?? new Set();
+  p.bound.set(scope, lookup);
+  return lookup;
+}
+
+/**
+ * Each `col IN (SELECT x …)` ANDed into a filter clause of `scope`, over a subquery with no set
+ * operation that selects one plain column: `col` as written, the subquery's `SELECT`, the column it
+ * selects, and the read that column resolves to there, if any.
+ */
+function inLinks(p: Proof, scope: string): InLink[] {
+  const cached = p.links.get(scope);
+  if (cached !== undefined) return cached;
+  const { tokens, scopes } = p.a;
+  const links: InLink[] = [];
+  p.links.set(scope, links);
+  for (const [open, close] of scopes.close) {
+    const column = open - 2;
+    if (scopes.of[column] !== scope || scopes.branched.has(open) || subqueryUse(tokens, open) !== "in") continue;
+    const written = writtenColumn(p.a, column);
+    if (written === undefined) continue;
+    const ref = { q: qualifierOf(tokens, column), column: written };
+    const filter = filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q, column).find((f) => f.scope === scope);
+    if (filter === undefined) continue;
+    const item = selectedColumn(p.a, open);
+    if (item === undefined) continue;
+    const innerScope = scopeKey(open, 0);
+    links.push({ ref, innerScope, item, inner: resolve(p, innerScope, item), on: filter.on });
+  }
+  return links;
+}
+
+/** A `col IN (SELECT x …)` link: `col` as written, the subquery's `SELECT`, `x`, the read `x` resolves to there, and the `ON` the link sits in. */
+type InLink = { readonly ref: ColumnRef; readonly innerScope: string; readonly item: ColumnRef; readonly inner: Node | undefined; readonly on?: number };
+
+/**
+ * The reads that `node`'s `hop` links it to in its `SELECT`: a conjunct `node.fromColumn = y.toColumn`
+ * (either way round), or `node.fromColumn IN (SELECT y.toColumn …)`, where `y` reads the hop's table.
+ */
+function hopTargets(p: Proof, node: Node, hop: PolicyGraph["hops"][number]): Node[] {
+  const { tokens, scopes } = p.a;
+  const targets: Node[] = [];
+  for (const eq of p.equalities) {
+    if (eq.scope !== node.scope) continue;
+    for (const [mine, theirs] of [[eq.left, eq.right], [eq.right, eq.left]] as const) {
+      if (mine.column !== hop.fromColumn || theirs.column !== hop.toColumn || resolve(p, node.scope, mine, eq.on)?.at !== node.at) continue;
+      const y = resolve(p, node.scope, theirs, eq.on);
+      if (y?.table === hop.to) targets.push(y);
+    }
+  }
+  for (const link of inLinks(p, node.scope)) {
+    if (link.ref.column !== hop.fromColumn || resolve(p, node.scope, link.ref, link.on)?.at !== node.at) continue;
+    if (link.item.column === hop.toColumn && link.inner?.table === hop.to) targets.push(link.inner);
+  }
+  return targets;
+}
+
+/** A foreign key the policy declares, from one table's column to another's, lower-cased. */
+type Hop = PolicyGraph["hops"][number];
+
+/** A root a join path reaches: its ID column, its placeholder, and the keys up to its parent roots. */
+type RootLink = { readonly idColumn: string; readonly placeholder: string; readonly parents: readonly Hop[] };
+
+/** A join path's own steps, in order, and the roots (by table) its end and the hierarchy above it reach. */
+type PathProof = { readonly steps: readonly Hop[]; readonly roots: ReadonlyMap<string, RootLink> };
+
+/**
+ * The proof for the join path `join` of the scoped `table`. The steps run in the order they chain from
+ * `table` (each one leaving the table the one before reached), whatever order the policy lists them in;
+ * when they don't chain that way (a fork or a gap), in the listed order.
+ */
+function joinPathProof(policy: NormalizedTenantPolicy, table: string, join: ReadonlyArray<{ readonly from: string; readonly to: string }>, reading: string): PathProof {
+  const hop = (fromId: string, toId: string): Hop => ({
+    from: lowerEachLetter(tableOfColumn(fromId)),
+    fromColumn: columnKey(extractColumnName(fromId), reading),
+    to: lowerEachLetter(tableOfColumn(toId)),
+    toColumn: columnKey(extractColumnName(toId), reading),
+  });
+  const idColumn = (rootId: string) => policy.roots.find((r) => r.id === rootId)?.tenantIdColumn;
+  const roots = new Map<string, RootLink>();
+  for (const root of policy.roots) {
+    const parents: Hop[] = [];
+    for (const edge of policy.hierarchy) {
+      const to = edge.child === root.id ? idColumn(edge.parent) : undefined;
+      if (to !== undefined) parents.push(hop(edge.foreignKey, to));
+    }
+    const to = root.parent ? idColumn(root.parent.root) : undefined;
+    if (root.parent && to !== undefined) parents.push(hop(root.parent.foreignKey, to));
+    roots.set(lowerEachLetter(tableOfColumn(root.tenantIdColumn)), {
+      idColumn: columnKey(extractColumnName(root.tenantIdColumn), reading),
+      placeholder: placeholderFor(policy, root.id),
+      parents,
+    });
+  }
+  const listed = join.map((step) => hop(step.from, step.to));
+  const left = [...listed];
+  const chained: Hop[] = [];
+  let at = lowerEachLetter(table);
+  while (left.length > 0) {
+    const next = left.filter((h) => h.from === at);
+    if (next.length !== 1) break;
+    chained.push(next[0]!);
+    left.splice(left.indexOf(next[0]!), 1);
+    at = next[0]!.to;
+  }
+  return { steps: left.length === 0 ? chained : listed, roots };
+}
+
+/**
+ * Whether `node`, read of a table scoped by a join path, is within scope through that path alone
+ * (#400): step `k` of `path` from `node` (a declared key, on exactly its columns) to a read of the
+ * next table, and so on in order, then the path's root, through its ID or the hierarchy above it
+ * ({@link rootInScope}). On the last step, the step's own column carries the root's IDs, so a filter
+ * on it counts (`appointments.client_id IN (:tenant_client_ids)`). A table along the way counts only
+ * through the path's own steps, never through its own scope column or another path's key.
+ */
+function pathInScope(p: Proof, node: Node, path: PathProof, allowed: ReadonlySet<string>, k = 0, visited: Set<number> = new Set([node.at])): boolean {
+  if (k === path.steps.length) return rootInScope(p, node, path, allowed, visited);
+  const step = path.steps[k]!;
+  if (node.table !== step.from) return false;
+  if (k === path.steps.length - 1) {
+    const holds = p.graph.carriers.get(node.table)?.get(step.fromColumn);
+    for (const placeholder of boundIn(p, node.scope)(node, step.fromColumn)) {
+      if (holds?.has(placeholder) && allowed.has(placeholder)) return true;
+    }
+  }
+  for (const next of hopTargets(p, node, step)) {
+    if (visited.has(next.at)) continue;
+    visited.add(next.at);
+    if (pathInScope(p, next, path, allowed, k + 1, visited)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether `node`, a read of a root table a join path reaches, is within scope: its ID column holds
+ * its own placeholder, a key to a parent root holds that parent's placeholder, or such a key links it
+ * to a parent root's read that is, in turn, within scope. Only the root's ID and the hierarchy count.
+ */
+function rootInScope(p: Proof, node: Node, path: PathProof, allowed: ReadonlySet<string>, visited: Set<number>): boolean {
+  const link = path.roots.get(node.table);
+  if (link === undefined) return false;
+  const bound = boundIn(p, node.scope);
+  if (allowed.has(link.placeholder) && bound(node, link.idColumn).has(link.placeholder)) return true;
+  for (const up of link.parents) {
+    const parent = path.roots.get(up.to);
+    if (parent !== undefined && allowed.has(parent.placeholder) && bound(node, up.fromColumn).has(parent.placeholder)) return true;
+    for (const next of hopTargets(p, node, up)) {
+      if (visited.has(next.at)) continue;
+      visited.add(next.at);
+      if (rootInScope(p, next, path, allowed, visited)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether `node` reads only rows within the scope of the roots whose placeholders are `allowed`
+ * (#400): a column of its table that holds an allowed root's IDs (by the policy) is bound to that
+ * root's placeholder in its `SELECT` (see {@link boundIn}), or a foreign key the policy declares links
+ * it, on exactly the declared columns, to a read that is itself within that scope. A join on any
+ * other pair of columns links nothing. With `start`, `node` counts only through that column of its
+ * table: a table scoped by a column is proven through that column, never another path's key on it.
+ */
+function inScope(p: Proof, node: Node, allowed: ReadonlySet<string>, visited: Set<number> = new Set([node.at]), start?: string): boolean {
+  const bound = boundIn(p, node.scope);
+  for (const [column, holds] of p.graph.carriers.get(node.table) ?? []) {
+    if (start !== undefined && column !== start) continue;
+    for (const placeholder of bound(node, column)) if (holds.has(placeholder) && allowed.has(placeholder)) return true;
+  }
+  for (const hop of p.graph.hops) {
+    if (hop.from !== node.table || (start !== undefined && hop.fromColumn !== start)) continue;
+    for (const next of hopTargets(p, node, hop)) {
+      if (visited.has(next.at)) continue;
+      visited.add(next.at);
+      if (inScope(p, next, allowed, visited)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The column the query at `open` selects, when its select list is one plain column (`col` or
+ * `q.col`, under any alias), else undefined.
+ */
+function selectedColumn(a: Analysis, open: number): ColumnRef | undefined {
+  const { tokens, scopes, view } = a;
+  const scope = scopeKey(open, 0);
+  const depth = tokens[open]!.depth + 1;
+  if (tokens[open + 1]?.kw !== "select") return undefined;
+  let first = open + 2;
+  if (tokens[first]?.kw === "all" || tokens[first]?.kw === "distinct") first++;
+  let from = first;
+  while (from < tokens.length && !(scopes.of[from] === scope && tokens[from]!.depth === depth && tokens[from]!.kw === "from")) from++;
+  const item = tokens.slice(first, from);
+  if (item.length === 0 || from >= tokens.length || item.some((t) => t.text === ",")) return undefined;
+  const last = item[item.length - 1]!;
+  for (let at = item[0]!.offset; at < last.offset + last.text.length; at++) {
+    if (view.text[at] !== view.source[at] && view.text[at] !== QUOTE_MARK) return undefined;
+  }
+  const n = item[1]?.text === "." ? 3 : 1;
+  const rest = item.slice(n);
+  const aliased = rest.length === 0 || (rest.length === 1 && isWord(rest[0])) || (rest.length === 2 && rest[0]!.kw === "as" && isWord(rest[1]));
+  if (!aliased || !isIdentifier(item[n - 1]!) || (n === 3 && !isWord(item[0]))) return undefined;
+  const column = writtenColumn(a, first + n - 1);
+  if (column === undefined) return undefined;
+  return { q: n === 3 ? item[0]!.name : undefined, column };
 }
 
 /** An identifier token: a word that isn't one of the predicate forms' keywords. */
@@ -1595,14 +2088,14 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
 /**
  * The span `[start, end]` and column index of a tenant predicate around the placeholder at `k`:
  * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a possibly
- * qualified name) is `column`, as {@link namesColumn} compares them under `reading`. Which read
- * the column belongs to is its qualifier's to say.
+ * qualified name) is `column`, as {@link namesColumn} compares them under `reading`, or any column
+ * when none is given. Which read the column belongs to is its qualifier's to say.
  */
-function predicateAt(tokens: readonly Token[], k: number, column: string, reading: string): { start: number; end: number; column: number } | undefined {
+function predicateAt(tokens: readonly Token[], k: number, column: string | undefined, reading: string): { start: number; end: number; column: number } | undefined {
   const at = (i: number) => tokens[i];
   const matches = (i: number) => {
     const t = at(i);
-    return t !== undefined && isIdentifier(t) && namesColumn(t, column, reading);
+    return t !== undefined && isIdentifier(t) && (column === undefined || namesColumn(t, column, reading));
   };
   // col = P
   if (at(k - 1)?.text === "=" && matches(k - 2)) return { start: qualifiedStart(tokens, k - 2), end: k, column: k - 2 };
@@ -1655,7 +2148,12 @@ const READ_APART = "\u0000";
 /** Whether the written column `t` is the policy's `column`, whose spelling the policy writes as the schema does ({@link engineName}). */
 function namesColumn(t: Token, column: string, reading: string): boolean {
   const name = engineName(t, reading);
-  return name !== undefined && name === (reading === "postgres" || reading === "sqlserver" ? column : asciiLower(column));
+  return name !== undefined && name === columnKey(column, reading);
+}
+
+/** A column's spelling, as the policy writes it from the schema, read the way `reading` compares a written name ({@link engineName}). */
+function columnKey(column: string, reading: string): string {
+  return reading === "postgres" || reading === "sqlserver" ? column : asciiLower(column);
 }
 
 /** Whether the written names `t` and `u` are the same name for every engine that shares the `reading` ({@link engineName}). */
@@ -1730,6 +2228,8 @@ function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
     if (t.depth < depth) return false;
     if (t.depth > depth) continue;
     if (t.kw === "on" || t.kw === "using") return true;
+    // MySQL has no outer `STRAIGHT_JOIN`, so an `ON` that closes one is an inner join's.
+    if (t.kw === "straight_join") return false;
     if (t.kw !== "join") continue;
     for (let k = i - 1; k >= 0; k--) {
       const w = tokens[k]!;
@@ -1794,16 +2294,16 @@ function takesNoOn(tokens: readonly Token[], join: number): boolean {
 }
 
 /**
- * The `SELECT`s whose reads the term `tokens[start..end]` filters (#399), each with the qualifier
- * that ties it to a read there. The term must be ANDed into a `WHERE`, `ON` (of an inner join) or
- * `HAVING` clause: at its own level and at every enclosing parenthesized level up to that clause,
- * it sits between `AND`s (or the clause's start and end), with no `OR`, `XOR` (or MySQL's `||`)
- * at that level and no `NOT` in front of it. It then filters that clause's `SELECT`, through
- * `qualifier`, its column's. When that `SELECT` is the whole right side of `col IN (…)` and the
- * `col IN (…)` is itself such a conjunct, it filters the query around it too, through `col`'s
- * qualifier. A level opened by a function call or a comparison doesn't count.
+ * The `SELECT` whose reads the term `tokens[start..end]` filters (#399), with `qualifier`, its
+ * column's, which ties it to a read there: none, or one. The term must be ANDed into a `WHERE`,
+ * `ON` (of an inner join, in a `SELECT` that keeps no unmatched rows) or `HAVING` clause: at its own level and
+ * at every enclosing parenthesized level up to that clause, it sits between `AND`s (or the clause's
+ * start and end), with no `OR`, `XOR` (or MySQL's `||`) at that level and no `NOT` in front of it.
+ * A level opened by a function call or a comparison doesn't count. In `HAVING`, each of the term's
+ * columns at `termColumn` must be a `GROUP BY` key ({@link onGroupKey}). A `SELECT` used as
+ * `col IN (…)` limits the query around it only through the join {@link inScope} follows (#400).
  */
-function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined, termColumn: number): Filter[] {
+function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined, termColumn: number | readonly number[]): Filter[] {
   const { tokens, scopes } = a;
   const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && a.view.reading.pipesAreOr);
   const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
@@ -1811,15 +2311,13 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
   let lo = start;
   let hi = end;
   let depth = tokens[start]!.depth;
-  let q = qualifier;
-  let ownSelect = true;
-  let column = termColumn;
   for (;;) {
     // What is directly around the term, at its level.
     const before = tokens[lo - 1];
     const after = tokens[hi + 1];
     const leftOk = before !== undefined && (conjunctAnd(tokens, lo - 1) || before.text === "(" || FILTER_CLAUSE.has(before.kw));
-    const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || endsClause(hi + 1);
+    // A `,` ends a join's `ON` when another source follows in the `FROM` list; elsewhere the opener check below refuses it.
+    const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || after.text === "," || endsClause(hi + 1);
     if (!leftOk || !rightOk) return filters;
 
     // Scan the rest of this level on both sides for a disjunction, a NOT, or the clause keyword.
@@ -1847,26 +2345,17 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
         break;
       }
       if (t.depth > depth) continue;
-      if (t.text === ";" || endsFilterScan(tokens, j, a.view.reading.profile.id)) break;
+      if (t.text === ";" || t.text === "," || endsFilterScan(tokens, j, a.view.reading.profile.id)) break;
       if (disjunction(t)) return filters;
     }
 
     if (clause >= 0) {
-      if (tokens[clause]!.kw === "on" && isOuterJoinOn(tokens, clause)) return filters;
-      if (tokens[clause]!.kw === "having" && !onGroupKey(a, clause, column)) return filters;
-      const scope = scopes.of[clause]!;
-      filters.push({ scope, qualifier: q, ownSelect, ...(tokens[clause]!.kw === "on" ? { on: clause } : {}) });
-      // `col IN (<this SELECT>)` limits the query around it to the rows this SELECT returns.
-      const query = scopeOpen(scope);
-      const queryClose = scopes.close.get(query);
-      if (query < 0 || queryClose === undefined || scopes.branched.has(query) || subqueryUse(tokens, query) !== "in") return filters;
-      lo = qualifiedStart(tokens, query - 2);
-      hi = queryClose;
-      depth = tokens[query]!.depth;
-      q = qualifierOf(tokens, query - 2);
-      column = query - 2;
-      ownSelect = false;
-      continue;
+      // An outer join keeps rows its ON doesn't match, and in a SELECT with one, an inner join's ON
+      // filters only the rows that join builds; there only WHERE and HAVING filter every row (#400).
+      if (tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || mayKeepUnmatchedRows(a, scopes.of[clause]!))) return filters;
+      if (tokens[clause]!.kw === "having" && !(typeof termColumn === "number" ? [termColumn] : termColumn).every((c) => onGroupKey(a, clause, c))) return filters;
+      filters.push(tokens[clause]!.kw === "on" ? { scope: scopes.of[clause]!, qualifier, on: clause } : { scope: scopes.of[clause]!, qualifier });
+      return filters;
     }
 
     if (open < 0 || tokens[open]!.text !== "(" || close >= tokens.length || tokens[close]!.text !== ")") return filters;

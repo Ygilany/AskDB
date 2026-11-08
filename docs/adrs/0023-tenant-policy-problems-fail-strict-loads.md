@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-09-29, maintainer decision on #332; details settled in the #332 plan round on 2026-11-05). Implemented in `packages/core/src/schema/v2/tenant-policy-loader.ts` (`normalizeTenantPolicy`), `packages/core/src/sql/tenant-policy-warnings.ts` and `apps/cli/src/introspect.ts`.
+Accepted (2026-09-29, maintainer decision on #332; details settled in the #332 plan round on 2026-11-05). Implemented in `packages/core/src/schema/v2/tenant-policy-loader.ts` (`normalizeTenantPolicy`), `packages/core/src/sql/tenant-policy-warnings.ts`, `apps/cli/src/introspect.ts` and `apps/cli/src/schema-warnings.ts`.
+
+> **Amendment (2026-11, #690):** `askdb ask` and `askdb bundle` print every warning `loadSchema()` returns, a tenant policy's included, as one `Warning:` line on stderr, and keep their exit code (the coordinator's call on #690). So `askdb ask` on a schema with a tenant policy prints the policy's warnings before it stops at `TenantScopeError`. They print by default, not only under `--verbose`: a warning here is an ignored `sensitive: false`, a misplaced or duplicate `columns[]` entry, an orphaned table file, or a policy entry for a removed table, which a user should see without asking for logs. A flag to quiet them can come later.
 
 ## Context
 
@@ -39,7 +41,7 @@ Keep load-and-continue everywhere, reword the contract to "warnings", and surfac
 
 - A strict policy that loads today with any of these problems starts throwing. The `@askdb/core` changeset is a minor bump and names the change.
 - `ask()`'s result gets no new field: the host already holds `schema.tenantPolicy.warnings`. The HTTP API changes nothing: a strict error reaches clients as the existing 400 `schema_parse_error`, and warnings go to the server log.
-- `askdb ask` takes no tenant scope, so on a schema with a tenant policy it stops at `TenantScopeError` and prints nothing for the policy. Its `--verbose` log still carries the event, which `ask()` logs before it checks the scope.
+- `askdb ask` takes no tenant scope, so on a schema with a tenant policy it stops at `TenantScopeError`. Since #690 it first prints each of the policy's warnings on stderr (amendment above). Its `--verbose` log still carries the event, which `ask()` logs before it checks the scope.
 - Studio can't open a workspace whose strict policy has errors, the same as a malformed `tenant-policy.md` today. The fix is to edit the file. Recovering inside Studio is a separate issue (#640). A Studio that is already open when a re-introspection breaks its policy can still save the fix.
 - Studio's Tenancy page lists one warning for a removed table instead of one per column it named.
 

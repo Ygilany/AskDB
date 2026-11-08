@@ -145,3 +145,33 @@ describe("askdb bundle on a directory the loader accepts", () => {
     expect(loadSchemaFromJson(readFileSync(out, "utf8"))).toEqual(loadSchema(dir));
   });
 });
+
+describe("askdb bundle prints the loader's warnings on stderr", () => {
+  it("writes the bundle and prints each warning as one line, a tenant policy's included", async () => {
+    const { dir, out } = copyFixture("agency-multi-tenant.schema");
+    const policy = join(dir, "tenant-policy.md");
+    writeFileSync(policy, readFileSync(policy, "utf8").replace("  - table:public.service_types\n", "  - table:public.service_types\n  - table:public.gone\n"));
+
+    expect(await runBundleCli([dir, "--out", out])).toBe(0);
+    expect(stdout).toBe(`Wrote ${out}\n`);
+    expect(stderr).toBe("Warning: tenant-policy.md: global table table:public.gone is not in schema.json\n");
+  });
+
+  it("prints a table file's warning", async () => {
+    const { dir, out } = copyFixture("orders-users.schema");
+    const orders = join(dir, "tables/orders.md");
+    writeFileSync(
+      orders,
+      readFileSync(orders, "utf8").replace(
+        "  - id: table:public.orders#status\n",
+        "  - id: table:public.users#id\n    sensitive: true\n  - id: table:public.orders#status\n",
+      ),
+    );
+
+    expect(await runBundleCli([dir, "--out", out])).toBe(0);
+    expect(stderr).toBe(
+      "Warning: tables/orders.md lists column table:public.users#id, which is on table:public.users; only its sensitive: true applies, so move the entry to that table's file\n",
+    );
+  });
+});
+
