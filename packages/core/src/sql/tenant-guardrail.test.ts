@@ -2404,7 +2404,19 @@ describe("validateTenantGuardrails — beside an outer join, WHERE counts and a 
       "WITH o AS (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) SELECT g.id, o.id FROM agencies g LEFT JOIN o ON o.agency_id = g.id WHERE g.id = :tenant_agency_ids",
       agencyScope,
     ],
+    [
+      "a polymorphic table, in a derived table with its discriminator",
+      "SELECT c.id, n.body FROM clients c LEFT JOIN (SELECT * FROM notes WHERE owner_type = 'client' AND owner_id IN (:tenant_client_ids)) n ON n.owner_id = c.id WHERE c.id IN (:tenant_client_ids)",
+      clients,
+    ],
   ] as const)("accepts %s on the side a LEFT JOIN may leave unmatched", (_label, sql, scope) => {
     expect(findings(sql, scope)).toEqual([]);
+  });
+
+  it("refuses a join path's root filtered in a derived table on the unmatched side, and accepts the plain JOIN", () => {
+    expect(findings("SELECT a.*, c.name FROM appointments a LEFT JOIN (SELECT * FROM clients WHERE id IN (:tenant_client_ids)) c ON c.id = a.client_id", clients)).toEqual([
+      "table:public.appointments",
+    ]);
+    expect(findings("SELECT a.*, c.name FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", clients)).toEqual([]);
   });
 });
