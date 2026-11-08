@@ -245,17 +245,17 @@ List each column once. If a column appears again in the same file, only its firs
 
 ### Body
 
-- **Description.** The first paragraph after the first heading is the table's description. The prompt shows it as a comment under the table's name. The lines of the paragraph are joined with spaces.
+- **Description.** The first paragraph after the first heading is the table's description. One of the four sections below never supplies it, even when its heading comes first. The prompt shows it as a comment under the table's name. The lines of the paragraph are joined with spaces.
 - **Sections.** AskDB recognizes four `##` sections by their exact heading, ignoring case. Other sections stay in the file, and AskDB doesn't use them.
 
 | Section | Used by | Format |
 | --- | --- | --- |
 | `## Common query language` | The prompt and `@askdb/rag` | Free text. The prompt shows each line as a comment under the table. |
 | `## Example questions` | `@askdb/rag`, and the prompt when retrieval picks one | Each `- ` or `* ` item becomes one indexed question. |
-| `## Business context` | `@askdb/rag`, and the prompt when retrieval picks it | Free text. The prompt shows it under the table. |
-| `## Column notes` | `@askdb/rag`, and the prompt when retrieval picks the column | ``- `column_name`: note``, with the column's name, not its ID. `-` or `—` can replace the colon. The prompt adds the note to the column's line. |
+| `## Business context` | The prompt and `@askdb/rag` | Free text. The prompt shows it under the table, after common query language; with retrieval, only when retrieval picks it. |
+| `## Column notes` | The prompt and `@askdb/rag` | ``- `column_name`: note``, with the column's name, not its ID. `-` or `—` can replace the colon. The prompt adds the note to the column's line. |
 
-For a sensitive table, AskDB drops its description, aliases, `primaryEntity` and common query language when it loads the file. For a sensitive column, it drops the column's description, aliases and `enum`.
+For a sensitive table, AskDB drops its description, aliases, `primaryEntity`, common query language and business context when it loads the file. For a sensitive column, it drops the column's description, aliases, `enum` and note.
 
 ## `concepts.md`
 

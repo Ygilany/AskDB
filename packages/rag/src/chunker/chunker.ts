@@ -45,8 +45,10 @@ export type ChunkResult = {
  * Deterministic chunker for a Schema v2 artifact.
  *
  * Inputs are pre-loaded sources (the `loadSchema` normalized form **plus** the
- * raw parsed markdowns — the normalized form intentionally drops example
- * questions, business context, and column-notes which the chunker needs).
+ * raw parsed markdowns). The normalized form drops example questions, and
+ * drops business context and column notes for sensitive tables and columns,
+ * which an opt-in index (`includeSensitiveDescribable`) still embeds, so the
+ * chunker reads all three from the markdown.
  *
  * Determinism is a contract: same artifact → same chunk ids and same chunk
  * texts on every run, regardless of file-system ordering, OS, or Node version.
@@ -603,6 +605,11 @@ function describableFilter(sensitiveMentions: MentionMatcher, includeSensitive: 
   };
 }
 
+/**
+ * A column's `Column notes` item, by the schema v2 contract's rule. `@askdb/core`'s loader reads
+ * the same items for `NormalizedV2Column.note` (`columnNoteOf` in its `loader.ts`); keep the two in
+ * step (a test runs both on the same file).
+ */
 function readColumnNote(
   md: ParsedTableMarkdown | undefined,
   columnName: string,

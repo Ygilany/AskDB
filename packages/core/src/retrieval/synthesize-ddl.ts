@@ -18,8 +18,8 @@ import type { RetrievedResult } from "./types.js";
  *   1. Each table referenced by any retrieved chunk gets a TABLE block with
  *      its full column definitions (so the model has complete column lists).
  *      Each column line carries the schema's own `-- aliases / values / desc`
- *      annotation, plus `note: …` from a retrieved column chunk's
- *      `Column notes` line, gated with the annotation as one unit.
+ *      annotation, with the column's note (ADR 0042, amended for #898); a
+ *      retrieved column chunk only picks its table.
  *      Then the table's foreign keys to other shown tables, as the
  *      full-schema prompt prints them (#898).
  *   2. CQL chunks land as a `-- common query language --` block under the
@@ -36,8 +36,8 @@ import type { RetrievedResult } from "./types.js";
  * `@askdb/rag` types a `Business context` chunk `table`; its id
  * (`…<table-id>#biz`, `…#biz#bc:<n>` for part n of a long body; the schema v2
  * contract's chunking rules) tells it apart from the table chunk. A sensitive
- * table's CQL and business context, and a sensitive column's note, never
- * show, like the schema's own describable text.
+ * table's CQL and business context never show, like the schema's own
+ * describable text.
  *
  * Sensitive identifiers retain their `(sensitive)` tagging exactly as
  * `formatSchemaV2ForNlToSql` does. With `omitSensitiveIdentifiersFromPrompt`,
@@ -88,7 +88,6 @@ export function synthesizeRetrievedDdl(args: {
   const tableIds = new Set<string>();
   const cqlPerTable = new Map<string, string[]>();
   const businessPerTable = new Map<string, { part: number; text: string }[]>();
-  const notePerColumn = new Map<string, { note: string; sensitive: boolean }>();
   const concepts: string[] = [];
   const questions: string[] = [];
   const tenantPolicyChunks: string[] = [];
@@ -114,10 +113,6 @@ export function synthesizeRetrievedDdl(args: {
       case "column": {
         const tid = p.refs[0];
         if (tid) tableIds.add(tid);
-        const cid = p.refs[1];
-        const note = columnNote(p.text);
-        // Gated with the column's annotation, where it renders (`columnAnnotation`).
-        if (cid && note) notePerColumn.set(cid, { note, sensitive: p.sensitive });
         break;
       }
       case "cql": {
@@ -194,10 +189,7 @@ export function synthesizeRetrievedDdl(args: {
       const sensitiveTag = c.sensitive || t.sensitive ? " (sensitive)" : "";
       let line = `  - ${quoteIdentifier(c.name)} ${c.type} (${flags.join(" ")})${sensitiveTag}`;
       if (!c.sensitive && !t.sensitive) {
-        const retrieved = notePerColumn.get(c.id);
-        // A description that itself starts `Note: ` is the chunk's last line when the column has no note.
-        const note = retrieved && c.description?.trim() !== `Note: ${retrieved.note}` ? retrieved : undefined;
-        const annotation = columnAnnotation(c, gate, note);
+        const annotation = columnAnnotation(c, gate);
         if (annotation) line += ` -- ${annotation}`;
       }
       lines.push(line);
@@ -258,16 +250,6 @@ function businessContextPart(chunkId: string, tableId: string): number | undefin
   if (chunkId.endsWith(marker)) return 0;
   const split = /#bc:(\d+)$/.exec(chunkId);
   if (split && chunkId.slice(0, split.index).endsWith(marker)) return Number(split[1]);
-  return undefined;
-}
-
-/** The note in a column chunk's `Note: …` line (the column's `Column notes` item), if any. */
-function columnNote(text: string): string | undefined {
-  const lines = text.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    if (line.startsWith("Note: ")) return line.slice("Note: ".length).trim() || undefined;
-  }
   return undefined;
 }
 
