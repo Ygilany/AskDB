@@ -1848,6 +1848,19 @@ describe("validateTenantGuardrails — SQLite reads a single-quoted alias as the
     }
   });
 
+  // The alias is one name, whatever it spells: `'join'` is no join and `'.'` no dot, as with `"join"`.
+  it.each(maybeSqlite)("reads a quoted alias spelled like a keyword or a mark as a name under %s", (_label, dialect) => {
+    for (const sql of [
+      "SELECT o.* FROM orders o LEFT JOIN lookup_states 'join' ON o.agency_id = :tenant_agency_ids",
+      "SELECT o.* FROM orders o LEFT JOIN lookup_states AS 'join' ON o.agency_id = :tenant_agency_ids",
+      "SELECT \"cross\".* FROM orders 'cross', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders 'where', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      "SELECT * FROM orders '.' CROSS JOIN orders o WHERE o.agency_id = :tenant_agency_ids",
+    ]) {
+      expect(findings(sql, dialect), sql).toContain(missing);
+    }
+  });
+
   it("a strict policy refuses it", () => {
     expect(() => validateTenantGuardrails(quotedAlias[0]![1], policy, agencyScope, { dialect: SQLITE_DIALECT })).toThrow(TenantGuardrailError);
   });
