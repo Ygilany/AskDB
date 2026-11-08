@@ -1973,9 +1973,18 @@ describe("validateTenantGuardrails — SQLite reads a single-quoted name inside 
       "SELECT o.* FROM lookup_states s, ('orders') o",
       "SELECT x.* FROM (orders) 'x', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
       "SELECT x.* FROM ('orders') 'x', sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
+      // A comma inside a source's parentheses is a FROM-list comma too.
+      "SELECT * FROM (lookup_states, 'orders')",
+      "SELECT o.* FROM (lookup_states s, 'orders' o)",
+      "SELECT o.* FROM lookup_states t JOIN (lookup_states s, ('orders') o) ON 1 = 1",
+      "SELECT x.* FROM (lookup_states s, orders 'x'), sub_agencies orders WHERE orders.agency_id = :tenant_agency_ids",
     ]) {
       expect(findings(sql, dialect), sql).toContain(missing);
     }
+  });
+
+  it.each(maybeSqlite)("still reads the strings of an IN (…) list as values under %s", (_label, dialect) => {
+    expect(findings("SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status IN ('a', 'orders')", dialect)).toEqual([]);
   });
 
   it.each(maybeSqlite)("keeps such a read filtered through its own name under %s", (_label, dialect) => {
@@ -2011,6 +2020,8 @@ describe("validateTenantGuardrails — a HAVING predicate counts only on a GROUP
       "SELECT agency_id, count(*), sum(total) FROM orders HAVING agency_id = :tenant_agency_ids",
       "SELECT agency_id, count(*) FROM orders GROUP BY status HAVING agency_id = :tenant_agency_ids",
       "SELECT o.agency_id, count(*) FROM orders o GROUP BY o.status HAVING o.agency_id IN (:tenant_agency_ids)",
+      // The key must be the predicate's own column, written the same way.
+      "SELECT o.agency_id, count(*) FROM orders o JOIN sub_agencies s ON s.id = o.id GROUP BY s.agency_id HAVING o.agency_id = :tenant_agency_ids",
     ]) {
       expect(findings(sql, dialect), sql).toEqual(orders);
     }
@@ -2020,6 +2031,10 @@ describe("validateTenantGuardrails — a HAVING predicate counts only on a GROUP
     for (const sql of [
       "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
       "SELECT o.agency_id, count(*) FROM orders o GROUP BY o.status, o.agency_id HAVING o.agency_id IN (:tenant_agency_ids)",
+      "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING :tenant_agency_ids = agency_id",
+      "SELECT DISTINCT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
+      // A qualified select item is the column itself, not an alias.
+      "SELECT o.agency_id, count(*) FROM orders o GROUP BY agency_id HAVING agency_id = :tenant_agency_ids",
     ]) {
       expect(findings(sql, dialect), sql).toEqual([]);
     }
@@ -2052,26 +2067,38 @@ describe("validateTenantGuardrails — the AND of a BETWEEN is no conjunction", 
   const findings = (sql: string, dialect?: DialectSpec) =>
     validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
   const orders = ["MISSING_TENANT_PREDICATE:table:public.orders"];
+  const every = [
+    POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT, customEngine(), undefined,
+  ];
 
   // MySQL and MariaDB read `0 BETWEEN 0 AND o.agency_id IN (…)` with the IN as the upper bound,
   // which is always true; with `=`, the comparison is against the BETWEEN's result.
   it.each([
     "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND o.agency_id IN (:tenant_agency_ids)",
     "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND o.agency_id = :tenant_agency_ids",
-    "SELECT o.* FROM orders o WHERE 0 NOT BETWEEN 1 AND o.agency_id = :tenant_agency_ids",
     "SELECT o.* FROM orders o WHERE 0 BETWEEN SYMMETRIC 0 AND o.agency_id = :tenant_agency_ids",
     "SELECT o.* FROM orders o WHERE 0 BETWEEN 0 AND (o.agency_id = :tenant_agency_ids)",
     "SELECT o.* FROM orders o WHERE o.status = 'a' AND 0 BETWEEN 0 AND o.agency_id = :tenant_agency_ids",
+    // Whatever the lower bound holds, the BETWEEN takes the next AND.
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN RIGHT('0', 1) AND o.agency_id IN (:tenant_agency_ids)",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1)::int AND o.agency_id = :tenant_agency_ids",
+    "SELECT o.* FROM orders o WHERE 0 BETWEEN LEFT('0', 1) AND (o.agency_id IN (:tenant_agency_ids))",
   ])("refuses a predicate written as a BETWEEN's upper bound: %s", (sql) => {
-    expect(findings(sql)).toEqual(orders);
+    for (const dialect of every) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual(orders);
+  });
+
+  it("keeps refusing one after NOT BETWEEN", () => {
+    expect(findings("SELECT o.* FROM orders o WHERE 0 NOT BETWEEN 1 AND o.agency_id = :tenant_agency_ids")).toEqual(orders);
   });
 
   it.each([
     "SELECT * FROM orders WHERE total BETWEEN 1 AND 5 AND agency_id = :tenant_agency_ids",
     "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND total BETWEEN 1 AND 5",
     "SELECT * FROM orders WHERE (total BETWEEN 1 AND 5) AND agency_id = :tenant_agency_ids",
+    "SELECT * FROM orders WHERE total BETWEEN LEFT('1', 1) AND 5 AND agency_id = :tenant_agency_ids",
   ])("keeps a predicate beside a BETWEEN: %s", (sql) => {
-    expect(findings(sql)).toEqual([]);
+    for (const dialect of every) expect(findings(sql, dialect), dialect?.id ?? "none").toEqual([]);
   });
 });
 
@@ -2090,7 +2117,10 @@ describe("validateTenantGuardrails — `order` or `group` after a dot, with a sp
   const check = (sql: string, dialect?: DialectSpec) =>
     validateTenantGuardrails(sql, named, agencyScope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
 
-  it.each([["postgres", POSTGRES_DIALECT], ["no dialect", undefined]] as const)("refuses an unfiltered read written that way under %s", (_label, dialect) => {
+  it.each([
+    ["postgres", POSTGRES_DIALECT], ["cockroachdb", COCKROACHDB_DIALECT], ["mysql", MYSQL_DIALECT], ["mariadb", MARIADB_DIALECT],
+    ["sqlite", SQLITE_DIALECT], ["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine()], ["no dialect", undefined],
+  ] as const)("refuses an unfiltered read written that way under %s", (_label, dialect) => {
     for (const sql of [
       "SELECT by.order_id, by.agency_id FROM billing . order by",
       "SELECT by.order_id FROM billing ./**/order by",
@@ -2125,7 +2155,14 @@ describe("validateTenantGuardrails — an OR after an alias spelled like a claus
   ] as const)("refuses an OR after the alias %s", (alias, dialect) => {
     const sql = `SELECT * FROM orders ${alias} WHERE agency_id = :tenant_agency_ids AND ${alias}.id > 0 OR 1 = 1`;
     expect(findings(sql, dialect), sql).toContain(missing);
-    expect(findings(sql), sql).toContain(missing);
+    for (const other of [POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT, customEngine(), undefined]) {
+      expect(findings(sql, other), `${sql} (${other?.id ?? "none"})`).toContain(missing);
+    }
+  });
+
+  it("keeps an OR in the ON of a later STRAIGHT_JOIN under mysql", () => {
+    const sql = "SELECT o.* FROM orders o JOIN lookup_states s ON o.agency_id = :tenant_agency_ids STRAIGHT_JOIN service_types t ON t.id = 1 OR t.id = 2";
+    expect(findings(sql, MYSQL_DIALECT)).toEqual([]);
   });
 
   it.each([
