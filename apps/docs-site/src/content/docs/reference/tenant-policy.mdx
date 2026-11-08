@@ -86,11 +86,12 @@ The policy names tables and columns by stable ID. After you rename a column or r
 
 Under `strict`, the `SchemaParseError` names `tenant-policy.md` and each ID. Update the policy to match `schema.json`: until you do, the schema doesn't load anywhere, Studio included.
 
-A warning loads, and you can find it in four places:
+A warning loads, and you can find it in five places:
 
 - **`schema.tenantPolicy.warnings`**: one `TenantPolicyWarning` per problem. `formatTenantPolicyWarning()` from `@askdb/core` describes one in a line.
 - **Your logger**: the first `ask()` that gets the loaded schema with a `logger` logs an `askdb.tenant.policy_warnings` event at `warn` level, once per loaded schema.
 - **`askdb introspect --out`**: when the output directory already holds a `tenant-policy.md`, it checks the policy against the `schema.json` it just wrote and prints what no longer matches.
+- **`askdb ask` and `askdb bundle`**: each prints one `Warning: tenant-policy.md: …` line per warning on stderr and keeps its exit code.
 - **Studio's Tenancy page.**
 
 ```ts

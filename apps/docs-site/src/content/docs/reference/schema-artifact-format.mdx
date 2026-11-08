@@ -306,7 +306,7 @@ Each table and column ends up with one `sensitive` value:
 
 ## Loader warnings
 
-`loadSchema()` returns its warnings in the loaded schema's `warnings` array (`SchemaV2Warning[]`). They never stop loading. The CLI doesn't print them. Studio lists them under **Settings → Schema Warnings**. Each warning is an object with a `kind` and the fields below.
+`loadSchema()` returns its warnings in the loaded schema's `warnings` array (`SchemaV2Warning[]`). They never stop loading. `askdb ask` and `askdb bundle` print each one as a `Warning:` line on stderr, the tenant policy's too, and keep their exit code. Studio lists them under **Settings → Schema Warnings**. Each warning is an object with a `kind` and the fields below.
 
 | `kind` | Fields | Cause | Fix |
 | --- | --- | --- | --- |
