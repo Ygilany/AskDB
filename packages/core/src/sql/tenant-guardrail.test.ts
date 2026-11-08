@@ -2986,6 +2986,23 @@ describe("validateTenantGuardrails — a name CockroachDB lower-cases or normali
     }
   });
 
+  // The schema's spelling excuses such a name only as CockroachDB reads it: unquoted, `İTEMS` reads
+  // `items`, `J̌` reads `ǰ` and `ΠΡΩΤΕΪ́ΝΗ` reads `πρωτεΐνη`, whichever table the schema also has.
+  const upperCaseBeside: ReadonlyArray<readonly [string, string]> = [["items", "İTEMS"], ["ǰ", "J̌"], ["πρωτεΐνη", "ΠΡΩΤΕΪ́ΝΗ"]];
+  const withGlobal = (table: string, written: string): NormalizedTenantPolicy => ({ ...scopedBy(table), globalTables: [...policy.globalTables, `table:public.${written}`] });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT])("refuses an unquoted upper-case name the schema also spells under $id", (dialect) => {
+    for (const [table, written] of upperCaseBeside) {
+      expect(findings(`SELECT * FROM ${written}`, withGlobal(table, written), dialect), written).toContain("UNICODE_ESCAPED_IDENTIFIER:");
+    }
+  });
+
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("accepts the upper-case name quoted as the schema spells it under $id", (dialect) => {
+    for (const [table, written] of upperCaseBeside) {
+      expect(findings(`SELECT * FROM "${written}"`, withGlobal(table, written), dialect), written).toEqual([]);
+    }
+  });
+
   // CockroachDB lower-cases a final capital sigma to `σ`, which `toLowerCase` writes `ς`.
   it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses a predicate on a read with a column list when the table's name ends in a capital sigma under $id", (dialect) => {
     const table = "οσ";
