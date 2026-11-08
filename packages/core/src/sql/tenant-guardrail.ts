@@ -287,7 +287,7 @@ function checkScopedTable(
       // filtered by the path's root or, up the hierarchy, one of its ancestors. A root outside that
       // chain filters nothing here, even one the scope binds.
       const allowed = new Set(selfAndAncestors(policy, path.root).map((rootId) => placeholderFor(policy, rootId)));
-      if (hasTenantPredicate(sql, table, [], { graph, allowed })) return;
+      if (hasTenantPredicate(sql, table, [], { graph, allowed, path: joinPathProof(policy, path.join) })) return;
     }
   }
 
@@ -1209,7 +1209,13 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
  * How a read may also count through joins (#400): the policy's graph, the placeholders allowed at the
  * end, and, for a table scoped by a column, that column: the proof leaves the read only through it.
  */
-type JoinProof = { readonly graph: PolicyGraph; readonly allowed: ReadonlySet<string>; readonly start?: string };
+type JoinProof = {
+  readonly graph: PolicyGraph;
+  readonly allowed: ReadonlySet<string>;
+  readonly start?: string;
+  /** For a table scoped by a join path, that path: the proof walks only its own steps ({@link pathInScope}). */
+  readonly path?: PathProof;
+};
 
 /**
  * Whether every read of `table` is filtered, on every reading, by a predicate from `targets`
@@ -1238,7 +1244,9 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
       const filtered = selfJoin ? selfJoinReadFiltered(a, found, targets, read, name, sameSelect) : readFiltered(a, found, targets, read, name);
       // A join proof names reads too, so a self-join's reads must be told apart for it as well.
       return filtered || (joinProof !== undefined && (!selfJoin || distinctAliases(a, sameSelect)) &&
-        inScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.allowed, undefined, joinProof.start));
+        (joinProof.path !== undefined
+          ? pathInScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.path, joinProof.allowed)
+          : inScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.allowed, undefined, joinProof.start)));
     });
   });
 }
@@ -1310,7 +1318,7 @@ function selfJoinReadFiltered(
   const mine = canonicalAlias(a, read)!;
   return found.some((o) =>
     o.filters.some((f) =>
-      f.scope === read.scope && f.qualifier === mine && targets.includes(o.target) &&
+      f.scope === read.scope && f.qualifier === mine && canName(a.tokens, mine, f.on, read) && targets.includes(o.target) &&
       (!o.target.discriminator || hasDiscriminator(a, read, o.target))));
 }
 
@@ -1553,7 +1561,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
     const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier);
-    if (filters.some((f) => f.scope === read.scope && (qualifier !== undefined || canName(tokens, undefined, f.on, read)))) return true;
+    if (filters.some((f) => f.scope === read.scope && canName(tokens, qualifier, f.on, read))) return true;
   }
   return false;
 }
@@ -1843,6 +1851,89 @@ function hopTargets(p: Proof, node: Node, hop: PolicyGraph["hops"][number]): Nod
     if (link.item.column === hop.toColumn && link.inner?.table === hop.to) targets.push(link.inner);
   }
   return targets;
+}
+
+/** A foreign key the policy declares, from one table's column to another's, lower-cased. */
+type Hop = PolicyGraph["hops"][number];
+
+/** A root a join path reaches: its ID column, its placeholder, and the keys up to its parent roots. */
+type RootLink = { readonly idColumn: string; readonly placeholder: string; readonly parents: readonly Hop[] };
+
+/** A join path's own steps, in order, and the roots (by table) its end and the hierarchy above it reach. */
+type PathProof = { readonly steps: readonly Hop[]; readonly roots: ReadonlyMap<string, RootLink> };
+
+function joinPathProof(policy: NormalizedTenantPolicy, join: ReadonlyArray<{ readonly from: string; readonly to: string }>): PathProof {
+  const hop = (fromId: string, toId: string): Hop => ({
+    from: tableOfColumn(fromId).toLowerCase(),
+    fromColumn: extractColumnName(fromId).toLowerCase(),
+    to: tableOfColumn(toId).toLowerCase(),
+    toColumn: extractColumnName(toId).toLowerCase(),
+  });
+  const idColumn = (rootId: string) => policy.roots.find((r) => r.id === rootId)?.tenantIdColumn;
+  const roots = new Map<string, RootLink>();
+  for (const root of policy.roots) {
+    const parents: Hop[] = [];
+    for (const edge of policy.hierarchy) {
+      const to = edge.child === root.id ? idColumn(edge.parent) : undefined;
+      if (to !== undefined) parents.push(hop(edge.foreignKey, to));
+    }
+    const to = root.parent ? idColumn(root.parent.root) : undefined;
+    if (root.parent && to !== undefined) parents.push(hop(root.parent.foreignKey, to));
+    roots.set(tableOfColumn(root.tenantIdColumn).toLowerCase(), {
+      idColumn: extractColumnName(root.tenantIdColumn).toLowerCase(),
+      placeholder: placeholderFor(policy, root.id),
+      parents,
+    });
+  }
+  return { steps: join.map((step) => hop(step.from, step.to)), roots };
+}
+
+/**
+ * Whether `node`, read of a table scoped by a join path, is within scope through that path alone
+ * (#400): step `k` of `path` from `node` (a declared key, on exactly its columns) to a read of the
+ * next table, and so on in order, then the path's root, through its ID or the hierarchy above it
+ * ({@link rootInScope}). On the last step, the step's own column carries the root's IDs, so a filter
+ * on it counts (`appointments.client_id IN (:tenant_client_ids)`). A table along the way counts only
+ * through the path's own steps, never through its own scope column or another path's key.
+ */
+function pathInScope(p: Proof, node: Node, path: PathProof, allowed: ReadonlySet<string>, k = 0, visited: Set<number> = new Set([node.at])): boolean {
+  if (k === path.steps.length) return rootInScope(p, node, path, allowed, visited);
+  const step = path.steps[k]!;
+  if (node.table !== step.from) return false;
+  if (k === path.steps.length - 1) {
+    const holds = p.graph.carriers.get(node.table)?.get(step.fromColumn);
+    for (const placeholder of boundIn(p, node.scope)(node, step.fromColumn)) {
+      if (holds?.has(placeholder) && allowed.has(placeholder)) return true;
+    }
+  }
+  for (const next of hopTargets(p, node, step)) {
+    if (visited.has(next.at)) continue;
+    visited.add(next.at);
+    if (pathInScope(p, next, path, allowed, k + 1, visited)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether `node`, a read of a root table a join path reaches, is within scope: its ID column holds
+ * its own placeholder, a key to a parent root holds that parent's placeholder, or such a key links it
+ * to a parent root's read that is, in turn, within scope. Only the root's ID and the hierarchy count.
+ */
+function rootInScope(p: Proof, node: Node, path: PathProof, allowed: ReadonlySet<string>, visited: Set<number>): boolean {
+  const link = path.roots.get(node.table);
+  if (link === undefined) return false;
+  const bound = boundIn(p, node.scope);
+  if (allowed.has(link.placeholder) && bound(node, link.idColumn).has(link.placeholder)) return true;
+  for (const up of link.parents) {
+    const parent = path.roots.get(up.to);
+    if (parent !== undefined && allowed.has(parent.placeholder) && bound(node, up.fromColumn).has(parent.placeholder)) return true;
+    for (const next of hopTargets(p, node, up)) {
+      if (visited.has(next.at)) continue;
+      visited.add(next.at);
+      if (rootInScope(p, next, path, allowed, visited)) return true;
+    }
+  }
+  return false;
 }
 
 /**
