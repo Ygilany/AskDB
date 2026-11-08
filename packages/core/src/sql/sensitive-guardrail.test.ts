@@ -818,3 +818,81 @@ describe("validateSensitiveReferences — a carriage return inside a `--` commen
     expect(validateSensitiveReferences(sql, ssnSchema, { dialect: SQLSERVER_DIALECT }).references).toEqual([]);
   });
 });
+
+describe("validateSensitiveReferences — a name outside printable ASCII that the schema doesn't spell", () => {
+  /** `password` in fullwidth letters. */
+  const password = "ｐａｓｓｗｏｒｄ";
+  const scan = (sql: string, dialect?: DialectSpec, schema: NormalizedSchemaV2 = districtSchema) =>
+    validateSensitiveReferences(sql, schema, dialect ? { dialect } : undefined);
+  const customEngine = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const folding = [["sqlserver", SQLSERVER_DIALECT], ["a custom id", customEngine], ["no dialect", undefined]] as const;
+
+  // On SQL Server 2022, [ｓｓｎ] and [s‍sn] both read people.client's ssn column: the collation reads
+  // fullwidth letters as ASCII and ignores U+200D.
+  it.each(folding)("reports a name the collation may fold to a sensitive column under %s", (_label, dialect) => {
+    for (const sql of [
+      `SELECT [${password}] FROM identity.users`,
+      "SELECT [pass‍word] FROM identity.users",
+      `SELECT "${password}" FROM identity.users`,
+    ]) {
+      const result = scan(sql, dialect);
+      expect(result.passed, sql).toBe(false);
+      expect(result.unresolvedScope?.issues, sql).toContain("UNICODE_ESCAPED_IDENTIFIER");
+    }
+  });
+
+  it.each(folding)("reports an unquoted name outside printable ASCII under %s", (_label, dialect) => {
+    expect(scan(`SELECT ${password} FROM identity.users`, dialect).unresolvedScope?.issues).toContain("UNICODE_ESCAPED_IDENTIFIER");
+  });
+
+  it("strict mode refuses it", () => {
+    expect(() =>
+      validateSensitiveReferences(`SELECT [${password}] FROM identity.users`, districtSchema, { mode: "strict", dialect: SQLSERVER_DIALECT }),
+    ).toThrow(SensitiveReferenceError);
+  });
+
+  it.each([
+    ["postgres", POSTGRES_DIALECT],
+    ["mysql", MYSQL_DIALECT],
+    ["sqlite", SQLITE_DIALECT],
+  ] as const)("leaves %s alone, which compares such a name as written", (_label, dialect) => {
+    expect(scan(`SELECT "${password}" FROM identity.users`, dialect).passed).toBe(true);
+  });
+
+  it.each(folding)("accepts a non-ASCII name the schema spells exactly under %s, and reports another spelling of it", (_label, dialect) => {
+    const schema: NormalizedSchemaV2 = {
+      schemaId: "kunden",
+      warnings: [],
+      tables: [table("app", "kunden", [["id"], ["straße"], ["geheim", true]])],
+    };
+    expect(scan("SELECT [straße] FROM app.kunden", dialect, schema)).toEqual({ passed: true, references: [] });
+    expect(scan("SELECT [STRAßE] FROM app.kunden", dialect, schema).unresolvedScope?.issues).toContain("UNICODE_ESCAPED_IDENTIFIER");
+  });
+
+  it.each(folding)("reads non-ASCII text in strings as text under %s", (_label, dialect) => {
+    expect(scan("SELECT email FROM identity.users WHERE tag = N'ｔａｇ'", dialect).passed).toBe(true);
+  });
+});
+
+describe("validateSensitiveReferences — SQLite reads a single-quoted name in a table's place as the table", () => {
+  const scan = (sql: string, dialect?: DialectSpec) => validateSensitiveReferences(sql, districtSchema, dialect ? { dialect } : undefined);
+  const customEngine = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+  const maybeSqlite = [["sqlite", SQLITE_DIALECT], ["a custom id", customEngine], ["no dialect", undefined]] as const;
+
+  // On SQLite, `FROM 'users'` reads the table, so `*` reaches its sensitive column.
+  it.each(maybeSqlite)("expands * over a single-quoted table under %s", (_label, dialect) => {
+    for (const sql of ["SELECT * FROM 'users'", "SELECT * FROM identity.'users'", "SELECT u.* FROM people.students s, 'users' u"]) {
+      const result = scan(sql, dialect);
+      expect(result.passed, sql).toBe(false);
+      expect(result.references, sql).toContainEqual(expect.objectContaining({ table: "users", column: "password" }));
+    }
+  });
+
+  it.each(maybeSqlite)("keeps a string literal in the select list under %s", (_label, dialect) => {
+    expect(scan("SELECT 'users' AS label, email FROM identity.users", dialect).passed).toBe(true);
+  });
+
+  it("leaves postgres alone, which rejects a literal in a table's place", () => {
+    expect(scan("SELECT * FROM 'users'", POSTGRES_DIALECT).passed).toBe(true);
+  });
+});

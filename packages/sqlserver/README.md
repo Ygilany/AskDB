@@ -80,6 +80,10 @@ In the Prisma form, wrap a value that contains `;` in curly braces, as Prisma do
 - Prisma reads every `{…}` as an escape, so a URL shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) reaches SQL Server with its braces when AskDB connects.
 - Prisma's credential keys `username`, `uid` and `pwd` are also read when `user` or `password` is absent (`username` before `uid`); the canonical key wins when both are set.
 
+In both URL forms, `encrypt` and `trustServerCertificate` read `true`, `yes` and `1` as true and `false`, `no` and `0` as false, in any case. Any other `encrypt` value turns encryption on, and any other `trustServerCertificate` value leaves the server certificate untrusted.
+
+An ADO.NET string is any string that doesn't start with a scheme (`name://`), so a password holding `://` doesn't stop AskDB from reading its spaced keys such as `Trust Server Certificate=True`.
+
 **TLS / self-signed certificates**
 
 SQL Server uses TLS by default. If you connect to a local or dev instance with a self-signed certificate you will see a `self-signed certificate` error unless you tell the driver to trust it:

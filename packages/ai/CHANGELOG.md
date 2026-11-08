@@ -1,5 +1,15 @@
 # @askdb/ai
 
+## 0.1.0-beta.12
+
+### Minor Changes
+
+- 4e79c4d: **Breaking:** `aiKeyMissingMessage`, `aiProviderMissingMessage` and `isReasoningEffort` are no longer exported (#654): nothing outside `@askdb/ai` used them, so they leave before 1.0 (ADR 0031). Use a registry's `keyMissingMessage(context)` for the first; the registry throws the second's message itself, and `hasProvider(provider)` checks first; check a string against `REASONING_EFFORTS` for the third. The upgrade guide's beta.52 section lists each.
+
+### Patch Changes
+
+- 30d2348: The "no language model configured" and "no embedding model configured" errors from the env path now name the config key first, `ai.language.model` or `ai.embedding.model` in `askdb.config.*`, then `ASKDB_AI_MODEL` / `ASKDB_AI_EMBEDDING_MODEL` or the provider's native variable for a host that passes its own env map (#629). The language error used to name only `ASKDB_AI_MODEL`, which a config file never sets.
+
 ## 0.1.0-beta.11
 
 ### Minor Changes

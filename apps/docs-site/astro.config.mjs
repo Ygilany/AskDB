@@ -99,7 +99,7 @@ export default defineConfig({
           details:
             "AskDB is an open-source NL-to-SQL toolkit: `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact and a Vercel AI SDK `LanguageModel`, and returns SQL that has passed heuristic checks. It never executes SQL — the host application runs it through its own connection. The same pipeline powers the CLI, the `@askdb/client` library, `@askdb/http-api`, and Studio.\n" +
             "\n" +
-            "The docs site is organized as Start (overview, quickstart, install, Studio tour); Guides, in five groups: Build (embed in a Node app, author your schema, introspect without a connection, bring your own model, switch engines, connect to SQL Server, RAG for large schemas, rerun a query with new values, bundle an app), Run in production (run safely, cap the rows a query returns, keep sensitive columns out of prompts, match your server's string settings, deploy as an HTTP service, enable Studio execute), Tenancy (scope queries to a tenant, tenant hierarchies, enforce tenancy in the database), Maintain (upgrade AskDB, fix common errors) and Integrations (Prisma, agents and MCP); Concepts (how AskDB works, the schema artifact, safety boundaries, modes and dialects, privacy model, tenant isolation); and Reference (CLI, HTTP API, configuration, Studio, the schema artifact and tenant policy formats, the SQL checks, packages, and the core, client, config, ai, rag and introspection APIs). The full per-page index is in the linked documentation sets below.\n" +
+            "The docs site is organized as Start (overview, quickstart, install, Studio tour); Guides, in five groups: Build (embed in a Node app, enrich your schema, introspect without a connection, bring your own model, switch engines, connect to SQL Server, RAG for large schemas, rerun a query with new values, plan a chart for a query result (experimental), bundle an app), Run in production (run safely, cap the rows a query returns, keep sensitive columns out of prompts, match your server's string settings, deploy as an HTTP service, enable Studio execute), Tenancy (scope queries to a tenant, tenant hierarchies, enforce tenancy in the database), Maintain (upgrade AskDB, fix common errors) and Integrations (Prisma, expose AskDB as an agent tool); Concepts (how AskDB works, the schema artifact, safety boundaries, modes and dialects, privacy model, tenant isolation); and Reference (CLI, HTTP API, configuration, Studio, the schema artifact and tenant policy formats, the SQL checks, packages, and the core, client, client/charts (experimental), config, ai, rag and introspection APIs). The full per-page index is in the linked documentation sets below.\n" +
             "\n" +
             "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — config-driven `@askdb/client`/`@askdb/ai` (built-in providers; install the matching `@ai-sdk/*` package) vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities. AskDB validates the scope shape, binds tenant IDs, and runs heuristic checks, but never originates scope and isn't the enforcement boundary; see /concepts/safety-boundaries/, and /guides/enforce-tenancy-in-the-database/ for Postgres row-level security.\n" +
             "\n" +
@@ -123,13 +123,14 @@ export default defineConfig({
               label: "Build",
               items: [
                 { label: "Embed in a Node app", slug: "guides/embed-in-node" },
-                { label: "Author your schema", slug: "guides/author-your-schema" },
+                { label: "Enrich your schema", slug: "guides/author-your-schema" },
                 { label: "Introspect without a connection", slug: "guides/introspect-without-a-connection" },
                 { label: "Bring your own model", slug: "guides/bring-your-own-model" },
                 { label: "Switch engines", slug: "guides/switch-engines" },
                 { label: "Connect to SQL Server", slug: "guides/connect-to-sql-server" },
                 { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
                 { label: "Rerun a query with new values", slug: "guides/rerun-a-query-with-new-values" },
+                { label: "Plan a chart (experimental)", slug: "guides/plan-a-chart" },
                 { label: "Bundle an app that uses AskDB", slug: "guides/bundle-your-app" },
               ],
             },
@@ -163,7 +164,7 @@ export default defineConfig({
               label: "Integrations",
               items: [
                 { label: "Prisma", slug: "guides/integrations/prisma" },
-                { label: "Agents & MCP", slug: "guides/integrations/agents-mcp" },
+                { label: "Expose as an agent tool", slug: "guides/integrations/agents-mcp" },
               ],
             },
           ],
@@ -222,6 +223,7 @@ export default defineConfig({
                   ],
                 },
                 { label: "@askdb/client API", slug: "reference/client-api" },
+                { label: "@askdb/client/charts API", slug: "reference/client-charts-api" },
                 { label: "@askdb/config API", slug: "reference/config-api" },
                 { label: "@askdb/ai API", slug: "reference/ai-api" },
                 { label: "@askdb/rag API", slug: "reference/rag-api" },

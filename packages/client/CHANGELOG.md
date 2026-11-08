@@ -1,5 +1,27 @@
 # @askdb/client
 
+## 1.0.0-beta.14
+
+### Minor Changes
+
+- 30a3bc6: `@askdb/client` gains an experimental entry point, `@askdb/client/charts`, that plans a chart for a query result without sending a row to the model (#906, ADR 0044). `classifyResult()` classifies the result's columns in your process: identifier, year, date, currency, percent, category or measure. `planChart()` sends the model the question, the SQL with every literal replaced by `?`, and the columns' names and kinds, the row count and the truncated flag. It returns a declarative chart spec (metric, line, area, bar, horizontal bar or pie) that `validateChartSpec()` checks against the result, with a part-to-whole policy for pies. A result column name that holds a literal is shown under a neutral label. With `omitSensitiveIdentifiers` and the schema artifact, it follows prompt omission like every other model call. On a timeout, an abort, a model error or an invalid spec it returns a deterministic fallback and says so, and it never rejects because of the model. The entry point is outside the stability promise: a minor release may change it (ADR 0030, ADR 0031). The root `@askdb/client` export doesn't include it, and it adds no dependency.
+  
+  `@askdb/core` adds `maskSqlLiterals(sql, dialect?)`, an internal export for `@askdb/client/charts` with no stability promise. It replaces a statement's literals with `?` and drops its comments, under the readings the tenant check uses, and returns `undefined` when the statement can't be read safely.
+  
+  The docs site adds the guide "Plan a chart for a query result" and the `@askdb/client/charts` API reference, both marked experimental, lists `maskSqlLiterals` among core's internal exports, and adds the planner to the privacy model and the sensitive-columns guide.
+
+## 1.0.0-beta.13
+
+### Minor Changes
+
+- 0077500: New export `resolveDialect(schema, { override?, configDialect?, unknownDialect? })`, the rule `createAskDb()`'s `ask()` runs to pick a dialect (#886): the override, then the configured dialect, then the schema's `provider` when it's a built-in dialect id, then `"postgres"` for a schema with no provider. Any other provider throws `DialectNotSupportedError`, unless `unknownDialect` is `"fallback-postgres"`. It returns a `DialectResolution` and reads no config. `createAskDb()` now calls it, with the same behavior as before.
+
+### Patch Changes
+
+- Updated dependencies [30d2348]
+- Updated dependencies [4e79c4d]
+  - @askdb/ai@0.1.0-beta.12
+
 ## 1.0.0-beta.12
 
 ### Minor Changes

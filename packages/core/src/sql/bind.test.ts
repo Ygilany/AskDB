@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { QueryParameterError } from "../errors.js";
-import { escapeSqlLiteral, scanPlaceholders, tokenizeSqlSpans, type PreparedQuery } from "./bind.js";
+import { escapeSqlLiteral, scanPlaceholders, sqlStructurallyEqual, tokenizeSqlSpans, type PreparedQuery } from "./bind.js";
 import { bindPreparedQuery as checkedBind } from "./rebind.js";
 import { validateSelectSql } from "./validate.js";
-import { MYSQL_DIALECT, POSTGRES_DIALECT } from "./dialect-spec.js";
+import { MARIADB_DIALECT, MYSQL_DIALECT, POSTGRES_DIALECT, SQLSERVER_DIALECT, type DialectSpec } from "./dialect-spec.js";
 
 /** Render spans as `kind:text` pairs for compact assertions. */
 function spansOf(sql: string, dialect?: Parameters<typeof tokenizeSqlSpans>[1]): string[] {
@@ -305,5 +305,48 @@ describe("bindPreparedQuery — escaping matrix for business values", () => {
     expect(myTwo.sql).toBe("SELECT * FROM t WHERE s = '\\\\' AND t = ' OR 1=1'");
     const pg = bindPreparedQuery(prepared("postgres", "SELECT * FROM t WHERE s = :s", params), { s: "\\" });
     expect(pg.sql).toBe("SELECT * FROM t WHERE s = '\\'");
+  });
+});
+
+describe("sqlStructurallyEqual — the parameterize consistency check (#359)", () => {
+  // ask()'s tests cover literal case, literal whitespace and quoted-name case on postgres.
+  const customEngine = { ...POSTGRES_DIALECT, id: "custom-engine" } as unknown as DialectSpec;
+
+  it("with a dialect id that has no built-in lexer, must agree under every engine's reading", () => {
+    expect(sqlStructurallyEqual("SELECT 1 FROM t WHERE s = 'Colorado'", "SELECT 1 FROM t WHERE s = 'colorado'", customEngine)).toBe(false);
+    expect(sqlStructurallyEqual("SELECT 1 FROM t WHERE s = 'x';", "SELECT 1\nFROM t WHERE s = 'x'", customEngine)).toBe(true);
+    // SQL Server's reading compares words as written, so a change of case drops the extras.
+    expect(sqlStructurallyEqual("select 1 from t", "SELECT 1 FROM t", customEngine)).toBe(false);
+  });
+
+  it("treats an unterminated token as unequal, even on both sides", () => {
+    expect(sqlStructurallyEqual("SELECT 'open", "SELECT 'open", POSTGRES_DIALECT)).toBe(false);
+  });
+
+  it("compares comments exactly, letter case included, since MySQL runs a `/*!` comment", () => {
+    expect(sqlStructurallyEqual("SELECT 1 -- Note", "SELECT 1 -- note", POSTGRES_DIALECT)).toBe(false);
+    expect(sqlStructurallyEqual("SELECT 1 /*!50000 , 2 */", "SELECT 1 /*!50001 , 2 */", MYSQL_DIALECT)).toBe(false);
+    expect(sqlStructurallyEqual("SELECT 1 -- note", "SELECT 1 -- note", MYSQL_DIALECT)).toBe(true);
+  });
+
+  it("tells apart tokens that touch from tokens that don't, since an engine can read two lexer tokens as one", () => {
+    // MySQL and MariaDB read `2fa_enabled` as one name; `2 fa_enabled` is 2 aliased `fa_enabled`.
+    expect(sqlStructurallyEqual("SELECT 2fa_enabled FROM users", "SELECT 2 fa_enabled FROM users", MYSQL_DIALECT)).toBe(false);
+    // Postgres reads `U&'1'` as one string and `1_000` as one number.
+    expect(sqlStructurallyEqual("SELECT 1 WHERE id = U&'1'", "SELECT 1 WHERE id = U & '1'", POSTGRES_DIALECT)).toBe(false);
+    expect(sqlStructurallyEqual("SELECT 1_000", "SELECT 1 _000", POSTGRES_DIALECT)).toBe(false);
+    // Layout between tokens that don't touch still doesn't matter.
+    expect(sqlStructurallyEqual("SELECT count(*)  FROM t", "SELECT count(*)\nFROM t", POSTGRES_DIALECT)).toBe(true);
+  });
+
+  it("folds an unquoted word the way the engine folds it", () => {
+    // Postgres folds only ASCII letters, so `Ärzte` and `ärzte` are two names; `Cities` and `cities` one.
+    expect(sqlStructurallyEqual("SELECT 1 FROM Ärzte", "SELECT 1 FROM ärzte", POSTGRES_DIALECT)).toBe(false);
+    expect(sqlStructurallyEqual("SELECT 1 FROM Cities", "select 1 from cities", POSTGRES_DIALECT)).toBe(true);
+    // MariaDB keeps U+212A KELVIN SIGN apart from `k`.
+    expect(sqlStructurallyEqual("SELECT 1 FROM \u212Aunden", "SELECT 1 FROM kunden", MARIADB_DIALECT)).toBe(false);
+    // SQL Server's collation may compare names case-sensitively, so a word is read as written.
+    expect(sqlStructurallyEqual("SELECT 1 FROM Cities", "SELECT 1 FROM cities", SQLSERVER_DIALECT)).toBe(false);
+    expect(sqlStructurallyEqual("SELECT 1 FROM Cities", "SELECT 1 FROM Cities;", SQLSERVER_DIALECT)).toBe(true);
   });
 });

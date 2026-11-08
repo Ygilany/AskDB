@@ -248,7 +248,7 @@ Both are required. Without either, `bundle` prints that usage line on stderr and
 
 Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
-Before it writes anything, it checks the bundle with the loader `ask()` uses (through `@askdb/enrich`'s `bundleSchemaDirectory()`), so it refuses whatever `loadSchema()` refuses. That includes a file name in the wrong case, such as `Tenant-Policy.md`, an optional file that exists but can't be read, an invalid `schema.json`, front-matter that isn't YAML or doesn't parse, a tenant policy that doesn't fit `schema.json`, and two table files with the same `id`. It then exits with status 1 and the loader's error, and writes nothing: a file already at `--out` stays as it was. So a bundle it writes always loads. The [Schema artifact format](/reference/schema-artifact-format/#bundle-format) describes the bundle.
+Before it writes anything, it checks the bundle with the loader `ask()` uses (through `@askdb/enrich`'s `bundleSchemaDirectory()`), so it refuses whatever `loadSchema()` refuses. That includes a file name in the wrong case, such as `Tenant-Policy.md`, an optional file that exists but can't be read, an invalid `schema.json`, front-matter that isn't YAML or doesn't parse, a tenant policy that doesn't fit `schema.json`, and two table files with the same `id`. It then exits with status 1 and the loader's error, and writes nothing: a file already at `--out` stays as it was. So a bundle it writes always loads. The [Schema artifact format](/reference/schema-artifact-format/#bundle-format) describes the bundle. After writing, it prints a `Warning:` line on stderr for each [loader warning](/reference/schema-artifact-format/#loader-warnings), a tenant policy's included, and still exits `0`.
 
 ```bash
 askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
@@ -269,7 +269,7 @@ askdb ask \
 | `-s, --schema <path>` | Path to the schema artifact. Optional — defaults to the configured `introspection.outputDir`, or `./askdb/`. |
 | `-q, --question <text>` | The natural-language question (required). |
 | `--mode <mode>` | Operating mode: `schema_only` or `bounded_results`. It can only tighten config `modes.askdbMode` (default `schema_only`): `--mode bounded_results` runs `schema_only` unless the config sets `bounded_results`. |
-| `--explain` | After the SQL, print a JSON block describing the heuristic guardrails satisfied. |
+| `--explain` | After the SQL, print a JSON block describing the read-only checks it ran. |
 | `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
 | `--mock-sql <sql>` | Deterministic output for tests — bypasses the live model call. Overrides `dev.mockSql` in `askdb.config.ts`, which does the same. With neither, `askdb ask` needs an AI key: without one it prints which key is missing and exits `1`. |
 
@@ -277,7 +277,7 @@ askdb ask \
 
 #### Output
 
-Stdout has the checked SQL after a `-- sql --` line. With `--explain`, a `-- explain --` line and the guardrail JSON follow:
+Stdout has the checked SQL after a `-- sql --` line. With `--explain`, a `-- explain --` line and that JSON follow:
 
 ```text
 -- sql --
@@ -286,7 +286,7 @@ SELECT customer_id, SUM(total) AS lifetime_value FROM orders GROUP BY customer_i
 { … }
 ```
 
-Everything else goes to stderr, so stdout stays parseable: errors, `Note:` lines (a dialect note, or a sensitive-scope note), and the sensitive warning. Execution is not part of the CLI.
+Everything else goes to stderr, so stdout stays parseable: errors, `Note:` lines (a dialect note, or a sensitive-scope note), a `Warning:` line for each [loader warning](/reference/schema-artifact-format/#loader-warnings) the schema has (a tenant policy's included), and the sensitive warning. Execution is not part of the CLI.
 
 If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/checks/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict`, rely on `bindPreparedQuery()` re-running it on a rebind, or call it directly on cached SQL.
 
@@ -412,7 +412,7 @@ Stdout is one JSON object: `question`, `k`, and `results`, best match first. Eac
 | Code | Meaning |
 | --- | --- |
 | `0` | Success, including `--help` and `--version`. |
-| `1` | Any error: invalid arguments, a missing or broken config, IO, generation, or a guardrail. |
+| `1` | Any error: invalid arguments, a missing or broken config, IO, generation, or a SQL check that refused the SQL. |
 
 Every command exits `1` for every error. No command uses another non-zero code. `askdb` with no command prints its usage to stderr and exits `1`.
 

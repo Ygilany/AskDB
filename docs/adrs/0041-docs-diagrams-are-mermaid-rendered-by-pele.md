@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-07, the maintainer's Round 16, Q41 → A). Supersedes [ADR 0034](0034-docs-diagrams-are-d2-rendered-at-build-time.md).
+Accepted (2026-11-07, the maintainer's Round 16, Q41 → A). Supersedes [ADR 0034](0034-docs-diagrams-are-d2-rendered-at-build-time.md). Amended 2026-11-07: the pin moves to pele 1.10.0 (see Decision).
 
 ## Context
 
@@ -29,7 +29,7 @@ ADR 0034 made docs-site diagrams D2 source, rendered at build time by `astro-d2`
 - There is no computed style at build time, so the plugin passes the site's font stacks (`--sl-font` and `--sl-font-mono` in `custom.css`) as `fontFamily` and `fontFamilyMono`. A test keeps the two equal.
 - A diagram pele can't render fails the build, with the page, the line and `PeleError`'s code (`syntax`, `semantic`, `unsupported-diagram` or `limit`). Nothing ships broken.
 - `custom.css` maps pele's `--pele-*` variables to Starlight's color tokens, which switch on the theme toggle (`:root[data-theme="dark"]`), so a diagram follows the toggle without a second render. Authors don't color a diagram in its source.
-- pele is pinned to an exact version, at least two weeks old when chosen (1.9.0, published 2026-10-22). A bump is a deliberate change: rebuild the site and check each diagram in both themes, at desktop width and at 390 px.
+- pele is pinned to an exact version, at least two weeks old when chosen. The first pin was 1.9.0 (published 2026-10-22). Since 2026-11-07 it is 1.10.0 (published 2026-10-24), whose `PeleError.line` counts lines in the source as written, comments, directives and front matter included ([obsidianmd/pele#61](https://github.com/obsidianmd/pele/issues/61)). So the plugin reports pele's own line, and no longer looks for the quoted line to correct it. A bump is a deliberate change: rebuild the site and check each diagram in both themes, at desktop width and at 390 px.
 - `apps/docs-site/STYLE.md` ("Diagrams") holds the authoring rules. The hand-drawn SVGs stay until their pages change, and are then redrawn in Mermaid.
 
 ## Consequences

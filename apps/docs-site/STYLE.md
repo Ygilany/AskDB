@@ -112,13 +112,15 @@ The `starlight-llms-txt` `details` string in `astro.config.mjs` summarises the s
 - Use the same words in node labels as on the page: command names, package names and terms from "Terminology". Break a long label with `<br/>` where it reads best, rather than leaving pele to wrap it.
 - Put notes for maintainers, such as the source of truth for what a diagram shows, on `%%` comment lines inside the fence. They don't reach the page.
 - A diagram pele can't render fails the build. The error names the page and line, and pele's error code: `syntax`, `semantic`, `unsupported-diagram` or `limit`.
-- The older diagrams in `src/assets/diagrams/*.svg` are hand-drawn. Redraw one in Mermaid when its page changes.
+- The home page's hero art (`src/assets/diagrams/askdb-hero-visual*.svg`) is hand-drawn, with a light and a dark file. Every other diagram is Mermaid.
 
 ## Code samples
 
 - TypeScript for library code; bash for commands. Standalone command snippets use `npx` (readers substitute `pnpm dlx` / `yarn dlx`); multi-command flows use `pkg` tabs.
 - Samples show AskDB returning SQL; any execution runs through the reader's own connection (`pg`, Prisma, …), never through AskDB.
 - Placeholders: environment variables (`process.env.OPENAI_API_KEY`) rather than inline fake keys.
+- Configuration: point readers at the `askdb.config.ts` field, the `env("…")` name they choose for it, or the CLI flag. Other than `ASKDB_DEBUG`, AskDB reads no `ASKDB_*` variable from the shell (the config API reference says so), so don't present one as a variable the reader sets. `@askdb/ai`'s `ASKDB_AI_*` names are keys of the env map a host passes to it, and the docs name them that way.
+- Variables in the reader's own code get neutral names (`DATABASE_URL`, not `ASKDB_DATABASE_URL`).
 
 ## Sources of truth
 

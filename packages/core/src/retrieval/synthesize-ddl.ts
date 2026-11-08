@@ -1,5 +1,8 @@
 import {
+  businessContextLines,
   columnAnnotation,
+  conceptRenderer,
+  foreignKeyLinesByTable,
   listAsStored,
   promptTableName,
   promptTextGate,
@@ -15,11 +18,26 @@ import type { RetrievedResult } from "./types.js";
  *   1. Each table referenced by any retrieved chunk gets a TABLE block with
  *      its full column definitions (so the model has complete column lists).
  *      Each column line carries the schema's own `-- aliases / values / desc`
- *      annotation; a retrieved column chunk only picks its table.
+ *      annotation, with the column's note (ADR 0042, amended for #898); a
+ *      retrieved column chunk only picks its table.
+ *      Then the table's foreign keys to other shown tables, as the
+ *      full-schema prompt prints them (#898).
  *   2. CQL chunks land as a `-- common query language --` block under the
- *      table.
- *   3. Relationship, concept, example-question and tenant-policy chunks follow
- *      the tables, each kind as its own `-- … --` block, in that order.
+ *      table, then `Business context` chunks as a `-- business context --`
+ *      block, its parts in body order (#894).
+ *   3. Concept, example-question and tenant-policy chunks follow the tables,
+ *      each kind as its own `-- … --` block, in that order. A concept the
+ *      schema has prints as the full-schema prompt prints it
+ *      (`conceptRenderer`); another keeps its chunk text and heading, as a
+ *      tenant-policy chunk does (the policy section's name). A relationship
+ *      chunk only picks its two tables: their foreign key prints from the
+ *      schema (#898).
+ *
+ * `@askdb/rag` types a `Business context` chunk `table`; its id
+ * (`…<table-id>#biz`, `…#biz#bc:<n>` for part n of a long body; the schema v2
+ * contract's chunking rules) tells it apart from the table chunk. A sensitive
+ * table's CQL and business context never show, like the schema's own
+ * describable text.
  *
  * Sensitive identifiers retain their `(sensitive)` tagging exactly as
  * `formatSchemaV2ForNlToSql` does. With `omitSensitiveIdentifiersFromPrompt`,
@@ -50,9 +68,17 @@ export function synthesizeRetrievedDdl(args: {
   const omit = args.omitSensitiveIdentifiersFromPrompt === true;
   const quoteIdentifier = args.quoteIdentifier ?? listAsStored;
   const gate = promptTextGate(schema, omit);
-  /** Renders a retrieved chunk's text as the prompt shows it, then lets the gate check exactly that. */
-  const shown = (p: RetrievedResult["payload"], render: (body: string) => string, into: string[]): void => {
-    const text = render(stripHeaderLine(p.text));
+  /**
+   * Renders a retrieved chunk's text as the prompt shows it, then lets the gate check exactly that.
+   * `keepHeading` keeps the chunk's `# heading` line, without its `#`.
+   */
+  const shown = (
+    p: RetrievedResult["payload"],
+    render: (body: string) => string,
+    into: string[],
+    keepHeading = false,
+  ): void => {
+    const text = render(keepHeading ? headingKept(p.text) : stripHeaderLine(p.text));
     if (gate.allows(text, p.sensitive)) into.push(text);
   };
   const asIs = (body: string) => body;
@@ -61,15 +87,29 @@ export function synthesizeRetrievedDdl(args: {
 
   const tableIds = new Set<string>();
   const cqlPerTable = new Map<string, string[]>();
+  const businessPerTable = new Map<string, { part: number; text: string }[]>();
   const concepts: string[] = [];
   const questions: string[] = [];
-  const relationships: string[] = [];
   const tenantPolicyChunks: string[] = [];
+  const renderConcept = conceptRenderer(schema, { unqualifiedNamespace: args.unqualifiedNamespace, quoteIdentifier });
 
   for (const r of results) {
     const p = r.payload;
     switch (p.type) {
-      case "table":
+      case "table": {
+        const tid = p.refs[0];
+        if (!tid) break;
+        tableIds.add(tid);
+        const part = businessContextPart(p.id, tid);
+        if (part !== undefined) {
+          const kept: string[] = [];
+          shown(p, asIs, kept);
+          const list = businessPerTable.get(tid) ?? [];
+          for (const text of kept) list.push({ part, text });
+          businessPerTable.set(tid, list);
+        }
+        break;
+      }
       case "column": {
         const tid = p.refs[0];
         if (tid) tableIds.add(tid);
@@ -91,7 +131,13 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "concept": {
-        shown(p, joinedLines, concepts);
+        const concept = schema.concepts?.find((c) => c.id === p.refs[0]);
+        if (concept) {
+          const rendered = renderConcept(concept);
+          if (rendered && gate.allows(rendered.text, p.sensitive || rendered.linksSensitive)) concepts.push(rendered.body);
+        } else {
+          shown(p, joinedLines, concepts, true);
+        }
         for (const ref of p.refs) {
           if (ref.startsWith("table:")) {
             const hash = ref.indexOf("#");
@@ -101,14 +147,13 @@ export function synthesizeRetrievedDdl(args: {
         break;
       }
       case "relationship": {
-        shown(p, oneLine, relationships);
         for (const ref of p.refs) {
           if (ref.startsWith("table:") && !ref.includes("#")) tableIds.add(ref);
         }
         break;
       }
       case "tenant-policy": {
-        shown(p, joinedLines, tenantPolicyChunks);
+        shown(p, joinedLines, tenantPolicyChunks, true);
         break;
       }
     }
@@ -116,6 +161,12 @@ export function synthesizeRetrievedDdl(args: {
 
   const lines: string[] = [];
   const emittedIds: string[] = [];
+  const foreignKeys = foreignKeyLinesByTable(schema, {
+    omit,
+    shown: (tableId) => tableIds.has(tableId),
+    unqualifiedNamespace: args.unqualifiedNamespace,
+    quoteIdentifier,
+  });
 
   for (const t of schema.tables) {
     if (!tableIds.has(t.id)) continue;
@@ -144,6 +195,8 @@ export function synthesizeRetrievedDdl(args: {
       lines.push(line);
     }
 
+    lines.push(...(foreignKeys.get(t.id) ?? []));
+
     const cqlList = cqlPerTable.get(t.id);
     if (cqlList && cqlList.length > 0 && !t.sensitive) {
       lines.push(`-- common query language --`);
@@ -153,12 +206,11 @@ export function synthesizeRetrievedDdl(args: {
         }
       }
     }
-    lines.push("");
-  }
 
-  if (relationships.length > 0) {
-    lines.push("-- relationships --");
-    for (const r of relationships) lines.push(`-- ${r}`);
+    const businessList = businessPerTable.get(t.id);
+    if (businessList && !t.sensitive) {
+      lines.push(...businessContextLines([...businessList].sort((a, b) => a.part - b.part).map(({ text }) => text)));
+    }
     lines.push("");
   }
 
@@ -187,6 +239,23 @@ export function synthesizeRetrievedDdl(args: {
     chunksUsed: results.length,
     mentionDroppedCount: gate.withheld,
   };
+}
+
+/**
+ * For a `table` chunk built from `tableId`'s `Business context` section, the part's position in
+ * the body (0 when the body wasn't split); `undefined` for any other chunk, the table chunk included.
+ */
+function businessContextPart(chunkId: string, tableId: string): number | undefined {
+  const marker = `${tableId}#biz`;
+  if (chunkId.endsWith(marker)) return 0;
+  const split = /#bc:(\d+)$/.exec(chunkId);
+  if (split && chunkId.slice(0, split.index).endsWith(marker)) return Number(split[1]);
+  return undefined;
+}
+
+/** The chunk's text with its `# heading` line kept as a plain line. */
+function headingKept(text: string): string {
+  return text.trim().replace(/^#+\s*/, "");
 }
 
 function stripHeaderLine(text: string): string {

@@ -2,7 +2,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symli
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import Module from "node:module";
+import { dirname, join } from "node:path";
 import { azureProvider, createAiRegistry } from "@askdb/ai";
 import {
   getAskDbRuntimeConfig,
@@ -235,7 +236,7 @@ describe("AskDB Studio server", () => {
   it("names the withheld key columns in the draft's warnings, and still sends the visible foreign keys", async () => {
     const { draft, prompt } = await suggestTenantPolicyFor({ omitSensitiveFromPrompt: true });
 
-    expect(prompt).toContain("table:public.patients#org_id -> table:public.orgs#id");
+    expect(prompt).toContain("  FK (org_id) -> public.orgs (id)");
     expect(draft.warnings).toHaveLength(1);
     for (const key of [
       "public.payroll_ledger.ledger_key (primary key)",
@@ -966,6 +967,39 @@ describe("AskDB Studio server", () => {
     expect(status).toMatchObject({ ...expected, configured: true });
   });
 
+  // #669: on Node 24+, a resolver probe that misses keeps the miss for the life of the process,
+  // so the driver Studio installs next would read as missing until Studio restarts.
+  it("GET /api/execute/status sees a driver installed after a status check that found none", async () => {
+    installStudioRuntime({
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "mysql", providerConfig: { mysql: { databaseUrl: "mysql://localhost/db" } }, outputDir: "./askdb/" },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
+    });
+    const schemaDir = copyFixture();
+    const projectRoot = dirname(schemaDir);
+    writeFileSync(join(projectRoot, "package.json"), '{"name":"host"}\n');
+    mkdirSync(join(projectRoot, "node_modules"));
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    // pnpm's bin shim puts its store on NODE_PATH (copied into Module.globalPaths), where this
+    // repo's mysql2 would be found.
+    const globalPaths = (Module as unknown as { globalPaths: string[] }).globalPaths;
+    const savedGlobalPaths = globalPaths.splice(0, globalPaths.length);
+    try {
+      expect(await getJson(`${baseUrl}/api/execute/status`)).toMatchObject({ packageName: "mysql2", installed: false });
+      // What a finished `pnpm add mysql2` leaves on disk.
+      const driverDir = join(projectRoot, "node_modules", "mysql2");
+      mkdirSync(driverDir);
+      writeFileSync(join(driverDir, "package.json"), '{"name":"mysql2","main":"index.js"}\n');
+      writeFileSync(join(driverDir, "index.js"), "module.exports = {};\n");
+      expect(await getJson(`${baseUrl}/api/execute/status`)).toMatchObject({ packageName: "mysql2", installed: true });
+    } finally {
+      globalPaths.push(...savedGlobalPaths);
+    }
+  });
+
   it("POST /api/execute/install-driver rejects unknown and inherited provider keys with 400", async () => {
     installStudioRuntime({ ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } });
     const schemaDir = copyFixture();
@@ -1608,6 +1642,58 @@ describe("AskDB Studio server", () => {
       process.chdir(prevCwd);
       rmSync(projectDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("a schema whose provider has no AskDB dialect (#886, ADR 0039)", () => {
+  const servers: ReturnType<typeof createStudioServer>[] = [];
+  afterEach(async () => {
+    resetAskDbRuntimeForTests();
+    await Promise.all(servers.splice(0).map((server) => new Promise<void>((done) => server.close(() => done()))));
+  });
+
+  function snowflakeFixture(): string {
+    const schemaDir = copyFixture();
+    const file = join(schemaDir, "schema.json");
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), provider: "snowflake" }, null, 2));
+    return schemaDir;
+  }
+
+  async function studioFor(schemaDir: string): Promise<string> {
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    return listen(server);
+  }
+
+  it("the Playground refuses it with @askdb/client's DialectNotSupportedError instead of PostgreSQL SQL", async () => {
+    installStudioRuntime({ ...STUDIO_TEST_BASE, dev: { mockSql: "select count(*) from users" } });
+    const baseUrl = await studioFor(snowflakeFixture());
+
+    const response = await postRaw(`${baseUrl}/api/ask`, { question: "How many users are there?" });
+    expect(response.status).toBe(422);
+    const message = ((await response.json()) as { error: { message: string } }).error.message;
+    expect(message).toContain("Schema declares provider 'snowflake', but AskDB does not yet ship a DialectSpec for it.");
+    expect(message).toContain("set `dialect: \"postgres\"` (or another supported id) in askdb.config.*");
+  });
+
+  it("the workspace still loads, with no dialect and the reason", async () => {
+    installStudioRuntime();
+    const baseUrl = await studioFor(snowflakeFixture());
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    expect(workspace.dialect).toBeNull();
+    expect(workspace.dialectError).toContain("Schema declares provider 'snowflake'");
+  });
+
+  it("a config dialect still wins over the schema's provider", async () => {
+    installStudioRuntime({ ...STUDIO_TEST_BASE, dialect: "postgres", dev: { mockSql: "select count(*) from users" } });
+    const baseUrl = await studioFor(snowflakeFixture());
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    expect(workspace.dialect).toBe("postgres");
+    expect(workspace.dialectError).toBeUndefined();
+    const generated = await postJson(`${baseUrl}/api/ask`, { question: "How many users are there?" });
+    expect(generated.sql).toBe("select count(*) from users");
   });
 });
 

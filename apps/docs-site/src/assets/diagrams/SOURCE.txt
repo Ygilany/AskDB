@@ -3,18 +3,14 @@ rendered to inline SVG at build time by pele (see STYLE.md, "Diagrams", and
 ADR 0041). Pages with a Mermaid diagram:
 
   src/content/docs/quickstart.mdx
+  src/content/docs/concepts/how-askdb-works.mdx
+  src/content/docs/concepts/safety-boundaries.mdx
+  src/content/docs/guides/deploy-as-http-service.mdx
   src/content/docs/reference/packages.mdx
   src/content/docs/reference/ai-api.mdx
   src/content/docs/reference/config-api.mdx
   src/content/docs/reference/sql-checks.mdx
   src/content/docs/guides/rag-for-large-schemas.mdx
-
-The SVG diagrams in this folder are older, hand-drawn build artifacts. They are
-imported via the Vite `?url` suffix and rendered as <img> elements so paths
-respect Astro `base`. Current page importers:
-
-  askdb-runtime-boundary.svg      → src/content/docs/concepts/how-askdb-works.mdx
-  askdb-defense-in-depth.svg      → src/content/docs/concepts/safety-boundaries.mdx
 
 The splash home hero diagram uses two editable vector files (theme toggle in
 `custom.css`): `askdb-hero-visual.svg` (light) and `askdb-hero-visual-dark.svg`

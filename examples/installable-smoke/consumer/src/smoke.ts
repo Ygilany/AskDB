@@ -17,6 +17,8 @@ import {
   type AskDialect,
 } from "@askdb/core";
 import { createAiRegistry, type AiRegistry } from "@askdb/ai";
+import { classifyResult, planChart } from "@askdb/client/charts";
+import { MockLanguageModelV3 } from "ai/test";
 import { buildSchemaIndex, createMemoryStore, type Embedder } from "@askdb/rag";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { buildDefaultTableBody, replaceH2Section } from "@askdb/enrich";
@@ -242,7 +244,20 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, and ai package surfaces loaded");
+  // The experimental @askdb/client/charts subpath resolves from the packed tarball, and a model
+  // that fails gives the fallback chart instead of a rejection.
+  const chartResult = classifyResult({ columns: [{ name: "region" }, { name: "order_count", type: "bigint" }], rowCount: 3 });
+  const failingModel = new MockLanguageModelV3({
+    doGenerate: async () => {
+      throw new Error("offline");
+    },
+  });
+  const chart = await planChart({ question: "Orders per region", sql: "SELECT 1", result: chartResult, model: failingModel });
+  if (chart.source !== "fallback" || chart.primary?.type !== "bar") {
+    throw new Error(`smoke: expected a fallback bar chart from @askdb/client/charts, got ${JSON.stringify(chart)}`);
+  }
+
+  console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, ai and client/charts package surfaces loaded");
 }
 
 main().catch((e: unknown) => {

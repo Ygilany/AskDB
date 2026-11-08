@@ -7,7 +7,7 @@ import { Aside } from "@astrojs/starlight/components";
 
 <p class="doc-eyebrow">Tenant isolation</p>
 
-<p class="doc-lede">AskDB's tenant check is a lint. It catches a model that forgot the tenant filter, but it can't prove a query is scoped. This guide makes Postgres the tenant boundary instead: row-level security keeps every query to the caller's tenants, whatever SQL arrives.</p>
+<p class="doc-lede">AskDB's tenant check is a heuristic. It catches a model that forgot the tenant filter, but it can't prove a query is scoped. This guide makes Postgres the tenant boundary instead: row-level security keeps every query to the caller's tenants, whatever SQL arrives.</p>
 
 ## Before you start
 
@@ -70,7 +70,7 @@ A policy keyed on a setting holds only while the SQL it guards can't change that
 - **`set_config()`.** One generated `SELECT` can call it to set its own tenant IDs before it reads.
 - **A `DO` block.** PL/pgSQL code in a `DO` statement can run `SET LOCAL`, read every tenant's rows, and return them in an error or notice message.
 
-This is documented Postgres behavior, not an AskDB bug. AskDB's checks already reject both: `set_config` is on the function denylist, a Unicode-escaped spelling such as `U&"set\005fconfig"` is refused as `SQL_UNICODE_ESCAPED_IDENTIFIER`, and `DO` doesn't start with `SELECT` or `WITH`. But those checks are a lint. Close the gap in the database: revoke both from `PUBLIC`, then grant them back to the roles that need them.
+This is documented Postgres behavior, not an AskDB bug. AskDB's checks already reject both: `set_config` is on the function denylist, a Unicode-escaped spelling such as `U&"set\005fconfig"` is refused as `SQL_UNICODE_ESCAPED_IDENTIFIER`, and `DO` doesn't start with `SELECT` or `WITH`. But those checks are heuristics. Close the gap in the database: revoke both from `PUBLIC`, then grant them back to the roles that need them.
 
 ```sql
 REVOKE EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) FROM PUBLIC;
@@ -151,7 +151,7 @@ export async function askForOrganizations(question: string, organizationIds: str
 
 - **Set the IDs you authorized.** The setting and `tenantScope` take the same IDs, from your own authorization. Don't read them from `result.tenantBindings`: it lists only the placeholders the model wrote, so a query that left out the filter would set no tenant.
 - **Quote the value.** `SET` can't take a bind parameter, so `escapeLiteral` quotes it. Never put an ID into the statement unquoted.
-- **Run one statement.** node-postgres sends a query with no parameters through the simple protocol, which runs every statement in the string. A query that reads only global tables has no tenant parameters, so a stacked `SET LOCAL app.organization_ids = '…'; SELECT …` would reset the tenant. `queryMode: "extended"` (node-postgres 8.12 or later) makes Postgres refuse it with `cannot insert multiple commands into a prepared statement`. AskDB's single-statement check rejects a stacked statement first, but that check is a lint too. `@types/pg` doesn't list `queryMode`, which is why the query is cast to `QueryConfig`. One statement can still be a `DO` block, which the PL/pgSQL revoke in [Stop the query from changing its tenant](#stop-the-query-from-changing-its-tenant) blocks.
+- **Run one statement.** node-postgres sends a query with no parameters through the simple protocol, which runs every statement in the string. A query that reads only global tables has no tenant parameters, so a stacked `SET LOCAL app.organization_ids = '…'; SELECT …` would reset the tenant. `queryMode: "extended"` (node-postgres 8.12 or later) makes Postgres refuse it with `cannot insert multiple commands into a prepared statement`. AskDB's single-statement check rejects a stacked statement first, but that check is a heuristic too. `@types/pg` doesn't list `queryMode`, which is why the query is cast to `QueryConfig`. One statement can still be a `DO` block, which the PL/pgSQL revoke in [Stop the query from changing its tenant](#stop-the-query-from-changing-its-tenant) blocks.
 
 ## Check that it works
 
@@ -233,7 +233,7 @@ Run these checks against a real database before you rely on the setup, and again
 
 ## Other engines
 
-This recipe is for Postgres. On every engine, AskDB's tenant check stays a lint, so the database or your application must keep each query to its tenants. [Tenant isolation](/concepts/tenant-isolation/#other-engines) says what CockroachDB, SQL Server, MySQL, MariaDB and SQLite offer.
+This recipe is for Postgres. On every engine, AskDB's tenant check stays a heuristic, so the database or your application must keep each query to its tenants. [Tenant isolation](/concepts/tenant-isolation/#other-engines) says what CockroachDB, SQL Server, MySQL, MariaDB and SQLite offer.
 
 ## Read next
 

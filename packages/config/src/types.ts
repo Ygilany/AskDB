@@ -441,8 +441,9 @@ export type AskDbConfig = {
        */
       maxRows?: number;
       /**
-       * Explicit live-execute provider. When omitted, Studio falls back to the active
-       * introspection provider when it is a live engine, then defaults to `"postgres"`.
+       * Explicit live-execute provider. Any other value fails to load. When omitted, Studio
+       * falls back to the active introspection provider when it is a live engine, then
+       * defaults to `"postgres"`.
        */
       provider?: AskDbStudioExecuteProvider;
       /** Connection URL used by `POST /api/execute` for network databases. */

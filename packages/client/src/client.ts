@@ -11,11 +11,9 @@ import {
   ask,
   bindPreparedQuery,
   expandTenantScope,
-  isBuiltInDialectId,
   loadSchema,
   loadSchemaFromJson,
   parseAskDbModeV1,
-  SUPPORTED_DIALECT_IDS,
   type AnyNormalizedSchema,
   type AskDbLanguageModel,
   type AskDbModeV1,
@@ -31,11 +29,11 @@ import {
   type ResolveTenantDescendants,
 } from "@askdb/core";
 import {
-  DialectNotSupportedError,
   ModelNotConfiguredError,
   SchemaLoadError,
   SchemaNotConfiguredError,
 } from "./errors.js";
+import { resolveDialect, type DialectResolution } from "./dialect.js";
 
 /** Where a schema comes from. A pre-loaded object short-circuits loading. */
 export type SchemaSource =
@@ -73,13 +71,6 @@ export type BindOptions = Omit<BindGuardrails, "schema"> & {
   schema?: SchemaSource | AnyNormalizedSchema;
   /** Expands a `subtree` `tenantScope` before binding, as in `ask()`. */
   resolveTenantDescendants?: ResolveTenantDescendants;
-};
-
-export type DialectResolution = {
-  dialect: AskDialectInput;
-  source: "override" | "config" | "schema" | "default";
-  /** Set when config.dialect and schema.provider disagree (config wins). */
-  note?: string;
 };
 
 export type CreateAskDbOptions = {
@@ -195,45 +186,6 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
     );
   }
 
-  function schemaProviderOf(schema: AnyNormalizedSchema): string | undefined {
-    return "provider" in schema && typeof schema.provider === "string" ? schema.provider : undefined;
-  }
-
-  function resolveDialect(schema: AnyNormalizedSchema, override?: AskDialectInput): DialectResolution {
-    if (override) return { dialect: override, source: "override" };
-    const configDialect = options.dialect ?? config.nlToSql.dialect;
-    const provider = schemaProviderOf(schema);
-    if (configDialect) {
-      if (provider && provider !== configDialect) {
-        return {
-          dialect: configDialect,
-          source: "config",
-          note: `Using config dialect '${configDialect}'; schema declared provider '${provider}'.`,
-        };
-      }
-      return { dialect: configDialect, source: "config" };
-    }
-    if (provider) {
-      if (!isBuiltInDialectId(provider)) {
-        if (options.unknownDialect === "fallback-postgres") {
-          return {
-            dialect: "postgres",
-            source: "default",
-            note: `Schema declared provider '${provider}' with no shipped DialectSpec; defaulting to 'postgres'.`,
-          };
-        }
-        throw new DialectNotSupportedError(
-          provider,
-          `Schema declares provider '${provider}', but AskDB does not yet ship a DialectSpec for it.\n` +
-            `Hint: set \`dialect: "postgres"\` (or another supported id) in askdb.config.* to override. ` +
-            `Supported: ${SUPPORTED_DIALECT_IDS.join(", ")}.`,
-        );
-      }
-      return { dialect: provider, source: "schema" };
-    }
-    return { dialect: "postgres", source: "default" };
-  }
-
   type ResolvedModel = {
     model: AskDbLanguageModel;
     source: "override" | "registry" | "mock";
@@ -315,7 +267,11 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         ...rest
       } = overrides;
       const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
-      const dialect = resolveDialect(schema, dialectOverride);
+      const dialect = resolveDialect(schema, {
+        override: dialectOverride,
+        configDialect: options.dialect ?? config.nlToSql.dialect,
+        unknownDialect: options.unknownDialect,
+      });
       const resolvedModel = await resolveModel(modelOverride, deps, reasoningEffort);
       options.onResolve?.({ dialect, modelSource: resolvedModel.source });
 

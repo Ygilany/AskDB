@@ -48,6 +48,7 @@ import AnchorRedirects from "../../../../components/AnchorRedirects.astro";
 | `normalizeTenantPolicy` | Checks a parsed tenant policy against `schema.json` and collects its problems | `@askdb/enrich` |
 | `formatAskDbModesV1` | Formats the list of modes for a message | CLI |
 | `formatSupportedAskDbLogLevels`, `isSupportedAskDbLogLevel` | Log-level helpers | CLI |
+| `maskSqlLiterals` | Replaces a statement's literals with `?` and drops its comments, under the SQL checks' readings; returns `undefined` when the statement can't be read safely | `@askdb/client/charts` |
 | `loadNormalizedSchemaFromJson`, `AskDbSchemaFile` | Load a v1 schema from a JSON string, and the v1 file's type | `@askdb/core`, and the packed-install smoke tests in `examples/installable-smoke` |
 
 ## Read next

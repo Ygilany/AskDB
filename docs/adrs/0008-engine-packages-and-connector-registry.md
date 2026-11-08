@@ -8,6 +8,8 @@ Accepted (2026-09-25). Decisions 1 and 2 (the engine kit) landed with #195; deci
 
 Amended 2026-11-05: a registered adapter can load on first use (lazy entries and `registry.load()`; #339, #259). See [Amendment (2026-11-05)](#amendment-2026-11-05-registered-adapters-can-load-on-first-use).
 
+Amended 2026-11-08 (#669): the kit's `isDriverInstalled` checks `node_modules` on disk (and Node's global directories, `NODE_PATH` first, read from `Module.globalPaths` so the kit reads no `process.env`, ADR 0005) instead of asking Node's resolver. The loader imports a driver that is on disk but unresolvable by its entry path, read from its `package.json` under the conditions Node's `require` uses. So a long-running host loads a driver installed after a failed lookup without a restart. Rejected: probing in a fresh child process, which costs a process spawn per status check and still leaves the load in the host process to miss; and keeping the restart message as the only answer, which leaves Studio's install button needing a restart on Node 24 and 26. Studio's guided setup calls the kit's check rather than keeping its own copy. See the consequence below.
+
 Supersedes in part:
 - [ADR 0002](0002-integration-package-layout.md): the rule that integration packages own their SQL dialect, and the rule that `@askdb/introspect` declares no source kinds (its registry's connection now names three: `url`, `fromExport`, `schemaPath`; connector inputs stay engine-owned).
 - [ADR 0007](0007-connector-registry.md): where the connector registry lives, and its closed provider union.
@@ -101,7 +103,7 @@ ADR 0002 organized AskDB around one package per integration. Each integration ow
 - A host that registers only adapter objects changes nothing.
 - A host that registers a lazy entry must call `registry.load()` before the synchronous methods. Forgetting it fails at runtime, with an error that names the call.
 - `askdb --help` and every command other than Prisma introspection resolve no `@askdb/prisma` or `@prisma/*` module (`apps/cli/src/load-cost.test.ts`). `askdb introspect templates` names only the engines already loaded when it lists the ones with templates.
-- Node 24 and later can keep a failed package lookup until the process exits, so a long-running host can't always load an optional package installed after its first attempt. The kit's loader then says to restart the process rather than to install the package, and Studio's guided setup checks for packages on disk, not through Node's resolver, before it installs them.
+- Node 24 and later can keep a failed package lookup until the process exits, so a long-running host can't always load an optional package installed after its first attempt. The kit's `isDriverInstalled` and Studio's guided setup check for packages on disk, not through Node's resolver, so a probe never leaves a miss behind. When a miss happened anyway, the loader reads the package's entry from its `package.json` and imports it by path; it says to restart the process only when it can't find that entry (#669).
 - Prisma users install `@askdb/prisma` themselves, and on pnpm 11 approve the `@prisma/engines` build. `askdb init --database prisma` and Studio's guided setup do both.
 
 ## Out of scope

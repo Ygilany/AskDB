@@ -62,7 +62,8 @@ export type MssqlConfigInput = {
  *    never match the schema, so options like TrustServerCertificate are silently
  *    dropped.  We normalise the affected keys before passing the string to mssql.
  *
- * ADO.NET strings are identified as anything that is not a URL (no `://`).
+ * A string is a URL when it starts with a scheme (`name://`); anything else is
+ * an ADO.NET string, even when a value in it holds `://` (#595).
  */
 export function resolveConnectionInput(connectionString: string): string | MssqlConfigInput {
   if (connectionString.startsWith("mssql://")) {
@@ -73,10 +74,47 @@ export function resolveConnectionInput(connectionString: string): string | Mssql
   }
   // ADO.NET string: normalise multi-word keys that @tediousjs/connection-string
   // v1.x does not recognise in their spaced form.
-  if (!connectionString.includes("://")) {
+  if (!isConnectionUrl(connectionString)) {
     return normalizeAdoNetString(connectionString);
   }
   return connectionString;
+}
+
+/** A leading URL scheme, `name://` (RFC 3986's scheme characters). */
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/**
+ * True when `connectionString` is a URL: it starts with a scheme (`name://`).
+ * Anything else is an ADO.NET string, even when a value holds `://` (#595).
+ * The connection label uses the same test, so the two never read a string as
+ * different forms (ADR 0011). Internal to this package.
+ */
+export function isConnectionUrl(connectionString: string): boolean {
+  return URL_SCHEME.test(connectionString);
+}
+
+const TLS_TRUE = new Set(["true", "yes", "1"]);
+const TLS_FALSE = new Set(["false", "no", "0"]);
+
+/**
+ * A TLS setting's value, read the same in both URL forms (#596): `true`, `yes`
+ * and `1` are true, `false`, `no` and `0` are false, in any case. Any other
+ * value fails closed, to `whenUnknown`: `true` for `encrypt` (encryption on),
+ * `false` for `trustServerCertificate` (the certificate not trusted).
+ */
+function readTlsFlag(value: string, whenUnknown: boolean): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (TLS_TRUE.has(normalized)) return true;
+  if (TLS_FALSE.has(normalized)) return false;
+  return whenUnknown;
+}
+
+/** The `encrypt` and `trustServerCertificate` options for the values a URL sets. */
+function tlsOptions(encrypt: string | undefined, trustServerCertificate: string | undefined): MssqlConfigInput["options"] {
+  return {
+    ...(encrypt !== undefined ? { encrypt: readTlsFlag(encrypt, true) } : {}),
+    ...(trustServerCertificate !== undefined ? { trustServerCertificate: readTlsFlag(trustServerCertificate, false) } : {}),
+  };
 }
 
 /**
@@ -122,10 +160,7 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
     ...(database ? { database } : {}),
     ...(user ? { user } : {}),
     ...(password ? { password } : {}),
-    options: {
-      ...(encrypt !== null ? { encrypt: !["false", "0", "no"].includes(encrypt.toLowerCase()) } : {}),
-      ...(trustCert !== null ? { trustServerCertificate: !["false", "0", "no"].includes(trustCert.toLowerCase()) } : {}),
-    },
+    options: tlsOptions(encrypt ?? undefined, trustCert ?? undefined),
   };
 }
 
@@ -168,6 +203,11 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  * string has no credentials.
  * `initial catalog` is not read: a string that sets it connects to the login's
  * default database, and reading it would change where that string connects.
+ *
+ * `encrypt` and `trustServerCertificate` read the way `mssql://` reads them
+ * (`readTlsFlag`, #596): `yes` and `1` are true too. An unknown `encrypt`
+ * value turns encryption on, and an unknown `trustServerCertificate` value
+ * leaves the certificate untrusted.
  */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));
@@ -210,12 +250,7 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
     ...(database ? { database } : {}),
     ...(user ? { user } : {}),
     ...(password ? { password } : {}),
-    options: {
-      ...(params["encrypt"] !== undefined ? { encrypt: params["encrypt"].toLowerCase() === "true" } : {}),
-      ...(params["trustservercertificate"] !== undefined
-        ? { trustServerCertificate: params["trustservercertificate"].toLowerCase() === "true" }
-        : {}),
-    },
+    options: tlsOptions(params["encrypt"], params["trustservercertificate"]),
   };
 }
 

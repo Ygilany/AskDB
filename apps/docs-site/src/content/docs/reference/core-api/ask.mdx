@@ -31,7 +31,7 @@ const { sql } = await ask({
 | `model` | `AskDbLanguageModel` | yes | — | An AI SDK `LanguageModel` instance (e.g. `openai("gpt-4o-mini")`). |
 | `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, a `DialectSpec` under a built-in id, or a custom `AskDialect`. See [Dialects](/reference/core-api/dialects/). |
 | `mode` | `AskDbModeV1` | no | `"schema_only"` | Trust boundary. See [Modes](#modes). |
-| `explain` | `boolean` | no | `false` | When `true`, populates `result.explain` with heuristic guardrail metadata. |
+| `explain` | `boolean` | no | `false` | When `true`, populates `result.explain` with metadata on the read-only checks. |
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, withholds sensitive columns from the NL→SQL prompt, along with any describable text that names one (a description, alias, enum value, common query language, or retrieved chunk text). A sensitive table stays as a one-line placeholder with its name. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-params"` | `"sql-params"` replaces the tenant placeholders with the dialect's driver markers (`$N` Postgres/CockroachDB, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. `"sql-only"` inlines them in `sql` as escaped literals, for a tool that takes one SQL string, and refuses a tenant ID that isn't printable ASCII or contains a backslash. A custom `AskDialect` has no default: with a tenant scope it must set this (`$N` markers in `"sql-params"`), or `ask()` throws `TenantScopeError` (`TENANT_SQL_MODE_REQUIRED`). With a tenant policy, any value other than these two throws the same error, on every dialect. See [Executing the result](#executing-the-result). |
@@ -51,13 +51,13 @@ const { sql } = await ask({
 | Field | Type | When present |
 | --- | --- | --- |
 | `sql` | `string` | Always. The model's bound, checked SQL — business values inlined as literals. Keeps the model's trailing `;`, if it wrote one; remove it before wrapping the statement. Its tenant markers start at the first slot (the default `tenantSqlMode: "sql-params"`); run it with `tenantParams`. In `"sql-only"` mode it has the tenant IDs inlined instead. Never overwritten by rebind failures. |
-| `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Absent, with `params`, `parameters` and `preparedQuery`, when a form `ask()` renders from that block still holds a placeholder or fails the read-only check, such as a `:tenant_<root>_ids` placeholder under a schema with no tenant policy. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. Keeps the trailing `;` of the model's `sql-unbound` block, if it has one. |
+| `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest: bound with the manifest, it matches `sql` token for token, with letter case ignored only in keywords and unquoted names. Absent, with `params`, `parameters` and `preparedQuery`, when a form `ask()` renders from that block still holds a placeholder or fails the read-only check, such as a `:tenant_<root>_ids` placeholder under a schema with no tenant policy. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. Keeps the trailing `;` of the model's `sql-unbound` block, if it has one. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order. With a tenant scope this already includes the tenant IDs, in either `tenantSqlMode`. |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
 | `preparedQuery` | `PreparedQuery \| undefined` | Definitions + named template only (no runtime values). Input to [`bindPreparedQuery()`](/reference/core-api/rebind/#bindpreparedqueryprepared-values-guardrails). |
-| `verdict` | `GuardrailVerdict` | Always. Every guardrail finding for the model's SQL and the outcome: `"allow"`, or `"warn"` when a check in `warn` mode found something. A `"deny"` throws instead. See [Guardrail verdict](#guardrail-verdict). |
+| `verdict` | `GuardrailVerdict` | Always. Every finding of the SQL checks for the model's SQL, and the outcome: `"allow"`, or `"warn"` when a check in `warn` mode found something. A `"deny"` throws instead. See [Guardrail verdict](#guardrail-verdict). |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
-| `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
+| `explain` | `unknown \| undefined` | When `explain: true`. Metadata on the read-only checks: the checks the SQL passed (`checksVerified`), its statement kind, and a note on what the checks don't guarantee. |
 | `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references, derived from `verdict`. |
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. `{ passed, warnings }` from the heuristic tenant check, derived from `verdict`, run on the model's SQL (and its `sql-unbound` block) before tenant binding. [What the tenant check requires](/reference/tenant-policy/#what-the-tenant-check-requires) says what passes. Passing it doesn't prove the SQL is scoped. With `enforcement: strict`, a failure throws `TenantGuardrailError` instead. |
 | `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode` is `"sql-params"` (the default) and the SQL has tenant placeholders. The tenant IDs for the markers in `sql`, in marker order. |
@@ -148,7 +148,7 @@ Populated from the model provider's usage report. All fields are `null` when the
 
 ## Modes
 
-`AskDbModeV1` controls which post-generation guardrails are active.
+`AskDbModeV1` sets what may enter the model's context beyond the schema artifact and the question. The SQL checks run the same in both modes.
 
 | Value | Description |
 | --- | --- |
@@ -184,7 +184,7 @@ Returns the NL→SQL user prompt `ask()` sends with a built-in dialect: the rule
 
 | Function | Returns |
 | --- | --- |
-| `formatSchemaV2ForNlToSql(schema, options?)` | `{ ddl, stats }`: the schema block `ask()` puts in the prompt for a schema artifact. `options` is a `FormatNlToSqlOptions`: `omitSensitiveIdentifiersFromPrompt`, `unqualifiedNamespace` and `quoteIdentifier`. `stats` is a `NlToSqlSchemaFormatStats`: counts of the sensitive columns left out or listed, the sensitive tables shown by name only, and the untracked tables. |
+| `formatSchemaV2ForNlToSql(schema, options?)` | `{ ddl, stats }`: the schema block `ask()` puts in the prompt for a schema artifact: each tracked table with its columns, annotations (column notes included), foreign keys, common query language and business context, then the schema's concepts. `options` is a `FormatNlToSqlOptions`: `omitSensitiveIdentifiersFromPrompt`, `unqualifiedNamespace` and `quoteIdentifier`. `stats` is a `NlToSqlSchemaFormatStats`: counts of the sensitive columns left out or listed, the sensitive tables shown by name only, and the untracked tables. |
 | `formatSchemaForNlToSql(schema, options?)` | The same for the older v1 `NormalizedSchema`. |
 | `synthesizeRetrievedDdl(args)` | The schema block for retrieved chunks: `{ ddl, tableIds, tablesEmitted, chunksUsed, … }`. `args` takes `schema`, `results` (`RetrievedResult[]`) and the three formatting options. `@askdb/rag` re-exports it. |
 | `nlToSqlAmbiguityNotes(question, schema)` | The hints `ask()` adds to the prompt when the question and the schema look misaligned, as a `string[]`. They name no schema table ([ADR 0038](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0038-prompt-hints-name-no-schema-table.md)). |

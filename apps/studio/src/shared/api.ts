@@ -28,8 +28,13 @@ export type StudioWorkspaceDto = {
   /** Schema artifact path relative to the project root — usable in integration snippets. */
   schemaPathRelative: string;
   schemaId: string;
-  /** Resolved NL-to-SQL dialect: config `dialect` → artifact provider → `postgres`. */
-  dialect: string;
+  /**
+   * Resolved NL-to-SQL dialect, by `@askdb/client`'s rule: config `dialect` → artifact provider →
+   * `postgres`. `null` when the artifact's provider has no AskDB dialect; `dialectError` says why.
+   */
+  dialect: string | null;
+  /** Why `dialect` is `null`: the client's `DialectNotSupportedError` message. */
+  dialectError?: string;
   warnings: SchemaV2Warning[];
   aiConfigured: boolean;
   model: string;

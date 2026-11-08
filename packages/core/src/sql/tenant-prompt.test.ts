@@ -424,3 +424,29 @@ describe("buildNlToSqlUserPrompt — the tenant block needs the tables the promp
     expect(() => prompt(undefined, undefined, v1)).toThrow(/needs the schema artifact/);
   });
 });
+
+describe("buildTenantPromptBlock — an outer join's ON counts for nothing (#400)", () => {
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.clients", ids: ["5"] } };
+  const lines = () => buildTenantPromptBlock(policy, scope, { schema }).split("\n");
+  const rule = (pattern: RegExp) => lines().find((line) => pattern.test(line));
+
+  it("tells the model to put tenant predicates and join-path equalities in WHERE beside an outer join or OUTER APPLY", () => {
+    const line = rule(/LEFT, RIGHT, FULL or OUTER join, or OUTER APPLY/);
+    expect(line).toMatch(/no condition in ON counts/);
+    expect(line).toMatch(/each tenant predicate and each join-path equality in WHERE/);
+  });
+
+  it("tells the model to filter a scoped table on an outer join's unmatched side in a derived table or CTE", () => {
+    const line = rule(/derived table or CTE with its own WHERE/);
+    expect(line).toMatch(/tenant-scoped or polymorphic table on the side an outer join may leave unmatched/);
+    expect(line).toMatch(/outer-join that instead/);
+  });
+
+  it("tells the model to write a plain JOIN when the other side reaches its tenant root through that table", () => {
+    expect(rule(/derived table or CTE with its own WHERE/)).toMatch(/through that table, write a plain JOIN instead/);
+  });
+
+  it("tells the model where a polymorphic table's discriminator goes on an outer join's unmatched side", () => {
+    expect(rule(/^- For polymorphic tables/)).toMatch(/derived table's WHERE/);
+  });
+});

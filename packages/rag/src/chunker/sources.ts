@@ -17,9 +17,10 @@ import type {
 
 /**
  * The chunker consumes both the normalized v2 form **and** the parsed
- * markdown bodies (for `Example questions`, `Business context`, `Column notes`
- * which the normalized form intentionally drops). This bundle is what
- * higher-level helpers assemble before calling the pure chunker.
+ * markdown bodies (for `Example questions`, which the normalized form drops,
+ * and `Business context` and `Column notes`, which it drops for sensitive
+ * tables and columns). This bundle is what higher-level helpers assemble
+ * before calling the pure chunker.
  */
 export type ChunkerSources = {
   schema: NormalizedSchemaV2;

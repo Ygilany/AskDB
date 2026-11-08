@@ -18,7 +18,7 @@ Every PR before it leaves draft; always for PRs an agent authored.
 Where requirements come from, read by the Spec lens.
 
 - **Issue tracker:** `docs/agents/issue-tracker.md` (GitHub Issues on `Ygilany/AskDB`; read one with `gh issue view <n> --comments`). Implementation plans are issues labelled `plan`; specs not yet built are issues labelled `enhancement`; a PR that implements an issue says `Closes #<n>`.
-- **Spec files:** `docs/specs/` and `docs/contracts/` describe settled, built behaviour (the "constitution"); read the ones the diff touches or names. `plans/` is closed to new plans and keeps only implemented ones as history (`plans/README.md`). For a consumer lab diff, `docs/specs/consumer-lab.md`.
+- **Spec files:** `docs/specs/` and `docs/contracts/` describe settled, built behaviour (the "constitution"); read the ones the diff touches or names. Plans are GitHub issues labelled `plan`; the old `plans/` folder was removed (#368) and its files stay in git history. For a consumer lab diff, `docs/specs/consumer-lab.md`.
 
 ### Description vs diff
 
@@ -44,7 +44,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Domain terms are used as `CONTEXT.md` and `docs/contracts/` define them (`docs/agents/domain.md`)
 - Markdown and MDX use one line per paragraph or list item, with no hard wraps in prose (`AGENTS.md`, "Conventions")
 - **Enforced by tooling:** `pnpm lint` (each package's `tsc --noEmit`, Studio's ESLint and `tsconfig.web.json` typecheck, the docs site's `astro check`); `pnpm run audit` (moderate or higher advisories, stale allowlist entries); the Changesets workflow (a changeset exists when a non-test file under `packages/*/src` or `apps/{cli,http-api,studio}/src`, or a manifest outside `devDependencies`, changes, but not its bump level, and not for `apps/docs-site`; test files (`*.test.*`, `*.spec.*`, `__tests__/`, `__snapshots__/`, `test-utils.ts`) are exempt, per `scripts/publishable-paths.sh`); the consumer-lab job's frozen-lockfile check of the lab's manifest against its lockfile; `pnpm test:ai-floors` (AI SDK peer floors); `pnpm smoke:install` and the publish dry-run; React Doctor on PRs. There is no formatter.
-- **Smell baseline:** applies by default. Endorsed here: `@askdb/config`'s own provider list duplicating `BUILTIN_AI_PROVIDERS`, guarded by a drift test in `@askdb/client` (`docs/architecture.md`, "Dependency boundaries").
+- **Smell baseline:** applies by default. Endorsed here: `@askdb/config`'s own provider list duplicating `BUILTIN_AI_PROVIDERS`, guarded by a drift test in `@askdb/client` (`docs/architecture.md`, "Dependency boundaries"); and a schema v2 contract rule copied in core and a package above it because sharing it would need a new core export, guarded by a parity test (Architecture, "One owner for a schema v2 contract rule").
 
 ## Architecture
 
@@ -55,6 +55,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - A fix belongs in the layer that owns the defect, not in the caller that hit it (for example the empty-store width rule fixed in `MemoryStore.restore()`, #193); in a stack, in the lower PR that introduced it (#195).
 - **Shared lists stay exhaustive:** code with one branch per member of a list another package owns (a store, engine or provider from `@askdb/config`'s `ASKDB_*` constants) keeps a compile-time check that fails when the list grows, such as an exhaustive `switch` or a `satisfies` on the fall-through, including when it replaces a local copy of the list with the shared one (#784).
 - **Shared lists stay exhaustive** also covers a runtime copy of a union's members inside one package (an allowlist array, a `z.enum`): derive the union from one `as const` tuple, or key a `Record<Union, …>`. `satisfies Union[]` checks only that each entry is a member, not that every member is listed (#795).
+- **One owner for a schema v2 contract rule:** a rule from `docs/contracts/schema-v2.md` that both `@askdb/core` and a package above it need (a markdown item syntax, a name list, a mention rule) is implemented once in core and imported, never copied into both (ADR 0022 rejected copying the sensitive-name list into core for this reason). When importing it would need a new core export, keep the copies in step with a test that runs both on the same input, as the `Column notes` parsers in core's loader and `@askdb/rag`'s chunker do (#901).
 - **Public surface:** each package's `exports` map and `src/index.ts`; `askdb` publishes only its binary, so `runIntrospectCli` and similar are internal (#199).
 - **Versioning rule:** while AskDB is pre-1.0, a breaking change (removed or renamed export, raised Node floor, restrictive `exports`, changed accepted input or default) is a minor bump, not a patch (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Before Opening a PR"). Removing an export that never reached `main` is not breaking (maintainer's ruling on #199). Published ranges move on purpose (ADR 0015).
 
@@ -97,10 +98,10 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - A tenant placeholder AskDB cannot bind throws; it is never returned raw.
 - No two roots share a placeholder: labels that normalize to the same `:tenant_<label>_ids` are rejected (#375).
 - A predicate counts only when the root's tenant column is compared with that root's placeholder and ANDed into `WHERE`, an inner-join `ON` or `HAVING`; not beside `OR`, under `NOT`, inside a string or comment, on the preserved side of an outer join (join hints `LOOP`, `HASH`, `MERGE`, `REMOTE` included) or inside `OUTER APPLY` (#341).
-- Every set-operation branch that reads a scoped table carries its own predicate at every depth, inside derived tables and CTEs too, and a parenthesized top-level operand counts as a query block (#341).
+- Each read of a scoped table, and of each root the scope covers, carries its own predicate in its own `SELECT`: a CTE body, a derived table, a subquery and each set-operation branch (a parenthesized top-level operand too) are each their own, and a qualified predicate counts only for the read it names (#399, #341; `docs/contracts/tenant-policy.md`, *Each read, in its own `SELECT`*).
 - Hierarchy and polymorphic fallbacks accept only `path.root` and its ancestors, and tie the discriminator value to the root whose placeholder the ID predicate uses (#341; `docs/contracts/tenant-policy.md`).
 - The check runs on the model's SQL before binding; bound tenant IDs are driver parameters in `sql-params` mode (the default). Wherever they're inlined (`sql-only`, in `ask()` or a rebind) only quotes are doubled, and a tenant ID that isn't printable ASCII or contains a backslash is refused on every dialect (`UNESCAPABLE_TENANT_ID`; ADR 0024). A custom `AskDialect` has no default mode with a tenant scope (`TENANT_SQL_MODE_REQUIRED`). Hosts take the default from `DEFAULT_TENANT_SQL_MODE`, never a hard-coded mode.
-- Known gaps stay documented with their issues (#342, #399) rather than described as fixed.
+- Known gaps stay documented with their issues (for example the sensitive check's `FROM` forms, #306–#309) rather than described as fixed.
 
 #### Sensitive fields
 

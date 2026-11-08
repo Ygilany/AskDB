@@ -1,5 +1,44 @@
 # @askdb/introspect
 
+## 0.3.0-beta.28
+
+### Patch Changes
+
+- Updated dependencies [30a3bc6]
+- Updated dependencies [f258449]
+  - @askdb/core@1.0.0-beta.54
+
+## 0.3.0-beta.27
+
+### Patch Changes
+
+- Updated dependencies [01415e2]
+- Updated dependencies [a81867a]
+- Updated dependencies [98612fb]
+- Updated dependencies [dadf211]
+- Updated dependencies [984f332]
+  - @askdb/core@1.0.0-beta.53
+
+## 0.3.0-beta.26
+
+### Minor Changes
+
+- 4e79c4d: **Breaking:** `connectorProviderMissingMessage` is no longer exported (#654): nothing outside `@askdb/introspect` used it, so it leaves before 1.0 (ADR 0031). A connector registry throws its message for a provider it has no adapter for, and `hasProvider(provider)` checks first. The upgrade guide's beta.52 section names it.
+
+### Patch Changes
+
+- 30d2348: The errors for an existing `schema.json` that can't be read say "invalid schema artifact file", "table" or "column" instead of "invalid Schema v2 …", and the README and package description say "schema artifact" (#273).
+- Updated dependencies [30d2348]
+- Updated dependencies [4188c04]
+- Updated dependencies [97312e1]
+- Updated dependencies [39a4a5e]
+- Updated dependencies [8069854]
+- Updated dependencies [f11909c]
+- Updated dependencies [4e79c4d]
+- Updated dependencies [109c581]
+- Updated dependencies [a7756fd]
+  - @askdb/core@1.0.0-beta.52
+
 ## 0.3.0-beta.25
 
 ### Patch Changes

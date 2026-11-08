@@ -42,16 +42,16 @@ test("a fence inside a <figure>, as every page has it, becomes an SVG too", () =
   assert.match(figure.children[0].value, /^<svg [^>]*class="pele pele-flowchart"/);
 });
 
-test("the line in the page is the broken line, whatever pele drops before it numbers lines", () => {
+test("the line in the page is the broken line, with comments, a directive, front matter or blank lines before it", () => {
   const broken = "c((x] --> d";
   const sources = [
     "flowchart TB\n  %% one\n  %% two\n  a --> b\n  " + broken,
     '%%{init: {"flowchart": {"curve": "basis"}}}%%\nflowchart TB\n  a --> b\n  ' + broken,
     "---\ntitle: T\n---\nflowchart TB\n  %% note\n  a --> b\n  " + broken,
-    // pele also drops the blank lines before a comment, and blank lines at the start.
+    // A blank line before a comment, and a blank line at the start.
     "flowchart TB\n  a --> b\n\n  %% the query side\n  " + broken,
     "\nflowchart TB\n  a --> b\n  " + broken,
-    // A directive in the middle still counts as a line for pele.
+    // A directive in the middle.
     'flowchart TB\n  a --> b\n  %%{init: {"flowchart": {"curve": "basis"}}}%%\n  ' + broken,
   ];
   for (const source of sources) {
@@ -63,6 +63,12 @@ test("the line in the page is the broken line, whatever pele drops before it num
       source,
     );
   }
+});
+
+test("an error at the end of the diagram points at the closing fence", () => {
+  // The fence opens on line 40; the diagram is lines 41 and 42, so the closing fence is line 43.
+  const { tree, file } = page(["mermaid", "flowchart TB\n  a -->", 40]);
+  assert.throws(() => remarkMermaid()(tree, file), (error) => error.message.startsWith("src/content/docs/page.mdx:43: "));
 });
 
 test("a fence that isn't a diagram type pele knows fails with unsupported-diagram", () => {
