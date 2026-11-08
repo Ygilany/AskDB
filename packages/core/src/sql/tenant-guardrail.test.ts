@@ -2346,15 +2346,17 @@ describe("validateTenantGuardrails — a name with non-ASCII letters, read as ev
     expect(findings("SELECT c.* FROM Client c WHERE c.städte_id = :tenant_agency_ids", scopedBy("städte_id"), dialect)).toEqual([]);
   });
 
-  // MariaDB keeps U+212A KELVIN SIGN apart from `k`, which Unicode lower-casing merges.
+  // MariaDB keeps U+212A KELVIN SIGN apart from `k`, which Unicode lower-casing merges. Such a name is
+  // also refused outright now, and the predicate still ties to no column.
   const workspace = scopedBy("workspace_id", "workspace");
   const kelvin = "worKspace_id";
   it.each([
     ["mariadb", MARIADB_DIALECT],
     ["mysql", MYSQL_DIALECT],
   ] as const)("refuses a name with a letter Unicode folding merges into ASCII under %s", (_label, dialect) => {
-    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`, workspace, dialect)).toEqual(refused);
-    expect(findings(`SELECT x.* FROM (SELECT c.id, ${kelvin} AS workspace_id FROM Client c, (SELECT 42 AS ${kelvin}) z) x WHERE x.workspace_id = :tenant_workspace_ids`, workspace, dialect)).toEqual(refused);
+    const both = ["UNICODE_ESCAPED_IDENTIFIER:", ...refused];
+    expect(findings(`SELECT c.* FROM Client c, (SELECT 42 AS ${kelvin}) z WHERE ${kelvin} = :tenant_workspace_ids`, workspace, dialect)).toEqual(both);
+    expect(findings(`SELECT x.* FROM (SELECT c.id, ${kelvin} AS workspace_id FROM Client c, (SELECT 42 AS ${kelvin}) z) x WHERE x.workspace_id = :tenant_workspace_ids`, workspace, dialect)).toEqual(both);
   });
 
   // A custom id or none is also read the SQL Server way, which refuses a non-ASCII name the schema doesn't spell.
@@ -2375,6 +2377,7 @@ describe("validateTenantGuardrails — a name with non-ASCII letters, read as ev
     };
     const k = "Kind";
     expect(findings(`SELECT n.* FROM Note n, (SELECT 'workspace' AS ${k}) z WHERE ${k} = 'workspace' AND n.owner_id = :tenant_workspace_ids AND n.kind IS NOT NULL`, polymorphic, dialect)).toEqual([
+      "UNICODE_ESCAPED_IDENTIFIER:",
       "MISSING_TYPE_DISCRIMINATOR:table:public.Note",
     ]);
     expect(findings("SELECT n.* FROM Note n WHERE n.KIND = 'workspace' AND n.owner_id = :tenant_workspace_ids", polymorphic, dialect)).toEqual([]);
@@ -2428,6 +2431,8 @@ describe("validateTenantGuardrails — every name the engines of a reading read 
   // Some engine folds U+0130, U+0131, U+017F and U+212A into an ASCII letter, and CockroachDB
   // normalizes a name to NFC: the check can't match such a name the engine's way, so it refuses it.
   const everyDialect = [POSTGRES_DIALECT, COCKROACHDB_DIALECT, MYSQL_DIALECT, MARIADB_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT, customEngine(), undefined];
+  /** `name` quoted the way the dialect's engine quotes a name: MySQL and MariaDB read `"…"` as a string. */
+  const quoted = (dialect: DialectSpec | undefined, name: string) => (dialect?.id === "mysql" || dialect?.id === "mariadb" ? `\`${name}\`` : `"${name}"`);
   it.each(everyDialect)("refuses a name some engine folds into ASCII, or one not in NFC, under %#", (dialect) => {
     for (const sql of [
       "SELECT * FROM clİents",
@@ -2435,7 +2440,7 @@ describe("validateTenantGuardrails — every name the engines of a reading read 
       "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.Kind = 1",
       "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.ıd = 1",
       "SELECT o.* FROM orders o WHERE o.agency_id = :tenant_agency_ids AND o.ſtate = 1",
-      `SELECT o.* FROM orders o, (SELECT 42 AS "céntimo") z WHERE o.agency_id = :tenant_agency_ids`,
+      `SELECT o.* FROM orders o, (SELECT 42 AS ${quoted(dialect, "céntimo")}) z WHERE o.agency_id = :tenant_agency_ids`,
     ]) {
       expect(findings(sql, dialect, sql.includes("ents") && !sql.includes("orders") ? clients : agencyScope), sql).toContain("UNICODE_ESCAPED_IDENTIFIER:");
     }

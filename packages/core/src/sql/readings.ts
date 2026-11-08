@@ -113,6 +113,33 @@ export function unmatchedNonAsciiName(
   return undefined;
 }
 
+/**
+ * Letters some engine folds into an ASCII letter: U+0130 (CockroachDB and MySQL read `i`), U+0131
+ * and U+017F (`I` and `S` upper-cased), and U+212A KELVIN SIGN (`k`).
+ */
+const FOLDS_INTO_ASCII = /[\u0130\u0131\u017F\u212A]/;
+
+/**
+ * The first name in `read`, quoted or not, under any of its readings, that holds a letter some
+ * engine folds into an ASCII letter ({@link FOLDS_INTO_ASCII}) or that isn't in NFC, which
+ * CockroachDB normalizes a name to, and isn't one of `known` exactly; undefined when there is none.
+ * The checks can't match such a name the way every engine does, so it may reach a table or column
+ * they never see. Read under every dialect.
+ */
+export function nameEnginesFoldApart(
+  read: SqlRead,
+  dialect: ReadingDialect | undefined,
+  known: ReadonlySet<string>,
+): string | undefined {
+  for (const profile of tenantStatementReadings(dialect)) {
+    for (const token of read.tokens(profile)) {
+      const name = token.kind === "word" ? token.text : token.kind === "quoted_identifier" ? token.value : undefined;
+      if (name !== undefined && (FOLDS_INTO_ASCII.test(name) || name !== name.normalize("NFC")) && !known.has(name)) return token.text;
+    }
+  }
+  return undefined;
+}
+
 /** Whether `profile` may be SQLite's reading: SQLite's own, or the generic and standard ones a dialect that may be SQLite gets. */
 export function mayBeSqlite(profile: SqlLexerProfile): boolean {
   return profile.id === "sqlite" || profile.id === "generic";

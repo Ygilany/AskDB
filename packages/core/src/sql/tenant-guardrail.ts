@@ -16,6 +16,7 @@ import {
   stringsSqliteReadsAsNames,
   tenantCodeReadings,
   tenantStatementReadings,
+  nameEnginesFoldApart,
   unmatchedNonAsciiName,
   type CodeViewReading,
   type SqlRead,
@@ -174,6 +175,19 @@ export function tenantRuleWarnings(
         `The SQL uses the name ${folded}, which has a character outside printable ASCII and isn't spelled that way in the schema. ` +
         "SQL Server reads names through its collation, which ignores some characters and reads others as ASCII letters, so the " +
         "tenant check can't tell which table or column it names. Spell the name exactly as the schema does."),
+    );
+  }
+
+  // Some engine folds a few letters into ASCII ones (CockroachDB and MySQL read U+0130 as `i`), and
+  // CockroachDB normalizes a name to NFC, so the checks below can't match such a name the engines'
+  // way: unless the schema spells it exactly, refuse it.
+  const apart = nameEnginesFoldApart(read, dialect, knownNames(policy, schemaNames));
+  if (apart !== undefined) {
+    warnings.push(
+      warn("UNICODE_ESCAPED_IDENTIFIER", "",
+        `The SQL uses the name ${apart}, which holds a letter some database engines read as an ASCII letter (U+0130, U+0131, U+017F or U+212A) ` +
+        "or isn't in Unicode normalization form C, and isn't spelled that way in the schema. The tenant check can't tell which table or column it names. " +
+        "Spell the name exactly as the schema does."),
     );
   }
 
@@ -696,11 +710,13 @@ function codeView(sql: string, tokens: readonly SqlToken[], names: ReadonlySet<n
 }
 
 /**
- * A table counts as referenced when any reading sees its name in code, except as a word of
- * `ORDER BY` or `GROUP BY` (#828).
+ * A table counts as referenced when any reading sees its name in code, in any case and between
+ * characters that can't continue a name in any script, except as a word of `ORDER BY` or
+ * `GROUP BY` (#828).
  */
 function mentionsTable(views: CodeViews, tableName: string): boolean {
-  const pattern = new RegExp(`\\b${escapeRegex(tableName)}\\b`, "gi");
+  // A name's edges are letters, digits, `_` or `$` in any script, matched in any case.
+  const pattern = new RegExp(`(?<![\\p{L}\\p{M}\\p{N}_$])${escapeRegex(tableName)}(?![\\p{L}\\p{M}\\p{N}_$])`, "giu");
   return views.some((view) =>
     [...view.text.matchAll(pattern)].some((m) => !inOrderOrGroupBy(view.text, m.index, m.index + m[0].length)),
   );
@@ -780,6 +796,9 @@ function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
   const split = lexerWordEnds(view);
   const foldsCase = view.reading.profile.id === "postgres" || view.reading.profile.id === "generic";
+  // Postgres folds only ASCII letters in an unquoted name and CockroachDB every letter: a name with
+  // an upper-case non-ASCII letter is read apart, so it names nothing ({@link READ_APART}).
+  const readsApart = view.reading.profile.id === "postgres";
   const quotedAt = new Map<number, { readonly end: number; readonly name: string }>();
   for (const t of view.tokens) {
     if (t.kind === "quoted_identifier") quotedAt.set(t.start, { end: t.end, name: t.value });
@@ -804,7 +823,7 @@ function tokenize(view: CodeViews[number]): Token[] {
     for (const [t, offset] of WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
       if (t === ")") depth = Math.max(0, depth - 1);
       const lower = t.toLowerCase();
-      const name = foldsCase ? t.replace(/[A-Z]+/g, (s) => s.toLowerCase()) : t;
+      const name = !foldsCase ? t : readsApart && lower !== asciiLower(t) ? `${READ_APART}${offset}` : asciiLower(t);
       tokens.push({ text: t, lower, name, kw: lower, depth, offset });
       if (t === "(") depth++;
     }
@@ -1009,7 +1028,15 @@ function scopeOpen(scope: string): number {
  * spellings finds more reads, so the check only gets stricter on engines that keep it.
  */
 function tableNameOf(t: Token): string {
-  return t.quoted === true ? t.lower.trimEnd() : t.lower;
+  return lowerEachLetter(t.quoted === true ? t.name.trimEnd() : t.text);
+}
+
+/**
+ * `name` with each letter lower-cased on its own, as CockroachDB lower-cases an unquoted name: a
+ * final capital sigma is `σ`, which `toLowerCase` writes `ς` at the end of a word.
+ */
+function lowerEachLetter(name: string): string {
+  return Array.from(name, (c) => c.toLowerCase()).join("");
 }
 
 /** Whether `token` may be a name: a quoted name, whatever it holds, or a word that starts with a letter or `_`. */
@@ -1217,7 +1244,7 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
  * unrenamed and every reference to it is filtered on it. See {@link validateTenantGuardrails}.
  */
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[]): boolean {
-  const name = table.toLowerCase();
+  const name = lowerEachLetter(table);
   return views.every((view) => {
     const a = analyze(view);
     // Read the Postgres way, a column list after a read's alias, or after a parenthesized source it
@@ -1330,7 +1357,7 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
       return true;
     }
   }
-  return targets.some((target) => target.table.toLowerCase() === table && !target.discriminator && filteredFromOutside(a, found, read, target, 0));
+  return targets.some((target) => lowerEachLetter(target.table) === table && !target.discriminator && filteredFromOutside(a, found, read, target, 0));
 }
 
 /**
@@ -1345,7 +1372,7 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
 function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
   const q = filter.qualifier;
   if (q === undefined) return filter.on === undefined || seenByOn(a.tokens, filter.on, read.at);
-  const owner = target.table.toLowerCase();
+  const owner = lowerEachLetter(target.table);
   if (owner === table) return read.names.has(q);
   return !filter.ownSelect || readsOf(a, owner).some((r) => r.names.has(q));
 }
@@ -1613,10 +1640,17 @@ function predicateAt(tokens: readonly Token[], k: number, column: string, readin
  * A custom id or none is read every way, so a name has to match under each.
  */
 function engineName(t: Token, reading: string): string | undefined {
-  if (reading === "sqlserver") return t.name;
-  if (reading === "postgres") return t.quoted === true || t.text.toLowerCase() === asciiLower(t.text) ? t.name : undefined;
-  return asciiLower(t.name);
+  if (t.name.startsWith(READ_APART)) return undefined;
+  return reading === "sqlserver" || reading === "postgres" ? t.name : asciiLower(t.name);
 }
+
+/**
+ * The start of the name a token gets when the engines that share its reading read it apart (an
+ * unquoted name with an upper-case non-ASCII letter, read the Postgres way), followed by its
+ * offset: no other name equals it, so an alias, a qualifier or a column spelled that way names
+ * nothing ({@link engineName}).
+ */
+const READ_APART = "\u0000";
 
 /** Whether the written column `t` is the policy's `column`, whose spelling the policy writes as the schema does ({@link engineName}). */
 function namesColumn(t: Token, column: string, reading: string): boolean {
