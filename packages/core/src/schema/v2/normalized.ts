@@ -18,6 +18,8 @@ export type NormalizedV2Column = {
   description?: string;
   aliases?: string[];
   enum?: string[];
+  /** The column's item in its table file's `Column notes` H2 section, matched by name. Absent when sensitive=true. */
+  note?: string;
 };
 
 /** Normalized table with optional v2 describable-layer fields. */
@@ -37,6 +39,8 @@ export type NormalizedV2Table = {
   primaryEntity?: string;
   /** Verbatim content of the `Common query language` H2 section. */
   commonQueryLanguage?: string;
+  /** Content of the `Business context` H2 section, trimmed. Absent when sensitive=true. */
+  businessContext?: string;
 };
 
 /** Fully normalized Schema v2 artifact — physical + describable layers merged. */

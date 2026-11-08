@@ -12,9 +12,11 @@ import { findPostgresOnlyForms, type SqlToken } from "./lexer.js";
 import {
   mayBeSqlite,
   readSql,
+  QUERY_START_WORDS,
   stringsSqliteReadsAsNames,
   tenantCodeReadings,
   tenantStatementReadings,
+  nameEnginesFoldApart,
   unmatchedNonAsciiName,
   type CodeViewReading,
   type SqlRead,
@@ -178,6 +180,19 @@ export function tenantRuleWarnings(
     );
   }
 
+  // Some engine folds a few letters into ASCII ones (CockroachDB and MySQL read U+0130 as `i`), and
+  // CockroachDB normalizes a name to NFC, so the checks below can't match such a name the engines'
+  // way: unless the schema spells it exactly, refuse it.
+  const apart = nameEnginesFoldApart(read, dialect, knownNames(policy, schemaNames));
+  if (apart !== undefined) {
+    warnings.push(
+      warn("UNICODE_ESCAPED_IDENTIFIER", "",
+        `The SQL uses the name ${apart}, which holds a letter some database engines read as an ASCII letter (U+0130, U+0131, U+017F or U+212A) ` +
+        "or isn't in Unicode normalization form C, and isn't spelled that way in the schema. The tenant check can't tell which table or column it names. " +
+        "Spell the name exactly as the schema does."),
+    );
+  }
+
   // Past an E'…' string continued on a later line, Postgres and the checks below read different
   // strings, so a table or call could sit in what they take for a string: refuse it (#703).
   const continued = postgresOnly.escapeStringContinuation;
@@ -223,7 +238,7 @@ export function tenantRuleWarnings(
     // query that joins the root for a label, filtered on the scoped table's tenant column; #400).
     const placeholder = placeholderForTenantRoot(root);
     const ownIdTarget = { placeholder, column, table: extractTableName(root.id) };
-    if (!hasTenantPredicate(views, ownIdTarget.table, [ownIdTarget], { graph: policyGraph(policy), allowed: new Set([placeholder]) })) {
+    if (!hasTenantPredicate(views, ownIdTarget.table, [ownIdTarget], { policy, allowed: new Set([placeholder]) })) {
       warnings.push(
         warn("MISSING_TENANT_PREDICATE", root.id,
           `Tenant root table '${extractTableName(root.id)}' is missing required tenant predicate. ` +
@@ -272,7 +287,6 @@ function checkScopedTable(
   warnings: TenantGuardrailWarning[],
 ): void {
   const table = extractTableName(st.id);
-  const graph = policyGraph(policy);
   for (const path of st.scopeThrough) {
     const placeholder = placeholderFor(policy, path.root);
     if ("column" in path) {
@@ -280,14 +294,13 @@ function checkScopedTable(
       // Through a join, only from that column: another path's column on this table (a join-path step's
       // key) proves nothing about the rows this path scopes.
       const target = { placeholder, column: extractColumnName(path.column), table };
-      const start = extractColumnName(path.column).toLowerCase();
-      if (hasTenantPredicate(sql, table, [target], { graph, allowed: new Set([placeholder]), start })) return;
+      if (hasTenantPredicate(sql, table, [target], { policy, allowed: new Set([placeholder]), start: target.column })) return;
     } else {
       // Inherited via JOINs (#400): each hop joined on the columns the policy declares, to a read
       // filtered by the path's root or, up the hierarchy, one of its ancestors. A root outside that
       // chain filters nothing here, even one the scope binds.
       const allowed = new Set(selfAndAncestors(policy, path.root).map((rootId) => placeholderFor(policy, rootId)));
-      if (hasTenantPredicate(sql, table, [], { graph, allowed, path: joinPathProof(policy, table, path.join) })) return;
+      if (hasTenantPredicate(sql, table, [], { policy, allowed, join: path.join })) return;
     }
   }
 
@@ -699,11 +712,13 @@ function codeView(sql: string, tokens: readonly SqlToken[], names: ReadonlySet<n
 }
 
 /**
- * A table counts as referenced when any reading sees its name in code, except as a word of
- * `ORDER BY` or `GROUP BY` (#828).
+ * A table counts as referenced when any reading sees its name in code, in any case and between
+ * characters that can't continue a name in any script, except as a word of `ORDER BY` or
+ * `GROUP BY` (#828).
  */
 function mentionsTable(views: CodeViews, tableName: string): boolean {
-  const pattern = new RegExp(`\\b${escapeRegex(tableName)}\\b`, "gi");
+  // A name's edges are letters, digits, `_` or `$` in any script, matched in any case.
+  const pattern = new RegExp(`(?<![\\p{L}\\p{M}\\p{N}_$])${escapeRegex(tableName)}(?![\\p{L}\\p{M}\\p{N}_$])`, "giu");
   return views.some((view) =>
     [...view.text.matchAll(pattern)].some((m) => !inOrderOrGroupBy(view.text, m.index, m.index + m[0].length)),
   );
@@ -713,13 +728,18 @@ function mentionsTable(views: CodeViews, tableName: string): boolean {
  * Whether `text[start, end)` in a code view is a word of `ORDER BY` or `GROUP BY`. `ORDER` and
  * `GROUP` are reserved on every engine, so a table named after one is written quoted (`"order"`,
  * whose closing quote mark breaks the phrase) or qualified (`billing.order`, which Postgres takes
- * unquoted), and the `BY` after them is the keyword.
+ * unquoted), and the `BY` after them is the keyword. A `.` before the word makes it a name even with
+ * whitespace or a comment (blanked in the view) between them, as every engine reads `billing . order`.
  */
 function inOrderOrGroupBy(text: string, start: number, end: number): boolean {
-  if (text[start - 1] === ".") return false;
+  const afterDot = (at: number) => /\.\s*$/.test(text.slice(0, at));
+  if (afterDot(start)) return false;
   const word = text.slice(start, end).toLowerCase();
   if (word === "order" || word === "group") return /^\s+by(?![\w$\u0080-\uffff])/i.test(text.slice(end));
-  return word === "by" && /(?:^|[^\w$\u0080-\uffff.\u0001])(?:order|group)\s+$/i.test(text.slice(0, start));
+  if (word !== "by") return false;
+  const before = /(?:order|group)\s+$/i.exec(text.slice(0, start));
+  if (before === null || /[\w$\u0080-\uffff\u0001]/.test(text[before.index - 1] ?? "")) return false;
+  return !afterDot(before.index);
 }
 
 /**
@@ -778,6 +798,9 @@ function tokenize(view: CodeViews[number]): Token[] {
   const tokens: Token[] = [];
   const split = lexerWordEnds(view);
   const foldsCase = view.reading.profile.id === "postgres" || view.reading.profile.id === "generic";
+  // Postgres folds only ASCII letters in an unquoted name and CockroachDB every letter: a name with
+  // an upper-case non-ASCII letter is read apart, so it names nothing ({@link READ_APART}).
+  const readsApart = view.reading.profile.id === "postgres";
   const quotedAt = new Map<number, { readonly end: number; readonly name: string }>();
   for (const t of view.tokens) {
     if (t.kind === "quoted_identifier") quotedAt.set(t.start, { end: t.end, name: t.value });
@@ -802,7 +825,7 @@ function tokenize(view: CodeViews[number]): Token[] {
     for (const [t, offset] of WORD_OR_NUMBER.test(m[0]) ? split(m[0], m.index) : [[m[0], m.index] as const]) {
       if (t === ")") depth = Math.max(0, depth - 1);
       const lower = t.toLowerCase();
-      const name = foldsCase ? t.replace(/[A-Z]+/g, (s) => s.toLowerCase()) : t;
+      const name = !foldsCase ? t : readsApart && lower !== asciiLower(t) ? `${READ_APART}${offset}` : asciiLower(t);
       tokens.push({ text: t, lower, name, kw: lower, depth, offset });
       if (t === "(") depth++;
     }
@@ -939,7 +962,7 @@ type Filter = {
 type Occurrence = { readonly target: PredicateTarget; readonly filters: readonly Filter[] };
 
 /** Words that start a query right after its `(`. */
-const QUERY_START = new Set(["select", "with", "values", "table"]);
+const QUERY_START = QUERY_START_WORDS;
 /** Words that end a row source with no alias under every reading: no engine takes one as an alias. */
 const ENDS_A_SOURCE = new Set([
   "where", "group", "order", "having", "union", "intersect", "except", "join", "inner", "left", "right", "cross", "outer", "on",
@@ -1005,7 +1028,15 @@ function scopeOpen(scope: string): number {
  * spellings finds more reads, so the check only gets stricter on engines that keep it.
  */
 function tableNameOf(t: Token): string {
-  return t.quoted === true ? t.lower.trimEnd() : t.lower;
+  return lowerEachLetter(t.quoted === true ? t.name.trimEnd() : t.text);
+}
+
+/**
+ * `name` with each letter lower-cased on its own, as CockroachDB lower-cases an unquoted name: a
+ * final capital sigma is `σ`, which `toLowerCase` writes `ς` at the end of a word.
+ */
+function lowerEachLetter(name: string): string {
+  return Array.from(name, (c) => c.toLowerCase()).join("");
 }
 
 /** Whether `token` may be a name: a quoted name, whatever it holds, or a word that starts with a letter or `_`. */
@@ -1195,9 +1226,9 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
     for (const target of targets) {
       // A quoted name spelled like the placeholder is a name, which nothing binds.
       if (t.text !== target.placeholder || t.quoted === true) continue;
-      const predicate = predicateAt(a.tokens, k, target.column, a.view.reading.profile.id === "postgres");
+      const predicate = predicateAt(a.tokens, k, target.column, a.view.reading.profile.id);
       if (!predicate) continue;
-      const filters = filteredScopes(a, predicate.start, predicate.end, qualifierOf(a.tokens, predicate.column));
+      const filters = filteredScopes(a, predicate.start, predicate.end, qualifierOf(a.tokens, predicate.column), predicate.column);
       if (filters.length > 0) found.push({ target, filters });
     }
   });
@@ -1210,12 +1241,12 @@ function occurrences(a: Analysis, targets: readonly PredicateTarget[]): Occurren
  * end, and, for a table scoped by a column, that column: the proof leaves the read only through it.
  */
 type JoinProof = {
-  readonly graph: PolicyGraph;
+  readonly policy: NormalizedTenantPolicy;
   readonly allowed: ReadonlySet<string>;
-  /** For a table scoped by a column path, that column: the proof leaves the read only through it. */
+  /** For a table scoped by a column path, that column as the policy spells it: the proof leaves the read only through it. */
   readonly start?: string;
-  /** For a table scoped by a join path, that path: the proof walks only its own steps ({@link pathInScope}). */
-  readonly path?: PathProof;
+  /** For a table scoped by a join path, that path's steps: the proof walks only its own steps ({@link pathInScope}). */
+  readonly join?: ReadonlyArray<{ readonly from: string; readonly to: string }>;
 };
 
 /**
@@ -1230,7 +1261,7 @@ type JoinProof = {
  * {@link validateTenantGuardrails} one for each root the scope covers.
  */
 function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[], joinProof?: JoinProof): boolean {
-  const name = table.toLowerCase();
+  const name = lowerEachLetter(table);
   return views.every((view) => {
     const a = analyze(view);
     // Read the Postgres way, a column list after a read's alias, or after a parenthesized source it
@@ -1247,10 +1278,14 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
       const selfJoin = tableReads.includes(read) && sameSelect.length > 1;
       const filtered = selfJoin ? selfJoinReadFiltered(a, found, targets, read, name, sameSelect) : readFiltered(a, found, targets, read, name);
       // A join proof names reads too, so a self-join's reads must be told apart for it as well.
-      return filtered || (joinProof !== undefined && (!selfJoin || distinctAliases(a, sameSelect)) &&
-        (joinProof.path !== undefined
-          ? pathInScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.path, joinProof.allowed)
-          : inScope(proofFor(a, joinProof.graph), { ...read, table: name }, joinProof.allowed, undefined, joinProof.start)));
+      if (filtered) return true;
+      if (joinProof === undefined || (selfJoin && !distinctAliases(a, sameSelect))) return false;
+      // The policy's names, read the way this view's reading compares a written name ({@link columnKey}).
+      const reading = a.view.reading.profile.id;
+      const proof = proofFor(a, policyGraph(joinProof.policy, reading));
+      return joinProof.join !== undefined
+        ? pathInScope(proof, { ...read, table: name }, joinPathProof(joinProof.policy, table, joinProof.join, reading), joinProof.allowed)
+        : inScope(proof, { ...read, table: name }, joinProof.allowed, undefined, joinProof.start === undefined ? undefined : columnKey(joinProof.start, reading));
     });
   });
 }
@@ -1351,7 +1386,7 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
       return true;
     }
   }
-  return targets.some((target) => target.table.toLowerCase() === table && !target.discriminator && filteredFromOutside(a, found, read, target, 0));
+  return targets.some((target) => lowerEachLetter(target.table) === table && !target.discriminator && filteredFromOutside(a, found, read, target, 0));
 }
 
 /**
@@ -1363,7 +1398,7 @@ function readFiltered(a: Analysis, found: readonly Occurrence[], targets: readon
  * through a join {@link inScope} can follow (#400).
  */
 function filtersRead(a: Analysis, filter: Filter, target: PredicateTarget, read: Read, table: string): boolean {
-  if (target.table.toLowerCase() !== table) return false;
+  if (lowerEachLetter(target.table) !== table) return false;
   return canName(a.tokens, filter.qualifier, filter.on, read);
 }
 
@@ -1399,7 +1434,7 @@ function filteredFromOutside(a: Analysis, found: readonly Occurrence[], read: Re
   let filtered = false;
   if (depth <= 8 && open >= 0 && !a.scopes.branched.has(open)) {
     const refs = sourceRefs(a, open);
-    filtered = refs !== undefined && refs.length > 0 && passesThrough(a, open, read.names, target.column.toLowerCase()) &&
+    filtered = refs !== undefined && refs.length > 0 && passesThrough(a, open, read.names, target.column) &&
       refs.every((ref) =>
         found.some((o) =>
           o.target === target &&
@@ -1458,10 +1493,12 @@ const COMPUTES_OVER_ROWS = new Set(["group", "having", "window", "qualify", "lim
  * column itself, the read's `q.*`, or `*` over a single source; and the body has no `GROUP BY`,
  * `HAVING`, window, `QUALIFY`, `LIMIT`, `OFFSET`, `FETCH` or `TOP`, which would run over every tenant's rows
  * before the outside filter. An item with a string or comment in it, `DISTINCT ON` or a nested
- * `WITH` fails closed.
+ * `WITH` fails closed. The column and the name it yields are compared as {@link namesColumn} reads
+ * them, and an item that yields the name in another case fails closed too.
  */
 function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, column: string): boolean {
   const { tokens, scopes, view } = a;
+  const reading = view.reading.profile.id;
   const scope = scopeKey(open, 0);
   const depth = tokens[open]!.depth + 1;
   const level = (i: number) => scopes.of[i] === scope && tokens[i]!.depth === depth;
@@ -1501,20 +1538,22 @@ function passesThrough(a: Analysis, open: number, names: ReadonlySet<string>, co
       yields++;
       continue;
     }
-    let alias: string | undefined;
+    let alias: Token | undefined;
     let expr = ts;
     if (n >= 3 && ts[n - 2]!.kw === "as" && isWord(ts[n - 1])) {
-      alias = ts[n - 1]!.lower;
+      alias = ts[n - 1]!;
       expr = ts.slice(0, n - 2);
     } else if (n >= 2 && isWord(ts[n - 1]) && (isWord(ts[n - 2]) || ts[n - 2]!.text === ")" || /^\d/.test(ts[n - 2]!.text))) {
-      alias = ts[n - 1]!.lower;
+      alias = ts[n - 1]!;
       expr = ts.slice(0, n - 1);
     }
     const isColumn = expr.length === 1 ? isWord(expr[0]) : expr.length === 3 && isWord(expr[0]) && expr[1]!.text === "." && isWord(expr[2]);
     if (!isColumn) return false; // an expression, a call or an aggregate
-    const name = expr[expr.length - 1]!.lower;
-    if ((alias ?? name) !== column) continue;
-    if (name !== column || (expr.length === 3 && !names.has(expr[0]!.name))) return false; // another expression named like the column
+    const name = expr[expr.length - 1]!;
+    // An item that yields the name in any case is a candidate; it must name the column the way the engine reads it.
+    if ((alias ?? name).lower !== column.toLowerCase()) continue;
+    if (!namesColumn(alias ?? name, column, reading) || !namesColumn(name, column, reading)) return false;
+    if (expr.length === 3 && !names.has(expr[0]!.name)) return false; // another expression named like the column
     yields++;
   }
   return yields === 1;
@@ -1538,8 +1577,8 @@ function singleSource(a: Analysis, open: number, scope: string, depth: number): 
 }
 
 /**
- * Whether `read`'s `SELECT` ANDs in `col = '<value>'` for `target.discriminator`: its column
- * (unqualified, or qualified with the read's table or alias), `=`, and a plain `'…'` literal,
+ * Whether `read`'s `SELECT` ANDs in `col = '<value>'` for `target.discriminator`: its column, as
+ * {@link namesColumn} compares it (unqualified, or qualified with the read's table or alias), `=`, and a plain `'…'` literal,
  * read from the statement at the offsets where the view blanked it, whose value is one of the
  * discriminator's values and which nothing but whitespace follows up to the next token (no
  * `''`-escape, no adjacent literal, no comment).
@@ -1551,7 +1590,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     const eq = tokens[i + 1];
-    if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || t.lower !== column.toLowerCase() || eq?.text !== "=") continue;
+    if (a.scopes.of[i] !== read.scope || !isIdentifier(t) || !namesColumn(t, column, view.reading.profile.id) || eq?.text !== "=") continue;
     const qualifier = qualifierOf(tokens, i);
     if (qualifier !== undefined && !read.names.has(qualifier)) continue;
     let open = eq.offset + 1;
@@ -1564,7 +1603,7 @@ function hasDiscriminator(a: Analysis, read: Read, target: PredicateTarget): boo
     // The view must read it as a string, and it must end there.
     const next = tokens[i + 2]?.offset ?? source.length;
     if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
-    const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier);
+    const filters = filteredScopes(a, qualifiedStart(tokens, i), i + 1, qualifier, i);
     if (filters.some((f) => f.scope === read.scope && canName(tokens, qualifier, f.on, read))) return true;
   }
   return false;
@@ -1587,33 +1626,34 @@ type PolicyGraph = {
   readonly columns: ReadonlyMap<string, ReadonlySet<string>>;
   /** Every root's placeholder. */
   readonly placeholders: ReadonlySet<string>;
-  /** Each column name the policy uses, lower-cased, with the spellings the policy writes it in. */
-  readonly spellings: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
-const graphs = new WeakMap<NormalizedTenantPolicy, PolicyGraph>();
+const graphs = new WeakMap<NormalizedTenantPolicy, Map<string, PolicyGraph>>();
 
-function policyGraph(policy: NormalizedTenantPolicy): PolicyGraph {
-  let graph = graphs.get(policy);
+/**
+ * {@link PolicyGraph} for `policy`, its table names lower-cased letter by letter ({@link tableNameOf})
+ * and its column names read the way `reading` compares a written name ({@link columnKey}).
+ */
+function policyGraph(policy: NormalizedTenantPolicy, reading: string): PolicyGraph {
+  const byReading = graphs.get(policy) ?? new Map<string, PolicyGraph>();
+  graphs.set(policy, byReading);
+  let graph = byReading.get(reading);
   if (graph !== undefined) return graph;
   const carriers = new Map<string, Map<string, Set<string>>>();
   const columns = new Map<string, Set<string>>();
-  const spellings = new Map<string, Set<string>>();
-  const spell = (column: string) => spellings.set(column.toLowerCase(), (spellings.get(column.toLowerCase()) ?? new Set()).add(column));
-  const name = (columnId: string) => [tableOfColumn(columnId).toLowerCase(), extractColumnName(columnId).toLowerCase()] as const;
+  const name = (columnId: string) => [lowerEachLetter(tableOfColumn(columnId)), columnKey(extractColumnName(columnId), reading)] as const;
   const know = (columnId: string) => {
     const [table, column] = name(columnId);
     columns.set(table, (columns.get(table) ?? new Set()).add(column));
-    spell(extractColumnName(columnId));
   };
   for (const root of policy.roots) {
     for (const carrier of idCarriers(policy, root.id)) {
-      const table = carrier.table.toLowerCase();
+      const table = lowerEachLetter(carrier.table);
+      const column = columnKey(carrier.column, reading);
       const byColumn = carriers.get(table) ?? new Map<string, Set<string>>();
-      byColumn.set(carrier.column.toLowerCase(), (byColumn.get(carrier.column.toLowerCase()) ?? new Set()).add(carrier.placeholder));
+      byColumn.set(column, (byColumn.get(column) ?? new Set()).add(carrier.placeholder));
       carriers.set(table, byColumn);
-      columns.set(table, (columns.get(table) ?? new Set()).add(carrier.column.toLowerCase()));
-      spell(carrier.column);
+      columns.set(table, (columns.get(table) ?? new Set()).add(column));
     }
   }
   const hops: Array<PolicyGraph["hops"][number]> = [];
@@ -1643,8 +1683,8 @@ function policyGraph(policy: NormalizedTenantPolicy): PolicyGraph {
       }
     }
   }
-  graph = { carriers, hops, columns, placeholders: new Set(policy.roots.map((r) => placeholderForTenantRoot(r))), spellings };
-  graphs.set(policy, graph);
+  graph = { carriers, hops, columns, placeholders: new Set(policy.roots.map((r) => placeholderForTenantRoot(r))) };
+  byReading.set(reading, graph);
   return graph;
 }
 
@@ -1661,6 +1701,8 @@ type Proof = {
   readonly nodes: readonly Node[];
   readonly equalities: ReadonlyArray<{ readonly left: ColumnRef; readonly right: ColumnRef; readonly scope: string; readonly on?: number }>;
   readonly bound: Map<string, (node: Node, column: string) => ReadonlySet<string>>;
+  /** Each `SELECT`'s `IN (SELECT …)` links, worked out once ({@link inLinks}). */
+  readonly links: Map<string, InLink[]>;
 };
 
 const proofs = new WeakMap<Analysis, WeakMap<PolicyGraph, Proof>>();
@@ -1670,11 +1712,12 @@ function proofFor(a: Analysis, graph: PolicyGraph): Proof {
   proofs.set(a, byGraph);
   let proof = byGraph.get(graph);
   if (proof !== undefined) return proof;
-  const ctes = new Set([...a.scopes.close.keys()].map((open) => cteNameAt(a.tokens, open)).filter((n) => n !== undefined));
+  // Every CTE's name, whatever its body (a data-modifying one opens no query): a read of that name may be the CTE.
+  const ctes = new Set(a.tokens.flatMap((t, open) => (t.text === "(" ? [cteNameAt(a.tokens, open)] : [])).filter((n) => n !== undefined));
   const nodes = [...graph.columns.keys()]
     .filter((table) => !ctes.has(table))
     .flatMap((table) => readsOf(a, table).filter((read) => isTableReference(a.tokens, read.at)).map((read) => ({ ...read, table })));
-  proof = { a, graph, nodes, equalities: equalities(a, graph), bound: new Map() };
+  proof = { a, graph, nodes, equalities: equalities(a), bound: new Map(), links: new Map() };
   byGraph.set(graph, proof);
   return proof;
 }
@@ -1712,17 +1755,12 @@ function isTableReference(tokens: readonly Token[], i: number): boolean {
 }
 
 /**
- * Whether the column at `i` is a quoted name in another case than the policy's, read the Postgres
- * way: Postgres compares a quoted name exactly, so it is another column, which another source may
- * hold, and ties nothing to it. For a name the policy uses, a quoted name counts only when spelled
- * as the policy spells it (`"clientId"`, not `"clientid"`), as {@link predicateAt} reads it; for any
- * other name, only in lower case (`"AGENCY_ID"` ties nothing).
+ * The column written at `i`, read the way the view's reading compares it with the policy's
+ * ({@link engineName}, {@link columnKey}); undefined when the engines of that reading read it apart,
+ * so it ties nothing. `"AGENCY_ID"`, read the Postgres way, is another column than `agency_id`.
  */
-function quotedInAnotherCase(a: Analysis, i: number, graph: PolicyGraph): boolean {
-  const t = a.tokens[i]!;
-  if (a.view.reading.profile.id !== "postgres" || t.quoted !== true) return false;
-  const spelled = graph.spellings.get(t.lower);
-  return spelled === undefined ? t.name !== t.lower : !(spelled.size === 1 && spelled.has(t.name));
+function writtenColumn(a: Analysis, i: number): string | undefined {
+  return engineName(a.tokens[i]!, a.view.reading.profile.id);
 }
 
 /**
@@ -1731,37 +1769,32 @@ function quotedInAnotherCase(a: Analysis, i: number, graph: PolicyGraph): boolea
  * an `ON` equality holds only on the rows its join matched, so it links nothing: there only `WHERE`
  * and `HAVING` count, as {@link filteredScopes} reads them (#400).
  */
-function equalities(a: Analysis, graph: PolicyGraph): Proof["equalities"] {
+function equalities(a: Analysis): Proof["equalities"] {
   const { tokens } = a;
   const found: Array<Proof["equalities"][number]> = [];
   tokens.forEach((t, i) => {
     if (t.text !== "=" || !tokens[i - 1] || !isIdentifier(tokens[i - 1]!) || !tokens[i + 1] || !isIdentifier(tokens[i + 1]!)) return;
     let end = i + 1;
     while (tokens[end + 1]?.text === "." && tokens[end + 2] !== undefined && isIdentifier(tokens[end + 2]!)) end += 2;
-    if (quotedInAnotherCase(a, i - 1, graph) || quotedInAnotherCase(a, end, graph)) return;
-    const left = { q: qualifierOf(tokens, i - 1), column: tokens[i - 1]!.lower };
-    const right = { q: qualifierOf(tokens, end), column: tokens[end]!.lower };
-    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined)) found.push({ left, right, scope: f.scope, on: f.on });
+    const leftColumn = writtenColumn(a, i - 1);
+    const rightColumn = writtenColumn(a, end);
+    if (leftColumn === undefined || rightColumn === undefined) return;
+    const left = { q: qualifierOf(tokens, i - 1), column: leftColumn };
+    const right = { q: qualifierOf(tokens, end), column: rightColumn };
+    // In `HAVING`, each side must be a `GROUP BY` key ({@link onGroupKey}).
+    for (const f of filteredScopes(a, qualifiedStart(tokens, i - 1), end, undefined, [i - 1, end])) found.push({ left, right, scope: f.scope, on: f.on });
   });
   return found;
 }
 
 /**
  * Whether a `SELECT` may keep rows a join's `ON` never matched: `LEFT`, `RIGHT`, `FULL` or `OUTER`
- * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`), and not as
- * a call (`LEFT(name, 1)`) or part of a qualified name (`o.full`). No `ON` there filters, seeds,
- * links or hops: only `WHERE` and `HAVING` do (#400).
+ * appears in it as a word, whatever hint follows (`RIGHT STRAIGHT JOIN`, `OUTER APPLY`). No `ON`
+ * there filters, seeds, links or hops: only `WHERE` and `HAVING` do (#400).
  */
 function mayKeepUnmatchedRows(a: Analysis, scope: string): boolean {
   const { tokens, scopes } = a;
-  return tokens.some(
-    (t, i) =>
-      scopes.of[i] === scope &&
-      OUTER_JOIN_WORDS.has(t.kw) &&
-      tokens[i + 1]?.text !== "(" &&
-      tokens[i - 1]?.text !== "." &&
-      tokens[i + 1]?.text !== ".",
-  );
+  return tokens.some((t, i) => scopes.of[i] === scope && ["left", "right", "full", "outer"].includes(t.kw) && tokens[i + 1]?.text !== "(");
 }
 
 /**
@@ -1810,10 +1843,11 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
   tokens.forEach((t, k) => {
     // A placeholder counts only outside a quoted name: `":tenant_agency_ids"` is a column.
     if (t.quoted === true || !p.graph.placeholders.has(t.text)) return;
-    const predicate = predicateAt(tokens, k);
-    if (!predicate || quotedInAnotherCase(a, predicate.column, p.graph)) return;
-    const ref = { q: qualifierOf(tokens, predicate.column), column: tokens[predicate.column]!.lower };
-    const filter = filteredScopes(a, predicate.start, predicate.end, ref.q).find((f) => f.scope === scope);
+    const predicate = predicateAt(tokens, k, undefined, a.view.reading.profile.id);
+    const column = predicate === undefined ? undefined : writtenColumn(a, predicate.column);
+    if (predicate === undefined || column === undefined) return;
+    const ref = { q: qualifierOf(tokens, predicate.column), column };
+    const filter = filteredScopes(a, predicate.start, predicate.end, ref.q, predicate.column).find((f) => f.scope === scope);
     if (filter === undefined) return;
     const node = resolve(p, scope, ref, filter.on);
     if (node) seed(term(node, ref.column), [t.text]);
@@ -1833,16 +1867,20 @@ function boundIn(p: Proof, scope: string): (node: Node, column: string) => Reado
  * selects, and the read that column resolves to there, if any.
  */
 function inLinks(p: Proof, scope: string): InLink[] {
+  const cached = p.links.get(scope);
+  if (cached !== undefined) return cached;
   const { tokens, scopes } = p.a;
   const links: InLink[] = [];
+  p.links.set(scope, links);
   for (const [open, close] of scopes.close) {
     const column = open - 2;
     if (scopes.of[column] !== scope || scopes.branched.has(open) || subqueryUse(tokens, open) !== "in") continue;
-    if (quotedInAnotherCase(p.a, column, p.graph)) continue;
-    const ref = { q: qualifierOf(tokens, column), column: tokens[column]!.lower };
-    const filter = filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q).find((f) => f.scope === scope);
+    const written = writtenColumn(p.a, column);
+    if (written === undefined) continue;
+    const ref = { q: qualifierOf(tokens, column), column: written };
+    const filter = filteredScopes(p.a, qualifiedStart(tokens, column), close, ref.q, column).find((f) => f.scope === scope);
     if (filter === undefined) continue;
-    const item = selectedColumn(p.a, open, p.graph);
+    const item = selectedColumn(p.a, open);
     if (item === undefined) continue;
     const innerScope = scopeKey(open, 0);
     links.push({ ref, innerScope, item, inner: resolve(p, innerScope, item), on: filter.on });
@@ -1889,12 +1927,12 @@ type PathProof = { readonly steps: readonly Hop[]; readonly roots: ReadonlyMap<s
  * `table` (each one leaving the table the one before reached), whatever order the policy lists them in;
  * when they don't chain that way (a fork or a gap), in the listed order.
  */
-function joinPathProof(policy: NormalizedTenantPolicy, table: string, join: ReadonlyArray<{ readonly from: string; readonly to: string }>): PathProof {
+function joinPathProof(policy: NormalizedTenantPolicy, table: string, join: ReadonlyArray<{ readonly from: string; readonly to: string }>, reading: string): PathProof {
   const hop = (fromId: string, toId: string): Hop => ({
-    from: tableOfColumn(fromId).toLowerCase(),
-    fromColumn: extractColumnName(fromId).toLowerCase(),
-    to: tableOfColumn(toId).toLowerCase(),
-    toColumn: extractColumnName(toId).toLowerCase(),
+    from: lowerEachLetter(tableOfColumn(fromId)),
+    fromColumn: columnKey(extractColumnName(fromId), reading),
+    to: lowerEachLetter(tableOfColumn(toId)),
+    toColumn: columnKey(extractColumnName(toId), reading),
   });
   const idColumn = (rootId: string) => policy.roots.find((r) => r.id === rootId)?.tenantIdColumn;
   const roots = new Map<string, RootLink>();
@@ -1906,8 +1944,8 @@ function joinPathProof(policy: NormalizedTenantPolicy, table: string, join: Read
     }
     const to = root.parent ? idColumn(root.parent.root) : undefined;
     if (root.parent && to !== undefined) parents.push(hop(root.parent.foreignKey, to));
-    roots.set(tableOfColumn(root.tenantIdColumn).toLowerCase(), {
-      idColumn: extractColumnName(root.tenantIdColumn).toLowerCase(),
+    roots.set(lowerEachLetter(tableOfColumn(root.tenantIdColumn)), {
+      idColumn: columnKey(extractColumnName(root.tenantIdColumn), reading),
       placeholder: placeholderFor(policy, root.id),
       parents,
     });
@@ -1915,7 +1953,7 @@ function joinPathProof(policy: NormalizedTenantPolicy, table: string, join: Read
   const listed = join.map((step) => hop(step.from, step.to));
   const left = [...listed];
   const chained: Hop[] = [];
-  let at = table.toLowerCase();
+  let at = lowerEachLetter(table);
   while (left.length > 0) {
     const next = left.filter((h) => h.from === at);
     if (next.length !== 1) break;
@@ -2003,7 +2041,7 @@ function inScope(p: Proof, node: Node, allowed: ReadonlySet<string>, visited: Se
  * The column the query at `open` selects, when its select list is one plain column (`col` or
  * `q.col`, under any alias), else undefined.
  */
-function selectedColumn(a: Analysis, open: number, graph: PolicyGraph): ColumnRef | undefined {
+function selectedColumn(a: Analysis, open: number): ColumnRef | undefined {
   const { tokens, scopes, view } = a;
   const scope = scopeKey(open, 0);
   const depth = tokens[open]!.depth + 1;
@@ -2022,8 +2060,9 @@ function selectedColumn(a: Analysis, open: number, graph: PolicyGraph): ColumnRe
   const rest = item.slice(n);
   const aliased = rest.length === 0 || (rest.length === 1 && isWord(rest[0])) || (rest.length === 2 && rest[0]!.kw === "as" && isWord(rest[1]));
   if (!aliased || !isIdentifier(item[n - 1]!) || (n === 3 && !isWord(item[0]))) return undefined;
-  if (quotedInAnotherCase(a, first + n - 1, graph)) return undefined;
-  return { q: n === 3 ? item[0]!.name : undefined, column: item[n - 1]!.lower };
+  const column = writtenColumn(a, first + n - 1);
+  if (column === undefined) return undefined;
+  return { q: n === 3 ? item[0]!.name : undefined, column };
 }
 
 /** An identifier token: a word that isn't one of the predicate forms' keywords. */
@@ -2049,18 +2088,14 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
 /**
  * The span `[start, end]` and column index of a tenant predicate around the placeholder at `k`:
  * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a possibly
- * qualified name) is `column`, or any column when none is given. Which read the column belongs to
- * is its qualifier's to say. With `exactQuoted` (read the Postgres way, where a quoted name is
- * compared exactly), a quoted `col` counts only when spelled as the policy spells the column:
- * `"AGENCY_ID"` is another column there, which another source in the query may hold.
+ * qualified name) is `column`, as {@link namesColumn} compares them under `reading`, or any column
+ * when none is given. Which read the column belongs to is its qualifier's to say.
  */
-function predicateAt(tokens: readonly Token[], k: number, column?: string, exactQuoted = false): { start: number; end: number; column: number } | undefined {
+function predicateAt(tokens: readonly Token[], k: number, column: string | undefined, reading: string): { start: number; end: number; column: number } | undefined {
   const at = (i: number) => tokens[i];
-  const name = column?.toLowerCase();
   const matches = (i: number) => {
     const t = at(i);
-    if (t === undefined || !isIdentifier(t) || (name !== undefined && t.lower !== name)) return false;
-    return !(exactQuoted && column !== undefined && t.quoted === true && t.name !== column);
+    return t !== undefined && isIdentifier(t) && (column === undefined || namesColumn(t, column, reading));
   };
   // col = P
   if (at(k - 1)?.text === "=" && matches(k - 2)) return { start: qualifiedStart(tokens, k - 2), end: k, column: k - 2 };
@@ -2080,6 +2115,56 @@ function predicateAt(tokens: readonly Token[], k: number, column?: string, exact
     if (matches(end)) return { start: k, end, column: end };
   }
   return undefined;
+}
+
+/**
+ * The name every engine that shares the `reading` reads for the written name `t`, to compare with a
+ * column's spelling ({@link namesColumn}) or with another written name ({@link sameName}); undefined
+ * when those engines read it apart, so it names no column. A name read as another column may be
+ * another source's, so it ties nothing to the policy's.
+ * - Read the Postgres way (`postgres`, `cockroachdb`): a quoted name exactly; an unquoted one with
+ *   its ASCII letters lower-cased, as Postgres folds it. CockroachDB lower-cases every letter, so an
+ *   unquoted name with an upper-case non-ASCII letter (`Égency_id`) is read apart.
+ * - Read the SQL Server way, as written: the database's collation may compare names
+ *   case-sensitively, and the check can't see it, so `agencyid` is another column than `agencyId`.
+ * - Read the MySQL way (MySQL and MariaDB) and otherwise (SQLite, the generic reading), with only
+ *   ASCII letters lower-cased, quoted or not: SQLite folds only those, and MariaDB keeps apart
+ *   letters Unicode lower-casing merges (U+212A KELVIN SIGN and `k`).
+ * A custom id or none is read every way, so a name has to match under each.
+ */
+function engineName(t: Token, reading: string): string | undefined {
+  if (t.name.startsWith(READ_APART)) return undefined;
+  return reading === "sqlserver" || reading === "postgres" ? t.name : asciiLower(t.name);
+}
+
+/**
+ * The start of the name a token gets when the engines that share its reading read it apart (an
+ * unquoted name with an upper-case non-ASCII letter, read the Postgres way), followed by its
+ * offset: no other name equals it, so an alias, a qualifier or a column spelled that way names
+ * nothing ({@link engineName}).
+ */
+const READ_APART = "\u0000";
+
+/** Whether the written column `t` is the policy's `column`, whose spelling the policy writes as the schema does ({@link engineName}). */
+function namesColumn(t: Token, column: string, reading: string): boolean {
+  const name = engineName(t, reading);
+  return name !== undefined && name === columnKey(column, reading);
+}
+
+/** A column's spelling, as the policy writes it from the schema, read the way `reading` compares a written name ({@link engineName}). */
+function columnKey(column: string, reading: string): string {
+  return reading === "postgres" || reading === "sqlserver" ? column : asciiLower(column);
+}
+
+/** Whether the written names `t` and `u` are the same name for every engine that shares the `reading` ({@link engineName}). */
+function sameName(t: Token, u: Token, reading: string): boolean {
+  const name = engineName(t, reading);
+  return name !== undefined && name === engineName(u, reading);
+}
+
+/** `name` with its ASCII letters lower-cased, as SQLite folds a name. */
+function asciiLower(name: string): string {
+  return name.replace(/[A-Z]+/g, (s) => s.toLowerCase());
 }
 
 /** How a parenthesized query (`(SELECT …)`) is used by the query around it. */
@@ -2214,10 +2299,11 @@ function takesNoOn(tokens: readonly Token[], join: number): boolean {
  * `ON` (of an inner join, in a `SELECT` that keeps no unmatched rows) or `HAVING` clause: at its own level and
  * at every enclosing parenthesized level up to that clause, it sits between `AND`s (or the clause's
  * start and end), with no `OR`, `XOR` (or MySQL's `||`) at that level and no `NOT` in front of it.
- * A level opened by a function call or a comparison doesn't count. A `SELECT` used as `col IN (…)`
- * limits the query around it only through the join {@link inScope} follows (#400).
+ * A level opened by a function call or a comparison doesn't count. In `HAVING`, each of the term's
+ * columns at `termColumn` must be a `GROUP BY` key ({@link onGroupKey}). A `SELECT` used as
+ * `col IN (…)` limits the query around it only through the join {@link inScope} follows (#400).
  */
-function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined): Filter[] {
+function filteredScopes(a: Analysis, start: number, end: number, qualifier: string | undefined, termColumn: number | readonly number[]): Filter[] {
   const { tokens, scopes } = a;
   const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && a.view.reading.pipesAreOr);
   const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
@@ -2229,7 +2315,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     // What is directly around the term, at its level.
     const before = tokens[lo - 1];
     const after = tokens[hi + 1];
-    const leftOk = before !== undefined && (before.kw === "and" || before.text === "(" || FILTER_CLAUSE.has(before.kw));
+    const leftOk = before !== undefined && (conjunctAnd(tokens, lo - 1) || before.text === "(" || FILTER_CLAUSE.has(before.kw));
     // A `,` ends a join's `ON` when another source follows in the `FROM` list; elsewhere the opener check below refuses it.
     const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || after.text === "," || endsClause(hi + 1);
     if (!leftOk || !rightOk) return filters;
@@ -2259,7 +2345,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
         break;
       }
       if (t.depth > depth) continue;
-      if (t.text === ";" || t.text === "," || endsClause(j)) break;
+      if (t.text === ";" || t.text === "," || endsFilterScan(tokens, j, a.view.reading.profile.id)) break;
       if (disjunction(t)) return filters;
     }
 
@@ -2267,6 +2353,7 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
       // An outer join keeps rows its ON doesn't match, and in a SELECT with one, an inner join's ON
       // filters only the rows that join builds; there only WHERE and HAVING filter every row (#400).
       if (tokens[clause]!.kw === "on" && (isOuterJoinOn(tokens, clause) || mayKeepUnmatchedRows(a, scopes.of[clause]!))) return filters;
+      if (tokens[clause]!.kw === "having" && !(typeof termColumn === "number" ? [termColumn] : termColumn).every((c) => onGroupKey(a, clause, c))) return filters;
       filters.push(tokens[clause]!.kw === "on" ? { scope: scopes.of[clause]!, qualifier, on: clause } : { scope: scopes.of[clause]!, qualifier });
       return filters;
     }
@@ -2276,11 +2363,112 @@ function filteredScopes(a: Analysis, start: number, end: number, qualifier: stri
     // WHERE/ON/HAVING, AND, or another "(". Anything else (`f(`, `IN (`, `EXISTS (`,
     // `NOT (`, `= (`) makes it something other than a filter conjunct.
     const opener = tokens[open - 1];
-    if (opener === undefined || !(FILTER_CLAUSE.has(opener.kw) || opener.kw === "and" || opener.text === "(")) return filters;
+    if (opener === undefined || !(FILTER_CLAUSE.has(opener.kw) || conjunctAnd(tokens, open - 1) || opener.text === "(")) return filters;
     lo = open;
     hi = close;
     depth = tokens[open]!.depth;
   }
+}
+
+/** Whether the token at `i` is an `AND` that joins two conjuncts, not the `AND` of a `BETWEEN`. */
+function conjunctAnd(tokens: readonly Token[], i: number): boolean {
+  return tokens[i]?.kw === "and" && !andOfBetween(tokens, i);
+}
+
+/**
+ * Whether the `AND` at `and` closes a `BETWEEN` (`x BETWEEN 0 AND y`), so that what follows is the
+ * upper bound, not a conjunct: MySQL reads `0 BETWEEN 0 AND col IN (…)` with the `IN` inside the
+ * bound. Each `BETWEEN` at the `AND`'s level, from the start of its clause or parentheses, takes the
+ * first `AND` after it there, whatever its lower bound holds (`LEFT(…)`, a cast); an `AND` inside a
+ * `CASE … END` belongs to the `CASE`.
+ */
+function andOfBetween(tokens: readonly Token[], and: number): boolean {
+  const depth = tokens[and]!.depth;
+  // A word beside a `.` is a name (`o.and`, `o.end`), never the keyword.
+  const dotted = (i: number) => tokens[i - 1]?.text === "." || tokens[i + 1]?.text === ".";
+  let from = and - 1;
+  while (from >= 0) {
+    const t = tokens[from]!;
+    if (t.depth < depth || (t.depth === depth && !dotted(from) && (FILTER_CLAUSE.has(t.kw) || t.kw === "select"))) break;
+    from--;
+  }
+  let pending = 0;
+  let inCase = 0;
+  for (let i = from + 1; i < and; i++) {
+    const t = tokens[i]!;
+    if (t.depth !== depth || dotted(i)) continue;
+    if (t.kw === "case") inCase++;
+    else if (t.kw === "end" && inCase > 0) inCase--;
+    else if (inCase === 0 && t.kw === "between") pending++;
+    else if (inCase === 0 && t.kw === "and" && pending > 0) pending--;
+  }
+  return pending > 0;
+}
+
+/**
+ * Whether the word at `j` ends the scan for an `OR` beside a predicate: a clause start that every
+ * engine reserves (`WHERE`, `HAVING`, `GROUP BY`, `ORDER BY`, a set operation, `JOIN`), not beside a
+ * `.`, and MySQL's `STRAIGHT_JOIN` where the SQL is read as MySQL. Other clause words (`LIMIT`, `LOCK`,
+ * `QUALIFY`, `NATURAL`, `USING`, `WINDOW`) are names on some engine, so the scan goes on past them, and
+ * an `OR` after one still counts as beside the predicate.
+ */
+function endsFilterScan(tokens: readonly Token[], j: number, engine: string): boolean {
+  const t = tokens[j]!;
+  if (tokens[j - 1]?.text === "." || tokens[j + 1]?.text === "." || isFunctionCall(tokens, j)) return false;
+  if (t.kw === "group" || t.kw === "order") return tokens[j + 1]?.kw === "by";
+  if (t.kw === "straight_join") return engine === "mysql";
+  return ["where", "having", "union", "intersect", "except", "join"].includes(t.kw);
+}
+
+/**
+ * Whether a predicate on the column at `column`, ANDed into the `HAVING` at `having`, filters rows:
+ * only when that column is a plain key of its `SELECT`'s `GROUP BY` (`agency_id`, or `o.agency_id`
+ * written the same way, the name compared by {@link sameName}). On any other column, a group holds every row it covers, and SQLite and
+ * MariaDB take the column's value from one of them. Read the MySQL way, an unqualified column that a
+ * select-list item is aliased to never counts: MySQL and MariaDB resolve such a `HAVING` name to the
+ * alias in some forms and to the `GROUP BY` column in others, so the check refuses the name either way.
+ */
+function onGroupKey(a: Analysis, having: number, column: number): boolean {
+  const { tokens } = a;
+  const depth = tokens[having]!.depth;
+  let select = -1;
+  let groupBy = -1;
+  for (let i = having - 1; i >= 0 && select < 0; i--) {
+    const t = tokens[i]!;
+    if (t.depth < depth) break;
+    if (t.depth > depth) continue;
+    if (t.kw === "by" && tokens[i - 1]?.kw === "group" && groupBy < 0) groupBy = i;
+    if (t.kw === "select") select = i;
+  }
+  if (select < 0 || groupBy < 0) return false;
+  const name = tokens[column]!.lower;
+  const qualifier = qualifierOf(tokens, column);
+  const itemRanges = (from: number, to: number): Array<[number, number]> => {
+    const out: Array<[number, number]> = [];
+    let itemStart = from;
+    for (let i = from; i <= to; i++) {
+      const t = tokens[i];
+      if (i === to || (t?.depth === depth && t.text === ",")) {
+        if (i > itemStart) out.push([itemStart, i - 1]);
+        itemStart = i + 1;
+      }
+    }
+    return out;
+  };
+  if (a.view.reading.profile.id === "mysql" && qualifier === undefined) {
+    let from = select + 1;
+    while (tokens[from]?.kw === "distinct" || tokens[from]?.kw === "all") from++;
+    let fromKw = from;
+    while (fromKw < having && !(tokens[fromKw]!.depth === depth && tokens[fromKw]!.kw === "from")) fromKw++;
+    const aliased = itemRanges(from, fromKw).some(([s, e]) => e > s && tokens[e - 1]?.text !== "." && isIdentifier(tokens[e]!) && tokens[e]!.lower === name);
+    if (aliased) return false;
+  }
+  return itemRanges(groupBy + 1, having).some(([s, e]) => {
+    const last = tokens[e]!;
+    if (!isIdentifier(last) || !sameName(last, tokens[column]!, a.view.reading.profile.id)) return false;
+    const plain = e === s || (e === s + 2 && tokens[s + 1]?.text === ".");
+    return plain && qualifierOf(tokens, e) === qualifier;
+  });
 }
 
 /** Index of the `(` or `)` that encloses the token at `i`, or -1 at the top level. */

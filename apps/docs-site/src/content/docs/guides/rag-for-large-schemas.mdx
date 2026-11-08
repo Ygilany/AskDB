@@ -11,7 +11,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 ## When you need it
 
-A rule of thumb: if your schema artifact has more than ~30 tables, or if rendered DDL routinely exceeds 8K tokens, you'll save money and improve generation quality by retrieving instead of stuffing.
+A rule of thumb: if your schema artifact has more than ~22 tables, or if rendered DDL routinely exceeds 8K tokens, you'll save money and improve generation quality by retrieving instead of stuffing.
 
 When you pass a retriever, `ask()` retrieves on every call, unless you also pass the schema's chunk count: see [Wire retrieval into `ask()`](#wire-retrieval-into-ask).
 
@@ -165,7 +165,7 @@ const { retriever, stats } = await buildSchemaIndex({
 
 ## Wire retrieval into `ask()`
 
-Pass the retriever to `ask()`. AskDB calls it with the question. The prompt then lists, in full, each table a retrieved chunk points to, instead of every table. Retrieved common query language goes under its table, and the retrieved relationships, concepts, example questions and tenant policy text follow the tables. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists everything that reaches the model.
+Pass the retriever to `ask()`. AskDB calls it with the question. The prompt then lists, in full, each table a retrieved chunk points to, instead of every table. Each listed table shows its foreign keys to the other listed tables. Retrieved common query language and business context go under their table, each listed column's note goes on its line, and the retrieved concepts, example questions and tenant policy text follow the tables. Business context and column notes reach the prompt since 1.0.0-beta.53, with or without retrieval; before that, they only steered retrieval. [Privacy model](/concepts/privacy-model/#what-the-model-sees) lists everything that reaches the model.
 
 With a tenant policy, the prompt's tenant block names only those tables too. A table outside them appears there only on a join path a retrieved table needs, and a root whose table wasn't retrieved appears by its label and placeholder ([#771](https://github.com/Ygilany/AskDB/issues/771)).
 

@@ -1,5 +1,12 @@
 # askdb-express-server-example
 
+## 0.0.2-beta.13
+
+### Patch Changes
+
+- Updated dependencies [30a3bc6]
+  - @askdb/client@1.0.0-beta.14
+
 ## 0.0.2-beta.12
 
 ### Patch Changes

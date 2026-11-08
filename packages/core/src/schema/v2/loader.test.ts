@@ -594,3 +594,51 @@ describe("readSchemaDirectory", () => {
     expect(loadSchemaFromJson(JSON.stringify(readSchemaDirectory(dir)))).toEqual(viaDir);
   });
 });
+
+describe("loadSchema — business context and column notes (#898)", () => {
+  const BIZ = "Orders move through `pending → paid → shipped` and may end in `cancelled`. The `total_amount` column is stored in cents.";
+  function withNotes(): string {
+    const dir = copyFixture(v2Dir);
+    const orders = join(dir, "tables/orders.md");
+    writeFileSync(orders, `${readFileSync(orders, "utf8")}\n## Column notes\n\n- \`status\`: refunds flip a paid order back to pending\n- \`total_amount\` — includes tax\n- \`id\` - surrogate key\n`);
+    const users = join(dir, "tables/users.md");
+    writeFileSync(users, `${readFileSync(users, "utf8")}\n## Column notes\n\n- \`email\`: lowercased on write\n`);
+    return dir;
+  }
+  const table = (schema: ReturnType<typeof loadSchema>, name: string) => schema.tables.find((t) => t.name === name)!;
+  const column = (schema: ReturnType<typeof loadSchema>, tableName: string, name: string) =>
+    table(schema, tableName).columns.find((c) => c.name === name)!;
+
+  it("fills a table's businessContext and each column's note from its table file", () => {
+    const schema = loadSchema(withNotes());
+    expect(table(schema, "orders").businessContext).toBe(BIZ);
+    expect(column(schema, "orders", "status").note).toBe("refunds flip a paid order back to pending");
+    expect(column(schema, "orders", "total_amount").note).toBe("includes tax");
+    expect(column(schema, "orders", "id").note).toBe("surrogate key");
+    expect(column(schema, "orders", "user_id").note).toBeUndefined();
+  });
+
+  it("leaves out a sensitive column's note, as it leaves out its description", () => {
+    expect(column(loadSchema(withNotes()), "users", "email").note).toBeUndefined();
+  });
+
+  it("leaves out a sensitive table's business context and its columns' notes", () => {
+    const dir = withNotes();
+    const orders = join(dir, "tables/orders.md");
+    writeFileSync(orders, readFileSync(orders, "utf8").replace("schemaId: orders-users\n", "schemaId: orders-users\nsensitive: true\n"));
+    const schema = loadSchema(dir);
+    expect(table(schema, "orders").sensitive).toBe(true);
+    expect(table(schema, "orders").businessContext).toBeUndefined();
+    expect(table(schema, "orders").columns.map((c) => c.note)).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it("never takes a table's description from a recognized section, even when the file has no heading before it", () => {
+    const dir = withNotes();
+    const users = join(dir, "tables/users.md");
+    const frontMatter = readFileSync(users, "utf8").split("\n---\n")[0];
+    writeFileSync(users, `${frontMatter}\n---\n\n## Column notes\n\n- \`email\`: personal addresses are hashed nightly\n`);
+    const schema = loadSchema(dir);
+    expect(table(schema, "users").description).toBeUndefined();
+    expect(column(schema, "users", "email").note).toBeUndefined();
+  });
+});

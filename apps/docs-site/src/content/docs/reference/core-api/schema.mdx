@@ -145,8 +145,8 @@ Each parser reads one file's text. `filePath` names the file in its errors. A fi
 | Type | What it is |
 | --- | --- |
 | `NormalizedSchemaV2` | `loadSchema()`'s result. |
-| `NormalizedV2Table` | One of its tables: the physical table with the describable fields from `tables/*.md` and the effective `sensitive` flag. |
-| `NormalizedV2Column` | One of a table's columns, the same way. |
+| `NormalizedV2Table` | One of its tables: the physical table with the describable fields from `tables/*.md` (`description`, `aliases`, `primaryEntity`, `commonQueryLanguage`, and since 1.0.0-beta.53 `businessContext`, the `## Business context` section) and the effective `sensitive` flag. A sensitive table has none of them. |
+| `NormalizedV2Column` | One of a table's columns, the same way: `description`, `aliases`, `enum`, and since 1.0.0-beta.53 `note`, its `## Column notes` item. A sensitive column has none of them. |
 | `SchemaV2Warning` | One entry of `schema.warnings`; see [Loader warnings](/reference/schema-artifact-format/#loader-warnings). |
 | `AnyNormalizedSchema` | What `ask()` takes: a `NormalizedSchemaV2`, or the older v1 `NormalizedSchema`. |
 | `NormalizedSchema` | The older v1 schema shape. |
