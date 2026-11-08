@@ -2288,6 +2288,25 @@ describe("validateTenantGuardrails — a type discriminator written as the engin
     ]);
   });
 
+  it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("refuses an unquoted name for a camelCase discriminator under $id, and keeps it quoted as the schema spells it", (dialect) => {
+    const camel: NormalizedTenantPolicy = {
+      ...policy,
+      enforcement: "warn",
+      roots: [{ id: "table:public.Agency", label: "agency", tenantIdColumn: "table:public.Agency#id" }],
+      hierarchy: [],
+      coverage: [],
+      globalTables: [],
+      scopedTables: [],
+      polymorphicTables: [{ id: "table:public.Note", typeColumn: "table:public.Note#ownerType", idColumn: "table:public.Note#ownerId", mapping: { agency: "table:public.Agency" } }],
+    };
+    const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.Agency", ids: ["42"] } };
+    const camelFindings = (sql: string) => validateTenantGuardrails(sql, camel, scope, { dialect }).warnings.map((w) => `${w.rule}:${w.tableId}`);
+    expect(camelFindings(`SELECT n.* FROM "Note" n, (SELECT 'agency' AS ownertype) z WHERE ownertype = 'agency' AND n."ownerId" = :tenant_agency_ids`)).toEqual([
+      "MISSING_TYPE_DISCRIMINATOR:table:public.Note",
+    ]);
+    expect(camelFindings(`SELECT n.* FROM "Note" n WHERE n."ownerType" = 'agency' AND n."ownerId" = :tenant_agency_ids`)).toEqual([]);
+  });
+
   it.each([POSTGRES_DIALECT, COCKROACHDB_DIALECT])("keeps the discriminator unquoted in any case, or quoted as the schema spells it, under $id", (dialect) => {
     expect(findings("SELECT n.* FROM notes n WHERE n.OWNER_TYPE = 'agency' AND n.owner_id = :tenant_agency_ids", dialect)).toEqual([]);
     expect(findings(`SELECT n.* FROM notes n WHERE n."owner_type" = 'agency' AND n.owner_id = :tenant_agency_ids`, dialect)).toEqual([]);
