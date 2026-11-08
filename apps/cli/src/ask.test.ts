@@ -109,4 +109,15 @@ describe("askdb ask prints the loader's warnings on stderr", () => {
     );
     expect(stdout).toContain("SELECT id FROM users");
   });
+
+  it("prints a tenant policy's warning before it stops at the missing tenant scope", async () => {
+    const dir = join(project, "agency-multi-tenant.schema");
+    cpSync(resolve(FIXTURE_DIR, "../agency-multi-tenant.schema"), dir, { recursive: true });
+    const policy = join(dir, "tenant-policy.md");
+    writeFileSync(policy, readFileSync(policy, "utf8").replace("  - table:public.service_types\n", "  - table:public.service_types\n  - table:public.gone\n"));
+
+    expect(await runAskCli(["-q", "Which agencies?", "--mock-sql", "SELECT id FROM agencies", "--schema", dir])).toBe(1);
+    expect(stderr.startsWith("Warning: tenant-policy.md: global table table:public.gone is not in schema.json\n")).toBe(true);
+    expect(stderr).toContain("TenantScopeError");
+  });
 });

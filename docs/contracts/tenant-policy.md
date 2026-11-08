@@ -191,7 +191,7 @@ The loader checks every ID in the front-matter against `schema.json` when it loa
 | A root, scoped, polymorphic or global table that `schema.json` doesn't have | Warning | Warning |
 
 - **An error** makes `loadSchema()` throw `SchemaParseError` naming the file and each problem with its IDs. `@askdb/enrich`'s `saveTenantPolicy()` refuses the same policy.
-- **A warning** loads. It is in `schema.tenantPolicy.warnings` as a `TenantPolicyWarning`, and `formatTenantPolicyWarning()` describes one in a line. `ask()` logs `askdb.tenant.policy_warnings` at `warn` level once per loaded schema, `askdb introspect --out` prints the problems in the directory it wrote, and Studio's Tenancy page lists them.
+- **A warning** loads. It is in `schema.tenantPolicy.warnings` as a `TenantPolicyWarning`, and `formatTenantPolicyWarning()` describes one in a line. `ask()` logs `askdb.tenant.policy_warnings` at `warn` level once per loaded schema, `askdb introspect --out` prints the problems in the directory it wrote, `askdb ask` and `askdb bundle` print each one on stderr, and Studio's Tenancy page lists them.
 - **A removed table** is one warning. The checks skip the column IDs of an entry whose own table is gone, since that entry scopes nothing. A join on a table that still exists, running through a removed table, is still an error.
 
 ---
