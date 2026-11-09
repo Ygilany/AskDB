@@ -7,7 +7,7 @@ This document is the **format contract** for AskDB's describable-schema layer. I
 3. **Stable identifiers** — the `id` scheme that survives re-introspection and re-embedding.
 4. **Chunking rules** — how `@askdb/rag` slices the artifact for embedding and retrieval.
 5. **Sensitive propagation** — how the `sensitive` flag flows from the physical layer (escalated by front-matter) into prompts and chunks.
-6. **Versioning** — how Schema v2 evolves pre-1.0 and how a future v3 would land.
+6. **Versioning** — how Schema v2 evolves before 1.0.0 stable and how a future v3 would land.
 
 Schema v2 is the **only** schema format AskDB understands. Pre-1.0 we are not maintaining a backward-compat path to any earlier internal format; the `version` literal in `schema.json` stays `2` as a stable marker.
 
@@ -355,7 +355,7 @@ Describable-layer fields (description, aliases, enum, `Common query language`) o
 
 ## Versioning
 
-Schema v2 is the only format AskDB reads. Pre-1.0, v2 may evolve **in place** — additive fields can land without a version bump, and breaking field changes require a contract-doc revision (this file) plus a coordinated release across `@askdb/core`, `@askdb/introspect`, `@askdb/enrich`, and `@askdb/rag`. Post-1.0, any breaking change requires a `version: 3` bump and a new contract document at `docs/contracts/schema-v3.md`.
+Schema v2 is the only format AskDB reads. Before 1.0.0 stable, release candidates included, v2 may evolve **in place** — additive fields can land without a version bump, and breaking field changes require a contract-doc revision (this file), an upgrade note, and a coordinated release across `@askdb/core`, `@askdb/introspect`, `@askdb/enrich`, and `@askdb/rag` ([ADR 0030](../adrs/0030-1-0-promises-checked-sql-only.md): the schema format is the one exception to the `1.0.0-rc.1` API freeze). From 1.0.0, any breaking change requires a `version: 3` bump and a new contract document at `docs/contracts/schema-v3.md`.
 
 Re-introspection and on-disk evolution behavior:
 
