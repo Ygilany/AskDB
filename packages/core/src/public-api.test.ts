@@ -35,3 +35,15 @@ describe("@askdb/core public API — table and column fields (#898)", () => {
     }
   });
 });
+
+describe("@askdb/core public API — the unknown_key loader warning (#690)", () => {
+  it("loadSchemaFromJson() returns SchemaV2Warning { kind: \"unknown_key\", id, key, suggestion }", () => {
+    const json = {
+      version: 2,
+      schemaId: "s",
+      tables: [{ id: "table:public.t", name: "t", schema: "public", columns: [{ id: "table:public.t#a", name: "a", type: "text", nullable: false, sensitve: true }] }],
+    };
+    const warning: api.SchemaV2Warning = { kind: "unknown_key", id: "table:public.t#a", key: "sensitve", suggestion: "sensitive" };
+    expect(api.loadSchemaFromJson(JSON.stringify(json)).warnings).toEqual([warning]);
+  });
+});

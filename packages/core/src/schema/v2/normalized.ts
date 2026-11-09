@@ -83,4 +83,11 @@ export type SchemaV2Warning =
    * across every entry: any `sensitive: true` escalates the column, and a duplicate's
    * `sensitive: false` never de-escalates it. Merge the entries into one.
    */
-  | { kind: "duplicate_column_id"; tableFile: string; id: string };
+  | { kind: "duplicate_column_id"; tableFile: string; id: string }
+  /**
+   * `schema.json` has a key AskDB doesn't read, which the loader ignores (#690). `id` says where:
+   * `"schema.json"` for a top-level key, a table's or a column's ID, or `<from>-><to>` for a
+   * relationship. `suggestion` is the known key it is closest to, when one differs only in case or
+   * by a small edit (`sensitve` → `sensitive`): a misspelled `sensitive` marks nothing.
+   */
+  | { kind: "unknown_key"; id: string; key: string; suggestion?: string };
