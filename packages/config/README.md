@@ -53,7 +53,7 @@ Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` re
 
 The `rag` block is optional. Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store, as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set. Setting `ai.embedding` without the block is an error, since nothing would use that model.
 
-`ai.providerConfig` holds provider connections only (one per provider, or a named list). The model choice lives in `ai.language` (the language model) and `ai.embedding` (the embedding model behind `rag.embedder: "ai"`), each with an optional `provider` and `connection`. A config that still sets a key from the older shape fails to load with an error that names each such key and its replacement; the [upgrade guide](https://askdb.tools/guides/upgrading/) shows each one before and after. See the [configuration reference](https://askdb.tools/reference/config/#the-ai-block).
+`ai.providerConfig` holds provider connections only (one per provider, or a named list). The model choice lives in `ai.language` (the language model) and `ai.embedding` (the embedding model behind `rag.embedder: "ai"`), each with an optional `provider` and `connection`. A config that still sets a key from the older shape fails to load with an error that names each such key and its replacement; the [upgrade notes](https://askdb.tools/reference/upgrade-notes/) show each one before and after. See the [configuration reference](https://askdb.tools/reference/config/#the-ai-block).
 
 ## Architectural rule — `@askdb/config` is the sole `process.env` reader
 
