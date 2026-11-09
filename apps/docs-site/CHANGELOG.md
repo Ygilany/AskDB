@@ -1,5 +1,11 @@
 # @askdb/docs-site
 
+## 0.0.1-rc.20
+
+### Patch Changes
+
+- 79c6d7a: The upgrade notes' 1.0.0-rc.1 section opens with its released-with line, checked against npm: the 12 packages of the 1.0 set at 1.0.0-rc.1, and `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` at 0.2.0-rc.1.
+
 ## 0.0.1-rc.19
 
 ### Patch Changes
