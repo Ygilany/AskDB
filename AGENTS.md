@@ -68,7 +68,7 @@ Docs follow the house style in `apps/docs-site/STYLE.md`.
 - `docs/mission.md` — north star, principles, non-goals
 - `docs/architecture.md` — package boundaries, install profiles
 - `docs/contracts/` — formal contracts (modes, sensitive fields, schema format)
-- `docs/adrs/` — architecture decision records
+- `docs/adrs/` — architecture decision records; read the index, `docs/adrs/README.md`, before you plan a change
 
 `apps/docs-site/src/content/docs/` is the public-facing docs (askdb.tools) — treat it as a product surface, not just documentation. If you change a package's public API or add a new integration pattern, the docs site needs a corresponding update or agents integrating AskDB elsewhere will get stale guidance.
 
