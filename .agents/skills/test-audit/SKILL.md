@@ -20,6 +20,8 @@ Then check the test against every [junk pattern](#junk-patterns); a match fails 
 
 Bug regression tests must fail on the pre-fix code for the intended reason and pass after the owner-boundary repair. A regression test that never demonstrably failed proves the mock, not the fix. One regression at the owner boundary covers the bug; do not replay the same scenario at every layer it crosses.
 
+A regression table that asserts through a permissive helper (one that any rejection satisfies) proves a row only when that row fails on the pre-fix code for the reason its name gives, so assert each row's specific rule or error code.
+
 ## Junk patterns
 
 The shared checklist for both modes: the authoring gate rejects a new test that matches one, and audits hunt for existing tests that do.
@@ -84,6 +86,8 @@ Record every field below before editing. A missing field means the candidate is 
 ## Edit shape
 
 Choose one coherent owner-boundary batch. Delete obsolete test-only exports, globals, wrappers, and dead production paths instead of preserving aliases. Move retained regressions to their canonical owners. Consolidate repeated package or dependency assertions into one generic contract.
+
+When you remove a test the PR description cites as evidence, keep one owner-boundary proof that drives the PR's new input end to end, and update the PR description in the same push.
 
 Prefer net-negative production LOC. Do not add replacement tests that restate the same implementation, and do not convert uncertain candidates into cleanup to increase deletion counts.
 
