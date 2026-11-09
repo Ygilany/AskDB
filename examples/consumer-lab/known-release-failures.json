@@ -1,12 +1,1 @@
-{
-  "askdb@1.0.0-beta.45": {
-    "safety-for-update [postgres]": "#319: fixed on main by #649 (SQL_LOCKING_READ replaces SQL_FORBIDDEN_KEYWORD for FOR UPDATE), not released",
-    "safety-for-update [mysql]": "#319: fixed on main by #649 (SQL_LOCKING_READ replaces SQL_FORBIDDEN_KEYWORD for FOR UPDATE), not released",
-    "safety-for-update [mariadb]": "#319: fixed on main by #649 (SQL_LOCKING_READ replaces SQL_FORBIDDEN_KEYWORD for FOR UPDATE), not released",
-    "safety-for-update [sqlserver]": "#319: fixed on main by #649 (WITH (UPDLOCK) rejected as SQL_LOCKING_READ), not released",
-    "safety-shared-lock [postgres]": "#319: fixed on main by #649 (FOR SHARE rejected as SQL_LOCKING_READ), not released",
-    "safety-shared-lock [mysql]": "#319: fixed on main by #649 (LOCK IN SHARE MODE rejected as SQL_LOCKING_READ), not released",
-    "safety-shared-lock [mariadb]": "#319: fixed on main by #649 (LOCK IN SHARE MODE rejected as SQL_LOCKING_READ), not released",
-    "safety-shared-lock [sqlserver]": "#319: fixed on main by #649 (WITH (HOLDLOCK) rejected as SQL_LOCKING_READ), not released"
-  }
-}
+{}

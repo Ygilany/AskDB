@@ -33,7 +33,7 @@ Triage every `FAIL` cell as [SKILL.md](SKILL.md#3-read-the-matrix) says. A cell 
 1. Find the change that brings it: the README's [Capabilities](../../../examples/consumer-lab/README.md#capabilities-testing-older-targets) table and the detector's comment in `examples/consumer-lab/src/capabilities.ts` name it. The first cases are below.
 2. Find its changeset: `gh pr view <pr> --json files --jq '.files[].path | select(startswith(".changeset/"))'`.
 3. The change has shipped when both hold:
-   - the changeset file has moved into `.changeset/pre/` on `origin/main`: `git cat-file -e origin/main:.changeset/pre/<id>.md` succeeds, where `<id>` is its file name without `.md` (the repo is in prerelease mode, where Changesets 3 keeps consumed changesets in `.changeset/pre/`; outside it, the changeset file is gone from `.changeset/`);
+   - the changeset file has moved into `.changeset/pre/` on `origin/main`: `git cat-file -e origin/main:.changeset/pre/<id>.md` succeeds, where `<id>` is its file name without `.md` (the repo is in prerelease mode, where Changesets 3 keeps consumed changesets in `.changeset/pre/`; outside it, the changeset file is gone from `.changeset/`). A changeset consumed before the rc line began (#354) isn't in `.changeset/pre/`, because entering the rc line reset it: for those, the file being gone from `.changeset/` on `origin/main` is this condition;
    - for each package the changeset names, its `CHANGELOG.md` on `origin/main` (under `packages/` or `apps/`) has the changeset's text under a `## <version>` heading at or below the version `lab:use npm:latest` installed. A higher version means it was versioned but not published yet.
 4. Record a verdict per capability:
    - **not shipped:** its `n/a` cells are expected; say so in the PR.
@@ -55,8 +55,9 @@ The first cases: once a release includes the change, the capability's `n/a` cell
 | `client-built-in-providers` | #198 (`@askdb/client` 1.0.0-beta.7) |
 | `askdb-optional-prisma` | #656 (fixes #259) |
 | `config-plain-mjs` | #648 (fixes #264 and #265) |
+| `tenant-unbound-binds-ids` | #743 (fixes #731) |
 
-The first five shipped in `askdb@1.0.0-beta.43` and `client-built-in-providers` in `askdb@1.0.0-beta.44`; they gate cells again only on an older target (`npm:askdb@<version>`). `askdb-optional-prisma` and `config-plain-mjs` merged after `askdb@1.0.0-beta.45`, so the beta.45 baseline has two expected `n/a` cells, `askdb-no-prisma [postgres]` and `config-forms [sqlite]`, until a release ships their changesets (`prisma-optional-peer`, `config-mjs-plain-object`).
+The first five shipped in `askdb@1.0.0-beta.43`, `client-built-in-providers` in `askdb@1.0.0-beta.44`, `askdb-optional-prisma` and `config-plain-mjs` in `askdb@1.0.0-beta.46` (changesets `prisma-optional-peer`, `config-mjs-plain-object`), and `tenant-unbound-binds-ids` in `@askdb/core@1.0.0-beta.48` (`core-sql-only-unbound-params`). All of them are in the committed `askdb@1.0.0-rc.1` baseline, which has no `n/a` cells: they gate cells again only on an older target (`npm:askdb@<version>`).
 
 Check `src/capabilities.ts` for the current list: a capability added since this table was written is checked the same way.
 
