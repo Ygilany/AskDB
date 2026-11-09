@@ -209,7 +209,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 
 **Goal:** Freeze the public API and launch AskDB 1.0 as a release candidate.
 
-**Milestone:** [1.0.0-rc.1 — public launch](https://github.com/Ygilany/AskDB/milestone/2). There is no fixed date: rc.1 ships when the milestone's gates close.
+**Milestone:** [1.0.0-rc.1 — public launch](https://github.com/Ygilany/AskDB/milestone/2). It closed on 2026-11-09, when `1.0.0-rc.1` was published.
 
 **Decision:** [ADR 0030 — 1.0 promises checked SQL only](adrs/0030-1-0-promises-checked-sql-only.md).
 

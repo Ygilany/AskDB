@@ -1,6 +1,6 @@
 # Support
 
-AskDB is pre-1.0. Public APIs, package boundaries, and CLI behavior may change before 1.0, with changes documented through changesets and package READMEs.
+AskDB is a release candidate for 1.0. The public API of the 12 packages on the 1.0 line is frozen, except the schema artifact format, which can still change before 1.0.0. Studio, `@askdb/enrich` and `@askdb/rag` stay on `0.x`, and their APIs may still change. Changes are documented through changesets and package READMEs.
 
 ## Where to go
 
