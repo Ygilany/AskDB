@@ -18,7 +18,7 @@ For the package-level architecture, diagrams, dependency boundaries, install pro
 
 ### Published packages
 
-AskDB ships as a set of focused npm packages. Each one has a single responsibility and is consumable on its own. Today every package publishes `-beta.N` prereleases. The **At 1.0** column is the maintainer's 2026-11-05 decision (#354).
+AskDB ships as a set of focused npm packages. Each one has a single responsibility and is consumable on its own. Today every package publishes `-rc.N` prereleases: the 12 packages marked 1.0.0 in the **At 1.0** column share one version on the `1.0.0-rc` line ([ADR 0035](adrs/0035-the-1-0-set-releases-as-one-version.md)), and the three `0.x` packages are on `0.2.0-rc`. The **At 1.0** column is the maintainer's 2026-11-05 decision (#354).
 
 | Package | Role | At 1.0 |
 |---|---|---|
@@ -111,7 +111,7 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 - Packages are published to npm with **semver** discipline, using **Changesets**. For `@askdb/core`, the contract surface (exports from `packages/core/src/index.ts` plus the formal contract docs under `docs/contracts/`) is the boundary that semver applies to. The release process and checklist live in [`docs/release.md`](release.md).
 - **At 1.0**, `@askdb/core`, `@askdb/client`, `@askdb/config`, `@askdb/ai`, `askdb`, `@askdb/http-api`, `@askdb/introspect` and the engine packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`) go to 1.0.0. `@askdb/studio`, `@askdb/enrich` and `@askdb/rag` stay 0.x, and their APIs may still move (#354, [ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)).
 - **Experimental surfaces in the 1.0 set** — the `studio` and `rag` blocks of `defineConfig` in `@askdb/config` (with the types and environment variables that feed them), the `askdb studio`, `enrich`, `bundle` and `rag` commands, `askdb init`'s RAG and Studio flags, the `@askdb/config/scaffold` entry point (the scaffold planner and package-manager helpers that `askdb init` and Studio's setup wizard share), and the `@askdb/client/charts` entry point (`classifyResult()`, `planChart()` and `validateChartSpec()`, chart planning that sends no rows, [ADR 0044](adrs/0044-chart-planning-sends-no-rows.md)) follow their 0.x packages or stand outside the promise. They are experimental, and a minor release of `@askdb/config`, `askdb` or `@askdb/client` may change them ([ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)).
-- Pre-1.0 versions allow contract evolution; once 1.0 ships, breaking changes to a 1.0 package outside those experimental surfaces require a contract doc bump where a contract changes (e.g. `schema-v2` → `schema-v3`) and a major version.
+- `1.0.0-rc.1` freezes the public API of the 1.0 set: a breaking change before 1.0.0 needs the maintainer's decision. The one named exception is the schema artifact format (Schema v2): it can still change before 1.0.0 stable, and such a change ships in a release candidate with an upgrade note ([ADR 0030](adrs/0030-1-0-promises-checked-sql-only.md)). From 1.0.0, breaking changes to a 1.0 package outside those experimental surfaces require a contract doc bump where a contract changes (e.g. `schema-v2` → `schema-v3`) and a major version.
 
 ## Other tooling
 

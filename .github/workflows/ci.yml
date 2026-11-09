@@ -306,6 +306,10 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-
 
+      # release.yml's Version PR runs `pnpm version-packages`, which uses this script.
+      - name: Self-test the prerelease counter script
+        run: node --test scripts/prerelease-counter.test.mjs
+
       - name: Installable smoke test
         run: pnpm smoke:install
 

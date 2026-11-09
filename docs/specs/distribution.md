@@ -7,7 +7,7 @@
 
 AskDB packages are published to npm under the `@askdb` scope. The distribution model is developer-first: consumers run `pnpm add @askdb/core ai`, supply their own model and dialect adapter, and call `ask()` from their own runtime. No database connection or API key is bundled.
 
-Release tooling uses changesets for versioning and changelog generation. Packages use semantic versioning; pre-1.0 versions allow breaking changes with a clear changeset entry rather than a migrator.
+Release tooling uses changesets for versioning and changelog generation. Packages use semantic versioning. The 12 packages on the 1.0 line share one version, and from `1.0.0-rc.1` their public API is frozen: a breaking change there needs the maintainer's decision first, and after 1.0.0 it is a major version (`docs/release.md`, "Version Posture"). A breaking change ships with a clear changeset entry rather than a migrator.
 
 ## Scope
 
@@ -30,7 +30,7 @@ Release tooling uses changesets for versioning and changelog generation. Package
 - **Built-in dialect specs in core** — `@askdb/core` owns the built-in dialect specs and imports no database driver. Consumers pass a built-in dialect string (`"postgres"`, `"mysql"`, etc.), a `DialectSpec` under a built-in id, or a custom `AskDialect` adapter. `pnpm add @askdb/core` pulls in no database dependency. See [ADR 0029](../adrs/0029-core-owns-built-in-dialect-specs.md), which supersedes this part of [ADR 0002](../adrs/0002-integration-package-layout.md).
 - **Database drivers as optional peer dependencies** — each integration package (`@askdb/postgres`, `@askdb/mysql`, etc.) declares its driver as an optional peer; the lazy-import path throws a clear error if the driver is absent when the live connector is used.
 - **CLI hosts connector providers, not drivers** — `askdb` includes first-party connector providers so `askdb introspect` can route by engine, but it does not bundle database drivers. Live connector runners first resolve optional peers from their normal package graph, then from the caller's project so ephemeral CLI launches can use drivers installed with the application or supplied in the same `npx`/`pnpm dlx` command.
-- **Pre-1.0 breaking changes without migrators** — before 1.0, breaking changes ship with a changeset entry describing the break. No compatibility shims. The changeset records the full surface diff.
+- **Breaking changes without migrators** — a breaking change ships with a changeset entry describing the break: a `major` for the 1.0 set (frozen from `1.0.0-rc.1` unless the maintainer decides otherwise), and a `minor` for the 0.x packages and the experimental surfaces (`docs/release.md`, "Version Posture"). No compatibility shims. The changeset records the full surface diff.
 - **Apps vs packages** — `apps/cli`, `apps/http-api`, `apps/studio` are first-party reference apps (batteries-included). `packages/` contains the published library surface. This boundary is explicit in the monorepo layout.
 
 ## Contracts and API surface

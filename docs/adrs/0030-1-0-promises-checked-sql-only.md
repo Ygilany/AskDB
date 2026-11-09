@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-05, maintainer decision in the 1.0 planning round, recorded on #354 and in the `1.0.0-rc.1 — public launch` milestone; the experimental surfaces were settled while #631 was planned, and the decision is recorded on #631). Implemented in `docs/mission.md`, `docs/roadmap.md`, `docs/platform.md` and the README status note (#631). Amended 2026-11-06: `@askdb/config/scaffold` joins the experimental surfaces (#711, maintainer decision in its planning round). Amended 2026-11-08: `@askdb/client/charts`, chart planning that sends no rows, joins the experimental surfaces and may ship in rc.1 (#906, maintainer decision in its planning round; [ADR 0044](0044-chart-planning-sends-no-rows.md)).
+Accepted (2026-11-05, maintainer decision in the 1.0 planning round, recorded on #354 and in the `1.0.0-rc.1 — public launch` milestone; the experimental surfaces were settled while #631 was planned, and the decision is recorded on #631). Implemented in `docs/mission.md`, `docs/roadmap.md`, `docs/platform.md` and the README status note (#631). Amended 2026-11-06: `@askdb/config/scaffold` joins the experimental surfaces (#711, maintainer decision in its planning round). Amended 2026-11-08: `@askdb/client/charts`, chart planning that sends no rows, joins the experimental surfaces and may ship in rc.1 (#906, maintainer decision in its planning round; [ADR 0044](0044-chart-planning-sends-no-rows.md)). Amended 2026-11-08: the schema artifact format (Schema v2) may still change during the release candidates (maintainer decision Q72, #354).
 
 ## Context
 
@@ -46,6 +46,7 @@ Rejected. Studio, `@askdb/enrich` and `@askdb/rag` are still moving: Studio's au
   - `askdb init`'s `--rag-store`, `--pgvector-env` and `--studio-execute` flags, and the `rag` and `studio` sections it writes;
   - the `@askdb/config/scaffold` entry point: the scaffold planner (config, `.env.example` and install plan) and package-manager helpers that `askdb init` and Studio's setup wizard share (added 2026-11-06, #711);
   - the `@askdb/client/charts` entry point: `classifyResult()`, `planChart()` and `validateChartSpec()`, which plan a chart for a host's query result from the question, the SQL with its literals masked and the result's column names and kinds, never its rows (added 2026-11-08, #906, [ADR 0044](0044-chart-planning-sends-no-rows.md)). It is a step toward reports, not a 1.0 report feature: result summaries and anything else that sends rows stay after 1.0.
+- **The schema artifact format isn't frozen at rc.1.** `1.0.0-rc.1` freezes the public API of the 1.0 set, but Schema v2 can still change before 1.0.0 stable. Such a change ships in a release candidate with an upgrade note, and from 1.0.0 a breaking change needs `version: 3` (`docs/contracts/schema-v2.md`). Added 2026-11-08 (maintainer decision Q72, #354).
 - **Engines:** all five engine families are supported at 1.0, and the consumer lab covers each one.
 - **No fixed date.** rc.1 ships when the `1.0.0-rc.1 — public launch` milestone's gates close.
 

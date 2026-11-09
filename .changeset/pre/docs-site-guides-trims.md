@@ -1,5 +1,0 @@
----
-"@askdb/docs-site": patch
----
-
-The guides lose what belongs in the reference (#713). Deploy as an HTTP service drops its copy of the endpoint shapes for a short "Ask a question" section that links the HTTP API reference, and its Python sample no longer calls `raise_for_status()` before reading the error body. Author your schema is now titled "Enrich your schema", and its explanation of how enrichment reaches the model gives way to a tip and a link to the schema artifact concept. Agents and MCP is now "Expose AskDB as an agent tool": a how-to, with the MCP roadmap cut to a sentence. Bring your own model replaces its five per-provider config samples with one, and links the configuration reference for each provider's fields and default model. The guides and reference pages say "SQL checks", "the read-only checks" or "heuristic" where they said "guardrail", "validator" or "lint" in prose; API names keep "guardrail". The `ask()` reference no longer says a mode controls which checks run.

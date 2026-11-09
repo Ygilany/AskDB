@@ -1,5 +1,0 @@
----
-"@askdb/docs-site": patch
----
-
-The `@askdb/core` API reference splits into an index and eight pages under `/reference/core-api/`: `ask()`, `bindPreparedQuery()`, tenant scope, checks, schema loading, dialects, logging and errors (#713). The index keeps its URL, maps where to start, and lists the internal exports. A link to one of its old anchors, such as `#tenantscope`, forwards to the page the section moved to. Every one of core's 203 exports is now named on a page: new entries cover `generateSelectSql()`, the prompt helpers, `resolveTenantSql()`, `validateTenantScope()`, `validateSelectSql()`, `validateTenantGuardrails()`, the markdown parsers and writers, the log contract and each type. The logger's `stderr` option, `AskDialectGenerateResult`'s `unboundNamedSql` and `parameterManifest`, and every caller that throws `SchemaParseError` are now documented. The ask options' Modes link now opens `ask()`'s modes, not the sensitive check's. A new docs check, `check-export-coverage.mjs`, fails when an export of core, client, config or ai isn't named on its API page.

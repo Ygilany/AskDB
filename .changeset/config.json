@@ -2,8 +2,23 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
-  "linked": [["@askdb/core", "askdb", "@askdb/http-api"]],
+  "fixed": [
+    [
+      "askdb",
+      "@askdb/ai",
+      "@askdb/client",
+      "@askdb/config",
+      "@askdb/core",
+      "@askdb/http-api",
+      "@askdb/introspect",
+      "@askdb/mysql",
+      "@askdb/postgres",
+      "@askdb/prisma",
+      "@askdb/sqlite",
+      "@askdb/sqlserver"
+    ]
+  ],
+  "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

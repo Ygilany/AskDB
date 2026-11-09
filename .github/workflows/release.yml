@@ -5,8 +5,10 @@ name: Release
 # Flow (see docs/release.md):
 #   1. Feature PRs land on `main` with a changeset (enforced by changesets.yml).
 #   2. CI passes on that push, which triggers this workflow. The `version` job opens or
-#      updates the "chore: version packages (beta)" PR, which applies every pending
+#      updates the "chore: version packages (rc)" PR, which applies every pending
 #      changeset (version bumps and CHANGELOG entries). It publishes nothing.
+#      `pnpm version-packages` restarts the prerelease counter after a pre-tag change
+#      (scripts/prerelease-counter.mjs), so the rc line starts at `1.0.0-rc.1`.
 #   3. Merging that PR puts versions on `main` that npm doesn't have yet. Once CI passes
 #      on the merge commit, `publish` waits for approval in the `npm-publish`
 #      environment, then publishes them. `tag` then creates their git tags.
@@ -25,10 +27,12 @@ name: Release
 #   (required reviewer, `main` only). pnpm 11 does the OIDC exchange itself, and adds
 #   provenance because the repo and the packages are public. Each package's trusted
 #   publisher on npmjs.com must name this file (`release.yml`) and that environment.
-# - Betas publish under the `latest` dist-tag (`--tag latest`), not the `beta` tag from
-#   `.changeset/pre.json`, so `npm install askdb` gets the newest beta. That's why this
-#   runs `pnpm -r publish` and not `changeset publish`, which would use the `beta` tag.
-#   OIDC can only publish, so a second tag couldn't be moved afterwards.
+# - Prereleases (the betas, now the release candidates) publish under the `latest`
+#   dist-tag (`--tag latest`), not the pre tag from `.changeset/pre.json`, so
+#   `npm install askdb` gets the newest one (#354). That's why this runs `pnpm -r publish`
+#   and not `changeset publish`, which would use the pre tag. OIDC can only publish, so
+#   a second tag couldn't be moved afterwards. The 1.0.0 PR changes this to the pre tag
+#   while in pre mode (docs/release.md, "Dist-tags").
 # - The GitHub App token (`RELEASE_APP_CLIENT_ID` / `RELEASE_APP_PRIVATE_KEY`) opens the
 #   Version PR. PRs opened with `GITHUB_TOKEN` don't trigger other workflows, so the
 #   required checks would never report on it. The token is minted after

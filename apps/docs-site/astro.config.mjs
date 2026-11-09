@@ -202,7 +202,10 @@ export default defineConfig({
             },
             {
               label: "Packages and releases",
-              items: [{ label: "Packages", slug: "reference/packages" }],
+              items: [
+                { label: "Packages", slug: "reference/packages" },
+                { label: "Versioning", slug: "reference/versioning" },
+              ],
             },
             {
               label: "APIs",
