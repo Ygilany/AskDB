@@ -1,5 +1,15 @@
 # @askdb/docs-site
 
+## 0.0.1-rc.19
+
+### Patch Changes
+
+- 3a4c866: The upgrade notes' 1.0.0-beta.55 section says beta.55 is released and opens with a security subsection for GHSA-p2v7-pv8j-c264 and GHSA-j363-683j-2pvw, in their published words. It tells readers to upgrade `@askdb/core` and the packages that pin it, links the sections that list the queries now refused, and points to the release's SQL Server TLS note. A new beta.55 note says `ask()` now drops `unboundSql`, `params`, `parameters` and `preparedQuery` whenever they differ from the checked `sql` in a literal, a quoted name, or how tokens join (#359), so a caller that runs them should fall back to `sql`. The SQL checks reference links the two advisories, and `SECURITY.md` lists them with 1.0.0-beta.55 as the release to upgrade to. The `@askdb/core` errors reference adds beta.55's cases to `UNICODE_ESCAPED_IDENTIFIER`: an unquoted name not in NFC once lower-cased, and when the schema's spelling excuses an unquoted name.
+- 80947b2: The upgrade notes get a 1.0.0-rc.1 section: which 12 packages move to the 1.0 line and share one version, which three stay `0.x`, and how to move your ranges. Its intro now covers release candidates as well as betas. A new reference page, Versioning and stability (`/reference/versioning/`), lists the 1.0 and 0.x sets, what each version bump means, the experimental surfaces and the dist-tags; the package reference and the upgrade guide link to it.
+- ce1d527: The tenant-policy, SQL checks and errors references, ADR 0012, and the 1.0.0-rc.1 upgrade notes say that under `sqlserver` the tenant check refuses code SQL Server may split differently, as the read-only check does.
+- 855a300: The schema artifact format, the core reference, the schema artifact concept page and the 1.0.0-rc.1 upgrade notes describe the `unknown_key` loader warning for a key `schema.json` doesn't define (#690).
+- a69142f: Upgrade AskDB splits into a how-to and a reference (#713). `/guides/upgrading/` keeps the steps: check Node, find the releases you cross, upgrade the packages in one step, apply each release's notes oldest first, and check the result. Every release section moves to the new `/reference/upgrade-notes/`, "Upgrade notes by release", unchanged apart from one link back to the how-to. A link to an old section anchor, such as a GitHub Release's `/guides/upgrading/#100-beta50`, forwards to that section on the new page. `docs/release.md` points new Releases at the notes page.
+
 ## 0.0.1-beta.18
 
 ### Patch Changes

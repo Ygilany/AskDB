@@ -1,5 +1,24 @@
 # @askdb/studio
 
+## 0.2.0-rc.1
+
+### Patch Changes
+
+- Updated dependencies [37565a9]
+- Updated dependencies [855a300]
+- Updated dependencies [80947b2]
+  - @askdb/core@1.0.0-rc.1
+  - @askdb/ai@1.0.0-rc.1
+  - @askdb/client@1.0.0-rc.1
+  - @askdb/config@1.0.0-rc.1
+  - @askdb/introspect@1.0.0-rc.1
+  - @askdb/mysql@1.0.0-rc.1
+  - @askdb/postgres@1.0.0-rc.1
+  - @askdb/sqlite@1.0.0-rc.1
+  - @askdb/sqlserver@1.0.0-rc.1
+  - @askdb/enrich@0.2.0-rc.1
+  - @askdb/rag@0.2.0-rc.1
+
 ## 0.2.0-beta.48
 
 ### Patch Changes
