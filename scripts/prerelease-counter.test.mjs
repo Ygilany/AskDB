@@ -105,3 +105,14 @@ test("both commands fail when pre mode has no tag", () => {
   }
   assert.equal(manifest("core").version, "1.0.0-beta.46");
 });
+
+test("both commands fail when pre.json has no mode, which Changesets still reads as pre mode", () => {
+  workspace({ tag: "rc" }, { core: { version: "1.0.0-beta.46" } });
+
+  for (const command of ["reset", "check"]) {
+    const result = run(command);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /neither "pre" nor "exit"/);
+  }
+  assert.equal(manifest("core").version, "1.0.0-beta.46");
+});

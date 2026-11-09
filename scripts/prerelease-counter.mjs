@@ -16,7 +16,8 @@
 //
 // Only public packages count: they are the versions npm shows. Outside pre mode (no
 // `.changeset/pre.json`, or `"mode": "exit"`), both commands do nothing. Pre mode without a
-// tag fails both.
+// tag, or a mode that is neither `pre` nor `exit`, fails both: Changesets treats any mode but
+// `exit` as pre mode, so doing nothing there would let it version past the reset.
 //
 // Self-test: `node --test scripts/prerelease-counter.test.mjs` (CI's `preflight` job).
 import { execFileSync } from "node:child_process";
@@ -35,7 +36,8 @@ function preTag() {
   const file = join(".changeset", "pre.json");
   if (!existsSync(file)) return undefined;
   const { mode, tag } = JSON.parse(readFileSync(file, "utf8"));
-  if (mode !== "pre") return undefined;
+  if (mode === "exit") return undefined;
+  if (mode !== "pre") throw new Error(`${file}: mode ${JSON.stringify(mode)} is neither "pre" nor "exit"`);
   // Changesets would version `1.0.0-undefined.N`; fail before it does.
   if (typeof tag !== "string" || tag === "") throw new Error(`${file}: pre mode has no tag`);
   return tag;

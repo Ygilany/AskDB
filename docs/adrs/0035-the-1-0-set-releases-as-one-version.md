@@ -11,7 +11,7 @@ Accepted (2026-11-06, maintainer decision in #354's first round: Q1–Q3 by the 
 - **Versions were scattered.** Five packages were on `1.0.0-beta.N` (core, `askdb` and http-api at beta.46; client at beta.9; config at beta.15), and seven were on `0.x` betas. Only core, `askdb` and http-api were `linked`.
 - **Betas published under `latest`.** The `beta` dist-tag was stale and was removed (#267). Trusted publishing sets one dist-tag per publish and can't move another tag afterwards without an npm token.
 - **Changesets 3 doesn't restart the prerelease counter when the pre tag changes.** `getPreVersion` in `@changesets/assemble-release-plan` is the current version's prerelease number plus one, whatever its tag. A dry run of `pre exit`, `pre enter rc` and `changeset version` gave `1.0.0-rc.47` for core and `0.2.0-rc.40` for Studio. A `fixed` group takes the highest number in the group.
-- **At the stable release, every file in `.changeset/pre/` goes into the stable CHANGELOG entry.** On `main` that was 289 beta changesets, which added 458 lines to core's `1.0.0` entry in a dry run.
+- **At the stable release, every file in `.changeset/pre/` goes into the stable CHANGELOG entry.** On `main` that was 289 beta changesets when this was decided (525 by the rc.1 cut), which added 458 lines to core's `1.0.0` entry in a dry run.
 
 ## Options considered
 
