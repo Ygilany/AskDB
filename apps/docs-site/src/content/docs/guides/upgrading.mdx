@@ -36,7 +36,7 @@ Released with `askdb`, `@askdb/core` and `@askdb/http-api` 1.0.0-beta.55, `@askd
 Two advisories fix places where the tenant check could pass a tenant-scoped query that returned rows belonging to tenants outside the caller's scope. Both needed the generated SQL to run without database-level tenant enforcement. GHSA-p2v7-pv8j-c264 also needed a way to influence the model's reply. GHSA-j363-683j-2pvw needs no unusual SQL, so a model's own mistake can trigger it.
 
 - **[GHSA-p2v7-pv8j-c264](https://github.com/Ygilany/AskDB/security/advisories/GHSA-p2v7-pv8j-c264):** the tenant check could read a name differently from the engine, so a tenant-scoped query could pass without an effective tenant predicate.
-- **[GHSA-j363-683j-2pvw](https://github.com/Ygilany/AskDB/security/advisories/GHSA-j363-683j-2pvw):** the tenant check counted a join without checking which columns it equated, so a tenant-scoped query could pass without an effective tenant predicate ([#400](https://github.com/Ygilany/AskDB/issues/400)).
+- **[GHSA-j363-683j-2pvw](https://github.com/Ygilany/AskDB/security/advisories/GHSA-j363-683j-2pvw):** the tenant check counted a join without checking which columns it equated, so a tenant-scoped query could pass without an effective tenant predicate ([#400](https://github.com/Ygilany/AskDB/issues/400)). The fix is partial: read the Postgres way, a column list after a joined table's alias (`JOIN clients c (sub_agency_id, x)`) renames that table's columns, and the check still reads them by the policy's names, so a join path can pass on the wrong column. [Known limits](/concepts/tenant-isolation/#known-limits) lists it.
 
 What to do:
 
