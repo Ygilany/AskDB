@@ -40,8 +40,8 @@ pnpm lint
 step "test"
 pnpm test
 
-step "prerelease counter self-test"
-node --test scripts/prerelease-counter.test.mjs
+step "release script self-tests"
+node --test scripts/prerelease-counter.test.mjs scripts/check-unpublished-versions.test.mjs scripts/check-version-pr-merge.test.mjs
 
 step "installable smoke test"
 pnpm smoke:install

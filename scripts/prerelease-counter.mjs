@@ -20,9 +20,9 @@
 // `exit` as pre mode, so doing nothing there would let it version past the reset.
 //
 // Self-test: `node --test scripts/prerelease-counter.test.mjs` (CI's `preflight` job).
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { publicPackages as workspacePublicPackages } from "./release-packages.mjs";
 
 const VERSION = /^(\d+\.\d+\.\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 
@@ -43,11 +43,9 @@ function preTag() {
   return tag;
 }
 
+// The same public packages `release.yml` publishes from (scripts/release-packages.mjs).
 function publicPackages() {
-  const out = execFileSync("pnpm", ["-r", "ls", "--json", "--depth", "-1"], { encoding: "utf8" });
-  return JSON.parse(out)
-    .filter((p) => !p.private && p.name && p.version)
-    .map(({ name, version, path }) => ({ name, version, path, ...parse(name, version) }));
+  return workspacePublicPackages().map((pkg) => ({ ...pkg, ...parse(pkg.name, pkg.version) }));
 }
 
 function setVersion({ name, version, path }, next) {
