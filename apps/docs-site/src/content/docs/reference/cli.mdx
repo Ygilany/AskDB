@@ -312,7 +312,7 @@ Experimental: `@askdb/rag` stays 0.x, so a minor release of `askdb` may change t
 
 Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-large-schemas/), with three commands: `setup-store`, `index`, and `query`.
 
-**It replaces `askdb-rag`.** `@askdb/rag` no longer ships the `askdb-rag` binary: run `askdb rag` from the `askdb` package. `askdb rag` reads its store from `askdb.config.*`, where `askdb-rag` always defaulted to the file store, so pass `--store file` or set `rag.store` to keep that store. See [Replace the `askdb-rag` binary with `askdb rag`](/guides/upgrading/#replace-the-askdb-rag-binary-with-askdb-rag).
+**It replaces `askdb-rag`.** `@askdb/rag` no longer ships the `askdb-rag` binary: run `askdb rag` from the `askdb` package. `askdb rag` reads its store from `askdb.config.*`, where `askdb-rag` always defaulted to the file store, so pass `--store file` or set `rag.store` to keep that store. See [Replace the `askdb-rag` binary with `askdb rag`](/reference/upgrade-notes/#replace-the-askdb-rag-binary-with-askdb-rag).
 
 ### Config and flags
 
@@ -338,7 +338,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 
 An index built with `ai` records the embedder id `ai-sdk:<provider>:<model>:<dimensions>`, ending in `default` when no width was requested. Studio uses the same id, so either accepts an index the other built.
 
-`--embedder openai` and `--embedder ai-sdk` were removed, as the same `rag.embedder` values were. Each fails with an error naming `--embedder ai` and `ai.embedding`: see [Replace the removed `--embedder` values](/guides/upgrading/#replace-the-removed---embedder-values).
+`--embedder openai` and `--embedder ai-sdk` were removed, as the same `rag.embedder` values were. Each fails with an error naming `--embedder ai` and `ai.embedding`: see [Replace the removed `--embedder` values](/reference/upgrade-notes/#replace-the-removed---embedder-values).
 
 `--api-key` was removed: a key on the command line leaks through shell history and the process list. Set the key on a connection in `ai.providerConfig` instead.
 
