@@ -61,7 +61,7 @@ Security-sensitive areas include SQL validation, schema handling, prompt constru
 
 **A check that misses something is a public hardening bug.** SQL that gets past the read-only check, the tenant check or the sensitive check is a bug we want to hear about: for example, a write keyword hidden from the keyword check, a second statement that isn't detected, a tenant-scoped table that passes without a tenant predicate that filters, or a check that reads a string, a name or a comment differently from the engine. The checks are defense in depth, not a security boundary, so a miss is tracked as a public issue labelled `security-hardening` and fixed in a normal release. This holds even when the miss would let a tenant-scoped query read another tenant's rows: database-level tenant enforcement is the boundary that stops it.
 
-Not a vulnerability: impact that depends only on generated SQL being executed without the controls in [What integrators should do](#what-integrators-should-do), such as with a privileged role or without database-level tenant enforcement. A check miss behind that impact is still a hardening bug. Model output quality (incorrect but harmless SQL) is out of scope.
+Not a vulnerability: a report whose harm comes only from generated SQL being executed without the controls in [What integrators should do](#what-integrators-should-do), such as with a privileged role or without database-level tenant enforcement, with nothing AskDB owns broken. A check miss behind such a report is still a hardening bug. Model output quality (incorrect but harmless SQL) is out of scope.
 
 ## Supported Versions
 
