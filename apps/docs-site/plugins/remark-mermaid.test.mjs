@@ -65,10 +65,10 @@ test("the line in the page is the broken line, with comments, a directive, front
   }
 });
 
-test("an error at the end of the diagram points at the closing fence", () => {
-  // The fence opens on line 40; the diagram is lines 41 and 42, so the closing fence is line 43.
+test("an error at the end of the diagram points at the diagram's last line", () => {
+  // The fence opens on line 40; the diagram is lines 41 and 42, and the unfinished edge is on line 42.
   const { tree, file } = page(["mermaid", "flowchart TB\n  a -->", 40]);
-  assert.throws(() => remarkMermaid()(tree, file), (error) => error.message.startsWith("src/content/docs/page.mdx:43: "));
+  assert.throws(() => remarkMermaid()(tree, file), (error) => error.message.startsWith("src/content/docs/page.mdx:42: "));
 });
 
 test("a fence that isn't a diagram type pele knows fails with unsupported-diagram", () => {

@@ -56,8 +56,8 @@ function renderFence(node, file, idPrefix) {
     if (!(error instanceof PeleError)) throw error;
     // The diagram's first line is the line after the opening fence.
     const fenceLine = node.position?.start.line;
-    // pele counts lines in the source as written, comments and front matter included, and puts an
-    // error at the end of the diagram one line past it: on the closing fence.
+    // pele counts lines in the source as written, comments and front matter included. From 1.13 it
+    // puts an error at the end of the diagram on the line where the diagram stops, not on the closing fence.
     const line = fenceLine && error.line > 0 ? fenceLine + error.line : fenceLine;
     const where = `${file.path ?? "a page"}${line ? `:${line}` : ""}`;
     throw new DiagramRenderError(`${where}: mermaid diagram failed to render (PeleError ${error.code}): ${error.message}`, error);
