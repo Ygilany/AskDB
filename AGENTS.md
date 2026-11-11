@@ -47,7 +47,7 @@ Priorities and release scope live on GitHub Project #27. Read `docs/agents/proje
 
 ### Triage labels
 
-The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), with label strings matching the role names. See `docs/agents/triage-labels.md`.
+The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), with label strings matching the role names. See `docs/agents/triage-labels.md`. A report that might be a security issue, or a SQL check that misses something (label `security-hardening`): see `docs/agents/security-triage.md`.
 
 ### Domain docs
 

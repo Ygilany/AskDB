@@ -23,6 +23,7 @@ GitHub issues are where AskDB tracks work that hasn't been done yet, and questio
 | **Specs** (`/to-spec` output) | `enhancement` + a triage label | Once a spec is settled and built, describe the feature in `docs/specs/` or `docs/contracts/` as usual. Those directories hold the current truth ("the constitution"), not open work. |
 | **Discrepancies**: docs vs. behavior, or two docs that disagree | `discrepancy`, plus `bug` or `documentation` | Quote both sides with file paths, state the observed behavior, and name the decision needed. Tests must not be bent to match the code. A test that pins the agreed subset links the issue. |
 | **Bugs and requests from outside** | `needs-triage` | Run `/triage`. |
+| **Security hardening**: a SQL check that misses something | `security-hardening`, plus `bug` | Public, fixed in a normal release. A possible vulnerability stays off the tracker; see `docs/agents/security-triage.md`. |
 
 A PR that implements an issue says `Closes #<n>`.
 
