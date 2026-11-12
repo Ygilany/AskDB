@@ -158,13 +158,26 @@ export function tenantRuleWarnings(
   // reads. The read-only check allows some of these as reads, and a custom AskDialect skips
   // it, so the tenant check refuses them under every dialect (#702). A listed name counts in any
   // code position, since an engine can reach a function without `(` right after its name.
-  const name = uncheckableName(read, dialect);
+  const name = listedName(read, dialect, UNCHECKABLE_FUNCTIONS);
   if (name !== undefined) {
     warnings.push(
       warn("UNCHECKABLE_FUNCTION", "",
         `The SQL names ${name}, a function that reads or scopes rows the tenant check can't see. Under a ` +
         "tenant policy, query the tables directly (pivot with CASE or FILTER, not crosstab), and don't " +
         "name a column, alias or parameter after one of these functions."),
+    );
+  }
+
+  // Nor do they look at a relation the policy doesn't name. Postgres keeps values sampled from
+  // every table's rows in its planner statistics (`pg_stats.most_common_vals`), so a query on
+  // them reads tenant tables' values with no tenant table in the SQL: refuse them, by name, as above.
+  const relation = listedName(read, dialect, UNCHECKABLE_RELATIONS);
+  if (relation !== undefined) {
+    warnings.push(
+      warn("UNCHECKABLE_RELATION", "",
+        `The SQL names ${relation}, a Postgres statistics relation that holds values sampled from the rows of other tables, ` +
+        "which the tenant check can't see. Under a tenant policy, query the tables directly, and don't name a column, " +
+        "alias or parameter after one of these relations."),
     );
   }
 
@@ -614,24 +627,43 @@ const UNCHECKABLE_FUNCTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The first name in `sql` from {@link UNCHECKABLE_FUNCTIONS}, lowercase, or undefined. A name counts
- * in any code position, in any case, bare, quoted or qualified, not only right before `(`: an
- * engine can reach a function in forms with no `(` after its name, so a column, an alias or a
- * placeholder named like a listed function counts too. Text in comments and single-quoted strings
- * doesn't. Read under every reading from `tenantStatementReadings`, so a name any of them sees counts.
+ * Postgres relations that hold values sampled from the rows of other tables, lowercase: the planner
+ * statistics views any role can read (`pg_stats` and the two for extended statistics) and the
+ * catalogs behind them, which a role may be granted. Their `most_common_vals` and
+ * `histogram_bounds` columns carry values of every table the querying role can read, a tenant
+ * table's included, and the per-table checks look only at tables the policy names. Postgres hides
+ * a table's rows in the views from a role that table's row-level security applies to; the check is
+ * for the hosts where it doesn't. Fixed here, like {@link UNCHECKABLE_FUNCTIONS}. Any other system
+ * relation (`pg_class`, `information_schema.columns`, `pg_stat_activity`) isn't here and passes.
  */
-function uncheckableName(read: SqlRead, dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined): string | undefined {
+const UNCHECKABLE_RELATIONS: ReadonlySet<string> = new Set([
+  "pg_stats", "pg_stats_ext", "pg_stats_ext_exprs", "pg_statistic", "pg_statistic_ext_data",
+]);
+
+/**
+ * The first name in `sql` from `listed` ({@link UNCHECKABLE_FUNCTIONS} or
+ * {@link UNCHECKABLE_RELATIONS}), lowercase, or undefined. A name counts in any code position, in
+ * any case, bare, quoted or qualified, not only right before `(` or after `FROM`: an engine can
+ * reach a function in forms with no `(` after its name, and the check doesn't parse a `FROM`
+ * clause, so a column, an alias or a placeholder named like a listed function or relation counts
+ * too. Text in comments and single-quoted strings doesn't. Read under every reading from `tenantStatementReadings`, so a name any of them sees counts.
+ */
+function listedName(
+  read: SqlRead,
+  dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+  listed: ReadonlySet<string>,
+): string | undefined {
   for (const profile of tenantStatementReadings(dialect)) {
     for (const token of read.tokens(profile)) {
       const name = nameOf(token);
-      if (name !== undefined && UNCHECKABLE_FUNCTIONS.has(name)) return name;
+      if (name !== undefined && listed.has(name)) return name;
     }
   }
   return undefined;
 }
 
 /**
- * A token's name, lowercase, when it can name a function: a word, a quoted identifier, a `"…"`
+ * A token's name, lowercase, when it can name a function or a relation: a word, a quoted identifier, a `"…"`
  * string (which some servers read as a name), or a `:name` placeholder, which the shared lexer
  * reads as one token but Postgres reads as `:` and then a name.
  */

@@ -198,6 +198,15 @@ export type TenantGuardrailRuleCode =
    */
   | "UNCHECKABLE_FUNCTION"
   /**
+   * The SQL names a Postgres statistics relation, in any code position (a column, alias or
+   * placeholder named like one counts too): `pg_stats`, `pg_stats_ext`, `pg_stats_ext_exprs`,
+   * `pg_statistic` or `pg_statistic_ext_data`, qualified with `pg_catalog` or not. They hold
+   * values sampled from the rows of other tables (`most_common_vals`, `histogram_bounds`), which
+   * the tenant check can't see. Reported for the whole SQL, with `tableId: ""`, under every
+   * dialect, a custom `AskDialect` included; not under a `global` scope.
+   */
+  | "UNCHECKABLE_RELATION"
+  /**
    * A name the tenant check can't match as written, in any position: a table, a column or a
    * function. Either a Postgres Unicode-escaped name (`U&"\006Frders"`), which Postgres decodes,
    * reported whenever the SQL is read as Postgres (postgres, cockroachdb, a custom `AskDialect`, or
