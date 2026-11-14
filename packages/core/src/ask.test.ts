@@ -1842,6 +1842,28 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
     expect((error as TenantGuardrailError).warnings.map((w) => [w.rule, w.tableId])).toEqual([["UNCHECKABLE_FUNCTION", ""]]);
   });
 
+  // The built-in Postgres read-only check allows a read of `pg_stats`, and the query beside it
+  // carries its tenant predicate, but the view holds values sampled from every agency's rows.
+  it("strict: refuses a read of pg_stats beside a scoped query from the built-in postgres dialect (UNCHECKABLE_RELATION)", async () => {
+    const sql =
+      "SELECT v.*, s.m FROM (SELECT count(*) AS n FROM orders WHERE agency_id = :tenant_agency_ids) AS v " +
+      "CROSS JOIN (SELECT string_agg(CAST(most_common_vals AS TEXT), '|' ORDER BY attname) AS m " +
+      "FROM pg_catalog.pg_stats WHERE schemaname = 'public' AND tablename = 'orders') AS s";
+    const error = await ask({
+      question: "q",
+      schema: loadSchema(multiTenantDir),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: { generateText: vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" })) },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    const warnings = (error as TenantGuardrailError).warnings;
+    expect(warnings.map((w) => [w.rule, w.tableId])).toEqual([["UNCHECKABLE_RELATION", ""]]);
+    expect(warnings[0]!.message).toContain("pg_stats");
+  });
+
   it("without a tenant policy, custom dialect output is unchanged", async () => {
     const dialect: AskDialect = { generate: async () => ({ sql: "DELETE FROM orders" }) };
     const result = await ask({ question: "q", schema: minimalSchema, model: fakeModel, dialect });

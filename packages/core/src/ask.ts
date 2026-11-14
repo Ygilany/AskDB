@@ -124,7 +124,10 @@ export type AskDialectGenerateResult = {
  *     query or reads a table named in a string, runs SQL over another connection, or sets
  *     what row-level security reads (`query_to_xml`, `table_to_xml`, `dblink`, `OPENQUERY`,
  *     `set_config`), so it reports `UNCHECKABLE_FUNCTION` wherever your SQL names one, a
- *     column named like one included (#702). A
+ *     column named like one included (#702). Nor does it look at a relation the policy
+ *     doesn't name, and Postgres's planner statistics (`pg_stats`, `pg_statistic`) hold
+ *     values sampled from every table's rows, so it reports `UNCHECKABLE_RELATION`
+ *     wherever your SQL names one of them. A
  *     `tenantGuardrail` your generator returns adds findings to that check
  *     (`form: "generator"`), never replaces it.
  *   - The sensitive-identifier check runs on your SQL too, unless
