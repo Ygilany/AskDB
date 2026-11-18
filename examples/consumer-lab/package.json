@@ -26,7 +26,7 @@
     "@askdb/studio": "0.2.0-rc.1",
     "ai": "7.0.51",
     "askdb": "1.0.0-rc.1",
-    "better-sqlite3": "13.0.3",
+    "better-sqlite3": "13.2.0",
     "mssql": "12.7.14",
     "mysql2": "3.24.6",
     "pg": "8.23.1",

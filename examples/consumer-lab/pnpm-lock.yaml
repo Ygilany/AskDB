@@ -42,16 +42,16 @@ importers:
         version: 1.0.0-rc.1
       '@askdb/studio':
         specifier: 0.2.0-rc.1
-        version: 0.2.0-rc.1(better-sqlite3@13.0.3)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)
+        version: 0.2.0-rc.1(better-sqlite3@13.2.0)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)
       ai:
         specifier: 7.0.51
         version: 7.0.51(zod@4.6.7)
       askdb:
         specifier: 1.0.0-rc.1
-        version: 1.0.0-rc.1(@types/node@22.20.5)(better-sqlite3@13.0.3)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)
+        version: 1.0.0-rc.1(@types/node@22.20.5)(better-sqlite3@13.2.0)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)
       better-sqlite3:
-        specifier: 13.0.3
-        version: 13.0.3
+        specifier: 13.2.0
+        version: 13.2.0
       mssql:
         specifier: 12.7.14
         version: 12.7.14
@@ -988,8 +988,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  better-sqlite3@13.0.3:
-    resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
+  better-sqlite3@13.2.0:
+    resolution: {integrity: sha512-Z8Q/9x/uNyKxA1v4FNodyItRVRw1TeKBrmj32JhxhR0ceNcBY+wMobt/Bv7M7TzwPAXjnZRtNaEsATnUZSKWZQ==}
     engines: {node: '>=22'}
 
   bl@6.1.6:
@@ -1812,13 +1812,13 @@ snapshots:
       ai: 7.0.51(zod@4.6.7)
       pg: 8.23.1
 
-  '@askdb/sqlite@1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(better-sqlite3@13.0.3)':
+  '@askdb/sqlite@1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(better-sqlite3@13.2.0)':
     dependencies:
       '@askdb/core': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))
       '@askdb/introspect': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))
       ai: 7.0.51(zod@4.6.7)
     optionalDependencies:
-      better-sqlite3: 13.0.3
+      better-sqlite3: 13.2.0
 
   '@askdb/sqlserver@1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(mssql@12.7.14)':
     dependencies:
@@ -1829,7 +1829,7 @@ snapshots:
     optionalDependencies:
       mssql: 12.7.14
 
-  '@askdb/studio@0.2.0-rc.1(better-sqlite3@13.0.3)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)':
+  '@askdb/studio@0.2.0-rc.1(better-sqlite3@13.2.0)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)':
     dependencies:
       '@ai-sdk/anthropic': 4.0.97(zod@4.6.7)
       '@ai-sdk/azure': 4.0.117(zod@4.6.7)
@@ -1844,12 +1844,12 @@ snapshots:
       '@askdb/mysql': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(mysql2@3.24.6(@types/node@22.20.5))
       '@askdb/postgres': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(pg@8.23.1)
       '@askdb/rag': 0.2.0-rc.1(@ai-sdk/openai@4.0.109(zod@4.6.7))(ai@7.0.51(zod@4.6.7))(pg@8.23.1)
-      '@askdb/sqlite': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(better-sqlite3@13.0.3)
+      '@askdb/sqlite': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(better-sqlite3@13.2.0)
       '@askdb/sqlserver': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(mssql@12.7.14)
       ai: 7.0.51(zod@4.6.7)
       zod: 4.6.7
     optionalDependencies:
-      better-sqlite3: 13.0.3
+      better-sqlite3: 13.2.0
       mssql: 12.7.14
       mysql2: 3.24.6(@types/node@22.20.5)
       pg: 8.23.1
@@ -2390,7 +2390,7 @@ snapshots:
     dependencies:
       sprintf-js: 1.0.3
 
-  askdb@1.0.0-rc.1(@types/node@22.20.5)(better-sqlite3@13.0.3)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1):
+  askdb@1.0.0-rc.1(@types/node@22.20.5)(better-sqlite3@13.2.0)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1):
     dependencies:
       '@ai-sdk/anthropic': 4.0.97(zod@4.6.7)
       '@ai-sdk/azure': 4.0.117(zod@4.6.7)
@@ -2405,9 +2405,9 @@ snapshots:
       '@askdb/mysql': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(mysql2@3.24.6(@types/node@22.20.5))
       '@askdb/postgres': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(pg@8.23.1)
       '@askdb/rag': 0.2.0-rc.1(@ai-sdk/openai@4.0.109(zod@4.6.7))(ai@7.0.51(zod@4.6.7))(pg@8.23.1)
-      '@askdb/sqlite': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(better-sqlite3@13.0.3)
+      '@askdb/sqlite': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(better-sqlite3@13.2.0)
       '@askdb/sqlserver': 1.0.0-rc.1(ai@7.0.51(zod@4.6.7))(mssql@12.7.14)
-      '@askdb/studio': 0.2.0-rc.1(better-sqlite3@13.0.3)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)
+      '@askdb/studio': 0.2.0-rc.1(better-sqlite3@13.2.0)(mssql@12.7.14)(mysql2@3.24.6(@types/node@22.20.5))(pg@8.23.1)
       '@inquirer/prompts': 8.7.5(@types/node@22.20.5)
       ai: 7.0.51(zod@4.6.7)
       zod: 4.6.7
@@ -2426,7 +2426,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  better-sqlite3@13.0.3:
+  better-sqlite3@13.2.0:
     dependencies:
       node-addon-api: 8.9.2
 
