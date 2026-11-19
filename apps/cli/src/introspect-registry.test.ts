@@ -331,6 +331,66 @@ describe("askdb introspect --out — success line", () => {
   });
 });
 
+// `--out` derives the schema id from the output directory's name (#782): a
+// directory of `.`, `/` or `.schema` derives an empty or "." name, which must
+// fall back to "introspected" instead of landing in schema.json.
+describe("askdb introspect --out — schemaId fallback for degenerate directories", () => {
+  const prevCwd = process.cwd();
+  let project: string;
+  afterEach(() => {
+    process.chdir(prevCwd);
+    rmSync(project, { recursive: true, force: true });
+  });
+
+  it.each([
+    { out: ".", label: "--out ." },
+    { out: "./", label: "--out ./" },
+    { out: ".schema", label: "--out .schema" },
+  ])("$label writes schemaId \"introspected\"", async ({ out }) => {
+    installRuntime();
+    project = mkdtempSync(join(tmpdir(), "askdb-introspect-schema-id-"));
+    process.chdir(project);
+    const { adapter, createConnector } = acmeAdapter();
+
+    const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://flag", "--out", out], {
+      connectorRegistry: createConnectorRegistry([adapter]),
+    });
+
+    expect(code).toBe(0);
+    expect(createConnector).toHaveBeenCalledWith(expect.objectContaining({ schemaId: "introspected" }));
+    expect(JSON.parse(readFileSync(join(project, out, "schema.json"), "utf8"))).toMatchObject({
+      schemaId: "introspected",
+    });
+  });
+
+  it("--out acme.schema still derives \"acme\"", async () => {
+    installRuntime();
+    project = mkdtempSync(join(tmpdir(), "askdb-introspect-schema-id-"));
+    process.chdir(project);
+    const { adapter, createConnector } = acmeAdapter();
+
+    const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://flag", "--out", "acme.schema"], {
+      connectorRegistry: createConnectorRegistry([adapter]),
+    });
+
+    expect(code).toBe(0);
+    expect(createConnector).toHaveBeenCalledWith(expect.objectContaining({ schemaId: "acme" }));
+  });
+
+  it("--diff / derives \"introspected\"", async () => {
+    installRuntime();
+    project = mkdtempSync(join(tmpdir(), "askdb-introspect-schema-id-"));
+    const { adapter, createConnector } = acmeAdapter();
+
+    const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://flag", "--diff", "/"], {
+      connectorRegistry: createConnectorRegistry([adapter]),
+    });
+
+    expect(code).toBe(0);
+    expect(createConnector).toHaveBeenCalledWith(expect.objectContaining({ schemaId: "introspected" }));
+  });
+});
+
 // Re-introspecting can drop a column the tenant policy names. `--out` checks the
 // policy against the new schema.json and says so, under either enforcement (#332).
 describe("askdb introspect --out — tenant policy check", () => {
