@@ -1,0 +1,6 @@
+# Deploy with `npx wrangler deploy` from this folder, signed in to the account that holds askdb.tools.
+name = "askdb-docs-edge"
+main = "worker.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = false
+routes = [{ pattern = "askdb.tools/*", zone_name = "askdb.tools" }]

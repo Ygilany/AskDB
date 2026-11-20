@@ -19,8 +19,13 @@ test("a site whose pages each have a clean twin has no problems; redirects and t
     ["/quickstart.md", "# Quickstart\n\nSee [Install](https://askdb.tools/install/) and [this step](#run).\n\n```md\n[a](/in-a-code-block/)\n```\n"],
     ["/old/index.html", `<!doctype html><meta http-equiv="refresh" content="0;url=/quickstart/">`],
     ["/404.html", page("")],
+    ["/404.md", "# Page not found\n\n- [llms.txt](https://askdb.tools/llms.txt)\n"],
   ]);
   assert.deepEqual(twinProblems(site), []);
+});
+
+test("a site with a 404 page needs a /404.md that links llms.txt", () => {
+  assert.deepEqual(twinProblems(new Map([["/404.html", page("")]])), [{ page: "/404.md", problem: "missing, or doesn't link /llms.txt" }]);
 });
 
 test("twinProblems reports a missing twin, a missing or wrong alternate link, and a twin that isn't clean Markdown", () => {

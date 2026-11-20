@@ -1,0 +1,216 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AskDB HTTP API",
+    "summary": "Generate checked, read-only SQL from a natural-language question.",
+    "description": "The API of `askdb-http` (npm package `@askdb/http-api`), a server you run yourself. askdb.tools does not host it. It has no authentication of its own (`security` is empty): put it behind your own gateway. It returns SQL and never executes it. Reference: https://askdb.tools/reference/http-api/",
+    "license": { "name": "Apache-2.0", "identifier": "Apache-2.0" }
+  },
+  "externalDocs": { "description": "HTTP API reference", "url": "https://askdb.tools/reference/http-api/" },
+  "servers": [
+    {
+      "url": "http://{host}:{port}",
+      "description": "Your own askdb-http server. The defaults are its default listen address.",
+      "variables": {
+        "host": { "default": "127.0.0.1", "description": "`httpApi.listen.host` or `--host`." },
+        "port": { "default": "3000", "description": "`httpApi.listen.port` or `--port`." }
+      }
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Liveness probe.",
+        "responses": {
+          "200": {
+            "description": "The server is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["ok"],
+                  "properties": { "ok": { "const": true } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ask": {
+      "post": {
+        "operationId": "ask",
+        "summary": "Generate SQL from a question.",
+        "description": "Returns generated SQL that passed AskDB's read-only checks. The server never runs it.",
+        "parameters": [
+          {
+            "name": "x-askdb-mode",
+            "in": "header",
+            "required": false,
+            "description": "The mode, when the body sends none. It can only tighten the server's `modes.askdbMode`.",
+            "schema": { "$ref": "#/components/schemas/Mode" }
+          },
+          {
+            "name": "x-correlation-id",
+            "in": "header",
+            "required": false,
+            "description": "A correlation ID to use for this request. When missing or blank, the server generates a UUID.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AskHttpRequest" },
+              "example": { "question": "How many customers signed up last week?" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The generated, checked SQL.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AskHttpSuccessResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "502": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "Error": {
+        "description": "An error. `error.code` says what went wrong; the reference's error codes table says what to do about each.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/AskHttpErrorResponse" },
+            "example": {
+              "ok": false,
+              "correlationId": "8f14e45f-ceea-4e7a-9f2b-1c3d5e7a9b0c",
+              "error": {
+                "code": "sql_validation_error",
+                "message": "SQL must start with SELECT or WITH (got 'delete').",
+                "rule": "SQL_NOT_SELECT_OR_WITH"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Mode": { "type": "string", "enum": ["schema_only", "bounded_results"] },
+      "AskHttpRequest": {
+        "type": "object",
+        "required": ["question"],
+        "properties": {
+          "question": { "type": "string", "minLength": 1, "description": "The natural-language question." },
+          "mode": {
+            "oneOf": [{ "$ref": "#/components/schemas/Mode" }, { "type": "null" }],
+            "description": "It can only tighten the server's `modes.askdbMode`. Wins over the `x-askdb-mode` header."
+          },
+          "explain": { "type": ["boolean", "null"], "description": "Return metadata on the read-only checks." },
+          "omitSensitiveFromPrompt": {
+            "type": ["boolean", "null"],
+            "description": "Omit sensitive columns from the prompt for this request. It can only tighten the server setting."
+          },
+          "schemaJson": {
+            "type": ["string", "null"],
+            "description": "A schema artifact, as a JSON string, that replaces the server's schema for this request. Refused with `403 schema_override_disabled` unless the server sets `httpApi.allowSchemaOverride: true`."
+          }
+        }
+      },
+      "AskUsage": {
+        "type": "object",
+        "required": ["promptTokens", "completionTokens", "totalTokens"],
+        "properties": {
+          "promptTokens": { "type": ["number", "null"] },
+          "completionTokens": { "type": ["number", "null"] },
+          "totalTokens": { "type": ["number", "null"] }
+        }
+      },
+      "SensitiveGuardrailResult": {
+        "type": "object",
+        "description": "Which sensitive identifiers the returned SQL references. `passed: false` is a warning: the SQL is still returned.",
+        "required": ["passed", "references"],
+        "properties": {
+          "passed": { "type": "boolean" },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["table", "column", "matchKind"],
+              "properties": {
+                "table": { "type": "string" },
+                "schema": { "type": "string" },
+                "column": { "type": "string" },
+                "matchKind": { "type": "string" }
+              }
+            }
+          },
+          "unresolvedScope": {
+            "type": "object",
+            "required": ["issues", "widened", "message"],
+            "properties": {
+              "issues": { "type": "array", "items": { "type": "string" } },
+              "widened": { "type": "boolean" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      },
+      "AskHttpSuccessResponse": {
+        "type": "object",
+        "required": ["ok", "correlationId", "sql", "usage"],
+        "properties": {
+          "ok": { "const": true },
+          "correlationId": { "type": "string" },
+          "sql": { "type": "string", "description": "The generated, checked SQL." },
+          "explain": { "description": "Metadata on the read-only checks. Present only when the request sent `explain: true`." },
+          "usage": { "oneOf": [{ "$ref": "#/components/schemas/AskUsage" }, { "type": "null" }] },
+          "sensitiveGuardrail": { "$ref": "#/components/schemas/SensitiveGuardrailResult" }
+        }
+      },
+      "AskHttpErrorResponse": {
+        "type": "object",
+        "required": ["ok", "correlationId", "error"],
+        "properties": {
+          "ok": { "const": false },
+          "correlationId": { "type": "string" },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "not_found",
+                  "bad_request",
+                  "payload_too_large",
+                  "schema_parse_error",
+                  "schema_override_disabled",
+                  "generation_not_configured",
+                  "tenant_scope_not_configured",
+                  "sql_validation_error",
+                  "guardrail_violation",
+                  "question_declined",
+                  "sql_generation_error",
+                  "internal_error"
+                ]
+              },
+              "message": { "type": "string" },
+              "rule": { "type": "string", "description": "With `sql_validation_error` and `guardrail_violation`: the check's rule code." },
+              "reason": { "type": "string", "description": "With `question_declined`: the model's one-line reason." }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@
 // (src/pages/[...slug].md.ts). Agents are told so on every page and in /llms.txt, and the page
 // header's "Copy as Markdown" fetches it, so a page without its twin is a broken promise.
 //
-// It reads dist/. A redirect page and the 404 page have no twin.
+// It reads dist/. A redirect page and the 404 page have no twin, but the 404 page needs /404.md.
 import { realpathSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
@@ -45,6 +45,9 @@ export function twinProblems(files, base = "/") {
     if (/<svg[\s>]/i.test(markdown)) problems.push({ page: twin, problem: "holds an SVG; a diagram should be its text alternative or its Mermaid source, with its caption" });
     const relativeLink = /\]\((\/[^)\s]*)\)/.exec(markdown.replace(/```[\s\S]*?```/g, ""));
     if (relativeLink) problems.push({ page: twin, problem: `links to ${relativeLink[1]} without the site's origin` });
+  }
+  if (files.has("/404.html")) {
+    if (!files.get("/404.md")?.includes("/llms.txt)")) problems.push({ page: "/404.md", problem: "missing, or doesn't link /llms.txt" });
   }
   return problems;
 }

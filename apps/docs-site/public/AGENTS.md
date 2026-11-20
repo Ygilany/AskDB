@@ -27,7 +27,7 @@ AskDB is a workspace of small, layered packages — install only what your use c
 - **`@askdb/postgres` / `-mysql` / `-sqlite` / `-sqlserver`** — engine packages: introspection connector, catalog query runner, and a re-export of that engine's dialect (the dialect specs themselves ship inside `@askdb/core`). API: `/reference/introspect-api/#engine-packages`.
 - **`@askdb/prisma`** — introspection connector for `.prisma` schema files, with no database connection. An optional peer of `askdb` and `@askdb/studio`, and pnpm must approve the build of its `@prisma/engines` dependency: see `/guides/integrations/prisma/`. API: `/reference/introspect-api/#askdbprisma`.
 - **`@askdb/rag`** — schema chunking, indexing, and retrieval for large schemas. API: `/reference/rag-api/`.
-- **`@askdb/http-api`** — minimal HTTP wrapper over `ask()` (`POST /ask`, `GET /health`). Reference: `/reference/http-api/`.
+- **`@askdb/http-api`** — minimal HTTP wrapper over `ask()` (`POST /ask`, `GET /health`). Reference: `/reference/http-api/`. OpenAPI 3.1: `/openapi.json`.
 - **`@askdb/studio`** — browser UI for schema enrichment and sample NL-to-SQL checks. Reference: `/reference/studio/`.
 - **`askdb`** (CLI) — batteries-included binary; good for trying AskDB out or scripting. Reference: `/reference/cli/`.
 

@@ -106,6 +106,8 @@ An installed `askdb-http` reads only the working directory's `.env`, and it neve
 
 ## Endpoints
 
+The same endpoints are described as an OpenAPI 3.1 document at [`/openapi.json`](/openapi.json), for a client generator or an agent. Its `servers` entry is your own server: askdb.tools doesn't host the API.
+
 | Route | Description |
 | --- | --- |
 | [`GET /health`](#get-health) | Liveness probe. |

@@ -41,6 +41,7 @@ flowchart LR
 | A page's twin is its path with the trailing slash replaced by `.md`. The home page's twin is `/index.md`. | `apps/docs-site/src/utils/markdown-twin.test.mjs` |
 | The twin shows what the page shows: each tab with its label, each code block with its language and title, and each diagram as text. | `apps/docs-site/src/utils/html-to-markdown.test.mjs` |
 | A list of `[link]: description` items renders as link cards, and reads as the same list in the twin. | `apps/docs-site/plugins/remark-link-cards.test.mjs`, `apps/docs-site/src/utils/html-to-markdown.test.mjs` |
+| A page asked for as `text/markdown` gets its twin with `Vary: Accept`, and a missing path gets a 404 with a Markdown body that links `/llms.txt` (or a JSON error, asked for as `application/json`). GitHub Pages can't negotiate, so the edge worker in `apps/docs-site/edge/` does. | `apps/docs-site/edge/worker.test.mjs` |
 | Every common task in `/llms.txt` links to the twin of a page that exists. | `apps/docs-site/src/utils/llms-txt.test.mjs` |
 | Every page is in a documentation set, so a new top-level docs folder needs one. | `apps/docs-site/src/utils/llms-txt.test.mjs` |
 | A page holds no layout HTML: raw HTML is `<figure>`, `<figcaption>` and `<details>` only. | review |
