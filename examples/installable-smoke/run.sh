@@ -178,7 +178,21 @@ node -e "
 
 echo "smoke: npm install bundled consumer…"
 (cd "$WORK/consumer-bundle" && npm install --silent --no-audit --no-fund --no-package-lock)
-for missing in @ai-sdk/azure @ai-sdk/google @ai-sdk/anthropic pg mysql2 better-sqlite3 mssql; do
+# Every provider SDK @askdb/ai declares as an optional peer, except the one this consumer installs
+# itself. Read from the installed manifest, so a new built-in provider is covered without an edit.
+OTHER_PROVIDER_SDKS="$(cd "$WORK/consumer-bundle" && node -e "
+  const ai = require('./node_modules/@askdb/ai/package.json');
+  const own = require('./package.json');
+  const mine = { ...own.dependencies, ...own.devDependencies };
+  const sdks = Object.keys(ai.peerDependenciesMeta ?? {}).filter((name) => name.startsWith('@ai-sdk/') && ai.peerDependenciesMeta[name].optional);
+  if (!sdks.some((name) => name in mine)) throw new Error('the bundled consumer installs none of the provider SDKs @askdb/ai declares');
+  console.log(sdks.filter((name) => !(name in mine)).join(' '));
+")"
+if [ -z "$OTHER_PROVIDER_SDKS" ]; then
+  echo "smoke: FAILED — @askdb/ai declares no optional provider SDK besides the one the bundled consumer installs." >&2
+  exit 1
+fi
+for missing in $OTHER_PROVIDER_SDKS pg mysql2 better-sqlite3 mssql; do
   if [ -d "$WORK/consumer-bundle/node_modules/$missing" ]; then
     echo "smoke: FAILED — $missing was installed in the bundled consumer; it must stay an optional peer." >&2
     exit 1

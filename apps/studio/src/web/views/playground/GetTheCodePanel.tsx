@@ -4,49 +4,9 @@ import { useWorkspace } from "../../contexts/workspace-context";
 import { usePlayground } from "../../contexts/playground-context";
 import { CopyButton } from "../../components/common/CopyButton";
 import { snippetInstallLine, type SnippetWiring } from "../../lib/install-line";
+import { providerWiring } from "../../lib/provider-wiring";
 
 const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
-
-type ProviderWiring = {
-  /** AI SDK package the host installs; `@askdb/ai` loads it lazily for the config-driven path. */
-  sdkPackage: string;
-  sdkImport: string;
-  sdkModel: (model: string) => string;
-};
-
-const PROVIDER_WIRING: Record<string, ProviderWiring> = {
-  openai: {
-    sdkPackage: "@ai-sdk/openai",
-    sdkImport: "openai",
-    sdkModel: (model) => `openai(${JSON.stringify(model)})`,
-  },
-  anthropic: {
-    sdkPackage: "@ai-sdk/anthropic",
-    sdkImport: "anthropic",
-    sdkModel: (model) => `anthropic(${JSON.stringify(model)})`,
-  },
-  google: {
-    sdkPackage: "@ai-sdk/google",
-    sdkImport: "google",
-    sdkModel: (model) => `google(${JSON.stringify(model)})`,
-  },
-  azure: {
-    sdkPackage: "@ai-sdk/azure",
-    sdkImport: "azure",
-    sdkModel: (model) => `azure(${JSON.stringify(model)}) // your deployment name`,
-  },
-  gateway: {
-    sdkPackage: "ai",
-    sdkImport: "gateway",
-    sdkModel: (model) => `gateway(${JSON.stringify(model)})`,
-  },
-};
-
-function providerWiring(aiProvider: string): ProviderWiring {
-  if (aiProvider in PROVIDER_WIRING) return PROVIDER_WIRING[aiProvider]!;
-  if (aiProvider === "foundry" || aiProvider === "azure-openai") return PROVIDER_WIRING.azure!;
-  return PROVIDER_WIRING.openai!;
-}
 
 export function GetTheCodePanel() {
   const { workspace } = useWorkspace();
@@ -62,6 +22,8 @@ export function GetTheCodePanel() {
     if (!workspace) return "";
     const question = askQuestion.trim() || "Which customers signed up last week?";
     const wiringDef = providerWiring(workspace.aiProvider);
+    // Another provider's snippet would install and import the wrong SDK, so show none.
+    if (!wiringDef) return `// Studio has no "Get the code" snippet for the ${workspace.aiProvider} provider yet.`;
     const schemaPath = workspace.schemaPathRelative;
     const tenant = askTenantEnabled && generatedTenantScopeJson ? generatedTenantScopeJson : null;
 

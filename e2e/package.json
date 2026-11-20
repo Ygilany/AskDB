@@ -5,7 +5,8 @@
   "description": "Scripted replays of verify-askdb's feature map: the askdb CLI and HTTP API (Vitest) and Studio (Playwright), each in a disposable project with a fake model.",
   "type": "module",
   "scripts": {
-    "e2e": "vitest run --config vitest.config.ts && playwright test",
+    "e2e": "node harness/check-feature-map.mjs && vitest run --config vitest.config.ts && playwright test",
+    "e2e:map": "node harness/check-feature-map.mjs",
     "e2e:vitest": "vitest run --config vitest.config.ts",
     "e2e:studio": "playwright test",
     "lint": "tsc --noEmit -p tsconfig.json"
