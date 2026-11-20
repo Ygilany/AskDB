@@ -360,22 +360,32 @@ export function PlaygroundPage() {
                       key={h.id}
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                        padding: "6px var(--pad-x)", cursor: "pointer", fontSize: 12,
+                        padding: "6px var(--pad-x)", fontSize: 12,
                         borderBottom: "1px solid var(--border)",
                       }}
-                      onClick={() => loadHistoryEntry(h)}
                     >
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                      <button
+                        type="button"
+                        aria-label={`Load "${h.question}"`}
+                        onClick={() => loadHistoryEntry(h)}
+                        style={{
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0,
+                          textAlign: "left", background: "none", border: 0, padding: 0,
+                          font: "inherit", color: "inherit", cursor: "pointer",
+                        }}
+                      >
                         {h.question}
-                      </span>
+                      </button>
                       <span className={`chip ${h.mode === "rag" ? "red" : ""}`} style={{ flexShrink: 0 }}>{h.mode}</span>
                       <button
+                        type="button"
                         className="btn ghost sm"
-                        onClick={(e) => { e.stopPropagation(); void handleDeleteHistory(h.id); }}
+                        onClick={() => void handleDeleteHistory(h.id)}
                         title="Delete"
+                        aria-label={`Delete "${h.question}" from history`}
                         style={{ flexShrink: 0, padding: 2 }}
                       >
-                        ×
+                        <span aria-hidden="true">×</span>
                       </button>
                     </div>
                   ))}
