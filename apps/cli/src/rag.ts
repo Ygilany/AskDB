@@ -13,11 +13,13 @@ import {
   aiSdkEmbedderId,
   buildSchemaIndex,
   checkIndexMatches,
+  CHUNK_TYPES,
   createAiSdkEmbedder,
   createFileStore,
   createMemoryStore,
   createPgvectorStore,
   detectEmbeddingDimensions,
+  isChunkType,
   loadChunkerSourcesFromDir,
   PgvectorDimensionMismatchError,
   type ChunkType,
@@ -47,21 +49,6 @@ function isCliEmbedder(value: string): value is AskDbRagEmbedder {
 
 function isCliStore(value: string): value is AskDbRagStore {
   return (ASKDB_RAG_STORES as readonly string[]).includes(value);
-}
-
-/** The chunk types `--types` accepts. A record, so a new `ChunkType` doesn't compile until it's listed here. */
-const CHUNK_TYPES: Record<ChunkType, true> = {
-  table: true,
-  column: true,
-  cql: true,
-  question: true,
-  concept: true,
-  relationship: true,
-  "tenant-policy": true,
-};
-
-function isChunkType(value: string): value is ChunkType {
-  return Object.hasOwn(CHUNK_TYPES, value);
 }
 
 /** The mock embedder is AskDB's own, so its width is the only one the CLI knows. */
@@ -652,7 +639,7 @@ const RAG_FLAGS: readonly Flag<CliOptions>[] = [
       const types: ChunkType[] = [];
       for (const type of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
         if (!isChunkType(type)) {
-          throw new Error(`${labelled("Unknown --types value", type)} (expected ${Object.keys(CHUNK_TYPES).join(", ")}).`);
+          throw new Error(`${labelled("Unknown --types value", type)} (expected ${CHUNK_TYPES.join(", ")}).`);
         }
         types.push(type);
       }
@@ -706,7 +693,7 @@ function ragNotes(): string[] {
     "  index        Chunk and embed a schema directory into the store. Only chunks the store",
     "               doesn't already hold (same id + content hash) are embedded; --force re-embeds everything.",
     "  query        Run a similarity query against an indexed store. Use the same embedder/dimensions as `index`.",
-    `               --types takes a comma-separated list of: ${Object.keys(CHUNK_TYPES).join(", ")}.`,
+    `               --types takes a comma-separated list of: ${CHUNK_TYPES.join(", ")}.`,
     "  setup-store  Create the pgvector extension, table, and indexes at --dimensions, the vector width of",
     "               your embedding model. Idempotent — safe to re-run.",
     "",
