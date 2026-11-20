@@ -54,7 +54,8 @@ export async function handle(request, fetchOrigin) {
       : reply(JSON.stringify(notFoundJson(siteUrl, url.pathname)), 404, "application/json; charset=utf-8", extra);
   }
   if (response.ok && isHtml && type === MARKDOWN) {
-    const twin = await fetchOrigin(new Request(new URL(markdownPathFor(url.pathname), url)));
+    // Joined as a string, not resolved as a URL: a path such as `//x/` would otherwise name a host.
+    const twin = await fetchOrigin(new Request(`${url.origin}${markdownPathFor(url.pathname)}`));
     if (twin.ok) return reply(await twin.text(), 200, "text/markdown; charset=utf-8");
   }
   return isHtml ? withVary(response) : response;

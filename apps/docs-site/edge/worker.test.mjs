@@ -42,6 +42,16 @@ test("the home page and a docs page asked for as Markdown get their Markdown twi
   }
 });
 
+test("a path that starts with // fetches its twin from the same origin, never from another host", async () => {
+  const fetched = [];
+  const recording = async (req) => {
+    fetched.push(new URL(req.url).host);
+    return new Response("<!DOCTYPE html>", { status: 200, headers: { "Content-Type": "text/html" } });
+  };
+  await handle(new Request("https://askdb.tools//quickstart/", { headers: { Accept: "text/markdown" } }), recording);
+  assert.deepEqual(fetched, ["askdb.tools", "askdb.tools"]);
+});
+
 test("a page asked for as HTML stays HTML and says Vary: Accept", async () => {
   const response = await handle(request("/", "text/html"), origin);
   assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
