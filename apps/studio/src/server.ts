@@ -22,9 +22,13 @@ import {
   type AiConfig,
   type AiProvider,
 } from "@askdb/ai";
-import { DialectNotSupportedError, resolveDialect } from "@askdb/client";
 import {
-  ask,
+  createAskDb,
+  DialectNotSupportedError,
+  ModelNotConfiguredError,
+  resolveDialect,
+} from "@askdb/client";
+import {
   DEFAULT_TENANT_SQL_MODE,
   formatSchemaV2ForNlToSql,
   formatSensitiveReference,
@@ -37,8 +41,6 @@ import {
   validateSensitiveReferences,
   suggestEnrichment,
   tenantScopeSchema,
-  type AskDialectInput,
-  type AskGenerateDeps,
   type BuiltInDialectId,
   type DialectSpec,
   type EnrichmentTarget,
@@ -851,10 +853,17 @@ function tenantPolicySchemaForPrompt(
 
 async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTenantPolicyResponse> {
   const rt = getAskDbRuntimeConfig();
-  const model = await ai.createLanguageModelFromSection(rt.ai.language);
-  if (!model) {
+  const aiConfig = ai.resolveAiConfigFromSection(rt.ai.language);
+  if (!aiConfig) {
     throw new StudioHttpError(400, ai.keyMissingMessage("AI tenant policy suggestion"));
   }
+  const model = await ai.createLanguageModel(aiConfig);
+  // Tenant-policy drafting is schema authoring, so it honours the `enrichment`
+  // reasoning effort (#364), like the enrichment suggestions in `suggestForSource`.
+  const reasoningEffort = resolveReasoningEffortFromSection(rt.ai.language.reasoning, "enrichment");
+  const providerOptions = reasoningEffort
+    ? ai.resolveProviderOptions(aiConfig, { reasoningEffort })
+    : undefined;
 
   requireWorkspace(state);
   const { schemaId, schemaDdl, tableIds, warnings } = tenantPolicySchemaForPrompt(
@@ -909,6 +918,11 @@ If the schema has no clear multi-tenant pattern, still make your best guess at w
     model,
     instructions: systemPrompt,
     prompt: userPrompt,
+    // Cast: AskDB's public `providerOptions` type is a plain opaque bag
+    // (`Record<string, unknown>`); the AI SDK validates it.
+    ...(providerOptions
+      ? { providerOptions: providerOptions as Parameters<typeof defaultGenerateText>[0]["providerOptions"] }
+      : {}),
   });
 
   let parsed: Pick<SuggestTenantPolicyResponse, "frontmatter" | "body">;
@@ -939,112 +953,87 @@ async function askSampleQuestion(
   },
 ): Promise<AskResponse> {
   const rt = getAskDbRuntimeConfig();
-  const mockSql = rt.dev.mockSql;
-  const aiConfig = mockSql ? undefined : ai.resolveAiConfigFromSection(rt.ai.language);
-  if (!mockSql && !aiConfig) {
-    throw new StudioHttpError(
-      400,
-      `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set dev.mockSql in askdb.config to bypass the live model.`,
-    );
-  }
-  const reasoningEffort = mockSql ? undefined : resolveReasoningEffortFromSection(rt.ai.language.reasoning, "nlToSql");
-  const providerOptions =
-    aiConfig && reasoningEffort ? ai.resolveProviderOptions(aiConfig, { reasoningEffort }) : undefined;
-
   const schema = loadSchema(state.schemaDir);
-  // `@askdb/client`'s rule, as the CLI and the HTTP API apply it: a provider AskDB ships no
-  // dialect for is refused, never checked under PostgreSQL's rules (ADR 0039).
-  let dialect: AskDialectInput;
-  try {
-    ({ dialect } = resolveDialect(schema, { configDialect: rt.nlToSql.dialect }));
-  } catch (error) {
-    if (error instanceof DialectNotSupportedError) throw new StudioHttpError(422, error.message);
-    throw error;
-  }
   const retrievedChunks: QueryResult[] = [];
   const usage = createRequestUsageCollector();
   const ragIndex = options.useRag
     ? await createCurrentStudioRagIndex(state, "using RAG for sample generation", usage)
     : undefined;
-  type AskModel = Parameters<typeof ask>[0]["model"];
-  const model: AskModel = mockSql
-    ? (undefined as unknown as AskModel)
-    : ((await ai.createLanguageModel(aiConfig!)) as AskModel);
-
-  const result = await ask({
-    question: options.question,
-    schema,
-    model,
-    dialect,
-    explain: true,
-    // `ask()` doesn't read config, so each host applies `modes.omitSensitiveFromPrompt`
-    // itself, as `@askdb/client` does (#601).
-    ...(rt.modes.omitSensitiveFromPrompt ? { omitSensitiveIdentifiersFromNlToSqlPrompt: true } : {}),
-    ...(options.tenantScope ? { tenantScope: options.tenantScope } : {}),
-    ...(options.tenantSqlMode ? { tenantSqlMode: options.tenantSqlMode } : {}),
-    ...(ragIndex
-      ? {
-          retriever: async (params) => {
-            let results: QueryResult[];
-            try {
-              results = await ragIndex.retriever(params);
-            } catch (error) {
-              throw formatStudioRagOperationError(error, ragIndex.config);
-            }
-            retrievedChunks.splice(0, retrievedChunks.length, ...results);
-            return results;
-          },
-          retrievalK: 8,
-          retrievalThresholdChunks: 0,
-          totalSchemaChunkCount: ragIndex.status.chunksTotal,
-        }
-      : {}),
-    deps:
-      mockSql !== undefined
+  try {
+    // Sample generation runs on `@askdb/client` (#364): it resolves the model, the
+    // `nlToSql` reasoning effort and the dialect from the same config, and honours
+    // `dev.mockSql`, so Studio no longer keeps its own copies of that resolution.
+    const askdb = createAskDb({ config: rt, registry: ai });
+    const result = await askdb.ask(options.question, {
+      schema,
+      explain: true,
+      // `ask()` doesn't read config, so each host applies `modes.omitSensitiveFromPrompt`
+      // itself, as `@askdb/client` does (#601).
+      ...(rt.modes.omitSensitiveFromPrompt ? { omitSensitiveIdentifiersFromNlToSqlPrompt: true } : {}),
+      ...(options.tenantScope ? { tenantScope: options.tenantScope } : {}),
+      ...(options.tenantSqlMode ? { tenantSqlMode: options.tenantSqlMode } : {}),
+      ...(ragIndex
         ? {
-            generateText: (async () => ({ text: mockSql } as any)) as NonNullable<
-              AskGenerateDeps["generateText"]
-            >,
+            retriever: async (params) => {
+              let results: QueryResult[];
+              try {
+                results = await ragIndex.retriever(params);
+              } catch (error) {
+                throw formatStudioRagOperationError(error, ragIndex.config);
+              }
+              retrievedChunks.splice(0, retrievedChunks.length, ...results);
+              return results;
+            },
+            retrievalK: 8,
+            retrievalThresholdChunks: 0,
+            totalSchemaChunkCount: ragIndex.status.chunksTotal,
           }
-        : {
-            generateText: createTrackedGenerateText(usage),
-            ...(providerOptions ? { providerOptions } : {}),
-          },
-  })
-    .catch((error: unknown) => {
-      // #949: the Playground shows the model's reason in place of SQL, so Execute has nothing to run.
-      if (error instanceof QuestionDeclinedError) throw new StudioHttpError(422, error.message);
-      throw error;
-    })
-    .finally(async () => {
-      await ragIndex?.dispose();
+        : {}),
     });
-
-  return {
-    sql: result.sql,
-    explain: result.explain ?? null,
-    warnings: schema.warnings,
-    // `ask()` runs the sensitive-column check in warn mode; `askdb ask` prints the same result.
-    sensitiveGuardrail: result.sensitiveGuardrail
-      ? {
-          references: result.sensitiveGuardrail.references.map(formatSensitiveReference),
-          unresolvedScopeNote: result.sensitiveGuardrail.unresolvedScope?.message ?? null,
-        }
-      : null,
-    rag: {
-      enabled: options.useRag,
-      chunks: options.useRag ? retrievedChunks.map(serializeRagResult) : [],
-    },
-    tenant: options.tenantScope
-      ? {
-          enabled: true,
-          sqlMode: options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE,
-          bindings: result.tenantBindings ?? [],
-          params: result.tenantParams ?? [],
-        }
-      : null,
-    usage: usage.toDto(),
-  };
+    // `ask()` returns the generation usage; the RAG index above already added the
+    // embedding usage to the same collector.
+    usage.add("generation", normalizeGenerationUsage(result.usage));
+    return {
+      sql: result.sql,
+      explain: result.explain ?? null,
+      warnings: schema.warnings,
+      // `ask()` runs the sensitive-column check in warn mode; `askdb ask` prints the same result.
+      sensitiveGuardrail: result.sensitiveGuardrail
+        ? {
+            references: result.sensitiveGuardrail.references.map(formatSensitiveReference),
+            unresolvedScopeNote: result.sensitiveGuardrail.unresolvedScope?.message ?? null,
+          }
+        : null,
+      rag: {
+        enabled: options.useRag,
+        chunks: options.useRag ? retrievedChunks.map(serializeRagResult) : [],
+      },
+      tenant: options.tenantScope
+        ? {
+            enabled: true,
+            sqlMode: options.tenantSqlMode ?? DEFAULT_TENANT_SQL_MODE,
+            bindings: result.tenantBindings ?? [],
+            params: result.tenantParams ?? [],
+          }
+        : null,
+      usage: usage.toDto(),
+    };
+  } catch (error: unknown) {
+    // `@askdb/client`'s rule, as the CLI and the HTTP API apply it: a provider AskDB ships no
+    // dialect for is refused, never checked under PostgreSQL's rules (ADR 0039).
+    if (isErrorOf(error, DialectNotSupportedError)) throw new StudioHttpError(422, error.message);
+    if (isErrorOf(error, ModelNotConfiguredError)) {
+      throw new StudioHttpError(
+        400,
+        `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set dev.mockSql in askdb.config to bypass the live model.`,
+      );
+    }
+    // #949: the Playground shows the model's reason in place of SQL, so Execute has nothing to run.
+    if (isErrorOf(error, QuestionDeclinedError)) throw new StudioHttpError(422, error.message);
+    throw error;
+  } finally {
+    await ragIndex?.dispose();
+  }
 }
 
 /** The `schema.lock.json` fields the RAG status reads. */
@@ -2143,19 +2132,6 @@ function parseRagQuery(body: unknown): { question: string; k: number; types?: Ch
   };
 }
 
-function createTrackedGenerateText(
-  usage: StudioRequestUsageCollector,
-): NonNullable<AskGenerateDeps["generateText"]> {
-  const generateText = defaultGenerateText as unknown as (
-    ...args: unknown[]
-  ) => Promise<{ usage?: unknown }>;
-  return (async (...args: unknown[]) => {
-    const result = await generateText(...args);
-    usage.add("generation", normalizeGenerationUsage((result as { usage?: unknown }).usage));
-    return result;
-  }) as NonNullable<AskGenerateDeps["generateText"]>;
-}
-
 function createRequestUsageCollector() {
   const requests: StudioRequestUsageDto["requests"] = [];
   return {
@@ -2371,4 +2347,9 @@ class StudioHttpError extends Error {
     super(message);
     this.name = "StudioHttpError";
   }
+}
+
+/** `instanceof` with a `name` fallback, so duplicated package copies still classify correctly. */
+function isErrorOf<T extends Error>(e: unknown, ctor: abstract new (...args: never[]) => T): e is T {
+  return e instanceof ctor || (e instanceof Error && e.name === ctor.name);
 }
