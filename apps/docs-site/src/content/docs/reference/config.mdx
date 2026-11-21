@@ -189,7 +189,7 @@ export default defineConfig({
 | --- | --- | --- | --- |
 | `effort` | `"minimal" \| "low" \| "medium" \| "high"` | none | Global default for every AskDB model call. |
 | `nlToSql` | Same as `effort` | `effort` | Overrides `effort` for NL→SQL generation calls (`ask()`). Typically left unset (provider default) or `"medium"`/`"high"` — this path is accuracy-sensitive. |
-| `enrichment` | Same as `effort` | `effort` | Overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()`). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical. |
+| `enrichment` | Same as `effort` | `effort` | Overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()` and Studio tenant-policy suggestions). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical. |
 
 AskDB maps each value to the provider's own setting, and sends nothing to a model that doesn't support reasoning tuning, even when `reasoning` is set. [Bring your own model](/guides/bring-your-own-model/#reasoninglatency-effort) lists each provider's setting.
 
