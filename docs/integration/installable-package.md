@@ -18,7 +18,7 @@ Configuration bootstrap: [**ADR 0005 — AskDB config package and env bootstrap*
 
 Enrichment package boundary: [**ADR 0004 — Enrichment-package boundary**](../adrs/0004-enrichment-package-boundary.md).
 
-Authoring a new integration: [**Connectors — what each connector needs**](connectors.md).
+Authoring a new integration: [**Connectors — what each connector needs**](connectors.md). Adding a new engine family also means [adding its dialect rules](dialects.md).
 
 ---
 
