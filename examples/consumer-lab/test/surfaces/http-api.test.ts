@@ -36,9 +36,9 @@
  * model is the lab's replay server, reached through the documented `openai` provider's
  * `baseUrl`.
  *
- * Known discrepancy, marked `it.fails`: `explain` is left out instead of `null` when not
- * requested (#285). Over HTTP a tenant-policy schema can only fail closed until the server
- * accepts a scope (#277).
+ * `explain` is left out when not requested (`reference/http-api.mdx`: "Present only when
+ * the request sent `explain: true`", #285). Over HTTP a tenant-policy schema can only fail
+ * closed until the server accepts a scope (#277).
  *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
  */
@@ -311,10 +311,11 @@ export default defineConfig({
     expect(reply.body.explain).toEqual(expect.any(Object));
   });
 
-  it.fails("http-explain: explain is null when it wasn't requested (#285)", async (ctx) => {
+  it("http-explain: explain is absent when it wasn't requested", async (ctx) => {
     const http = await labServer(ctx, "postgres");
 
-    expect((await postAsk(http, { question: AGENCIES.text })).body.explain).toBeNull();
+    // `reference/http-api.mdx`: "Present only when the request sent `explain: true`".
+    expect((await postAsk(http, { question: AGENCIES.text })).body).not.toHaveProperty("explain");
   });
 
   it("http-tenant-fail-closed: a tenant-policy schema over HTTP, which has no scope field, returns no SQL and never calls the model", async (ctx) => {

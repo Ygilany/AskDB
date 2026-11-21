@@ -2,8 +2,8 @@
  * The installed `askdb` binary, run the way a user runs it, against `reference/cli.mdx`:
  * `askdb ask` prints SQL on stdout and the sensitive `Warning:` on stderr, `--mock-sql`
  * bypasses the model, `askdb introspect` writes, prints or fails as documented, and the
- * exit codes are 0 (success), 1 (config, IO, generation, validation) and 2 (invalid CLI
- * arguments). Every command runs `node_modules/.bin/askdb` from the lab's install, never
+ * exit codes are 0 (success) and 1 (any error, including invalid CLI arguments). Every
+ * command runs `node_modules/.bin/askdb` from the lab's install, never
  * the workspace build. The model is the lab's replay server, reached through the lab's
  * `askdb.config.ts` (`providerConfig.openai.baseUrl` reads `LAB_REPLAY_BASE_URL`).
  *
@@ -183,27 +183,27 @@ describe("[postgres] cli-ask-exit-1", () => {
 });
 
 /**
- * Contract: exit code 2 means invalid CLI arguments (`reference/cli.mdx`, "Exit codes"):
- * a missing required flag (`askdb ask` without `--question`) or an unknown one.
+ * Contract: every error exits 1, including invalid CLI arguments (`reference/cli.mdx`,
+ * "Exit codes"): a missing required flag (`askdb ask` without `--question`) or an unknown
+ * one. The CLI page dropped exit code 2, which no command uses (#287).
  * Catches: argument errors that can't be told apart from runtime failures, so a script
  * retries a typo, or treats a bad flag as a database outage.
- * Not covered elsewhere: no test checks the documented code 2. Today every argument error
- * exits 1, filed as #287, so these are `it.fails` until the docs or the CLI change.
+ * Not covered elsewhere: no other test checks the exit code for invalid CLI arguments.
  */
-describe("[postgres] cli-exit-2", () => {
-  it.fails("askdb ask without --question exits 2 (#287)", async () => {
+describe("[postgres] cli-usage-exit-1", () => {
+  it("askdb ask without --question exits 1", async () => {
     const run = await askdbCli(["ask", "--mock-sql", "SELECT 1"]);
-    expect(run.status).toBe(2);
+    expect(run.status).toBe(1);
   });
 
-  it.fails("askdb ask with an unknown flag exits 2 (#287)", async () => {
+  it("askdb ask with an unknown flag exits 1", async () => {
     const run = await askdbCli(["ask", "--question", "List the agencies.", "--mock-sql", "SELECT 1", "--no-such-flag"]);
-    expect(run.status).toBe(2);
+    expect(run.status).toBe(1);
   });
 
-  it.fails("askdb introspect with an unknown flag exits 2 (#287)", async () => {
+  it("askdb introspect with an unknown flag exits 1", async () => {
     const run = await askdbCli(["introspect", "--no-such-flag"]);
-    expect(run.status).toBe(2);
+    expect(run.status).toBe(1);
   });
 });
 
