@@ -19,7 +19,7 @@ Every export below comes from `@askdb/rag`. The stores and embedders also have t
 | [Chunking](#chunking) | `chunkSchema()`, the loaders and `ChunkOptions`. |
 | [Embedders](#embedders) | `createAiSdkEmbedder()`, `aiSdkEmbedderId()`, `detectEmbeddingDimensions()`. |
 | [Vector stores](#vector-stores) | `createMemoryStore()`, `createFileStore()`, `createPgvectorStore()` and the `VectorStore` interface. |
-| [Core types](#core-types) | `Embedder`, `Retriever`, `Filter`, `Chunk`, `QueryResult`. |
+| [Core types](#core-types) | `Embedder`, `Retriever`, `Filter`, `Chunk`, `ChunkType`, `CHUNK_TYPES`, `isChunkType`, `QueryResult`. |
 | [`AskDbRagLogEvent`](#askdbraglogevent) | The log events `@askdb/rag` writes. |
 
 ## `buildSchemaIndex(options)`
@@ -634,6 +634,26 @@ The fields a store keeps with each vector: the same fields as `Chunk` (`id`, `ty
 ### `ChunkType`
 
 `"table"` | `"column"` | `"cql"` | `"question"` | `"concept"` | `"relationship"` | `"tenant-policy"`
+
+### `CHUNK_TYPES`
+
+```ts
+import { CHUNK_TYPES } from "@askdb/rag";
+
+const CHUNK_TYPES: readonly ["table", "column", "cql", "question", "concept", "relationship", "tenant-policy"];
+```
+
+Every chunk type, in the order the chunker emits them. `ChunkType` is derived from this list, so the two can't drift apart — validate a value against it instead of keeping your own list.
+
+### `isChunkType(value)`
+
+```ts
+import { isChunkType } from "@askdb/rag";
+
+function isChunkType(value: string): value is ChunkType;
+```
+
+True when `value` names a chunk type.
 
 ### `QueryResult`
 

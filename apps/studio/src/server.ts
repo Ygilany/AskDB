@@ -56,12 +56,14 @@ import {
   chunkContentHash,
   chunkSchema,
   aiSdkEmbedderId,
+  CHUNK_TYPES,
   createAiSdkEmbedder,
   createFileStore,
   createMemoryStore,
   createPgvectorStore,
   createRetriever,
   detectEmbeddingDimensions,
+  isChunkType,
   loadChunkerSourcesFromDir,
   PgvectorDimensionMismatchError,
   type ChunkType,
@@ -107,7 +109,6 @@ import type {
   SuggestResponse,
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
-import { STUDIO_CHUNK_TYPES } from "./shared/rag.js";
 import {
   EXECUTE_DRIVER_REGISTRY,
   executeDialectFor,
@@ -2126,13 +2127,12 @@ function parseRagQuery(body: unknown): { question: string; k: number; types?: Ch
     // Leave `types` out to search every type. An unknown type is refused rather than dropped, and
     // so is an empty list: either would otherwise widen the filter to every type, the opposite of
     // what the caller asked for (#1047).
-    const allowed = new Set<string>(STUDIO_CHUNK_TYPES);
     if (
       !Array.isArray(body.types) ||
       body.types.length === 0 ||
-      body.types.some((type) => typeof type !== "string" || !allowed.has(type))
+      body.types.some((type) => typeof type !== "string" || !isChunkType(type))
     ) {
-      throw new StudioHttpError(400, `\`types\` must be an array of chunk types: ${STUDIO_CHUNK_TYPES.join(", ")}.`);
+      throw new StudioHttpError(400, `\`types\` must be an array of chunk types: ${CHUNK_TYPES.join(", ")}.`);
     }
     types = body.types as ChunkType[];
   }
