@@ -4,48 +4,21 @@ import { useWorkspace } from "../../contexts/workspace-context";
 import { usePlayground } from "../../contexts/playground-context";
 import { CopyButton } from "../../components/common/CopyButton";
 import { snippetInstallLine, type SnippetWiring } from "../../lib/install-line";
+import { AI_PROVIDERS, type AiProviderWiring } from "../setup/types";
 
 const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
 
-type ProviderWiring = {
-  /** AI SDK package the host installs; `@askdb/ai` loads it lazily for the config-driven path. */
-  sdkPackage: string;
-  sdkImport: string;
-  sdkModel: (model: string) => string;
-};
-
-const PROVIDER_WIRING: Record<string, ProviderWiring> = {
-  openai: {
-    sdkPackage: "@ai-sdk/openai",
-    sdkImport: "openai",
-    sdkModel: (model) => `openai(${JSON.stringify(model)})`,
-  },
-  anthropic: {
-    sdkPackage: "@ai-sdk/anthropic",
-    sdkImport: "anthropic",
-    sdkModel: (model) => `anthropic(${JSON.stringify(model)})`,
-  },
-  google: {
-    sdkPackage: "@ai-sdk/google",
-    sdkImport: "google",
-    sdkModel: (model) => `google(${JSON.stringify(model)})`,
-  },
-  azure: {
-    sdkPackage: "@ai-sdk/azure",
-    sdkImport: "azure",
-    sdkModel: (model) => `azure(${JSON.stringify(model)}) // your deployment name`,
-  },
-  gateway: {
-    sdkPackage: "ai",
-    sdkImport: "gateway",
-    sdkModel: (model) => `gateway(${JSON.stringify(model)})`,
-  },
-};
-
-function providerWiring(aiProvider: string): ProviderWiring {
-  if (aiProvider in PROVIDER_WIRING) return PROVIDER_WIRING[aiProvider]!;
-  if (aiProvider === "foundry" || aiProvider === "azure-openai") return PROVIDER_WIRING.azure!;
-  return PROVIDER_WIRING.openai!;
+/**
+ * The SDK wiring for the workspace's provider, from the setup wizard's `AI_PROVIDERS` list
+ * (drift-tested against `@askdb/ai` in `setup-providers.test.ts`). `azure-openai` is an
+ * `@askdb/ai` alias with no wizard entry, so it falls back to the azure row; anything
+ * unknown falls back to openai, as before.
+ */
+function providerWiring(aiProvider: string): AiProviderWiring {
+  const found = AI_PROVIDERS.find((provider) => provider.value === aiProvider);
+  if (found) return found;
+  if (aiProvider === "azure-openai") return AI_PROVIDERS.find((provider) => provider.value === "azure")!;
+  return AI_PROVIDERS.find((provider) => provider.value === "openai")!;
 }
 
 export function GetTheCodePanel() {
@@ -62,6 +35,8 @@ export function GetTheCodePanel() {
     if (!workspace) return "";
     const question = askQuestion.trim() || "Which customers signed up last week?";
     const wiringDef = providerWiring(workspace.aiProvider);
+    // The gateway ships with `ai` itself, so it has no SDK package to install.
+    const sdkPackage = wiringDef.sdkPackage ?? "ai";
     const schemaPath = workspace.schemaPathRelative;
     const tenant = askTenantEnabled && generatedTenantScopeJson ? generatedTenantScopeJson : null;
 
@@ -69,11 +44,11 @@ export function GetTheCodePanel() {
       const overrides = tenant
         ? `, {\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},\n}`
         : "";
-      const bundledSdk = wiringDef.sdkPackage === "ai";
+      const bundledSdk = wiringDef.sdkPackage === undefined;
       const providerNote = bundledSdk
         ? "the AI Gateway provider ships with `ai`"
-        : `${wiringDef.sdkPackage} is loaded on first use`;
-      return `// ${snippetInstallLine("client", wiringDef.sdkPackage)}
+        : `${sdkPackage} is loaded on first use`;
+      return `// ${snippetInstallLine("client", sdkPackage)}
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 
@@ -97,9 +72,9 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
     const tenantOptions = tenant
       ? `\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},`
       : "";
-    return `// ${snippetInstallLine("core", wiringDef.sdkPackage)}
+    return `// ${snippetInstallLine("core", sdkPackage)}
 import { ask, loadSchema } from "@askdb/core";
-import { ${wiringDef.sdkImport} } from "${wiringDef.sdkPackage}";
+import { ${wiringDef.sdkImport} } from "${sdkPackage}";
 
 const schema = loadSchema(${JSON.stringify(schemaPath)});
 const model = ${wiringDef.sdkModel(workspace.model)};
