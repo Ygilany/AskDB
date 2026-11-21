@@ -1532,16 +1532,21 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
   it("strict: throws TenantGuardrailError when sql and sql-unbound disagree on tenant scope", async () => {
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({ text: disagreeingReply }));
-    await expect(
-      ask({
-        question: "open orders",
-        schema,
-        model: fakeModel,
-        dialect: "postgres",
-        tenantScope: agencyScope,
-        deps: { generateText },
-      }),
-    ).rejects.toThrow(TenantGuardrailError);
+    const rejection = ask({
+      question: "open orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: { generateText },
+    });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({
+      name: "TenantGuardrailError",
+      warnings: [
+        expect.objectContaining({ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }),
+      ],
+    });
   });
 
   it("warn: returns the unscoped SQL with a failed guardrail and warnings", async () => {
@@ -1646,9 +1651,14 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
   it("strict: rejects an unscoped SELECT from a custom dialect", async () => {
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = { generate: async () => ({ sql: "SELECT * FROM orders" }) };
-    await expect(
-      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" }),
-    ).rejects.toThrow(TenantGuardrailError);
+    const rejection = ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({
+      name: "TenantGuardrailError",
+      warnings: [
+        expect.objectContaining({ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }),
+      ],
+    });
   });
 
   it("strict: rejects a scoped table written as a U& name, which the read-only check doesn't see here (#704)", async () => {
@@ -1677,17 +1687,25 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
         tenantGuardrail: { passed: true, warnings: [] },
       }),
     };
-    await expect(
-      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" }),
-    ).rejects.toThrow(TenantGuardrailError);
+    const rejection = ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope, tenantSqlMode: "sql-only" });
+    await expect(rejection).rejects.toThrow(TenantGuardrailError);
+    await expect(rejection).rejects.toMatchObject({
+      name: "TenantGuardrailError",
+      warnings: [
+        expect.objectContaining({ rule: "MISSING_TENANT_PREDICATE", tableId: "table:public.orders" }),
+      ],
+    });
   });
 
   it("merges a custom dialect's reported failures into the result (warn)", async () => {
     const base = loadSchema(multiTenantDir);
     const schema = { ...base, tenantPolicy: { ...base.tenantPolicy!, enforcement: "warn" as const } };
+    // The dialect returns unscoped SQL with its own failure: ask()'s own check must
+    // add MISSING_TENANT_PREDICATE, not pass the dialect's report through unchanged
+    // (the pre-#186 behaviour, which this test would then fail to catch).
     const dialect: AskDialect = {
       generate: async () => ({
-        sql: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids",
+        sql: "SELECT * FROM orders",
         tenantGuardrail: {
           passed: false,
           warnings: [{ rule: "UNPROVABLE_SCOPE", tableId: "table:public.orders", message: "custom" }],
@@ -1702,11 +1720,15 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
       tenantScope: agencyScope,
       tenantSqlMode: "sql-only",
     });
-    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '42'");
+    expect(result.sql).toBe("SELECT * FROM orders");
     expect(result.tenantGuardrail?.passed).toBe(false);
-    expect(result.tenantGuardrail?.warnings).toEqual([
-      { rule: "UNPROVABLE_SCOPE", tableId: "table:public.orders", message: "custom" },
+    expect(result.tenantGuardrail?.warnings.map((w) => w.rule).sort()).toEqual([
+      "MISSING_TENANT_PREDICATE",
+      "UNPROVABLE_SCOPE",
     ]);
+    expect(result.tenantGuardrail?.warnings).toContainEqual(
+      expect.objectContaining({ rule: "UNPROVABLE_SCOPE", tableId: "table:public.orders", message: "custom" }),
+    );
   });
 
   it("scoped SQL from a custom dialect passes and gets a tenantGuardrail result", async () => {
