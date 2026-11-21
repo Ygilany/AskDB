@@ -3,7 +3,9 @@
  *
  * Imports `ask` from `@askdb/core`, the engine-agnostic
  * `introspect()` from `@askdb/introspect`, and the Postgres dialect + connector
- * from `@askdb/postgres`, plus the Prisma connector from `@askdb/prisma`.
+ * from `@askdb/postgres`, plus the Prisma connector from `@askdb/prisma` and
+ * `createAskDb` from `@askdb/client` (whose public type exports the consumer's
+ * `tsc --noEmit` checks from the packed tarball, #336).
  * Runs the pipeline against a fake LanguageModel and confirms generated SQL is
  * returned without any execution seam in core.
  *
@@ -18,6 +20,8 @@ import {
 } from "@askdb/core";
 import { createAiRegistry, type AiRegistry } from "@askdb/ai";
 import { classifyResult, planChart } from "@askdb/client/charts";
+import { createAskDb, type AskDbClient, type CreateAskDbOptions } from "@askdb/client";
+import type { AskDbRuntimeConfig } from "@askdb/config";
 import { MockLanguageModelV3 } from "ai/test";
 import { buildSchemaIndex, createMemoryStore, type Embedder } from "@askdb/rag";
 import { createFileStore } from "@askdb/rag/stores/file";
@@ -257,7 +261,37 @@ async function main(): Promise<void> {
     throw new Error(`smoke: expected a fallback bar chart from @askdb/client/charts, got ${JSON.stringify(chart)}`);
   }
 
-  console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, ai and client/charts package surfaces loaded");
+  // The @askdb/client root export is type-checked from the packed tarball: a
+  // missing or broken re-export in packages/client/src/index.ts fails the
+  // consumer's `tsc --noEmit` (#336). The config below is the minimal shape
+  // `createAskDb` needs here (cf. makeConfig in packages/client/src/client.test.ts);
+  // the client is never asked, so no model call or schema load runs.
+  const smokeConfig = {
+    structured: { host: { schemaJson: v2SchemaJson } },
+    flat: {},
+    ai: {
+      language: {
+        provider: "openai",
+        connection: { name: "default" },
+        model: undefined,
+        modelFamily: undefined,
+        reasoning: undefined,
+      },
+      embedding: undefined,
+    },
+    dev: { mockSql: undefined },
+    nlToSql: { dialect: undefined },
+    modes: { askdbMode: undefined, omitSensitiveFromPrompt: false },
+  } as unknown as AskDbRuntimeConfig;
+  const askdbClient: AskDbClient = createAskDb({
+    config: smokeConfig,
+    schema: { schema: v2Schema },
+  } satisfies CreateAskDbOptions);
+  if (typeof askdbClient.ask !== "function") {
+    throw new Error("smoke: @askdb/client createAskDb did not return a client with ask()");
+  }
+
+  console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, ai, client and client/charts package surfaces loaded");
 }
 
 main().catch((e: unknown) => {
