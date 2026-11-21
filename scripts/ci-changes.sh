@@ -4,7 +4,7 @@
 #
 #   docs_only=true|false      every changed file is docs (rule below). Always false on a push.
 #   deps=true|false           a dependency file changed: any package.json or pnpm-lock.yaml,
-#                             pnpm-workspace.yaml, .audit-ci.json or .npmrc.
+#                             pnpm-workspace.yaml, .audit-ci.json, .audit-ci.prod.json or .npmrc.
 #   smoke_input=true|false    a docs file `pnpm smoke:install` reads changed: a package's
 #                             README.md (it ships in the tarball, and the smoke test checks
 #                             its links) or the Quickstart page (quickstart-example.sh runs
@@ -26,7 +26,7 @@
 set -u
 
 DOCS_RE='^(apps/docs-site/|docs/)|^[^/]+\.md$|(^|/)(README|CHANGELOG)\.md$'
-DEPS_RE='(^|/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$|^\.audit-ci\.json$'
+DEPS_RE='(^|/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$|^\.audit-ci(\.prod)?\.json$'
 SMOKE_INPUT_RE='^(packages|apps)/[^/]+/README\.md$|^apps/docs-site/src/content/docs/quickstart\.mdx$'
 
 everything() {

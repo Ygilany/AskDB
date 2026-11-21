@@ -44,9 +44,10 @@ check "root lockfile" false true false "pnpm-lock.yaml"
 check "a package manifest" false true false "packages/core/package.json"
 check "workspace file" false true false "pnpm-workspace.yaml"
 check "audit config" false true false ".audit-ci.json"
+check "audit prod config" false true false ".audit-ci.prod.json"
 check "npmrc" false true false ".npmrc"
 check "lockfile among sources" false true false "$(printf '%s\n' packages/core/src/ask.ts pnpm-lock.yaml)"
-check "not a dependency file" false false false "$(printf '%s\n' scripts/package.json.md packages/core/src/pnpm-lock.ts packages/x/.audit-ci.json)"
+check "not a dependency file" false false false "$(printf '%s\n' scripts/package.json.md packages/core/src/pnpm-lock.ts packages/x/.audit-ci.json packages/x/.audit-ci.prod.json)"
 
 # An empty list can't be classified, so everything runs.
 expect "empty input" "${EVERYTHING}" "$(printf '' | bash "${SCRIPT}" classify 2>/dev/null)"
