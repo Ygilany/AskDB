@@ -430,14 +430,17 @@ export type AskDbConfig = {
        */
       useIntrospectionConnection?: boolean;
       /**
-       * Per-query timeout in milliseconds (positive integer). Default `30000`.
-       * Enforced server-side on Postgres, MySQL/MariaDB, and SQL Server; not enforced
-       * for SQLite.
+       * Per-query timeout in milliseconds (positive integer, at most `2147481647` — the
+       * Node timer maximum minus the 2000 ms the Postgres driver adds to its
+       * `query_timeout`). Default `30000`. Enforced server-side on Postgres,
+       * MySQL/MariaDB, and SQL Server; not enforced for SQLite.
        */
       timeoutMs?: number;
       /**
-       * Maximum rows returned per query (positive integer). Default `500`. Studio fetches
-       * at most `maxRows + 1` rows and reports `truncated: true` when more exist.
+       * Maximum rows returned per query (positive integer, at most `2147483646` — Studio
+       * fetches `maxRows + 1` rows and SQL Server runs `SET ROWCOUNT maxRows + 1`, which
+       * overflows T-SQL `int` at 2^31 - 1). Default `500`. Studio fetches at most
+       * `maxRows + 1` rows and reports `truncated: true` when more exist.
        */
       maxRows?: number;
       /**

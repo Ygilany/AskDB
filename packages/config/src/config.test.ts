@@ -1106,6 +1106,52 @@ describe("getAskDbRuntimeConfig — studio execute safety defaults", () => {
   });
 });
 
+describe("flattenAskDbConfig — studio.execute bounds (#333)", () => {
+  // A timeout past the Node timer maximum overflows Studio's `setTimeout` to 1 ms, so every
+  // query "times out" immediately; `pg` adds 2000 ms to its `query_timeout` on top.
+  it.each([
+    [3_000_000_000, "past the 32-bit timer maximum"],
+    [2_147_483_647, "the 32-bit maximum, before pg adds 2000 ms"],
+    [2_147_481_648, "one past the cap"],
+  ])("refuses studio.execute.timeoutMs %s (%s), naming the field and the cap", (timeoutMs) => {
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { timeoutMs } } })),
+    ).toThrow(/studio\.execute\.timeoutMs.*at most 2147481647/);
+  });
+
+  it("accepts studio.execute.timeoutMs at the cap and below it", () => {
+    expect(
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { timeoutMs: 2_147_481_647 } } }))
+        .ASKDB_STUDIO_EXECUTE_TIMEOUT_MS,
+    ).toBe("2147481647");
+    expect(
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { timeoutMs: 3_600_000 } } }))
+        .ASKDB_STUDIO_EXECUTE_TIMEOUT_MS,
+    ).toBe("3600000");
+  });
+
+  // Studio fetches `maxRows + 1` rows and SQL Server runs `SET ROWCOUNT maxRows + 1`, which
+  // overflows T-SQL `int` at 2^31 - 1.
+  it.each([
+    [2_147_483_647, "the 32-bit maximum"],
+    [3_000_000_000, "past the 32-bit maximum"],
+  ])("refuses studio.execute.maxRows %s (%s), naming the field and the cap", (maxRows) => {
+    expect(() => flattenAskDbConfig(minimalConfig({ studio: { execute: { maxRows } } }))).toThrow(
+      /studio\.execute\.maxRows.*at most 2147483646/,
+    );
+  });
+
+  it("accepts studio.execute.maxRows at the cap and below it", () => {
+    expect(
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { maxRows: 2_147_483_646 } } }))
+        .ASKDB_STUDIO_EXECUTE_MAX_ROWS,
+    ).toBe("2147483646");
+    expect(
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { maxRows: 500 } } })).ASKDB_STUDIO_EXECUTE_MAX_ROWS,
+    ).toBe("500");
+  });
+});
+
 describe("bootstrapAskDbEnv", () => {
   let dir: string;
   const prevOpenAi = process.env.OPENAI_API_KEY;

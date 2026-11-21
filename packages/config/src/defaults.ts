@@ -22,5 +22,15 @@ export const DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS = 64;
 export const DEFAULT_PGVECTOR_INDEX_STRATEGY = "hnsw" as const;
 /** Default per-query statement timeout for Studio execute (`studio.execute.timeoutMs`). */
 export const DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS = 30_000;
+/**
+ * Largest `studio.execute.timeoutMs`: the Node timer maximum (2^31 - 1 ms) minus the 2000 ms
+ * `pg`'s client-side `query_timeout` adds, so the driver timeout never overflows to 1 ms.
+ */
+export const MAX_STUDIO_EXECUTE_TIMEOUT_MS = 2_147_481_647;
 /** Default row cap for Studio execute results (`studio.execute.maxRows`). */
 export const DEFAULT_STUDIO_EXECUTE_MAX_ROWS = 500;
+/**
+ * Largest `studio.execute.maxRows`: 2^31 - 2, because Studio fetches `maxRows + 1` rows and SQL
+ * Server runs `SET ROWCOUNT maxRows + 1`, which overflows T-SQL `int` at 2^31 - 1.
+ */
+export const MAX_STUDIO_EXECUTE_MAX_ROWS = 2_147_483_646;

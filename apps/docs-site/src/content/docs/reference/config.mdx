@@ -316,8 +316,8 @@ The `studio.execute` block configures the Playground's live execution. It's **of
 | `studio.execute.databaseUrl` | `string` | none | Connection URL for Postgres, MySQL and SQL Server. See `useIntrospectionConnection`. |
 | `studio.execute.file` | `string` | none | SQLite file path. See `useIntrospectionConnection`. |
 | `studio.execute.useIntrospectionConnection` | `boolean` | `false` | When `true`, reuse the introspection connection if `databaseUrl` / `file` is unset. |
-| `studio.execute.timeoutMs` | `number` | `30000` | Per-query timeout in milliseconds, a positive integer. Not enforced for SQLite. |
-| `studio.execute.maxRows` | `number` | `500` | Row cap, a positive integer. Results with more rows are truncated. |
+| `studio.execute.timeoutMs` | `number` | `30000` | Per-query timeout in milliseconds, a positive integer up to 2147481647 (the Node timer maximum minus the 2000 ms the Postgres driver adds). Not enforced for SQLite. |
+| `studio.execute.maxRows` | `number` | `500` | Row cap, a positive integer up to 2147483646 (Studio fetches `maxRows + 1` rows; SQL Server's `SET ROWCOUNT` overflows at 2^31 - 1). Results with more rows are truncated. |
 
 **Provider resolution order:**
 
