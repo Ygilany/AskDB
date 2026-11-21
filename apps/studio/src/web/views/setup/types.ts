@@ -14,6 +14,7 @@ export const DATABASES: Array<{ value: SetupDatabase; label: string }> = [
   { value: "sqlserver", label: "SQL Server" },
   { value: "prisma", label: "Prisma schema file (no live database)" },
 ];
+
 /**
  * Mirrors `listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS)` from `@askdb/ai` (the browser bundle
  * can't import it). `setup-providers.test.ts` fails if the two drift. The Get-the-code panel
@@ -94,12 +95,14 @@ export const RAG_STORES: Array<{ value: SetupRagStore; label: string }> = [
   { value: "memory", label: "Memory (fast, non-persistent)" },
   { value: "pgvector", label: "pgvector (Postgres vector store)" },
 ];
+
 export const EXECUTE_PROVIDERS: Array<{ value: SetupExecuteProvider; label: string }> = [
   { value: "postgres", label: "PostgreSQL" },
   { value: "mysql", label: "MySQL" },
   { value: "sqlite", label: "SQLite" },
   { value: "sqlserver", label: "SQL Server" },
 ];
+
 /** The connection URL variable each engine defaults to; `""` for an engine that reads no URL. */
 export const CONNECTION_ENV_DEFAULTS: Record<SetupDatabase, string> = {
   postgres: "DATABASE_URL",
@@ -108,10 +111,10 @@ export const CONNECTION_ENV_DEFAULTS: Record<SetupDatabase, string> = {
   sqlite: "",
   prisma: "",
 };
+
 export const EXECUTE_CONNECTION_ENV_DEFAULTS: Record<SetupExecuteProvider, string> = {
   postgres: "DATABASE_URL",
   mysql: "DATABASE_URL",
   sqlserver: "DATABASE_URL",
   sqlite: "",
 };
-
