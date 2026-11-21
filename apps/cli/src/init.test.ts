@@ -632,8 +632,8 @@ describe("runInitCli install", () => {
     await runInitCli(["--yes", "--database", "sqlite", "--sqlite-file", "./shop.db", "--path", join(project, "askdb.config.ts")], failingInstaller);
 
     const packages = [`@askdb/config@${resolveInitDepSpecs().configSpec}`, "better-sqlite3"];
-    expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, packages, []);
-    expect(stderr.join("")).toContain(`  pnpm add ${packages.join(" ")}\n`);
+    expect(failingInstaller).toHaveBeenCalledWith("pnpm", project, packages, ["better-sqlite3"]);
+    expect(stderr.join("")).toContain(`  pnpm add --allow-build=better-sqlite3 ${packages.join(" ")}\n`);
   });
 
   // #937: a local install puts no bare `askdb` on PATH, so each command the Next steps print
@@ -722,7 +722,7 @@ describe("runInitCli install", () => {
     const code = await runInitCli(["--yes", "--database", "sqlite", "--sqlite-file", "./shop.db", "--path", join(project, "askdb.config.ts")], installer);
 
     expect(code).toBe(0);
-    expect(installer).toHaveBeenCalledWith("pnpm", project, [`@askdb/config@${resolveInitDepSpecs().configSpec}`, "better-sqlite3"], []);
+    expect(installer).toHaveBeenCalledWith("pnpm", project, [`@askdb/config@${resolveInitDepSpecs().configSpec}`, "better-sqlite3"], ["better-sqlite3"]);
     expect(stdout.join("")).not.toContain("Skipped automatic dependency install");
   });
 
