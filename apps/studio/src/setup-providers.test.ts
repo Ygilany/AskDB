@@ -5,12 +5,21 @@ import { AI_PROVIDERS } from "./web/views/setup/types.js";
 
 describe("Studio setup wizard AI providers", () => {
   it("match @askdb/ai's built-in provider table (the browser bundle keeps its own copy)", () => {
-    expect(AI_PROVIDERS).toEqual(
-      listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS).map(({ id, label, keyEnv, modelEnv }) => ({
+    expect(
+      AI_PROVIDERS.map(({ value, label, keyEnv, modelEnv, sdkPackage }) => ({
+        value,
+        label,
+        keyEnv,
+        modelEnv,
+        sdkPackage,
+      })),
+    ).toEqual(
+      listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS).map(({ id, label, keyEnv, modelEnv, peerPackage }) => ({
         value: id,
         label,
         keyEnv,
         modelEnv,
+        sdkPackage: peerPackage,
       })),
     );
   });
