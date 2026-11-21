@@ -24,7 +24,7 @@ import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { errorMessage } from "./cli-error.js";
 import { runCommand, type CommandSpec, type Flag } from "./command.js";
 import { createCliLogger, loggingFlags, type CliLoggingFlags } from "./logger.js";
-import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
+import { PRISMA_BUILD_APPROVALS, PRISMA_YARN_PNP_HINT } from "./prisma-install.js";
 
 /**
  * `@askdb/prisma` is an optional peer of `askdb`: it pulls in Prisma, whose
@@ -36,11 +36,12 @@ import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 const prismaPackage = createOptionalDriverLoader({
   packageName: "@askdb/prisma",
   importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
-  missingMessage: connectorPackageMissingMessage({
-    provider: "prisma",
-    packageName: "@askdb/prisma",
-    allowBuilds: PRISMA_BUILD_APPROVALS,
-  }),
+  missingMessage:
+    connectorPackageMissingMessage({
+      provider: "prisma",
+      packageName: "@askdb/prisma",
+      allowBuilds: PRISMA_BUILD_APPROVALS,
+    }) + ` ${PRISMA_YARN_PNP_HINT}`,
 });
 
 /**
