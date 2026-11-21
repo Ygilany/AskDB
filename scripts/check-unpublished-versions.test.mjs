@@ -63,7 +63,7 @@ function workspace(packages = MAIN) {
   dir = mkdtempSync(join(tmpdir(), "check-unpublished-versions-"));
   git("init", "-q", "-b", "main");
   write("pnpm-workspace.yaml", 'packages:\n  - "pkgs/*"\n');
-  write("package.json", { name: "root", private: true });
+  write("package.json", { name: "root", private: true, packageManager: "pnpm@11.28.10" });
   for (const [name, fields] of Object.entries(packages)) manifest(name, fields);
   git("add", "-A");
   git("commit", "-q", "-m", "main");
