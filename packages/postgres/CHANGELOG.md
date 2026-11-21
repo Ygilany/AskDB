@@ -1,5 +1,14 @@
 # @askdb/postgres
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- Updated dependencies [5ce8b37]
+- Updated dependencies [8feae53]
+  - @askdb/core@1.0.0-rc.4
+  - @askdb/introspect@1.0.0-rc.4
+
 ## 1.0.0-rc.3
 
 ### Patch Changes

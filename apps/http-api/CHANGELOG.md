@@ -1,5 +1,19 @@
 # @askdb/http-api
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- e195ecb: Reject non-decimal `--port` values in `askdb-http`: only ASCII digits in 0–65535 are accepted, so `0x50`, `1e3`, `80.0`, `+80` and values with surrounding spaces now fail with `Invalid --port` instead of listening on a different port. Port 0 is accepted and means "let the OS pick a free port", the same 0–65535 range as `httpApi.listen.port` (closes #718).
+- Updated dependencies [5ce8b37]
+- Updated dependencies [33b7af2]
+- Updated dependencies [8feae53]
+- Updated dependencies [1257e13]
+  - @askdb/core@1.0.0-rc.4
+  - @askdb/config@1.0.0-rc.4
+  - @askdb/ai@1.0.0-rc.4
+  - @askdb/client@1.0.0-rc.4
+
 ## 1.0.0-rc.3
 
 ### Patch Changes
