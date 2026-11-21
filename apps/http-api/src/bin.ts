@@ -63,7 +63,9 @@ try {
   process.stderr.write(`askdb-http: ${formatListenError(error, app.host, app.port)}\n`);
   process.exit(1);
 }
-console.log(`AskDB HTTP API listening on http://${app.host}:${app.port}`);
+const address = app.server.address();
+const listeningPort = address && typeof address !== "string" ? address.port : app.port;
+console.log(`AskDB HTTP API listening on http://${app.host}:${listeningPort}`);
 
 function formatListenError(error: unknown, host: string, port: number): string {
   const code = (error as { code?: unknown } | undefined)?.code;
