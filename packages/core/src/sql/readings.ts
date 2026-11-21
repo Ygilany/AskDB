@@ -28,7 +28,11 @@
  * may point at CockroachDB, which is wire-compatible but ends a `--` comment only at `\n`, so the
  * Postgres family is read with both comment ends where that decides what is code.
  */
-import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import {
+  isBuiltInDialectId,
+  type BuiltInDialectId,
+  type DialectSpec,
+} from "./dialect-spec.js";
 import { ENGINE_LEXER_PROFILES, GENERIC_LEXER, lexerProfileFor, lexSql, SQLSERVER_LEXER, type SqlLexerProfile, type SqlToken } from "./lexer.js";
 
 /** The parts of a dialect that decide how its SQL is read. */
@@ -367,14 +371,27 @@ const SQLSERVER_VIEW: SqlLexerProfile = {
 };
 
 /**
- * The tenant check's predicate readings. A built-in engine gets its own view: the MySQL one twice,
- * with executable comments as code and as comments; the Postgres one with both comment ends; the
- * SQL Server one. The Postgres and SQL Server views nest block comments, and each is read again with
- * them not nested. Backslash escapes follow the spec as the lexer reads it: an unset value on MySQL
- * or MariaDB is the server default, on. Any other id, or none, gets the standard and Postgres views
- * with both comment ends, the MySQL view and the SQL Server view: a table counts as referenced when
- * any of them sees it, a predicate only when every one does.
+ * The tenant check's per-engine predicate reading, exhaustive over `BuiltInDialectId`:
+ * a new built-in id fails the type check until it has a case here (#661). SQLite reads
+ * the standard view (its `"…"` identifiers and backtick / `[…]` names are the standard
+ * view's); every other engine gets its own view. The MySQL view is taken twice, with
+ * executable comments as code and as comments; the Postgres view with both comment
+ * ends; the SQL Server view. The Postgres and SQL Server views nest block comments,
+ * and each is read again with them not nested. Backslash escapes follow the spec as
+ * the lexer reads it: an unset value on MySQL or MariaDB is the server default, on.
+ * Any other id, or none, gets the standard and Postgres views with both comment ends,
+ * the MySQL view and the SQL Server view: a table counts as referenced when any of
+ * them sees it, a predicate only when every one does.
  */
+const TENANT_CODE_VIEWS: Record<BuiltInDialectId, readonly SqlLexerProfile[]> = {
+  postgres: [POSTGRES_VIEW, crEnds(POSTGRES_VIEW)],
+  cockroachdb: [POSTGRES_VIEW, crEnds(POSTGRES_VIEW)],
+  mysql: [MYSQL_VIEW],
+  mariadb: [MYSQL_VIEW],
+  sqlite: [STANDARD_VIEW],
+  sqlserver: [SQLSERVER_VIEW],
+};
+
 export function tenantCodeReadings(dialect: ReadingDialect | undefined): CodeViewReading[] {
   const views = (profiles: readonly SqlLexerProfile[]) =>
     bothExecutableCommentReadings(bothBlockCommentReadings(profiles)).map((profile) => ({ profile, pipesAreOr: profile.id === "mysql" }));
@@ -383,14 +400,7 @@ export function tenantCodeReadings(dialect: ReadingDialect | undefined): CodeVie
   }
   const mysqlFamily = dialect.id === "mysql" || dialect.id === "mariadb";
   const backslashEscapes = mysqlFamily ? dialect.backslashEscapes !== false : dialect.backslashEscapes === true;
-  const engine =
-    mysqlFamily
-      ? [MYSQL_VIEW]
-      : dialect.id === "postgres" || dialect.id === "cockroachdb"
-        ? [POSTGRES_VIEW, crEnds(POSTGRES_VIEW)]
-        : dialect.id === "sqlserver"
-          ? [SQLSERVER_VIEW]
-          : [STANDARD_VIEW];
+  const engine = TENANT_CODE_VIEWS[dialect.id];
   return views(engine.map((view) => ({ ...view, backslashEscapes })));
 }
 

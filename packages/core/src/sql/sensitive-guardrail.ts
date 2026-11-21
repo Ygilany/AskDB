@@ -5,7 +5,7 @@ import {
   type SensitiveScopeReport,
 } from "../errors.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
-import type { DialectSpec } from "./dialect-spec.js";
+import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { decide, formatSensitiveReference, sensitiveFindings, throwIfDenied } from "./guardrail-decide.js";
 import { findPostgresOnlyForms, hasUnterminatedToken, type SqlToken } from "./lexer.js";
 import { isKnownEngine, mayBeSqlite, readSql, sensitiveReadings, stringsSqliteReadsAsNames, unmatchedNonAsciiName } from "./readings.js";
@@ -337,7 +337,12 @@ const SELECT_MODIFIERS = {
 function selectModifiersFor(
   dialect: Pick<DialectSpec, "id"> | undefined,
 ): SelectModifiers {
-  switch (dialect?.id as string | undefined) {
+  // Unknown or no dialect: accept every engine's modifiers, so no wildcard slips past
+  // (a deliberate fail-closed default — kept as-is). A built-in id switches
+  // exhaustively below, so a new built-in id fails the type check until it has a case
+  // (#661).
+  if (dialect === undefined || !isBuiltInDialectId(dialect.id)) return SELECT_MODIFIERS.any;
+  switch (dialect.id) {
     case "postgres":
     case "cockroachdb":
       return SELECT_MODIFIERS.postgres;
@@ -348,8 +353,10 @@ function selectModifiersFor(
       return SELECT_MODIFIERS.sqlserver;
     case "sqlite":
       return SELECT_MODIFIERS.sqlite;
-    default:
-      return SELECT_MODIFIERS.any;
+    default: {
+      const _exhaustive: never = dialect.id;
+      return _exhaustive;
+    }
   }
 }
 
