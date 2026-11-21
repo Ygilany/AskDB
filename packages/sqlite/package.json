@@ -1,6 +1,6 @@
 {
   "name": "@askdb/sqlite",
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0-rc.4",
   "description": "AskDB SQLite integration: introspection connector via sqlite_master + PRAGMA functions and a better-sqlite3-backed catalog query runner. Pairs with @askdb/core's SQLITE_DIALECT.",
   "keywords": [
     "askdb",

@@ -1,5 +1,15 @@
 # @askdb/config
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- 33b7af2: Load the fallback `.env` from the supplied working directory when no dotenv candidate loads, and return the loaded file path.
+- 8feae53: Internal: remove unused imports and variables that the new repo-wide oxlint run found, and build zero-filled vectors with `Array.from`. No behavior changes.
+- 1257e13: Reject non-decimal `httpApi.listen.port` values: only a number, or a string of decimal digits, in 0–65535 is accepted, so `"0x50"`, `"1e3"`, `"+80"` and `"80.0"` now fail config loading instead of binding a different port. This is the same rule as the `askdb-http --port` flag (#1024), with one difference: the config still trims whitespace around a string, so `" 80 "` loads as 80 and the flag rejects it. Closes #1030.
+  
+  Upgrade note: a config that relied on a hex, exponent or signed port string (for example `"0x50"`) no longer loads. Write the port as a plain decimal number or string instead.
+
 ## 1.0.0-rc.3
 
 No changes in this release.

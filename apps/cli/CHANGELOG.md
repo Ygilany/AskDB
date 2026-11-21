@@ -1,5 +1,39 @@
 # askdb
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- 8feae53: Internal: remove unused imports and variables that the new repo-wide oxlint run found, and build zero-filled vectors with `Array.from`. No behavior changes.
+- Updated dependencies [5ce8b37]
+- Updated dependencies [53ecbd5]
+- Updated dependencies [0590781]
+- Updated dependencies [a87afa8]
+- Updated dependencies [33b7af2]
+- Updated dependencies [8feae53]
+- Updated dependencies [1257e13]
+- Updated dependencies [7cff001]
+- Updated dependencies [a87afa8]
+- Updated dependencies [0d8925f]
+- Updated dependencies [7880c43]
+- Updated dependencies [875ebac]
+- Updated dependencies [1565efa]
+- Updated dependencies [a4626cf]
+- Updated dependencies [787014b]
+- Updated dependencies [eb3bf08]
+  - @askdb/core@1.0.0-rc.4
+  - @askdb/studio@0.2.0-rc.4
+  - @askdb/rag@0.2.0-rc.4
+  - @askdb/enrich@0.2.0-rc.4
+  - @askdb/config@1.0.0-rc.4
+  - @askdb/ai@1.0.0-rc.4
+  - @askdb/introspect@1.0.0-rc.4
+  - @askdb/mysql@1.0.0-rc.4
+  - @askdb/sqlserver@1.0.0-rc.4
+  - @askdb/client@1.0.0-rc.4
+  - @askdb/postgres@1.0.0-rc.4
+  - @askdb/sqlite@1.0.0-rc.4
+
 ## 1.0.0-rc.3
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # @askdb/rag
 
+## 0.2.0-rc.4
+
+### Patch Changes
+
+- 53ecbd5: Drop the unused `@ai-sdk/openai` optional peer: the only code that used it, `createOpenAiEmbedder`, was removed in #847, so nothing in `@askdb/rag` loads the package (closes #849).
+- Updated dependencies [5ce8b37]
+- Updated dependencies [8feae53]
+  - @askdb/core@1.0.0-rc.4
+
 ## 0.2.0-rc.3
 
 ### Patch Changes
