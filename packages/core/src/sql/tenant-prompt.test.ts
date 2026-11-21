@@ -450,3 +450,53 @@ describe("buildTenantPromptBlock — an outer join's ON counts for nothing (#400
     expect(rule(/^- For polymorphic tables/)).toMatch(/derived table's WHERE/);
   });
 });
+
+describe("buildNlToSqlUserPrompt — the tenant block is omission's one exception (ADR 0026, #1082)", () => {
+  const scope: TenantScope = { access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] } };
+  // orders.agency_id is the tenant column of a scoped table: the policy filters orders through it.
+  const withSensitiveTenantColumn = (): NormalizedSchemaV2 => {
+    const copy = structuredClone(schema);
+    copy.tables
+      .find((t) => t.id === "table:public.orders")!
+      .columns.find((c) => c.name === "agency_id")!.sensitive = true;
+    return copy;
+  };
+  const promptWith = (s: NormalizedSchemaV2, omit: boolean) =>
+    buildNlToSqlUserPrompt(
+      POSTGRES_DIALECT,
+      "how many orders",
+      s,
+      [],
+      undefined,
+      { omitSensitiveIdentifiersFromPrompt: omit },
+      undefined,
+      policy,
+      scope,
+    );
+  const splitAtTenantBlock = (prompt: string): [string, string] => {
+    const at = prompt.indexOf("--- TENANT POLICY (mandatory");
+    expect(at).toBeGreaterThan(-1);
+    return [prompt.slice(0, at), prompt.slice(at)];
+  };
+  const ordersBlockOf = (ddlPart: string): string => {
+    const lines = ddlPart.split("\n");
+    const start = lines.findIndex((l) => l.startsWith("TABLE public.orders"));
+    expect(start).toBeGreaterThan(-1);
+    const end = lines.findIndex((l, i) => i > start && l.startsWith("TABLE "));
+    return lines.slice(start, end === -1 ? undefined : end).join("\n");
+  };
+
+  // ADR 0026 option H (withhold sensitive columns from the tenant block too) lost: without the
+  // column name the model cannot write the tenant predicate, and the check rejects the SQL for
+  // every sensitive scoped table. So the DDL withholds the column while the tenant block still names it.
+  it("names a sensitive tenant column in the tenant block while the DDL withholds it", () => {
+    const [ddlPart, tenantPart] = splitAtTenantBlock(promptWith(withSensitiveTenantColumn(), true));
+    expect(tenantPart).toContain("  - table:public.orders → filter via table:public.orders#agency_id (Agency scope)");
+    expect(ordersBlockOf(ddlPart)).not.toContain("agency_id");
+  });
+
+  it("lists the tenant column in the DDL when omission is off", () => {
+    const [ddlPart] = splitAtTenantBlock(promptWith(withSensitiveTenantColumn(), false));
+    expect(ordersBlockOf(ddlPart)).toContain("agency_id");
+  });
+});
