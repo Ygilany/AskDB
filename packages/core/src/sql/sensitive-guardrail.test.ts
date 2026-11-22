@@ -654,6 +654,59 @@ describe("validateSensitiveReferences — wildcards expand per query block", () 
   });
 });
 
+describe("validateSensitiveReferences — Postgres TABLE shorthand (#309)", () => {
+  // `TABLE users` is shorthand for `SELECT * FROM users`: a parenthesised TABLE item,
+  // a CTE body, or a set-operation branch reads every column of the table. Each row is
+  // checked with the Postgres dialect and with no dialect.
+  const readings = [{ dialect: POSTGRES_DIALECT }, {}];
+
+  it.each([
+    ["SELECT * FROM (TABLE users) t", "unqualified"],
+    ["SELECT * FROM (TABLE users) AS t", "unqualified"],
+    ["SELECT * FROM ((TABLE users)) t", "unqualified"],
+    ["SELECT t.* FROM (TABLE users) t", "qualified"],
+    ["SELECT t.ssn FROM (TABLE users) t", "qualified"],
+    ["SELECT * FROM (TABLE users) t JOIN orders o ON o.user_id = t.id", "unqualified"],
+    ["WITH c AS (TABLE users) SELECT * FROM c", "unqualified"],
+    ["WITH c AS ((TABLE users)) SELECT * FROM c", "unqualified"],
+    ["WITH c AS (TABLE users) SELECT c.ssn FROM c", "qualified"],
+    ["SELECT id FROM orders UNION TABLE users", "unqualified"],
+    ["SELECT id FROM orders INTERSECT TABLE users", "unqualified"],
+    ["SELECT id FROM orders EXCEPT TABLE users", "unqualified"],
+  ] as const)("%s flags users.ssn", (sql, kind) => {
+    for (const options of readings) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([ssnRef(kind)]);
+      expect(result.passed).toBe(false);
+      expect(result.unresolvedScope).toBeUndefined();
+    }
+  });
+
+  it.each([
+    // Only the named column is read: no wildcard, no whole-row reference.
+    ["SELECT t.id FROM (TABLE users) t"],
+    ["WITH c AS (TABLE users) SELECT c.id FROM c"],
+    // A TABLE branch over a table with no sensitive column reads nothing sensitive.
+    ["SELECT id FROM orders UNION TABLE orders"],
+  ])("%s does not flag users.ssn", (sql) => {
+    for (const options of readings) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([]);
+      expect(result.passed).toBe(true);
+      expect(result.unresolvedScope).toBeUndefined();
+    }
+  });
+
+  it("leaves top-level TABLE users failing closed, as before", () => {
+    for (const options of readings) {
+      const result = validateSensitiveReferences("TABLE users", ssnSchema, options);
+      expect(result.passed).toBe(false);
+      expect(result.references).toEqual([]);
+      expect(result.unresolvedScope?.issues).toEqual(["NO_TABLE_SOURCE"]);
+    }
+  });
+});
+
 describe("validateSensitiveReferences — dialect-aware lexing", () => {
   it("sees a column after a Postgres E'' string with an escaped quote", () => {
     const sql = "SELECT E'\\'', ssn, '' FROM users";
