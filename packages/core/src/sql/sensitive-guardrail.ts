@@ -660,6 +660,20 @@ function scanTokens(
     return takeAlias(k, (alias) => aliasDecls.push({ alias, path, at: bindingAt }));
   };
 
+  /**
+   * Whether the `STRAIGHT_JOIN` at `i` sits in SELECT-modifier position: directly after
+   * `SELECT` or another SELECT modifier (`SELECT [DISTINCT] STRAIGHT_JOIN * …`). A join
+   * operator follows a table reference instead, so this is the only position to skip (#308).
+   */
+  const isSelectModifierPosition = (i: number): boolean => {
+    const prev = tokens[i - 1];
+    return (
+      prev?.kind === "word" &&
+      !prev.quoted &&
+      (prev.lower === "select" || modifiers.words.has(prev.lower))
+    );
+  };
+
   // Pass A — resolve relation names, aliases, and CTE names.
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
@@ -676,9 +690,13 @@ function scanTokens(
       continue;
     }
 
-    if (t.lower !== "from" && t.lower !== "join") continue;
+    // MySQL/MariaDB accept `STRAIGHT_JOIN` as a join operator (`t1 STRAIGHT_JOIN t2
+    // [ON …]`), not only as a SELECT modifier (#308). With no dialect the union of
+    // every engine's behaviour applies, so it counts as a join operator there too.
+    const isStraightJoin = t.lower === "straight_join" && !isSelectModifierPosition(i);
+    if (t.lower !== "from" && t.lower !== "join" && !isStraightJoin) continue;
     consumed.add(i);
-    if (t.lower === "join") {
+    if (t.lower === "join" || isStraightJoin) {
       for (let k = i - 1; k >= 0 && isWord(tokens[k]) && JOIN_MODIFIER.has(tokens[k]!.lower); k--) {
         consumed.add(k);
       }
