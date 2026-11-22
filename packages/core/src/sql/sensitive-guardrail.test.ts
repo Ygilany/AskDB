@@ -592,6 +592,30 @@ describe("validateSensitiveReferences — wildcards and whole-row references", (
   });
 });
 
+describe("validateSensitiveReferences — STRAIGHT_JOIN as a join operator (#308)", () => {
+  // MySQL/MariaDB accept STRAIGHT_JOIN as a join operator (`t1 STRAIGHT_JOIN t2 [ON …]`),
+  // not only as a SELECT modifier. Each row must be flagged under its own dialect and,
+  // with no dialect, under the union of every dialect's behaviour. The `u.ssn` row pins
+  // the alias binding itself: before the fix it reports `ssn` as unqualified with an
+  // UNKNOWN_QUALIFIER scope issue instead of a qualified hit.
+  const dialects = { mysql: MYSQL_DIALECT, mariadb: MARIADB_DIALECT };
+  it.each([
+    ["mysql", "SELECT * FROM orders STRAIGHT_JOIN users", "unqualified"],
+    ["mysql", "SELECT * FROM orders STRAIGHT_JOIN users USING (id)", "unqualified"],
+    ["mysql", "SELECT * FROM orders o STRAIGHT_JOIN users u ON u.id = o.user_id", "unqualified"],
+    ["mysql", "SELECT u.ssn FROM orders o STRAIGHT_JOIN users u ON u.id = o.user_id", "qualified"],
+    ["mysql", "SELECT * FROM orders o STRAIGHT_JOIN users u ON u.id = o.user_id STRAIGHT_JOIN orders o2 ON o2.id = o.id", "unqualified"],
+    ["mariadb", "SELECT * FROM orders STRAIGHT_JOIN users", "unqualified"],
+  ] as const)("%s: %s flags users.ssn with and without the dialect", (id, sql, kind) => {
+    for (const options of [{ dialect: dialects[id] }, {}]) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([ssnRef(kind)]);
+      expect(result.passed).toBe(false);
+      expect(result.unresolvedScope).toBeUndefined();
+    }
+  });
+});
+
 describe("validateSensitiveReferences — wildcards expand per query block", () => {
   // No dialect (every engine's reading) and each named dialect must agree.
   const readings = [
