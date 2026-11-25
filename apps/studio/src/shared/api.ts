@@ -348,7 +348,7 @@ export type ExecuteResponse =
       truncated: boolean;
       /** The row cap applied (`studio.execute.maxRows`). */
       rowLimit: number;
-      /** Non-blocking notices, e.g. the SQL references columns marked `sensitive`. */
+      /** Non-blocking notices, e.g. the SQL references columns marked `sensitive`, or the sensitive-column check couldn't run because the schema failed to load. */
       warnings?: string[];
     }
   | { ok: false; error: string };
