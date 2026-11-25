@@ -324,7 +324,7 @@ describe("validateSensitiveReferences — unresolvable scope", () => {
   it("widens and reports when there is no resolvable table source", () => {
     const result = validateSensitiveReferences("SELECT password", districtSchema);
     expect(result.passed).toBe(false);
-    expect(result.unresolvedScope?.issues).toEqual(["NO_TABLE_SOURCE"]);
+    expect(result.unresolvedScope).toBeUndefined();
     expect(result.unresolvedScope?.widened).toBe(true);
     expect(result.references).toEqual([
       { table: "users", schema: "identity", column: "password", matchKind: "unqualified" },
@@ -697,6 +697,9 @@ describe("validateSensitiveReferences — Postgres TABLE shorthand (#309)", () =
     ["SELECT * FROM orders UNION ALL (TABLE users)", "unqualified"],
     ["WITH c AS (SELECT id FROM orders) TABLE users", "unqualified"],
     ["SELECT id FROM orders WHERE (id, total) IN (TABLE users)", "unqualified"],
+    // A TABLE that starts the statement is recorded too, so a set operation whose
+    // first branch is one still reports the table's sensitive columns.
+    ["TABLE users UNION SELECT id, name, email FROM orders", "unqualified"],
     // A TABLE command reads every column of its table, exactly as a `SELECT *` in its
     // place would — so only naming a non-sensitive column still flags, and a renamed
     // column read through a column-alias list flags too.
@@ -739,12 +742,12 @@ describe("validateSensitiveReferences — Postgres TABLE shorthand (#309)", () =
     }
   });
 
-  it("leaves top-level TABLE users failing closed, as before", () => {
+  it("reports a statement-leading TABLE users instead of failing closed", () => {
     for (const options of readings) {
       const result = validateSensitiveReferences("TABLE users", ssnSchema, options);
       expect(result.passed).toBe(false);
-      expect(result.references).toEqual([]);
-      expect(result.unresolvedScope?.issues).toEqual(["NO_TABLE_SOURCE"]);
+      expect(result.references).toEqual([ssnRef("unqualified")]);
+      expect(result.unresolvedScope).toBeUndefined();
     }
   });
 });
