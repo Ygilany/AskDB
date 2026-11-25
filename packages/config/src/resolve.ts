@@ -24,6 +24,8 @@ import {
   DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
   MAX_HTTP_API_REQUEST_TIMEOUT_MS,
+  MAX_STUDIO_EXECUTE_MAX_ROWS,
+  MAX_STUDIO_EXECUTE_TIMEOUT_MS,
 } from "./defaults.js";
 import type {
   AskDbRuntimeAiConnection,
@@ -521,12 +523,17 @@ function parsePositiveInteger(value: unknown): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
-/** A positive-integer key, as a number or a string holding one. */
-function readPositiveInteger(value: unknown, key: string): number | undefined {
+/**
+ * A positive-integer key no larger than `max`, as a number or a string holding one. The error
+ * names the field and the max, following {@link readRequestTimeoutMs}.
+ */
+function readBoundedPositiveInteger(value: unknown, key: string, max: number, expected: string): number | undefined {
   if (value === undefined) return undefined;
   const n = parsePositiveInteger(value);
-  if (n === undefined) {
-    throw new Error(`askdb.config: ${key} must be a positive integer (got ${describeValue(value)}).`);
+  if (n === undefined || n > max) {
+    throw new Error(
+      `askdb.config: invalid ${key} ${describeValue(value)} (expected ${expected}, at most ${max}).`,
+    );
   }
   return n;
 }
@@ -784,8 +791,18 @@ function resolveStudio(
     execute?.useIntrospectionConnection,
     "studio.execute.useIntrospectionConnection",
   );
-  const timeoutMs = readPositiveInteger(execute?.timeoutMs, "studio.execute.timeoutMs");
-  const maxRows = readPositiveInteger(execute?.maxRows, "studio.execute.maxRows");
+  const timeoutMs = readBoundedPositiveInteger(
+    execute?.timeoutMs,
+    "studio.execute.timeoutMs",
+    MAX_STUDIO_EXECUTE_TIMEOUT_MS,
+    "a positive integer number of milliseconds",
+  );
+  const maxRows = readBoundedPositiveInteger(
+    execute?.maxRows,
+    "studio.execute.maxRows",
+    MAX_STUDIO_EXECUTE_MAX_ROWS,
+    "a positive integer",
+  );
   const configuredUrl = readString(execute?.databaseUrl, "studio.execute.databaseUrl");
   const configuredFile = readString(execute?.file, "studio.execute.file");
 
