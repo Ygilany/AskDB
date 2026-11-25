@@ -18,6 +18,8 @@ export type {
   Retriever,
 } from "./types.js";
 
+export { CHUNK_TYPES, isChunkType } from "./types.js";
+
 export {
   chunkSchema,
   chunkSchemaDir,

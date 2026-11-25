@@ -6,15 +6,28 @@
  * consumers wire their own providers behind these interfaces.
  */
 
+/**
+ * Every chunk type, in the order the chunker emits them. `ChunkType` is
+ * derived from this list, so the two can't drift apart — consumers validate
+ * against it instead of keeping their own copy (#1064).
+ */
+export const CHUNK_TYPES = [
+  "table",
+  "column",
+  "cql",
+  "question",
+  "concept",
+  "relationship",
+  "tenant-policy",
+] as const;
+
 /** Chunk type taxonomy from `docs/contracts/schema-v2.md` (Chunking rules). */
-export type ChunkType =
-  | "table"
-  | "column"
-  | "cql"
-  | "question"
-  | "concept"
-  | "relationship"
-  | "tenant-policy";
+export type ChunkType = (typeof CHUNK_TYPES)[number];
+
+/** True when `value` names a chunk type. */
+export function isChunkType(value: string): value is ChunkType {
+  return (CHUNK_TYPES as readonly string[]).includes(value);
+}
 
 /**
  * One slice of the v2 artifact, embedded as a single vector.
