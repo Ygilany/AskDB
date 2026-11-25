@@ -81,7 +81,7 @@ For Studio's UI, use whichever browser tool the session has (the T3 preview tool
 
 ## Write a replay
 
-A replay asserts the steps of one feature file, one test per sub-feature, named by its ID (`ask-generate: …`). It lives in `e2e/cli/`, `e2e/api/` or `e2e/studio/` and drives AskDB only through `AskdbRun` (`e2e/run.ts`): `AskdbRun.create()` or `introspectedRun()` in `beforeAll`, `run.cleanup()` in `afterAll`.
+A replay asserts the steps of one feature file, one test per sub-feature, named by its ID (`ask-generate: …`). `pnpm e2e` starts with `node e2e/harness/check-feature-map.mjs`, which fails with one line per mismatch between the map and the replays' test names; the naming rule is in the [feature entry contract](features/README.md). It lives in `e2e/cli/`, `e2e/api/` or `e2e/studio/` and drives AskDB only through `AskdbRun` (`e2e/run.ts`): `AskdbRun.create()` or `introspectedRun()` in `beforeAll`, `run.cleanup()` in `afterAll`.
 
 - **CLI, HTTP API and Studio's API:** Vitest, `*.test.ts`. `run.cli([...])`, `run.request("api" | "studio", …)`, `run.modelReply(…)`, `run.modelRequests()`.
 - **Studio's UI:** Playwright, `e2e/studio/*.spec.ts`, using the `run` and `studioUrl` fixtures from `e2e/studio/fixtures.ts`. Find elements by role and accessible name only (`getByRole`), never by CSS selector.

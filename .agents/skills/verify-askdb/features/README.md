@@ -32,7 +32,7 @@ This directory is the maintained source for verifying AskDB's user-facing behavi
 
 Each feature file starts with an H1 title and one paragraph describing the user-visible behavior, then exactly four H2 sections in this order:
 
-1. `Sub-features` lists short IDs with one line for each behavior, ending `Scripted: <replay path>` (one or more paths, joined by `and`) or `Agent-driven.` A replay runs the same steps as the `Driving` section and names its tests by these IDs.
+1. `Sub-features` lists short IDs with one line for each behavior, ending `Scripted: <replay path>` (one or more paths, joined by `and`) or `Agent-driven.` A replay runs the same steps as the `Driving` section and names its tests by these IDs: a test's name starts with every ID it replays, joined by `,` or `and`, then `:` and what it shows. A test that pins a known bug takes the ID of the sub-feature the bug belongs to and says `known bug` after the colon; it gets no ID of its own. `node e2e/harness/check-feature-map.mjs` checks this contract both ways, and `pnpm e2e` runs it first.
 2. `How to get to it (user POV)` lists every user entry point.
 3. `Driving it with control-askdb` starts with `Preconditions:`, then labeled bullets that pair each user action with an exact command and the observable result.
 4. `Gotchas` lists traps that waste or invalidate a run.
