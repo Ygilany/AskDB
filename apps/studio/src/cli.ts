@@ -73,7 +73,9 @@ export async function runStudioCli(argv: readonly string[]): Promise<number> {
   const address = server.address();
   if (!address || typeof address === "string") return 1;
   const shownHost = opts.host === "0.0.0.0" ? firstPrivateAddress() ?? "127.0.0.1" : opts.host;
-  process.stdout.write(`AskDB Studio is running at http://${shownHost}:${address.port}\n`);
+    // Mirror apps/http-api/src/bin.ts: bracket IPv6 hosts so the printed URL parses.
+    const displayHost = shownHost.includes(":") ? `[${shownHost}]` : shownHost;
+  process.stdout.write(`AskDB Studio is running at http://${displayHost}:${address.port}\n`);
   if (!isLoopbackHost(opts.host)) {
     process.stderr.write(formatNetworkExposureWarning(opts.host));
   }
