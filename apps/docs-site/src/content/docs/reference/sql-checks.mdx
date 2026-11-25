@@ -217,7 +217,7 @@ It can miss a table in some `FROM` forms, so a wildcard over it goes unreported:
 
 - a parenthesized `FROM` item ([#306](https://github.com/Ygilany/AskDB/issues/306))
 - a comma-joined table after a `JOIN`'s `ON` or `USING` ([#307](https://github.com/Ygilany/AskDB/issues/307))
-- Postgres `TABLE users` inside a derived table ([#309](https://github.com/Ygilany/AskDB/issues/309))
+- a column renamed by a column-alias list on a table reference ([#1108](https://github.com/Ygilany/AskDB/issues/1108))
 
 Mark sensitive data in the database too: keep it out of the read-only role's grants (see [Keep sensitive columns out of prompts](/guides/keep-sensitive-columns-out-of-prompts/)).
 
