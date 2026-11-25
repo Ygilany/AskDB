@@ -88,7 +88,7 @@ Wildcards and whole-row references expand per query block. Each `SELECT` is a bl
 
 **Logs:** `askdb.pipeline.sensitive_sql_warning` with `sensitiveColumnCount` and the matched `sensitiveColumns` — schema metadata only, never row values. Emitted in both `warn` and `strict` modes.
 
-**Limits.** The check is heuristic, not a SQL parser, and defaults to `warn`. It can miss a table written in a FROM form it doesn't bind, so a wildcard over that table goes unreported. Known open cases: a parenthesized FROM item such as `SELECT * FROM (users)` ([#306](https://github.com/Ygilany/AskDB/issues/306)), a comma-joined table after a JOIN's `ON`/`USING` condition ([#307](https://github.com/Ygilany/AskDB/issues/307)), MySQL `STRAIGHT_JOIN` used as a join operator ([#308](https://github.com/Ygilany/AskDB/issues/308)), and Postgres `TABLE users` inside a derived table ([#309](https://github.com/Ygilany/AskDB/issues/309)). It is a review/enforcement aid and defense in depth, not a security boundary and not a substitute for database-side column privileges.
+**Limits.** The check is heuristic, not a SQL parser, and defaults to `warn`. It can miss a table written in a FROM form it doesn't bind, so a wildcard over that table goes unreported. Known open cases: a parenthesized FROM item such as `SELECT * FROM (users)` ([#306](https://github.com/Ygilany/AskDB/issues/306)), a comma-joined table after a JOIN's `ON`/`USING` condition ([#307](https://github.com/Ygilany/AskDB/issues/307)), MySQL `STRAIGHT_JOIN` used as a join operator ([#308](https://github.com/Ygilany/AskDB/issues/308)). It is a review/enforcement aid and defense in depth, not a security boundary and not a substitute for database-side column privileges.
 
 ---
 
