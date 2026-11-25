@@ -1987,8 +1987,14 @@ function sensitiveExecuteWarnings(
   let schema: ReturnType<typeof loadSchema>;
   try {
     schema = loadSchema(schemaDir);
-  } catch {
-    return [];
+  } catch (error) {
+    // The check cannot run without the schema (e.g. a strict tenant policy naming
+    // a column a re-introspection renamed, #663) — say so, with the load error,
+    // instead of silently returning no warning. The query still runs.
+    const detail = error instanceof Error ? error.message : String(error);
+    return [
+      `Could not check whether this query reads sensitive columns: the schema failed to load (${detail}).`,
+    ];
   }
   if (!schemaHasSensitiveIdentifiers(schema)) return [];
   const result = validateSensitiveReferences(sql, schema, { mode: "warn", dialect });

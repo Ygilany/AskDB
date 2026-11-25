@@ -92,7 +92,7 @@ None of them sends table rows.
 
 Execute is off until you set `studio.execute.enabled: true` ([Enable Studio execute](/guides/enable-studio-execute/)). While it's off, Studio refuses to run SQL. When it's on, every query gets these guards:
 
-- **Validated first.** Studio runs the read-only SELECT check that `ask()` uses (`validateSelectSql`) for the execute engine's dialect, before anything reaches the driver. The dialect is `postgres`, `mysql`, `sqlite` or `sqlserver`, or `cockroachdb` or `mariadb` when your config's `dialect` names one of those. A rejected query never runs; the error names the rule, such as `SQL rejected by the read-only guardrail (SQL_MULTI_STATEMENT): …`. A query that reads a column marked sensitive runs, with a warning.
+- **Validated first.** Studio runs the read-only SELECT check that `ask()` uses (`validateSelectSql`) for the execute engine's dialect, before anything reaches the driver. The dialect is `postgres`, `mysql`, `sqlite` or `sqlserver`, or `cockroachdb` or `mariadb` when your config's `dialect` names one of those. A rejected query never runs; the error names the rule, such as `SQL rejected by the read-only guardrail (SQL_MULTI_STATEMENT): …`. A query that reads a column marked sensitive runs, with a warning. If the schema fails to load, the check can't run, but the query still runs, with a warning that says so and names the loader's error.
 - **One read-only statement.**
   - Postgres runs the query as a single statement (extended query protocol) inside `BEGIN READ ONLY`, with `default_transaction_read_only` on.
   - MySQL and MariaDB use a prepared statement inside `START TRANSACTION READ ONLY`.
@@ -143,7 +143,7 @@ Runs one statement, with the [execute guards](#execute-guards). The request:
 { "ok": true, "columns": ["id", "name"], "rows": [[1, "Ada"], [2, "Grace"]], "rowCount": 2, "durationMs": 4, "truncated": false, "rowLimit": 500 }
 ```
 
-`rows` holds one array per row, in `columns` order. `truncated` is `true` when the query had more than `rowLimit` rows. `warnings` lists any sensitive identifiers the SQL reads.
+`rows` holds one array per row, in `columns` order. `truncated` is `true` when the query had more than `rowLimit` rows. `warnings` lists any sensitive identifiers the SQL reads, and says when the sensitive-column check couldn't run because the schema failed to load, with the loader's error.
 
 A failure at run time, such as a missing driver, a connection error, a database error or a timeout, also returns `200`, with the message in `error`:
 

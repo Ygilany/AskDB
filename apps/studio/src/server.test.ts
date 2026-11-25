@@ -1289,13 +1289,13 @@ describe("AskDB Studio server", () => {
       return file;
     }
 
-    async function startSqliteServer(file: string, execute: { maxRows?: number } = {}) {
+    async function startSqliteServer(file: string, execute: { maxRows?: number } = {}, schemaDir = copyFixture()) {
       installStudioRuntime({
         ...STUDIO_TEST_BASE,
         introspection: { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
         studio: { execute: { enabled: true, provider: "sqlite", file, ...execute } },
       });
-      const server = createStudioServer({ schema: copyFixture() });
+      const server = createStudioServer({ schema: schemaDir });
       servers.push(server);
       return listen(server);
     }
@@ -1348,6 +1348,30 @@ describe("AskDB Studio server", () => {
       const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT email FROM users" });
       expect(result.ok).toBe(true);
       expect(result.warnings).toEqual([expect.stringContaining("users.email")]);
+    });
+
+    // #663: a strict tenant policy naming a column a re-introspection renamed makes
+    // `loadSchema` throw, so the sensitive-column check cannot run at all — Execute
+    // must say so instead of silently returning no warning. The policy is broken
+    // after the server starts (as a re-introspection would): `createStudioServer`
+    // loads the workspace eagerly, so a schema that already fails to load at
+    // startup never gets a server.
+    it("warns (without blocking) when the schema fails to load, so the sensitive-column check cannot run (#663)", async () => {
+      const schemaDir = copyFixture();
+      const baseUrl = await startSqliteServer(createSqliteDb(1), {}, schemaDir);
+      writeFileSync(
+        join(schemaDir, "tenant-policy.md"),
+        "---\nschemaId: orders-users\nenforcement: strict\nroots:\n" +
+          "  - id: table:public.users\n    tenantIdColumn: table:public.users#renamed_id\n    label: Account\n---\n",
+      );
+      const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT email FROM users" });
+      expect(result.ok).toBe(true);
+      expect(result.rows).toEqual([["user0@example.com"]]);
+      expect(result.warnings).toEqual([
+        expect.stringContaining("Could not check whether this query reads sensitive columns"),
+      ]);
+      // The warning carries the load error, not a generic string.
+      expect(result.warnings[0]).toContain("tenant policy doesn't match schema.json");
     });
   });
 
