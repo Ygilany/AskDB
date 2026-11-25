@@ -1,5 +1,11 @@
 # @askdb/ai
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- 8feae53: Internal: remove unused imports and variables that the new repo-wide oxlint run found, and build zero-filled vectors with `Array.from`. No behavior changes.
+
 ## 1.0.0-rc.3
 
 No changes in this release.

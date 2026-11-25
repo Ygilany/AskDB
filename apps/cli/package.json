@@ -1,6 +1,6 @@
 {
   "name": "askdb",
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0-rc.4",
   "description": "AskDB CLI: ask natural-language questions and get checked SQL from the configured dialect.",
   "keywords": [
     "askdb",

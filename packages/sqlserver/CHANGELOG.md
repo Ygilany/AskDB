@@ -1,5 +1,15 @@
 # @askdb/sqlserver
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- 7cff001: Internal: the comment on the SQL Server catalog queries now names the issue that tracks the column defaults and comments they don't read (#1072). No behavior changes.
+- Updated dependencies [5ce8b37]
+- Updated dependencies [8feae53]
+  - @askdb/core@1.0.0-rc.4
+  - @askdb/introspect@1.0.0-rc.4
+
 ## 1.0.0-rc.3
 
 ### Patch Changes

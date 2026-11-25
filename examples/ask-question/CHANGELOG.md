@@ -1,5 +1,20 @@
 # askdb-ask-question-example
 
+## 0.0.1-rc.36
+
+### Patch Changes
+
+- Updated dependencies [5ce8b37]
+- Updated dependencies [53ecbd5]
+- Updated dependencies [33b7af2]
+- Updated dependencies [8feae53]
+- Updated dependencies [1257e13]
+  - @askdb/core@1.0.0-rc.4
+  - @askdb/rag@0.2.0-rc.4
+  - @askdb/config@1.0.0-rc.4
+  - @askdb/ai@1.0.0-rc.4
+  - @askdb/client@1.0.0-rc.4
+
 ## 0.0.1-rc.35
 
 ### Patch Changes
