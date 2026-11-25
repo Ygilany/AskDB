@@ -29,7 +29,7 @@
  * The lexer never throws: a string, quoted identifier, or comment that runs off the end
  * of the input is returned with `unterminated: true` so callers can fail closed.
  */
-import type { DialectSpec } from "./dialect-spec.js";
+import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 
 export type SqlLexerProfileId = "postgres" | "mysql" | "sqlserver" | "sqlite" | "generic";
 
@@ -184,8 +184,12 @@ export const ENGINE_LEXER_PROFILES: readonly SqlLexerProfile[] = [
 ];
 
 /**
- * The lexer profile for a dialect, or `undefined` when the id is not a built-in engine
+ * The lexer profile for a dialect, or `undefined` when the id is no built-in engine
  * family (callers should then check every profile in {@link ENGINE_LEXER_PROFILES}).
+ *
+ * The `undefined` return is only for host dialects: a built-in id switches
+ * exhaustively below, so a new built-in id fails the type check until it has a case
+ * (#661).
  *
  * `backslashEscapes` on the spec is honored: MySQL with `NO_BACKSLASH_ESCAPES` sets it
  * to `false`; Postgres with `standard_conforming_strings = off` sets it to `true`.
@@ -194,7 +198,8 @@ export const ENGINE_LEXER_PROFILES: readonly SqlLexerProfile[] = [
 export function lexerProfileFor(
   dialect: Pick<DialectSpec, "id" | "backslashEscapes">,
 ): SqlLexerProfile | undefined {
-  switch (dialect.id as string) {
+  if (!isBuiltInDialectId(dialect.id)) return undefined;
+  switch (dialect.id) {
     case "postgres":
     case "cockroachdb":
       return dialect.backslashEscapes === true
@@ -209,8 +214,10 @@ export function lexerProfileFor(
       return SQLSERVER_LEXER;
     case "sqlite":
       return SQLITE_LEXER;
-    default:
-      return undefined;
+    default: {
+      const _exhaustive: never = dialect.id;
+      return _exhaustive;
+    }
   }
 }
 
