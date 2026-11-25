@@ -89,13 +89,20 @@ The workspace root lists `@askdb/config` as a dev dependency so Node can resolve
 
 ## Dependency Audit
 
-`pnpm run audit` runs [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json). It runs in three places:
+Two gates run [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, both failing on any advisory of **moderate** severity or higher:
 
-- **CI's `audit` job**, on a PR or push to `main` that changes a dependency file: any `package.json` or `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.audit-ci.json` or `.npmrc` (`scripts/ci-changes.sh`). Other changes skip it, so a new advisory against a dependency already on `main` doesn't fail unrelated PRs.
+- **Full audit** — `pnpm run audit`, configuration in [`.audit-ci.json`](.audit-ci.json): every dependency, dev-only ones included. Allowlisted advisories live here; each one needs a written rationale in the table below.
+- **Production-only audit** — `pnpm run audit:prod`, configuration in [`.audit-ci.prod.json`](.audit-ci.prod.json): only production dependencies (`audit-ci --skip-dev`, i.e. `pnpm audit --prod`), with an **empty allowlist that must stay empty**. An allowlist entry for a dev tool can never mask an advisory in a published package's runtime tree: if a package moved a dev tool into its `dependencies`, this gate still fails.
+
+The full audit runs in three places:
+
+- **CI's `audit` job**, on a PR or push to `main` that changes a dependency file: any `package.json` or `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.audit-ci.json`, `.audit-ci.prod.json` or `.npmrc` (`scripts/ci-changes.sh`). Other changes skip it, so a new advisory against a dependency already on `main` doesn't fail unrelated PRs.
 - **The daily scheduled audit** of `main` ([`audit-scheduled.yml`](.github/workflows/audit-scheduled.yml), also runnable by hand from the Actions tab). When it fails, it opens an issue titled "Dependency audit fails on main", or comments on the open one, naming the advisories. Fix it with the `repair-dependency-audit` skill and the steps below. The fixing PR changes a dependency file, so CI's `audit` job checks it.
 - **`pnpm preflight`**, locally, on every run.
 
-When it fails, prefer fixing over allowlisting:
+CI's `audit-prod` job runs the production-only audit next to `audit`, on the same dependency-file changes, so a vulnerable runtime dependency fails the PR even when the full audit allowlists it for dev use.
+
+When it fails, prefer fixing over allowlisting. The production-only audit has no allowlist: when it fails, fix it with steps 1–2 below — never add an entry to `.audit-ci.prod.json`:
 
 1. If the patched version is inside the existing semver range, refresh the lockfile without touching `package.json`: `pnpm update -r --no-save <pkg>...` (this also moves transitive dependencies).
 2. If an intermediate package pins a vulnerable range, bump that parent, or add a documented `overrides` entry in [`pnpm-workspace.yaml`](pnpm-workspace.yaml) (see the existing ones for the expected rationale).

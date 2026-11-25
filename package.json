@@ -7,6 +7,7 @@
   },
   "scripts": {
     "audit": "audit-ci --config .audit-ci.json",
+    "audit:prod": "audit-ci --config .audit-ci.prod.json --skip-dev",
     "build": "pnpm exec turbo run build",
     "check-updates": "ncu --configFileName .check-updates.json",
     "check-updates:fix": "npm run check-updates -- --upgrade --errorLevel 1",
