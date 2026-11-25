@@ -697,3 +697,66 @@ jobs:
             e2e/playwright-report
             e2e/test-results
           if-no-files-found: warn
+
+  # ── 6. Bound-forms deep run ──────────────────────────────────────────────
+  # The property check that every executable form of a statement binds each tenant ID and
+  # value into its own slot (.agents/skills/verify-bound-forms). `pnpm test` runs it at 300
+  # cases on every PR. When a PR touches the code it covers, or the check itself, this job
+  # runs it at 20000 cases and then the mutants, which prove the check can still fail.
+  # `covered.mjs` decides; it runs on every PR, so the job always reports a status and a
+  # PR that touches nothing covered skips only the slow steps. Pushes to main always run it.
+  bound-forms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Detector self-test
+        run: node --test .agents/skills/verify-bound-forms/covered.test.mjs
+
+      # Exit 0: nothing covered changed. Exit 3: covered code or the check changed. Anything
+      # else is the detector failing, which fails the job instead of skipping the deep run.
+      - name: Does this change touch covered code?
+        id: covered
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "deep=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          status=0
+          node .agents/skills/verify-bound-forms/covered.mjs --base "origin/${BASE_REF}" || status=$?
+          case "$status" in
+            0) echo "deep=false" >> "$GITHUB_OUTPUT"; echo "Nothing the bound-forms check covers changed; skipping the deep run." ;;
+            3) echo "deep=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "covered.mjs exited $status" >&2; exit 1 ;;
+          esac
+
+      - name: Install dependencies
+        if: steps.covered.outputs.deep == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Bound-forms check at 20000 cases
+        if: steps.covered.outputs.deep == 'true'
+        env:
+          ASKDB_VERIFY_RUNS: "20000"
+        run: .agents/skills/verify-bound-forms/run.sh
+
+      - name: Mutants (every break must be caught)
+        if: steps.covered.outputs.deep == 'true'
+        run: node .agents/skills/verify-bound-forms/mutants.mjs

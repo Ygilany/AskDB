@@ -14,7 +14,11 @@ The check is [`packages/sqlite/src/verification/bound-forms-agree.test.ts`](../.
 
 ## 1. Does your change touch it?
 
-It does if the diff touches any covered code below, or adds code that writes `params`, `tenantParams`, `bindings[].indices`, or the text that replaces a placeholder.
+```bash
+node .agents/skills/verify-bound-forms/covered.mjs   # this branch against origin/main, with uncommitted files; --base <ref> for another base
+```
+
+Exit 3 means it does, and each line says why: `covered` (a file in the table below), `sql` (another source file under `packages/core/src/sql/`) or `check` (the check itself). Exit 0 means no path it knows changed. A path can't show what a hunk does, so two calls stay yours: on an `sql` line, and on any code elsewhere, a change that writes `params`, `tenantParams`, `bindings[].indices` or the text that replaces a placeholder touches it, and that file joins the table and `COVERED` in `covered.mjs`.
 
 | File | What the check covers |
 |---|---|
@@ -24,10 +28,10 @@ It does if the diff touches any covered code below, or adds code that writes `pa
 | `packages/core/src/sql/tenant-placeholders.ts` | `resolveTenantSql`, `substituteTenantPlaceholders`, `replacePlaceholdersWithParams`, `replacePlaceholdersWithLiterals`, `escapeTenantId`, `planEdit` |
 | `packages/core/src/sql/lexer.ts`, `readings.ts` | the SQLite reading of strings and comments (`placeholderReading`) |
 
-Sync commit: `367219e8b6b1b6611120f632e91569f92618df26` (2026-11-18). At this commit the check was confirmed to describe the code above. To see what changed since then:
+Sync commit: `89dfa8524961b251750af40d21bcb146948d485a` (2026-11-19). At this commit the check was confirmed to describe the code above. To see what changed since then:
 
 ```bash
-git diff 367219e8 -- packages/core/src/sql/{rebind,checked-statement,bind,tenant-placeholders,lexer,readings}.ts
+node .agents/skills/verify-bound-forms/covered.mjs --since-sync --diff
 ```
 
 ## 2. Run it
@@ -40,7 +44,7 @@ ASKDB_VERIFY_SEED=<seed> .agents/skills/verify-bound-forms/run.sh   # replay a f
 
 `run.sh` builds `@askdb/core` first: the check imports `@askdb/core` from its `dist`, so a stale build checks old code. The check also runs on every `pnpm test` (turbo `test` for `@askdb/sqlite`) at 300 cases. It needs no Docker and no network.
 
-Done when `run.sh` exits 0 at 20000 cases on your change.
+Done when `run.sh` exits 0 at 20000 cases on your change. CI's `bound-forms` job runs `covered.mjs` on every PR and, on exit 3, the 20000-case run and the mutants, so a PR that skipped this still gets both.
 
 ## 3. Read a failure
 
