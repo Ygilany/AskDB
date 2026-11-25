@@ -84,10 +84,19 @@ describe("AskDB Studio server", () => {
 
   /**
    * Starts Studio on the clinic schema with OpenAI pointed at a fake endpoint that answers
-   * every call with `reply`. `model.requests` holds the text of each prompt the model received.
+   * every call with `reply`. `model.requests` holds the text of each prompt the model received,
+   * `model.bodies` the parsed request bodies. `language` overrides the model id and reasoning
+   * effort; `modelUsage` overrides the token counts in the fake response; `mockSql` answers
+   * Playground questions without calling the model.
    */
-  async function startClinicStudio(options: { omitSensitiveFromPrompt: boolean; reply: string }) {
-    const model = createModelServer(options.reply);
+  async function startClinicStudio(options: {
+    omitSensitiveFromPrompt: boolean;
+    reply: string;
+    language?: AskDbConfig["ai"]["language"];
+    modelUsage?: { inputTokens: number; outputTokens: number };
+    mockSql?: string;
+  }) {
+    const model = createModelServer(options.reply, { usage: options.modelUsage });
     modelServers.push(model.server);
     const modelBaseUrl = await listen(model.server);
     installStudioRuntime({
@@ -95,9 +104,10 @@ describe("AskDB Studio server", () => {
       ai: {
         provider: "openai",
         providerConfig: { openai: { apiKey: "test-key", baseUrl: modelBaseUrl } },
-        language: { model: "gpt-4o-mini" },
+        language: options.language ?? { model: "gpt-4o-mini" },
       },
       modes: { omitSensitiveFromPrompt: options.omitSensitiveFromPrompt },
+      ...(options.mockSql !== undefined ? { dev: { mockSql: options.mockSql } } : {}),
     });
     const server = createStudioServer({ schema: writeClinicSchema() });
     servers.push(server);
@@ -313,6 +323,21 @@ describe("AskDB Studio server", () => {
     }
   });
 
+  // #364: the tenant-policy suggestion honours the configured `enrichment` reasoning effort.
+  it("sends the enrichment reasoning effort when drafting a tenant policy", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: JSON.stringify(CANNED_TENANT_POLICY),
+      language: { model: "o4-mini", reasoning: { enrichment: "low" } },
+    });
+
+    const draft = await postJson(`${baseUrl}/api/suggest-tenant-policy`, {});
+
+    expect(draft.frontmatter.roots).toHaveLength(1);
+    expect(model.bodies).toHaveLength(1);
+    expect(model.bodies[0]).toMatchObject({ reasoning: { effort: "low" } });
+  });
+
   // #601: the Playground must apply modes.omitSensitiveFromPrompt, as @askdb/client does.
   it("generates Playground SQL without listing any sensitive column when omitSensitiveFromPrompt is on", async () => {
     const { baseUrl, model } = await startClinicStudio({
@@ -331,6 +356,87 @@ describe("AskDB Studio server", () => {
     }
     expect(prompt).toContain("payroll_ledger");
     expect(prompt).toContain("admitted_on");
+  });
+
+  // #364: sample generation still carries the `nlToSql` reasoning effort and reports the
+  // model's usage after moving onto `@askdb/client`.
+  it("sends the nlToSql reasoning effort and reports the model's usage for Playground SQL", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "SELECT count(*) FROM public.patients",
+      language: { model: "o4-mini", reasoning: { nlToSql: "high" } },
+      modelUsage: { inputTokens: 11, outputTokens: 5 },
+    });
+
+    const generated = await postJson(`${baseUrl}/api/ask`, { question: "How many patients are there?" });
+
+    expect(generated.sql).toContain("count(*)");
+    expect(model.bodies).toHaveLength(1);
+    expect(model.bodies[0]).toMatchObject({ reasoning: { effort: "high" } });
+    expect(generated.usage).toMatchObject({ promptTokens: 11, completionTokens: 5, totalTokens: 16 });
+  });
+
+  // #364: `dev.mockSql` still answers Playground questions without calling the model.
+  it("returns the mock SQL without calling the model when dev.mockSql is set", async () => {
+    const { baseUrl, model } = await startClinicStudio({
+      omitSensitiveFromPrompt: false,
+      reply: "SELECT count(*) FROM public.patients",
+      mockSql: "SELECT count(*) FROM public.patients",
+    });
+
+    const generated = await postJson(`${baseUrl}/api/ask`, { question: "How many patients are there?" });
+
+    expect(generated.sql).toBe("SELECT count(*) FROM public.patients");
+    expect(generated.usage).toBeNull();
+    expect(model.requests).toHaveLength(0);
+    expect(model.bodies).toHaveLength(0);
+  });
+
+  // #364: one Playground RAG answer reports both the generation and the embedding usage.
+  it("reports generation and embedding usage for a RAG Playground answer", async () => {
+    const model = createModelServer("SELECT count(*) FROM public.patients", {
+      usage: { inputTokens: 11, outputTokens: 5 },
+    });
+    modelServers.push(model.server);
+    const modelBaseUrl = await listen(model.server);
+    const embeddingServer = createEmbeddingServer();
+    embeddingServers.push(embeddingServer);
+    const embeddingBaseUrl = await listen(embeddingServer);
+    installStudioRuntime({
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "openai",
+        providerConfig: {
+          openai: [
+            { apiKey: "test-key", baseUrl: modelBaseUrl },
+            { name: "embeddings", apiKey: "test-key", baseUrl: embeddingBaseUrl },
+          ],
+        },
+        language: { model: "gpt-4o-mini" },
+        embedding: { model: "text-embedding-3-small", dimensions: 4, connection: "embeddings" },
+      },
+      rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+    });
+    const server = createStudioServer({ schema: writeClinicSchema() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
+    expect(indexed.status.hasIndex).toBe(true);
+
+    const generated = await postJson(`${baseUrl}/api/ask`, {
+      question: "How many patients are there?",
+      mode: "rag",
+    });
+    expect(generated.sql).toContain("count(*)");
+    expect(generated.rag.enabled).toBe(true);
+    expect(generated.rag.chunks.length).toBeGreaterThan(0);
+    const kinds = generated.usage.requests.map((request: any) => request.kind).sort();
+    expect(kinds).toEqual(["embedding", "generation"]);
+    const generation = generated.usage.requests.find((request: any) => request.kind === "generation");
+    expect(generation).toMatchObject({ promptTokens: 11, completionTokens: 5, totalTokens: 16 });
+    const embedding = generated.usage.requests.find((request: any) => request.kind === "embedding");
+    expect(embedding.embeddingTokens).toBeGreaterThan(0);
   });
 
   // #957: the Playground returns the sensitive-column check ask() ran, as `askdb ask` prints it.
@@ -1966,14 +2072,27 @@ const CANNED_TENANT_POLICY = {
 /**
  * A fake OpenAI endpoint (Responses and Chat Completions) that replies with `replyText`
  * and records, per request, every string in the request body joined by newlines: the
- * instructions and prompt text the model would have read.
+ * instructions and prompt text the model would have read. `bodies` holds the parsed
+ * request bodies, so tests can assert on provider options such as `reasoning.effort`;
+ * `usage` overrides the token counts in the fake response (defaults are zero).
  */
-function createModelServer(replyText: string): { server: ReturnType<typeof createServer>; requests: string[] } {
+function createModelServer(
+  replyText: string,
+  options: { usage?: { inputTokens: number; outputTokens: number } } = {},
+): {
+  server: ReturnType<typeof createServer>;
+  requests: string[];
+  bodies: Record<string, unknown>[];
+} {
   const requests: string[] = [];
+  const bodies: Record<string, unknown>[] = [];
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const body = JSON.parse(await readBody(req)) as { model?: string };
+    bodies.push(body);
     requests.push(collectStrings(body).join("\n"));
     const model = body.model ?? "fake-model";
+    const inputTokens = options.usage?.inputTokens ?? 0;
+    const outputTokens = options.usage?.outputTokens ?? 0;
     res.writeHead(200, { "content-type": "application/json" });
     if (req.url === "/responses") {
       res.end(
@@ -1993,7 +2112,7 @@ function createModelServer(replyText: string): { server: ReturnType<typeof creat
             },
           ],
           incomplete_details: null,
-          usage: { input_tokens: 0, output_tokens: 0 },
+          usage: { input_tokens: inputTokens, output_tokens: outputTokens },
         }),
       );
       return;
@@ -2005,11 +2124,15 @@ function createModelServer(replyText: string): { server: ReturnType<typeof creat
         created: 0,
         model,
         choices: [{ index: 0, message: { role: "assistant", content: replyText }, finish_reason: "stop" }],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        usage: {
+          prompt_tokens: inputTokens,
+          completion_tokens: outputTokens,
+          total_tokens: inputTokens + outputTokens,
+        },
       }),
     );
   });
-  return { server, requests };
+  return { server, requests, bodies };
 }
 
 function collectStrings(value: unknown): string[] {
