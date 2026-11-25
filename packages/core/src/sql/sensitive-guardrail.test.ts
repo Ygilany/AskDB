@@ -636,7 +636,7 @@ describe("validateSensitiveReferences — STRAIGHT_JOIN as a join operator (#308
       },
     ],
   };
-  it.each[
+  it.each([
     ["SELECT id, straight_join FROM users"],
     ["SELECT straight_join, id FROM users"],
   ])("%s flags users.straight_join", (sql) => {
