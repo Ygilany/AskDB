@@ -1,5 +1,12 @@
 # @askdb/core
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- 5ce8b37: Internal: code comments cite an ADR by its number, not by a section the rewritten ADRs no longer have. No behavior changes.
+- 8feae53: Internal: remove unused imports and variables that the new repo-wide oxlint run found, and build zero-filled vectors with `Array.from`. No behavior changes.
+
 ## 1.0.0-rc.3
 
 ### Minor Changes

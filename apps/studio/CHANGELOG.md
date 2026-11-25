@@ -1,5 +1,52 @@
 # @askdb/studio
 
+## 0.2.0-rc.4
+
+### Patch Changes
+
+- 5ce8b37: Internal: code comments cite an ADR by its number, not by a section the rewritten ADRs no longer have. No behavior changes.
+- 8feae53: Internal: remove unused imports and variables that the new repo-wide oxlint run found, and build zero-filled vectors with `Array.from`. No behavior changes.
+- a87afa8: Studio's form controls have names of their own, and the mouse-only ones work from the keyboard (closes #1048, closes #1049, closes #1052).
+  
+  - **Tables › Enrichment:** each field's label names its control, and a column's fields carry the column (`Description for email`). Each `Suggest` button and drafts group names its field (`Suggest Description for email`, `Drafts for Description for email`). Clicking a label now focuses its field.
+  - **Tables › Sensitivity:** each column's override is `Sensitivity override for <column>`.
+  - **Tenancy review:** the `×` buttons say what they remove (`Remove scoped table <id>`), each root's `Label` names its root, and the body is `Policy body`.
+  - **Concepts:** a link chip's remove button is `Remove link to <table>`, works with Enter and Space, and leaves focus in the links search. The concept's own button is `Remove concept`. Typing in the links search reopens its list after a pick.
+  - **Overview:** each pending table's `Enrich` is a link, `Enrich <schema>.<table>`, so you can reach it from the keyboard.
+  - **Primary entity** keeps its spaces as you type. Typing `Customer Account` key by key used to give `CustomerAccount`.
+- 0d8925f: Studio loads the saved Playground history when it starts. The Overview's **Recent playground queries** and the Playground's **History** used to stay empty until the first ask or delete of the session, even when `playground-history.json` had entries (closes #1046).
+- 7880c43: Studio's Overview counts and suggestions now match the state (closes #1053, closes #1054).
+  
+  - **One rule for "enriched".** The Overview's `enriched` and `partial` counts, `tables to go`, the pending list, and the Tables list's **Complete**, **Partial** and **Not started** filters now share one rule. A table is complete once it and every column have a description, and partial once anything is written for it or a column (a description, alias, tag, primary entity, business vocabulary, example questions, or a column's alias or enum notes). A table with aliases and every column described, but no description, used to count as enriched on the Overview while the pending list still showed it. It now counts as partial everywhere.
+  - **"Rebuild index".** Suggested next actions offers **Rebuild index** only once an index exists and is stale. With no index, it used to offer both **Build** and **Rebuild**.
+- 875ebac: The RAG Index query debugger's `tenant-policy` chunk type now filters. Studio's server accepted only the six chunk types that existed before tenant policies were indexed, so a query with only `tenant-policy` checked came back with every type. The server and the page now share one list of chunk types, and `/api/rag/query` answers 400 for a type it doesn't know instead of dropping it (closes #1047).
+- 1565efa: Studio's **Resync schema** now shows its result: `Re-introspected <n> tables from <engine> — enrichment preserved.`, or the error when introspection fails. The Overview used to reload the whole workspace behind a full-page loading screen, which remounted the page and dropped the message, the Playground's question and results, and any unsaved table edits. A resync now refreshes the workspace in place and keeps unsaved edits (closes #1045).
+- a4626cf: Return HTTP 404 for unknown table or column IDs in /api/suggest instead of 500.
+- 787014b: Studio's Tenancy screen shows the messages it used to drop, and keeps a label you typed (closes #1051, closes #1055).
+  
+  - **Messages:** after an AI draft, the review screen says `AI draft ready for review.` After a save, or a saved edit, the summary says `Tenant policy saved.` Both used to be set on a screen that had already been replaced.
+  - **Label:** in **Configure manually**, picking or changing the root table fills **Label** with the table's name only while you haven't typed one. A label you typed used to be replaced.
+- eb3bf08: Studio's setup wizard no longer lists the wrong `.env` variables for a config that already exists (closes #1050). With a config but no schema artifact, the wizard used to show **Add your secrets to .env** filled from its form's defaults (`OPENAI_API_KEY`, `OPENAI_MODEL` and a Postgres `DATABASE_URL`), whatever the config said. It now goes straight to **1 · Introspect your database**. If the config can't load, it shows the load error (with the config's real file name), and keeps `Run introspection` disabled until you fix it and restart Studio. The introspect error a broken config returns now says to fix what the error names, not to install step 1's dependencies. A config the wizard writes still gets its own `.env` step.
+- Updated dependencies [5ce8b37]
+- Updated dependencies [53ecbd5]
+- Updated dependencies [0590781]
+- Updated dependencies [a87afa8]
+- Updated dependencies [33b7af2]
+- Updated dependencies [8feae53]
+- Updated dependencies [1257e13]
+- Updated dependencies [7cff001]
+  - @askdb/core@1.0.0-rc.4
+  - @askdb/rag@0.2.0-rc.4
+  - @askdb/enrich@0.2.0-rc.4
+  - @askdb/config@1.0.0-rc.4
+  - @askdb/ai@1.0.0-rc.4
+  - @askdb/introspect@1.0.0-rc.4
+  - @askdb/mysql@1.0.0-rc.4
+  - @askdb/sqlserver@1.0.0-rc.4
+  - @askdb/client@1.0.0-rc.4
+  - @askdb/postgres@1.0.0-rc.4
+  - @askdb/sqlite@1.0.0-rc.4
+
 ## 0.2.0-rc.3
 
 ### Patch Changes

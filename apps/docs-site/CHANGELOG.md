@@ -1,5 +1,20 @@
 # @askdb/docs-site
 
+## 0.0.1-rc.25
+
+### Patch Changes
+
+- f19496e: Document that `httpApi.listen.port` accepts a number or a string of decimal digits from 0 to 65535, and add the 1.0.0-rc.4 upgrade note for the stricter rule.
+- 7a123be: The docs footer credits the author with a "Built by Yahya Gilany" link to yahyagilany.io, and a site-wide banner announces the AskDB 1.0 release candidate with a link to the announcement post.
+- 5ce8b37: The config API reference no longer says ADR 0005 names `mergeAskDbFlatIntoEnvMap`: the rewritten ADR does not.
+- 95c7ee5: Make askdb.tools negotiate content for agents. A Cloudflare Worker in `apps/docs-site/edge/` serves a page's Markdown twin when a request prefers `text/markdown`, with `Vary: Accept`, and answers a missing path with a Markdown 404 body (also at `/404.md`) or, for `application/json`, a JSON error with a hint and links. The site also publishes `/openapi.json`, an OpenAPI 3.1 document of the self-hosted `askdb-http` API, checked against the server's routes and error codes at build time and linked from the HTTP API reference.
+- 7880c43: The Studio page says when a table counts as **Complete** or **Partial**.
+- 1565efa: The Studio page says that **Resync schema** keeps unsaved edits and reports how many tables it read, or why it failed.
+- eb3bf08: The Studio page says the setup wizard goes straight to introspection when a config already exists, and shows the config's load error when it can't load.
+- 94919bd: The site serves the 23-second AskDB teaser at `/videos/askdb-teaser.mp4`, which the repo README links from a poster frame.
+- 33b7af2: Load the fallback `.env` from the supplied working directory when no dotenv candidate loads, and return the loaded file path.
+- 5625070: Document the `--port` range for `askdb-http`: an integer from 0 to 65535, where 0 lets the OS pick a free port.
+
 ## 0.0.1-rc.24
 
 ### Patch Changes

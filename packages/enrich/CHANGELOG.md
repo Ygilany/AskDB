@@ -1,5 +1,16 @@
 # @askdb/enrich
 
+## 0.2.0-rc.4
+
+### Patch Changes
+
+- 0590781: Validate suggest table and column references in `buildSuggestionTarget`: an unknown table or a column that doesn't belong to the requested table throws the new `SuggestSourceNotFoundError`, which Studio maps to HTTP 404 before resolving AI config or creating a model.
+- a87afa8: `buildFrontmatter` trims `primaryEntity` and leaves it out when it's only spaces. Studio now keeps the field as typed, so the trim happens here when the draft is written (#1052).
+- 8feae53: Internal: remove unused imports and variables that the new repo-wide oxlint run found, and build zero-filled vectors with `Array.from`. No behavior changes.
+- Updated dependencies [5ce8b37]
+- Updated dependencies [8feae53]
+  - @askdb/core@1.0.0-rc.4
+
 ## 0.2.0-rc.3
 
 ### Patch Changes
