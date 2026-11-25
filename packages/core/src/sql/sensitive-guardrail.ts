@@ -756,20 +756,19 @@ function scanTokens(
 
     // A `TABLE [ONLY] rel` command reads every column of `rel`, wherever it appears
     // in a SELECT: a derived table, a CTE body, a set-operation branch (parenthesised
-    // or not), the main query after `WITH`, or an `IN (TABLE rel)` subquery (#309).
-    // `TABLE` is reserved in Postgres, MySQL and SQL Server, so in a SELECT it can
-    // only be this command; over-reporting is the accepted failure direction. A TABLE
-    // command that starts the statement is not one: it stays unbound, so it still
-    // fails closed as NO_TABLE_SOURCE.
+    // or not), the main query after `WITH`, or an `IN (TABLE rel)` subquery (#309),
+    // including one that starts the statement. `TABLE` is reserved in Postgres, MySQL
+    // and SQL Server, so in a SELECT it can only be this command; over-reporting is
+    // the accepted failure direction. A statement-leading TABLE reports its table's
+    // sensitive columns (still `passed: false`, so still fail-closed); `validateSelectSql`
+    // rejects such a statement, so this only matters to hosts calling
+    // `validateSensitiveReferences` directly.
     if (t.lower === "table") {
-      const startsStatement = i === 0 || isPunct(tokens[i - 1], ";");
-      if (!startsStatement) {
-        const tableCmd = parseTableCommand(i);
-        if (tableCmd) {
-          tableBranches.push({ path: tableCmd.path });
-          consumed.add(tableCmd.at);
-          for (const x of tableCmd.pathIdx) consumed.add(x);
-        }
+      const tableCmd = parseTableCommand(i);
+          if (tableCmd) {
+        tableBranches.push({ path: tableCmd.path });
+        consumed.add(tableCmd.at);
+        for (const x of tableCmd.pathIdx) consumed.add(x);
       }
       continue;
     }
