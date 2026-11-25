@@ -656,9 +656,17 @@ describe("validateSensitiveReferences — wildcards expand per query block", () 
 
 describe("validateSensitiveReferences — Postgres TABLE shorthand (#309)", () => {
   // `TABLE users` is shorthand for `SELECT * FROM users`: a parenthesised TABLE item,
-  // a CTE body, or a set-operation branch reads every column of the table. Each row is
-  // checked with the Postgres dialect and with no dialect.
-  const readings = [{ dialect: POSTGRES_DIALECT }, {}];
+  // a CTE body, or a set-operation branch reads every column of the table. The handling
+  // is not dialect-gated — `TABLE` is reserved in Postgres, MySQL and SQL Server — so
+  // each row is checked with the Postgres dialect, the CockroachDB dialect (which uses
+  // the Postgres modifiers), the MySQL dialect (which accepts `TABLE t [ORDER BY …]
+  // [LIMIT …]` in set operations and subqueries), and with no dialect.
+  const readings = [
+    { dialect: POSTGRES_DIALECT },
+    { dialect: COCKROACHDB_DIALECT },
+    { dialect: MYSQL_DIALECT },
+    {},
+  ];
 
   it.each([
     ["SELECT * FROM (TABLE users) t", "unqualified"],
@@ -673,6 +681,29 @@ describe("validateSensitiveReferences — Postgres TABLE shorthand (#309)", () =
     ["SELECT id FROM orders UNION TABLE users", "unqualified"],
     ["SELECT id FROM orders INTERSECT TABLE users", "unqualified"],
     ["SELECT id FROM orders EXCEPT TABLE users", "unqualified"],
+    // Variants the exact-shape matcher missed: `ONLY`, the `*` descendant marker,
+    // `ORDER BY` / `LIMIT`, a set operation as the derived-table body, a parenthesised
+    // set-operation operand, a `TABLE` main query after `WITH`, and a row comparison
+    // against a `TABLE` subquery.
+    ["SELECT * FROM (TABLE users ORDER BY id) t", "unqualified"],
+    ["SELECT * FROM (TABLE users LIMIT 10) t", "unqualified"],
+    ["SELECT * FROM (TABLE ONLY users) t", "unqualified"],
+    ["SELECT * FROM (TABLE users *) t", "unqualified"],
+    ["SELECT * FROM (TABLE users UNION TABLE orders) t", "unqualified"],
+    ["WITH c AS (TABLE users ORDER BY id) SELECT * FROM c", "unqualified"],
+    ["WITH c AS (TABLE ONLY users) SELECT * FROM c", "unqualified"],
+    ["SELECT id FROM orders UNION TABLE ONLY users", "unqualified"],
+    ["SELECT * FROM orders UNION (TABLE users)", "unqualified"],
+    ["SELECT * FROM orders UNION ALL (TABLE users)", "unqualified"],
+    ["WITH c AS (SELECT id FROM orders) TABLE users", "unqualified"],
+    ["SELECT id FROM orders WHERE (id, total) IN (TABLE users)", "unqualified"],
+    // A TABLE command reads every column of its table, exactly as a `SELECT *` in its
+    // place would — so only naming a non-sensitive column still flags, and a renamed
+    // column read through a column-alias list flags too.
+    ["SELECT t.id FROM (TABLE users) t", "unqualified"],
+    ["WITH c AS (TABLE users) SELECT c.id FROM c", "unqualified"],
+    ["SELECT t.c FROM (TABLE users) AS t(a, b, c)", "unqualified"],
+    ["WITH c(a, b, d) AS (TABLE users) SELECT d FROM c", "unqualified"],
   ] as const)("%s flags users.ssn", (sql, kind) => {
     for (const options of readings) {
       const result = validateSensitiveReferences(sql, ssnSchema, options);
@@ -682,10 +713,21 @@ describe("validateSensitiveReferences — Postgres TABLE shorthand (#309)", () =
     }
   });
 
+  // A CTE named after a real table must not rebind an outer reference to that table:
+  // the CTE is only visible inside the query that declares it.
   it.each([
-    // Only the named column is read: no wildcard, no whole-row reference.
-    ["SELECT t.id FROM (TABLE users) t"],
-    ["WITH c AS (TABLE users) SELECT c.id FROM c"],
+    ["SELECT * FROM (WITH users AS (TABLE orders) SELECT 1) d, users"],
+    ["WITH o AS (WITH users AS (TABLE orders) SELECT 1) SELECT * FROM o, users"],
+  ])("%s flags users.ssn", (sql) => {
+    for (const options of readings) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([ssnRef("unqualified")]);
+      expect(result.passed).toBe(false);
+      expect(result.unresolvedScope).toBeUndefined();
+    }
+  });
+
+  it.each([
     // A TABLE branch over a table with no sensitive column reads nothing sensitive.
     ["SELECT id FROM orders UNION TABLE orders"],
   ])("%s does not flag users.ssn", (sql) => {
