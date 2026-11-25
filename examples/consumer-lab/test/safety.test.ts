@@ -35,8 +35,8 @@
  * Engine-inapplicable syntax is not generated for that engine (no `TRUNCATE` on SQLite, no
  * `SELECT … INTO` outside Postgres and SQL Server, no `FOR UPDATE` on SQLite or SQL Server).
  *
- * Known discrepancies, marked `it.fails`: queries on system schemas pass validation on
- * every engine although `safety-boundaries.mdx` says they are rejected (#318).
+ * Queries on system schemas are accepted: `concepts/safety-boundaries.mdx` ("No
+ * system-schema filtering") says AskDB does not reject them (#318).
  *
  * Needs the `cli-introspect-engine` capability to build the schema artifacts, the fixture
  * and an installed lab (`pnpm lab:use .`). The isolated runner starts and seeds its own copy.
@@ -618,19 +618,24 @@ const CASES: Case[] = [
 ];
 
 /**
- * System catalogs. `concepts/safety-boundaries.mdx`: "Queries against system schemas
- * (`pg_catalog`, `information_schema`, MySQL `mysql`, SQL Server `sys`, and so on) are
- * rejected." The docs name no rule code for it, so these assert the error class only.
+ * System catalogs. `concepts/safety-boundaries.mdx` ("No system-schema filtering"): AskDB
+ * does not reject queries against system schemas (`pg_catalog`, `information_schema`, MySQL
+ * `mysql`, SQL Server `sys`, and so on), so these assert `ask()` accepts them, unchanged,
+ * and runs them as the read-only role where that role can read the catalog (#318).
+ * `runsAsReader: false` marks the two MySQL/MariaDB catalogs the fixture's read-only role
+ * has no grant on (`fixtures/multi-engine/dataset/ddl/mysql.sql`: SELECT only on
+ * org/people/billing/ref/fixture) — what a catalog query returns "depends on your
+ * database's privileges" (`concepts/safety-boundaries.mdx`), so those two assert acceptance
+ * only and are not run.
  */
-const CATALOG_CASES: { what: string; dialects: readonly SupportedDialect[]; sql: string }[] = [
+const CATALOG_CASES: { what: string; dialects: readonly SupportedDialect[]; sql: string; runsAsReader?: boolean }[] = [
   { what: "pg_catalog", dialects: ["postgres"], sql: "SELECT rolname FROM pg_catalog.pg_roles" },
   { what: "information_schema", dialects: SERVERS, sql: "SELECT table_name FROM information_schema.tables" },
-  { what: "MySQL's mysql schema", dialects: MYSQL_FAMILY, sql: "SELECT user, host FROM mysql.user" },
-  { what: "MySQL's sys schema", dialects: MYSQL_FAMILY, sql: "SELECT * FROM sys.version" },
+  { what: "MySQL's mysql schema", dialects: MYSQL_FAMILY, sql: "SELECT user, host FROM mysql.user", runsAsReader: false },
+  { what: "MySQL's sys schema", dialects: MYSQL_FAMILY, sql: "SELECT * FROM sys.version", runsAsReader: false },
   { what: "SQL Server's sys views", dialects: ["sqlserver"], sql: "SELECT name FROM sys.objects" },
   { what: "sqlite_master", dialects: ["sqlite"], sql: "SELECT name FROM sqlite_master" },
 ];
-const CATALOG_ISSUE = 318;
 
 /** A quoted identifier, in each engine's own quoting (the dialects' prompt briefs, `reference/core-api/dialects.mdx`). */
 function quoted(dialect: SupportedDialect, name: string): string {
@@ -761,9 +766,13 @@ describe.each(ALL.map((d) => [d] as [SupportedDialect]))("[%s]", (dialect) => {
   }
 
   for (const c of CATALOG_CASES.filter((x) => x.dialects.includes(dialect))) {
-    it.fails(`safety-system-catalog: ask() rejects a query on ${c.what} (#${CATALOG_ISSUE})`, async (ctx: TestContext) => {
+    it(`safety-system-catalog: ask() accepts a query on ${c.what}, unchanged${c.runsAsReader === false ? "" : ", and it runs"}`, async (ctx: TestContext) => {
       needsCapability(ctx, "cli-introspect-engine");
-      await expectRejectedKnown(dialect, schemaDir, c.sql);
+      const result = await askFixedSql(dialect, c.sql, schemaDir, QUESTION);
+      expect(result.sql).toBe(c.sql);
+      if (c.runsAsReader !== false) {
+        expect((await executeReadOnly(dialect, result.sql)).rows.length).toBeGreaterThan(0);
+      }
     });
   }
 
