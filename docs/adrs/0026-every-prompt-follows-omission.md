@@ -49,7 +49,7 @@ flowchart LR
 | Enrichment reads the sensitivity that `loadSchema()` computes, so a column made sensitive in front-matter is tagged or withheld. | `apps/studio/src/server.test.ts` |
 | Under omission, a sensitive column as the target throws before any model call. The message does not name the column. | `packages/core/src/enrichment/suggest.test.ts`, `apps/studio/src/server.test.ts` |
 | Core's enrichment types require a normalized table. The type is the only check, and core adds none at runtime. | review |
-| The tenant policy block is the one exception: under omission it still names sensitive tenant columns. The contracts, the docs-site privacy page and the review profile say so. | review |
+| The tenant policy block is the one exception: under omission it still names sensitive tenant columns. The contracts, the docs-site privacy page and the review profile say so. | `packages/core/src/sql/tenant-prompt.test.ts` |
 | The tenant policy block names only the tables the prompt shows (ADR 0038). | `packages/core/src/ask.test.ts`, `packages/core/src/sql/tenant-prompt.test.ts` |
 
 Embedding calls are outside this decision. They do not read the setting, and the RAG chunker leaves sensitive content out of the index by default.
