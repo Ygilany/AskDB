@@ -106,7 +106,7 @@ Each request (`apps/studio/src/server.ts` `executeQuery` → `apps/studio/src/ex
 
 These guards narrow the blast radius. They don't replace a read-only database role.
 
-**Request and reply.** The request is `{ "sql": "<statement>" }`, optionally with `"params": [...]` for the statement's parameter markers. A run returns `200 { "ok": true, "columns": [...], "rows": [[...]], "rowCount", "durationMs", "truncated", "rowLimit" }`, plus `"warnings"` when the SQL reads a sensitive identifier: `rows` holds one array per row, in `columns` order. A failure at run time (a missing driver, no connection, a database error or a timeout) is `200 { "ok": false, "error": "<message>" }`. The types are `ExecuteRequest` and `ExecuteResponse` in `apps/studio/src/shared/api.ts`.
+**Request and reply.** The request is `{ "sql": "<statement>" }`, optionally with `"params": [...]` for the statement's parameter markers. A run returns `200 { "ok": true, "columns": [...], "rows": [[...]], "rowCount", "durationMs", "truncated", "rowLimit" }`, plus `"warnings"` when the SQL reads a sensitive identifier, or when the sensitive-column check couldn't run because the schema failed to load (with the loader's error): `rows` holds one array per row, in `columns` order. A failure at run time (a missing driver, no connection, a database error or a timeout) is `200 { "ok": false, "error": "<message>" }`. The types are `ExecuteRequest` and `ExecuteResponse` in `apps/studio/src/shared/api.ts`.
 
 ## Test bar
 
