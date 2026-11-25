@@ -661,18 +661,20 @@ function scanTokens(
   };
 
   /**
-   * Whether the `STRAIGHT_JOIN` at `i` sits in SELECT-modifier position: directly after
-   * `SELECT` or another SELECT modifier (`SELECT [DISTINCT] STRAIGHT_JOIN * …`). A join
-   * operator follows a table reference instead, so this is the only position to skip (#308).
+   * Token indices that sit between a `SELECT` and its first select-list item — the
+   * engine's SELECT modifiers (`SELECT [DISTINCT] STRAIGHT_JOIN * …`). A `STRAIGHT_JOIN`
+   * there is the modifier; anywhere else it is a join operator (#308). Deciding from
+   * the `SELECT` itself, not from the previous token, so a table alias spelled like a
+   * modifier word (`sql_cache`, `sql_no_cache`, `sql_buffer_result`) cannot turn a join
+   * operator back into a modifier. `selectListStart` already walks exactly the
+   * engine's modifiers, so the range is the modifier span.
    */
-  const isSelectModifierPosition = (i: number): boolean => {
-    const prev = tokens[i - 1];
-    return (
-      prev?.kind === "word" &&
-      !prev.quoted &&
-      (prev.lower === "select" || modifiers.words.has(prev.lower))
-    );
-  };
+  const selectModifierPositions = new Set<number>();
+  for (let s = 0; s < tokens.length; s++) {
+    if (!isKeywordTok(tokens[s], "select")) continue;
+    for (let k = s + 1; k < selectListStart(s); k++) selectModifierPositions.add(k);
+  }
+  const isSelectModifierPosition = (i: number): boolean => selectModifierPositions.has(i);
 
   // Pass A — resolve relation names, aliases, and CTE names.
   for (let i = 0; i < tokens.length; i++) {
@@ -695,7 +697,11 @@ function scanTokens(
     // every engine's behaviour applies, so it counts as a join operator there too.
     const isStraightJoin = t.lower === "straight_join" && !isSelectModifierPosition(i);
     if (t.lower !== "from" && t.lower !== "join" && !isStraightJoin) continue;
-    consumed.add(i);
+    // The `STRAIGHT_JOIN` token itself stays unconsumed: it is already in ALIAS_STOP,
+    // so it cannot be taken as an alias, and leaving it as a bare candidate keeps a
+    // sensitive column named `straight_join` reported outside modifier position (#308).
+    // That can only over-report, and only when a column really has that name.
+    if (!isStraightJoin) consumed.add(i);
     if (t.lower === "join" || isStraightJoin) {
       for (let k = i - 1; k >= 0 && isWord(tokens[k]) && JOIN_MODIFIER.has(tokens[k]!.lower); k--) {
         consumed.add(k);
