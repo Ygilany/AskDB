@@ -606,7 +606,15 @@ describe("validateSensitiveReferences — STRAIGHT_JOIN as a join operator (#308
     ["mysql", "SELECT u.ssn FROM orders o STRAIGHT_JOIN users u ON u.id = o.user_id", "qualified"],
     ["mysql", "SELECT * FROM orders o STRAIGHT_JOIN users u ON u.id = o.user_id STRAIGHT_JOIN orders o2 ON o2.id = o.id", "unqualified"],
     ["mariadb", "SELECT * FROM orders STRAIGHT_JOIN users", "unqualified"],
-  ] as const)("%s: %s flags users.ssn with and without the dialect", (id, sql, kind) => {
+  // An alias spelled like a SELECT modifier must not turn the join operator back
+    // into a modifier: modifier position is decided from the SELECT itself.
+      ["mysql", "SELECT * FROM orders sql_cache STRAIGHT_JOIN users", "unqualified"],
+        ["mysql", "SELECT * FROM orders AS sql_cache STRAIGHT_JOIN users", "unqualified"],
+          ["mysql", "SELECT * FROM orders sql_no_cache STRAIGHT_JOIN users", "unqualified"],
+            ["mysql", "SELECT * FROM orders sql_buffer_result STRAIGHT_JOIN users", "unqualified"],
+              ["mysql", "SELECT * FROM (SELECT id FROM orders) sql_cache STRAIGHT_JOIN users", "unqualified"],
+                ["mariadb", "SELECT * FROM orders sql_cache STRAIGHT_JOIN users", "unqualified"],
+                  ] as const)("%s: %s flags users.ssn with and without the dialect", (id, sql, kind) => {
     for (const options of [{ dialect: dialects[id] }, {}]) {
       const result = validateSensitiveReferences(sql, ssnSchema, options);
       expect(result.references).toEqual([ssnRef(kind)]);
@@ -614,6 +622,33 @@ describe("validateSensitiveReferences — STRAIGHT_JOIN as a join operator (#308
       expect(result.unresolvedScope).toBeUndefined();
     }
   });
+  // A column named `straight_join` is an ordinary identifier outside SELECT-modifier
+  // position: it must stay reported when it is sensitive.
+  const straightJoinSchema: NormalizedSchema = {
+    tables: [
+      {
+        name: "users",
+        columns: [
+          { name: "id", type: "integer", nullable: false, primaryKey: true },
+          { name: "ssn", type: "text", nullable: true, sensitive: true },
+          { name: "straight_join", type: "text", nullable: true, sensitive: true },
+        ],
+      },
+    ],
+  };
+  it.each[
+    ["SELECT id, straight_join FROM users"],
+    ["SELECT straight_join, id FROM users"],
+  ])("%s flags users.straight_join", (sql) => {
+    for (const options of [{ dialect: POSTGRES_DIALECT }, { dialect: SQLSERVER_DIALECT }, {}]) {
+      const result = validateSensitiveReferences(sql, straightJoinSchema, options);
+      expect(result.references).toEqual([
+        { table: "users", column: "straight_join", matchKind: "unqualified" },
+      ]);
+      expect(result.passed).toBe(false);
+      expect(result.unresolvedScope).toBeUndefined();
+    }
+});
 });
 
 describe("validateSensitiveReferences — wildcards expand per query block", () => {
