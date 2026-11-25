@@ -104,14 +104,14 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - Each read of a scoped table, and of each root the scope covers, carries its own predicate in its own `SELECT`: a CTE body, a derived table, a subquery and each set-operation branch (a parenthesized top-level operand too) are each their own, and a qualified predicate counts only for the read it names (#399, #341; `docs/contracts/tenant-policy.md`, *Each read, in its own `SELECT`*).
 - Hierarchy and polymorphic fallbacks accept only `path.root` and its ancestors, and tie the discriminator value to the root whose placeholder the ID predicate uses (#341; `docs/contracts/tenant-policy.md`).
 - The check runs on the model's SQL before binding; bound tenant IDs are driver parameters in `sql-params` mode (the default). Wherever they're inlined (`sql-only`, in `ask()` or a rebind) only quotes are doubled, and a tenant ID that isn't printable ASCII or contains a backslash is refused on every dialect (`UNESCAPABLE_TENANT_ID`; ADR 0024). A custom `AskDialect` has no default mode with a tenant scope (`TENANT_SQL_MODE_REQUIRED`). Hosts take the default from `DEFAULT_TENANT_SQL_MODE`, never a hard-coded mode.
-- Known gaps stay documented with their issues (for example the sensitive check's `FROM` forms, #306–#309) rather than described as fixed.
+- Known gaps stay documented with their issues (for example the sensitive check's `FROM` forms, #306, #307, #309) rather than described as fixed.
 
 #### Sensitive fields
 
 - A `sensitive` mark propagates as `docs/contracts/schema-v2.md` ("Sensitive propagation") says, through the loader, normalizer and writer.
 - With `omitSensitiveFromPrompt`, sensitive columns, and text that names one, are absent from every prompt sent to a language model: the prompt, synthesized DDL, Studio's Playground, tenant-policy draft and enrichment prompts; a sensitive table keeps a one-line stub with its name. RAG chunks leave them out by default, whatever the mode. A new prompt follows the setting (`docs/contracts/sensitive-fields-and-modes.md`, "Which prompts follow omission"; ADR 0026).
 - The one exception: the tenant policy block keeps naming the tenant columns the policy lists for the tables the prompt shows, sensitive ones included, because the tenant check needs them (#624, ADR 0038). Don't flag that as a leak.
-- The sensitive-reference check reports named sensitive columns, sensitive tables in `FROM`/`JOIN`, and columns reached through `SELECT *`, `t.*` or a whole-row reference; its known misses (#306 to #309) stay listed in `SECURITY.md`.
+- The sensitive-reference check reports named sensitive columns, sensitive tables in `FROM`/`JOIN`, and columns reached through `SELECT *`, `t.*` or a whole-row reference; its known misses (#306, #307, #309) stay listed in `SECURITY.md`.
 - Logs, error messages and redaction notices never contain sensitive identifiers or values.
 - Sensitive-exclusion counters count chunks, not source sections (#193).
 
