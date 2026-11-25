@@ -122,7 +122,7 @@ describe("planAskDbScaffold", () => {
     ["postgres", answers(), ["@askdb/config@1.2.3", "pg"], []],
     ["mysql", answers({ database: "mysql" }), ["@askdb/config@1.2.3", "mysql2"], []],
     ["sqlserver", answers({ database: "sqlserver" }), ["@askdb/config@1.2.3", "mssql"], []],
-    ["sqlite", answers({ database: "sqlite", sqliteFile: { path: "./shop.db" } }), ["@askdb/config@1.2.3", "better-sqlite3"], []],
+    ["sqlite", answers({ database: "sqlite", sqliteFile: { path: "./shop.db" } }), ["@askdb/config@1.2.3", "better-sqlite3"], ["better-sqlite3"]],
     ["prisma", answers({ database: "prisma" }), ["@askdb/config@1.2.3", "@askdb/prisma@0.9.0", coreAi, coreZod], ["@prisma/engines"]],
     [
       "prisma with SQL Server execute",
@@ -140,7 +140,13 @@ describe("planAskDbScaffold", () => {
       "sqlite with MySQL execute",
       answers({ database: "sqlite", sqliteFile: { path: "./shop.db" }, studioExecute: { provider: "mysql", connectionEnv: "PLAN_DB_URL" } }),
       ["@askdb/config@1.2.3", "better-sqlite3", "mysql2"],
-      [],
+      ["better-sqlite3"],
+    ],
+    [
+      "postgres with SQLite execute",
+      answers({ studioExecute: { provider: "sqlite", sqliteFile: { path: "./exec.db" } } }),
+      ["@askdb/config@1.2.3", "pg", "better-sqlite3"],
+      ["better-sqlite3"],
     ],
   ] satisfies [string, AskDbScaffoldAnswers, string[], string[]][])(
     "installs @askdb/config and what %s needs",

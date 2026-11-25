@@ -97,7 +97,7 @@ const CORE_ZOD = "zod@^4.6.7";
 /** How each engine's config block finds its database, and what a project installs for it. */
 type EngineFacts =
   | { connection: "url"; urlFormat: string; urlNote?: string; driver: string }
-  | { connection: "file"; driver: string }
+  | { connection: "file"; driver: string; allowBuilds: string[] }
   | { connection: "schema"; packages: (versions: { prisma: string }) => string[]; allowBuilds: string[] };
 
 const ENGINES: Record<AskDbIntrospectionProvider, EngineFacts> = {
@@ -118,7 +118,9 @@ const ENGINES: Record<AskDbIntrospectionProvider, EngineFacts> = {
       "For a development server with a self-signed certificate (such as the SQL Server Docker image), add TrustServerCertificate=True; to this URL. Leave it out for a server with a CA-signed certificate.",
     driver: "mssql",
   },
-  sqlite: { connection: "file", driver: "better-sqlite3" },
+  // better-sqlite3's postinstall is a build pnpm 11.0–11.27 refuses to run unapproved
+  // (and then exits 1), so a SQLite project approves it, as Prisma does above (#983).
+  sqlite: { connection: "file", driver: "better-sqlite3", allowBuilds: ["better-sqlite3"] },
   // `@askdb/prisma` depends on Prisma, whose `@prisma/engines` postinstall pnpm 11 refuses
   // to run unapproved (and then exits 1). A Prisma project approves it anyway.
   prisma: {
@@ -292,6 +294,11 @@ function installPlan(a: CheckedAnswers, versions: { config: string; prisma: stri
   for (const id of [a.database, a.execute?.provider]) {
     const facts = id && ENGINES[id];
     if (facts && facts.connection !== "schema" && !packages.includes(facts.driver)) packages.push(facts.driver);
+    // A build approval travels with the driver it belongs to, whichever side installs it:
+    // the introspection database or Studio execute (#983: better-sqlite3 via either).
+    if (facts && "allowBuilds" in facts) {
+      for (const build of facts.allowBuilds) if (!allowBuilds.includes(build)) allowBuilds.push(build);
+    }
   }
   return { packages, allowBuilds };
 }
