@@ -1,8 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 // Runs the published bin over dist/: turbo's `test` task depends on this package's `build`.
 const repoRoot = join(import.meta.dirname, "../../..");
@@ -51,5 +53,45 @@ export default defineConfig({
     expect(exec.stderr).toContain("Invalid studio.listen.port in askdb.config: 70000 (expected an integer from 1 to 65535).");
   } finally {
     rmSync(project, { recursive: true, force: true });
+  }
+}, 15_000);
+
+it("prints a bracketed, parseable Studio URL for an IPv6 host (#1042)", async () => {
+  // The bin prints the bound port, so pick a free port first: --port 0 is rejected
+  // by the flag check, and would print `:0`, which is not a reachable URL.
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, "::1", resolve));
+  const probeAddress = probe.address();
+  if (!probeAddress || typeof probeAddress === "string") throw new Error("expected inet address");
+  const port = probeAddress.port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  const emptyDir = mkdtempSync(join(tmpdir(), "askdb-studio-ipv6-"));
+  const child = spawn(process.execPath, [bin, "--host", "::1", "--port", String(port)], {
+    cwd: emptyDir,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const closed = once(child, "close");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  try {
+    const url = await vi.waitFor(
+      () => {
+        const studioUrl = stdout.match(/^AskDB Studio is running at (http:\/\/\[::1\]:\d+)\r?$/m)?.[1];
+        if (!studioUrl) throw new Error(`Startup URL was not printed. ${stderr}`);
+        return new URL(studioUrl);
+      },
+      { timeout: 10_000 },
+    );
+    expect(url.port).toBe(String(port));
+  } finally {
+    child.kill();
+    await closed;
+    rmSync(emptyDir, { recursive: true, force: true });
   }
 }, 15_000);
