@@ -459,7 +459,7 @@ function scanTokens(
   const derived = new Set<string>();
   /** CTE names whose body is exactly `TABLE rel`, mapped to that table's path (#309). */
   const cteTables = new Map<string, string[]>();
-  /** `TABLE rel` set-operation branches: each reads every column of its table (#309). */
+  /** `TABLE rel` commands, wherever they appear in a SELECT: each reads every column of its table (#309). */
   const tableBranches: Array<{ path: string[] }> = [];
   // FROM/JOIN bindings. `at` is the index of the FROM/JOIN keyword that introduced them,
   // which places the binding in that clause's query block.
@@ -621,9 +621,12 @@ function scanTokens(
   };
 
   /**
-   * `TABLE schema.name` at `start` (the `TABLE` keyword): its relation path, or
+   * `TABLE [ONLY] schema.name` at `start` (the `TABLE` keyword): its relation path, or
    * undefined when the tokens are not a TABLE command. Postgres reads `TABLE name` as
-   * `SELECT * FROM name`, so it is a whole-table read (#309).
+   * `SELECT * FROM name`, so it is a whole-table read (#309). `pathIdx` also holds the
+ * `ONLY` marker when present, so callers consume the whole command with the path. A
+ * trailing `*` marker or `ORDER BY` / `LIMIT` / `OFFSET` / `FETCH` needs no handling:
+ * the path ends before them.
    */
   const parseTableCommand = (
     start: number,
@@ -632,6 +635,11 @@ function scanTokens(
     const path: string[] = [];
     const pathIdx: number[] = [];
     let k = start + 1;
+    // `TABLE ONLY name` — ONLY is the descendant-exclusion marker, not the table.
+    if (isKeywordTok(tokens[k], "only")) {
+      pathIdx.push(k);
+      k++;
+    }
     for (;;) {
       if (!isWord(tokens[k])) return undefined;
       path.push(tokens[k]!.lower);
@@ -746,17 +754,22 @@ function scanTokens(
       continue;
     }
 
-    // `… UNION [ALL | DISTINCT] TABLE rel` — a set-operation branch that reads every
-    // column of `rel` (#309). A bare `TABLE rel` at the start of the statement is not
-    // one: it stays unbound, so it still fails closed as NO_TABLE_SOURCE.
-    if (t.lower === "union" || t.lower === "intersect" || t.lower === "except") {
-      let k = i + 1;
-      if (isKeywordTok(tokens[k], "all") || isKeywordTok(tokens[k], "distinct")) k++;
-      const tableCmd = parseTableCommand(k);
-      if (tableCmd) {
-        tableBranches.push({ path: tableCmd.path });
-        consumed.add(k);
-        for (const x of tableCmd.pathIdx) consumed.add(x);
+    // A `TABLE [ONLY] rel` command reads every column of `rel`, wherever it appears
+    // in a SELECT: a derived table, a CTE body, a set-operation branch (parenthesised
+    // or not), the main query after `WITH`, or an `IN (TABLE rel)` subquery (#309).
+    // `TABLE` is reserved in Postgres, MySQL and SQL Server, so in a SELECT it can
+    // only be this command; over-reporting is the accepted failure direction. A TABLE
+    // command that starts the statement is not one: it stays unbound, so it still
+    // fails closed as NO_TABLE_SOURCE.
+    if (t.lower === "table") {
+      const startsStatement = i === 0 || isPunct(tokens[i - 1], ";");
+      if (!startsStatement) {
+        const tableCmd = parseTableCommand(i);
+        if (tableCmd) {
+          tableBranches.push({ path: tableCmd.path });
+          consumed.add(tableCmd.at);
+          for (const x of tableCmd.pathIdx) consumed.add(x);
+        }
       }
       continue;
     }
@@ -889,11 +902,13 @@ function scanTokens(
     else into.set(name, [...entries]);
   };
   for (const { path, at } of sourcePaths) {
-    // A CTE name shadows a table of the same name, so resolve it through the CTE's
-    // `TABLE rel` body when it has one (#309).
-    const resolvedPath =
-      path.length === 1 && cteTables.has(path[0]!) ? cteTables.get(path[0]!)! : path;
-    const entries = resolve(resolvedPath);
+    // A CTE name shadows a table of the same name — but only inside the query that
+    // declares it, and this map is statement-wide, so a nested CTE named after a real
+    // table would rebind an outer reference to that table away from it (#309). Bind
+    // the CTE's `TABLE rel` body and the same-named schema table, so the outer
+    // reference is never lost; over-reporting is the safe failure here.
+    const ctePath = path.length === 1 ? cteTables.get(path[0]!) : undefined;
+    const entries = [...resolve(path), ...(ctePath ? resolve(ctePath) : [])];
     const scope = blockScope(blockAt(at));
     for (const e of entries) {
       inScope.add(e);
@@ -1017,8 +1032,8 @@ function scanTokens(
     const tables = block === -1 ? inScope : (blockScopes.get(block)?.tables ?? []);
     for (const table of tables) recordAllSensitive(table, "unqualified");
   }
-  // A `TABLE rel` set-operation branch (`… UNION TABLE rel`) projects every column
-  // of `rel`, so it reaches its sensitive columns (#309).
+  // A `TABLE rel` command projects every column of `rel`, so it reaches its sensitive
+  // columns (#309).
   for (const { path } of tableBranches) {
     for (const table of resolve(path)) recordAllSensitive(table, "unqualified");
   }
