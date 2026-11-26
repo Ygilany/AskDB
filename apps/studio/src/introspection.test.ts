@@ -4,7 +4,8 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterAll, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { inferSchemaId } from "./introspection.js";
 
 const studioDir = join(import.meta.dirname, "..");
 const work = realpathSync(mkdtempSync(join(tmpdir(), "askdb-studio-plan-")));
@@ -28,6 +29,26 @@ registerHooks({
   },
 });
 `;
+
+// Studio derives the schema id the same way `askdb introspect` does (#782):
+// an output directory of `.`, `..`, `/` or `.schema` must fall back to
+// "introspected", matching the CLI.
+describe("inferSchemaId", () => {
+  it.each([
+    [".", "introspected"],
+    ["./", "introspected"],
+    ["..", "introspected"],
+    ["../", "introspected"],
+    ["a/..", "introspected"],
+    ["/", "introspected"],
+    [".schema", "introspected"],
+    ["acme.schema", "acme"],
+    ["askdb", "askdb"],
+    ["/tmp/my-app.schema", "my-app"],
+  ])("%s -> %s", (path, expected) => {
+    expect(inferSchemaId(path)).toBe(expected);
+  });
+});
 
 // `@askdb/prisma` is an optional peer of Studio (#259): with it missing, the plan for a
 // Prisma config is an error the UI shows, with the install hint, not a thrown exception.
