@@ -3,13 +3,19 @@
 // that knows which versions are "on npm". Run with `node --test` (CI's `preflight` job).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { after, afterEach, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT = fileURLToPath(new URL("./check-unpublished-versions.mjs", import.meta.url));
+// The pnpm the release workflow runs, read from the repo root instead of
+// hard-coded (#1075): the field moves about monthly, and a stale copy would
+// certify a detection the production check no longer has (e.g. the
+// `package.yaml` case under pnpm 12).
+const PACKAGE_MANAGER = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).packageManager;
+const ROOT = { name: "root", private: true, packageManager: PACKAGE_MANAGER };
 // What `main` holds, and which of it is on npm.
 const MAIN = { core: { version: "1.0.0" }, studio: { version: "0.2.0" }, docs: { version: "0.0.1", private: true } };
 const ON_NPM = ["core@1.0.0", "studio@0.2.0"];
@@ -63,7 +69,7 @@ function workspace(packages = MAIN) {
   dir = mkdtempSync(join(tmpdir(), "check-unpublished-versions-"));
   git("init", "-q", "-b", "main");
   write("pnpm-workspace.yaml", 'packages:\n  - "pkgs/*"\n');
-  write("package.json", { name: "root", private: true });
+  write("package.json", ROOT);
   for (const [name, fields] of Object.entries(packages)) manifest(name, fields);
   git("add", "-A");
   git("commit", "-q", "-m", "main");
@@ -128,7 +134,7 @@ const passes = {
   "a private package's bump": () => manifest("docs", { version: "0.0.2", private: true }),
   "a dependency-only change": () => manifest("core", { version: "1.0.0", dependencies: { other: "^2.0.0" } }),
   "a deleted package": () => rmSync(join(dir, "pkgs/studio"), { recursive: true }),
-  "a change to the private root manifest": () => write("package.json", { name: "root", private: true, scripts: { x: "true" } }),
+  "a change to the private root manifest": () => write("package.json", { ...ROOT, scripts: { x: "true" } }),
 };
 
 for (const [name, edit] of Object.entries(passes)) {
