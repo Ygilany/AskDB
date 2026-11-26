@@ -765,7 +765,7 @@ function scanTokens(
     // `validateSensitiveReferences` directly.
     if (t.lower === "table") {
       const tableCmd = parseTableCommand(i);
-          if (tableCmd) {
+      if (tableCmd) {
         tableBranches.push({ path: tableCmd.path });
         consumed.add(tableCmd.at);
         for (const x of tableCmd.pathIdx) consumed.add(x);
