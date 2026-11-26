@@ -368,6 +368,7 @@ Connectors and peer packages solve different problems:
 
 - [Installable package guide](integration/installable-package.md)
 - [Connector authoring](integration/connectors.md)
+- [Adding a new engine's dialect rules](integration/dialects.md)
 - [Schema v2 contract](contracts/schema-v2.md)
 - [Modes and sensitive fields](contracts/sensitive-fields-and-modes.md)
 - [ADR 0002: Integration-package layout](adrs/0002-integration-package-layout.md)
