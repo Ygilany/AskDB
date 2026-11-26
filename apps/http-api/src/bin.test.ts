@@ -1,9 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Runs dist/bin.js: turbo's `test` task depends on this package's `build`, so dist is current.
 const repoRoot = join(import.meta.dirname, "../../..");
@@ -63,6 +64,53 @@ describe("askdb-http startup errors", () => {
       expect(run.stdout).toBe("");
     },
   );
+
+  it.each([
+    { source: "config", configuredPort: 0, args: [] },
+    { source: "--port", configuredPort: 1, args: ["--port", "0"] },
+  ])("prints a reachable listening URL when $source requests port 0", async ({ configuredPort, args }) => {
+    scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));
+    writeFileSync(
+      join(scratch, "askdb.config.mjs"),
+      `export default {
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } } },
+  introspection: { provider: "postgres", providerConfig: { postgres: {} } },
+  httpApi: { listen: { host: "127.0.0.1", port: ${configuredPort} } },
+};
+`,
+    );
+
+    const child = spawn(process.execPath, [bin, ...args], { cwd: scratch, stdio: ["ignore", "pipe", "pipe"] });
+    const closed = once(child, "close");
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    try {
+      const url = await vi.waitFor(
+        () => {
+          const listeningUrl = stdout.match(/^AskDB HTTP API listening on (http:\/\/127\.0\.0\.1:\d+)\r?$/m)?.[1];
+          if (!listeningUrl) throw new Error(`Startup URL was not printed. ${stderr}`);
+          return new URL(listeningUrl);
+        },
+        { timeout: 10_000 },
+      );
+
+      expect(Number(url.port || 80)).toBeGreaterThan(0);
+      expect(Number(url.port || 80)).not.toBe(configuredPort);
+      const response = await fetch(new URL("/health", url), { signal: AbortSignal.timeout(5_000) });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+    } finally {
+      child.kill();
+      await closed;
+    }
+  });
 
   it("prints one line and exits 1 when the config sets an out-of-range httpApi.requestTimeoutMs", () => {
     scratch = mkdtempSync(join(tmpdir(), "askdb-http-bin-"));

@@ -63,7 +63,12 @@ try {
   process.stderr.write(`askdb-http: ${formatListenError(error, app.host, app.port)}\n`);
   process.exit(1);
 }
-console.log(`AskDB HTTP API listening on http://${app.host}:${app.port}`);
+const address = app.server.address();
+if (!address || typeof address === "string") {
+  process.stderr.write("askdb-http: TCP listener has no bound address.\n");
+  process.exit(1);
+}
+console.log(`AskDB HTTP API listening on http://${app.host}:${address.port}`);
 
 function formatListenError(error: unknown, host: string, port: number): string {
   const code = (error as { code?: unknown } | undefined)?.code;

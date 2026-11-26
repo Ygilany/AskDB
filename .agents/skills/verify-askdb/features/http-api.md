@@ -34,6 +34,6 @@ Preconditions:
 ## Gotchas
 
 - The repo root's config sets no schema for the API. Without `--schema-path` (which `vctl api start` passes), `/ask` answers 500 `generation_not_configured`.
-- `askdb-http --port 0` binds a free port but its ready line still prints `:0`. The harness gives each run a fixed free port, so use the port `vctl api start` prints.
+- `askdb-http --port 0` binds a free port and prints the assigned port in its ready line. When using the harness, use the URL `vctl api start` prints.
 - `pnpm -C apps/http-api start` runs inside `apps/http-api`, which has no config, and exits. Start it through the harness.
 - `vctl api-request` exits 1 on any non-2xx status: that's the response under test, not a harness failure.
