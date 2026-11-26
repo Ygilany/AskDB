@@ -138,7 +138,8 @@ export async function runStudioIntrospection(options: {
 export function inferSchemaId(path: string): string {
   const name = basename(path);
   const inferred = name.endsWith(".schema") ? name.slice(0, -".schema".length) : name;
-  // An output directory of `.`, `/` or `.schema` derives an empty or "." name:
-  // fall back to "introspected" instead of writing that into schema.json.
-  return inferred && inferred !== "." ? inferred : "introspected";
+  // An output directory of `.`, `..`, `/` or `.schema` derives an empty or
+  // dot-only name: fall back to "introspected" instead of writing that into
+  // schema.json.
+  return inferred && !/^\.+$/.test(inferred) ? inferred : "introspected";
 }
