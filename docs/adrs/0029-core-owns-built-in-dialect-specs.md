@@ -49,3 +49,7 @@ flowchart LR
 | `cockroachdb` is a built-in id outside the 1.0 support claim, which covers five engine families. | review |
 
 A new built-in dialect is a change to core. ADR 0007's rule that a new engine needs no change to core holds for introspection only. ADR 0032 decides how a rebind treats a spread spec.
+
+## Related
+
+How-to: [Adding a new engine's dialect rules](../integration/dialects.md).
