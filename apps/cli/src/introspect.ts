@@ -422,9 +422,10 @@ function inferSchemaId(path: string | undefined): string | undefined {
   if (!path) return undefined;
   const name = basename(path);
   const inferred = name.endsWith(".schema") ? name.slice(0, -".schema".length) : name;
-  // `--out .`, `--out /` and `--out .schema` derive an empty or "." name (#782):
-  // fall back to "introspected" instead of writing that into schema.json.
-  return inferred && inferred !== "." ? inferred : "introspected";
+  // `--out .`, `--out ..`, `--out /` and `--out .schema` derive an empty or
+  // dot-only name (#782): fall back to "introspected" instead of writing
+  // that into schema.json.
+  return inferred && !/^\.+$/.test(inferred) ? inferred : "introspected";
 }
 
 const INTROSPECT_USAGE = [
