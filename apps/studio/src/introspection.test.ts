@@ -57,4 +57,7 @@ it("reports a missing @askdb/prisma as the Prisma plan's error", () => {
   const plan = JSON.parse(run.stdout) as { ok: boolean; engine: string; error: string };
   expect(plan).toMatchObject({ ok: false, engine: "prisma" });
   expect(plan.error).toContain("needs the optional peer dependency `@askdb/prisma`");
+  expect(plan.error).toContain("pnpm add --allow-build=@prisma/engines @askdb/prisma");
+  expect(plan.error).toContain("For Yarn Plug'n'Play, your project also needs `ai`");
+  expect(plan.error).toContain("Add any missing packages and keep compatible installed versions.");
 });

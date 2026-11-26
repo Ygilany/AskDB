@@ -103,6 +103,7 @@ Tooling for `askdb init` and AskDB Studio's setup wizard. It is experimental, li
 
 - `planAskDbScaffold(answers, versions)` — a new project's `askdb.config.ts` source, `.env.example`, the env vars the config reads, and the packages to install, from its answers (engine, connection variable or SQLite file, schema directory, `ai`, RAG store, Studio execute). Pure; it throws `AskDbScaffoldInputError`, with the answer's `field`, for an env var name that isn't uppercase POSIX (`^[A-Z_][A-Z0-9_]*$`), a control character in a path, an unknown id, or a missing answer. The caller supplies the defaults.
 - `isAskDbScaffoldEnvName(name)` — the planner's env var name rule: POSIX, uppercase (`^[A-Z_][A-Z0-9_]*$`).
+- `PRISMA_YARN_PNP_HINT` — the extra install guidance for Yarn Plug'n'Play projects using `@askdb/prisma`.
 - `detectPackageManager(dir, env?)` — the package manager for `dir`: a lockfile in `dir` or a parent, then the nearest `package.json`'s `packageManager` or `devEngines.packageManager`, then `npm_config_user_agent`, then npm.
 - `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` — project and install-command helpers.
 - `packageManagerSpawnSpec(pm, args, platform?)` — how to spawn the package manager: allowlisted arguments, and `shell: true` on Windows, where package managers are `.cmd` shims.

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { getAskDbRuntimeConfig } from "@askdb/config";
+import { PRISMA_YARN_PNP_HINT } from "@askdb/config/scaffold";
 import { formatTenantPolicyWarning, loadSchema, type TenantPolicyWarning } from "@askdb/core";
 import {
   connectorPackageMissingMessage,
@@ -36,11 +37,12 @@ import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 const prismaPackage = createOptionalDriverLoader({
   packageName: "@askdb/prisma",
   importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
-  missingMessage: connectorPackageMissingMessage({
-    provider: "prisma",
-    packageName: "@askdb/prisma",
-    allowBuilds: PRISMA_BUILD_APPROVALS,
-  }),
+  missingMessage:
+    connectorPackageMissingMessage({
+      provider: "prisma",
+      packageName: "@askdb/prisma",
+      allowBuilds: PRISMA_BUILD_APPROVALS,
+    }) + ` ${PRISMA_YARN_PNP_HINT}`,
 });
 
 /**

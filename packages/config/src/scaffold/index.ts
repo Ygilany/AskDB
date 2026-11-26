@@ -9,7 +9,7 @@
  * `@askdb/config` may change these exports (ADR 0030).
  */
 export type { AskDbAiConfigScaffoldInput } from "./ai.js";
-export { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold } from "./plan.js";
+export { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold, PRISMA_YARN_PNP_HINT } from "./plan.js";
 export type { AskDbScaffoldAnswers, AskDbScaffoldPlan, ScaffoldValue } from "./plan.js";
 export {
   detectPackageManager,

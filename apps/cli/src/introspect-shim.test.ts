@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "../../..");
@@ -14,6 +15,50 @@ const prismaFixture = join(prismaDir, "test-fixtures/simple/schema.prisma");
 // (`test` depends on `build` and `^build`); rebuilding them in-test raced with other
 // test files executing the same dist output.
 describe("cli spawn: introspect subcommand", () => {
+  it("names the additional dependencies for Yarn Plug'n'Play when @askdb/prisma is missing", () => {
+    const project = mkdtempSync(join(tmpdir(), "askdb-prisma-missing-"));
+    try {
+      writeFileSync(
+        join(project, "askdb.config.cjs"),
+        `module.exports = {
+          ai: { provider: "openai", providerConfig: { openai: { apiKey: "test-key" } } },
+          introspection: { provider: "prisma", providerConfig: { prisma: { schemaPath: "./schema.prisma" } } },
+        };`,
+        "utf8",
+      );
+      const hook = join(project, "hide-prisma.mjs");
+      writeFileSync(hook, `
+import { registerHooks } from "node:module";
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "@askdb/prisma") {
+      throw Object.assign(new Error("Cannot find package '@askdb/prisma'"), { code: "ERR_MODULE_NOT_FOUND" });
+    }
+    return nextResolve(specifier, context);
+  },
+});
+`, "utf8");
+      const result = run(process.execPath, [
+        "--import",
+        pathToFileURL(hook).href,
+        join(cliDir, "dist/cli.js"),
+        "introspect",
+        "--engine",
+        "prisma",
+        "--print",
+      ], { NODE_PATH: "" }, project);
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("needs the optional peer dependency `@askdb/prisma`");
+      expect(result.stderr).toContain("npm install @askdb/prisma");
+      expect(result.stderr).toContain("pnpm add --allow-build=@prisma/engines @askdb/prisma");
+      expect(result.stderr).toContain("For Yarn Plug'n'Play, your project also needs `ai`");
+      expect(result.stderr).toContain("Add any missing packages and keep compatible installed versions.");
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
   it("errors with an auto-discover message when no Prisma schema is found", () => {
     const exec = run("node", [
       join(cliDir, "dist/cli.js"),

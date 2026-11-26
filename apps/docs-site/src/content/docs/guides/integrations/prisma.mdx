@@ -42,11 +42,13 @@ written -> ask
 
 For the CLI and Studio (AskDB's browser UI for schema enrichment), install `@askdb/prisma` in your project next to `askdb`. `askdb` and `@askdb/studio` list it as an optional peer: they load it only to read a Prisma schema, and don't install it, because it brings in Prisma.
 
+Use these commands for a new install. If your project already has a compatible version of `ai` or `zod`, omit that package from the command.
+
 <InstallTabs pkgs="askdb @askdb/prisma ai zod" />
 
 `ai` and `zod` are there for Yarn Plug'n'Play. `@askdb/prisma` loads `@askdb/core`, which can only load them from your project. `npx askdb@latest init --database prisma` installs all of them for you. `askdb` also finds the copy in your project when it runs from elsewhere, as `npx askdb` does. To run the CLI without installing anything, name both packages in the one-off command: `npx -p askdb -p @askdb/prisma askdb introspect --engine prisma`.
 
-Without it, `askdb introspect --engine prisma` exits 1 and names the package to install, and Studio shows the same message instead of resyncing.
+If `@askdb/prisma` is missing, `askdb introspect --engine prisma` exits 1, and Studio stops the resync. Both show how to install the package and list the compatible versions of the extra dependencies for Yarn Plug'n'Play.
 
 <Aside type="caution" title="pnpm 11: approve the Prisma build">
 `@askdb/prisma` depends on Prisma. Prisma's `@prisma/engines` package has an install script. pnpm 11 doesn't run it until you approve it, and `pnpm add` exits 1 with `ERR_PNPM_IGNORED_BUILDS`. Approve it in the same command:

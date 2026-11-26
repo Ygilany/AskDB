@@ -271,6 +271,7 @@ The tooling `askdb init` and Studio's setup wizard share, for tools that set up 
 
 - **`planAskDbScaffold(answers, versions)`** turns a new project's answers into its `askdb.config.ts` source, its `.env.example`, the env vars the config reads and the packages to install. It throws `AskDbScaffoldInputError`, with the answer's `field`, for a bad answer. Its types are `AskDbScaffoldAnswers` (its `ai` answer is an `AskDbAiConfigScaffoldInput`), `AskDbScaffoldPlan` and `ScaffoldValue`.
 - **`isAskDbScaffoldEnvName(name)`** is its rule for an env var name: POSIX and uppercase (`^[A-Z_][A-Z0-9_]*$`).
+- **`PRISMA_YARN_PNP_HINT`** is the install guidance for the extra dependencies a Yarn Plug'n'Play project needs with `@askdb/prisma`.
 - **The package-manager helpers:** `detectPackageManager`, `findNearestPackageJsonDir`, `isLikelyWorkspaceRoot`, `lockfilePackageManager`, `packageManagerAddArgs`, `supportedBuildApprovals`, `formatInstallCommand` and `packageManagerSpawnSpec`, with the types `PackageManager` and `PackageManagerSpawnSpec`.
 
 ## Internal

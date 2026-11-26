@@ -88,11 +88,21 @@ const POSTGRES_URL = "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABA
 /**
  * `@askdb/core`'s `ai` peer and `zod` dependency. A Prisma project installs them next to
  * `@askdb/prisma`: under Yarn Plug'n'Play, core can only load them from the project (#760).
- * `ai` is the newest major in core's peer range, since one shell-safe spec can't hold the
- * whole `||` range. `plan.test.ts` fails when core's manifest moves.
+ * The scaffold picks the newest supported `ai` major for a new project.
+ * `plan.test.ts` checks both the install plan and the hint against core's manifest.
  */
-const CORE_AI = "ai@^7.0.51";
-const CORE_ZOD = "zod@^4.6.7";
+const CORE_AI_LATEST_RANGE = "^7.0.51";
+const CORE_AI_RANGE = `^6.0.0 || ${CORE_AI_LATEST_RANGE}`;
+const CORE_ZOD_RANGE = "^4.6.7";
+
+/**
+ * Additional Prisma install guidance for an existing Yarn Plug'n'Play project.
+ *
+ * @experimental See the module note.
+ */
+export const PRISMA_YARN_PNP_HINT =
+  `For Yarn Plug'n'Play, your project also needs \`ai\` (${CORE_AI_RANGE}) and \`zod\` (${CORE_ZOD_RANGE}). ` +
+  "Add any missing packages and keep compatible installed versions.";
 
 /** How each engine's config block finds its database, and what a project installs for it. */
 type EngineFacts =
@@ -123,7 +133,7 @@ const ENGINES: Record<AskDbIntrospectionProvider, EngineFacts> = {
   // to run unapproved (and then exits 1). A Prisma project approves it anyway.
   prisma: {
     connection: "schema",
-    packages: ({ prisma }) => [`@askdb/prisma@${prisma}`, CORE_AI, CORE_ZOD],
+    packages: ({ prisma }) => [`@askdb/prisma@${prisma}`, `ai@${CORE_AI_LATEST_RANGE}`, `zod@${CORE_ZOD_RANGE}`],
     allowBuilds: ["@prisma/engines"],
   },
 };

@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { getAskDbRuntimeConfig } from "@askdb/config";
+import { PRISMA_YARN_PNP_HINT } from "@askdb/config/scaffold";
 import {
   connectorPackageMissingMessage,
   createConnectorRegistry,
@@ -25,11 +26,12 @@ import { PRISMA_BUILD_APPROVALS } from "./prisma-install.js";
 const prismaPackage = createOptionalDriverLoader({
   packageName: "@askdb/prisma",
   importDriver: () => import("@askdb/prisma").catch(rethrowDriverImportError),
-  missingMessage: connectorPackageMissingMessage({
-    provider: "prisma",
-    packageName: "@askdb/prisma",
-    allowBuilds: PRISMA_BUILD_APPROVALS,
-  }),
+  missingMessage:
+    connectorPackageMissingMessage({
+      provider: "prisma",
+      packageName: "@askdb/prisma",
+      allowBuilds: PRISMA_BUILD_APPROVALS,
+    }) + ` ${PRISMA_YARN_PNP_HINT}`,
 });
 
 const connectorRegistry = createConnectorRegistry([

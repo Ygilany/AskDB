@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ASKDB_AI_PROVIDERS, loadAskDbConfigProjectionSync, resetAskDbRuntimeForTests, type AskDbConfig } from "../index.js";
 import { linkWorkspacePackage, resolvedRuntimeText } from "../test-utils.js";
-import { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold, type AskDbScaffoldAnswers } from "./index.js";
+import { AskDbScaffoldInputError, isAskDbScaffoldEnvName, planAskDbScaffold, PRISMA_YARN_PNP_HINT, type AskDbScaffoldAnswers } from "./index.js";
 
 const VERSIONS = { config: "1.2.3", prisma: "0.9.0" };
 
@@ -117,6 +117,11 @@ describe("planAskDbScaffold", () => {
   };
   const coreAi = `ai@${core.peerDependencies.ai.split("||").at(-1)!.trim()}`;
   const coreZod = `zod@${core.dependencies.zod}`;
+
+  it("lists every supported core dependency range in the Prisma Yarn Plug'n'Play hint", () => {
+    expect(PRISMA_YARN_PNP_HINT).toContain(`\`ai\` (${core.peerDependencies.ai})`);
+    expect(PRISMA_YARN_PNP_HINT).toContain(`\`zod\` (${core.dependencies.zod})`);
+  });
 
   it.each([
     ["postgres", answers(), ["@askdb/config@1.2.3", "pg"], []],
