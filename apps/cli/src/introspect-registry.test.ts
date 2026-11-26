@@ -332,8 +332,8 @@ describe("askdb introspect --out — success line", () => {
 });
 
 // `--out` derives the schema id from the output directory's name (#782): a
-// directory of `.`, `/` or `.schema` derives an empty or "." name, which must
-// fall back to "introspected" instead of landing in schema.json.
+// directory of `.`, `..`, `/` or `.schema` derives an empty or dot-only name,
+// which must fall back to "introspected" instead of landing in schema.json.
 describe("askdb introspect --out — schemaId fallback for degenerate directories", () => {
   const prevCwd = process.cwd();
   let project: string;
@@ -345,6 +345,9 @@ describe("askdb introspect --out — schemaId fallback for degenerate directorie
   it.each([
     { out: ".", label: "--out ." },
     { out: "./", label: "--out ./" },
+    { out: "..", label: "--out .." },
+    { out: "../", label: "--out ../" },
+    { out: "a/..", label: "--out a/.." },
     { out: ".schema", label: "--out .schema" },
   ])("$label writes schemaId \"introspected\"", async ({ out }) => {
     installRuntime();
