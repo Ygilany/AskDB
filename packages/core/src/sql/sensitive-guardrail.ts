@@ -457,6 +457,10 @@ function scanTokens(
   const consumed = new Set<number>();
   /** Relation names that exist but are not schema tables (CTEs, derived tables). */
   const derived = new Set<string>();
+  /** CTE names whose body is exactly `TABLE rel`, mapped to that table's path (#309). */
+  const cteTables = new Map<string, string[]>();
+  /** `TABLE rel` commands, wherever they appear in a SELECT: each reads every column of its table (#309). */
+  const tableBranches: Array<{ path: string[] }> = [];
   // FROM/JOIN bindings. `at` is the index of the FROM/JOIN keyword that introduced them,
   // which places the binding in that clause's query block.
   const sourcePaths: Array<{ path: string[]; at: number }> = [];
@@ -616,6 +620,61 @@ function scanTokens(
     return k;
   };
 
+  /**
+   * `TABLE [ONLY] schema.name` at `start` (the `TABLE` keyword): its relation path, or
+   * undefined when the tokens are not a TABLE command. Postgres reads `TABLE name` as
+   * `SELECT * FROM name`, so it is a whole-table read (#309). `pathIdx` also holds the
+ * `ONLY` marker when present, so callers consume the whole command with the path. A
+ * trailing `*` marker or `ORDER BY` / `LIMIT` / `OFFSET` / `FETCH` needs no handling:
+ * the path ends before them.
+   */
+  const parseTableCommand = (
+    start: number,
+  ): { path: string[]; pathIdx: number[]; end: number; at: number } | undefined => {
+    if (!isKeywordTok(tokens[start], "table")) return undefined;
+    const path: string[] = [];
+    const pathIdx: number[] = [];
+    let k = start + 1;
+    // `TABLE ONLY name` — ONLY is the descendant-exclusion marker, not the table.
+    if (isKeywordTok(tokens[k], "only")) {
+      pathIdx.push(k);
+      k++;
+    }
+    for (;;) {
+      if (!isWord(tokens[k])) return undefined;
+      path.push(tokens[k]!.lower);
+      pathIdx.push(k);
+      k++;
+      if (isPunct(tokens[k], ".")) {
+        k++;
+        continue;
+      }
+      break;
+    }
+    return { path, pathIdx, end: k, at: start };
+  };
+
+  /**
+   * `TABLE rel` inside the parentheses opened at `open` and closed at `close`,
+   * allowing redundant grouping — `((TABLE rel))` reads the same table (#309).
+   */
+  const tableCommandInParens = (
+    open: number,
+    close: number,
+  ): { path: string[]; pathIdx: number[]; end: number; at: number } | undefined => {
+    let depth = open;
+    for (;;) {
+      const cmd = parseTableCommand(depth + 1);
+      if (cmd) {
+        if (cmd.end !== closeParenAfter(depth)) return undefined;
+        for (let k = cmd.end; k <= close; k++) if (!isPunct(tokens[k], ")")) return undefined;
+        return cmd;
+      }
+      if (!isPunct(tokens[depth + 1], "(")) return undefined;
+      depth++;
+    }
+  };
+
   const parseTableRef = (start: number): number => {
     let j = start;
     while (isWord(tokens[j]) && (tokens[j]!.lower === "lateral" || tokens[j]!.lower === "only")) {
@@ -627,6 +686,18 @@ function scanTokens(
     if (isPunct(tokens[j], "(")) {
       const close = closeParenAfter(j);
       if (close === -1) return j + 1;
+      // `(TABLE name)` is shorthand for `(SELECT * FROM name)`: bind the table itself,
+      // so the outer wildcard (or the alias) reads its columns (#309).
+      const tableCmd = tableCommandInParens(j, close);
+      if (tableCmd) {
+        sawTableSource = true;
+        consumed.add(tableCmd.at);
+        for (const x of tableCmd.pathIdx) consumed.add(x);
+        sourcePaths.push({ path: tableCmd.path, at: bindingAt });
+        return takeAlias(close + 1, (alias) =>
+          aliasDecls.push({ alias, path: tableCmd.path, at: bindingAt }),
+        );
+      }
       sawTableSource = true;
       return takeAlias(close + 1, addDerived);
     }
@@ -672,6 +743,32 @@ function scanTokens(
       if (canAlias(tokens[back])) {
         derived.add(tokens[back]!.lower);
         consumed.add(back);
+        // `name AS (TABLE rel)` — the CTE reads every column of `rel` (#309).
+        const tableCmd = tableCommandInParens(i + 1, closeParenAfter(i + 1));
+        if (tableCmd) {
+          cteTables.set(tokens[back]!.lower, tableCmd.path);
+          consumed.add(tableCmd.at);
+          for (const x of tableCmd.pathIdx) consumed.add(x);
+        }
+      }
+      continue;
+    }
+
+    // A `TABLE [ONLY] rel` command reads every column of `rel`, wherever it appears
+    // in a SELECT: a derived table, a CTE body, a set-operation branch (parenthesised
+    // or not), the main query after `WITH`, or an `IN (TABLE rel)` subquery (#309),
+    // including one that starts the statement. `TABLE` is reserved in Postgres, MySQL
+    // and SQL Server, so in a SELECT it can only be this command; over-reporting is
+    // the accepted failure direction. A statement-leading TABLE reports its table's
+    // sensitive columns (still `passed: false`, so still fail-closed); `validateSelectSql`
+    // rejects such a statement, so this only matters to hosts calling
+    // `validateSensitiveReferences` directly.
+    if (t.lower === "table") {
+      const tableCmd = parseTableCommand(i);
+      if (tableCmd) {
+        tableBranches.push({ path: tableCmd.path });
+        consumed.add(tableCmd.at);
+        for (const x of tableCmd.pathIdx) consumed.add(x);
       }
       continue;
     }
@@ -804,7 +901,13 @@ function scanTokens(
     else into.set(name, [...entries]);
   };
   for (const { path, at } of sourcePaths) {
-    const entries = resolve(path);
+    // A CTE name shadows a table of the same name — but only inside the query that
+    // declares it, and this map is statement-wide, so a nested CTE named after a real
+    // table would rebind an outer reference to that table away from it (#309). Bind
+    // the CTE's `TABLE rel` body and the same-named schema table, so the outer
+    // reference is never lost; over-reporting is the safe failure here.
+    const ctePath = path.length === 1 ? cteTables.get(path[0]!) : undefined;
+    const entries = [...resolve(path), ...(ctePath ? resolve(ctePath) : [])];
     const scope = blockScope(blockAt(at));
     for (const e of entries) {
       inScope.add(e);
@@ -927,6 +1030,11 @@ function scanTokens(
     const block = blockAt(at);
     const tables = block === -1 ? inScope : (blockScopes.get(block)?.tables ?? []);
     for (const table of tables) recordAllSensitive(table, "unqualified");
+  }
+  // A `TABLE rel` command projects every column of `rel`, so it reaches its sensitive
+  // columns (#309).
+  for (const { path } of tableBranches) {
+    for (const table of resolve(path)) recordAllSensitive(table, "unqualified");
   }
   // `alias.*`
   for (const ref of starRefs) {
