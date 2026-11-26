@@ -31,12 +31,15 @@ registerHooks({
 `;
 
 // Studio derives the schema id the same way `askdb introspect` does (#782):
-// an output directory of `.`, `/` or `.schema` must fall back to
+// an output directory of `.`, `..`, `/` or `.schema` must fall back to
 // "introspected", matching the CLI.
 describe("inferSchemaId", () => {
   it.each([
     [".", "introspected"],
     ["./", "introspected"],
+    ["..", "introspected"],
+    ["../", "introspected"],
+    ["a/..", "introspected"],
     ["/", "introspected"],
     [".schema", "introspected"],
     ["acme.schema", "acme"],
