@@ -324,7 +324,7 @@ describe("validateSensitiveReferences — unresolvable scope", () => {
   it("widens and reports when there is no resolvable table source", () => {
     const result = validateSensitiveReferences("SELECT password", districtSchema);
     expect(result.passed).toBe(false);
-    expect(result.unresolvedScope).toBeUndefined();
+    expect(result.unresolvedScope?.issues).toEqual(["NO_TABLE_SOURCE"]);
     expect(result.unresolvedScope?.widened).toBe(true);
     expect(result.references).toEqual([
       { table: "users", schema: "identity", column: "password", matchKind: "unqualified" },
